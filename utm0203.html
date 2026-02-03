@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1280">
+    <title>오더즈 링크 관리자 (v8.3 - Layout Updated)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=JetBrains+Mono:wght@400;700&display=swap');
+        body { font-family: 'Noto Sans KR', sans-serif; background-color: #f4f7fa; color: #334155; min-width: 1024px; }
+        
+        /* [Select Design] */
+        select.input-base {
+            -webkit-appearance: none; -moz-appearance: none; appearance: none;
+            background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2364748b' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+            background-position: right 0.5rem center;
+            background-repeat: no-repeat;
+            background-size: 1.2em 1.2em;
+            padding-right: 2rem;
+        }
+        select optgroup { font-weight: 800; color: #1e40af; background-color: #eff6ff; padding: 8px 0; font-family: 'Noto Sans KR', sans-serif; }
+        select option { font-weight: 400; color: #334155; background-color: #fff; padding: 8px 10px; font-size: 13px; }
+
+        /* [Layout] */
+        .tbl_frm { border-collapse: separate; border-spacing: 0; width: 100%; }
+        .tbl_frm th { background-color: #f8fafc; padding: 14px 16px; text-align: left; font-weight: 600; font-size: 13px; border-bottom: 1px solid #e2e8f0; color: #475569; width: 150px; border-right: 1px solid #e2e8f0; vertical-align: top; }
+        .tbl_frm td { padding: 14px 16px; border-bottom: 1px solid #e2e8f0; background-color: #fff; vertical-align: top; }
+        
+        /* [List Table] */
+        .tbl_head_container { background-color: #fff; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); overflow: hidden; border: 1px solid #e2e8f0; }
+        .tbl_head { border-collapse: collapse; width: 100%; table-layout: fixed; }
+        .tbl_head th { background-color: #f8fafc; padding: 12px 14px; font-weight: 700; font-size: 12px; border-bottom: 1px solid #e2e8f0; color: #64748b; vertical-align: middle; }
+        .tbl_head td { padding: 12px 14px; border-bottom: 1px solid #e2e8f0; font-size: 12px; color: #334155; vertical-align: middle; }
+        
+        /* Inputs & Controls */
+        .input-base { width: 100%; border: 1px solid #cbd5e1; border-radius: 4px; padding: 8px 10px; font-size: 13px; outline: none; transition: border 0.2s; height: 36px; }
+        .input-base:focus { border-color: #3b82f6; }
+        .input-required { background-color: #f8fafc; border-color: #cbd5e1; }
+        .input-required:focus { background-color: #fff; border-color: #3b82f6; }
+        
+        /* Toggle Switch */
+        .toggle-checkbox:checked { right: 0; border-color: #3b82f6; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #3b82f6; }
+        .toggle-label { width: 34px; height: 18px; } 
+        .toggle-checkbox { width: 14px; height: 14px; top: 2px; } 
+        .toggle-checkbox:checked { transform: translateX(100%); right: auto; left: 2px; }
+        
+        /* Badges */
+        .preset-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; background-color: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+        .medium-badge { font-size: 9px; color: #94a3b8; margin-left: 4px; font-weight: 400; }
+        .expired-badge { font-size: 10px; color: #ef4444; background-color: #fef2f2; border: 1px solid #fee2e2; padding: 2px 6px; border-radius: 4px; font-weight: 700; display: inline-block; margin-top: 4px; }
+        .off-badge { font-size: 10px; color: #64748b; background-color: #f1f5f9; border: 1px solid #e2e8f0; padding: 2px 8px; border-radius: 4px; font-weight: 700; display: inline-block; margin-top: 4px; letter-spacing: 0.5px; }
+
+        /* [Link Styling] */
+        .url-text { font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.5; }
+        .url-text-target { word-break: break-all; white-space: normal; color: #64748b; margin-top: 4px; display: block; }
+        .url-base { color: #334155; font-weight: 600; }
+        .url-params { color: #94a3b8; }
+        
+        .copy-btn-wrapper { display: flex; align-items: center; justify-content: center; height: 100%; }
+        .btn-copy-circle { 
+            width: 32px; height: 32px; border-radius: 50%; border: 1px solid #e2e8f0; 
+            display: flex; align-items: center; justify-content: center; 
+            color: #64748b; background-color: #fff; cursor: pointer; transition: all 0.2s; 
+        }
+        .btn-copy-circle:hover { border-color: #3b82f6; color: #2563eb; background-color: #eff6ff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+
+        /* [UX] Toast Notification */
+        #toast-container { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 100; visibility: hidden; opacity: 0; transition: opacity 0.3s, bottom 0.3s; }
+        #toast-container.show { visibility: visible; opacity: 1; bottom: 40px; }
+        .toast-message { background-color: #1e293b; color: #fff; padding: 10px 20px; border-radius: 50px; font-size: 13px; font-weight: 500; box-shadow: 0 4px 15px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 8px; }
+    </style>
+</head>
+<body>
+    <header class="bg-white border-b border-slate-200 px-6 py-3 mb-5 shadow-sm sticky top-0 z-50">
+        <div class="flex justify-between items-center max-w-7xl mx-auto w-full">
+            <h1 class="text-lg font-bold text-slate-800"><i class="fas fa-link text-blue-600 mr-2"></i>마케팅 링크 관리자 <span class="text-xs font-normal text-slate-400 ml-1">v8.3 (Layout Updated)</span></h1>
+            <div class="text-xs text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
+                <i class="fas fa-check-circle mr-1 text-green-500"></i> MVP 규칙 준수: 필수 항목 좌측 배치 완료
+            </div>
+        </div>
+    </header>
+
+    <div class="max-w-7xl mx-auto px-6 pb-20">
+        
+        <!-- 링크 생성 -->
+        <section class="mb-8">
+            <div class="flex items-center gap-2 mb-2 border-l-4 border-blue-600 pl-3">
+                <h2 class="text-sm font-bold text-slate-700">신규 캠페인 생성</h2>
+            </div>
+            
+            <div class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+                <table class="tbl_frm">
+                    <tbody>
+                        <!-- STEP 1 -->
+                        <tr>
+                            <th>
+                                <div class="flex flex-col gap-0.5 items-center">
+                                    <span class="bg-blue-600 text-white w-4 h-4 flex items-center justify-center rounded-full text-[9px] mb-0.5">1</span>
+                                    <span>캠페인 정보</span>
+                                </div>
+                            </th>
+                            <td colspan="3">
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-blue-800 mb-1">캠페인 명 (Memo) *</label>
+                                        <input type="text" id="in_memo" class="input-base input-required" placeholder="예: 26년 설날 감사 이벤트">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-slate-600 mb-1">담당 유통사 (yt_code)</label>
+                                        <input type="text" id="in_yt" class="input-base" placeholder="HQ (기본값)">
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        <!-- STEP 2 -->
+                        <tr>
+                            <th>
+                                <div class="flex flex-col gap-0.5 items-center">
+                                    <span class="bg-slate-500 text-white w-4 h-4 flex items-center justify-center rounded-full text-[9px] mb-0.5">2</span>
+                                    <span>연결 설정</span>
+                                </div>
+                            </th>
+                            <td colspan="3">
+                                <div class="grid grid-cols-2 gap-4">
+                                    <!-- [Left] Landing Page (Base URL) -->
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-slate-700 mb-1">랜딩페이지 (Base URL) *</label>
+                                        <input type="text" id="in_url" class="input-base input-required" placeholder="https://orderz.kr/member/join.php">
+                                    </div>
+                                    <!-- [Right] Channel Preset -->
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-slate-600 mb-1">채널 프리셋 (GA4 Source/Medium) *</label>
+                                        <select id="in_channel" class="input-base input-required">
+                                            <optgroup label="✅ 1. Owned / Organic (비용 없음)">
+                                                <option value="orderz|referral">오더즈 (orderz / referral)</option>
+                                                <option value="blog|referral">블로그 (blog / referral)</option>
+                                                <option value="place|referral">플레이스 (place / referral)</option>
+                                                <option value="kakao_channel|message">카카오톡 채널 (kakao_channel / message)</option>
+                                                <option value="offline|qr">오프라인 QR (offline / qr)</option>
+                                            </optgroup>
+                                            <optgroup label="💬 2. Paid - 메시지 / CRM">
+                                                <option value="kakao|message">카카오 알림톡 (kakao / message)</option>
+                                                <option value="sms|message">문자 (sms / message)</option>
+                                            </optgroup>
+                                            <optgroup label="💰 3. Paid / Advertising (광고)">
+                                                <option value="naver|cpc">네이버 검색광고 (naver / cpc)</option>
+                                                <option value="google|cpc">구글 검색광고 (google / cpc)</option>
+                                                <option value="naver_place|cpc">네이버 플레이스 광고 (naver_place / cpc)</option>
+                                                <option value="danggeun|paid_social">당근마켓 광고 (danggeun / paid_social)</option>
+                                                <option value="youtube|video">유튜브 광고 (youtube / video)</option>
+                                                <option value="meta|paid_social">메타 광고 (IG/FB) (meta / paid_social)</option>
+                                                <option value="display|banner">디스플레이 광고 (display / banner)</option>
+                                                <option value="press|article">언론 기사 광고 (press / article)</option>
+                                            </optgroup>
+                                        </select>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        <!-- STEP 3 -->
+                        <tr>
+                            <th>
+                                <div class="flex flex-col gap-0.5 items-center">
+                                    <span class="bg-blue-600 text-white w-4 h-4 flex items-center justify-center rounded-full text-[9px] mb-0.5">3</span>
+                                    <span>링크 생성</span>
+                                </div>
+                            </th>
+                            <td colspan="3">
+                                <div class="grid grid-cols-2 gap-4 items-end">
+                                    <!-- [Left] Short Code -->
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-blue-800 mb-1">
+                                            단축 코드 (Short Code) *
+                                            <span class="text-[10px] font-normal text-slate-400 ml-1">*영문 소문자, 숫자, _ Only</span>
+                                        </label>
+                                        <div class="flex items-center gap-2">
+                                            <div class="flex items-center flex-1">
+                                                <span class="bg-slate-100 text-slate-500 text-xs px-3 border border-r-0 border-slate-300 rounded-l h-[36px] flex items-center font-mono">go.orderz.kr/</span>
+                                                <input type="text" id="in_code" class="input-base rounded-l-none font-bold text-blue-600 h-[36px]" placeholder="sale_2026">
+                                            </div>
+                                            <button onclick="window.saveLink()" class="bg-blue-600 text-white px-4 h-[36px] rounded text-xs font-bold hover:bg-blue-700 transition shadow-sm whitespace-nowrap active:scale-95 flex items-center">
+                                                <i class="fas fa-link mr-1.5"></i> 링크 생성
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <!-- [Right] Next URL -->
+                                    <div class="mb-0.5">
+                                        <label class="block text-[11px] font-bold text-slate-700 mb-1">
+                                            이동 목적지 (Next URL)
+                                            <span class="text-[10px] font-normal text-slate-400 ml-1">*선택사항 (/로 시작 필수)</span>
+                                        </label>
+                                        <input type="text" id="in_next" class="input-base" placeholder="/event/coupon.php">
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 2. 관리 목록 -->
+        <section>
+            <div class="flex justify-between items-center mb-2">
+                <h2 class="text-sm font-bold text-slate-700 border-l-4 border-slate-600 pl-2">관리 목록</h2>
+                <div class="flex gap-2">
+                    <input type="text" id="searchInput" placeholder="캠페인명, 코드 검색..." class="border border-slate-300 px-3 py-1.5 text-xs rounded-full w-60 outline-none focus:border-blue-500" onkeyup="window.render()">
+                    <button onclick="window.render()" class="text-xs bg-white border border-slate-300 px-2 py-1.5 rounded hover:bg-slate-50" title="새로고침"><i class="fas fa-sync-alt text-slate-500"></i></button>
+                </div>
+            </div>
+            
+            <div class="tbl_head_container">
+                <table class="tbl_head">
+                    <colgroup>
+                        <col style="width: 25%"> <!-- 캠페인 정보 -->
+                        <col style="width: 8%">  <!-- 상태 -->
+                        <col style="width: 12%"> <!-- 시작일 -->
+                        <col style="width: 8%">  <!-- 성과 -->
+                        <col style="width: 47%"> <!-- 링크 정보 -->
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            <th class="text-left pl-4">캠페인 정보</th>
+                            <th class="text-center">상태</th>
+                            <th class="text-center">시작일 (ON시점)</th>
+                            <th class="text-center">성과</th>
+                            <th class="text-left pl-4">링크 정보 (Short / Target)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="listBody"></tbody>
+                </table>
+                <div id="emptyMsg" class="hidden py-10 text-center text-xs text-slate-400">등록된 링크가 없습니다.</div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Toast UI Container -->
+    <div id="toast-container">
+        <div class="toast-message">
+            <i class="fas fa-check-circle text-green-400"></i>
+            <span>링크가 복사되었습니다.</span>
+        </div>
+    </div>
+
+    <!-- Script Block -->
+    <script type="module">
+        // [Mock Data]
+        let links = [
+            { id: 1, code: 'sale_2026', memo: '26년 설날 감사 이벤트 (운영중)', url: 'https://orderz.kr/join', yt: 'HQ', next: '', utm_source: 'orderz', utm_medium: 'referral', active: true, started_at: '2026-02-01', end_date: '2026-02-28', hits: 152 },
+            { id: 2, code: 'insta_winter', memo: '겨울 시즌 인스타그램 (유입있음)', url: 'https://orderz.kr/main', yt: 'BUSAN_A01', next: '/event/winter', utm_source: 'meta', utm_medium: 'paid_social', active: true, started_at: '2026-01-15', end_date: '', hits: 4500 },
+            { id: 3, code: 'inactive_test', memo: '비활성 테스트용 (OFF / Hits 0)', url: 'https://orderz.kr/test', yt: 'TEST', next: '', utm_source: 'sms', utm_medium: 'message', active: false, started_at: '', end_date: '', hits: 0 },
+            { id: 4, code: 'expired_event', memo: '만료된 이벤트 (재활성 테스트)', url: 'https://orderz.kr/old', yt: 'HQ', next: '', utm_source: 'kakao', utm_medium: 'message', active: false, started_at: '2025-12-01', end_date: '2025-12-31', hits: 320 }
+        ];
+
+        window.render = function() {
+            const tbody = document.getElementById('listBody');
+            const keyword = document.getElementById('searchInput').value.toLowerCase();
+            const today = new Date().toISOString().split('T')[0];
+            
+            tbody.innerHTML = '';
+            
+            const filtered = links.filter(l => !keyword || l.memo.toLowerCase().includes(keyword) || l.code.toLowerCase().includes(keyword));
+            
+            if (filtered.length === 0) {
+                document.getElementById('emptyMsg').classList.remove('hidden');
+            } else {
+                document.getElementById('emptyMsg').classList.add('hidden');
+            }
+
+            filtered.forEach(link => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-50 transition";
+                
+                const isExpired = link.end_date && link.end_date < today;
+                
+                let params = [];
+                params.push(`utm_source=${link.utm_source}`);
+                params.push(`utm_medium=${link.utm_medium}`);
+                params.push(`utm_campaign=${link.code}`);
+                params.push(`yt_code=${link.yt || 'HQ'}`);
+                if(link.next) params.push(`next=${encodeURIComponent(link.next)}`);
+                
+                const separator = link.url.includes('?') ? '&' : '?';
+                const paramStr = params.join('&');
+                const shortUrl = `https://go.orderz.kr/${link.code}`;
+                const longUrlHtml = `<span class="url-base">${link.url}</span><span class="url-params">${separator}${paramStr}</span>`;
+                const dateDisplay = link.started_at ? link.started_at : '<span class="text-slate-300">-</span>';
+                
+                let statusBadge = '';
+                if (isExpired) statusBadge = `<div class="expired-badge"><i class="fas fa-exclamation-circle mr-1"></i>만료됨</div>`;
+                else if (!link.active) statusBadge = `<div class="off-badge">OFF</div>`;
+
+                tr.innerHTML = `
+                    <td class="pl-4 py-3 align-top">
+                        <div class="font-bold text-xs mb-1.5 text-slate-800 break-keep pr-2" title="${link.memo}">${link.memo}</div>
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                            <span class="preset-badge">
+                                ${link.utm_source}<span class="medium-badge">/ ${link.utm_medium}</span>
+                            </span>
+                            <span class="bg-slate-100 px-1.5 py-0.5 rounded text-[9px] text-slate-500 border border-slate-200 font-mono" title="유통사코드(yt_code)">${link.yt || 'HQ'}</span>
+                        </div>
+                    </td>
+                    <td class="text-center align-top pt-3">
+                        <div class="relative inline-block w-8 h-4 select-none">
+                            <input type="checkbox" id="toggle_${link.id}" class="toggle-checkbox absolute block w-3 h-3 rounded-full bg-white border border-slate-300 appearance-none cursor-pointer transition-all duration-300 ease-in-out top-0.5 left-0.5" 
+                                ${link.active ? 'checked' : ''} onchange="window.toggleActive(${link.id})"/>
+                            <label for="toggle_${link.id}" class="toggle-label block overflow-hidden w-8 h-4 rounded-full ${link.active ? 'bg-blue-500' : 'bg-slate-300'} cursor-pointer transition-colors duration-300 ease-in-out"></label>
+                        </div>
+                        ${statusBadge}
+                    </td>
+                    <td class="text-center align-top pt-3">
+                        <div class="text-[10px] text-slate-600 font-mono mb-1">${dateDisplay}</div>
+                        <div class="text-[9px] text-slate-400 flex flex-col items-center">
+                            <span>종료:</span>
+                            <input type="date" value="${link.end_date || ''}" class="bg-transparent border-b border-dashed border-slate-300 text-center w-20 focus:outline-none focus:border-blue-400 text-[9px] ${isExpired ? 'text-red-500 font-bold' : ''}" onchange="window.updateEndDate(${link.id}, this.value)">
+                        </div>
+                    </td>
+                    <td class="text-center align-top pt-3">
+                        <div class="flex flex-col items-center gap-1">
+                            <span class="text-xs font-bold font-mono text-slate-700">${link.hits.toLocaleString()}</span>
+                            <a href="https://analytics.google.com/" target="_blank" class="text-[9px] text-slate-400 hover:text-blue-600" title="GA4 리포트"><i class="fas fa-chart-line"></i></a>
+                        </div>
+                    </td>
+                    <td class="pl-4 py-3 align-top">
+                        <div class="flex items-start justify-between gap-4">
+                            <div class="flex flex-col gap-2 flex-1">
+                                <div class="url-text font-bold text-blue-600 hover:underline cursor-pointer truncate" onclick="window.open('${shortUrl}')">${shortUrl}</div>
+                                <div class="url-text url-text-target select-all">${longUrlHtml}</div>
+                            </div>
+                            <div class="copy-btn-wrapper shrink-0 pt-1">
+                                <button onclick="window.copyToClipboard('${shortUrl}', this)" class="btn-copy-circle" title="단축링크 복사">
+                                    <i class="far fa-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        };
+
+        window.saveLink = function() {
+            const memo = document.getElementById('in_memo').value.trim();
+            const url = document.getElementById('in_url').value.trim();
+            const code = document.getElementById('in_code').value.trim();
+            const channelSelect = document.getElementById('in_channel');
+            const yt = document.getElementById('in_yt').value.trim() || 'HQ';
+            const next = document.getElementById('in_next').value.trim();
+
+            if(!memo || !url || !code) return alert("필수 항목(*)을 모두 입력해주세요.");
+            
+            // [규칙 2] 단축 코드 중복 체크 (UNIQUE)
+            if(links.some(l => l.code === code)) return alert(`[생성 실패] 이미 존재하는 단축 코드입니다: ${code}`);
+
+            // [규칙 2] 단축 코드 형식 검증 (영소문자, 숫자, _)
+            const codeRegex = /^[a-z0-9_]+$/;
+            if(!codeRegex.test(code)) return alert("[생성 실패] 단축 코드는 영문 소문자, 숫자, 언더바(_)만 사용 가능합니다.");
+
+            // [규칙 7] Next URL 형식 검증 (내부 경로만 허용)
+            if(next && !next.startsWith('/')) return alert("[생성 실패] 이동 목적지(Next URL)는 반드시 '/'로 시작하는 내부 경로여야 합니다.\n예: /event/coupon.php");
+
+            const presetVal = channelSelect.value;
+            const [utm_source, utm_medium] = presetVal.split('|');
+            
+            links.unshift({
+                id: Date.now(),
+                code, memo, url, yt, next,
+                utm_source, utm_medium,
+                active: false,    // [규칙 3] 생성 시 항상 OFF
+                started_at: '',   // [규칙 3] 생성 시 시작일 없음
+                end_date: '', 
+                hits: 0
+            });
+            window.render();
+            
+            document.getElementById('in_code').value = '';
+            document.getElementById('in_memo').value = '';
+            document.getElementById('in_next').value = '';
+            alert("✅ 캠페인이 생성되었습니다.\n(기본 상태는 OFF 입니다. 검토 후 활성화해주세요.)");
+        };
+
+        window.toggleActive = function(id) {
+            const item = links.find(l => String(l.id) === String(id));
+            if (!item) return;
+
+            const checkbox = document.getElementById(`toggle_${id}`);
+            const isTurningOn = !item.active; 
+
+            // [규칙 5] 만료된 링크 재활성화 방어
+            const today = new Date().toISOString().split('T')[0];
+            if (isTurningOn && item.end_date && item.end_date < today) {
+                alert(`🚫 기간 만료 (Expired)\n\n설정된 종료일(${item.end_date})이 지났습니다.\n\n재활성화 하려면 먼저 [종료일]을\n오늘 이후로 연장해주세요.`);
+                checkbox.checked = false; 
+                return; 
+            }
+
+            // 상태 변경
+            item.active = !item.active;
+            
+            // [규칙 4] ON 전환 시 started_at 없으면 오늘 날짜 세팅
+            if (item.active && !item.started_at) {
+                item.started_at = today;
+            }
+            window.render();
+        };
+
+        window.updateEndDate = function(id, val) {
+            const item = links.find(l => String(l.id) === String(id));
+            if (item) {
+                item.end_date = val;
+                window.render();
+            }
+        };
+
+        window.copyToClipboard = function(text, btnElement) {
+            // 1. Copy Logic
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            textArea.style.left = "-9999px";
+            textArea.style.top = "0";
+            document.body.appendChild(textArea);
+            textArea.select();
+            
+            let successful = false;
+            try {
+                successful = document.execCommand('copy');
+            } catch (err) {
+                console.error('Fallback copy failed', err);
+            }
+            document.body.removeChild(textArea);
+
+            // 2. Feedback Logic
+            if (successful) {
+                // A. Toast UI
+                const toast = document.getElementById('toast-container');
+                toast.classList.add('show');
+                setTimeout(() => { toast.classList.remove('show'); }, 2000);
+
+                // B. Button UI (Icon Change)
+                if (btnElement) {
+                    const originalContent = btnElement.innerHTML;
+                    const originalClass = btnElement.className;
+                    
+                    // Change Style (Success State)
+                    btnElement.innerHTML = '<i class="fas fa-check"></i>';
+                    // Tailwind utility classes for Green style
+                    btnElement.classList.remove('text-slate-500', 'hover:text-blue-600', 'btn-copy-circle');
+                    btnElement.className = "w-[32px] h-[32px] rounded-full border border-green-500 bg-green-50 text-green-500 flex items-center justify-center transition-all";
+                    
+                    // Revert after 1.5s
+                    setTimeout(() => {
+                        btnElement.innerHTML = originalContent;
+                        btnElement.className = originalClass;
+                    }, 1500);
+                }
+            } else {
+                prompt("복사하기: Ctrl+C를 눌러 복사하세요", text);
+            }
+        };
+
+        window.render();
+    </script>
+</body>
+</html>
