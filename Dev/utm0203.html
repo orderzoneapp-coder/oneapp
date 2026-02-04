@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=1280">
-    <title>오더즈 링크 관리자 (v8.3 - Layout Updated)</title>
+    <title>오더즈 링크 관리자 (v8.5 - UI Polished)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     
@@ -48,8 +48,10 @@
         .toggle-checkbox:checked { transform: translateX(100%); right: auto; left: 2px; }
         
         /* Badges */
-        .preset-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; background-color: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
-        .medium-badge { font-size: 9px; color: #94a3b8; margin-left: 4px; font-weight: 400; }
+        /* [Update] Font weight increased for better visibility */
+        .preset-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; background-color: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; }
+        .medium-badge { font-size: 9px; color: #64748b; margin-left: 4px; font-weight: 600; }
+        
         .expired-badge { font-size: 10px; color: #ef4444; background-color: #fef2f2; border: 1px solid #fee2e2; padding: 2px 6px; border-radius: 4px; font-weight: 700; display: inline-block; margin-top: 4px; }
         .off-badge { font-size: 10px; color: #64748b; background-color: #f1f5f9; border: 1px solid #e2e8f0; padding: 2px 8px; border-radius: 4px; font-weight: 700; display: inline-block; margin-top: 4px; letter-spacing: 0.5px; }
 
@@ -76,9 +78,9 @@
 <body>
     <header class="bg-white border-b border-slate-200 px-6 py-3 mb-5 shadow-sm sticky top-0 z-50">
         <div class="flex justify-between items-center max-w-7xl mx-auto w-full">
-            <h1 class="text-lg font-bold text-slate-800"><i class="fas fa-link text-blue-600 mr-2"></i>마케팅 링크 관리자 <span class="text-xs font-normal text-slate-400 ml-1">v8.3 (Layout Updated)</span></h1>
+            <h1 class="text-lg font-bold text-slate-800"><i class="fas fa-link text-blue-600 mr-2"></i>마케팅 링크 관리자 <span class="text-xs font-normal text-slate-400 ml-1">v8.5 (UI Polished)</span></h1>
             <div class="text-xs text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
-                <i class="fas fa-check-circle mr-1 text-green-500"></i> MVP 규칙 준수: 필수 항목 좌측 배치 완료
+                <i class="fas fa-check-circle mr-1 text-green-500"></i> 단축 URL 구조 변경: orderz.kr/go/{code}
             </div>
         </div>
     </header>
@@ -125,14 +127,13 @@
                             </th>
                             <td colspan="3">
                                 <div class="grid grid-cols-2 gap-4">
-                                    <!-- [Left] Landing Page (Base URL) -->
                                     <div>
                                         <label class="block text-[11px] font-bold text-slate-700 mb-1">랜딩페이지 (Base URL) *</label>
                                         <input type="text" id="in_url" class="input-base input-required" placeholder="https://orderz.kr/member/join.php">
                                     </div>
-                                    <!-- [Right] Channel Preset -->
                                     <div>
-                                        <label class="block text-[11px] font-bold text-slate-600 mb-1">채널 프리셋 (GA4 Source/Medium) *</label>
+                                        <!-- [Update] Label Color Change -->
+                                        <label class="block text-[11px] font-bold text-slate-600 mb-1">채널 프리셋 <span class="text-blue-600">(GA4 Source/Medium)</span> *</label>
                                         <select id="in_channel" class="input-base input-required">
                                             <optgroup label="✅ 1. Owned / Organic (비용 없음)">
                                                 <option value="orderz|referral">오더즈 (orderz / referral)</option>
@@ -170,15 +171,15 @@
                             </th>
                             <td colspan="3">
                                 <div class="grid grid-cols-2 gap-4 items-end">
-                                    <!-- [Left] Short Code -->
                                     <div>
+                                        <!-- [Update] Label Color & Text Change -->
                                         <label class="block text-[11px] font-bold text-blue-800 mb-1">
-                                            단축 코드 (Short Code) *
+                                            단축 코드 <span class="text-blue-600">(GA4 campaign)</span> *
                                             <span class="text-[10px] font-normal text-slate-400 ml-1">*영문 소문자, 숫자, _ Only</span>
                                         </label>
                                         <div class="flex items-center gap-2">
                                             <div class="flex items-center flex-1">
-                                                <span class="bg-slate-100 text-slate-500 text-xs px-3 border border-r-0 border-slate-300 rounded-l h-[36px] flex items-center font-mono">go.orderz.kr/</span>
+                                                <span class="bg-slate-100 text-slate-500 text-xs px-3 border border-r-0 border-slate-300 rounded-l h-[36px] flex items-center font-mono">orderz.kr/go/</span>
                                                 <input type="text" id="in_code" class="input-base rounded-l-none font-bold text-blue-600 h-[36px]" placeholder="sale_2026">
                                             </div>
                                             <button onclick="window.saveLink()" class="bg-blue-600 text-white px-4 h-[36px] rounded text-xs font-bold hover:bg-blue-700 transition shadow-sm whitespace-nowrap active:scale-95 flex items-center">
@@ -186,7 +187,6 @@
                                             </button>
                                         </div>
                                     </div>
-                                    <!-- [Right] Next URL -->
                                     <div class="mb-0.5">
                                         <label class="block text-[11px] font-bold text-slate-700 mb-1">
                                             이동 목적지 (Next URL)
@@ -207,8 +207,8 @@
             <div class="flex justify-between items-center mb-2">
                 <h2 class="text-sm font-bold text-slate-700 border-l-4 border-slate-600 pl-2">관리 목록</h2>
                 <div class="flex gap-2">
+                    <!-- [Update] Removed Refresh Button -->
                     <input type="text" id="searchInput" placeholder="캠페인명, 코드 검색..." class="border border-slate-300 px-3 py-1.5 text-xs rounded-full w-60 outline-none focus:border-blue-500" onkeyup="window.render()">
-                    <button onclick="window.render()" class="text-xs bg-white border border-slate-300 px-2 py-1.5 rounded hover:bg-slate-50" title="새로고침"><i class="fas fa-sync-alt text-slate-500"></i></button>
                 </div>
             </div>
             
@@ -225,7 +225,7 @@
                         <tr>
                             <th class="text-left pl-4">캠페인 정보</th>
                             <th class="text-center">상태</th>
-                            <th class="text-center">시작일 (ON시점)</th>
+                            <th class="text-center">시작일 (ON) / 종료일</th>
                             <th class="text-center">성과</th>
                             <th class="text-left pl-4">링크 정보 (Short / Target)</th>
                         </tr>
@@ -247,7 +247,6 @@
 
     <!-- Script Block -->
     <script type="module">
-        // [Mock Data]
         let links = [
             { id: 1, code: 'sale_2026', memo: '26년 설날 감사 이벤트 (운영중)', url: 'https://orderz.kr/join', yt: 'HQ', next: '', utm_source: 'orderz', utm_medium: 'referral', active: true, started_at: '2026-02-01', end_date: '2026-02-28', hits: 152 },
             { id: 2, code: 'insta_winter', memo: '겨울 시즌 인스타그램 (유입있음)', url: 'https://orderz.kr/main', yt: 'BUSAN_A01', next: '/event/winter', utm_source: 'meta', utm_medium: 'paid_social', active: true, started_at: '2026-01-15', end_date: '', hits: 4500 },
@@ -285,7 +284,7 @@
                 
                 const separator = link.url.includes('?') ? '&' : '?';
                 const paramStr = params.join('&');
-                const shortUrl = `https://go.orderz.kr/${link.code}`;
+                const shortUrl = `https://orderz.kr/go/${link.code}`;
                 const longUrlHtml = `<span class="url-base">${link.url}</span><span class="url-params">${separator}${paramStr}</span>`;
                 const dateDisplay = link.started_at ? link.started_at : '<span class="text-slate-300">-</span>';
                 
@@ -300,7 +299,7 @@
                             <span class="preset-badge">
                                 ${link.utm_source}<span class="medium-badge">/ ${link.utm_medium}</span>
                             </span>
-                            <span class="bg-slate-100 px-1.5 py-0.5 rounded text-[9px] text-slate-500 border border-slate-200 font-mono" title="유통사코드(yt_code)">${link.yt || 'HQ'}</span>
+                            <span class="bg-slate-100 px-1.5 py-0.5 rounded text-[9px] text-slate-600 font-bold border border-slate-200 font-mono" title="유통사코드(yt_code)">${link.yt || 'HQ'}</span>
                         </div>
                     </td>
                     <td class="text-center align-top pt-3">
@@ -312,10 +311,9 @@
                         ${statusBadge}
                     </td>
                     <td class="text-center align-top pt-3">
-                        <div class="text-[10px] text-slate-600 font-mono mb-1">${dateDisplay}</div>
-                        <div class="text-[9px] text-slate-400 flex flex-col items-center">
-                            <span>종료:</span>
-                            <input type="date" value="${link.end_date || ''}" class="bg-transparent border-b border-dashed border-slate-300 text-center w-20 focus:outline-none focus:border-blue-400 text-[9px] ${isExpired ? 'text-red-500 font-bold' : ''}" onchange="window.updateEndDate(${link.id}, this.value)">
+                        <div class="flex flex-col items-center gap-1">
+                            <div class="text-[10px] text-slate-600 font-mono font-bold">${dateDisplay}</div>
+                            <input type="date" value="${link.end_date || ''}" class="bg-transparent border border-dashed border-slate-300 rounded px-1 py-0.5 text-center w-22 focus:outline-none focus:border-blue-400 text-[10px] font-mono ${isExpired ? 'text-red-500 font-bold border-red-200 bg-red-50' : 'text-slate-500'}" onchange="window.updateEndDate(${link.id}, this.value)">
                         </div>
                     </td>
                     <td class="text-center align-top pt-3">
@@ -351,16 +349,10 @@
             const next = document.getElementById('in_next').value.trim();
 
             if(!memo || !url || !code) return alert("필수 항목(*)을 모두 입력해주세요.");
-            
-            // [규칙 2] 단축 코드 중복 체크 (UNIQUE)
             if(links.some(l => l.code === code)) return alert(`[생성 실패] 이미 존재하는 단축 코드입니다: ${code}`);
-
-            // [규칙 2] 단축 코드 형식 검증 (영소문자, 숫자, _)
             const codeRegex = /^[a-z0-9_]+$/;
             if(!codeRegex.test(code)) return alert("[생성 실패] 단축 코드는 영문 소문자, 숫자, 언더바(_)만 사용 가능합니다.");
-
-            // [규칙 7] Next URL 형식 검증 (내부 경로만 허용)
-            if(next && !next.startsWith('/')) return alert("[생성 실패] 이동 목적지(Next URL)는 반드시 '/'로 시작하는 내부 경로여야 합니다.\n예: /event/coupon.php");
+            if(next && !next.startsWith('/')) return alert("[생성 실패] 이동 목적지(Next URL)는 반드시 '/'로 시작하는 내부 경로여야 합니다.");
 
             const presetVal = channelSelect.value;
             const [utm_source, utm_medium] = presetVal.split('|');
@@ -369,8 +361,8 @@
                 id: Date.now(),
                 code, memo, url, yt, next,
                 utm_source, utm_medium,
-                active: false,    // [규칙 3] 생성 시 항상 OFF
-                started_at: '',   // [규칙 3] 생성 시 시작일 없음
+                active: false,
+                started_at: '',
                 end_date: '', 
                 hits: 0
             });
@@ -379,28 +371,21 @@
             document.getElementById('in_code').value = '';
             document.getElementById('in_memo').value = '';
             document.getElementById('in_next').value = '';
-            alert("✅ 캠페인이 생성되었습니다.\n(기본 상태는 OFF 입니다. 검토 후 활성화해주세요.)");
+            alert("✅ 캠페인이 생성되었습니다.");
         };
 
         window.toggleActive = function(id) {
             const item = links.find(l => String(l.id) === String(id));
             if (!item) return;
-
             const checkbox = document.getElementById(`toggle_${id}`);
             const isTurningOn = !item.active; 
-
-            // [규칙 5] 만료된 링크 재활성화 방어
             const today = new Date().toISOString().split('T')[0];
             if (isTurningOn && item.end_date && item.end_date < today) {
-                alert(`🚫 기간 만료 (Expired)\n\n설정된 종료일(${item.end_date})이 지났습니다.\n\n재활성화 하려면 먼저 [종료일]을\n오늘 이후로 연장해주세요.`);
+                alert(`🚫 기간 만료 (Expired)`);
                 checkbox.checked = false; 
                 return; 
             }
-
-            // 상태 변경
             item.active = !item.active;
-            
-            // [규칙 4] ON 전환 시 started_at 없으면 오늘 날짜 세팅
             if (item.active && !item.started_at) {
                 item.started_at = today;
             }
@@ -416,7 +401,6 @@
         };
 
         window.copyToClipboard = function(text, btnElement) {
-            // 1. Copy Logic
             const textArea = document.createElement("textarea");
             textArea.value = text;
             textArea.style.position = "fixed";
@@ -424,41 +408,25 @@
             textArea.style.top = "0";
             document.body.appendChild(textArea);
             textArea.select();
-            
             let successful = false;
-            try {
-                successful = document.execCommand('copy');
-            } catch (err) {
-                console.error('Fallback copy failed', err);
-            }
+            try { successful = document.execCommand('copy'); } catch (err) { }
             document.body.removeChild(textArea);
 
-            // 2. Feedback Logic
             if (successful) {
-                // A. Toast UI
                 const toast = document.getElementById('toast-container');
                 toast.classList.add('show');
                 setTimeout(() => { toast.classList.remove('show'); }, 2000);
-
-                // B. Button UI (Icon Change)
                 if (btnElement) {
                     const originalContent = btnElement.innerHTML;
                     const originalClass = btnElement.className;
-                    
-                    // Change Style (Success State)
                     btnElement.innerHTML = '<i class="fas fa-check"></i>';
-                    // Tailwind utility classes for Green style
                     btnElement.classList.remove('text-slate-500', 'hover:text-blue-600', 'btn-copy-circle');
                     btnElement.className = "w-[32px] h-[32px] rounded-full border border-green-500 bg-green-50 text-green-500 flex items-center justify-center transition-all";
-                    
-                    // Revert after 1.5s
                     setTimeout(() => {
                         btnElement.innerHTML = originalContent;
                         btnElement.className = originalClass;
                     }, 1500);
                 }
-            } else {
-                prompt("복사하기: Ctrl+C를 눌러 복사하세요", text);
             }
         };
 
