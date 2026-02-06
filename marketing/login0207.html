@@ -10,7 +10,7 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
     
-    <!-- 2. Daum 우편번호 서비스 (HTTPS 명시) -->
+    <!-- 2. Daum 우편번호 서비스 -->
     <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
 
     <style>
@@ -85,11 +85,12 @@
         <!-- Form Start -->
         <form id="joinForm" name="joinForm" action="/member/simple_join_update.php" method="POST" onsubmit="return false;">
             
+            <!-- Hidden Fields -->
             <input type="hidden" name="yt_code" id="yt_code"> 
             <input type="hidden" name="next_url" id="next_url">
             <input type="hidden" name="join_type" id="join_type" value="general">
 
-            <!-- ================= STEP 1: 약관/인증 ================= -->
+            <!-- ================= STEP 1: 인증 (Auth) ================= -->
             <div id="step1_section" class="fade-in">
                 
                 <div class="mb-8 text-center">
@@ -99,8 +100,20 @@
                     </p>
                 </div>
 
-                <!-- 약관 동의 -->
-                <div class="mb-8">
+                <!-- [변경] 일반 가입 시에만 노출되는 영역 (휴대폰 + 약관) -->
+                <div id="generalInputArea" class="hidden fade-in mb-6">
+                    
+                    <!-- 휴대폰 번호 입력 -->
+                    <div class="mb-5">
+                        <label class="block text-sm font-bold text-gray-700 mb-1.5">
+                            휴대폰 번호 <span class="text-pink-400 text-xs font-normal ml-0.5">(필수)</span>
+                        </label>
+                        <input type="tel" name="mb_hp" id="mb_hp" maxlength="13"
+                            class="w-full px-4 py-3.5 border border-gray-200 rounded-lg input-box-style input-focus transition-colors text-sm placeholder-required"
+                            placeholder="010-0000-0000 (숫자만 입력)" oninput="autoHyphen(this)">
+                    </div>
+
+                    <!-- 약관 동의 (일반 가입 전용) -->
                     <div class="border border-gray-200 rounded-lg p-4 input-box-style hover:border-[#14682A] transition-colors cursor-pointer" onclick="document.getElementById('agree_all').click()">
                         <label class="checkbox-wrapper flex items-start cursor-pointer group select-none pointer-events-none">
                             <input type="checkbox" name="agree_all" id="agree_all" class="hidden" required>
@@ -119,29 +132,22 @@
                     </div>
                 </div>
 
-                <!-- [일반] 휴대폰 번호 입력 -->
-                <div id="phoneInputArea" class="mb-6 hidden fade-in">
-                    <label class="block text-sm font-bold text-gray-700 mb-1.5">
-                        휴대폰 번호 <span class="text-pink-400 text-xs font-normal ml-0.5">(필수)</span>
-                    </label>
-                    <input type="tel" name="mb_hp" id="mb_hp" maxlength="13"
-                        class="w-full px-4 py-3.5 border border-gray-200 rounded-lg input-box-style input-focus transition-colors text-sm placeholder-required"
-                        placeholder="010-0000-0000 (숫자만 입력)" oninput="autoHyphen(this)">
-                </div>
-
                 <!-- 버튼 그룹 -->
                 <div class="flex flex-col gap-3">
+                    <!-- 카카오 (체크박스 없이 바로 진행) -->
                     <button type="button" id="btnKakao" onclick="processKakaoLogin()"
                         class="w-full py-4 rounded-lg font-bold text-[15px] btn-kakao flex items-center justify-center gap-2 shadow-sm hover:opacity-90 transition">
                         <i class="fas fa-comment text-lg"></i>
                         확인하기
                     </button>
 
+                    <!-- 일반 전환 (클릭 시 입력폼 펼침) -->
                     <button type="button" id="btnGeneral" onclick="showGeneralInput()"
                         class="w-full py-3 rounded-lg font-medium text-sm text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition underline decoration-1 underline-offset-4">
                         다른 방법으로 확인
                     </button>
                     
+                    <!-- 일반 다음 버튼 (입력폼 활성화 후 보임) -->
                     <button type="button" id="btnStep1Next" onclick="processGeneralStep1()"
                         class="w-full py-4 btn-brand rounded-lg font-bold text-[15px] shadow-md transition hidden">
                         확인하기
@@ -169,17 +175,16 @@
                         placeholder="상호명을 입력하세요">
                 </div>
 
-                <!-- 주소 (기존 시스템 연동 구조) -->
+                <!-- 주소 -->
                 <div class="mb-8">
                     <label class="block text-sm font-bold text-gray-700 mb-1.5">
                         가게 주소 (배송지) <span class="text-pink-400 text-xs font-normal ml-0.5">(필수)</span>
                     </label>
                     
-                    <!-- 1. 기본 주소 + 검색 버튼 -->
+                    <!-- 기본 주소 + 검색 버튼 -->
                     <div class="flex gap-2 mb-2">
-                        <!-- 실제 기존 시스템 필드들 (mb_zip, mb_addr3는 숨김 처리하여 디자인 유지) -->
-                        <input type="hidden" name="mb_zip" id="mb_zip"> <!-- 우편번호 (DB 저장용) -->
-                        <input type="hidden" name="mb_addr3" id="mb_addr3"> <!-- 참고항목 (DB 저장용) -->
+                        <input type="hidden" name="mb_zip" id="mb_zip">
+                        <input type="hidden" name="mb_addr3" id="mb_addr3">
                         
                         <input type="text" name="mb_addr1" id="mb_addr1" 
                             class="flex-1 px-4 py-3.5 border border-gray-200 rounded-lg input-box-style text-gray-800 text-sm input-focus cursor-pointer placeholder-required"
@@ -190,8 +195,7 @@
                         </button>
                     </div>
 
-                    <!-- 2. 상세 주소 (검색 후 입력) -->
-                    <!-- 기존 시스템의 mb_addr2와 매핑 -->
+                    <!-- 상세 주소 -->
                     <input type="text" name="mb_addr2" id="mb_addr2" 
                         class="w-full px-4 py-3.5 border border-gray-200 rounded-lg input-box-style input-focus text-sm transition-colors"
                         placeholder="상세주소를 입력해주세요 (예: 1층)" >
@@ -229,22 +233,23 @@
     </div>
 
     <script>
-        // 초기화
         window.addEventListener('DOMContentLoaded', () => {
             const urlParams = new URLSearchParams(window.location.search);
             document.getElementById('yt_code').value = urlParams.get('yt_code') || '';
             document.getElementById('next_url').value = urlParams.get('next') || '/';
         });
 
-        // STEP 1 관련
+        // 1. 카카오 가입 처리 (약관 동의 체크 제거)
         function processKakaoLogin() {
-            if(!checkAgreement()) return;
+            // 카카오싱크는 자체 약관 동의 화면이 있으므로 외부 체크 불필요
             document.getElementById('join_type').value = 'kakao';
+            // 실무: Kakao SDK Login 호출 -> 성공 시 goToStep2()
             goToStep2();
         }
 
+        // 2. 일반 가입 전환 (입력창 + 약관 표시)
         function showGeneralInput() {
-            document.getElementById('phoneInputArea').classList.remove('hidden');
+            document.getElementById('generalInputArea').classList.remove('hidden');
             document.getElementById('btnKakao').classList.add('hidden');
             document.getElementById('btnGeneral').classList.add('hidden');
             document.getElementById('btnStep1Next').classList.remove('hidden');
@@ -252,8 +257,11 @@
             document.getElementById('join_type').value = 'general';
         }
 
+        // 3. 일반 가입 1단계 확인 (약관 체크 필수)
         function processGeneralStep1() {
+            // 일반 가입은 여기서 약관 동의를 꼭 받아야 함
             if(!checkAgreement()) return;
+            
             const hp = document.getElementById('mb_hp');
             if(!hp.value || hp.value.length < 10) {
                 alert("휴대폰 번호를 올바르게 입력해주세요.");
@@ -281,59 +289,27 @@
             setTimeout(() => { document.getElementById('mb_company').focus(); }, 300);
         }
 
-        // [핵심] 기존 시스템 호환용 주소 검색 로직
+        // 주소 검색 및 제출 로직 (유지)
         function openDaumPostcode() {
             new daum.Postcode({
                 oncomplete: function(data) {
-                    // 1. 도로명/지번 주소 결정
-                    var addr = ''; 
-                    var extraAddr = ''; 
-
-                    if (data.userSelectedType === 'R') { 
-                        addr = data.roadAddress;
-                    } else { 
-                        addr = data.jibunAddress;
-                    }
-                    
-                    // 지번 주소가 비어있는 경우(드물게 발생) 자동지번 사용
-                    if(data.userSelectedType === 'J' && (!addr || addr === '')){
-                         addr = data.autoJibunAddress;
-                    }
-
-                    // 2. 참고항목(mb_addr3) 조합 (도로명일 경우)
+                    var addr = ''; var extraAddr = '';
+                    if (data.userSelectedType === 'R') { addr = data.roadAddress; } else { addr = data.jibunAddress; }
+                    if(data.userSelectedType === 'J' && (!addr || addr === '')){ addr = data.autoJibunAddress; }
                     if(data.userSelectedType === 'R'){
-                        if(data.bname !== '' && /[동|로|가]$/g.test(data.bname)){
-                            extraAddr += data.bname;
-                        }
-                        if(data.buildingName !== '' && data.apartment === 'Y'){
-                            extraAddr += (extraAddr !== '' ? ', ' + data.buildingName : data.buildingName);
-                        }
-                        if(extraAddr !== ''){
-                            extraAddr = ' (' + extraAddr + ')';
-                        }
+                        if(data.bname !== '' && /[동|로|가]$/g.test(data.bname)){ extraAddr += data.bname; }
+                        if(data.buildingName !== '' && data.apartment === 'Y'){ extraAddr += (extraAddr !== '' ? ', ' + data.buildingName : data.buildingName); }
+                        if(extraAddr !== ''){ extraAddr = ' (' + extraAddr + ')'; }
                     }
-
-                    // 3. 필드 매핑 (기존 시스템과 동일한 name/id)
-                    // 우편번호 (5자리)
-                    if(document.getElementById('mb_zip')) {
-                        document.getElementById('mb_zip').value = data.zonecode;
-                    }
+                    if(document.getElementById('mb_zip')) { document.getElementById('mb_zip').value = data.zonecode; }
                     
-                    // 기본주소 (addr1)
-                    if(document.getElementById('mb_addr1')) {
-                        document.getElementById('mb_addr1').value = addr;
-                        document.getElementById('mb_addr1').classList.add('text-gray-900', 'font-medium');
+                    const addrInput = document.getElementById('mb_addr1');
+                    if(addrInput) {
+                        addrInput.value = addr;
+                        addrInput.classList.add('text-gray-900', 'font-medium');
                     }
-
-                    // 참고항목 (addr3)
-                    if(document.getElementById('mb_addr3')) {
-                        document.getElementById('mb_addr3').value = extraAddr;
-                    }
-
-                    // 4. 상세주소(addr2)로 포커스 이동
-                    if(document.getElementById('mb_addr2')) {
-                        document.getElementById('mb_addr2').focus();
-                    }
+                    if(document.getElementById('mb_addr3')) { document.getElementById('mb_addr3').value = extraAddr; }
+                    if(document.getElementById('mb_addr2')) { document.getElementById('mb_addr2').focus(); }
                 }
             }).open();
         }
@@ -341,14 +317,8 @@
         function submitFinalForm() {
             const company = document.getElementById('mb_company');
             const addr1 = document.getElementById('mb_addr1');
-            const addr2 = document.getElementById('mb_addr2');
-
             if(!company.value) { alert("상호명을 입력해주세요."); company.focus(); return; }
             if(!addr1.value) { alert("주소를 검색해주세요."); openDaumPostcode(); return; }
-            
-            // 상세주소는 필수가 아닐 수 있으나, 확인 차원 (선택사항)
-            // if(!addr2.value) { alert("상세주소를 입력해주세요."); addr2.focus(); return; }
-
             showSuccessAndRedirect();
         }
 
@@ -356,13 +326,9 @@
             const nextUrl = document.getElementById('next_url').value;
             const toast = document.getElementById('toast-overlay');
             const bar = document.getElementById('progress-bar');
-            
             toast.classList.add('show');
             setTimeout(() => { bar.style.width = "100%"; }, 100);
-            
-            setTimeout(() => {
-                window.location.href = nextUrl;
-            }, 1600);
+            setTimeout(() => { window.location.href = nextUrl; }, 1600);
         }
 
         function autoHyphen(target) {
