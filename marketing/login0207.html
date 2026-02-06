@@ -208,7 +208,7 @@
                 <!-- 최종 버튼 -->
                 <button type="button" onclick="submitFinalForm()"
                     class="w-full py-4 btn-brand rounded-lg font-bold text-[15px] shadow-md transition hover:bg-[#0f5220]">
-                    확인 (결과 보기)
+                    완료
                 </button>
             </div>
 
@@ -236,7 +236,8 @@
         window.addEventListener('DOMContentLoaded', () => {
             const urlParams = new URLSearchParams(window.location.search);
             document.getElementById('yt_code').value = urlParams.get('yt_code') || '';
-            document.getElementById('next_url').value = urlParams.get('next') || '/';
+            // [변경] 기본 이동 경로를 오더즈 메인으로 설정
+            document.getElementById('next_url').value = urlParams.get('next') || 'https://orderz.kr/';
         });
 
         // 1. 카카오 가입 처리 (약관 동의 체크 제거)
