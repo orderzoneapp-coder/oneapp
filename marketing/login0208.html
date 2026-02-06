@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>오더즈 - 식당 사업자 지역 확인</title>
+    <title>오더즈 - 식자재 최저가 확인</title>
     
     <!-- 1. 필수 라이브러리 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
     
-    <!-- 2. Daum 우편번호 서비스 -->
+    <!-- 2. Daum 우편번호 서비스 (HTTPS 필수) -->
     <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
 
     <style>
@@ -18,10 +18,10 @@
         
         /* [Brand Color] */
         :root {
-            --brand-primary: #14682A;
+            --brand-primary: #14682A; /* 오더즈 그린 */
             --brand-hover: #0f5220;
             --box-bg: #f8fafc;
-            --required-color: #f472b6;
+            --required-color: #f472b6; /* 필수값 강조 (분홍) */
         }
 
         .check-container {
@@ -73,7 +73,7 @@
         
         <!-- Logo -->
         <div class="text-center mb-8">
-            <h1 class="text-3xl font-black text-[#14682A] tracking-tight" style="font-family: 'Arial', sans-serif;">ORDERZ</h1>
+            <h1 class="text-3xl font-black text-[#14682A] tracking-tight cursor-pointer" onclick="location.reload()">ORDERZ</h1>
         </div>
 
         <!-- Step Indicator -->
@@ -83,14 +83,15 @@
         </div>
 
         <!-- Form Start -->
-        <form id="joinForm" name="joinForm" action="/member/simple_join_update.php" method="POST" onsubmit="return false;">
+        <form id="joinForm" onsubmit="return false;">
             
-            <!-- Hidden Fields -->
+            <!-- Hidden Fields (마케팅 파라미터) -->
             <input type="hidden" name="yt_code" id="yt_code"> 
+            <input type="hidden" name="join_source" id="join_source"> <!-- 본사/유통사 구분 -->
             <input type="hidden" name="next_url" id="next_url">
             <input type="hidden" name="join_type" id="join_type" value="general">
 
-            <!-- ================= STEP 1: 고객 유입 (Benefit) ================= -->
+            <!-- ================= STEP 1: 고객 유입 (Lead Gen) ================= -->
             <div id="step1_section" class="fade-in">
                 
                 <div class="mb-8 text-center">
@@ -123,7 +124,7 @@
                                     개인정보 수집 및 이용 동의 <span class="text-pink-400 text-xs font-normal ml-0.5">(필수)</span>
                                 </span>
                                 <p class="text-xs text-gray-500 mt-1 break-keep leading-snug">
-                                    안전한 거래를 위해 사업자 정보를 확인합니다. <span class="text-gray-400">(회원 가입)</span>
+                                    상품 안내를 위해 연락처 정보를 수집합니다. <span class="text-gray-400">(회원 가입)</span>
                                 </p>
                             </div>
                         </label>
@@ -153,14 +154,13 @@
                 </div>
             </div>
 
-            <!-- ================= STEP 2: 정보 입력 (Verification) ================= -->
+            <!-- ================= STEP 2: 정보 매칭 (Matching) ================= -->
             <div id="step2_section" class="hidden">
                 
                 <div class="mb-8 text-center">
                     <h2 class="text-xl font-bold text-gray-800 mb-2">사업자 정보 확인</h2>
                     <p class="text-sm font-medium text-gray-500 break-keep">
-                        정확한 상품 가격과 재고 안내를 위해<br>
-                        <span class="text-[#14682A] font-bold">지역 매칭</span>이 필요합니다.
+                        정확한 매칭을 위해 가게 정보를 입력해주세요.
                     </p>
                 </div>
 
@@ -220,10 +220,10 @@
             <div class="w-12 h-12 bg-green-50 text-[#14682A] rounded-full flex items-center justify-center mx-auto mb-4 text-xl">
                 <i class="fas fa-check"></i>
             </div>
-            <h3 class="text-lg font-bold text-gray-800 mb-2">확인되었습니다!</h3>
+            <h3 class="text-lg font-bold text-gray-800 mb-2">매칭이 완료되었습니다!</h3>
             <p class="text-sm text-gray-600 mb-4">
-                사장님 지역은 배송 가능 지역입니다.<br>
-                <span class="text-[#14682A] font-bold">이벤트 페이지로 이동합니다.</span>
+                사장님 지역의 특가 상품을 불러옵니다.<br>
+                <span class="text-[#14682A] font-bold">오더즈 메인으로 이동합니다.</span>
             </p>
             <div class="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
                 <div class="bg-[#14682A] h-full w-0 transition-all duration-[1500ms] ease-out" id="progress-bar"></div>
@@ -234,8 +234,14 @@
     <script>
         window.addEventListener('DOMContentLoaded', () => {
             const urlParams = new URLSearchParams(window.location.search);
-            document.getElementById('yt_code').value = urlParams.get('yt_code') || '';
+            const ytCode = urlParams.get('yt_code') || '';
+            document.getElementById('yt_code').value = ytCode;
             document.getElementById('next_url').value = urlParams.get('next') || 'https://orderz.kr/';
+            
+            // [정책] 유통사 코드 유무에 따라 회원 소속 구분
+            const source = ytCode ? 'DISTRIBUTOR' : 'HQ';
+            document.getElementById('join_source').value = source;
+            console.log(`[Init] Mode: ${source}, Code: ${ytCode}`);
         });
 
         // 1. 카카오 가입 처리
@@ -283,8 +289,7 @@
             step2.classList.add('fade-in');
             document.getElementById('dot2').classList.add('active');
             
-            // [UI 개선] 화면 전환 시 입력창에 포커스를 주면서 스크롤을 중앙으로 이동
-            // 모바일 키보드에 가려지는 현상 방지
+            // 모바일 키보드 가림 방지
             setTimeout(() => { 
                 const companyInput = document.getElementById('mb_company');
                 companyInput.focus(); 
@@ -292,11 +297,13 @@
             }, 300);
         }
 
-        // [New] 상호명에서 엔터 입력 시 주소 검색 실행
+        // 엔터키 입력 시 다음 단계 유도 (주소창)
         function handleCompanyKeydown(event) {
             if (event.key === 'Enter') {
-                event.preventDefault(); // 폼 전송 방지
-                openDaumPostcode(); // 주소 검색창 열기
+                event.preventDefault();
+                const addrInput = document.getElementById('mb_addr1');
+                addrInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // openDaumPostcode(); // 팝업 자동 띄우기는 제거함 (사용자 선택 존중)
             }
         }
 
@@ -337,6 +344,7 @@
             const nextUrl = document.getElementById('next_url').value;
             const toast = document.getElementById('toast-overlay');
             const bar = document.getElementById('progress-bar');
+            
             toast.classList.add('show');
             setTimeout(() => { bar.style.width = "100%"; }, 100);
             setTimeout(() => { window.location.href = nextUrl; }, 1600);
@@ -344,20 +352,15 @@
 
         function autoHyphen(target) {
             target.value = target.value.replace(/[^0-9]/g, '').replace(/^(\d{0,3})(\d{0,4})(\d{0,4})$/g, "$1-$2-$3").replace(/(\-{1,2})$/g, "");
-
-            // [UX 개선] 13자리(하이픈 포함) 완성 시 자동 이동
+            
             if (target.value.length === 13) {
-                target.blur(); // 모바일 키보드 닫기
-                
-                // 약관 동의 박스 찾기
+                target.blur();
                 const agreeBox = document.querySelector('#generalInputArea .border');
                 if (agreeBox) {
                     agreeBox.scrollIntoView({behavior: 'smooth', block: 'center'});
                     agreeBox.classList.remove('border-gray-200');
                     agreeBox.classList.add('border-[#14682A]', 'ring-1', 'ring-[#14682A]', 'bg-green-50');
-                    setTimeout(() => {
-                        agreeBox.classList.remove('bg-green-50');
-                    }, 1000);
+                    setTimeout(() => { agreeBox.classList.remove('bg-green-50'); }, 1000);
                 }
             }
         }
