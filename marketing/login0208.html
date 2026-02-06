@@ -94,7 +94,6 @@
             <div id="step1_section" class="fade-in">
                 
                 <div class="mb-8 text-center">
-                    <!-- [변경] 확인(Verification) -> 혜택(Benefit) 강조 -->
                     <h2 class="text-xl font-bold text-gray-800 mb-2">식자재 특가 상품 보기</h2>
                     <p class="text-sm font-medium text-[#14682A]">
                         사장님 지역의 직배송 상품과 혜택을<br>지금 바로 확인해보세요.
@@ -158,7 +157,6 @@
             <div id="step2_section" class="hidden">
                 
                 <div class="mb-8 text-center">
-                    <!-- [변경] 인과관계 설명: 상품을 보여주려면 -> 확인이 필요하다 -->
                     <h2 class="text-xl font-bold text-gray-800 mb-2">사업자 정보 확인</h2>
                     <p class="text-sm font-medium text-gray-500 break-keep">
                         정확한 상품 가격과 재고 안내를 위해<br>
@@ -166,14 +164,14 @@
                     </p>
                 </div>
 
-                <!-- 상호명 -->
+                <!-- 상호명 (엔터키 처리 추가) -->
                 <div class="mb-5">
                     <label class="block text-sm font-bold text-gray-700 mb-1.5">
                         상호명 <span class="text-pink-400 text-xs font-normal ml-0.5">(필수)</span>
                     </label>
                     <input type="text" name="mb_company" id="mb_company" 
                         class="w-full px-4 py-3.5 border border-gray-200 rounded-lg input-box-style input-focus transition-colors text-sm placeholder-required"
-                        placeholder="상호명을 입력하세요">
+                        placeholder="상호명을 입력하세요" onkeydown="handleCompanyKeydown(event)">
                 </div>
 
                 <!-- 주소 -->
@@ -284,7 +282,22 @@
             step2.classList.remove('hidden');
             step2.classList.add('fade-in');
             document.getElementById('dot2').classList.add('active');
-            setTimeout(() => { document.getElementById('mb_company').focus(); }, 300);
+            
+            // [UI 개선] 화면 전환 시 입력창에 포커스를 주면서 스크롤을 중앙으로 이동
+            // 모바일 키보드에 가려지는 현상 방지
+            setTimeout(() => { 
+                const companyInput = document.getElementById('mb_company');
+                companyInput.focus(); 
+                companyInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 300);
+        }
+
+        // [New] 상호명에서 엔터 입력 시 주소 검색 실행
+        function handleCompanyKeydown(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault(); // 폼 전송 방지
+                openDaumPostcode(); // 주소 검색창 열기
+            }
         }
 
         // 주소 검색 및 제출 로직
@@ -331,6 +344,22 @@
 
         function autoHyphen(target) {
             target.value = target.value.replace(/[^0-9]/g, '').replace(/^(\d{0,3})(\d{0,4})(\d{0,4})$/g, "$1-$2-$3").replace(/(\-{1,2})$/g, "");
+
+            // [UX 개선] 13자리(하이픈 포함) 완성 시 자동 이동
+            if (target.value.length === 13) {
+                target.blur(); // 모바일 키보드 닫기
+                
+                // 약관 동의 박스 찾기
+                const agreeBox = document.querySelector('#generalInputArea .border');
+                if (agreeBox) {
+                    agreeBox.scrollIntoView({behavior: 'smooth', block: 'center'});
+                    agreeBox.classList.remove('border-gray-200');
+                    agreeBox.classList.add('border-[#14682A]', 'ring-1', 'ring-[#14682A]', 'bg-green-50');
+                    setTimeout(() => {
+                        agreeBox.classList.remove('bg-green-50');
+                    }, 1000);
+                }
+            }
         }
     </script>
 </body>
