@@ -79,12 +79,12 @@
                     </div>
                 </div>
 
-                <!-- Action Buttons (Changed to A Tag for reliability) -->
+                <!-- Action Buttons (Changed to <a> Tags for reliable linking) -->
                 <div class="flex flex-col md:flex-row justify-center gap-4 md:gap-6 max-w-5xl mx-auto mb-8 px-2">
                     
                     <!-- Restaurant Button -->
-                    <!-- Added id="btn-signup-restaurant" for script target -->
-                    <a href="https://orderz.kr/bbs/register_form.php" id="btn-signup-restaurant" class="hover-card-effect group relative bg-white hover:bg-teal-50 text-gray-800 p-6 md:p-8 rounded-2xl shadow-2xl flex-1 text-left border-b-4 border-teal-500 w-full md:w-auto overflow-hidden block">
+                    <!-- 'signup-link' class added for script targeting -->
+                    <a href="https://orderz.kr/bbs/register_form.php" class="signup-link hover-card-effect group relative bg-white hover:bg-teal-50 text-gray-800 p-6 md:p-8 rounded-2xl shadow-2xl flex-1 text-left border-b-4 border-teal-500 w-full md:w-auto overflow-hidden block">
                         <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                             <i class="fas fa-utensils text-5xl sm:text-6xl md:text-9xl text-teal-600 transform rotate-12"></i>
                         </div>
@@ -121,8 +121,8 @@
                     </a>
 
                     <!-- Distributor Button -->
-                    <!-- Added id="btn-signup-distributor" for script target -->
-                    <a href="https://orderz.kr/bbs/register_form.php" id="btn-signup-distributor" class="hover-card-effect group relative bg-slate-800 hover:bg-slate-700 text-white p-6 md:p-8 rounded-2xl shadow-2xl flex-1 text-left border-b-4 border-orange-500 w-full md:w-auto overflow-hidden block">
+                    <!-- 'signup-link' class added for script targeting -->
+                    <a href="https://orderz.kr/bbs/register_form.php" class="signup-link hover-card-effect group relative bg-slate-800 hover:bg-slate-700 text-white p-6 md:p-8 rounded-2xl shadow-2xl flex-1 text-left border-b-4 border-orange-500 w-full md:w-auto overflow-hidden block">
                         <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                             <i class="fas fa-truck text-5xl sm:text-6xl md:text-9xl text-slate-400 transform -rotate-12"></i>
                         </div>
@@ -174,6 +174,7 @@
     <script>
         // Set dynamic region text on load
         window.onload = function() {
+            // 1. Dynamic Region
             const urlParams = new URLSearchParams(window.location.search);
             const region = urlParams.get('region');
             const regionEl = document.getElementById('dynamic-region');
@@ -181,23 +182,23 @@
                 regionEl.innerText = region;
             }
 
-            // Execute Parameter Relay Logic
+            // 2. Parameter Relay (이어달리기) Logic
             passBatonParams();
         };
 
         /**
          * [파라미터 이어달리기 스크립트]
          * 현재 페이지(랜딩)로 들어온 URL 파라미터를 감지하여
-         * 오더즈 가입 링크 뒤에 자동으로 이어 붙입니다.
+         * 오더즈 가입 링크(a.signup-link) 뒤에 자동으로 이어 붙입니다.
          */
         function passBatonParams() {
             const currentQuery = window.location.search;
             
-            // 파라미터가 없으면 패스
+            // 파라미터가 없으면 아무것도 안 함
             if (!currentQuery) return;
 
-            // 오더즈 가입 링크를 가진 모든 a 태그 선택
-            const links = document.querySelectorAll('a[href*="orderz.kr"]');
+            // 'signup-link' 클래스를 가진 모든 a 태그 선택
+            const links = document.querySelectorAll('a.signup-link');
 
             links.forEach(function(link) {
                 try {
@@ -211,6 +212,7 @@
                         }
                     });
 
+                    // href 속성 업데이트 (클릭 시 이 주소로 이동)
                     link.href = originalUrl.toString();
                     // console.log("🔗 Relay Link Updated:", link.href);
 
