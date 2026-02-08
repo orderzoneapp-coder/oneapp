@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>오더즈 - 식자재 주문의 새로운 기준</title>
+    
+    <!-- 필수 라이브러리 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
+
+    <style>
+        body { font-family: 'Noto Sans KR', sans-serif; background-color: #f3f4f6; }
+        :root { 
+            --brand-primary: #14682A; 
+            --brand-hover: #0f5220; 
+            --box-bg: #f8fafc; 
+            --required-color: #f472b6;
+        }
+        .check-container { max-width: 480px; margin: 0 auto; background-color: #ffffff; min-height: 100vh; padding: 40px 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        .checkbox-wrapper input:checked + div { background-color: var(--brand-primary); border-color: var(--brand-primary); }
+        .checkbox-wrapper input:checked + div svg { display: block; }
+        
+        .btn-kakao { background-color: #FEE500; color: #191919; }
+        .btn-brand { background-color: var(--brand-primary); color: white; }
+        
+        .fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .hidden { display: none; }
+        
+        /* Modal & Toast */
+        #toast-overlay, #kakao-connect-modal {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.6); z-index: 9999;
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; pointer-events: none; transition: opacity 0.3s;
+        }
+        #toast-overlay.show, #kakao-connect-modal.show { opacity: 1; pointer-events: all; }
+        
+        .modal-window { width: 90%; max-width: 360px; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+
+        .input-focus:focus { outline: none; border-color: var(--brand-primary); box-shadow: 0 0 0 1px var(--brand-primary); background-color: #fff; }
+        .input-box-style { background-color: var(--box-bg); }
+        .placeholder-required::placeholder { color: #9ca3af; font-weight: 400; }
+        
+        .step-dots { display: flex; justify-content: center; gap: 8px; margin-bottom: 24px; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; background-color: #e5e7eb; transition: background-color 0.3s; }
+        .dot.active { background-color: var(--brand-primary); }
+    </style>
+</head>
+<body>
+
+    <div class="check-container relative">
+        
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-black text-[#14682A] tracking-tight cursor-pointer" onclick="location.reload()">ORDERZ</h1>
+        </div>
+
+        <div class="step-dots hidden" id="step-indicator">
+            <div id="dot1" class="dot active"></div>
+            <div id="dot2" class="dot"></div>
+        </div>
+
+        <form id="joinForm" onsubmit="return false;">
+            <input type="hidden" name="yt_code" id="yt_code"> 
+            <input type="hidden" name="join_source" id="join_source">
+            <input type="hidden" name="next_url" id="next_url">
+            <input type="hidden" name="join_type" id="join_type" value="general">
+
+            <!-- ================= 통합 게이트웨이 ================= -->
+            <div id="step1_section" class="fade-in">
+                
+                <div class="mb-8 text-center" id="intro-text">
+                    <h2 class="text-xl font-bold text-gray-800 mb-2">오더즈가 기억합니다</h2>
+                    <p class="text-sm font-medium text-[#14682A]">
+                        내 방식대로, 쓸수록 손에 익는 플랫폼
+                    </p>
+                </div>
+
+                <!-- [일반 가입] 휴대폰 번호 입력 (초기 숨김) -->
+                <div id="generalInputArea" class="hidden fade-in mb-6">
+                    <div class="mb-5">
+                        <label class="block text-sm font-bold text-gray-700 mb-1.5">
+                            휴대폰 번호
+                        </label>
+                        <input type="tel" name="mb_hp" id="mb_hp" maxlength="13"
+                            class="w-full px-4 py-3.5 border border-gray-200 rounded-lg input-box-style input-focus transition-colors text-sm placeholder-required"
+                            placeholder="010-0000-0000" oninput="autoHyphen(this)">
+                    </div>
+                    <div class="border border-gray-200 rounded-lg p-4 input-box-style hover:border-[#14682A] transition-colors cursor-pointer" onclick="document.getElementById('agree_all').click()">
+                        <label class="checkbox-wrapper flex items-start cursor-pointer group select-none pointer-events-none">
+                            <input type="checkbox" name="agree_all" id="agree_all" class="hidden" required>
+                            <div class="w-5 h-5 border-2 border-gray-300 rounded flex items-center justify-center mr-3 mt-0.5 transition-colors bg-white shrink-0">
+                                <svg class="w-3 h-3 text-white hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
+                            </div>
+                            <div>
+                                <span class="text-sm font-bold text-gray-800">개인정보 수집 및 이용 동의</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- [기존 아이디 로그인 폼] (초기 숨김) -->
+                <div id="loginFormArea" class="hidden fade-in mb-6">
+                    <div class="mb-4">
+                        <label class="block text-sm font-bold text-gray-700 mb-1.5">아이디</label>
+                        <input type="text" name="login_id" id="login_id" 
+                            class="w-full px-4 py-3.5 border border-gray-200 rounded-lg input-box-style input-focus transition-colors text-sm"
+                            placeholder="아이디를 입력하세요">
+                    </div>
+                    <div class="mb-2">
+                        <label class="block text-sm font-bold text-gray-700 mb-1.5">비밀번호</label>
+                        <input type="password" name="login_pw" id="login_pw" 
+                            class="w-full px-4 py-3.5 border border-gray-200 rounded-lg input-box-style input-focus transition-colors text-sm"
+                            placeholder="비밀번호를 입력하세요">
+                    </div>
+                    <div class="flex justify-end mb-4">
+                        <a href="#" class="text-xs text-gray-400 hover:text-gray-600">아이디/비밀번호 찾기</a>
+                    </div>
+                    <!-- 안내 메시지 (넛지) -->
+                    <div class="bg-blue-50 border border-blue-100 rounded-lg p-3 mb-4 flex items-start">
+                        <i class="fas fa-info-circle text-blue-500 mt-0.5 mr-2 text-sm"></i>
+                        <p class="text-xs text-gray-600 break-keep">
+                            로그인 후 <span class="font-bold text-blue-600">카카오 계정과 연동</span>하시면 다음부터는 ID 입력 없이 1초 만에 접속할 수 있습니다.
+                        </p>
+                    </div>
+                    <button type="button" onclick="processIdLogin()"
+                        class="w-full py-4 btn-brand rounded-lg font-bold text-[15px] shadow-md transition hover:bg-[#0f5220]">
+                        로그인
+                    </button>
+                </div>
+
+                <!-- 메인 버튼 그룹 -->
+                <div class="flex flex-col gap-3" id="mainBtnGroup">
+                    <!-- 1. 카카오 (Main) -->
+                    <button type="button" id="btnKakao" onclick="processKakaoGateway()"
+                        class="w-full py-4 rounded-lg font-bold text-[15px] btn-kakao flex items-center justify-center gap-2 shadow-sm hover:opacity-90 transition">
+                        <i class="fas fa-comment text-lg"></i>
+                        카카오로 계속하기
+                    </button>
+
+                    <!-- 2. 일반/다른 방법 (Secondary) -->
+                    <button type="button" id="btnGeneral" onclick="showGeneralInput()"
+                        class="w-full py-3 rounded-lg font-medium text-sm text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition underline decoration-1 underline-offset-4">
+                        다른 방법으로 계속하기
+                    </button>
+                    
+                    <!-- (Hidden) 진행 버튼 -->
+                    <button type="button" id="btnStep1Next" onclick="processGeneralGateway()"
+                        class="w-full py-4 btn-brand rounded-lg font-bold text-[15px] shadow-md transition hidden">
+                        계속하기
+                    </button>
+                </div>
+
+                <!-- [Restore] 기존 회원 로그인 링크 (텍스트 복구) -->
+                <div class="mt-6 text-center" id="loginLinkArea">
+                    <button type="button" onclick="showLoginForm()" class="text-xs text-gray-400 underline decoration-gray-300 font-normal hover:text-gray-600">
+                        기존회원 로그인 / 카카오로 연결하기
+                    </button>
+                </div>
+                
+                <!-- [New] 로그인폼에서 돌아가기 링크 -->
+                <div class="mt-6 text-center hidden" id="backLinkArea">
+                    <button type="button" onclick="hideLoginForm()" class="text-xs text-gray-500 underline font-medium hover:text-[#14682A]">
+                        초기 화면으로 돌아가기
+                    </button>
+                </div>
+
+            </div>
+
+            <!-- ================= STEP 2: 정보 추가 입력 ================= -->
+            <div id="step2_section" class="hidden">
+                <div class="mb-8 text-center">
+                    <h2 class="text-xl font-bold text-gray-800 mb-2">사업자 정보 확인</h2>
+                    <p class="text-sm font-medium text-gray-500 break-keep">
+                        정확한 매칭을 위해 가게 정보를 입력해주세요.
+                    </p>
+                </div>
+
+                <div class="mb-5">
+                    <label class="block text-sm font-bold text-gray-700 mb-1.5">
+                        상호명 <span class="text-pink-400 text-xs font-normal ml-0.5">(필수)</span>
+                    </label>
+                    <input type="text" name="mb_company" id="mb_company" 
+                        class="w-full px-4 py-3.5 border border-gray-200 rounded-lg input-box-style input-focus transition-colors text-sm placeholder-required"
+                        placeholder="상호명을 입력하세요" onkeydown="handleCompanyKeydown(event)">
+                </div>
+
+                <div class="mb-8">
+                    <label class="block text-sm font-bold text-gray-700 mb-1.5">
+                        가게 주소 (배송지) <span class="text-pink-400 text-xs font-normal ml-0.5">(필수)</span>
+                    </label>
+                    <div class="flex gap-2 mb-2">
+                        <input type="hidden" name="mb_zip" id="mb_zip">
+                        <input type="hidden" name="mb_addr3" id="mb_addr3">
+                        <input type="text" name="mb_addr1" id="mb_addr1" 
+                            class="flex-1 px-4 py-3.5 border border-gray-200 rounded-lg input-box-style text-gray-800 text-sm input-focus cursor-pointer placeholder-required"
+                            placeholder="우측 버튼으로 검색하세요" readonly onclick="openDaumPostcode()">
+                        <button type="button" onclick="openDaumPostcode()" 
+                            class="px-5 py-3.5 btn-brand text-sm font-bold rounded-lg transition whitespace-nowrap shadow-sm">
+                            검색
+                        </button>
+                    </div>
+                    <input type="text" name="mb_addr2" id="mb_addr2" 
+                        class="w-full px-4 py-3.5 border border-gray-200 rounded-lg input-box-style input-focus text-sm transition-colors"
+                        placeholder="상세주소를 입력해주세요 (예: 1층)" >
+                </div>
+
+                <button type="button" onclick="submitFinalForm()"
+                    class="w-full py-4 btn-brand rounded-lg font-bold text-[15px] shadow-md transition hover:bg-[#0f5220]">
+                    완료
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- [New] 카카오 연동 유도 모달 (로그인 성공 시) -->
+    <div id="kakao-connect-modal">
+        <div class="modal-window">
+            <div class="bg-blue-50 p-4 border-b border-blue-100 flex justify-between items-center">
+                <h3 class="font-bold text-gray-800 text-sm flex items-center">
+                    <i class="fas fa-link text-blue-500 mr-2 text-lg"></i>
+                    기존 계정에 연결하기
+                </h3>
+                <button onclick="skipKakaoConnect()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="p-6 bg-white text-center">
+                <div class="mb-4">
+                    <i class="fas fa-user-shield text-4xl text-gray-300 mb-3"></i>
+                    <h4 class="text-lg font-bold text-gray-800 mb-2">로그인 성공!</h4>
+                    <p class="text-sm text-gray-500 leading-relaxed break-keep">
+                        사장님, 매번 아이디 입력하기 번거로우시죠?<br>
+                        <span class="text-blue-600 font-bold underline decoration-2 underline-offset-2">지금 카카오톡으로 연결</span>해두시면<br>
+                        다음부터는 1초 만에 접속됩니다.
+                    </p>
+                </div>
+            </div>
+            <div class="p-4 bg-gray-50 border-t border-gray-100 flex flex-col gap-2">
+                <button onclick="confirmKakaoConnect()" class="w-full bg-[#FEE500] text-[#191919] py-3 rounded-lg font-bold text-sm hover:bg-[#fdd835] transition flex items-center justify-center shadow-sm">
+                    <i class="fas fa-comment mr-2"></i> 지금 연결하기
+                </button>
+                <button onclick="skipKakaoConnect()" class="w-full py-2 text-xs text-gray-400 underline hover:text-gray-600">
+                    다음에 하기 (그냥 이동)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 성공 팝업 -->
+    <div id="toast-overlay">
+        <div class="bg-white rounded-xl p-6 w-[320px] text-center shadow-2xl transform scale-100 transition-transform">
+            <div class="w-12 h-12 bg-green-50 text-[#14682A] rounded-full flex items-center justify-center mx-auto mb-4 text-xl">
+                <i class="fas fa-check"></i>
+            </div>
+            <h3 class="text-lg font-bold text-gray-800 mb-2" id="toast-title">로그인 완료</h3>
+            <p class="text-sm text-gray-600 mb-4" id="toast-desc">
+                <span class="text-[#14682A] font-bold">페이지로 이동합니다.</span>
+            </p>
+            <div class="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                <div class="bg-[#14682A] h-full w-0 transition-all duration-[1500ms] ease-out" id="progress-bar"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        window.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const ytCode = urlParams.get('yt_code') || '';
+            const nextUrl = urlParams.get('next_url') || 'https://orderz.kr/';
+            
+            document.getElementById('yt_code').value = ytCode;
+            document.getElementById('next_url').value = nextUrl;
+            
+            if(ytCode) {
+                document.querySelector('#intro-text h2').innerText = "우리 지역 직배송 상품 보기";
+                document.querySelector('#intro-text p').innerHTML = "가장 신선한 식자재 혜택을<br>지금 바로 확인해보세요.";
+                document.getElementById('step-indicator').classList.remove('hidden');
+            } else {
+                document.querySelector('#intro-text h2').innerText = "오더즈가 기억합니다";
+                document.querySelector('#intro-text p').innerText = "내 방식대로, 쓸수록 손에 익는 플랫폼";
+            }
+        });
+
+        // -------------------------------------------------------------------
+        // [Logic] 화면 전환
+        // -------------------------------------------------------------------
+        
+        // 1. 기존 계정 연결하기 (ID로그인)
+        function showLoginForm() {
+            document.getElementById('mainBtnGroup').classList.add('hidden');
+            document.getElementById('generalInputArea').classList.add('hidden');
+            document.getElementById('loginLinkArea').classList.add('hidden');
+            document.getElementById('loginFormArea').classList.remove('hidden');
+            document.getElementById('backLinkArea').classList.remove('hidden');
+            document.getElementById('login_id').focus();
+        }
+
+        // 2. 다른 방법 (일반 가입)
+        function showGeneralInput() {
+            document.getElementById('mainBtnGroup').classList.add('hidden');
+            document.getElementById('generalInputArea').classList.remove('hidden');
+            document.getElementById('btnStep1Next').classList.remove('hidden');
+            document.getElementById('backLinkArea').classList.remove('hidden');
+            document.getElementById('mb_hp').focus();
+            document.getElementById('join_type').value = 'general';
+        }
+
+        // 3. 초기화 (뒤로가기)
+        function resetToMain() {
+            document.getElementById('mainBtnGroup').classList.remove('hidden');
+            document.getElementById('loginLinkArea').classList.remove('hidden');
+            
+            document.getElementById('generalInputArea').classList.add('hidden');
+            document.getElementById('loginFormArea').classList.add('hidden');
+            document.getElementById('btnStep1Next').classList.add('hidden');
+            document.getElementById('backLinkArea').classList.add('hidden');
+        }
+
+        // -------------------------------------------------------------------
+        // [Logic] 로그인 및 연동 처리
+        // -------------------------------------------------------------------
+
+        // ID 로그인 시뮬레이션
+        function processIdLogin() {
+            const id = document.getElementById('login_id').value;
+            const pw = document.getElementById('login_pw').value;
+
+            if(!id) { alert('아이디를 입력해주세요.'); return; }
+            if(!pw) { alert('비밀번호를 입력해주세요.'); return; }
+
+            // [로그인 성공 시뮬레이션] -> 연동 제안 모달 노출
+            document.getElementById('kakao-connect-modal').classList.add('show');
+        }
+
+        // 카카오 연동 확인
+        function confirmKakaoConnect() {
+            document.getElementById('kakao-connect-modal').classList.remove('show');
+            // 실무: Kakao.Auth.authorize() -> 서버에서 기존 ID와 매핑
+            alert("[시스템] 카카오 계정과 연결되었습니다.");
+            completeLogin('LINKED');
+        }
+
+        // 연동 건너뛰기
+        function skipKakaoConnect() {
+            document.getElementById('kakao-connect-modal').classList.remove('show');
+            completeLogin('EXISTING');
+        }
+
+        // -------------------------------------------------------------------
+        // [Logic] 기타 흐름
+        // -------------------------------------------------------------------
+        
+        function processKakaoGateway() {
+            const isExistingMember = confirm("[시스템 시뮬레이션] 기존 회원입니까? (확인=예, 취소=아니오)");
+            if (isExistingMember) {
+                completeLogin('EXISTING');
+            } else {
+                document.getElementById('join_type').value = 'kakao';
+                goToStep2();
+            }
+        }
+
+        function processGeneralGateway() {
+            const hp = document.getElementById('mb_hp');
+            if(!hp.value || hp.value.length < 10) { alert("휴대폰 번호를 올바르게 입력해주세요."); hp.focus(); return; }
+            if (hp.value.endsWith('0000')) { completeLogin('EXISTING'); } else { goToStep2(); }
+        }
+
+        function goToStep2() {
+            document.getElementById('step1_section').classList.add('hidden');
+            const step2 = document.getElementById('step2_section');
+            step2.classList.remove('hidden');
+            step2.classList.add('fade-in');
+            const dot2 = document.getElementById('dot2');
+            if(dot2) dot2.classList.add('active');
+            setTimeout(() => { 
+                const companyInput = document.getElementById('mb_company');
+                companyInput.focus(); 
+                companyInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 300);
+        }
+
+        function submitFinalForm() {
+            const company = document.getElementById('mb_company');
+            const addr1 = document.getElementById('mb_addr1');
+            if(!company.value) { alert("상호명을 입력해주세요."); company.focus(); return; }
+            if(!addr1.value) { alert("주소를 검색해주세요."); openDaumPostcode(); return; }
+            completeLogin('NEW');
+        }
+
+        function completeLogin(type) {
+            const nextUrl = document.getElementById('next_url').value;
+            const toast = document.getElementById('toast-overlay');
+            const bar = document.getElementById('progress-bar');
+            const title = document.getElementById('toast-title');
+            const desc = document.getElementById('toast-desc');
+
+            if (type === 'LINKED') {
+                title.innerText = "연동 및 로그인 완료";
+                desc.innerHTML = `이제 카카오로 1초 만에 로그인하세요.<br><span class="text-[#14682A] font-bold">페이지로 이동합니다.</span>`;
+            } else if (type === 'EXISTING') {
+                title.innerText = "로그인 되었습니다.";
+                desc.innerHTML = `반갑습니다 사장님!<br><span class="text-[#14682A] font-bold">페이지로 이동합니다.</span>`;
+            } else {
+                title.innerText = "가입이 완료되었습니다!";
+                desc.innerHTML = `매칭 및 등록 완료.<br><span class="text-[#14682A] font-bold">상품 페이지로 이동합니다.</span>`;
+            }
+            
+            toast.classList.add('show');
+            setTimeout(() => { bar.style.width = "100%"; }, 100);
+            setTimeout(() => { alert(`[시스템 이동] ${nextUrl} 로 이동합니다.`); window.location.reload(); }, 1600);
+        }
+
+        function handleCompanyKeydown(event) {
+            if (event.key === 'Enter') { event.preventDefault(); const addrInput = document.getElementById('mb_addr1'); addrInput.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+        }
+
+        function openDaumPostcode() {
+            new daum.Postcode({
+                oncomplete: function(data) {
+                    var addr = data.userSelectedType === 'R' ? data.roadAddress : data.jibunAddress;
+                    if(data.userSelectedType === 'J' && !addr){ addr = data.autoJibunAddress; }
+                    var extraAddr = '';
+                    if(data.userSelectedType === 'R'){ if(data.bname !== '' && /[동|로|가]$/g.test(data.bname)){ extraAddr += data.bname; } if(data.buildingName !== '' && data.apartment === 'Y'){ extraAddr += (extraAddr !== '' ? ', ' + data.buildingName : data.buildingName); } if(extraAddr !== ''){ extraAddr = ' (' + extraAddr + ')'; } }
+                    if(document.getElementById('mb_zip')) { document.getElementById('mb_zip').value = data.zonecode; }
+                    const addrInput = document.getElementById('mb_addr1');
+                    if(addrInput) { addrInput.value = addr; addrInput.classList.add('text-gray-900', 'font-medium'); }
+                    if(document.getElementById('mb_addr3')) { document.getElementById('mb_addr3').value = extraAddr; }
+                    if(document.getElementById('mb_addr2')) { document.getElementById('mb_addr2').focus(); }
+                }
+            }).open();
+        }
+
+        function autoHyphen(target) { target.value = target.value.replace(/[^0-9]/g, '').replace(/^(\d{0,3})(\d{0,4})(\d{0,4})$/g, "$1-$2-$3").replace(/(\-{1,2})$/g, ""); }
+    </script>
+</body>
+</html>
