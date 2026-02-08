@@ -41,6 +41,11 @@
             color: #6b7280;
             font-weight: 500;
         }
+        .tab-disabled {
+            color: #d1d5db; /* Gray-300 */
+            font-weight: 500;
+            cursor: pointer;
+        }
 
         /* Create List Tab Style */
         .cl-tab-btn {
@@ -316,6 +321,49 @@
             top: 0;
             z-index: 5;
         }
+
+        /* Coach Mark (Tooltip) */
+        .coach-mark {
+            position: fixed; /* Fixed to viewport to handle scrolling tabs easily */
+            z-index: 9999; /* Highest z-index to ensure visibility */
+            background: #2D3748; /* Dark Gray */
+            color: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            opacity: 0;
+            transform: translateY(5px);
+            transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+            pointer-events: none; /* Initially non-interactive */
+        }
+        .coach-mark.visible {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+        .coach-mark::before { /* Arrow pointing up */
+            content: '';
+            position: absolute;
+            top: -5px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 0 5px 6px 5px;
+            border-style: solid;
+            border-color: transparent transparent #2D3748 transparent;
+        }
+        .coach-btn {
+            background: #22c55e;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 700;
+            font-size: 10px;
+            cursor: pointer;
+        }
         
         /* Safe area bottom fix */
         .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
@@ -408,7 +456,7 @@
             <!-- Sub Header (Sticky) -->
             <div id="sub-header" class="sticky top-[57px] z-30 shadow-md bg-gray-100 relative">
                 <!-- 리스트 바 -->
-                <div id="my-list-container" class="flex justify-between items-center px-0 bg-white border-b h-[40px] overflow-hidden">
+                <div id="my-list-container" class="flex justify-between items-center px-0 bg-white border-b h-[40px] overflow-hidden relative">
                     <div id="my-list-tabs" class="flex flex-1 items-center h-full no-scrollbar"></div>
                 </div>
                 
@@ -526,223 +574,246 @@
                 </div>
                 <div class="h-6 bg-white w-full"></div>
             </div>
-            
-            <!-- Delivery Date Sheet (Modal) -->
-            <div id="delivery-sheet-overlay" class="hidden absolute inset-0 z-40"></div>
-            <div id="delivery-sheet" class="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-[0_-5px_20px_rgba(0,0,0,0.15)] z-50">
-                <div class="p-5">
-                    <h3 class="font-bold text-lg mb-4 text-center">배송일 변경</h3>
-                    <div class="space-y-2">
-                        <button class="w-full py-3 rounded-xl border border-gray-200 text-gray-700 font-semibold hover:bg-green-50" onclick="updateDeliveryDate('1월 12일(월) 도착')">1월 12일(월) 도착 (기본)</button>
-                        <button class="w-full py-3 rounded-xl border border-gray-200 text-gray-700 font-semibold hover:bg-green-50" onclick="updateDeliveryDate('1월 13일(화) 도착')">1월 13일(화) 도착</button>
-                        <button class="w-full py-3 rounded-xl border border-gray-200 text-gray-700 font-semibold hover:bg-green-50" onclick="updateDeliveryDate('1월 14일(수) 도착')">1월 14일(수) 도착</button>
-                    </div>
-                    <button id="delivery-sheet-cancel" class="w-full mt-4 py-3 text-gray-500 font-medium">닫기</button>
-                </div>
-                <div class="h-6 bg-white w-full"></div>
+    </div> <!-- END of create-list-view -->
+    
+    <!-- Delivery Date Sheet (Modal) - Correctly placed outside hidden view -->
+    <div id="delivery-sheet-overlay" class="hidden absolute inset-0 z-40"></div>
+    <div id="delivery-sheet" class="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-[0_-5px_20px_rgba(0,0,0,0.15)] z-50">
+        <div class="p-5">
+            <h3 class="font-bold text-lg mb-4 text-center">배송일 변경</h3>
+            <div class="space-y-2">
+                <button class="w-full py-3 rounded-xl border border-gray-200 text-gray-700 font-semibold hover:bg-green-50" onclick="updateDeliveryDate('1월 12일(월) 도착')">1월 12일(월) 도착 (기본)</button>
+                <button class="w-full py-3 rounded-xl border border-gray-200 text-gray-700 font-semibold hover:bg-green-50" onclick="updateDeliveryDate('1월 13일(화) 도착')">1월 13일(화) 도착</button>
+                <button class="w-full py-3 rounded-xl border border-gray-200 text-gray-700 font-semibold hover:bg-green-50" onclick="updateDeliveryDate('1월 14일(수) 도착')">1월 14일(수) 도착</button>
             </div>
+            <button id="delivery-sheet-cancel" class="w-full mt-4 py-3 text-gray-500 font-medium">닫기</button>
+        </div>
+        <div class="h-6 bg-white w-full"></div>
+    </div>
 
-            <!-- Guide & Setting Modal (FIXED HEIGHT) -->
-            <div id="guide-modal-overlay" class="fixed inset-0 bg-black/50 z-[60] hidden transition-opacity opacity-0">
-                <div class="flex items-center justify-center min-h-screen px-4">
-                    <!-- Added fixed height h-[70vh] here -->
-                    <div class="bg-gray-50 rounded-2xl shadow-2xl w-full max-w-sm h-[70vh] overflow-hidden transform transition-transform scale-95 flex flex-col" id="guide-modal-content">
-                        <!-- Header -->
-                        <div class="flex justify-between items-center p-5 bg-white border-b sticky top-0 z-10 flex-none">
-                            <h3 class="text-lg font-bold text-gray-900">이용 안내 및 설정</h3>
-                            <button onclick="closeGuide()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times text-lg"></i></button>
+    <!-- FOOTER (Main) - Correctly placed outside hidden view -->
+    <footer class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t z-30 flex h-[60px] shadow-[0_-2px_10px_rgba(0,0,0,0.05)] safe-pb">
+        <button id="footer-search-btn" class="flex-1 flex flex-col items-center justify-center text-gray-500 border-r border-gray-100 hover:text-green-600 transition-colors">
+            <i class="fas fa-search text-xl mb-0.5"></i>
+            <span class="text-[10px]">검색</span>
+        </button>
+        <button id="footer-cta-btn" class="flex-1 flex flex-col items-center justify-center transition-colors bg-white text-gray-300">
+            <div class="flex items-center space-x-1 mb-0.5"><span id="footer-logo" class="font-extrabold text-xs text-green-800">ORDERZ</span></div>
+            <span id="cta-text" class="text-sm font-bold">상품을 담아 주세요</span>
+        </button>
+        <button id="footer-inquiry-btn" class="flex-1 flex flex-col items-center justify-center text-gray-500 border-l border-gray-100 hover:text-green-600 transition-colors">
+            <i class="fas fa-comment-dots text-xl mb-0.5"></i>
+            <span class="text-[10px]">문의</span>
+        </button>
+    </footer>
+
+    </div> <!-- END of app -->
+
+    <!-- MOVED OUTSIDE #APP: Coach Mark Popup (New) -->
+    <div id="coach-mark-popup" class="coach-mark">
+        <span>리스트가 비어 있습니다</span>
+        <button onclick="goToCreateListFromPopup()" class="coach-btn">리스트 만들기 <i class="fas fa-chevron-right text-[9px] ml-0.5"></i></button>
+    </div>
+
+    <!-- MOVED OUTSIDE #APP: Guide & Setting Modal (FIXED HEIGHT) -->
+    <div id="guide-modal-overlay" class="fixed inset-0 bg-black/50 z-[60] hidden transition-opacity opacity-0">
+        <div class="flex items-center justify-center min-h-screen px-4">
+            <!-- Added fixed height h-[70vh] here -->
+            <div class="bg-gray-50 rounded-2xl shadow-2xl w-full max-w-sm h-[70vh] overflow-hidden transform transition-transform scale-95 flex flex-col" id="guide-modal-content">
+                <!-- Header -->
+                <div class="flex justify-between items-center p-5 bg-white border-b sticky top-0 z-10 flex-none">
+                    <h3 class="text-lg font-bold text-gray-900">이용 안내 및 설정</h3>
+                    <button onclick="closeGuide()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times text-lg"></i></button>
+                </div>
+                
+                <!-- Tabs -->
+                <div class="flex border-b bg-white z-10 sticky top-[68px] flex-none">
+                    <button id="tab-faq" class="guide-tab-btn active" onclick="switchGuideTab('faq')">이용안내</button>
+                    <button id="tab-rename" class="guide-tab-btn" onclick="switchGuideTab('rename')">이름설정</button>
+                    <button id="tab-start" class="guide-tab-btn" onclick="switchGuideTab('start')">시작화면</button>
+                </div>
+                
+                <!-- Content Area (Scrollable) -->
+                <div class="flex-grow overflow-y-auto bg-gray-50">
+                    <!-- Section: FAQ -->
+                    <div id="guide-section-faq" class="block">
+                        <!-- FAQ 1 -->
+                        <div class="faq-item" id="faq-1">
+                            <div class="faq-header" onclick="toggleFaq('faq-1')">
+                                <div class="faq-question">
+                                    <i class="fas fa-list-ul text-green-500 mr-2"></i> 찜한상품이란?
+                                </div>
+                                <i class="fas fa-chevron-down faq-chevron"></i>
+                            </div>
+                            <div class="faq-content">
+                                <div class="faq-answer-box">
+                                    '찜한상품'탭은 <span class="text-green-600 font-bold">내가 찜한 상품</span>과, 해당 상품과 관련된 <span class="text-green-600 font-bold">행사 상품</span>을 함께 모아볼 수 있는 리스트입니다.
+                                </div>
+                            </div>
                         </div>
-                        
-                        <!-- Tabs -->
-                        <div class="flex border-b bg-white z-10 sticky top-[68px] flex-none">
-                            <button id="tab-faq" class="guide-tab-btn active" onclick="switchGuideTab('faq')">이용안내</button>
-                            <button id="tab-rename" class="guide-tab-btn" onclick="switchGuideTab('rename')">이름설정</button>
-                            <button id="tab-start" class="guide-tab-btn" onclick="switchGuideTab('start')">시작화면</button>
+                        <!-- FAQ 2 -->
+                        <div class="faq-item" id="faq-2">
+                            <div class="faq-header" onclick="toggleFaq('faq-2')">
+                                <div class="faq-question">
+                                    <i class="fas fa-sort text-green-500 mr-2"></i> 상품 순서 변경
+                                </div>
+                                <i class="fas fa-chevron-down faq-chevron"></i>
+                            </div>
+                            <div class="faq-content">
+                                <div class="faq-answer-box">
+                                    전체보기에서는 불가능하며, <span class="text-green-600 font-bold">개별 리스트 탭</span>(LIST1 등)을 눌러 들어갔을 때만 상품 우측에 <span class="text-green-600 font-bold">드래그 핸들(≡)</span>이 나타납니다. 핸들을 잡고 위아래로 움직여 순서를 바꿔보세요.
+                                </div>
+                            </div>
                         </div>
-                        
-                        <!-- Content Area (Scrollable) -->
-                        <div class="flex-grow overflow-y-auto bg-gray-50">
-                            <!-- Section: FAQ -->
-                            <div id="guide-section-faq" class="block">
-                                <!-- FAQ 1 -->
-                                <div class="faq-item" id="faq-1">
-                                    <div class="faq-header" onclick="toggleFaq('faq-1')">
-                                        <div class="faq-question">
-                                            <i class="fas fa-list-ul text-green-500 mr-2"></i> 찜한상품이란?
-                                        </div>
-                                        <i class="fas fa-chevron-down faq-chevron"></i>
-                                    </div>
-                                    <div class="faq-content">
-                                        <div class="faq-answer-box">
-                                            '찜한상품'탭은 <span class="text-green-600 font-bold">내가 찜한 상품</span>과, 해당 상품과 관련된 <span class="text-green-600 font-bold">행사 상품</span>을 함께 모아볼 수 있는 리스트입니다.
-                                        </div>
+                        <!-- FAQ 3 -->
+                        <div class="faq-item" id="faq-3">
+                            <div class="faq-header" onclick="toggleFaq('faq-3')">
+                                <div class="faq-question">
+                                    <i class="fas fa-edit text-green-500 mr-2"></i> 리스트 이름 변경
+                                </div>
+                                <i class="fas fa-chevron-down faq-chevron"></i>
+                            </div>
+                            <div class="faq-content">
+                                <div class="faq-answer-box">
+                                    상단의 <span class="text-green-600 font-bold">'이름설정' 탭</span>으로 이동하여 LIST1, LIST2, LIST3의 이름을 변경할 수 있습니다. 자주 쓰는 키워드를 선택하거나 직접 입력하여 저장하세요.
+                                    <div class="mt-3 text-right">
+                                        <button onclick="switchGuideTab('rename')" class="text-xs text-green-600 underline font-bold">이름설정 바로가기</button>
                                     </div>
                                 </div>
-                                <!-- FAQ 2 -->
-                                <div class="faq-item" id="faq-2">
-                                    <div class="faq-header" onclick="toggleFaq('faq-2')">
-                                        <div class="faq-question">
-                                            <i class="fas fa-sort text-green-500 mr-2"></i> 상품 순서 변경
-                                        </div>
-                                        <i class="fas fa-chevron-down faq-chevron"></i>
-                                    </div>
-                                    <div class="faq-content">
-                                        <div class="faq-answer-box">
-                                            전체보기에서는 불가능하며, <span class="text-green-600 font-bold">개별 리스트 탭</span>(LIST1 등)을 눌러 들어갔을 때만 상품 우측에 <span class="text-green-600 font-bold">드래그 핸들(≡)</span>이 나타납니다. 핸들을 잡고 위아래로 움직여 순서를 바꿔보세요.
-                                        </div>
+                            </div>
+                        </div>
+                        <!-- FAQ 4 -->
+                        <div class="faq-item" id="faq-4">
+                            <div class="faq-header" onclick="toggleFaq('faq-4')">
+                                <div class="faq-question">
+                                    <i class="fas fa-home text-green-500 mr-2"></i> 시작화면 설정
+                                </div>
+                                <i class="fas fa-chevron-down faq-chevron"></i>
+                            </div>
+                            <div class="faq-content">
+                                <div class="faq-answer-box">
+                                    앱을 실행할 때 처음 보여지는 화면을 고정하고 싶다면 상단의 <span class="text-green-600 font-bold">'시작화면' 탭</span>에서 설정해주세요. 빠른 주문이 필요하다면 '주문하기'를 추천합니다.
+                                    <div class="mt-3 text-right">
+                                        <button onclick="switchGuideTab('start')" class="text-xs text-green-600 underline font-bold">시작화면 설정 바로가기</button>
                                     </div>
                                 </div>
-                                <!-- FAQ 3 -->
-                                <div class="faq-item" id="faq-3">
-                                    <div class="faq-header" onclick="toggleFaq('faq-3')">
-                                        <div class="faq-question">
-                                            <i class="fas fa-edit text-green-500 mr-2"></i> 리스트 이름 변경
-                                        </div>
-                                        <i class="fas fa-chevron-down faq-chevron"></i>
-                                    </div>
-                                    <div class="faq-content">
-                                        <div class="faq-answer-box">
-                                            상단의 <span class="text-green-600 font-bold">'이름설정' 탭</span>으로 이동하여 LIST1, LIST2, LIST3의 이름을 변경할 수 있습니다. 자주 쓰는 키워드를 선택하거나 직접 입력하여 저장하세요.
-                                            <div class="mt-3 text-right">
-                                                <button onclick="switchGuideTab('rename')" class="text-xs text-green-600 underline font-bold">이름설정 바로가기</button>
-                                            </div>
-                                        </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section: Rename -->
+                    <div id="guide-section-rename" class="hidden">
+                        <div class="p-5">
+                            <div class="flex justify-between items-center mb-4">
+                                <p class="text-[11px] text-gray-400 italic">터치하여 포커스 후 아래 키워드를 선택하세요.</p>
+                                <button onclick="resetListNames()" class="text-xs text-gray-400 underline">초기화</button>
+                            </div>
+
+                            <!-- Custom Inputs -->
+                            <div class="space-y-2 mb-4">
+                                <div class="list-input-group flex items-center active" id="group-l1" onclick="focusInput(1)">
+                                    <span class="text-xs font-bold text-gray-400 w-8">LIST1</span>
+                                    <input type="text" id="input-list1-name" placeholder="LIST1 명칭" class="outline-none" readonly>
+                                </div>
+                                <div class="list-input-group flex items-center" id="group-l2" onclick="focusInput(2)">
+                                    <span class="text-xs font-bold text-gray-400 w-8">LIST2</span>
+                                    <input type="text" id="input-list2-name" placeholder="LIST2 명칭" class="outline-none" readonly>
+                                </div>
+                                <div class="list-input-group flex items-center" id="group-l3" onclick="focusInput(3)">
+                                    <span class="text-xs font-bold text-gray-400 w-8">LIST3</span>
+                                    <input type="text" id="input-list3-name" placeholder="LIST3 명칭" class="outline-none" readonly>
+                                </div>
+                            </div>
+
+                            <!-- Multi-Category Keyword Pool -->
+                            <div class="bg-white rounded-xl p-4 border border-gray-100 shadow-inner h-56 overflow-y-auto mb-6">
+                                <div class="mb-4">
+                                    <div class="text-[10px] font-bold text-gray-400 mb-2">공간 / 관리 주체</div>
+                                    <div class="flex flex-wrap gap-2">
+                                        <button class="keyword-chip" onclick="applyKeyword('주방')">주방</button>
+                                        <button class="keyword-chip" onclick="applyKeyword('홀/바')">홀/바</button>
+                                        <button class="keyword-chip" onclick="applyKeyword('창고')">창고</button>
+                                        <button class="keyword-chip" onclick="applyKeyword('매장')">매장</button>
+                                        <button class="keyword-chip" onclick="applyKeyword('냉장고')">냉장고</button>
                                     </div>
                                 </div>
-                                <!-- FAQ 4 -->
-                                <div class="faq-item" id="faq-4">
-                                    <div class="faq-header" onclick="toggleFaq('faq-4')">
-                                        <div class="faq-question">
-                                            <i class="fas fa-home text-green-500 mr-2"></i> 시작화면 설정
-                                        </div>
-                                        <i class="fas fa-chevron-down faq-chevron"></i>
+                                <div class="mb-4">
+                                    <div class="text-[10px] font-bold text-gray-400 mb-2">보관 / 온도</div>
+                                    <div class="flex flex-wrap gap-2">
+                                        <button class="keyword-chip" onclick="applyKeyword('신선/냉장')">신선/냉장</button>
+                                        <button class="keyword-chip" onclick="applyKeyword('냉동')">냉동</button>
+                                        <button class="keyword-chip" onclick="applyKeyword('상온/공산')">상온/공산</button>
                                     </div>
-                                    <div class="faq-content">
-                                        <div class="faq-answer-box">
-                                            앱을 실행할 때 처음 보여지는 화면을 고정하고 싶다면 상단의 <span class="text-green-600 font-bold">'시작화면' 탭</span>에서 설정해주세요. 빠른 주문이 필요하다면 '주문하기'를 추천합니다.
-                                            <div class="mt-3 text-right">
-                                                <button onclick="switchGuideTab('start')" class="text-xs text-green-600 underline font-bold">시작화면 설정 바로가기</button>
-                                            </div>
-                                        </div>
+                                </div>
+                                <div class="mb-4">
+                                    <div class="text-[10px] font-bold text-gray-400 mb-2">목적 / 용도</div>
+                                    <div class="flex flex-wrap gap-2">
+                                        <button class="keyword-chip" onclick="applyKeyword('메인재료')">메인재료</button>
+                                        <button class="keyword-chip" onclick="applyKeyword('부재료')">부재료</button>
+                                        <button class="keyword-chip" onclick="applyKeyword('양념/소스')">양념/소스</button>
+                                        <button class="keyword-chip" onclick="applyKeyword('소모품')">소모품</button>
+                                        <button class="keyword-chip" onclick="applyKeyword('직원식')">직원식</button>
+                                    </div>
+                                </div>
+                                <div class="mb-2">
+                                    <div class="text-[10px] font-bold text-gray-400 mb-2">발주 주기</div>
+                                    <div class="flex flex-wrap gap-2">
+                                        <button class="keyword-chip" onclick="applyKeyword('매일발주')">매일발주</button>
+                                        <button class="keyword-chip" onclick="applyKeyword('정기발주')">정기발주</button>
+                                        <button class="keyword-chip" onclick="applyKeyword('긴급/기타')">긴급/기타</button>
                                     </div>
                                 </div>
                             </div>
 
-                            <!-- Section: Rename -->
-                            <div id="guide-section-rename" class="hidden">
-                                <div class="p-5">
-                                    <div class="flex justify-between items-center mb-4">
-                                        <p class="text-[11px] text-gray-400 italic">터치하여 포커스 후 아래 키워드를 선택하세요.</p>
-                                        <button onclick="resetListNames()" class="text-xs text-gray-400 underline">초기화</button>
-                                    </div>
+                            <button onclick="saveListNames()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl text-sm shadow-lg shadow-blue-100 transition-colors">
+                                설정된 이름으로 변경하기
+                            </button>
+                        </div>
+                    </div>
 
-                                    <!-- Custom Inputs -->
-                                    <div class="space-y-2 mb-4">
-                                        <div class="list-input-group flex items-center active" id="group-l1" onclick="focusInput(1)">
-                                            <span class="text-xs font-bold text-gray-400 w-8">LIST1</span>
-                                            <input type="text" id="input-list1-name" placeholder="LIST1 명칭" class="outline-none" readonly>
-                                        </div>
-                                        <div class="list-input-group flex items-center" id="group-l2" onclick="focusInput(2)">
-                                            <span class="text-xs font-bold text-gray-400 w-8">LIST2</span>
-                                            <input type="text" id="input-list2-name" placeholder="LIST2 명칭" class="outline-none" readonly>
-                                        </div>
-                                        <div class="list-input-group flex items-center" id="group-l3" onclick="focusInput(3)">
-                                            <span class="text-xs font-bold text-gray-400 w-8">LIST3</span>
-                                            <input type="text" id="input-list3-name" placeholder="LIST3 명칭" class="outline-none" readonly>
-                                        </div>
-                                    </div>
-
-                                    <!-- Multi-Category Keyword Pool -->
-                                    <div class="bg-white rounded-xl p-4 border border-gray-100 shadow-inner h-56 overflow-y-auto mb-6">
-                                        <div class="mb-4">
-                                            <div class="text-[10px] font-bold text-gray-400 mb-2">공간 / 관리 주체</div>
-                                            <div class="flex flex-wrap gap-2">
-                                                <button class="keyword-chip" onclick="applyKeyword('주방')">주방</button>
-                                                <button class="keyword-chip" onclick="applyKeyword('홀/바')">홀/바</button>
-                                                <button class="keyword-chip" onclick="applyKeyword('창고')">창고</button>
-                                                <button class="keyword-chip" onclick="applyKeyword('매장')">매장</button>
-                                                <button class="keyword-chip" onclick="applyKeyword('냉장고')">냉장고</button>
-                                            </div>
-                                        </div>
-                                        <div class="mb-4">
-                                            <div class="text-[10px] font-bold text-gray-400 mb-2">보관 / 온도</div>
-                                            <div class="flex flex-wrap gap-2">
-                                                <button class="keyword-chip" onclick="applyKeyword('신선/냉장')">신선/냉장</button>
-                                                <button class="keyword-chip" onclick="applyKeyword('냉동')">냉동</button>
-                                                <button class="keyword-chip" onclick="applyKeyword('상온/공산')">상온/공산</button>
-                                            </div>
-                                        </div>
-                                        <div class="mb-4">
-                                            <div class="text-[10px] font-bold text-gray-400 mb-2">목적 / 용도</div>
-                                            <div class="flex flex-wrap gap-2">
-                                                <button class="keyword-chip" onclick="applyKeyword('메인재료')">메인재료</button>
-                                                <button class="keyword-chip" onclick="applyKeyword('부재료')">부재료</button>
-                                                <button class="keyword-chip" onclick="applyKeyword('양념/소스')">양념/소스</button>
-                                                <button class="keyword-chip" onclick="applyKeyword('소모품')">소모품</button>
-                                                <button class="keyword-chip" onclick="applyKeyword('직원식')">직원식</button>
-                                            </div>
-                                        </div>
-                                        <div class="mb-2">
-                                            <div class="text-[10px] font-bold text-gray-400 mb-2">발주 주기</div>
-                                            <div class="flex flex-wrap gap-2">
-                                                <button class="keyword-chip" onclick="applyKeyword('매일발주')">매일발주</button>
-                                                <button class="keyword-chip" onclick="applyKeyword('정기발주')">정기발주</button>
-                                                <button class="keyword-chip" onclick="applyKeyword('긴급/기타')">긴급/기타</button>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <button onclick="saveListNames()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl text-sm shadow-lg shadow-blue-100 transition-colors">
-                                        설정된 이름으로 변경하기
-                                    </button>
-                                </div>
+                    <!-- Section: Start Screen -->
+                    <div id="guide-section-start" class="hidden">
+                        <div class="p-5">
+                            <div class="text-sm text-gray-600 mb-4 font-bold">
+                                앱 실행(접속)시 가장 먼저 보일 화면을 선택하세요.
                             </div>
 
-                            <!-- Section: Start Screen -->
-                            <div id="guide-section-start" class="hidden">
-                                <div class="p-5">
-                                    <div class="text-sm text-gray-600 mb-4 font-bold">
-                                        앱 실행(접속)시 가장 먼저 보일 화면을 선택하세요.
+                            <div class="space-y-3">
+                                <!-- Home Option -->
+                                <div class="bg-white rounded-xl border-2 p-5 flex items-center justify-between cursor-pointer transition-colors hover:bg-gray-50" 
+                                     id="option-home" onclick="setStartScreen('home')">
+                                    <div>
+                                        <div class="font-bold text-gray-800 text-sm flex items-center">
+                                            <i class="fas fa-shopping-bag mr-2 text-gray-400"></i> 상품목록 (홈)
+                                        </div>
+                                        <div class="text-[11px] text-gray-400 mt-1 pl-6">
+                                            다양한 상품을 둘러보고 검색할 때 적합합니다.
+                                        </div>
                                     </div>
+                                    <div class="text-gray-300 transition-colors" id="check-icon-home"><i class="fas fa-circle text-xl"></i></div>
+                                </div>
 
-                                    <div class="space-y-3">
-                                        <!-- Home Option -->
-                                        <div class="bg-white rounded-xl border-2 p-5 flex items-center justify-between cursor-pointer transition-colors hover:bg-gray-50" 
-                                             id="option-home" onclick="setStartScreen('home')">
-                                            <div>
-                                                <div class="font-bold text-gray-800 text-sm flex items-center">
-                                                    <i class="fas fa-shopping-bag mr-2 text-gray-400"></i> 상품목록 (홈)
-                                                </div>
-                                                <div class="text-[11px] text-gray-400 mt-1 pl-6">
-                                                    다양한 상품을 둘러보고 검색할 때 적합합니다.
-                                                </div>
-                                            </div>
-                                            <div class="text-gray-300 transition-colors" id="check-icon-home"><i class="fas fa-circle text-xl"></i></div>
+                                <!-- Order Option -->
+                                <div class="bg-white rounded-xl border-2 p-5 flex items-center justify-between cursor-pointer transition-colors hover:bg-gray-50" 
+                                     id="option-quick-order" onclick="setStartScreen('quick-order')">
+                                    <div>
+                                        <div class="font-bold text-gray-800 text-sm flex items-center">
+                                            <i class="fas fa-clipboard-check mr-2 text-gray-400"></i> 주문하기
                                         </div>
-
-                                        <!-- Order Option -->
-                                        <div class="bg-white rounded-xl border-2 p-5 flex items-center justify-between cursor-pointer transition-colors hover:bg-gray-50" 
-                                             id="option-quick-order" onclick="setStartScreen('quick-order')">
-                                            <div>
-                                                <div class="font-bold text-gray-800 text-sm flex items-center">
-                                                    <i class="fas fa-clipboard-check mr-2 text-gray-400"></i> 주문하기
-                                                </div>
-                                                <div class="text-[11px] text-gray-400 mt-1 pl-6">
-                                                    자주 시키는 상품을 빠르게 주문할 때 적합합니다.
-                                                </div>
-                                            </div>
-                                            <div class="text-gray-300 transition-colors" id="check-icon-quick-order"><i class="fas fa-circle text-xl"></i></div>
+                                        <div class="text-[11px] text-gray-400 mt-1 pl-6">
+                                            자주 시키는 상품을 빠르게 주문할 때 적합합니다.
                                         </div>
                                     </div>
-                                    
-                                    <div class="mt-6 p-4 bg-green-50 rounded-xl border border-green-100">
-                                        <div class="text-[10px] text-green-700 font-bold mb-1">
-                                            <i class="fas fa-check-circle mr-1"></i> 설정 팁
-                                        </div>
-                                        <div class="text-[10px] text-gray-600">
-                                            선택하신 설정은 자동으로 저장되며, 다음 앱 실행 시부터 즉시 반영됩니다.
-                                        </div>
-                                    </div>
+                                    <div class="text-gray-300 transition-colors" id="check-icon-quick-order"><i class="fas fa-circle text-xl"></i></div>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-6 p-4 bg-green-50 rounded-xl border border-green-100">
+                                <div class="text-[10px] text-green-700 font-bold mb-1">
+                                    <i class="fas fa-check-circle mr-1"></i> 설정 팁
+                                </div>
+                                <div class="text-[10px] text-gray-600">
+                                    선택하신 설정은 자동으로 저장되며, 다음 앱 실행 시부터 즉시 반영됩니다.
                                 </div>
                             </div>
                         </div>
@@ -750,23 +821,6 @@
                 </div>
             </div>
         </div>
-
-        <!-- FOOTER (Main) -->
-        <footer class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t z-30 flex h-[60px] shadow-[0_-2px_10px_rgba(0,0,0,0.05)] safe-pb">
-            <button id="footer-search-btn" class="flex-1 flex flex-col items-center justify-center text-gray-500 border-r border-gray-100 hover:text-green-600 transition-colors">
-                <i class="fas fa-search text-xl mb-0.5"></i>
-                <span class="text-[10px]">검색</span>
-            </button>
-            <button id="footer-cta-btn" class="flex-1 flex flex-col items-center justify-center transition-colors bg-white text-gray-300">
-                <div class="flex items-center space-x-1 mb-0.5"><span id="footer-logo" class="font-extrabold text-xs text-green-800">ORDERZ</span></div>
-                <span id="cta-text" class="text-sm font-bold">상품을 담아 주세요</span>
-            </button>
-            <button id="footer-inquiry-btn" class="flex-1 flex flex-col items-center justify-center text-gray-500 border-l border-gray-100 hover:text-green-600 transition-colors">
-                <i class="fas fa-comment-dots text-xl mb-0.5"></i>
-                <span class="text-[10px]">문의</span>
-            </button>
-        </footer>
-
     </div>
 
 <script>
@@ -848,6 +902,10 @@
         const deliverySheet = document.getElementById('delivery-sheet');
         const deliverySheetOverlay = document.getElementById('delivery-sheet-overlay');
         const deliverySheetCancel = document.getElementById('delivery-sheet-cancel');
+        
+        // Coach Mark Element
+        const coachMarkPopup = document.getElementById('coach-mark-popup');
+        let coachMarkTimeout;
 
         function getAllProducts() {
             return Object.values(appState.products).flat();
@@ -955,6 +1013,10 @@
             if (!e.target.closest('.sort-dropdown-container')) {
                 sortDropdownMenu.classList.remove('active');
             }
+            // Close coach mark on outside click
+            if (coachMarkPopup.classList.contains('visible') && !e.target.closest('.tab-disabled') && !e.target.closest('.coach-mark')) {
+                closeCoachMark();
+            }
         });
 
         // Delivery Modal Logic
@@ -978,6 +1040,9 @@
 
         // --- Create List Logic ---
         window.openCreateListView = function() {
+            // Close any existing coach mark to prevent it showing up on create list
+            closeCoachMark();
+
             appState.tempChanges = {};
             appState.hasChanges = false;
             appState.clTab = 'all';
@@ -1391,13 +1456,27 @@
             }
             return sortedList;
         }
+        
+        // Helper to check if a list is empty
+        function getListCount(listId) {
+             const list = getAllProducts();
+             return list.filter(p => (p.myList||[]).includes(listId)).length;
+        }
 
         function renderListTabs() {
             const listIds = [1, 2, 3];
-            let html = `<button class="tab-btn ${appState.currentMyList===0?'tab-active':'tab-inactive'} px-4" onclick="switchMainList(0)">찜한상품</button>`;
+            // Passing 'this' is critical for reliable element reference in inline handlers
+            let html = `<button class="tab-btn ${appState.currentMyList===0?'tab-active':'tab-inactive'} px-4" onclick="handleTabClick(0, this)">찜한상품</button>`;
             listIds.forEach(id => {
                 const isActive = appState.currentMyList === id;
-                html += `<button class="tab-btn ${isActive?'tab-active':'tab-inactive'} px-4" onclick="switchMainList(${id})">${appState.listNames[id]}</button>`;
+                const count = getListCount(id);
+                
+                const isDisabled = count === 0;
+                let className = isActive ? 'tab-active' : 'tab-inactive';
+                if (isDisabled && !isActive) className = 'tab-disabled';
+                
+                // Passing 'this' here
+                html += `<button class="tab-btn ${className} px-4" onclick="handleTabClick(${id}, this)">${appState.listNames[id]}</button>`;
             });
             html += `<div class="flex-grow"></div><button class="add-list-btn-wide ml-2" onclick="openCreateListView()">+ 리스트 만들기</button>`;
             myListTabsContainer.innerHTML = html;
@@ -1412,6 +1491,58 @@
                 }
             }, 0);
         }
+        
+        // Updated Handler to accept element directly
+        window.handleTabClick = function(id, btnElement) {
+            // Close any open coach mark first
+            closeCoachMark();
+
+            if (id === 0) {
+                switchMainList(0);
+                return;
+            }
+            
+            const count = getListCount(id);
+            if (count === 0) {
+                // Show Coach Mark Popup relative to clicked element
+                showCoachMark(btnElement);
+            } else {
+                switchMainList(id);
+            }
+        };
+        
+        window.showCoachMark = function(targetEl) {
+            if (!targetEl) return;
+            const rect = targetEl.getBoundingClientRect();
+            
+            // Positioning Logic
+            const top = rect.bottom + 8; // 8px spacing below tab
+            const left = rect.left + (rect.width / 2); // Center horizontally relative to tab
+            
+            coachMarkPopup.style.top = `${top}px`;
+            coachMarkPopup.style.left = `${left}px`;
+            coachMarkPopup.style.transform = `translateX(-50%) translateY(5px)`;
+            
+            // Trigger animation
+            requestAnimationFrame(() => {
+                coachMarkPopup.classList.add('visible');
+                coachMarkPopup.style.transform = `translateX(-50%) translateY(0)`;
+            });
+            
+            // Auto hide after 3 seconds
+            clearTimeout(coachMarkTimeout);
+            coachMarkTimeout = setTimeout(closeCoachMark, 3000);
+        };
+        
+        window.closeCoachMark = function() {
+            coachMarkPopup.classList.remove('visible');
+            clearTimeout(coachMarkTimeout);
+        };
+        
+        window.goToCreateListFromPopup = function() {
+            closeCoachMark();
+            openCreateListView();
+        };
 
         window.switchMainList = function(id) { 
             appState.currentMyList = id; 
@@ -1472,6 +1603,8 @@
             } else {
                 filtered = list.filter(p => (p.myList||[]).includes(appState.currentMyList));
                 if (filtered.length === 0) {
+                     // Normally this shouldn't be reached via tab click due to popup restriction
+                     // But good to keep as fallback
                      document.getElementById('product-list').innerHTML = `<div class="p-8 text-center text-gray-400 text-sm">해당 리스트에 담긴 상품이 없습니다.</div>`;
                 } else {
                     document.getElementById('product-list').innerHTML = renderItemsHTML(filtered);
