@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>오더즈 - 식자재 주문의 새로운 기준</title> <!-- 타이틀 변경 -->
+    <title>오더즈 - 식자재 주문의 새로운 기준</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
@@ -171,9 +171,9 @@
                     </button>
                 </div>
 
-                <!-- 일반 회원 로그인 링크 -->
+                <!-- 일반 회원 로그인 링크 (색상 변경: 회색 -> 파란색) -->
                 <div class="mt-6 text-center" id="loginLinkArea">
-                    <button type="button" onclick="showLoginForm()" class="text-xs text-gray-400 underline decoration-gray-300 font-normal hover:text-gray-600">
+                    <button type="button" onclick="showLoginForm()" class="text-xs text-blue-500 underline decoration-blue-300 font-normal hover:text-blue-700">
                         일반회원 로그인 / 카카오로 연결하기
                     </button>
                 </div>
@@ -190,9 +190,9 @@
             <!-- ================= STEP 2: 정보 추가 입력 ================= -->
             <div id="step2_section" class="hidden">
                 <div class="mb-8 text-center">
-                    <h2 class="text-xl font-bold text-gray-800 mb-2">사업자 정보 확인</h2>
-                    <p class="text-sm font-medium text-gray-500 break-keep">
-                        정확한 매칭을 위해 가게 정보를 입력해주세요.
+                    <h2 class="text-xl font-bold text-gray-800 mb-2">주소 기반 상품 매칭</h2>
+                    <p class="text-sm font-medium text-[#14682A] break-keep">
+                        사장님! 우리동네 특가 상품을 지금 확인해보세요.
                     </p>
                 </div>
 
@@ -348,10 +348,10 @@
     </div>
 
     <script>
-        // 시뮬레이션 설정값 (기본값 변경)
+        // 시뮬레이션 설정값 (기본값)
         let simConfig = {
             userType: 'NEW', // NEW | EXISTING
-            flowType: 'ORGANIC' // [변경] 기본값을 MARKETING -> ORGANIC(일반 유입)으로 변경하여 슬로건 노출
+            flowType: 'ORGANIC' // MARKETING | ORGANIC
         };
 
         window.addEventListener('DOMContentLoaded', () => {
@@ -360,18 +360,18 @@
         });
 
         function initPage() {
-            // 1. 유입 경로에 따른 UI 세팅
+            // [변경] 초기 화면 텍스트 통일 (브랜드 슬로건)
+            document.querySelector('#intro-text h2').innerText = "오더즈가 기억합니다";
+            document.querySelector('#intro-text p').innerText = "내 방식대로, 쓸수록 손에 익는 플랫폼";
+
+            // 1. 유입 경로에 따른 내부 설정 (텍스트는 위에서 통일함)
             if (simConfig.flowType === 'MARKETING') {
                 document.getElementById('yt_code').value = 'TEST_CODE';
-                // 마케팅 유입 (특정 혜택 강조)
-                document.querySelector('#intro-text h2').innerText = "우리 가게 식자재, 더 싸고 편리하게";
-                document.querySelector('#intro-text p').innerHTML = "사장님 지역의 특가 상품을<br>지금 바로 확인해보세요.";
+                // 마케팅 유입일 때만 진행 단계 표시 (가입 유도 흐름)
                 document.getElementById('step-indicator').classList.remove('hidden');
             } else {
-                // [기본] 일반/자연 유입 (브랜드 슬로건)
+                // 일반 유입
                 document.getElementById('yt_code').value = '';
-                document.querySelector('#intro-text h2').innerText = "오더즈가 기억합니다";
-                document.querySelector('#intro-text p').innerText = "내 방식대로, 쓸수록 손에 익는 플랫폼";
                 document.getElementById('step-indicator').classList.add('hidden');
             }
         }
@@ -404,29 +404,26 @@
         function applySimSettings() {
             closeSimSettings();
             
-            // [Fix] 화면 전체 리셋 (Step 1으로 이동)
+            // [Fix] 화면 리셋
             document.getElementById('step1_section').classList.remove('hidden');
             document.getElementById('step1_section').classList.add('fade-in');
             document.getElementById('step2_section').classList.add('hidden');
             document.getElementById('step2_section').classList.remove('fade-in');
 
-            // 인디케이터 리셋
             const dot2 = document.getElementById('dot2');
             if(dot2) dot2.classList.remove('active');
 
-            initPage(); // 화면 갱신
-            resetToMain(); // 폼 초기화
+            initPage();
+            resetToMain();
             
             alert(`[설정 완료]\n회원: ${simConfig.userType}\n유입: ${simConfig.flowType}\n\n초기 화면으로 이동합니다.`);
         }
 
         // --- Auth Logic ---
         function processKakaoGateway() {
-            // [수정] 기존 회원이면 싱크 창 없이 바로 로그인 처리
             if (simConfig.userType === 'EXISTING') {
                 completeLogin('EXISTING');
             } else {
-                // 신규 회원이면 싱크(가입 동의) 창 띄우기
                 document.getElementById('kakao-sync-modal').classList.add('show');
             }
         }
