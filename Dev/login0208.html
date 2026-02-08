@@ -18,7 +18,14 @@
             --box-bg: #f8fafc; 
             --required-color: #f472b6;
         }
-        .check-container { max-width: 480px; margin: 0 auto; background-color: #ffffff; min-height: 100vh; padding: 40px 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); position: relative; }
+        /* [Layout] Flex Column 적용하여 수직 리듬 제어 */
+        .check-container { 
+            max-width: 480px; margin: 0 auto; background-color: #ffffff; 
+            min-height: 100vh; 
+            display: flex; flex-direction: column;
+            padding: 0 24px; /* 상하 패딩은 개별 요소에서 제어 */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); position: relative; 
+        }
         
         /* Checkbox & Inputs */
         .checkbox-wrapper input:checked + div { background-color: var(--brand-primary); border-color: var(--brand-primary); }
@@ -33,7 +40,7 @@
         .btn-brand:hover { background-color: var(--brand-hover); }
         
         /* Animations */
-        .fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        .fade-in { animation: fadeIn 0.5s ease-out forwards; } /* 시간을 조금 늘려 부드럽게 */
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .hidden { display: none; }
         
@@ -70,8 +77,9 @@
 
     <div class="check-container relative">
         
-        <!-- Header with Sim Settings Button -->
-        <div class="flex justify-between items-center mb-8 pt-2">
+        <!-- Header: [상단 여백] + Logo -->
+        <!-- pt-12 (48px) 적용하여 시원한 상단 공간 확보 -->
+        <div class="flex justify-between items-center mb-2 pt-12">
             <div class="w-8"></div> <!-- Spacer -->
             <h1 class="text-3xl font-black text-[#14682A] tracking-tight cursor-pointer" onclick="location.reload()">ORDERZ</h1>
             <button onclick="openSimSettings()" class="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600">
@@ -84,24 +92,26 @@
             <div id="dot2" class="dot"></div>
         </div>
 
-        <form id="joinForm" onsubmit="return false;">
+        <form id="joinForm" onsubmit="return false;" class="flex-1 flex flex-col">
             <input type="hidden" name="yt_code" id="yt_code"> 
             <input type="hidden" name="join_source" id="join_source">
             <input type="hidden" name="next_url" id="next_url">
             <input type="hidden" name="join_type" id="join_type" value="general">
 
             <!-- ================= 통합 게이트웨이 ================= -->
-            <div id="step1_section" class="fade-in">
+            <div id="step1_section" class="fade-in flex flex-col h-full">
                 
-                <div class="mb-8 text-center" id="intro-text">
+                <!-- [인지 영역] 슬로건 -->
+                <!-- mb-16 (64px) 적용하여 버튼과 확실한 거리두기 -->
+                <div class="text-center mb-16 mt-4" id="intro-text">
                     <h2 class="text-xl font-bold text-gray-800 mb-2">오더즈가 기억합니다</h2>
                     <p class="text-sm font-medium text-[#14682A]">
                         내 방식대로, 쓸수록 손에 익는 플랫폼
                     </p>
                 </div>
 
-                <!-- [일반 가입/로그인] 휴대폰 번호 입력 -->
-                <div id="generalInputArea" class="hidden fade-in mb-6">
+                <!-- [일반 가입/로그인 폼] -->
+                <div id="generalInputArea" class="hidden fade-in mb-8">
                     <div class="mb-5">
                         <label class="block text-sm font-bold text-gray-700 mb-1.5">
                             휴대폰 번호
@@ -124,45 +134,54 @@
                 </div>
 
                 <!-- [기존 아이디 로그인 폼] -->
-                <div id="loginFormArea" class="hidden fade-in mb-6">
+                <div id="loginFormArea" class="hidden fade-in mb-8">
+                    <div class="text-center mb-6">
+                        <h3 class="text-lg font-bold text-gray-800 mb-1">로그인</h3>
+                    </div>
                     <div class="mb-4">
-                        <label class="block text-sm font-bold text-gray-700 mb-1.5">아이디</label>
-                        <input type="text" name="login_id" id="login_id" 
-                            class="w-full px-4 py-3.5 border border-gray-200 rounded-lg input-box-style input-focus transition-colors text-sm"
+                        <label class="block text-sm font-bold text-gray-700 mb-1.5">아이디 <span class="text-pink-400 text-xs font-normal ml-0.5">(필수)</span></label>
+                        <input type="text" name="login_id" id="login_id" value="test_owner"
+                            class="w-full px-4 py-3.5 border border-gray-200 rounded-lg input-box-style input-focus transition-colors text-sm placeholder-required"
                             placeholder="아이디를 입력하세요">
                     </div>
-                    <div class="mb-2">
-                        <label class="block text-sm font-bold text-gray-700 mb-1.5">비밀번호</label>
-                        <input type="password" name="login_pw" id="login_pw" 
+                    <div class="mb-6">
+                        <label class="block text-sm font-bold text-gray-700 mb-1.5">비밀번호 <span class="text-pink-400 text-xs font-normal ml-0.5">(필수)</span></label>
+                        <input type="password" name="login_pw" id="login_pw" value="1234"
                             class="w-full px-4 py-3.5 border border-gray-200 rounded-lg input-box-style input-focus transition-colors text-sm"
                             placeholder="비밀번호를 입력하세요">
                     </div>
-                    <div class="flex justify-end mb-4">
-                        <a href="#" class="text-xs text-gray-400 hover:text-gray-600">아이디/비밀번호 찾기</a>
-                    </div>
-                    <div class="bg-blue-50 border border-blue-100 rounded-lg p-3 mb-4 flex items-start">
-                        <i class="fas fa-info-circle text-blue-500 mt-0.5 mr-2 text-sm"></i>
-                        <p class="text-xs text-gray-600 break-keep">
-                            로그인 후 <span class="font-bold text-blue-600">카카오 계정과 바로 연결</span>됩니다. 다음부터는 ID 입력 없이 1초 만에 접속할 수 있습니다.
-                        </p>
-                    </div>
-                    <button type="button" onclick="processIdLogin()"
+                    
+                    <p class="text-[11px] text-gray-500 text-center mb-2.5 break-keep leading-snug">
+                        <i class="fas fa-lightbulb text-yellow-500 mr-1"></i>카카오 계정을 연결하면, 다음부터는<br>
+                        <strong>아이디 입력 없이 간편하게 접속</strong>할 수 있습니다.
+                    </p>
+
+                    <button type="button" onclick="processConnectLogin()"
                         class="w-full py-4 btn-brand rounded-lg font-bold text-[15px] shadow-md transition hover:bg-[#0f5220]">
-                        로그인
+                        로그인 (카카오 연결)
                     </button>
+                    
+                    <div class="mt-4 text-center">
+                        <button onclick="processJustLogin()" class="text-xs text-gray-400 underline hover:text-gray-600">
+                            연결 없이 로그인
+                        </button>
+                    </div>
                 </div>
 
-                <!-- 메인 버튼 그룹 -->
+                <!-- [행동 영역] 메인 버튼 그룹 -->
+                <!-- 상단 컨텐츠와 간격을 두어 독립성 확보 -->
                 <div class="flex flex-col gap-3" id="mainBtnGroup">
+                    <!-- 1. 카카오 (Main) -->
                     <button type="button" id="btnKakao" onclick="processKakaoGateway()"
                         class="w-full py-4 rounded-lg font-bold text-[15px] btn-kakao flex items-center justify-center gap-2 shadow-sm hover:opacity-90 transition">
                         <i class="fas fa-comment text-lg"></i>
-                        카카오로 계속하기
+                        시작하기
                     </button>
 
+                    <!-- 2. 일반/다른 방법 (Secondary) - 간격 확보 -->
                     <button type="button" id="btnGeneral" onclick="showGeneralInput()"
-                        class="w-full py-3 rounded-lg font-medium text-sm text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition underline decoration-1 underline-offset-4">
-                        다른 방법으로 계속하기
+                        class="w-full py-3 rounded-lg font-medium text-sm text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition underline decoration-1 underline-offset-4 mt-2">
+                        (비회원) 다른 방법으로 계속하기
                     </button>
                     
                     <button type="button" id="btnStep1Next" onclick="processGeneralGateway()"
@@ -171,17 +190,18 @@
                     </button>
                 </div>
 
-                <!-- 일반 회원 로그인 링크 (색상 변경: 회색 -> 파란색) -->
-                <div class="mt-6 text-center" id="loginLinkArea">
-                    <button type="button" onclick="showLoginForm()" class="text-xs text-blue-500 underline decoration-blue-300 font-normal hover:text-blue-700">
-                        일반회원 로그인 / 카카오로 연결하기
+                <!-- [선택 영역] 하단 링크 -->
+                <!-- mt-8 (32px) 적용하여 메인 행동과 분리 -->
+                <div class="mt-8 mb-8 text-center" id="loginLinkArea">
+                    <button type="button" onclick="showLoginForm()" class="text-xs text-gray-400 font-normal hover:text-gray-600 transition-colors">
+                        <span class="border-b border-gray-300 pb-0.5">아이디로 로그인</span>
                     </button>
                 </div>
                 
                 <!-- 로그인폼에서 돌아가기 링크 -->
-                <div class="mt-6 text-center hidden" id="backLinkArea">
-                    <button type="button" onclick="resetToMain()" class="text-xs text-gray-500 underline font-medium hover:text-[#14682A]">
-                        초기 화면으로 돌아가기
+                <div class="mt-8 mb-8 text-center hidden" id="backLinkArea">
+                    <button type="button" onclick="resetToMain()" class="text-xs text-gray-400 font-normal hover:text-gray-600 transition-colors">
+                        <span class="border-b border-gray-300 pb-0.5">초기 화면으로 돌아가기</span>
                     </button>
                 </div>
 
@@ -189,10 +209,10 @@
 
             <!-- ================= STEP 2: 정보 추가 입력 ================= -->
             <div id="step2_section" class="hidden">
-                <div class="mb-8 text-center">
+                <div class="mb-10 mt-6 text-center">
                     <h2 class="text-xl font-bold text-gray-800 mb-2">주소 기반 상품 매칭</h2>
                     <p class="text-sm font-medium text-[#14682A] break-keep">
-                        사장님! 우리동네 특가 상품을 지금 확인해보세요.
+                        사장님 지역의 특가 상품을 지금 확인해보세요.
                     </p>
                 </div>
 
@@ -229,6 +249,13 @@
                     class="w-full py-4 btn-brand rounded-lg font-bold text-[15px] shadow-md transition hover:bg-[#0f5220]">
                     완료
                 </button>
+                
+                <!-- Step 2에서 돌아가기 -->
+                <div class="mt-6 text-center">
+                    <button type="button" onclick="resetToMain()" class="text-xs text-gray-400 font-normal hover:text-gray-600 transition-colors">
+                        <span class="border-b border-gray-300 pb-0.5">이전으로</span>
+                    </button>
+                </div>
             </div>
         </form>
     </div>
@@ -319,6 +346,15 @@
                         다음부터는 1초 만에 접속됩니다.
                     </p>
                 </div>
+                
+                <!-- 퇴사 관련 보안 경고 -->
+                <div class="mt-3 bg-red-50 border border-red-100 rounded p-3 text-left">
+                    <p class="text-[11px] text-red-500 leading-snug break-keep">
+                        <i class="fas fa-exclamation-triangle mr-1"></i>
+                        <strong>보안 주의:</strong> 연결된 계정 해제는 현재 <strong>고객센터</strong>를 통해서만 가능합니다.<br>
+                        <span class="underline decoration-red-300">직원 퇴사 시 정보 보호를 위해 반드시 연결 해제를 요청해주세요.</span>
+                    </p>
+                </div>
             </div>
             <div class="p-4 bg-gray-50 border-t border-gray-100 flex flex-col gap-2">
                 <button onclick="confirmKakaoConnect()" class="w-full bg-[#FEE500] text-[#191919] py-3 rounded-lg font-bold text-sm hover:bg-[#fdd835] transition flex items-center justify-center shadow-sm">
@@ -331,126 +367,95 @@
         </div>
     </div>
 
-    <!-- 성공 팝업 -->
+    <!-- 성공 팝업 (버튼 추가됨) -->
     <div id="toast-overlay">
         <div class="bg-white rounded-xl p-6 w-[320px] text-center shadow-2xl transform scale-100 transition-transform">
             <div class="w-12 h-12 bg-green-50 text-[#14682A] rounded-full flex items-center justify-center mx-auto mb-4 text-xl">
                 <i class="fas fa-check"></i>
             </div>
             <h3 class="text-lg font-bold text-gray-800 mb-2" id="toast-title">로그인 완료</h3>
-            <p class="text-sm text-gray-600 mb-4" id="toast-desc">
-                <span class="text-[#14682A] font-bold">페이지로 이동합니다.</span>
-            </p>
-            <div class="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+            <div class="text-sm text-gray-600 mb-4 leading-relaxed break-keep" id="toast-desc"></div>
+            
+            <div id="toast-loading" class="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden mb-2">
                 <div class="bg-[#14682A] h-full w-0 transition-all duration-[1500ms] ease-out" id="progress-bar"></div>
+            </div>
+
+            <div id="toast-btn-area" class="hidden mt-4">
+                 <button onclick="goToNextPage()" class="w-full bg-[#14682A] text-white py-3 rounded-lg font-bold text-sm hover:bg-[#0f5220] transition shadow-md">
+                    확인 (이동하기)
+                </button>
             </div>
         </div>
     </div>
 
     <script>
-        // 시뮬레이션 설정값 (기본값)
-        let simConfig = {
-            userType: 'NEW', // NEW | EXISTING
-            flowType: 'ORGANIC' // MARKETING | ORGANIC
-        };
+        let simConfig = { userType: 'NEW', flowType: 'ORGANIC' };
 
-        window.addEventListener('DOMContentLoaded', () => {
-            // URL 파라미터가 없으면 시뮬레이션 기본 설정으로 초기화
-            initPage();
-        });
+        window.addEventListener('DOMContentLoaded', () => { initPage(); });
 
         function initPage() {
-            // [변경] 초기 화면 텍스트 통일 (브랜드 슬로건)
-            document.querySelector('#intro-text h2').innerText = "오더즈가 기억합니다";
-            document.querySelector('#intro-text p').innerText = "내 방식대로, 쓸수록 손에 익는 플랫폼";
-
-            // 1. 유입 경로에 따른 내부 설정 (텍스트는 위에서 통일함)
             if (simConfig.flowType === 'MARKETING') {
                 document.getElementById('yt_code').value = 'TEST_CODE';
-                // 마케팅 유입일 때만 진행 단계 표시 (가입 유도 흐름)
+                document.querySelector('#intro-text h2').innerText = "우리 가게 식자재, 더 싸고 편리하게";
+                document.querySelector('#intro-text p').innerHTML = "사장님! 우리동네 특가 상품을<br>지금 확인해보세요.";
                 document.getElementById('step-indicator').classList.remove('hidden');
+                // 마케팅 시 버튼 문구 (선택적)
+                // document.getElementById('btnKakao').innerHTML = '<i class="fas fa-comment text-lg"></i> 카카오로 계속하기';
             } else {
-                // 일반 유입
                 document.getElementById('yt_code').value = '';
+                document.querySelector('#intro-text h2').innerText = "오더즈가 기억합니다";
+                document.querySelector('#intro-text p').innerText = "내 방식대로, 쓸수록 손에 익는 플랫폼";
                 document.getElementById('step-indicator').classList.add('hidden');
+                // 일반 시 버튼 문구
+                // document.getElementById('btnKakao').innerHTML = '<i class="fas fa-comment text-lg"></i> 시작하기';
             }
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const nextUrl = urlParams.get('next_url') || 'https://orderz.kr/shop/';
+            document.getElementById('next_url').value = nextUrl;
         }
 
-        // --- Simulation Settings Logic ---
-        function openSimSettings() {
-            updateSimUI('user', simConfig.userType);
-            updateSimUI('flow', simConfig.flowType);
-            document.getElementById('sim-settings-modal').classList.add('show');
-        }
+        // --- Settings ---
+        function openSimSettings() { updateSimUI('user', simConfig.userType); updateSimUI('flow', simConfig.flowType); document.getElementById('sim-settings-modal').classList.add('show'); }
         function closeSimSettings() { document.getElementById('sim-settings-modal').classList.remove('show'); }
-        
-        function setSimState(group, value) {
-            if(group === 'user') simConfig.userType = value;
-            if(group === 'flow') simConfig.flowType = value;
-            updateSimUI(group, value);
-        }
-
+        function setSimState(group, value) { if(group==='user') simConfig.userType=value; if(group==='flow') simConfig.flowType=value; updateSimUI(group, value); }
         function updateSimUI(group, value) {
-            const opts = group === 'user' ? ['new', 'exist'] : ['mkt', 'org'];
-            const valMap = group === 'user' ? {new:'NEW', exist:'EXISTING'} : {mkt:'MARKETING', org:'ORGANIC'};
-            
-            opts.forEach(opt => {
-                const el = document.getElementById(`opt-${group}-${opt}`);
-                if (valMap[opt] === value) el.classList.add('selected');
-                else el.classList.remove('selected');
+            const opts = group==='user'?['new','exist']:['mkt','org'];
+            const valMap = group==='user'?{new:'NEW',exist:'EXISTING'}:{mkt:'MARKETING',org:'ORGANIC'};
+            opts.forEach(opt=>{
+                const el=document.getElementById(`opt-${group}-${opt}`);
+                if(valMap[opt]===value) el.classList.add('selected'); else el.classList.remove('selected');
             });
         }
-
         function applySimSettings() {
             closeSimSettings();
-            
-            // [Fix] 화면 리셋
             document.getElementById('step1_section').classList.remove('hidden');
             document.getElementById('step1_section').classList.add('fade-in');
             document.getElementById('step2_section').classList.add('hidden');
             document.getElementById('step2_section').classList.remove('fade-in');
-
-            const dot2 = document.getElementById('dot2');
-            if(dot2) dot2.classList.remove('active');
-
-            initPage();
-            resetToMain();
-            
+            const dot2 = document.getElementById('dot2'); if(dot2) dot2.classList.remove('active');
+            initPage(); resetToMain();
             alert(`[설정 완료]\n회원: ${simConfig.userType}\n유입: ${simConfig.flowType}\n\n초기 화면으로 이동합니다.`);
         }
 
-        // --- Auth Logic ---
+        // --- Auth ---
         function processKakaoGateway() {
-            if (simConfig.userType === 'EXISTING') {
-                completeLogin('EXISTING');
-            } else {
-                document.getElementById('kakao-sync-modal').classList.add('show');
-            }
+            if (simConfig.userType === 'EXISTING') { completeLogin('EXISTING'); } 
+            else { document.getElementById('kakao-sync-modal').classList.add('show'); }
         }
         function closeKakaoSync() { document.getElementById('kakao-sync-modal').classList.remove('show'); }
         function confirmKakaoSync() {
             closeKakaoSync();
-            
-            if (simConfig.userType === 'EXISTING') {
-                completeLogin('EXISTING');
-            } else {
-                document.getElementById('join_type').value = 'kakao';
-                goToStep2();
-            }
+            if (simConfig.userType === 'EXISTING') { completeLogin('EXISTING'); } 
+            else { document.getElementById('join_type').value = 'kakao'; goToStep2(); }
         }
-
         function processGeneralGateway() {
             const hp = document.getElementById('mb_hp');
             if(!hp.value || hp.value.length < 10) { alert("휴대폰 번호를 올바르게 입력해주세요."); hp.focus(); return; }
-            
-            if (simConfig.userType === 'EXISTING') {
-                completeLogin('EXISTING');
-            } else {
-                goToStep2();
-            }
+            if (simConfig.userType === 'EXISTING') { completeLogin('EXISTING'); } else { goToStep2(); }
         }
 
-        // --- Common Logic ---
+        // --- Navigation ---
         function showLoginForm() {
             document.getElementById('mainBtnGroup').classList.add('hidden');
             document.getElementById('generalInputArea').classList.add('hidden');
@@ -476,32 +481,30 @@
             document.getElementById('backLinkArea').classList.add('hidden');
         }
 
-        function processIdLogin() {
+        // --- ID Login ---
+        function processConnectLogin() {
             const id = document.getElementById('login_id').value;
             const pw = document.getElementById('login_pw').value;
             if(!id || !pw) { alert('아이디와 비밀번호를 입력해주세요.'); return; }
-            document.getElementById('kakao-connect-modal').classList.add('show');
-        }
-        function confirmKakaoConnect() {
-            document.getElementById('kakao-connect-modal').classList.remove('show');
             completeLogin('LINKED');
         }
-        function skipKakaoConnect() {
-            document.getElementById('kakao-connect-modal').classList.remove('show');
-            completeLogin('EXISTING');
+        function processJustLogin() {
+            const id = document.getElementById('login_id').value;
+            const pw = document.getElementById('login_pw').value;
+            if(!id || !pw) { alert('아이디와 비밀번호를 입력해주세요.'); return; }
+            completeLogin('JUST_LOGIN');
         }
+        function processIdLogin() { processConnectLogin(); } // Fallback
 
         function goToStep2() {
             document.getElementById('step1_section').classList.add('hidden');
             const step2 = document.getElementById('step2_section');
             step2.classList.remove('hidden');
             step2.classList.add('fade-in');
-            const dot2 = document.getElementById('dot2');
-            if(dot2) dot2.classList.add('active');
+            const dot2 = document.getElementById('dot2'); if(dot2) dot2.classList.add('active');
             setTimeout(() => { 
                 const companyInput = document.getElementById('mb_company');
-                companyInput.focus(); 
-                companyInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                companyInput.focus(); companyInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }, 300);
         }
 
@@ -518,10 +521,26 @@
             const bar = document.getElementById('progress-bar');
             const title = document.getElementById('toast-title');
             const desc = document.getElementById('toast-desc');
+            const loadingArea = document.getElementById('toast-loading');
+            const btnArea = document.getElementById('toast-btn-area');
+
+            // Reset
+            loadingArea.classList.remove('hidden');
+            btnArea.classList.add('hidden');
+            bar.style.width = '0%';
 
             if (type === 'LINKED') {
-                title.innerText = "연동 및 로그인 완료";
-                desc.innerHTML = `이제 카카오로 1초 만에 로그인하세요.<br><span class="text-[#14682A] font-bold">페이지로 이동합니다.</span>`;
+                title.innerText = "카카오 로그인 연결 성공!";
+                desc.innerHTML = `
+                    이제 카카오 계정으로<br>더 빠르게 로그인할 수 있습니다.<br><br>
+                    <div class="text-[11px] bg-gray-50 p-2 rounded text-left border border-gray-100 space-y-1">
+                        <p class="text-gray-500">📢 연결된 계정 관리는 <strong>마이페이지</strong>에서 확인 가능합니다.</p>
+                        <p class="text-gray-500">🔒 보안상 계정 해제가 필요할 경우 <strong>고객센터</strong>로 문의해주세요.</p>
+                    </div>
+                `;
+            } else if (type === 'JUST_LOGIN') {
+                 title.innerText = "로그인 성공";
+                 desc.innerHTML = `반갑습니다 사장님!<br>페이지로 이동합니다.`;
             } else if (type === 'EXISTING') {
                 title.innerText = "확인되었습니다.";
                 desc.innerHTML = `반갑습니다 사장님!<br><span class="text-[#14682A] font-bold">요청하신 페이지로 이동합니다.</span>`;
@@ -532,13 +551,16 @@
             
             toast.classList.add('show');
             setTimeout(() => { bar.style.width = "100%"; }, 100);
-            setTimeout(() => { window.location.reload(); }, 1600);
+            setTimeout(() => { loadingArea.classList.add('hidden'); btnArea.classList.remove('hidden'); }, 1600);
         }
 
-        function handleCompanyKeydown(event) {
-            if (event.key === 'Enter') { event.preventDefault(); const addrInput = document.getElementById('mb_addr1'); addrInput.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+        function goToNextPage() {
+            const nextUrl = document.getElementById('next_url').value;
+            alert(`[시스템 이동] ${nextUrl} 로 이동합니다.`);
+            window.location.reload(); 
         }
 
+        function handleCompanyKeydown(event) { if (event.key === 'Enter') { event.preventDefault(); const addrInput = document.getElementById('mb_addr1'); addrInput.scrollIntoView({ behavior: 'smooth', block: 'center' }); } }
         function openDaumPostcode() {
             new daum.Postcode({
                 oncomplete: function(data) {
@@ -554,7 +576,6 @@
                 }
             }).open();
         }
-
         function autoHyphen(target) { target.value = target.value.replace(/[^0-9]/g, '').replace(/^(\d{0,3})(\d{0,4})(\d{0,4})$/g, "$1-$2-$3").replace(/(\-{1,2})$/g, ""); }
     </script>
 </body>
