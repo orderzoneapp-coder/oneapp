@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>오더즈 - 통합 로그인/가입 시뮬레이션</title>
+    <title>오더즈 - 식자재 주문의 새로운 기준</title> <!-- 타이틀 변경 -->
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
@@ -348,10 +348,10 @@
     </div>
 
     <script>
-        // 시뮬레이션 설정값 (기본값)
+        // 시뮬레이션 설정값 (기본값 변경)
         let simConfig = {
             userType: 'NEW', // NEW | EXISTING
-            flowType: 'MARKETING' // MARKETING | ORGANIC
+            flowType: 'ORGANIC' // [변경] 기본값을 MARKETING -> ORGANIC(일반 유입)으로 변경하여 슬로건 노출
         };
 
         window.addEventListener('DOMContentLoaded', () => {
@@ -363,10 +363,12 @@
             // 1. 유입 경로에 따른 UI 세팅
             if (simConfig.flowType === 'MARKETING') {
                 document.getElementById('yt_code').value = 'TEST_CODE';
-                document.querySelector('#intro-text h2').innerText = "우리 지역 직배송 상품 보기";
-                document.querySelector('#intro-text p').innerHTML = "가장 신선한 식자재 혜택을<br>지금 바로 확인해보세요.";
+                // 마케팅 유입 (특정 혜택 강조)
+                document.querySelector('#intro-text h2').innerText = "우리 가게 식자재, 더 싸고 편리하게";
+                document.querySelector('#intro-text p').innerHTML = "사장님 지역의 특가 상품을<br>지금 바로 확인해보세요.";
                 document.getElementById('step-indicator').classList.remove('hidden');
             } else {
+                // [기본] 일반/자연 유입 (브랜드 슬로건)
                 document.getElementById('yt_code').value = '';
                 document.querySelector('#intro-text h2').innerText = "오더즈가 기억합니다";
                 document.querySelector('#intro-text p').innerText = "내 방식대로, 쓸수록 손에 익는 플랫폼";
