@@ -274,6 +274,9 @@
         .fallback-text {
             font-size: 15px; color: #555; margin-bottom: 12px; font-weight: 600;
         }
+        .fallback-subtext {
+            font-size: 12px; color: #888; text-align: center; line-height: 1.4;
+        }
         .fallback-btn {
             width: 100%; height: 48px;
             background: #222; 
@@ -931,7 +934,12 @@
         function closeMoveMenu() { document.getElementById('lemOverlay').classList.remove('show'); document.getElementById('lemMoveMenu').classList.remove('show'); }
         function confirmMove(targetListId) { let movedCount = 0; lemCheckedIds.forEach(id => { const item = rawDB.find(p => p.id === id); if (item) { if (!item.lists) item.lists = []; if (lemCurrentTab !== 'all' && item.lists.includes(lemCurrentTab)) item.lists = item.lists.filter(l => l !== lemCurrentTab); if (!item.lists.includes(targetListId)) item.lists.push(targetListId); movedCount++; } }); lemCheckedIds.clear(); closeMoveMenu(); renderEditorItems(); updateLemUI(); showToast(`${movedCount}개 상품을 ${userLists.find(l=>l.id===targetListId).name}로 이동했습니다.`); }
 
-        function setAppMode(mode) { currentAppMode = mode; localStorage.setItem('nh_sim_mode', currentAppMode); updateModeUI(); }
+        function setAppMode(mode) {
+            if (currentAppMode === 'mall' && mode === 'order') applyMallSnapshotToOrder();
+            currentAppMode = mode;
+            localStorage.setItem('nh_sim_mode', currentAppMode);
+            updateModeUI();
+        }
 
         function updateModeUI() {
             const orderView = document.getElementById('orderModeElements'); const mallView = document.getElementById('mallModeElements');
@@ -952,13 +960,20 @@
                 mainBtn.className = 'center-main-btn mall-mode-btn' + (selectedIds.size > 0 ? ' has-selection' : '');
                 mainBtn.innerHTML = selectedIds.size > 0 ? `<div style="display:flex; align-items:center; justify-content:center; gap:6px;"><div style="background:#fff; color:var(--primary); width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; box-shadow:0 1px 2px rgba(0,0,0,0.1);">${selectedIds.size}</div><span class="btn-action-text" style="font-size:15px; color:#fff; font-weight:700;">상품 담기</span></div>` : `<span class="btn-action-text" style="color:#fff; font-size:15px; font-weight:600;">주문하러가기</span>`;
             } else {
-                let totalQty = 0; if (orderQuantities[currentTab]) Object.values(orderQuantities[currentTab]).forEach(q => totalQty += q);
+                let totalQty = 0;
+                Object.values(orderQuantities).forEach(tabQtys => Object.values(tabQtys || {}).forEach(q => totalQty += q));
                 mainBtn.className = 'center-main-btn' + (totalQty > 0 ? ' active' : '');
                 mainBtn.innerHTML = totalQty > 0 ? `<div style="display:flex; align-items:center; justify-content:center; gap:6px;"><div style="background:#fff; color:var(--primary); width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; box-shadow:0 1px 2px rgba(0,0,0,0.1);">${totalQty}</div><span class="btn-action-text" style="font-size:16px; color:#fff; font-weight:700;">담은 상품 확인하기</span></div>` : `<span class="btn-brand-text">ORDERZ</span><span class="btn-action-text" id="orderBtnText">상품을 담아주세요</span>`;
             }
         }
 
-        function handleMainBtnClick() { if (currentAppMode === 'mall') { if(selectedIds.size > 0) { selectedIds.forEach(id => { const item = rawDB.find(p => p.id === id); if(item) item.isWished = true; }); showToast(`${selectedIds.size}개 상품이 찜한상품에 담겼습니다.`); selectedIds.clear(); currentAppMode = 'order'; updateModeUI(); } else { currentAppMode = 'order'; updateModeUI(); } } else showToast('주문서 이동'); }
+        function handleMainBtnClick() {
+            if (currentAppMode === 'mall') {
+                if(selectedIds.size > 0) applyMallSnapshotToOrder();
+                currentAppMode = 'order';
+                updateModeUI();
+            } else showToast('주문서 이동');
+        }
         function handleMasterTabClick() { switchTab('all'); }
         function switchTab(tabId) { currentTab = tabId; renderTabs(); document.getElementById('orderScrollContainer').classList.toggle('master-view', tabId === 'all'); renderMainList(); updateBottomButton(); }
         function getItemsForTab(tabId) { if (tabId === 'special') return rawDB.filter(p => p.theme === 'special'); if (tabId === 'all') return rawDB.filter(p => p.isWished === true || (p.lists && p.lists.length > 0)); return rawDB.filter(p => p.lists && p.lists.includes(tabId)); }
@@ -983,12 +998,10 @@
             else renderItems(list, container);
             if (isOrderSearchActive && query) {
                 const footer = document.createElement('div'); footer.className = 'search-fallback-area';
-                footer.innerHTML = `<div class="fallback-text">찾으시는 상품이 없으신가요?</div><button class="fallback-btn" onclick="searchInMall('${query}')"><svg class="icon" style="width:16px;height:16px;" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>전체 상품 목록에서 검색하기</button>`;
+                footer.innerHTML = `<div class="fallback-text">현재 주문서 내 검색 결과입니다.</div><div class="fallback-subtext">Mall에서 상품을 탐색한 뒤 주문서에 담아주세요.</div>`;
                 container.appendChild(footer);
             }
         }
-
-        function searchInMall(query) { currentAppMode = 'mall'; localStorage.setItem('nh_sim_mode', currentAppMode); updateModeUI(); toggleMallSearch(true); document.getElementById('mallSearchInput').value = query; renderMallList(); }
 
         function renderItems(items, container) {
             let lastGroup = null; const showHeader = (currentTab === 'all' && masterSortMode === 'category') || currentTab === 'special'; const groupKey = currentTab === 'special' ? 'theme' : 'category'; const isMallMode = currentAppMode === 'mall';
@@ -997,7 +1010,7 @@
                     const h = document.createElement('div'); h.className = currentTab === 'special' ? 'main-section-header special-header' : 'main-section-header'; h.innerText = currentTab === 'special' ? "🔥 사장님 추천" : item[groupKey];
                     container.appendChild(h); lastGroup = item[groupKey];
                 }
-                const currentQty = !isMallMode ? getOrderQty(item.id) : 0; const isSelected = isMallMode ? (selectedIds.has(item.id) || (item.lists && item.lists.length > 0)) : (currentQty > 0);
+                const currentQty = !isMallMode ? getOrderQty(item.id) : 0; const isSelected = isMallMode ? selectedIds.has(item.id) : (currentQty > 0);
                 const div = document.createElement('div'); div.className = `product-item ${isSelected ? 'selected' : ''} ${isMallMode ? 'mall-mode-item' : 'order-mode-item'}`;
                 let badgeHtml = (item.lists && item.lists.length > 0) ? `<div class="list-badges">${item.lists.map(lid => { const listObj = userLists.find(l=>l.id===lid); return `<span class="list-badge">${listObj ? listObj.name.substring(0,2) : lid}</span>`; }).join('')}</div>` : '';
                 let checkboxHtml = isMallMode ? `<div class="prod-chk-area" onclick="toggleSelect(${item.id})"><div class="prod-chk"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg></div></div>` : '';
@@ -1007,7 +1020,22 @@
             });
         }
 
-        function toggleSelect(id) { const item = rawDB.find(p => p.id === id); if (item && item.lists && item.lists.length > 0) { const idx = item.lists.findIndex(l => userLists.some(ul => ul.id === l)); if (idx > -1) { item.lists.splice(idx, 1); showToast('리스트에서 제외되었습니다.'); } } else { if (selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id); } updateModeUI(); if(currentAppMode === 'order') renderMainList(); else renderMallList(); }
+        function toggleSelect(id) {
+            if (selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id);
+            updateModeUI();
+            if(currentAppMode === 'order') renderMainList(); else renderMallList();
+        }
+        function applyMallSnapshotToOrder() {
+            if (selectedIds.size === 0) return;
+            if (!orderQuantities[currentTab]) orderQuantities[currentTab] = {};
+            selectedIds.forEach(id => {
+                const item = rawDB.find(p => p.id === id);
+                if (item) item.isWished = true;
+                orderQuantities[currentTab][id] = Math.max(orderQuantities[currentTab][id] || 0, 1);
+            });
+            showToast(`${selectedIds.size}개 상품이 주문서에 담겼습니다.`);
+            selectedIds.clear();
+        }
         function toggleMallSearch(show) { const row = document.getElementById('mallCategoryRow'); const box = document.getElementById('mallRealSearchBox'); if(show) { row.classList.add('hidden'); box.classList.add('show'); document.getElementById('mallSearchInput').focus(); renderMallList(); } else { row.classList.remove('hidden'); box.classList.remove('show'); renderMallList(); } }
         function filterMallByCategory(cat) { mallCategoryFilter = cat; document.querySelectorAll('.mall-cat-item').forEach(el => el.classList.remove('active')); if(cat) { const targets = document.querySelectorAll('.mall-cat-item'); for(let t of targets) if(t.innerText.includes(cat)) t.classList.add('active'); } switchMallTab('today', false); }
         function switchMallTab(tabName, resetCategory=true) { currentMallTab = tabName; document.querySelectorAll('.mall-sub-tab').forEach(el => el.classList.toggle('active', el.id === `mallTab-${tabName}`)); if(resetCategory) { mallCategoryFilter = null; document.querySelectorAll('.mall-cat-item').forEach(el => el.classList.remove('active')); } renderMallList(); }
