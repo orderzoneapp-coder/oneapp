@@ -8,7 +8,7 @@
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@100;400;600;800&family=Noto+Sans+KR:wght@300;400;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@100;300;400;500;600;700;800;900&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
     <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
 
     <style>
@@ -29,310 +29,324 @@
         .check-container { 
             max-width: 480px; margin: 0 auto; background-color: #ffffff; 
             min-height: 100vh; display: flex; flex-direction: column;
-            position: relative; 
+            padding: 0 24px; position: relative; 
         }
 
+        /* Hero Section */
         .hero-bg {
-            background: linear-gradient(180deg, var(--brand-light) 0%, #ffffff 100%);
+            background: linear-gradient(180deg, rgba(233, 242, 236, 0.6) 0%, rgba(255, 255, 255, 0) 100%);
             padding: 80px 24px 40px 24px;
+            margin: 0 -24px; /* 컨테이너 패딩 무시 */
         }
 
-        .form-content {
-            padding: 0 24px 120px 24px; /* 하단 여백 확대 */
-            flex: 1;
+        /* Input Styles */
+        .input-group {
+            position: relative;
+            width: 100%;
         }
 
         .input-field {
             width: 100%;
-            padding: 16px;
+            padding: 18px 16px; /* 모바일 터치 영역 확보 */
             padding-right: 60px; 
-            background-color: #F1F3F5;
-            border: 2px solid transparent;
-            border-radius: 16px;
-            font-size: 16px;
+            background-color: #F8F9FA;
+            border: 1px solid #E9ECEF;
+            border-radius: 14px;
+            font-size: 16px; /* iOS Zoom 방지 */
             font-weight: 500;
-            transition: all 0.2s ease;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: #333;
         }
+        .input-field::placeholder { color: #ADB5BD; font-weight: 400; }
         .input-field:focus {
             background-color: #ffffff;
             border-color: var(--brand-primary);
-            box-shadow: 0 8px 20px rgba(0, 90, 43, 0.08);
+            box-shadow: 0 4px 20px rgba(0, 90, 43, 0.08);
             outline: none;
         }
+        .input-field:read-only {
+            background-color: #ffffff;
+            cursor: pointer;
+        }
 
+        /* Next Button (Enter Symbol) */
         .input-next-btn {
             position: absolute;
-            right: 10px;
+            right: 8px;
             top: 50%;
             transform: translateY(-50%);
-            width: 36px;
-            height: 36px;
-            background-color: var(--brand-light);
-            color: var(--brand-primary);
-            border-radius: 12px;
+            width: 40px;
+            height: 40px;
+            background-color: var(--brand-primary);
+            color: white;
+            border-radius: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
             opacity: 0;
+            transform: translateY(-50%) scale(0.9);
             transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
             cursor: pointer;
             visibility: hidden;
             font-size: 20px;
             line-height: 1;
-            padding-bottom: 4px;
+            box-shadow: 0 2px 8px rgba(0, 90, 43, 0.2);
         }
         .input-next-btn.visible {
             opacity: 1;
+            transform: translateY(-50%) scale(1);
             visibility: visible;
         }
+        .input-next-btn:active {
+            transform: translateY(-50%) scale(0.92);
+            background-color: var(--brand-hover);
+        }
 
+        /* Buttons */
         .btn-action {
             padding: 18px;
-            border-radius: 18px;
+            border-radius: 16px;
             font-size: 17px;
             font-weight: 700;
-            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
         }
-        .btn-action:active { transform: scale(0.96); }
+        .btn-action:active { transform: scale(0.98); }
 
-        .slide-up { animation: slideUp 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+        /* Animations */
+        .slide-up { animation: slideUp 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
         @keyframes slideUp { 
-            from { opacity: 0; transform: translateY(20px); } 
+            from { opacity: 0; transform: translateY(30px); } 
             to { opacity: 1; transform: translateY(0); } 
         }
         
         .hidden-step { display: none; opacity: 0; }
-        .show-step { display: block; animation: slideUp 0.5s ease-out forwards; }
+        .show-step { display: block; animation: slideUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
 
-        .ready-to-auth {
-            position: relative;
-        }
         .ready-to-auth::after {
-            content: '';
-            position: absolute;
-            inset: 0;
-            border-radius: 18px;
+            content: ''; position: absolute; inset: 0; border-radius: 16px;
             box-shadow: 0 0 0 0 rgba(254, 229, 0, 0.6);
-            animation: pulse 2s infinite;
-            pointer-events: none;
+            animation: pulse 2s infinite; pointer-events: none;
         }
         @keyframes pulse {
             0% { box-shadow: 0 0 0 0 rgba(254, 229, 0, 0.6); }
-            70% { box-shadow: 0 0 0 15px rgba(254, 229, 0, 0); }
+            70% { box-shadow: 0 0 0 10px rgba(254, 229, 0, 0); }
             100% { box-shadow: 0 0 0 0 rgba(254, 229, 0, 0); }
         }
 
         .version-tag {
-            position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
-            font-size: 10px; font-weight: 600; color: #ADB5BD;
-            background: rgba(255, 255, 255, 0.9); padding: 4px 10px; border-radius: 20px;
-            z-index: 100; border: 1px solid #eee;
+            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+            font-size: 10px; font-weight: 600; color: #ADB5BD; font-family: monospace;
+            background: rgba(255, 255, 255, 0.9); padding: 4px 12px; border-radius: 20px;
+            z-index: 90; border: 1px solid #F1F3F5; backdrop-filter: blur(4px);
         }
     </style>
 </head>
 <body>
 
-    <div class="check-container">
+    <div class="check-container pb-32">
         
         <!-- [Branding Hero Area] -->
         <div class="hero-bg text-center slide-up">
-            <div class="inline-block px-3 py-1 bg-white/60 border border-white rounded-md mb-4 shadow-sm">
-                <span class="text-[11px] font-bold text-[#005A2B] tracking-tight notranslate" translate="no">ORDERZ</span>
-            </div>
-            <h2 class="text-[34px] font-extrabold text-gray-900 mb-3 tracking-tighter leading-tight">오더즈가 기억합니다</h2>
-            <p class="text-lg text-gray-600 font-medium leading-relaxed opacity-90">내 방식대로, 쓸수록 손에 익는 플랫폼</p>
+            <!-- [v5.6 수정] 박스 제거 및 텍스트 스타일 강화 -->
+            <h1 class="text-sm font-extrabold text-[#005A2B] tracking-[0.2em] mb-4 notranslate uppercase" translate="no">ORDERZ</h1>
+            
+            <h2 class="text-[32px] font-extrabold text-[#111] mb-3 tracking-tighter leading-tight">오더즈가 기억합니다</h2>
+            <p class="text-[17px] text-gray-500 font-medium leading-relaxed">내 방식대로, 쓸수록 손에 익는 플랫폼</p>
         </div>
 
-        <div class="form-content">
-            <form id="matchingForm" onsubmit="return false;" class="flex flex-col space-y-10">
-                
-                <!-- [STEP 1] 주소 입력 -->
-                <div id="step-address" class="slide-up" style="animation-delay: 0.1s;">
-                    <div class="flex items-center justify-between mb-6 px-1">
-                        <div>
-                            <h3 class="text-xl font-bold text-gray-900">지역 맞춤 정보</h3>
-                            <p class="text-sm text-green-700 font-semibold mt-1">지역별 실시간 특가를 매칭합니다.</p>
-                        </div>
-                        <div class="w-12 h-12 bg-green-50 rounded-2xl flex items-center justify-center text-green-700">
-                            <i class="fas fa-map-marker-alt text-xl"></i>
-                        </div>
+        <form id="matchingForm" onsubmit="return false;" class="flex-1 flex flex-col space-y-10">
+            
+            <!-- [STEP 1] 주소 입력 -->
+            <div id="step-address" class="slide-up" style="animation-delay: 0.1s;">
+                <div class="flex items-center justify-between mb-6 px-1">
+                    <div>
+                        <h3 class="text-[20px] font-bold text-gray-900">지역 맞춤 정보</h3>
+                        <p class="text-sm text-[#005A2B] font-semibold mt-1">지역별 실시간 특가를 매칭합니다.</p>
                     </div>
-                    
-                    <div class="space-y-4">
-                        <label class="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">배송지 설정</label>
-                        <div class="flex gap-2">
-                            <div class="flex-1">
-                                <input type="text" id="mb_addr1" 
-                                    class="input-field cursor-pointer placeholder:text-gray-400"
-                                    placeholder="주소를 선택해 주세요" readonly onclick="fillTestAddress()">
-                            </div>
-                            <button type="button" onclick="openDaumPostcode()" 
-                                class="px-6 bg-white border-2 border-gray-200 rounded-2xl text-sm font-bold text-gray-700 hover:border-green-600 transition-all active:scale-95 shadow-sm">
-                                검색
-                            </button>
-                        </div>
-                        
-                        <div class="relative w-100">
-                            <input type="text" id="mb_addr2" class="input-field hidden" 
-                                placeholder="상세주소 입력 (예: 2층 좌측)" 
-                                onkeyup="handleAddr2Key(event)"
-                                onfocus="handleInputFocus(this)"> <!-- 포커스 시 자동 스크롤 -->
-                            <div id="btn-next-addr2" class="input-next-btn" onclick="moveToCompany()">
-                                ↵
-                            </div>
-                        </div>
+                    <div class="w-12 h-12 bg-[#E9F2EC] rounded-2xl flex items-center justify-center text-[#005A2B]">
+                        <i class="fas fa-map-marker-alt text-xl"></i>
                     </div>
                 </div>
-
-                <!-- [STEP 2] 매장명 입력 (필수) -->
-                <div id="step-company-section" class="hidden-step space-y-3">
-                    <label class="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">매장명 <span class="text-red-500 font-bold">*</span></label>
-                    <div class="relative w-100">
-                        <input type="text" id="mb_company" class="input-field" 
-                            placeholder="가게의 상호명을 입력해 주세요" 
-                            onkeyup="handleCompanyKey(event)"
-                            onfocus="handleInputFocus(this)"> <!-- 포커스 시 자동 스크롤 -->
-                        <div id="btn-next-company" class="input-next-btn" onclick="showAuthStep()">
+                
+                <div class="space-y-3">
+                    <label class="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">배송지 설정</label>
+                    <div class="flex gap-2">
+                        <div class="flex-1">
+                            <input type="text" id="mb_addr1" 
+                                class="input-field cursor-pointer text-[#111]"
+                                placeholder="주소를 선택해 주세요" readonly onclick="fillTestAddress()">
+                        </div>
+                        <button type="button" onclick="openDaumPostcode()" 
+                            class="px-6 bg-white border border-[#E2E8F0] rounded-2xl text-sm font-bold text-gray-600 hover:border-[#005A2B] hover:text-[#005A2B] transition-all active:scale-95 shadow-sm">
+                            검색
+                        </button>
+                    </div>
+                    
+                    <div class="input-group">
+                        <input type="text" id="mb_addr2" class="input-field hidden" 
+                            placeholder="상세주소 입력 (예: 2층 좌측)" onkeyup="handleAddr2Key(event)"
+                            onfocus="handleInputFocus(this)">
+                        <!-- Next Button (Enter Symbol) -->
+                        <div id="btn-next-addr2" class="input-next-btn" onclick="moveToCompany()">
                             ↵
                         </div>
                     </div>
                 </div>
+            </div>
 
-                <!-- [STEP 3] 스마트 인증 카드 -->
-                <div id="step-auth" class="hidden-step relative pt-6">
-                    <div class="absolute -top-2 left-1/2 -translate-x-1/2 bg-white px-4 py-1 border border-gray-100 rounded-full shadow-sm z-10">
-                        <span class="text-[11px] font-bold text-gray-400">마지막 단계</span>
+            <!-- [STEP 2] 매장명 입력 (필수) -->
+            <div id="step-company-section" class="hidden-step space-y-3">
+                <label class="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">매장명 <span class="text-red-500">*</span></label>
+                <div class="input-group">
+                    <input type="text" id="mb_company" class="input-field" 
+                        placeholder="가게의 상호명을 입력해 주세요" onkeyup="handleCompanyKey(event)"
+                        onfocus="handleInputFocus(this)">
+                    <div id="btn-next-company" class="input-next-btn" onclick="showAuthStep()">
+                        ↵
                     </div>
-                    
-                    <div class="bg-white border border-gray-100 rounded-[28px] p-6 shadow-[0_20px_50px_rgba(0,0,0,0.04)] space-y-6">
-                        <div id="kakao-wrapper">
-                            <button type="button" id="btn-kakao-main" onclick="handleKakaoAuth()"
-                                class="w-full btn-action btn-kakao flex items-center justify-center gap-3 bg-[#FEE500] text-[#191919] font-bold shadow-sm">
-                                <i class="fas fa-comment text-xl"></i>
-                                카카오로 바로 보러가기
-                            </button>
+                </div>
+            </div>
+
+            <!-- [STEP 3] 스마트 인증 카드 -->
+            <div id="step-auth" class="hidden-step relative pt-4">
+                <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-white px-4 py-1.5 border border-gray-100 rounded-full shadow-sm z-10">
+                    <span class="text-[11px] font-bold text-gray-400">마지막 단계</span>
+                </div>
+                
+                <div class="bg-white border border-gray-100 rounded-[24px] p-6 shadow-[0_12px_40px_rgba(0,0,0,0.06)] space-y-6">
+                    <div id="kakao-wrapper">
+                        <button type="button" id="btn-kakao-main" onclick="handleKakaoAuth()"
+                            class="w-full btn-action flex items-center justify-center gap-2.5 bg-[#FEE500] text-[#191919] font-bold shadow-sm hover:bg-[#FADA00]">
+                            <i class="fas fa-comment text-xl"></i>
+                            카카오로 바로 보러가기
+                        </button>
+                    </div>
+
+                    <!-- Recovery Area -->
+                    <div id="recovery-area" class="hidden-step space-y-6 overflow-hidden">
+                        <div class="flex items-center gap-4 py-2 opacity-60">
+                            <div class="h-[1px] flex-1 bg-gray-200"></div>
+                            <span class="text-[11px] font-bold text-gray-400">또는</span>
+                            <div class="h-[1px] flex-1 bg-gray-200"></div>
                         </div>
 
-                        <div id="recovery-area" class="hidden-step space-y-6 overflow-hidden">
-                            <div class="flex items-center gap-4 py-2">
-                                <div class="h-[1px] flex-1 bg-gray-100"></div>
-                                <span class="text-[11px] font-bold text-gray-300">또는</span>
-                                <div class="h-[1px] flex-1 bg-gray-100"></div>
-                            </div>
-
-                            <p class="text-center text-sm font-bold text-green-800">카카오 로그인이 어려우신가요?</p>
+                        <p class="text-center text-sm font-bold text-[#005A2B]">카카오 로그인이 어려우신가요?</p>
+                        
+                        <div class="space-y-4">
+                            <input type="tel" id="mb_phone" class="input-field" 
+                                placeholder="휴대폰 번호 (- 없이 입력)" 
+                                oninput="autoHyphen(this);" onfocus="handleInputFocus(this)">
                             
-                            <div class="space-y-4">
-                                <input type="tel" id="mb_phone" class="input-field" 
-                                    placeholder="휴대폰 번호 (- 없이 입력)" 
-                                    oninput="autoHyphen(this);"
-                                    onfocus="handleInputFocus(this)"> <!-- 포커스 시 자동 스크롤 -->
-                                
-                                <button type="button" onclick="submitWithPhone()"
-                                    class="w-full btn-action bg-[#005A2B] text-white font-bold shadow-[0_8px_25px_rgba(0,90,43,0.2)]">
-                                    인증 후 특가 확인하기
-                                </button>
+                            <button type="button" onclick="submitWithPhone()"
+                                class="w-full btn-action bg-[#005A2B] text-white font-bold shadow-[0_4px_15px_rgba(0,90,43,0.3)] hover:bg-[#004420]">
+                                인증 후 특가 확인하기
+                            </button>
 
-                                <div class="bg-gray-50 rounded-2xl p-4 space-y-3 text-left">
-                                    <div class="flex items-start gap-3">
-                                        <input type="checkbox" id="privacy-check" checked class="mt-1 accent-brand w-5 h-5">
-                                        <label for="privacy-check" class="text-[11px] text-gray-500 leading-snug cursor-pointer">
-                                            번호 입력 시 <a href="#" class="underline text-gray-900 font-semibold" onclick="event.preventDefault(); alert('이용약관');">이용약관</a> 및 <a href="#" class="underline text-gray-900 font-semibold" onclick="event.preventDefault(); alert('개인정보처리방침');">개인정보 처리방침</a>에 동의한 것으로 간주합니다.
-                                        </label>
-                                    </div>
-                                    <div class="flex items-start gap-3">
-                                        <input type="checkbox" id="marketing-check" checked class="mt-0.5 accent-brand w-5 h-5">
-                                        <label for="marketing-check" class="text-[11px] text-gray-500 leading-snug font-medium cursor-pointer">
-                                            <span class="text-green-800 font-bold">[선택]</span> 이벤트 및 맞춤 특가 알림 수신 동의
-                                        </label>
-                                    </div>
+                            <div class="bg-gray-50 rounded-xl p-4 space-y-3 text-left border border-gray-100">
+                                <div class="flex items-start gap-3">
+                                    <input type="checkbox" id="privacy-check" checked class="mt-1 accent-brand w-4 h-4 cursor-pointer">
+                                    <label for="privacy-check" class="text-[11px] text-gray-500 leading-snug cursor-pointer">
+                                        번호 입력 시 <a href="#" class="underline text-gray-800 font-bold" onclick="event.preventDefault(); showNotice('이용약관');">이용약관</a> 및 <a href="#" class="underline text-gray-800 font-bold" onclick="event.preventDefault(); showNotice('개인정보처리방침');">개인정보 처리방침</a>에 동의한 것으로 간주합니다.
+                                    </label>
+                                </div>
+                                <div class="flex items-start gap-3">
+                                    <input type="checkbox" id="marketing-check" checked class="mt-0.5 accent-brand w-4 h-4 cursor-pointer">
+                                    <label for="marketing-check" class="text-[11px] text-gray-500 leading-snug font-medium cursor-pointer">
+                                        <span class="text-[#005A2B] font-bold">[선택]</span> 이벤트 및 맞춤 특가 알림 수신 동의
+                                    </label>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
-            </form>
-        </div>
+            </div>
+        </form>
 
-        <div class="version-tag">v5.4 FOCUS OPTIMIZED</div>
+        <div class="version-tag">v5.6 FINAL MASTER</div>
     </div>
 
     <!-- [가상 카카오 인증 시트] -->
-    <div id="kakao-sim-overlay" class="fixed inset-0 bg-white z-[200] hidden overflow-y-auto">
-        <div class="flex items-center justify-between px-4 h-14 border-b bg-white">
-            <div class="flex items-center gap-2">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/e/e3/KakaoTalk_logo.svg" class="w-6 h-6" alt="Kakao">
-                <span class="font-bold text-sm">카카오톡</span>
-            </div>
-            <button onclick="closeKakaoSim()" class="text-gray-400 p-2"><i class="fas fa-times text-xl"></i></button>
-        </div>
-        
-        <div class="px-6 pt-10 pb-20 max-w-[480px] mx-auto">
-            <div class="flex flex-col items-center mb-10">
-                <div class="w-20 h-20 bg-[#005A2B] rounded-3xl flex items-center justify-center mb-4 shadow-sm overflow-hidden">
-                    <span class="text-white font-black text-xl">ORDERZ</span>
+    <div id="kakao-sim-overlay" class="fixed inset-0 bg-black/30 backdrop-blur-[2px] z-[200] hidden">
+        <div class="absolute bottom-0 w-full bg-white rounded-t-[20px] overflow-hidden shadow-2xl animate-slide-up-fast">
+            <div class="flex items-center justify-between px-5 h-14 border-b border-gray-100 bg-white">
+                <div class="flex items-center gap-2">
+                    <span class="w-6 h-6 bg-[#FEE500] rounded-md flex items-center justify-center text-[10px] font-bold text-black">Talk</span>
+                    <span class="font-bold text-sm text-gray-800">카카오톡</span>
                 </div>
-                <h3 class="text-xl font-bold text-gray-900">오더즈</h3>
-                <p class="text-sm text-gray-500 mt-1">간편가입 및 서비스 이용동의</p>
+                <button onclick="closeKakaoSim()" class="text-gray-400 p-2"><i class="fas fa-times text-lg"></i></button>
             </div>
+            
+            <div class="px-6 pt-8 pb-10">
+                <div class="flex flex-col items-center mb-8">
+                    <div class="w-[72px] h-[72px] bg-[#005A2B] rounded-[24px] flex items-center justify-center mb-4 shadow-md">
+                        <span class="text-white font-black text-lg tracking-tight">ORDERZ</span>
+                    </div>
+                    <h3 class="text-lg font-bold text-gray-900">'오더즈'</h3>
+                    <p class="text-sm text-gray-500 mt-1">간편가입 및 서비스 이용동의</p>
+                </div>
 
-            <div class="space-y-6">
-                <div class="flex items-center justify-between border-b pb-4">
-                    <span class="font-bold text-[15px]">전체 동의하기</span>
-                    <input type="checkbox" checked class="w-6 h-6 accent-[#FEE500]">
+                <div class="space-y-5">
+                    <div class="flex items-center justify-between pb-3 border-b border-gray-100">
+                        <span class="font-bold text-[15px] text-gray-900">전체 동의하기</span>
+                        <div class="w-6 h-6 rounded-full bg-[#FEE500] flex items-center justify-center text-xs"><i class="fas fa-check"></i></div>
+                    </div>
+                    
+                    <div class="space-y-3 pt-1 pl-1">
+                        <div class="flex items-center justify-between text-[13px] text-gray-600">
+                            <span>[필수] 개인정보 제3자 제공 동의</span>
+                            <i class="fas fa-chevron-right text-[10px] text-gray-300"></i>
+                        </div>
+                        <div class="flex items-center justify-between text-[13px] text-gray-600">
+                            <span>[필수] 카카오 개인정보 제공 동의</span>
+                            <i class="fas fa-chevron-right text-[10px] text-gray-300"></i>
+                        </div>
+                        <div class="flex items-center justify-between text-[13px] text-gray-600">
+                            <span>[선택] 카카오톡 채널 추가</span>
+                            <i class="fas fa-chevron-right text-[10px] text-gray-300"></i>
+                        </div>
+                    </div>
                 </div>
-                
-                <div class="space-y-4 pt-2">
-                    <div class="flex items-center justify-between text-sm text-gray-600">
-                        <span>[필수] 개인정보 제3자 제공 동의</span>
-                        <i class="fas fa-chevron-right text-xs text-gray-300"></i>
-                    </div>
-                    <div class="flex items-center justify-between text-sm text-gray-600">
-                        <span>[필수] 카카오 개인정보 제공 동의</span>
-                        <i class="fas fa-chevron-right text-xs text-gray-300"></i>
-                    </div>
-                    <div class="flex items-center justify-between text-sm text-gray-600">
-                        <span>[선택] 카카오톡 채널 추가 및 홍보 메시지 수신</span>
-                        <i class="fas fa-chevron-right text-xs text-gray-300"></i>
-                    </div>
-                </div>
-            </div>
 
-            <div class="mt-12 text-center">
-                <p class="text-[12px] text-gray-400 leading-relaxed mb-6">
-                    동의 시 사장님의 카카오 계정 정보(이메일, 이름, 연락처)가<br>오더즈에 제공되며, 서비스 이용을 위해 사용됩니다.
-                </p>
-                <button onclick="successAuth()" class="w-full py-4 bg-[#FEE500] text-[#191919] rounded-xl font-bold text-[16px] active:bg-[#FADA00] transition-colors mb-4">
-                    동의하고 계속하기
-                </button>
-                <button onclick="closeKakaoSim()" class="text-sm text-gray-400 font-medium underline underline-offset-4">
-                    취소 후 돌아가기
-                </button>
+                <div class="mt-10">
+                    <button onclick="successAuth()" class="w-full py-4 bg-[#FEE500] text-[#191919] rounded-[12px] font-bold text-[15px] active:bg-[#FADA00] transition-colors">
+                        동의하고 계속하기
+                    </button>
+                </div>
             </div>
         </div>
     </div>
 
     <!-- [성공 모달] -->
-    <div id="toast-overlay" class="fixed inset-0 bg-[#005A2B]/90 backdrop-blur-md z-[300] flex items-center justify-center hidden opacity-0 transition-opacity duration-300">
-        <div class="bg-white rounded-[40px] p-10 w-[340px] text-center shadow-2xl scale-90 transition-transform duration-500" id="success-card">
-            <div class="w-20 h-20 bg-green-50 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6 text-3xl"><i class="fas fa-check-double"></i></div>
-            <h3 class="text-2xl font-black text-gray-900 mb-3">매칭 완료!</h3>
-            <p class="text-gray-500 font-medium leading-relaxed mb-8 text-sm">사장님 매장을 위한<br>맞춤형 특가 상품을 불러오고 있습니다.</p>
-            <div class="w-full bg-gray-100 rounded-full h-2 overflow-hidden px-1 py-1">
+    <div id="toast-overlay" class="fixed inset-0 bg-[#005A2B]/95 backdrop-blur-md z-[300] flex items-center justify-center hidden opacity-0 transition-opacity duration-300 px-6">
+        <div class="bg-white rounded-[32px] p-8 w-full max-w-[320px] text-center shadow-2xl scale-90 transition-transform duration-500" id="success-card">
+            <div class="w-16 h-16 bg-green-50 text-green-600 rounded-full flex items-center justify-center mx-auto mb-5 text-2xl">
+                <i class="fas fa-check"></i>
+            </div>
+            <h3 class="text-xl font-bold text-gray-900 mb-2">매칭 완료!</h3>
+            <p class="text-sm text-gray-500 font-medium leading-relaxed mb-6">사장님 매장을 위한<br>맞춤형 특가 상품을 불러옵니다.</p>
+            <div class="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
                 <div class="bg-green-600 h-full w-0 rounded-full transition-all duration-[2000ms] ease-out" id="progress-bar"></div>
             </div>
         </div>
     </div>
 
+    <style>
+        @keyframes slideUpFast {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+        .animate-slide-up-fast {
+            animation: slideUpFast 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+    </style>
+
     <script>
-        // [추가] 모바일 키보드 대응 스마트 스크롤 함수
+        // [모바일 키보드 대응] 포커스 시 해당 요소로 부드럽게 스크롤
         function handleInputFocus(el) {
-            // 키보드가 올라오는 시간을 기다리기 위해 300ms 지연 후 실행
             setTimeout(() => {
-                el.scrollIntoView({ 
-                    behavior: 'smooth', 
-                    block: 'center' // 화면 정중앙에 위치하도록 설정
-                });
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }, 300);
         }
 
@@ -359,7 +373,8 @@
             const addr2 = document.getElementById('mb_addr2');
             const nextBtn = document.getElementById('btn-next-addr2');
             addr2.classList.remove('hidden');
-            addr2.classList.add('show-step');
+            addr2.classList.add('slide-up');
+            
             nextBtn.classList.add('visible'); 
             
             setTimeout(() => {
@@ -385,6 +400,8 @@
         function handleCompanyKey(e) {
             const val = e.target.value.trim();
             const nextBtn = document.getElementById('btn-next-company');
+            
+            // 필수값이므로 입력이 있어야 버튼 노출
             if (val.length > 0) {
                 nextBtn.classList.add('visible');
                 if (e.key === 'Enter') showAuthStep();
@@ -413,16 +430,17 @@
             }
         }
 
+        // 2. 카카오 인증 시뮬레이션
         function handleKakaoAuth() {
             const val = document.getElementById('mb_company').value.trim();
-            if (val.length === 0) return;
-            const overlay = document.getElementById('kakao-sim-overlay');
-            overlay.classList.remove('hidden');
+            if (val.length === 0) {
+                alert("상호명을 입력해 주세요."); return;
+            }
+            document.getElementById('kakao-sim-overlay').classList.remove('hidden');
         }
 
         function closeKakaoSim() {
-            const overlay = document.getElementById('kakao-sim-overlay');
-            overlay.classList.add('hidden');
+            document.getElementById('kakao-sim-overlay').classList.add('hidden');
             activateRecovery();
         }
 
@@ -442,28 +460,41 @@
             completeMatching();
         }
 
+        // 3. 완료 처리
         function submitWithPhone() {
             const phone = document.getElementById('mb_phone').value.trim();
             const consent = document.getElementById('privacy-check').checked;
-            if(!phone || phone.length < 10) { alert("올바른 휴대폰 번호를 입력해 주세요."); return; }
+            
+            if(!phone || phone.length < 10) { 
+                alert("올바른 휴대폰 번호를 입력해 주세요."); 
+                document.getElementById('mb_phone').focus();
+                return; 
+            }
             if(!consent) { alert("서비스 이용 약관 동의가 필요합니다."); return; }
+            
             completeMatching();
         }
 
         function completeMatching() {
             const toast = document.getElementById('toast-overlay');
             const card = document.getElementById('success-card');
+            
             toast.classList.remove('hidden');
             setTimeout(() => {
                 toast.classList.remove('opacity-0');
                 card.classList.remove('scale-90');
             }, 50);
+            
             setTimeout(() => { document.getElementById('progress-bar').style.width = "100%"; }, 400);
             setTimeout(() => { location.reload(); }, 2500);
         }
 
         function autoHyphen(target) {
             target.value = target.value.replace(/[^0-9]/g, '').replace(/^(\d{0,3})(\d{0,4})(\d{0,4})$/g, "$1-$2-$3").replace(/(\-{1,2})$/g, "");
+        }
+
+        function showNotice(type) {
+            alert(type + " 내용을 확인하는 팝업이 노출됩니다.");
         }
     </script>
 </body>
