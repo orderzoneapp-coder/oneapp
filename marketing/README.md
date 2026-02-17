@@ -8,3 +8,7 @@ ORDERZ
 중간 유통 거품을 싹! 뺐습니다.](https://github.com/orderzoneapp-coder/oneapp/blob/main/marketing/QR.html)
 https://oneapp.orderz.co.kr/marketing/QR.html
 
+[사업자 전용
+우리 동네 직배송
+식자재 정보를 한눈에!](https://github.com/orderzoneapp-coder/oneapp/blob/main/marketing/sa0206.html)
+https://oneapp.orderz.co.kr/marketing/sa0206.html
