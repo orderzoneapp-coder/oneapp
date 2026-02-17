@@ -32,14 +32,13 @@
             position: relative; 
         }
 
-        /* [추가] 상단 배색 영역 스킨 */
         .hero-bg {
             background: linear-gradient(180deg, var(--brand-light) 0%, #ffffff 100%);
             padding: 80px 24px 40px 24px;
         }
 
         .form-content {
-            padding: 0 24px 80px 24px;
+            padding: 0 24px 120px 24px; /* 하단 여백 확대 */
             flex: 1;
         }
 
@@ -85,11 +84,6 @@
         .input-next-btn.visible {
             opacity: 1;
             visibility: visible;
-        }
-        .input-next-btn:active {
-            transform: translateY(-50%) scale(0.9);
-            background-color: var(--brand-primary);
-            color: white;
         }
 
         .btn-action {
@@ -140,7 +134,7 @@
 
     <div class="check-container">
         
-        <!-- [Branding Hero Area] 상단 배색 레이아웃 적용 -->
+        <!-- [Branding Hero Area] -->
         <div class="hero-bg text-center slide-up">
             <div class="inline-block px-3 py-1 bg-white/60 border border-white rounded-md mb-4 shadow-sm">
                 <span class="text-[11px] font-bold text-[#005A2B] tracking-tight notranslate" translate="no">ORDERZ</span>
@@ -180,7 +174,9 @@
                         
                         <div class="relative w-100">
                             <input type="text" id="mb_addr2" class="input-field hidden" 
-                                placeholder="상세주소 입력 (예: 2층 좌측)" onkeyup="handleAddr2Key(event)">
+                                placeholder="상세주소 입력 (예: 2층 좌측)" 
+                                onkeyup="handleAddr2Key(event)"
+                                onfocus="handleInputFocus(this)"> <!-- 포커스 시 자동 스크롤 -->
                             <div id="btn-next-addr2" class="input-next-btn" onclick="moveToCompany()">
                                 ↵
                             </div>
@@ -193,7 +189,9 @@
                     <label class="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">매장명 <span class="text-red-500 font-bold">*</span></label>
                     <div class="relative w-100">
                         <input type="text" id="mb_company" class="input-field" 
-                            placeholder="가게의 상호명을 입력해 주세요" onkeyup="handleCompanyKey(event)">
+                            placeholder="가게의 상호명을 입력해 주세요" 
+                            onkeyup="handleCompanyKey(event)"
+                            onfocus="handleInputFocus(this)"> <!-- 포커스 시 자동 스크롤 -->
                         <div id="btn-next-company" class="input-next-btn" onclick="showAuthStep()">
                             ↵
                         </div>
@@ -225,7 +223,10 @@
                             <p class="text-center text-sm font-bold text-green-800">카카오 로그인이 어려우신가요?</p>
                             
                             <div class="space-y-4">
-                                <input type="tel" id="mb_phone" class="input-field" placeholder="휴대폰 번호 (- 없이 입력)" oninput="autoHyphen(this);">
+                                <input type="tel" id="mb_phone" class="input-field" 
+                                    placeholder="휴대폰 번호 (- 없이 입력)" 
+                                    oninput="autoHyphen(this);"
+                                    onfocus="handleInputFocus(this)"> <!-- 포커스 시 자동 스크롤 -->
                                 
                                 <button type="button" onclick="submitWithPhone()"
                                     class="w-full btn-action bg-[#005A2B] text-white font-bold shadow-[0_8px_25px_rgba(0,90,43,0.2)]">
@@ -253,7 +254,7 @@
             </form>
         </div>
 
-        <div class="version-tag">v5.3 HERO GRADIENT DESIGN</div>
+        <div class="version-tag">v5.4 FOCUS OPTIMIZED</div>
     </div>
 
     <!-- [가상 카카오 인증 시트] -->
@@ -324,6 +325,18 @@
     </div>
 
     <script>
+        // [추가] 모바일 키보드 대응 스마트 스크롤 함수
+        function handleInputFocus(el) {
+            // 키보드가 올라오는 시간을 기다리기 위해 300ms 지연 후 실행
+            setTimeout(() => {
+                el.scrollIntoView({ 
+                    behavior: 'smooth', 
+                    block: 'center' // 화면 정중앙에 위치하도록 설정
+                });
+            }, 300);
+        }
+
+        // 1. 주소 입력 로직
         function fillTestAddress() {
             const addr1 = document.getElementById('mb_addr1');
             addr1.value = "서울특별시 강남구 테헤란로 427";
@@ -351,7 +364,7 @@
             
             setTimeout(() => {
                 addr2.focus();
-                addr2.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // 자동 스크롤은 handleInputFocus 에서 처리됨
             }, 300);
         }
 
@@ -366,7 +379,6 @@
             stepCompany.classList.add('show-step');
             setTimeout(() => {
                 mbCompany.focus();
-                mbCompany.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }, 300);
         }
 
@@ -421,7 +433,6 @@
                 recoveryArea.classList.add('show-step');
                 setTimeout(() => {
                     document.getElementById('mb_phone').focus();
-                    recoveryArea.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }, 400);
             }
         }
