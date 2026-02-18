@@ -455,24 +455,20 @@
             // 2초 후 최종 목적지로 이동
             setTimeout(() => { 
                 // [최종 라우팅 URL 생성]
-                // 1. 기본 목적지 (수정됨)
-                const baseUrl = "https://orderz.kr/?type=1";
+                // 1. 기본 목적지 (요청하신 주소로 변경)
+                const baseUrl = "https://oneapp.orderz.co.kr/shop/list.php?ca_id=10";
                 
                 // 2. 파라미터 병합
                 const finalParams = globalParams.toString();
                 
                 // baseUrl에 이미 '?'가 있으면 '&', 없으면 '?' 사용
-                // (위 baseUrl에 이미 ?type=1이 있으므로 자동으로 &가 선택됨)
+                // (위 주소에 ?ca_id=10이 있으므로 자동으로 &로 연결됩니다)
                 const separator = baseUrl.includes('?') ? '&' : '?';
                 
                 const finalUrl = finalParams ? `${baseUrl}${separator}${finalParams}` : baseUrl;
 
-                // 3. 이동 (실제 환경에서는 주석 해제)
+                // 3. 이동
                  window.location.href = finalUrl;
-                
-                // (데모용: 이동하는 척 알림만 표시하고 리로드 방지)
-                // console.log("Redirecting to:", finalUrl);
-                // location.reload(); 
             }, 2000);
         }
 
