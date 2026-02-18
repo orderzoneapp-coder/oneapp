@@ -295,7 +295,6 @@
         }
 
         // --- 2. 주소 로직 (버튼 전용) ---
-        // 테스트용 함수 제거됨. 실제 다음 우편번호 API 호출만 사용.
         
         function openDaumPostcode() {
             // daum 객체가 로드되었는지 확인
@@ -454,21 +453,30 @@
 
             // 2초 후 최종 목적지로 이동
             setTimeout(() => { 
-                // [최종 라우팅 URL 생성]
-                // 1. 기본 목적지 (요청하신 주소로 변경)
-                const baseUrl = "https://oneapp.orderz.co.kr/shop/list.php?ca_id=10";
+                // [중요 수정] oneapp(GitHub Pages)는 PHP 지원 불가 -> orderz.kr로 변경
+                // 실제 PHP가 동작하는 쇼핑몰 도메인이어야 합니다.
+                const baseUrl = "https://orderz.kr/shop/list.php?ca_id=10";
                 
                 // 2. 파라미터 병합
                 const finalParams = globalParams.toString();
                 
                 // baseUrl에 이미 '?'가 있으면 '&', 없으면 '?' 사용
-                // (위 주소에 ?ca_id=10이 있으므로 자동으로 &로 연결됩니다)
                 const separator = baseUrl.includes('?') ? '&' : '?';
                 
                 const finalUrl = finalParams ? `${baseUrl}${separator}${finalParams}` : baseUrl;
 
-                // 3. 이동
-                 window.location.href = finalUrl;
+                // [DEBUG] 콘솔에서 이동할 주소 확인 가능
+                console.log("Redirecting to:", finalUrl);
+
+                // 3. 이동 (Iframe 탈출 로직 적용)
+                try {
+                    // 1순위: 최상위 부모 창(브라우저 전체)을 이동시킴
+                    window.top.location.href = finalUrl;
+                } catch (e) {
+                    // 2순위: 차단될 경우 현재 프레임 이동
+                    window.location.href = finalUrl;
+                }
+                
             }, 2000);
         }
 
