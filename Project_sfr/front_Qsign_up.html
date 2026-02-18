@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="google" content="notranslate">
-    <title>오더즈 - 간편가입 (최종)</title>
+    <title>오더즈 - 간편가입 (최종 확정)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
@@ -191,7 +191,7 @@
                                         <input type="checkbox" name="agreements" id="agree_privacy" class="sub-agree">
                                         <label for="agree_privacy" class="text-[12px] text-gray-500 cursor-pointer">[필수] 개인정보 처리방침 동의</label>
                                     </div>
-                                    <!-- 수정된 문구 적용 -->
+                                    <!-- [필수] 마케팅 동의 확인 -->
                                     <div class="flex items-center gap-2">
                                         <input type="checkbox" name="agreements" id="agree_marketing" class="sub-agree">
                                         <label for="agree_marketing" class="text-[12px] text-gray-500 cursor-pointer"><span class="text-brand font-medium">[필수]</span> 서비스 이용 알림 및 마케팅 정보 수신 동의</label>
@@ -206,7 +206,7 @@
             </div>
         </form>
 
-        <div class="version-tag">v5.1 RELEASE CANDIDATE</div>
+        <div class="version-tag">v5.2 FINAL CONFIRMED</div>
     </div>
 
     <!-- [카카오 싱크 표준 시스템창 시뮬레이션] -->
@@ -237,7 +237,7 @@
                     <div class="text-[13px] text-gray-500 space-y-3.5 px-1 pt-2">
                         <div class="flex justify-between items-center"><span>[필수] 개인정보 제3자 제공 동의</span><i class="fas fa-chevron-right text-[10px]"></i></div>
                         <div class="flex justify-between items-center"><span>[필수] 배송지 정보 제공 동의</span><i class="fas fa-chevron-right text-[10px]"></i></div>
-                        <!-- 여기도 문구 통일 -->
+                        <!-- 카카오 패널에서도 [필수] 확인 -->
                         <div class="flex justify-between items-center"><span>[필수] 서비스 이용 알림 및 마케팅 정보 수신</span><i class="fas fa-chevron-right text-[10px]"></i></div>
                     </div>
                 </div>
@@ -404,6 +404,7 @@
             const agreePrivacy = document.getElementById('agree_privacy').checked;
             const agreeMarketing = document.getElementById('agree_marketing').checked;
 
+            // [필수] 검증: 3가지 모두 체크되어야 통과
             if (!agreeService || !agreePrivacy || !agreeMarketing) {
                 showError("모든 필수 약관에 동의해주세요.");
                 return;
@@ -428,7 +429,7 @@
                 bar.style.width = "100%"; 
             }, 10);
 
-            // 목적지 URL 생성
+            // 목적지 URL 생성: orderz.kr/shop/list.php?ca_id=10
             const baseUrl = "https://orderz.kr/shop/list.php?ca_id=10";
             const finalParams = globalParams.toString();
             const separator = baseUrl.includes('?') ? '&' : '?';
@@ -443,7 +444,7 @@
                 
                 // Canvas/Preview 환경 대응: 자동 이동 시도
                 try {
-                    // 1순위: 최상위 창 이동
+                    // 1순위: 최상위 창 이동 (Iframe 탈출)
                     window.top.location.href = finalUrl;
                 } catch (e) {
                     // 2순위: 현재 프레임 이동
