@@ -455,13 +455,17 @@
             // 2초 후 최종 목적지로 이동
             setTimeout(() => { 
                 // [최종 라우팅 URL 생성]
-                // 1. 기본 목적지
-                const baseUrl = "/shop/list.php?ca_id=10";
+                // 1. 기본 목적지 (수정됨)
+                const baseUrl = "https://orderz.kr/?type=1";
                 
-                // 2. 파라미터 병합 (기존 파라미터가 있으면 & 없으면 ?)
-                // 이미 ?ca_id=10이 있으므로 &로 연결
+                // 2. 파라미터 병합
                 const finalParams = globalParams.toString();
-                const finalUrl = finalParams ? `${baseUrl}&${finalParams}` : baseUrl;
+                
+                // baseUrl에 이미 '?'가 있으면 '&', 없으면 '?' 사용
+                // (위 baseUrl에 이미 ?type=1이 있으므로 자동으로 &가 선택됨)
+                const separator = baseUrl.includes('?') ? '&' : '?';
+                
+                const finalUrl = finalParams ? `${baseUrl}${separator}${finalParams}` : baseUrl;
 
                 // 3. 이동 (실제 환경에서는 주석 해제)
                  window.location.href = finalUrl;
