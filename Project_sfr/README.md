@@ -19,7 +19,7 @@ https://oneapp.orderz.co.kr/Project_sfr/front_login.html
 https://oneapp.orderz.co.kr/Project_sfr/plan_solution.html
 
 
-https://oneapp.orderz.co.kr/Project_sfr/
+https://oneapp.orderz.co.kr/Project_sfr/plan_logic.html
 
 
 https://oneapp.orderz.co.kr/Project_sfr/
