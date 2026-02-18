@@ -9,7 +9,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
-    <!-- https 프로토콜 명시 -->
     <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
 
     <style>
@@ -46,11 +45,10 @@
             background-color: #fff;
             box-shadow: 0 0 0 4px rgba(0, 90, 43, 0.05);
         }
-        /* 주소 필드 비활성 스타일 */
         .input-field.readonly-style {
             background-color: #e5e7eb;
             color: #6b7280;
-            pointer-events: none; /* 클릭 불가 */
+            pointer-events: none;
         }
 
         .input-next-btn {
@@ -83,7 +81,6 @@
 
         .version-tag { position: fixed; bottom: 15px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #9ca3af; pointer-events: none; }
 
-        /* 카카오 싱크 표준창 스타일 (모바일 하단 시트) */
         #kakao-panel {
             transform: translateY(100%);
             transition: transform 0.4s cubic-bezier(0.32, 0.72, 0, 1);
@@ -110,7 +107,6 @@
             <p class="text-[15px] text-gray-500 font-medium">내 방식대로, 쓸수록 손에 익는 플랫폼</p>
         </div>
 
-        <!-- Hidden inputs for debugging/checking -->
         <div class="hidden">
             <input type="hidden" id="yt_code" value="">
             <input type="hidden" id="utm_source" value="">
@@ -118,7 +114,6 @@
 
         <form id="matchingForm" onsubmit="return false;" class="flex-1 flex flex-col space-y-10">
             
-            <!-- [STEP 1] 주소 입력 -->
             <div id="step-address">
                 <div class="mb-5 pb-2 border-b border-gray-100">
                     <h3 class="text-lg font-bold text-gray-800">지역 확인</h3>
@@ -129,7 +124,6 @@
                     <label class="text-[13px] font-bold text-gray-600 ml-1">주소</label>
                     <div class="flex gap-2">
                         <div class="flex-1">
-                            <!-- readonly-style 클래스 추가: 클릭 불가, 회색 배경 -->
                             <input type="text" id="mb_addr1" 
                                 class="input-field readonly-style"
                                 placeholder="주소를 검색해 주세요" readonly tabindex="-1">
@@ -150,7 +144,6 @@
                 </div>
             </div>
 
-            <!-- [STEP 2] 매장명 입력 -->
             <div id="step-company-section" class="hidden-step space-y-4">
                 <div class="flex justify-between items-center ml-1">
                     <label class="text-[13px] font-bold text-gray-600">매장명</label>
@@ -164,7 +157,6 @@
                 </div>
             </div>
 
-            <!-- [STEP 3] 인증 (Kakao Sync / Phone) -->
             <div id="step-auth" class="hidden-step pt-4">
                 <div class="p-6 border border-gray-100 rounded-2xl bg-gray-50 shadow-sm">
                     <button type="button" id="btn-kakao-main" onclick="handleKakaoAuth()"
@@ -172,9 +164,7 @@
                         <i class="fas fa-comment text-xl"></i> 카카오로 상품 보러가기
                     </button>
 
-                    <!-- Recovery Area (Phone Input) -->
                     <div id="recovery-area" class="hidden-step mt-8 pt-8 border-t border-gray-200">
-                        <!-- 수정된 문구 -->
                         <div class="text-center mb-6">
                             <h4 class="text-[15px] font-bold text-gray-800 mb-1">카카오가 불편하신가요?</h4>
                             <p class="text-[13px] text-gray-500">휴대폰으로 빠르게 진행할 수 있어요.</p>
@@ -184,7 +174,6 @@
                             <input type="tel" id="mb_phone" class="input-field shadow-sm" 
                                 placeholder="휴대폰 번호 입력" oninput="autoHyphen(this);">
                             
-                            <!-- 필수 동의 항목 (마케팅 포함) -->
                             <div class="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
                                 <div class="flex items-start gap-3">
                                     <input type="checkbox" id="agree_all" onchange="toggleAllAgreements(this)">
@@ -202,9 +191,10 @@
                                         <input type="checkbox" name="agreements" id="agree_privacy" class="sub-agree">
                                         <label for="agree_privacy" class="text-[12px] text-gray-500 cursor-pointer">[필수] 개인정보 처리방침 동의</label>
                                     </div>
+                                    <!-- 수정된 문구 적용 -->
                                     <div class="flex items-center gap-2">
                                         <input type="checkbox" name="agreements" id="agree_marketing" class="sub-agree">
-                                        <label for="agree_marketing" class="text-[12px] text-gray-500 cursor-pointer"><span class="text-brand font-medium">[필수]</span> 서비스 알림 및 마케팅 수신 동의</label>
+                                        <label for="agree_marketing" class="text-[12px] text-gray-500 cursor-pointer"><span class="text-brand font-medium">[필수]</span> 서비스 이용 알림 및 마케팅 정보 수신 동의</label>
                                     </div>
                                 </div>
                             </div>
@@ -216,7 +206,7 @@
             </div>
         </form>
 
-        <div class="version-tag">v5.0 FINAL RELEASE</div>
+        <div class="version-tag">v5.1 RELEASE CANDIDATE</div>
     </div>
 
     <!-- [카카오 싱크 표준 시스템창 시뮬레이션] -->
@@ -247,8 +237,8 @@
                     <div class="text-[13px] text-gray-500 space-y-3.5 px-1 pt-2">
                         <div class="flex justify-between items-center"><span>[필수] 개인정보 제3자 제공 동의</span><i class="fas fa-chevron-right text-[10px]"></i></div>
                         <div class="flex justify-between items-center"><span>[필수] 배송지 정보 제공 동의</span><i class="fas fa-chevron-right text-[10px]"></i></div>
-                        <!-- 마케팅 동의도 카카오싱크 단계에서 필수로 간주 -->
-                        <div class="flex justify-between items-center"><span>[필수] 오더즈 마케팅 정보 수신</span><i class="fas fa-chevron-right text-[10px]"></i></div>
+                        <!-- 여기도 문구 통일 -->
+                        <div class="flex justify-between items-center"><span>[필수] 서비스 이용 알림 및 마케팅 정보 수신</span><i class="fas fa-chevron-right text-[10px]"></i></div>
                     </div>
                 </div>
                 <button onclick="successAuth()" class="w-full py-4 bg-[#FEE500] text-[#191919] rounded-2xl font-bold text-lg active:bg-[#FADA00] transition-colors shadow-sm">
@@ -269,35 +259,36 @@
             </div>
             <h3 class="font-bold text-xl text-gray-900 mb-2">가입 완료!</h3>
             <p id="success-msg" class="text-sm text-gray-500 leading-relaxed mb-6">사장님 지역의 특가 정보를<br>불러오고 있습니다.</p>
-            <div class="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+            <div class="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden mb-4">
                 <div class="bg-green-600 h-full w-0 transition-all duration-[1200ms] ease-out" id="progress-bar"></div>
             </div>
+            
+            <!-- 자동 이동 실패 시 나타나는 수동 이동 버튼 -->
+            <div id="manual-link-area" class="hidden opacity-0 transition-opacity duration-500">
+                <a id="final-link" href="#" class="block w-full py-3 bg-gray-900 text-white rounded-xl text-sm font-bold shadow-md hover:bg-gray-800 transition-colors">
+                    쇼핑몰로 바로가기 <i class="fas fa-arrow-right ml-1"></i>
+                </a>
+                <p class="text-[11px] text-gray-400 mt-2">자동으로 이동하지 않으면 버튼을 눌러주세요.</p>
+            </div>
+            
             <p id="generated-id" class="text-[10px] text-gray-300 mt-4"></p>
         </div>
     </div>
 
-    <!-- [간단한 경고 토스트] -->
     <div id="error-toast" class="fixed top-10 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-6 py-3 rounded-full shadow-lg text-sm font-bold z-[400] transition-all duration-300 opacity-0 translate-y-[-20px]" style="pointer-events: none;">
         <i class="fas fa-exclamation-circle mr-2"></i> <span id="error-msg">오류 발생</span>
     </div>
 
     <script>
-        // --- 1. 파라미터 관리 (이어달리기) ---
         let globalParams = new URLSearchParams();
 
         window.onload = function() {
-            // 현재 URL의 모든 파라미터 캡처
             globalParams = new URLSearchParams(window.location.search);
-
-            // Hidden Input에도 세팅 (필요시 폼 전송용)
             if(globalParams.has('yt_code')) document.getElementById('yt_code').value = globalParams.get('yt_code');
             if(globalParams.has('utm_source')) document.getElementById('utm_source').value = globalParams.get('utm_source');
         }
 
-        // --- 2. 주소 로직 (버튼 전용) ---
-        
         function openDaumPostcode() {
-            // daum 객체가 로드되었는지 확인
             if (typeof daum === 'undefined') {
                 alert("우편번호 서비스를 불러오는 중입니다. 잠시 후 다시 시도해주세요.");
                 return;
@@ -305,15 +296,11 @@
 
             new daum.Postcode({
                 oncomplete: function(data) {
-                    // 주소 세팅
                     document.getElementById('mb_addr1').value = data.roadAddress;
-                    
-                    // 상세주소 노출 및 포커스
                     const addr2 = document.getElementById('mb_addr2');
                     addr2.classList.remove('hidden');
                     addr2.classList.add('show-step');
                     document.getElementById('btn-next-addr2').classList.add('visible');
-                    
                     setTimeout(() => { addr2.focus(); }, 150);
                 }
             }).open();
@@ -323,14 +310,11 @@
             const val = e.target.value.trim();
             const nextBtn = document.getElementById('btn-next-addr2');
             
-            // 입력값 있으면 버튼 표시
             if (val.length > 0) nextBtn.classList.add('visible');
             else nextBtn.classList.remove('visible');
 
-            // Enter키 입력 시 다음 단계로
             if (e.key === 'Enter' && val.length > 0) {
                 moveToCompany();
-                // 모바일 키보드 닫기 (선택사항)
                 e.target.blur();
             }
         }
@@ -341,7 +325,6 @@
             stepCompany.classList.add('show-step');
             setTimeout(() => { 
                 document.getElementById('mb_company').focus();
-                // 부드러운 스크롤 이동
                 stepCompany.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }, 150);
         }
@@ -362,8 +345,6 @@
             }, 150);
         }
 
-        // --- 3. 인증 및 Recovery 로직 ---
-
         function handleKakaoAuth() {
             const overlay = document.getElementById('kakao-sim-overlay');
             const panel = document.getElementById('kakao-panel');
@@ -382,7 +363,6 @@
             
             setTimeout(() => {
                 overlay.classList.add('hidden');
-                // 카카오 취소 시 휴대폰 인증 영역 노출
                 const recoveryArea = document.getElementById('recovery-area');
                 if (recoveryArea.classList.contains('hidden-step')) {
                     recoveryArea.classList.remove('hidden-step');
@@ -395,7 +375,6 @@
             }, 400);
         }
 
-        // --- 4. 동의 체크박스 로직 ---
         function toggleAllAgreements(source) {
             const checkboxes = document.querySelectorAll('.sub-agree');
             checkboxes.forEach(cb => cb.checked = source.checked);
@@ -416,17 +395,14 @@
 
         function submitWithPhone() { 
             const phone = document.getElementById('mb_phone').value.trim();
-            
-            // 전화번호 검증
             if(phone.length < 10) {
                 showError("휴대폰 번호를 정확히 입력해주세요.");
                 return;
             }
 
-            // 필수 동의 검증 (3가지 모두 필수)
             const agreeService = document.getElementById('agree_service').checked;
             const agreePrivacy = document.getElementById('agree_privacy').checked;
-            const agreeMarketing = document.getElementById('agree_marketing').checked; // 마케팅 필수
+            const agreeMarketing = document.getElementById('agree_marketing').checked;
 
             if (!agreeService || !agreePrivacy || !agreeMarketing) {
                 showError("모든 필수 약관에 동의해주세요.");
@@ -436,12 +412,13 @@
             completeMatching('Phone'); 
         }
 
-        // --- 5. 완료 및 라우팅 (파라미터 포함) ---
         function completeMatching(method) {
             const systemId = 'mk_' + Date.now(); 
             const toast = document.getElementById('toast-overlay');
             const bar = document.getElementById('progress-bar');
             const idText = document.getElementById('generated-id');
+            const manualArea = document.getElementById('manual-link-area');
+            const finalLinkBtn = document.getElementById('final-link');
             
             idText.innerText = `System ID: ${systemId} (${method})`;
             toast.classList.remove('hidden');
@@ -451,32 +428,35 @@
                 bar.style.width = "100%"; 
             }, 10);
 
-            // 2초 후 최종 목적지로 이동
+            // 목적지 URL 생성
+            const baseUrl = "https://orderz.kr/shop/list.php?ca_id=10";
+            const finalParams = globalParams.toString();
+            const separator = baseUrl.includes('?') ? '&' : '?';
+            const finalUrl = finalParams ? `${baseUrl}${separator}${finalParams}` : baseUrl;
+
+            // 수동 버튼에도 링크 미리 세팅
+            finalLinkBtn.href = finalUrl;
+
+            // 2초 후 자동 이동 시도
             setTimeout(() => { 
-                // [중요 수정] oneapp(GitHub Pages)는 PHP 지원 불가 -> orderz.kr로 변경
-                // 실제 PHP가 동작하는 쇼핑몰 도메인이어야 합니다.
-                const baseUrl = "https://orderz.kr/shop/list.php?ca_id=10";
+                console.log("Attempting Redirect to:", finalUrl);
                 
-                // 2. 파라미터 병합
-                const finalParams = globalParams.toString();
-                
-                // baseUrl에 이미 '?'가 있으면 '&', 없으면 '?' 사용
-                const separator = baseUrl.includes('?') ? '&' : '?';
-                
-                const finalUrl = finalParams ? `${baseUrl}${separator}${finalParams}` : baseUrl;
-
-                // [DEBUG] 콘솔에서 이동할 주소 확인 가능
-                console.log("Redirecting to:", finalUrl);
-
-                // 3. 이동 (Iframe 탈출 로직 적용)
+                // Canvas/Preview 환경 대응: 자동 이동 시도
                 try {
-                    // 1순위: 최상위 부모 창(브라우저 전체)을 이동시킴
+                    // 1순위: 최상위 창 이동
                     window.top.location.href = finalUrl;
                 } catch (e) {
-                    // 2순위: 차단될 경우 현재 프레임 이동
+                    // 2순위: 현재 프레임 이동
                     window.location.href = finalUrl;
                 }
-                
+
+                // 이동이 차단되거나 지연될 경우를 대비해 1.5초 뒤 수동 버튼 노출
+                setTimeout(() => {
+                    manualArea.classList.remove('hidden');
+                    // 약간의 딜레이 후 페이드인
+                    setTimeout(() => { manualArea.style.opacity = "1"; }, 50);
+                }, 1500);
+
             }, 2000);
         }
 
