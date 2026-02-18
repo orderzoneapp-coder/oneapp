@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>마케팅 간편 가입 로직 가이드</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;700&display=swap');
+        body { font-family: 'Pretendard', sans-serif; background-color: #f8fafc; color: #1e293b; }
+        .logic-card { transition: all 0.3s ease; }
+        .logic-card:hover { transform: translateY(-5px); }
+        .step-number { background: #3b82f6; color: white; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 14px; font-weight: bold; }
+        .status-badge { @apply px-2 py-1 rounded-full text-[10px] font-bold uppercase; }
+        .owner-tag { @apply px-2 py-0.5 rounded text-[10px] font-bold mr-1; }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-5xl mx-auto">
+        <!-- Header -->
+        <header class="mb-10 text-center border-b pb-8">
+            <h1 class="text-3xl font-bold text-gray-900 mb-2">마케팅 간편 가입(simple-join.php) 핵심 로직</h1>
+            <p class="text-gray-600 font-medium">본사 DB 확보, 다자간 매핑 및 상태별 노출 제어 가이드라인</p>
+        </header>
+
+        <!-- Section 1: 가입 프로세스 -->
+        <section class="mb-12">
+            <div class="flex items-center mb-6">
+                <div class="p-2 bg-blue-100 rounded-lg mr-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                    </svg>
+                </div>
+                <h2 class="text-xl font-bold text-gray-800">1. 사용자 가입 경험 (UX)</h2>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 logic-card">
+                    <div class="step-number mb-4">1</div>
+                    <h3 class="font-bold mb-2 text-sm">간편 정보 입력</h3>
+                    <p class="text-xs text-gray-500 leading-relaxed">상호명, 주소, 연락처만 입력. 기존 5단계 과정을 단일 페이지로 축소하여 이탈 방지.</p>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 logic-card">
+                    <div class="step-number mb-4">2</div>
+                    <h3 class="font-bold mb-2 text-sm">자동 ID/PW 생성</h3>
+                    <p class="text-xs text-gray-500 leading-relaxed">
+                        <span class="text-blue-600 font-semibold">ID:</span> mk + 날짜 + 난수<br>
+                        <span class="text-blue-600 font-semibold">PW:</span> 휴대폰 번호 뒷자리<br>
+                        <span class="italic text-[10px] text-red-400">*중복 체크 루프 작동</span>
+                    </p>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 logic-card">
+                    <div class="step-number mb-4">3</div>
+                    <h3 class="font-bold mb-2 text-sm">세션 자동 로그인</h3>
+                    <p class="text-xs text-gray-500 leading-relaxed">가입 완료 즉시 로그인 상태로 메인 이동. 별도 입력 단계 없이 즉시 쇼핑 유도.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 2: 지역 매칭 갈등 해결 -->
+        <section class="mb-12 bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+            <div class="flex items-center mb-6 text-orange-600">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                </svg>
+                <h2 class="text-xl font-bold">2. 지역 매칭 갈등 해결 (운영 기반)</h2>
+            </div>
+
+            <div class="flex flex-col md:flex-row gap-8 items-center">
+                <div class="flex-1 w-full">
+                    <div class="bg-red-50 p-4 rounded-lg mb-4 border-l-4 border-red-400">
+                        <p class="text-sm text-red-700 font-semibold">문제: 유통사 광고 유입 vs 타 지역 주소 입력</p>
+                        <p class="text-xs text-red-600 mt-1">시스템이 거절하면 고객 DB를 놓치게 됩니다.</p>
+                    </div>
+                    <div class="bg-green-50 p-4 rounded-lg border-l-4 border-green-400">
+                        <p class="text-sm text-green-700 font-semibold">해결: "선(先) 가입, 후(後) 운영 처리"</p>
+                        <ul class="text-xs text-green-600 mt-2 space-y-1 list-disc list-inside">
+                            <li>일단 가입은 무조건 성공시켜 DB 확보</li>
+                            <li>관리자가 미스매칭 회원 검색 후 매칭 해제</li>
+                            <li>고객에게는 "본사 직영 관리" 안내 메시지 발송</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="flex-shrink-0 bg-gray-50 p-6 rounded-xl border border-dashed border-gray-300">
+                    <p class="text-[10px] font-bold text-gray-400 mb-2 uppercase tracking-widest text-center">알림톡 예시</p>
+                    <p class="text-sm text-gray-600 italic">"고객님, 주소지 확인 결과<br>원활한 관리를 위해<br><span class="text-blue-600 font-bold text-base">본사 직영 회원</span>으로<br>전환되었습니다."</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 3: DB 설계 방식 비교 -->
+        <section class="mb-12">
+            <div class="flex items-center mb-6 text-purple-600">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+                </svg>
+                <h2 class="text-xl font-bold text-gray-800">3. 데이터베이스 저장 방식 비교</h2>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div class="border border-gray-200 rounded-2xl overflow-hidden bg-white">
+                    <div class="bg-gray-100 px-6 py-4 border-b">
+                        <h3 class="font-bold text-gray-700 text-sm">A. 단순 필드 방식 (1:1)</h3>
+                    </div>
+                    <div class="p-6">
+                        <div class="space-y-3 mb-4 text-xs">
+                            <div class="flex justify-between border-b pb-1"><span class="text-gray-500">mb_origin</span><span class="font-mono text-blue-600 font-bold">최초 유입 유통사</span></div>
+                            <div class="flex justify-between border-b pb-1"><span class="text-gray-500">mb_owner</span><span class="font-mono text-blue-600 font-bold">현재 관리 주체</span></div>
+                        </div>
+                        <p class="text-[11px] text-gray-500 font-medium">※ 현재 적용 모델: 유입=소유로 즉시 매칭</p>
+                    </div>
+                </div>
+
+                <div class="border border-blue-200 rounded-2xl overflow-hidden bg-white ring-2 ring-blue-500 ring-opacity-50">
+                    <div class="bg-blue-600 px-6 py-4 border-b border-blue-700 text-white">
+                        <h3 class="font-bold text-sm">B. 매핑 테이블 방식 (N:M)</h3>
+                    </div>
+                    <div class="p-6">
+                        <table class="w-full text-[10px] text-left mb-4">
+                            <thead class="text-gray-400 uppercase"><tr><th class="pb-1">유통사</th><th class="pb-1">역할</th><th class="pb-1">상태</th></tr></thead>
+                            <tbody class="text-gray-600">
+                                <tr class="border-b"><td class="py-1 text-[10px]">유통사A</td><td class="py-1"><span class="owner-tag bg-blue-100 text-blue-700">유입</span></td><td class="py-1 font-bold">고정</td></tr>
+                                <tr class="border-b"><td class="py-1 text-red-400 text-[10px]">유통사A</td><td class="py-1"><span class="owner-tag bg-gray-100 text-gray-400">관리</span></td><td class="py-1 text-red-400">중단</td></tr>
+                                <tr><td class="py-1 font-bold text-blue-800 text-[10px]">본사(HQ)</td><td class="py-1"><span class="owner-tag bg-green-100 text-green-700">관리</span></td><td class="py-1 font-bold text-green-600">활성</td></tr>
+                            </tbody>
+                        </table>
+                        <p class="text-[11px] text-gray-500 italic">"누가 데려왔고, 누가 소유했는가"를 분리하여 히스토리 보존.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 4: 양방향 매칭 & 거부권 -->
+        <section class="mb-12 bg-emerald-50 p-8 rounded-3xl border border-emerald-100">
+            <div class="flex items-center mb-6 text-emerald-700">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                </svg>
+                <h2 class="text-xl font-bold">4. 양방향 동의(Mutual Consent) 및 고객 거부권</h2>
+            </div>
+
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-emerald-200 flex flex-col md:flex-row gap-6 items-center justify-between mb-6">
+                <div class="text-center w-full">
+                    <p class="text-[10px] font-bold text-gray-400 mb-2 uppercase tracking-widest text-center">Step 1. 유통사</p>
+                    <p class="text-sm font-bold text-blue-600 italic">"내 구역 고객임 (소유 주장)"</p>
+                </div>
+                <div class="text-emerald-300 text-2xl font-light">+</div>
+                <div class="text-center w-full text-pink-600 font-bold">
+                    <p class="text-[10px] font-bold text-gray-400 mb-2 uppercase tracking-widest text-center">Step 2. 고객</p>
+                    <p class="text-sm italic text-center">"해당 지점 관리 수락/거부"</p>
+                </div>
+                <div class="text-emerald-300 text-2xl font-light">=</div>
+                <div class="text-center w-full bg-emerald-600 text-white p-3 rounded-xl shadow-lg">
+                    <p class="text-xs font-bold text-center">매칭 활성화 (Status: Active)</p>
+                </div>
+            </div>
+            <p class="text-xs text-center text-emerald-700 font-medium italic">※ 고객 거부 시 상품이 비노출되며 본사 직영 관리로 자동 전환됩니다.</p>
+        </section>
+
+        <!-- Section 5: 상태별 노출 로직 -->
+        <section class="mb-12">
+            <div class="flex items-center mb-6 text-slate-800">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <h2 class="text-xl font-bold">5. 상태(Status)별 상품 노출 제어 로직</h2>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-white rounded-2xl border-t-4 border-blue-500 shadow-sm p-6">
+                    <span class="status-badge bg-blue-100 text-blue-700">Active</span>
+                    <h4 class="font-bold text-sm mt-3 mb-2 text-blue-800 underline decoration-blue-200">상품 노출: ON</h4>
+                    <p class="text-xs text-gray-500 leading-relaxed">정상 매칭된 상태. 유통사 특가 상품 노출 및 즉시 주문 가능.</p>
+                </div>
+                <div class="bg-white rounded-2xl border-t-4 border-yellow-500 shadow-sm p-6">
+                    <span class="status-badge bg-yellow-100 text-yellow-700">Waiting</span>
+                    <h4 class="font-bold text-sm mt-3 mb-2">상품 노출: 비활성</h4>
+                    <p class="text-xs text-gray-500 leading-relaxed">승인 대기 상태. 본사 공통 상품만 노출하거나 "매칭 중" 안내.</p>
+                </div>
+                <div class="bg-white rounded-2xl border-t-4 border-red-500 shadow-sm p-6">
+                    <span class="status-badge bg-red-100 text-red-700">Rejected</span>
+                    <h4 class="font-bold text-sm mt-3 mb-2">상품 노출: OFF</h4>
+                    <p class="text-xs text-gray-500 leading-relaxed">고객 거부 상태. 해당 유통사 상품 비노출. 본사 직영관 유도.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 6: MVP 단계별 개발 로드맵 -->
+        <section class="mb-12 border-t pt-10">
+            <div class="flex items-center mb-8">
+                <div class="p-2 bg-indigo-100 rounded-lg mr-3 text-indigo-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                </div>
+                <h2 class="text-xl font-bold text-gray-800">6. MVP 단계별 개발 로드맵 (총 7~8일 예상)</h2>
+            </div>
+            
+            <div class="space-y-6">
+                <!-- Phase 1 -->
+                <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col md:flex-row gap-6">
+                    <div class="md:w-48 flex-shrink-0">
+                        <span class="bg-indigo-600 text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest">Phase 1</span>
+                        <p class="mt-2 text-sm font-bold text-gray-900 underline decoration-indigo-200 underline-offset-4">데이터 아키텍처 구축</p>
+                        <p class="text-xs text-indigo-600 font-bold mt-1">공수: 2일</p>
+                    </div>
+                    <div class="flex-1">
+                        <ul class="text-xs text-gray-600 space-y-2 list-disc list-inside">
+                            <li><b>N:M 매핑 테이블 생성:</b> 회원ID-유통사코드-상태값(Active/Wait/Reject) 구조 설계</li>
+                            <li><b>가입 로직 업데이트:</b> 가입 시 1:1 필드와 N:M 테이블에 <b>데이터를 동시 삽입</b></li>
+                            <li><b>기존 기능 유지:</b> 기능은 기존 방식을 유지하면서 데이터만 누적 쌓기</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Phase 2 -->
+                <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col md:flex-row gap-6">
+                    <div class="md:w-48 flex-shrink-0">
+                        <span class="bg-indigo-600 text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest">Phase 2</span>
+                        <p class="mt-2 text-sm font-bold text-gray-900 underline decoration-indigo-200 underline-offset-4">상태 기반 제어 적용</p>
+                        <p class="text-xs text-indigo-600 font-bold mt-1">공수: 3~4일</p>
+                    </div>
+                    <div class="flex-1">
+                        <ul class="text-xs text-gray-600 space-y-2 list-disc list-inside">
+                            <li><b>노출 쿼리 전수 수정:</b> 상품 리스트/상세 쿼리에 <b>상태값(Status) 조건</b> 추가</li>
+                            <li><b>제어 시스템 가동:</b> 'Active' 상태인 유통사 상품만 노출되도록 필터링 로직 활성화</li>
+                            <li><b>사용자 UI 추가:</b> 마이페이지 내 지점 관리(수락/거부) 인터페이스 작업 포함</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Phase 3 -->
+                <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col md:flex-row gap-6">
+                    <div class="md:w-48 flex-shrink-0">
+                        <span class="bg-indigo-600 text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest">Phase 3</span>
+                        <p class="mt-2 text-sm font-bold text-gray-900 underline decoration-indigo-200 underline-offset-4">관리자 운영 도구 완성</p>
+                        <p class="text-xs text-indigo-600 font-bold mt-1">공수: 2일</p>
+                    </div>
+                    <div class="flex-1">
+                        <ul class="text-xs text-gray-600 space-y-2 list-disc list-inside">
+                            <li><b>통합 매칭 관리 UI:</b> 관리자 페이지에서 버튼 하나로 <b>매칭 해제/변경/본사 이관</b></li>
+                            <li><b>미스매칭 모니터링:</b> 주소지와 유통사 권역 불일치 회원 자동 추출 및 필터 기능</li>
+                            <li><b>운영 자동화:</b> 관리자 상태 변경 시 고객에게 안내 알림톡 자동 발송 연동</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Final Decision -->
+        <footer class="mt-12 p-8 bg-slate-900 text-white rounded-3xl text-center shadow-2xl">
+            <h3 class="text-xl font-bold mb-4 italic">"데이터 자산화와 운영 효율을 위한 MVP 전략"</h3>
+            <p class="text-slate-400 text-sm leading-relaxed mb-6">
+                현재의 '무조건 노출' 방식에서 <span class="text-yellow-400 font-bold">Phase 1(데이터 축적)</span>부터 즉시 착수하여<br>
+                약 1주일 내에 <span class="text-white font-bold">상태 기반 제어 시스템</span>으로의 안정적인 전환을 제안합니다.
+            </p>
+        </footer>
+    </div>
+
+</body>
+</html>
