@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ORDERZ - 지역 기반 식자재 정보 플랫폼</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=Noto+Serif+KR:wght@400;600&display=swap');
+        
+        body { font-family: 'Noto Sans KR', sans-serif; word-break: keep-all; }
+        .font-serif { font-family: 'Noto Serif KR', serif; }
+        
+        .hero-bg {
+            background-image: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.9)), url('https://images.unsplash.com/photo-1451187580459-43490279c0fa?ixlib=rb-1.2.1&auto=format&fit=crop&w=1920&q=80');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+        }
+
+        .hover-card-effect { transition: all 0.3s ease; }
+        .hover-card-effect:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 antialiased overflow-x-hidden">
+
+    <!-- Navbar -->
+    <nav class="fixed w-full z-50 bg-white shadow-sm border-b border-gray-100 transition-all duration-300">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-14 md:h-16">
+                <div class="flex items-center">
+                    <span class="text-xl md:text-2xl font-bold text-teal-600 tracking-tight">ORDERZ</span>
+                </div>
+                <div class="hidden md:block text-sm text-gray-500 font-medium">
+                    지역 기반 식자재 정보 플랫폼
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content Area -->
+    <div class="relative min-h-screen flex flex-col justify-center">
+        
+        <!-- Hero Section -->
+        <section id="step-1" class="hero-bg absolute inset-0 w-full z-10 overflow-y-auto">
+            <div class="container max-w-5xl mx-auto px-4 text-center text-white min-h-screen flex flex-col justify-start md:justify-center pt-40 pb-6 md:py-24">
+                
+                <h1 class="font-black mb-6 md:mb-8 leading-tight drop-shadow-2xl tracking-tight">
+                    <span class="block text-sm sm:text-base md:text-xl font-bold text-teal-300 mb-1 tracking-widest opacity-90">사업자 전용</span>
+                    <span class="block text-3xl sm:text-5xl md:text-7xl text-white mb-2 break-keep">
+                        <span id="dynamic-region">우리 동네</span> 직배송
+                    </span>
+                    <span class="block font-medium text-xl sm:text-3xl md:text-5xl text-gray-200 mt-2 md:mt-4 break-keep">식자재 정보를 한눈에!</span>
+                </h1>
+                
+                <!-- Sub Copy -->
+                <div class="flex flex-col items-center space-y-2.5 md:space-y-4 mb-8 md:mb-12 w-full max-w-2xl mx-auto px-2">
+                    <div class="flex items-center justify-start md:justify-center space-x-3 md:space-x-4 bg-white/10 backdrop-blur-md px-4 py-3 md:px-6 md:py-4 rounded-xl border border-white/20 w-full hover:bg-white/20 transition-all duration-300">
+                        <div class="bg-teal-500/20 p-1.5 md:p-2 rounded-lg flex-shrink-0">
+                            <i class="fas fa-map-marked-alt text-teal-300 text-lg md:text-xl"></i>
+                        </div>
+                        <span class="text-sm sm:text-base md:text-xl font-medium text-gray-100 text-left leading-snug">지역 기반으로 식당과 유통사를 연결</span>
+                    </div>
+                    <div class="flex items-center justify-start md:justify-center space-x-3 md:space-x-4 bg-white/10 backdrop-blur-md px-4 py-3 md:px-6 md:py-4 rounded-xl border border-white/20 w-full hover:bg-white/20 transition-all duration-300">
+                        <div class="bg-yellow-500/20 p-1.5 md:p-2 rounded-lg flex-shrink-0">
+                            <i class="fas fa-bolt text-yellow-300 text-lg md:text-xl"></i>
+                        </div>
+                        <span class="text-sm sm:text-base md:text-xl font-medium text-gray-100 text-left leading-snug">상품·배송 정보는 실시간으로 확인</span>
+                    </div>
+                    <div class="flex items-center justify-start md:justify-center space-x-3 md:space-x-4 bg-white/10 backdrop-blur-md px-4 py-3 md:px-6 md:py-4 rounded-xl border border-white/20 w-full hover:bg-white/20 transition-all duration-300">
+                        <div class="bg-green-500/20 p-1.5 md:p-2 rounded-lg flex-shrink-0">
+                            <i class="fas fa-comments text-green-300 text-lg md:text-xl"></i>
+                        </div>
+                        <span class="text-sm sm:text-base md:text-xl font-medium text-gray-100 text-left leading-snug">카톡부터 주문앱까지, 편한 방식으로 거래</span>
+                    </div>
+                </div>
+
+                <!-- Action Buttons (Changed to <a> Tags for reliable linking) -->
+                <div class="flex flex-col md:flex-row justify-center gap-4 md:gap-6 max-w-5xl mx-auto mb-8 px-2">
+                    
+                    <!-- Restaurant Button -->
+                    <!-- 'signup-link' class added for script targeting -->
+                    <a href="https://orderz.kr/bbs/register_form.php" class="signup-link hover-card-effect group relative bg-white hover:bg-teal-50 text-gray-800 p-6 md:p-8 rounded-2xl shadow-2xl flex-1 text-left border-b-4 border-teal-500 w-full md:w-auto overflow-hidden block">
+                        <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                            <i class="fas fa-utensils text-5xl sm:text-6xl md:text-9xl text-teal-600 transform rotate-12"></i>
+                        </div>
+                        <div class="relative z-10 flex flex-col h-full">
+                            <h3 class="text-lg sm:text-xl md:text-2xl font-bold mb-3 md:mb-4 text-teal-700 flex items-center">
+                                <i class="fas fa-store mr-2"></i> 식당 사장님인가요?
+                            </h3>
+                            <div class="text-gray-600 mb-6 md:mb-8 text-sm leading-relaxed font-medium flex-grow space-y-3 text-left">
+                                <div>
+                                    <p class="text-teal-600 font-bold text-base">"오더즈는<br>오픈마켓이 아닙니다."</p>
+                                </div>
+                                
+                                <div>
+                                    <p>내 지역 유통사의 <span class="text-red-500 font-extrabold">(무료배송!)</span></p>
+                                    <p class="text-gray-800 font-bold mt-1">
+                                        가게까지<br>
+                                        직배송 가능한 상품을<br>
+                                        확인해보세요.
+                                    </p>
+                                </div>
+
+                                <div class="pt-2 border-t border-gray-100">
+                                    <p class="text-gray-500 text-xs">
+                                        불필요한 상품 없이<br>
+                                        <span class="text-teal-600 font-bold">자주 쓰는 상품만</span> 가격과 시세를<br>
+                                        확인할 수 있습니다.
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="inline-flex items-center justify-center w-full py-3 px-4 bg-teal-600 text-white rounded-lg font-bold group-hover:bg-teal-700 transition-colors mt-auto text-sm md:text-base">
+                                직배송 식자재 보러가기 <i class="fas fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
+                            </div>
+                        </div>
+                    </a>
+
+                    <!-- Distributor Button -->
+                    <!-- 'signup-link' class added for script targeting -->
+                    <a href="https://orderz.kr/bbs/register_form.php" class="signup-link hover-card-effect group relative bg-slate-800 hover:bg-slate-700 text-white p-6 md:p-8 rounded-2xl shadow-2xl flex-1 text-left border-b-4 border-orange-500 w-full md:w-auto overflow-hidden block">
+                        <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                            <i class="fas fa-truck text-5xl sm:text-6xl md:text-9xl text-slate-400 transform -rotate-12"></i>
+                        </div>
+                        <div class="relative z-10 flex flex-col h-full">
+                            <h3 class="text-lg sm:text-xl md:text-2xl font-bold mb-3 md:mb-4 text-orange-400 flex items-center">
+                                <i class="fas fa-handshake mr-2"></i> 유통사 모집
+                            </h3>
+                            <div class="text-gray-300 mb-6 text-sm leading-relaxed font-medium flex-grow flex flex-col justify-center space-y-3">
+                                <div>
+                                    <p class="text-white font-bold text-base">직배송 가능 지역 선택!</p>
+                                    <p><span class="text-orange-300">미수금없는</span>, 내 지역 주문 자동 수집</p>
+                                </div>
+                                
+                                <div class="w-full border-t border-gray-600/50 my-1"></div>
+
+                                <div>
+                                    <p class="flex items-center text-white justify-start md:justify-start">
+                                        <i class="fas fa-comment text-yellow-400 mr-2"></i>기존 거래 방식 그대로
+                                    </p>
+                                    <p class="text-gray-200">거래처별 단가 맞춤 설정 가능</p>
+                                </div>
+                                
+                                <p class="text-orange-200 font-medium pt-1">상품등록부터 오더즈가 지원합니다.</p>
+                            </div>
+                            
+                            <p class="text-gray-400 text-xs mb-3 text-center font-medium">
+                                지금 식당 사장님들이 기다리고 있습니다.
+                            </p>
+                            <div class="inline-flex items-center justify-center w-full py-3 px-4 bg-orange-500 text-slate-900 rounded-lg font-bold group-hover:bg-orange-400 transition-colors mt-auto text-sm md:text-base">
+                                유통사 신청하기 <i class="fas fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
+                            </div>
+                        </div>
+                    </a>
+                </div>
+
+                <!-- Footer / Business Info -->
+                <div class="text-[10px] text-gray-400 opacity-60 leading-relaxed pb-6">
+                    <p class="mb-1">© 2025 ORDERZ by ONEAPP. All Rights Reserved.</p>
+                    <p>
+                        원앱(ONEAPP) &nbsp; 사업자등록번호: 380-14-01523 &nbsp; 주소: 서울특별시 송파구 양재대로 932
+                    </p>
+                </div>
+
+            </div>
+        </section>
+
+    </div>
+
+    <script>
+        // Set dynamic region text on load
+        window.onload = function() {
+            // 1. Dynamic Region
+            const urlParams = new URLSearchParams(window.location.search);
+            const region = urlParams.get('region');
+            const regionEl = document.getElementById('dynamic-region');
+            if (region && regionEl) {
+                regionEl.innerText = region;
+            }
+
+            // 2. Parameter Relay (이어달리기) Logic
+            passBatonParams();
+        };
+
+        /**
+         * [파라미터 이어달리기 스크립트]
+         * 현재 페이지(랜딩)로 들어온 URL 파라미터를 감지하여
+         * 오더즈 가입 링크(a.signup-link) 뒤에 자동으로 이어 붙입니다.
+         */
+        function passBatonParams() {
+            const currentQuery = window.location.search;
+            
+            // 파라미터가 없으면 아무것도 안 함
+            if (!currentQuery) return;
+
+            // 'signup-link' 클래스를 가진 모든 a 태그 선택
+            const links = document.querySelectorAll('a.signup-link');
+
+            links.forEach(function(link) {
+                try {
+                    let originalUrl = new URL(link.href);
+                    const currentParams = new URLSearchParams(currentQuery);
+
+                    currentParams.forEach((value, key) => {
+                        // 기존 링크에 파라미터가 없으면 추가 (덮어쓰기 방지)
+                        if (!originalUrl.searchParams.has(key)) {
+                            originalUrl.searchParams.append(key, value);
+                        }
+                    });
+
+                    // href 속성 업데이트 (클릭 시 이 주소로 이동)
+                    link.href = originalUrl.toString();
+                    // console.log("🔗 Relay Link Updated:", link.href);
+
+                } catch (e) {
+                    console.error("Link update failed", e);
+                }
+            });
+        }
+    </script>
+</body>
+</html>
