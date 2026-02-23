@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>우리의 오더즈 - 회원관리 (접속링크 기능 포함)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b5998', // 기존 시스템과 유사한 메인 컬러
+                        secondary: '#f3f4f6',
+                        accent: '#10b981', // 링크 발송 강조 컬러 (녹색)
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* 기본 스크롤바 커스텀 및 폰트 */
+        body { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; background-color: #f8f9fa; }
+        .table-header { background-color: #6a82a7; color: white; }
+        .table-row:nth-child(even) { background-color: #f8fafc; }
+        .table-row:hover { background-color: #e2e8f0; }
+        
+        /* 토스트 메시지 애니메이션 */
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+        .toast {
+            animation: slideInRight 0.3s ease-out forwards;
+        }
+        .toast.hide {
+            animation: fadeOut 0.3s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="text-sm text-gray-800">
+
+    <!-- Top Navigation -->
+    <header class="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-6 shadow-sm z-10 relative">
+        <div class="flex items-center gap-2">
+            <span class="text-2xl font-bold text-primary tracking-tighter">우리<span class="text-sm font-normal text-gray-500 ml-1">의 오더즈</span></span>
+        </div>
+        <div class="flex items-center gap-4 text-gray-600">
+            <button class="flex items-center gap-1 hover:text-primary"><i class="fas fa-store"></i> 쇼핑몰</button>
+            <button class="flex items-center gap-1 hover:text-red-600"><i class="fas fa-sign-out-alt"></i> 로그아웃</button>
+        </div>
+    </header>
+
+    <div class="flex h-[calc(100vh-4rem)]">
+        <!-- Sidebar Navigation -->
+        <aside class="w-56 bg-white border-r border-gray-200 flex flex-col pt-6 flex-shrink-0">
+            <h2 class="text-lg font-bold px-6 mb-4">대시보드</h2>
+            <nav class="flex flex-col gap-1">
+                <a href="#" class="px-6 py-3 text-gray-600 hover:bg-gray-50">회사정보설정</a>
+                <a href="#" class="px-6 py-3 text-gray-600 hover:bg-gray-50">유통정보설정</a>
+                <a href="#" class="px-6 py-3 text-primary font-bold border-r-4 border-primary bg-blue-50">회원관리</a>
+                <a href="#" class="px-6 py-3 text-gray-600 hover:bg-gray-50">상품관리</a>
+                <a href="#" class="px-6 py-3 text-gray-600 hover:bg-gray-50">주문내역</a>
+                <a href="#" class="px-6 py-3 text-gray-600 hover:bg-gray-50">주문내역출력</a>
+            </nav>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="flex-1 p-6 overflow-y-auto" id="mainContent">
+            
+            <!-- ====== [1] 회원 목록 뷰 ====== -->
+            <div id="listView" class="bg-white border border-gray-200 shadow-sm p-4">
+                
+                <!-- 상단 필터 및 버튼 그룹 (최적화 됨) -->
+                <div class="flex justify-between items-end mb-3">
+                    <div class="flex flex-col gap-2">
+                        <div class="flex gap-2 text-xs">
+                            <span class="bg-primary text-white px-2 py-1 rounded">전체목록</span>
+                            <span class="bg-blue-100 text-primary px-2 py-1 rounded">총회원수 <strong class="ml-1">4명</strong></span>
+                            <span class="bg-blue-100 text-primary px-2 py-1 rounded">차단 <strong class="ml-1">0명</strong></span>
+                            <span class="bg-blue-100 text-primary px-2 py-1 rounded">탈퇴 <strong class="ml-1">0명</strong></span>
+                        </div>
+                        <div class="flex gap-1 text-xs">
+                            <select class="border border-gray-300 px-2 py-1 rounded bg-white outline-none">
+                                <option>회원아이디</option>
+                                <option>거래처명</option>
+                            </select>
+                            <input type="text" class="border border-gray-300 px-2 py-1 rounded w-40 outline-none focus:border-primary">
+                            <button class="bg-gray-600 text-white px-3 py-1 rounded hover:bg-gray-700 transition"><i class="fas fa-search"></i> 검색</button>
+                        </div>
+                    </div>
+                    
+                    <div class="flex gap-1.5 items-center">
+                        <!-- 기본 관리 버튼군 -->
+                        <button class="bg-gray-500 text-white px-2.5 py-1 rounded hover:bg-gray-600 text-xs shadow-sm transition">선택수정</button>
+                        <button class="bg-gray-500 text-white px-2.5 py-1 rounded hover:bg-gray-600 text-xs shadow-sm transition">선택삭제</button>
+                        <button class="bg-pink-500 text-white px-2.5 py-1 rounded hover:bg-pink-600 text-xs shadow-sm transition">회원추가</button>
+                        
+                        <div class="w-px h-4 bg-gray-300 mx-1"></div> <!-- 구분선 -->
+                        
+                        <!-- NEW: 일괄 링크 발송 버튼 (강조, 약간 작게) -->
+                        <button class="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 text-xs font-bold shadow-sm flex items-center gap-1 transition" onclick="openModal('multiple')">
+                            <i class="fas fa-paper-plane"></i> 선택 링크발송
+                        </button>
+                        
+                        <div class="w-px h-4 bg-gray-300 mx-1"></div> <!-- 구분선 -->
+                        
+                        <!-- 다운로드/업로드 버튼군 -->
+                        <button class="bg-blue-600 text-white px-2.5 py-1 rounded hover:bg-blue-700 text-xs shadow-sm transition"><i class="fas fa-download mr-1"></i>목록다운</button>
+                        <button class="bg-indigo-600 text-white px-2.5 py-1 rounded hover:bg-indigo-700 text-xs shadow-sm transition"><i class="fas fa-upload mr-1"></i>업로드</button>
+                    </div>
+                </div>
+
+                <div class="text-xs text-gray-500 mb-2 p-2 bg-gray-50 border border-gray-200">
+                    <i class="fas fa-info-circle"></i> 회원자료 삭제 시 다른 회원이 기존 회원아이디를 사용하지 못하도록 회원아이디, 이름, 닉네임은 삭제하지 않고 영구 보관합니다.
+                </div>
+
+                <!-- 데이터 테이블 -->
+                <div class="overflow-x-auto border border-gray-300">
+                    <table class="w-full text-center whitespace-nowrap">
+                        <thead class="table-header text-xs">
+                            <tr>
+                                <th rowspan="2" class="p-2 border-r border-gray-400 border-b w-10"><input type="checkbox"></th>
+                                <th class="p-1 border-r border-gray-400 border-b">아이디</th>
+                                <th class="p-1 border-r border-gray-400 border-b">대표자명</th>
+                                <th class="p-1 border-r border-gray-400 border-b">메일수신</th>
+                                <th class="p-1 border-r border-gray-400 border-b">거래처그룹</th>
+                                <th class="p-1 border-r border-gray-400 border-b">상태</th>
+                                <th class="p-1 border-r border-gray-400 border-b">휴대폰</th>
+                                <th class="p-1 border-r border-gray-400 border-b">최종접속</th>
+                                <th rowspan="2" class="p-2 border-b w-32">관리</th>
+                            </tr>
+                            <tr>
+                                <th class="p-1 border-r border-gray-400 border-b">거래처명</th>
+                                <th class="p-1 border-r border-gray-400 border-b bg-[#5b7396]">닉네임</th>
+                                <th class="p-1 border-r border-gray-400 border-b bg-[#5b7396]">사업자번호</th>
+                                <th class="p-1 border-r border-gray-400 border-b bg-[#5b7396]">SMS수신</th>
+                                <th class="p-1 border-r border-gray-400 border-b bg-[#5b7396]">거래처담당자</th>
+                                <th class="p-1 border-r border-gray-400 border-b bg-[#5b7396]">권한</th>
+                                <th class="p-1 border-r border-gray-400 border-b bg-[#5b7396]">전화번호</th>
+                                <th class="p-1 border-r border-gray-400 border-b bg-[#5b7396]">가입일</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-xs">
+                            <!-- Row 1 -->
+                            <tr class="table-row border-b border-gray-200">
+                                <td rowspan="2" class="p-2 border-r border-gray-200"><input type="checkbox"></td>
+                                <td class="p-1 border-r border-gray-200">orderz_roma0223</td>
+                                <td class="p-1 border-r border-gray-200">김철수</td>
+                                <td class="p-1 border-r border-gray-200"><input type="checkbox" checked></td>
+                                <td class="p-1 border-r border-gray-200">88</td>
+                                <td class="p-1 border-r border-gray-200 text-blue-600">정상</td>
+                                <td class="p-1 border-r border-gray-200">010-8512-8787</td>
+                                <td class="p-1 border-r border-gray-200">26-02-23</td>
+                                <td rowspan="2" class="p-2 align-middle">
+                                    <div class="flex flex-col gap-1 items-center justify-center">
+                                        <!-- 기존 수정 버튼 -->
+                                        <button class="bg-primary text-white px-3 py-1 rounded text-xs w-full hover:bg-blue-800" onclick="toggleView('detail')">수정</button>
+                                        <!-- NEW: 빠른 링크 발송 버튼 -->
+                                        <button class="bg-accent text-white px-2 py-1 rounded text-xs w-full hover:bg-green-600 flex justify-center items-center gap-1 shadow" onclick="openModal('로만시스', '010-8512-8787')">
+                                            <i class="fas fa-link"></i> 링크발송
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr class="table-row border-b border-gray-300">
+                                <td class="p-1 border-r border-gray-200 font-bold">로만시스</td>
+                                <td class="p-1 border-r border-gray-200">로만시스</td>
+                                <td class="p-1 border-r border-gray-200">123-45-67890</td>
+                                <td class="p-1 border-r border-gray-200"><input type="checkbox"></td>
+                                <td class="p-1 border-r border-gray-200"></td>
+                                <td class="p-1 border-r border-gray-200">전용회원</td>
+                                <td class="p-1 border-r border-gray-200"></td>
+                                <td class="p-1 border-r border-gray-200">26-02-23</td>
+                            </tr>
+
+                            <!-- Row 2 -->
+                            <tr class="table-row border-b border-gray-200 bg-gray-50">
+                                <td rowspan="2" class="p-2 border-r border-gray-200"><input type="checkbox"></td>
+                                <td class="p-1 border-r border-gray-200">test123456</td>
+                                <td class="p-1 border-r border-gray-200"></td>
+                                <td class="p-1 border-r border-gray-200"><input type="checkbox"></td>
+                                <td class="p-1 border-r border-gray-200"></td>
+                                <td class="p-1 border-r border-gray-200 text-red-500">삭제</td>
+                                <td class="p-1 border-r border-gray-200">010-1111-2222</td>
+                                <td class="p-1 border-r border-gray-200">23-07-27</td>
+                                <td rowspan="2" class="p-2 align-middle">
+                                    <div class="flex flex-col gap-1 items-center justify-center">
+                                        <button class="bg-primary text-white px-3 py-1 rounded text-xs w-full hover:bg-blue-800" onclick="toggleView('detail')">수정</button>
+                                        <button class="bg-gray-400 text-white px-2 py-1 rounded text-xs w-full cursor-not-allowed flex justify-center items-center gap-1">
+                                            <i class="fas fa-ban"></i> 발송불가
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr class="table-row border-b border-gray-300 bg-gray-50">
+                                <td class="p-1 border-r border-gray-200">경남거제test</td>
+                                <td class="p-1 border-r border-gray-200">경남거제test</td>
+                                <td class="p-1 border-r border-gray-200"></td>
+                                <td class="p-1 border-r border-gray-200"><input type="checkbox"></td>
+                                <td class="p-1 border-r border-gray-200"></td>
+                                <td class="p-1 border-r border-gray-200">전용회원</td>
+                                <td class="p-1 border-r border-gray-200"></td>
+                                <td class="p-1 border-r border-gray-200">23-07-27</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ====== [2] 회원 상세 (수정) 뷰 ====== -->
+            <div id="detailView" class="hidden bg-white border border-gray-200 shadow-sm p-4">
+                <div class="flex justify-between items-center mb-4 pb-2 border-b">
+                    <h3 class="text-lg font-bold text-gray-800">회원 정보 수정</h3>
+                    <div class="flex gap-2">
+                        <button class="bg-gray-400 text-white px-4 py-1.5 rounded hover:bg-gray-500 font-bold" onclick="toggleView('list')">목록</button>
+                        <button class="bg-pink-500 text-white px-4 py-1.5 rounded hover:bg-pink-600 font-bold" onclick="showToast('수정되었습니다.')">확인</button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-x-8 gap-y-4">
+                    <!-- 기본 정보 폼 (기존 화면 구조 재현) -->
+                    <div class="flex border-b border-gray-100 pb-2">
+                        <div class="w-32 font-bold text-gray-600 bg-gray-50 p-2 flex items-center">아이디</div>
+                        <div class="flex-1 p-2"><input type="text" value="orderz_roma0223" readonly class="bg-gray-100 border border-gray-300 p-1 w-full outline-none"></div>
+                    </div>
+                    <div class="flex border-b border-gray-100 pb-2">
+                        <div class="w-32 font-bold text-gray-600 bg-gray-50 p-2 flex items-center">비밀번호</div>
+                        <div class="flex-1 p-2 flex items-center gap-2">
+                            <input type="password" value="********" class="border border-gray-300 p-1 bg-blue-50 w-full outline-none">
+                            <button class="bg-gray-500 text-white px-2 py-1 rounded text-xs whitespace-nowrap">초기화</button>
+                        </div>
+                    </div>
+                    <div class="flex border-b border-gray-100 pb-2">
+                        <div class="w-32 font-bold text-gray-600 bg-gray-50 p-2 flex items-center">거래처명</div>
+                        <div class="flex-1 p-2"><input type="text" value="로만시스" class="border border-gray-300 p-1 w-full outline-none"></div>
+                    </div>
+                    <div class="flex border-b border-gray-100 pb-2">
+                        <div class="w-32 font-bold text-gray-600 bg-gray-50 p-2 flex items-center">휴대폰번호</div>
+                        <div class="flex-1 p-2"><input type="text" value="010-8512-8787" class="border border-gray-300 p-1 w-full outline-none"></div>
+                    </div>
+                </div>
+
+                <!-- ====== NEW: 상세페이지 내 링크 관리 섹션 ====== -->
+                <div class="mt-8 border border-green-200 rounded-lg overflow-hidden">
+                    <div class="bg-green-50 px-4 py-3 border-b border-green-200 flex justify-between items-center">
+                        <h4 class="font-bold text-green-800 flex items-center gap-2"><i class="fas fa-link"></i> 자동 로그인 접속 정보 설정</h4>
+                        <span class="text-xs bg-green-200 text-green-800 px-2 py-1 rounded-full">상태: 발송 이력 없음</span>
+                    </div>
+                    <div class="p-4 bg-white grid grid-cols-1 md:grid-cols-2 gap-6">
+                        
+                        <!-- 링크 생성/설정 영역 -->
+                        <div class="flex flex-col gap-3">
+                            <div class="flex flex-col gap-2">
+                                <div class="flex gap-2 items-center">
+                                    <span class="w-24 text-gray-600 font-bold text-sm">목적지 선택</span>
+                                    <select id="detailDest" onchange="updateUrlInput('detail')" class="border border-gray-300 rounded p-1.5 flex-1 text-sm outline-none">
+                                        <option value="custom" class="font-bold text-primary">직접 입력 (하단 URL 창 사용)</option>
+                                        <option value="https://orderz.kr/">쇼핑몰 메인 (홈)</option>
+                                        <option value="https://orderz.kr/cart">장바구니 / 결제 진행</option>
+                                        <option value="https://orderz.kr/event/spring">봄맞이 특가 기획전</option>
+                                    </select>
+                                </div>
+                                <div id="detailCustomUrlWrapper" class="flex gap-2 items-center">
+                                    <span class="w-24 text-gray-600 font-bold text-sm">도착 URL</span>
+                                    <input type="text" id="detailCustomUrl" placeholder="도착할 페이지의 전체 URL을 입력하세요." class="border border-green-400 bg-green-50 rounded p-1.5 flex-1 text-sm outline-none placeholder-gray-400 focus:ring-1 focus:ring-green-500">
+                                </div>
+                            </div>
+                            <div class="flex gap-2 items-center">
+                                <span class="w-24 text-gray-600 font-bold text-sm">링크 유효기간</span>
+                                <select id="detailExp" class="border border-gray-300 rounded p-1.5 flex-1 text-sm outline-none">
+                                    <option value="72">72시간 (3일) 뒤 만료</option>
+                                    <option value="24">24시간 (1일) 뒤 만료</option>
+                                    <option value="unlimited">무제한 (보안상 비권장)</option>
+                                </select>
+                            </div>
+                            <div class="flex gap-2 items-center">
+                                <span class="w-24 text-gray-600 font-bold text-sm">접속 권한</span>
+                                <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked class="accent-green-600"> 1회 사용 시 즉시 폐기 (추천)</label>
+                            </div>
+                        </div>
+
+                        <!-- 링크 확인/수동 발송 영역 -->
+                        <div class="bg-gray-50 border border-gray-200 p-3 rounded flex flex-col justify-between">
+                            <div>
+                                <div class="text-xs text-gray-500 mb-1">현재 생성된 고유 접속 링크 (토큰)</div>
+                                <div class="bg-white border border-gray-300 p-2 rounded text-xs text-gray-600 break-all font-mono select-all">
+                                    https://orderz.kr/login?t=ENC_c8x9a2b4...<span class="text-gray-400 italic">(생성전)</span>
+                                </div>
+                            </div>
+                            <div class="flex gap-2 mt-3">
+                                <button class="flex-1 bg-white border border-gray-300 text-gray-700 py-1.5 rounded hover:bg-gray-100 text-sm shadow-sm" onclick="generateAndCopyLink()">
+                                    <i class="far fa-copy"></i> 링크 생성 및 복사
+                                </button>
+                                <button class="flex-1 bg-yellow-400 text-yellow-900 py-1.5 rounded hover:bg-yellow-500 text-sm font-bold shadow-sm" onclick="showToast('알림톡 발송 완료')">
+                                    <i class="fas fa-comment"></i> 알림톡 전송
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- ====== [3] 모달 (빠른 링크 발송 팝업) ====== -->
+    <div id="linkModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg shadow-xl w-[500px] overflow-hidden transform transition-all">
+            <!-- Modal Header -->
+            <div class="bg-primary text-white px-5 py-3 flex justify-between items-center">
+                <h3 class="font-bold text-lg"><i class="fas fa-paper-plane mr-2"></i>자동 로그인 링크 발송</h3>
+                <button onclick="closeModal()" class="text-white hover:text-gray-200 focus:outline-none">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            
+            <!-- Modal Body -->
+            <div class="p-6">
+                <div class="bg-blue-50 border border-blue-100 rounded p-3 mb-5">
+                    <p class="text-sm text-blue-800">
+                        발송 대상: <strong id="modalTargetName" class="text-lg ml-1">로만시스</strong> 
+                        <span id="modalTargetPhone" class="text-gray-500 ml-2">(010-8512-8787)</span>
+                    </p>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">고객 도착 페이지 설정</label>
+                        <select id="modalDestSelect" onchange="updateUrlInput('modal')" class="w-full border border-gray-300 rounded p-2 focus:ring-primary focus:border-primary outline-none mb-2">
+                            <option value="custom" class="font-bold text-primary">직접 입력 (하단 URL 창 사용)</option>
+                            <option value="https://orderz.kr/">쇼핑몰 메인 화면</option>
+                            <option value="https://orderz.kr/cart">진행중인 장바구니/결제 화면</option>
+                            <option value="https://orderz.kr/event/spring">봄맞이 특가 기획전 화면</option>
+                        </select>
+                        <input type="text" id="modalCustomUrl" placeholder="보내실 특정 상품이나 기획전 URL을 직접 입력하세요. (예: https://orderz.kr/...)" class="w-full border border-green-400 bg-green-50 rounded p-2 focus:ring-primary focus:border-primary outline-none text-sm placeholder-gray-400">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">링크 보안 설정</label>
+                        <div class="flex gap-4">
+                            <select class="flex-1 border border-gray-300 rounded p-2 outline-none">
+                                <option>유효기간 72시간</option>
+                                <option>유효기간 24시간</option>
+                            </select>
+                            <label class="flex items-center gap-2 cursor-pointer flex-1 bg-gray-50 border border-gray-200 px-3 rounded">
+                                <input type="checkbox" checked class="accent-primary w-4 h-4">
+                                <span class="text-sm">1회 클릭 시 폐기</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-6 p-3 bg-gray-50 rounded text-xs text-gray-500 border border-gray-200">
+                    <i class="fas fa-info-circle mr-1 text-primary"></i> 
+                    버튼 클릭 즉시 고객에게 암호화된 전용 접속 토큰이 발송됩니다.
+                </div>
+            </div>
+            
+            <!-- Modal Footer -->
+            <div class="bg-gray-100 px-5 py-3 flex justify-end gap-2 border-t border-gray-200">
+                <button onclick="closeModal()" class="px-4 py-2 bg-white border border-gray-300 rounded text-gray-700 hover:bg-gray-50">취소</button>
+                <button onclick="copyToClipboardAndClose()" class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 flex items-center gap-1">
+                    <i class="fas fa-copy"></i> 수동 복사
+                </button>
+                <button onclick="sendAndClose()" class="px-5 py-2 bg-yellow-400 text-yellow-900 font-bold rounded hover:bg-yellow-500 shadow-sm flex items-center gap-1">
+                    <i class="fas fa-comment"></i> 알림톡 발송
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="hidden fixed top-20 right-6 bg-gray-800 text-white px-6 py-3 rounded shadow-lg flex items-center gap-3 z-50">
+        <i class="fas fa-check-circle text-green-400"></i>
+        <span id="toastMsg">발송 완료</span>
+    </div>
+
+    <script>
+        // 화면 전환 로직
+        function toggleView(viewType) {
+            const listView = document.getElementById('listView');
+            const detailView = document.getElementById('detailView');
+            
+            if(viewType === 'list') {
+                listView.classList.remove('hidden');
+                detailView.classList.add('hidden');
+            } else {
+                listView.classList.add('hidden');
+                detailView.classList.remove('hidden');
+            }
+        }
+
+        // 모달 제어 로직
+        const modal = document.getElementById('linkModal');
+        
+        function openModal(name, phone) {
+            if(name === 'multiple') {
+                document.getElementById('modalTargetName').innerText = "선택된 고객 3명";
+                document.getElementById('modalTargetPhone').innerText = "(일괄 전송)";
+            } else {
+                document.getElementById('modalTargetName').innerText = name;
+                document.getElementById('modalTargetPhone').innerText = `(${phone})`;
+            }
+            
+            // 모달 열 때 '직접 입력'을 기본값으로 강제 리셋 및 포커스
+            const select = document.getElementById('modalDestSelect');
+            const input = document.getElementById('modalCustomUrl');
+            select.value = 'custom';
+            input.value = ''; // 이전 입력값 초기화
+            
+            modal.classList.remove('hidden');
+            
+            // 모달 렌더링 후 URL 입력창에 자동 포커스 (UX 개선)
+            setTimeout(() => {
+                input.focus();
+            }, 100);
+        }
+
+        function closeModal() {
+            modal.classList.add('hidden');
+        }
+
+        // 목적지 설정 및 URL 창 동기화 로직
+        function updateUrlInput(type) {
+            const selectId = type === 'modal' ? 'modalDestSelect' : 'detailDest';
+            const inputId = type === 'modal' ? 'modalCustomUrl' : 'detailCustomUrl';
+            const select = document.getElementById(selectId);
+            const input = document.getElementById(inputId);
+
+            if (select.value === 'custom') {
+                input.value = '';
+                input.focus();
+            } else {
+                input.value = select.value;
+            }
+        }
+
+        // 액션 로직 (시뮬레이션)
+        function sendAndClose() {
+            closeModal();
+            showToast('카카오 알림톡으로 로그인 링크가 전송되었습니다.');
+        }
+
+        function copyToClipboardAndClose() {
+            // 실제 클립보드 복사 코드 (여기서는 시뮬레이션)
+            const fakeUrl = "https://orderz.kr/autologin?t=ENC_" + Math.random().toString(36).substring(2, 10);
+            
+            // Clipboard API (브라우저 정책상 HTTPS나 localhost에서만 완벽 동작하므로 fallback 제공)
+            try {
+                navigator.clipboard.writeText(fakeUrl).then(() => {
+                    closeModal();
+                    showToast('접속 링크가 클립보드에 복사되었습니다.');
+                });
+            } catch (err) {
+                // 구형 브라우저 방식 Fallback
+                const el = document.createElement('textarea');
+                el.value = fakeUrl;
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand('copy');
+                document.body.removeChild(el);
+                closeModal();
+                showToast('접속 링크가 클립보드에 복사되었습니다.');
+            }
+        }
+
+        function generateAndCopyLink() {
+            copyToClipboardAndClose(); // 모달 밖에서도 동일한 기능 재사용
+        }
+
+        // 토스트 메시지
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMsg').innerText = message;
+            
+            toast.classList.remove('hidden', 'hide');
+            
+            setTimeout(() => {
+                toast.classList.add('hide');
+                setTimeout(() => toast.classList.add('hidden'), 300); // 애니메이션 후 숨김
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
