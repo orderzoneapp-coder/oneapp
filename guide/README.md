@@ -8,3 +8,5 @@ https://oneapp.orderz.co.kr/guide/order.html
 
  [오더즈 빠른 주문 리뉴얼 개발 통합본](https://github.com/orderzoneapp-coder/oneapp/blob/main/guide/orderz01.html)
  https://oneapp.orderz.co.kr/guide/orderz01.html
+ 
+오프라인 고객 온라인 전환 전용 주문 기초 가이드 https://oneapp.orderz.co.kr/guide/event.html
