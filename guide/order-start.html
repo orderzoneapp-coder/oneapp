@@ -50,7 +50,7 @@
         #tooltip {
             position: absolute;
             z-index: 70;
-            width: 280px;
+            width: 295px; /* 텍스트 확대에 맞춰 너비 살짝 넓힘 (280 -> 295) */
             transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             visibility: hidden;
         }
@@ -139,8 +139,9 @@
                         <h3 class="font-bold text-gray-800 text-sm">월동무(특) <span class="text-gray-400 text-[10px] font-normal">BOX</span></h3>
                         <p class="text-[#008c45] font-bold text-base mt-0.5">21,000원</p>
                     </div>
-                    <div id="target-checkbox" class="w-7 h-7 flex items-center justify-center border-2 border-gray-200 rounded text-gray-200 ml-2 bg-white transition-colors">
-                        <i class="fas fa-check text-xs"></i>
+                    <!-- 체크박스 크기 축소 (w-8 h-8 -> w-[26px] h-[26px]) -->
+                    <div id="target-checkbox" class="w-[26px] h-[26px] flex items-center justify-center ml-2 transition-transform">
+                        <img src="https://oneapp2.godohosting.com/order_guide/%EC%B2%B4%ED%81%AC%EC%A0%84.png" alt="체크 전" class="w-full h-full object-contain">
                     </div>
                 </div>
                 <div class="flex items-center p-3 border-b">
@@ -149,7 +150,10 @@
                         <h3 class="font-bold text-gray-800 text-sm">배추_3입망 <span class="text-gray-400 text-[10px] font-normal">BOX</span></h3>
                         <p class="text-[#008c45] font-bold text-base mt-0.5">10,600원</p>
                     </div>
-                    <div class="w-7 h-7 flex items-center justify-center border-2 border-gray-200 rounded text-gray-200 ml-2"><i class="fas fa-check text-xs"></i></div>
+                    <!-- 체크박스 크기 축소 -->
+                    <div class="w-[26px] h-[26px] flex items-center justify-center ml-2">
+                        <img src="https://oneapp2.godohosting.com/order_guide/%EC%B2%B4%ED%81%AC%EC%A0%84.png" alt="체크 전" class="w-full h-full object-contain">
+                    </div>
                 </div>
             </div>
 
@@ -274,14 +278,15 @@
             <div id="spotlight-borders" class="absolute inset-0 pointer-events-none z-20"></div>
             
             <div id="tooltip" class="bg-[#10b981] text-white rounded-xl shadow-2xl p-4 flex flex-col z-30">
-                <div class="flex items-start mb-2">
-                    <span id="tooltip-step" class="bg-white text-[#10b981] text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm">STEP 1</span>
+                <div class="flex items-start mb-2.5">
+                    <span id="tooltip-step" class="bg-white text-[#10b981] text-[11px] font-black px-2.5 py-0.5 rounded-full shadow-sm">STEP 1</span>
                 </div>
-                <h3 id="tooltip-title" class="font-bold text-base mb-2"></h3>
-                <p id="tooltip-desc" class="text-[13px] opacity-95 leading-relaxed"></p>
+                <!-- 텍스트 크기 증가 및 줄바꿈 최적화(break-keep) 추가 -->
+                <h3 id="tooltip-title" class="font-bold text-[17px] mb-2 tracking-tight"></h3>
+                <p id="tooltip-desc" class="text-[15px] opacity-95 leading-relaxed break-keep"></p>
                 <div class="flex justify-between items-center mt-4 pt-3 border-t border-white/20">
                     <div id="step-dots" class="flex gap-1.5"></div>
-                    <button id="next-btn" onclick="nextStep()" class="bg-white text-[#10b981] font-bold px-4 py-1.5 rounded-lg text-xs shadow-md">
+                    <button id="next-btn" onclick="nextStep()" class="bg-white text-[#10b981] font-bold px-4 py-2 rounded-lg text-[13px] shadow-md">
                         다음 <i class="fas fa-chevron-right ml-1"></i>
                     </button>
                 </div>
@@ -306,10 +311,12 @@
                 desc: "매일 시키는 상품은 우측 체크박스[<i class='fas fa-check'></i>]를 눌러두세요. <b>매번 새로 찾을 필요 없이 한곳에 모아줍니다.</b>",
                 tooltipPosition: 'bottom',
                 action: () => {
-                    const el = document.getElementById('target-checkbox');
-                    el.classList.replace('border-gray-200', 'border-[#008c45]');
-                    el.classList.replace('text-gray-200', 'text-white');
-                    el.classList.replace('bg-white', 'bg-[#008c45]');
+                    // 체크 시 실제 이미지 파일(체크후.png)로 소스 변경
+                    const imgEl = document.querySelector('#target-checkbox img');
+                    if(imgEl) {
+                        imgEl.src = 'https://oneapp2.godohosting.com/order_guide/%EC%B2%B4%ED%81%AC%ED%9B%84.png';
+                        imgEl.alt = '체크 후';
+                    }
                 }
             },
             {
@@ -428,13 +435,14 @@
                         tooltip.classList.add('tooltip-arrow-bottom');
                     }
 
-                    let tLeft = (lastRect.rect.left - appRect.left + lastRect.rect.width / 2) - 140; 
+                    // 넓어진 툴팁(295px)에 맞춰 화살표 및 위치 계산 로직 수정
+                    let tLeft = (lastRect.rect.left - appRect.left + lastRect.rect.width / 2) - 147.5; 
                     if (tLeft < 10) tLeft = 10;
-                    if (tLeft + 280 > appRect.width - 10) tLeft = appRect.width - 290;
+                    if (tLeft + 295 > appRect.width - 10) tLeft = appRect.width - 305;
                     tooltip.style.left = `${tLeft}px`;
 
                     let arrowPos = (lastRect.rect.left - appRect.left + lastRect.rect.width / 2) - tLeft;
-                    arrowPos = Math.max(16, Math.min(arrowPos, 280 - 16));
+                    arrowPos = Math.max(16, Math.min(arrowPos, 295 - 16));
                     tooltip.style.setProperty('--arrow-pos', `${arrowPos}px`);
                 }
             }, 100);
