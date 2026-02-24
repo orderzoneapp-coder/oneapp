@@ -8,13 +8,19 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        
+        /* 카카오톡 등 인앱 브라우저 하단바 잘림 방지 (dvh 적용) */
+        html, body {
+            height: 100dvh;
+            min-height: -webkit-fill-available;
+        }
+
         body {
             font-family: 'Pretendard', sans-serif;
             background-color: #e5e7eb;
             display: flex;
             justify-content: center;
             margin: 0;
-            height: 100vh;
             overflow: hidden;
         }
         
@@ -91,17 +97,32 @@
                 <div class="text-xs font-bold z-10 w-20 text-right">0P <i class="fas fa-user ml-1"></i></div>
             </header>
 
+            <!-- 카테고리 5개 (아이콘 정렬을 위해 고정 높이 래퍼 적용) -->
             <div id="target-category" class="flex justify-between py-2 px-2 border-b text-[9px] text-center text-gray-600 bg-white relative">
-                <div class="flex-1"><i class="fas fa-carrot text-base mb-1 text-gray-400"></i><br>채소/과일</div>
-                <div class="flex-1"><i class="fas fa-fish text-base mb-1 text-gray-400"></i><br>수산/축산</div>
-                <div class="flex-1"><i class="fas fa-snowflake text-base mb-1 text-gray-400"></i><br>식품/가공</div>
-                <div class="flex-1">
-                    <svg viewBox="0 0 24 24" class="w-[18px] h-[18px] mx-auto mb-1 fill-current text-gray-400">
-                        <path d="M12.5 2h-1c-.3 0-.5.2-.5.5v2.6c-1.4.3-2.5 1.5-2.5 3v11.4c0 1.4 1.1 2.5 2.5 2.5h2c1.4 0 2.5-1.1 2.5-2.5V8.1c0-1.5-1.1-2.7-2.5-3V2.5c0-.3-.2-.5-.5-.5zM11 5h2v2h-2V5zm3 14.5c0 .3-.2.5-.5.5h-3c-.3 0-.5-.2-.5-.5v-11c0-.3.2-.5.5-.5h3c.3 0 .5.2.5.5v11z"/>
-                    </svg>
-                    양념/소스
+                <div class="flex-1 flex flex-col items-center justify-center">
+                    <div class="h-[20px] flex items-center justify-center mb-1"><i class="fas fa-carrot text-[16px] text-gray-400"></i></div>
+                    <span>채소/과일</span>
                 </div>
-                <div class="flex-1"><i class="fas fa-utensils text-base mb-1 text-gray-400"></i><br>주방/잡화</div>
+                <div class="flex-1 flex flex-col items-center justify-center">
+                    <div class="h-[20px] flex items-center justify-center mb-1"><i class="fas fa-fish text-[16px] text-gray-400"></i></div>
+                    <span>수산/축산</span>
+                </div>
+                <div class="flex-1 flex flex-col items-center justify-center">
+                    <div class="h-[20px] flex items-center justify-center mb-1"><i class="fas fa-snowflake text-[16px] text-gray-400"></i></div>
+                    <span>식품/가공</span>
+                </div>
+                <div class="flex-1 flex flex-col items-center justify-center">
+                    <div class="h-[20px] flex items-center justify-center mb-1">
+                        <svg viewBox="0 0 24 24" class="w-[16px] h-[16px] fill-current text-gray-400">
+                            <path d="M12.5 2h-1c-.3 0-.5.2-.5.5v2.6c-1.4.3-2.5 1.5-2.5 3v11.4c0 1.4 1.1 2.5 2.5 2.5h2c1.4 0 2.5-1.1 2.5-2.5V8.1c0-1.5-1.1-2.7-2.5-3V2.5c0-.3-.2-.5-.5-.5zM11 5h2v2h-2V5zm3 14.5c0 .3-.2.5-.5.5h-3c-.3 0-.5-.2-.5-.5v-11c0-.3.2-.5.5-.5h3c.3 0 .5.2.5.5v11z"/>
+                        </svg>
+                    </div>
+                    <span>양념/소스</span>
+                </div>
+                <div class="flex-1 flex flex-col items-center justify-center">
+                    <div class="h-[20px] flex items-center justify-center mb-1"><i class="fas fa-utensils text-[16px] text-gray-400"></i></div>
+                    <span>주방/잡화</span>
+                </div>
             </div>
 
             <div class="flex text-center border-b font-bold text-xs">
@@ -132,7 +153,7 @@
                 </div>
             </div>
 
-            <!-- 하단 바 (버튼 가로 길이 200px, 양옆 검색/문의 남은 여백 중앙 정렬) -->
+            <!-- 하단 바 (텍스트 크기 +2px 적용) -->
             <div class="h-14 border-t bg-white flex items-center w-full absolute bottom-0 z-10 px-1">
                 <div id="target-search-icon" class="flex-1 flex flex-col items-center justify-center text-gray-500 h-full relative">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.2" stroke="currentColor" class="w-[20px] h-[20px] mb-0.5 text-gray-600">
@@ -143,7 +164,7 @@
                 <div class="w-[200px] flex justify-center relative">
                     <button id="target-order-btn" class="w-full border border-gray-200 rounded-xl py-1 flex flex-col items-center justify-center bg-white shadow-md transition-all">
                         <span class="text-[#008c45] text-[8px] font-bold tracking-widest leading-tight">ORDERZ</span>
-                        <span class="font-bold text-gray-800 text-[13px]">주문하러 가기</span>
+                        <span class="font-bold text-gray-800 text-[15px]">주문하러 가기</span>
                     </button>
                 </div>
                 <div class="flex-1 flex flex-col items-center justify-center text-gray-500 h-full">
@@ -198,7 +219,7 @@
                 </div>
             </div>
 
-            <!-- 하단 바 -->
+            <!-- 하단 바 (텍스트 크기 +2px 적용) -->
             <div class="h-14 border-t bg-white flex items-center w-full absolute bottom-0 z-10 px-1">
                 <div class="flex-1 flex flex-col items-center justify-center text-gray-500 h-full">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.2" stroke="currentColor" class="w-[20px] h-[20px] mb-0.5 text-gray-600">
@@ -209,7 +230,7 @@
                 <div id="target-submit-btn" class="w-[200px] flex justify-center relative">
                     <button id="final-order-btn" class="w-full border border-gray-200 rounded-xl py-1 flex flex-col items-center justify-center bg-white shadow-md transition-all duration-300">
                         <span class="text-[#008c45] text-[8px] font-bold tracking-widest leading-tight">ORDERZ</span>
-                        <span class="font-bold text-gray-800 text-[13px]">상품을 담아주세요</span>
+                        <span class="font-bold text-gray-800 text-[15px]">상품을 담아주세요</span>
                     </button>
                 </div>
                 <div class="flex-1 flex flex-col items-center justify-center text-gray-500 h-full">
@@ -237,7 +258,7 @@
         </div>
 
         <!-- ========================================== -->
-        <!-- 가이드 오버레이 (X버튼 제거) -->
+        <!-- 가이드 오버레이 -->
         <!-- ========================================== -->
         <div id="overlay-container" class="absolute inset-0 z-50" style="display: none;">
             <svg width="100%" height="100%" class="absolute inset-0 pointer-events-none z-10">
@@ -270,7 +291,6 @@
     </div>
 
     <script>
-        // 오프라인 고객 맞춤형 직관적 문구 반영
         const guideSteps = [
             {
                 targetIds: ['target-category', 'target-search-icon'],
@@ -311,11 +331,12 @@
                     
                     const btn = document.getElementById('final-order-btn');
                     btn.className = "w-full border border-[#A5D6B4] rounded-xl py-1 flex flex-col items-center justify-center bg-[#A5D6B4] shadow-md transition-all duration-300";
+                    // 텍스트 사이즈 14px -> 16px 로 확대
                     btn.innerHTML = `
                         <span class="text-[#005a2b] text-[8px] font-bold tracking-widest leading-tight opacity-80">ORDERZ</span>
                         <div class="flex items-center justify-center gap-1.5 mt-[1px]">
                             <span class="bg-[#ff9f72] text-white text-[9px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center leading-none pt-px">1</span>
-                            <span class="font-bold text-[#1a4a2e] text-[14px]">담은 상품 확인하기</span>
+                            <span class="font-bold text-[#1a4a2e] text-[16px]">담은 상품 확인하기</span>
                         </div>
                     `;
                 }
