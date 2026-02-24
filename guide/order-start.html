@@ -400,20 +400,31 @@
                     if (!target) return;
                     
                     const rect = target.getBoundingClientRect();
-                    const pad = 4;
+                    const pad = 2; // 여백 축소
                     let top = rect.top - appRect.top - pad;
                     let left = rect.left - appRect.left - pad;
                     let width = rect.width + (pad * 2);
                     let height = rect.height + (pad * 2);
 
-                    // 하이라이트 영역이 화면을 벗어나 스크롤을 유발하지 않도록 크기 보정 (Clamp)
-                    if (top < 0) { height += top; top = 0; }
-                    if (left < 0) { width += left; left = 0; }
-                    if (top + height > appRect.height) { height = appRect.height - top; }
-                    if (left + width > appRect.width) { width = appRect.width - left; }
+                    // 테두리가 화면 밖으로 나가 잘리지 않도록 2px 여백을 두고 보정 (Clamp)
+                    const edgeMargin = 2;
+                    if (top < edgeMargin) { 
+                        height -= (edgeMargin - top); 
+                        top = edgeMargin; 
+                    }
+                    if (left < edgeMargin) { 
+                        width -= (edgeMargin - left); 
+                        left = edgeMargin; 
+                    }
+                    if (top + height > appRect.height - edgeMargin) { 
+                        height = appRect.height - edgeMargin - top; 
+                    }
+                    if (left + width > appRect.width - edgeMargin) { 
+                        width = appRect.width - edgeMargin - left; 
+                    }
 
-                    maskHoles.innerHTML += `<rect x="${left}" y="${top}" width="${width}" height="${height}" rx="8" fill="black" />`;
-                    spotlightBorders.innerHTML += `<div class="absolute border-2 border-[#10b981] rounded-lg pulse-border" style="top:${top}px; left:${left}px; width:${width}px; height:${height}px;"></div>`;
+                    maskHoles.innerHTML += `<rect x="${left}" y="${top}" width="${width}" height="${height}" rx="6" fill="black" />`;
+                    spotlightBorders.innerHTML += `<div class="absolute border-2 border-[#10b981] rounded-md pulse-border" style="top:${top}px; left:${left}px; width:${width}px; height:${height}px;"></div>`;
                     
                     lastRect = { top, left, width, height, rect };
                 });
