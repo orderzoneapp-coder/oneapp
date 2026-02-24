@@ -339,7 +339,8 @@
             <div id="tip-tooltip" class="absolute z-30 w-[305px] tooltip-pro text-white rounded-2xl shadow-2xl p-5 flex flex-col transition-all duration-300" style="visibility: hidden;">
                 <div class="flex items-center gap-2 mb-2.5">
                     <span class="bg-yellow-400 text-emerald-900 text-[11px] font-black px-2 py-0.5 rounded-md">TIP</span>
-                    <h3 id="tip-title" class="font-bold text-[17px]"></h3>
+                    <!-- 제목 크기 키우기 및 색상 변경 (text-[19px], text-yellow-400) -->
+                    <h3 id="tip-title" class="font-bold text-[19px] text-yellow-400 tracking-tight"></h3>
                 </div>
                 <p id="tip-desc" class="text-[15px] leading-relaxed break-keep opacity-95 mb-5"></p>
                 <div class="flex justify-between items-center border-t border-white/20 pt-4">
@@ -358,7 +359,6 @@
             {
                 targetIds: ['target-sale'],
                 title: '식자재비 아끼는 맞춤 특가',
-                // 요청하신 '알짜배기 대체품' 및 '발주 금액 절감' 강조 문구 적용
                 desc: '평소 사던 상품의 <b>알짜배기 대체품을 확인하고 오늘 발주 금액을 낮춰보세요!</b> 주문 전 <b>단골특가 확인은 필수!</b>',
                 pos: 'bottom'
             },
