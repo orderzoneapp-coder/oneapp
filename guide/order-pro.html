@@ -55,11 +55,12 @@
             100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0); }
         }
 
+        /* 툴팁 본체 그라데이션 배경 */
         .tooltip-pro {
             background: linear-gradient(135deg, #059669 0%, #10b981 100%);
         }
 
-        /* 툴팁 화살표 */
+        /* 툴팁 화살표 색상 수정: 배경색과 완벽히 일치하도록 조정 */
         .arrow-bottom::after {
             content: '';
             position: absolute;
@@ -67,6 +68,7 @@
             left: var(--arrow-pos, 50%);
             transform: translateX(-50%);
             border-width: 8px 8px 0 8px;
+            /* 말풍선 하단은 연한 초록색(#10b981)에 가깝습니다 */
             border-color: #10b981 transparent transparent transparent;
         }
         
@@ -77,7 +79,8 @@
             left: var(--arrow-pos, 50%);
             transform: translateX(-50%);
             border-width: 0 8px 8px 8px;
-            border-color: transparent transparent #10b981 transparent;
+            /* 말풍선 상단은 진한 초록색(#059669)에서 시작합니다 */
+            border-color: transparent transparent #059669 transparent;
         }
 
         .scroll-area::-webkit-scrollbar { display: none; }
@@ -119,7 +122,7 @@
                 </div>
             </div>
 
-            <!-- 메인 상품 리스트 (5개) -->
+            <!-- 메인 상품 리스트 -->
             <div class="flex-1 overflow-y-auto scroll-area pb-16" id="main-list-content">
                 <div class="flex items-center p-3 border-b">
                     <div class="w-10 h-10 bg-gray-100 rounded mr-3 flex items-center justify-center text-gray-300"><i class="fas fa-image"></i></div>
@@ -189,7 +192,7 @@
                 </div>
             </div>
 
-            <!-- 메인 하단 바 -->
+            <!-- 하단 바 -->
             <div class="h-14 border-t bg-white flex items-center w-full absolute bottom-0 z-10">
                 <div id="target-search-area" class="flex-1 flex flex-col items-center justify-center text-gray-500 h-full">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.2" stroke="currentColor" class="w-5 h-5 mb-0.5">
@@ -231,7 +234,7 @@
             </div>
 
             <div class="flex-1 overflow-y-auto scroll-area border-t border-gray-100 pb-16">
-                <!-- 편집 아이템 리스트 (5개) -->
+                <!-- 편집 아이템 리스트 -->
                 <div class="flex items-center p-3 border-b relative">
                     <i id="target-trash-icon" class="far fa-trash-alt text-gray-300 text-lg mr-4"></i>
                     <div class="flex-1">
@@ -339,7 +342,6 @@
             <div id="tip-tooltip" class="absolute z-30 w-[305px] tooltip-pro text-white rounded-2xl shadow-2xl p-5 flex flex-col transition-all duration-300" style="visibility: hidden;">
                 <div class="flex items-center gap-2 mb-2.5">
                     <span class="bg-yellow-400 text-emerald-900 text-[11px] font-black px-2 py-0.5 rounded-md">TIP</span>
-                    <!-- 제목 크기 키우기 및 색상 변경 (text-[19px], text-yellow-400) -->
                     <h3 id="tip-title" class="font-bold text-[19px] text-yellow-400 tracking-tight"></h3>
                 </div>
                 <p id="tip-desc" class="text-[15px] leading-relaxed break-keep opacity-95 mb-5"></p>
@@ -385,13 +387,13 @@
             {
                 targetIds: ['target-btn-1', 'target-btn-2'],
                 title: '나만의 리스트 지정',
-                desc: '1, 2 버튼을 눌러 각각 MY1, MY2 탭으로 쏙! 쉽게 리스트를 분류할 수 있어요.',
+                desc: '1, 2 버튼을 눌러 각각 MY1, MY2 탭으로 쏙! 아주 쉽게 리스트를 분류할 수 있어요.',
                 pos: 'bottom'
             },
             {
                 targetIds: ['target-save-btn'],
                 title: '변경사항 저장하기',
-                desc: '정리가 끝났다면 변경사항을 꼭 저장해주세요! 이제 깔끔하게 나뉜 탭에서 고민 없이 바로 주문하세요.',
+                desc: '정리가 끝났다면 꼭 변경사항을 저장해주세요! 이제 깔끔하게 나뉜 탭에서 고민 없이 바로 주문하세요.',
                 pos: 'bottom'
             }
         ];
