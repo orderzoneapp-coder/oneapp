@@ -7,6 +7,8 @@
     <!-- 카카오톡 등 SNS 공유 시 보여지는 미리보기 정보(Open Graph) -->
     <meta property="og:title" content="오더즈 주문 가이드">
     <meta property="og:description" content="터치 몇 번이면 발주 끝! 세상에서 가장 쉬운 주문 방법">
+    <!-- 오더즈 슬로건 실제 이미지 주소 반영 -->
+    <meta property="og:image" content="https://oneapp2.godohosting.com/order_guide/%EC%98%A4%EB%8D%94%EC%A6%88%EC%8A%AC%EB%A1%9C%EA%B1%B4.png">
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
@@ -58,7 +60,7 @@
         #tooltip {
             position: absolute;
             z-index: 70;
-            width: 295px; /* 텍스트 확대에 맞춰 너비 살짝 넓힘 (280 -> 295) */
+            width: 295px; 
             transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             visibility: hidden;
         }
@@ -105,7 +107,7 @@
                 <div class="text-xs font-bold z-10 w-20 text-right">0P <i class="fas fa-user ml-1"></i></div>
             </header>
 
-            <!-- 카테고리 5개 (아이콘 정렬을 위해 고정 높이 래퍼 적용) -->
+            <!-- 카테고리 5개 -->
             <div id="target-category" class="flex justify-between py-2 px-2 border-b text-[10px] text-center text-gray-600 bg-white relative">
                 <div class="flex-1 flex flex-col items-center justify-center">
                     <div class="h-[20px] flex items-center justify-center mb-1"><i class="fas fa-carrot text-[16px] text-gray-400"></i></div>
@@ -147,25 +149,12 @@
                         <h3 class="font-bold text-gray-800 text-[15px]">월동무(특) <span class="text-gray-400 text-[11px] font-normal">BOX</span></h3>
                         <p class="text-[#008c45] font-bold text-[17px] mt-0.5">21,000원</p>
                     </div>
-                    <!-- 체크박스 크기 축소 (w-8 h-8 -> w-[26px] h-[26px]) -->
                     <div id="target-checkbox" class="w-[26px] h-[26px] flex items-center justify-center ml-2 transition-transform">
-                        <img src="https://oneapp2.godohosting.com/order_guide/%EC%B2%B4%ED%81%AC%EC%A0%84.png" alt="체크 전" class="w-full h-full object-contain">
-                    </div>
-                </div>
-                <div class="flex items-center p-3 border-b">
-                    <div class="w-14 h-14 bg-gray-100 rounded flex items-center justify-center overflow-hidden"><img src="https://placehold.co/100x100/e2e8f0/94a3b8?text=배추" class="w-full h-full object-cover"></div>
-                    <div class="ml-3 flex-1">
-                        <h3 class="font-bold text-gray-800 text-[15px]">배추_3입망 <span class="text-gray-400 text-[11px] font-normal">BOX</span></h3>
-                        <p class="text-[#008c45] font-bold text-[17px] mt-0.5">10,600원</p>
-                    </div>
-                    <!-- 체크박스 크기 축소 -->
-                    <div class="w-[26px] h-[26px] flex items-center justify-center ml-2">
                         <img src="https://oneapp2.godohosting.com/order_guide/%EC%B2%B4%ED%81%AC%EC%A0%84.png" alt="체크 전" class="w-full h-full object-contain">
                     </div>
                 </div>
             </div>
 
-            <!-- 하단 바 (텍스트 크기 +2px 적용) -->
             <div class="h-14 border-t bg-white flex items-center w-full absolute bottom-0 z-10 px-1">
                 <div id="target-search-icon" class="flex-1 flex flex-col items-center justify-center text-gray-500 h-full relative">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.2" stroke="currentColor" class="w-[20px] h-[20px] mb-0.5 text-gray-600">
@@ -207,15 +196,6 @@
                 <div class="px-2 py-2.5 text-gray-500"><i class="fas fa-sliders-h text-base"></i></div>
             </div>
 
-            <div class="flex items-center justify-between px-3 py-2 border-b bg-white text-[13px]">
-                <div class="font-bold text-gray-800 flex items-center gap-1.5">
-                    <i class="far fa-calendar-alt text-[#008c45] text-sm"></i> 1월 12일(월) 도착
-                </div>
-                <div class="text-gray-500 text-[11px] font-bold">
-                    최신순 <i class="fas fa-caret-down ml-0.5"></i>
-                </div>
-            </div>
-
             <div class="flex-1 overflow-y-auto scroll-area pb-16">
                 <div class="flex items-center p-3 border-b relative">
                     <img src="https://placehold.co/60x60/e2e8f0/94a3b8?text=무" class="w-10 h-10 rounded object-cover">
@@ -231,16 +211,13 @@
                 </div>
             </div>
 
-            <!-- 하단 바 (텍스트 크기 +2px 적용) -->
             <div class="h-14 border-t bg-white flex items-center w-full absolute bottom-0 z-10 px-1">
                 <div class="flex-1 flex flex-col items-center justify-center text-gray-500 h-full">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.2" stroke="currentColor" class="w-[20px] h-[20px] mb-0.5 text-gray-600">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-                    </svg>
+                    <i class="fas fa-search text-lg mb-0.5 text-gray-600"></i>
                     <span class="text-[9px] font-medium text-gray-600">검색</span>
                 </div>
                 <div id="target-submit-btn" class="w-[200px] flex justify-center relative">
-                    <button id="final-order-btn" class="w-full border border-gray-200 rounded-xl py-1 flex flex-col items-center justify-center bg-white shadow-md transition-all duration-300">
+                    <button id="final-order-btn" class="w-full border border-gray-200 rounded-xl py-1 flex flex-col items-center justify-center bg-white shadow-md">
                         <span class="text-[#008c45] text-[8px] font-bold tracking-widest leading-tight">ORDERZ</span>
                         <span class="font-bold text-gray-800 text-[15px]">상품을 담아주세요</span>
                     </button>
@@ -252,9 +229,7 @@
             </div>
         </div>
 
-        <!-- ========================================== -->
         <!-- 도입 팝업 -->
-        <!-- ========================================== -->
         <div id="intro-popup-overlay" class="absolute inset-0 bg-black/60 z-[100] flex items-center justify-center backdrop-blur-sm" style="display: none;">
             <div class="bg-white rounded-3xl p-6 w-[85%] max-w-[320px] shadow-2xl text-center">
                 <div class="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-green-100 text-[#008c45]">
@@ -269,9 +244,7 @@
             </div>
         </div>
 
-        <!-- ========================================== -->
-        <!-- 가이드 오버레이 (overflow-hidden 추가로 영역 이탈 차단) -->
-        <!-- ========================================== -->
+        <!-- 가이드 오버레이 -->
         <div id="overlay-container" class="absolute inset-0 z-50 overflow-hidden" style="display: none;">
             <svg width="100%" height="100%" class="absolute inset-0 pointer-events-none z-10">
                 <defs>
@@ -289,7 +262,6 @@
                 <div class="flex items-start mb-2.5">
                     <span id="tooltip-step" class="bg-white text-[#10b981] text-[11px] font-black px-2.5 py-0.5 rounded-full shadow-sm">STEP 1</span>
                 </div>
-                <!-- 텍스트 크기 증가 및 줄바꿈 최적화(break-keep) 추가 -->
                 <h3 id="tooltip-title" class="font-bold text-[17px] mb-2 tracking-tight"></h3>
                 <p id="tooltip-desc" class="text-[15px] opacity-95 leading-relaxed break-keep"></p>
                 <div class="flex justify-between items-center mt-4 pt-3 border-t border-white/20">
@@ -319,7 +291,6 @@
                 desc: "매일 시키는 상품은 우측 체크박스[<i class='fas fa-check'></i>]를 눌러두세요. <b>매번 새로 찾을 필요 없이 한곳에 모아줍니다.</b>",
                 tooltipPosition: 'bottom',
                 action: () => {
-                    // 체크 시 실제 이미지 파일(체크후.png)로 소스 변경
                     const imgEl = document.querySelector('#target-checkbox img');
                     if(imgEl) {
                         imgEl.src = 'https://oneapp2.godohosting.com/order_guide/%EC%B2%B4%ED%81%AC%ED%9B%84.png';
@@ -346,7 +317,6 @@
                     
                     const btn = document.getElementById('final-order-btn');
                     btn.className = "w-full border border-[#A5D6B4] rounded-xl py-1 flex flex-col items-center justify-center bg-[#A5D6B4] shadow-md transition-all duration-300";
-                    // 텍스트 사이즈 14px -> 16px 로 확대
                     btn.innerHTML = `
                         <span class="text-[#005a2b] text-[8px] font-bold tracking-widest leading-tight opacity-80">ORDERZ</span>
                         <div class="flex items-center justify-center gap-1.5 mt-[1px]">
@@ -404,28 +374,17 @@
                     if (!target) return;
                     
                     const rect = target.getBoundingClientRect();
-                    const pad = 2; // 여백 축소
+                    const pad = 2; 
                     let top = rect.top - appRect.top - pad;
                     let left = rect.left - appRect.left - pad;
                     let width = rect.width + (pad * 2);
                     let height = rect.height + (pad * 2);
 
-                    // 테두리가 화면 밖으로 나가 잘리지 않도록 2px 여백을 두고 보정 (Clamp)
                     const edgeMargin = 2;
-                    if (top < edgeMargin) { 
-                        height -= (edgeMargin - top); 
-                        top = edgeMargin; 
-                    }
-                    if (left < edgeMargin) { 
-                        width -= (edgeMargin - left); 
-                        left = edgeMargin; 
-                    }
-                    if (top + height > appRect.height - edgeMargin) { 
-                        height = appRect.height - edgeMargin - top; 
-                    }
-                    if (left + width > appRect.width - edgeMargin) { 
-                        width = appRect.width - edgeMargin - left; 
-                    }
+                    if (top < edgeMargin) { height -= (edgeMargin - top); top = edgeMargin; }
+                    if (left < edgeMargin) { width -= (edgeMargin - left); left = edgeMargin; }
+                    if (top + height > appRect.height - edgeMargin) { height = appRect.height - edgeMargin - top; }
+                    if (left + width > appRect.width - edgeMargin) { width = appRect.width - edgeMargin - left; }
 
                     maskHoles.innerHTML += `<rect x="${left}" y="${top}" width="${width}" height="${height}" rx="6" fill="black" />`;
                     spotlightBorders.innerHTML += `<div class="absolute border-2 border-[#10b981] rounded-md pulse-border" style="top:${top}px; left:${left}px; width:${width}px; height:${height}px;"></div>`;
@@ -460,7 +419,6 @@
                         tooltip.classList.add('tooltip-arrow-bottom');
                     }
 
-                    // 넓어진 툴팁(295px)에 맞춰 화살표 및 위치 계산 로직 수정
                     let tLeft = (lastRect.rect.left - appRect.left + lastRect.rect.width / 2) - 147.5; 
                     if (tLeft < 10) tLeft = 10;
                     if (tLeft + 295 > appRect.width - 10) tLeft = appRect.width - 305;
