@@ -7,7 +7,6 @@
     <!-- 카카오톡 등 SNS 공유 시 보여지는 미리보기 정보(Open Graph) -->
     <meta property="og:title" content="오더즈 주문 가이드">
     <meta property="og:description" content="터치 몇 번이면 발주 끝! 세상에서 가장 쉬운 주문 방법">
-    <!-- 오더즈 슬로건 실제 이미지 주소 반영 -->
     <meta property="og:image" content="https://oneapp2.godohosting.com/order_guide/slogan.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
@@ -16,17 +15,10 @@
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
         
-        /* 카카오톡 등 인앱 브라우저 스크롤 및 하단 잘림 완벽 방지 */
         html, body {
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            width: 100%;
-            height: 100%;
-            margin: 0;
-            padding: 0;
+            top: 0; left: 0; right: 0; bottom: 0;
+            width: 100%; height: 100%; margin: 0; padding: 0;
             overflow: hidden;
             overscroll-behavior: none;
             font-family: 'Pretendard', sans-serif;
@@ -47,7 +39,7 @@
             flex-direction: column;
         }
 
-        /* --- 앱 화면 슬라이드 애니메이션 처리 --- */
+        /* --- 앱 화면 슬라이드 애니메이션 --- */
         #screen-home, #screen-order {
             transition: transform 0.45s cubic-bezier(0.25, 1, 0.5, 1);
             width: 100%;
@@ -56,24 +48,13 @@
             top: 0;
             left: 0;
         }
-        #screen-order {
-            transform: translateX(100%);
-        }
-        #app.show-order #screen-home {
-            transform: translateX(-100%);
-        }
-        #app.show-order #screen-order {
-            transform: translateX(0);
-        }
+        #screen-order { transform: translateX(100%); }
+        #app.show-order #screen-home { transform: translateX(-100%); }
+        #app.show-order #screen-order { transform: translateX(0); }
 
-        .scroll-area::-webkit-scrollbar {
-            display: none;
-        }
+        .scroll-area::-webkit-scrollbar { display: none; }
 
-        /* 툴팁 기본 배경색 동적 제어를 위한 CSS 변수 세팅 */
-        :root {
-            --tooltip-bg: #10b981;
-        }
+        :root { --tooltip-bg: #10b981; }
 
         .pulse-border {
             box-shadow: 0 0 0 0 var(--tooltip-bg);
@@ -86,66 +67,50 @@
             100% { box-shadow: 0 0 0 0 rgba(0,0,0,0); }
         }
 
-        /* 화살표 꼬리 위치를 변수로 동적 제어 */
         .tooltip-arrow-top::before {
-            content: '';
-            position: absolute;
-            top: -8px;
-            left: var(--arrow-pos, 50%);
-            transform: translateX(-50%);
-            border-width: 0 8px 8px 8px;
+            content: ''; position: absolute; top: -8px; left: var(--arrow-pos, 50%);
+            transform: translateX(-50%); border-width: 0 8px 8px 8px;
             border-color: transparent transparent var(--tooltip-bg) transparent;
         }
         .tooltip-arrow-bottom::after {
-            content: '';
-            position: absolute;
-            bottom: -8px;
-            left: var(--arrow-pos, 50%);
-            transform: translateX(-50%);
-            border-width: 8px 8px 0 8px;
+            content: ''; position: absolute; bottom: -8px; left: var(--arrow-pos, 50%);
+            transform: translateX(-50%); border-width: 8px 8px 0 8px;
             border-color: var(--tooltip-bg) transparent transparent transparent;
         }
         
-        /* 툴팁 및 보조박스 컨테이너 애니메이션 */
         #tooltip {
-            position: absolute;
-            z-index: 70;
-            width: 295px; 
-            background-color: var(--tooltip-bg);
-            visibility: hidden;
-            opacity: 0;
-            transition: opacity 0.25s ease-in-out;
-        }
-        #extra-boxes-container {
-            transition: opacity 0.2s ease-in-out;
+            position: absolute; z-index: 70; width: 295px; 
+            background-color: var(--tooltip-bg); visibility: hidden;
+            opacity: 0; transition: opacity 0.25s ease-in-out;
         }
 
-        /* 도입 팝업 부드러운 슬라이드업 */
         @keyframes slideUpPopup {
             0% { opacity: 0; transform: translateY(30px) scale(0.95); }
             100% { opacity: 1; transform: translateY(0) scale(1); }
         }
-        .animate-popup {
-            animation: slideUpPopup 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
+        .animate-popup { animation: slideUpPopup 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
 
-        /* 내용 페이드 애니메이션 */
         @keyframes contentFade {
             0% { opacity: 0; transform: translateY(4px); }
             100% { opacity: 1; transform: translateY(0); }
         }
-        .animate-content {
-            animation: contentFade 0.4s ease-out forwards;
+        .animate-content { animation: contentFade 0.4s ease-out forwards; }
+
+        /* 등장 시 1회만 커졌다 작아지는 애니메이션 */
+        @keyframes pulseOnce {
+            0% { transform: scale(0.8); opacity: 0; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-pulse-once {
+            animation: pulseOnce 0.6s ease-out forwards;
         }
     </style>
 </head>
 <body>
 
     <div class="app-container" id="app">
-        
-        <!-- ========================================== -->
         <!-- [화면 1] 홈/상품목록 -->
-        <!-- ========================================== -->
         <div id="screen-home" class="flex flex-col h-full w-full absolute inset-0 bg-white">
             <header class="flex justify-between items-center px-3 py-2.5 border-b relative h-12">
                 <div class="flex items-center gap-2 z-10 w-20">
@@ -161,24 +126,24 @@
                     <div class="h-[20px] flex items-center justify-center mb-1"><i class="fas fa-carrot text-[16px] text-gray-400"></i></div>
                     <span>채소/과일</span>
                 </div>
-                <div class="flex-1 flex flex-col items-center justify-center">
-                    <div class="h-[20px] flex items-center justify-center mb-1"><i class="fas fa-fish text-[16px] text-gray-400"></i></div>
+                <div class="flex-1 flex flex-col items-center justify-center text-gray-300">
+                    <div class="h-[20px] flex items-center justify-center mb-1"><i class="fas fa-fish text-[16px]"></i></div>
                     <span>수산/축산</span>
                 </div>
-                <div class="flex-1 flex flex-col items-center justify-center">
-                    <div class="h-[20px] flex items-center justify-center mb-1"><i class="fas fa-snowflake text-[16px] text-gray-400"></i></div>
+                <div class="flex-1 flex flex-col items-center justify-center text-gray-300">
+                    <div class="h-[20px] flex items-center justify-center mb-1"><i class="fas fa-snowflake text-[16px]"></i></div>
                     <span>식품/가공</span>
                 </div>
-                <div class="flex-1 flex flex-col items-center justify-center">
+                <div class="flex-1 flex flex-col items-center justify-center text-gray-300">
                     <div class="h-[20px] flex items-center justify-center mb-1">
-                        <svg viewBox="0 0 24 24" class="w-[16px] h-[16px] fill-current text-gray-400">
-                            <path d="M12.5 2h-1c-.3 0-.5.2-.5.5v2.6c-1.4.3-2.5 1.5-2.5 3v11.4c0 1.4 1.1 2.5 2.5 2.5h2c1.4 0 2.5-1.1 2.5-2.5V8.1c0-1.5-1.1-2.7-2.5-3V2.5c0-.3-.2-.5-.5-.5zM11 5h2v2h-2V5zm3 14.5c0 .3-.2.5-.5.5h-3c-.3 0-.5-.2-.5-.5v-11c0-.3.2-.5.5-.5h3c.3 0 .5.2.5.5v11z"/>
+                        <svg viewBox="0 0 24 24" class="w-[16px] h-[16px] fill-current">
+                            <path d="M12.5 2h-1c-.3 0-.5.2-.5.5v2.6c-1.4.3-2.5 1.5-2.5 3v11.4c0 1.4 1.1 2.5 2.5 2.5h2c1.4 0 2.5-1.1 2.5-2.5V8.1c0-1.5-1.1-2.7-2.5-3V2.5c0-.3-.2-.5-.5-.5z"/>
                         </svg>
                     </div>
                     <span>양념/소스</span>
                 </div>
-                <div class="flex-1 flex flex-col items-center justify-center">
-                    <div class="h-[20px] flex items-center justify-center mb-1"><i class="fas fa-utensils text-[16px] text-gray-400"></i></div>
+                <div class="flex-1 flex flex-col items-center justify-center text-gray-300">
+                    <div class="h-[20px] flex items-center justify-center mb-1"><i class="fas fa-utensils text-[16px]"></i></div>
                     <span>주방/잡화</span>
                 </div>
             </div>
@@ -205,9 +170,7 @@
 
             <div class="h-14 border-t bg-white flex items-center w-full absolute bottom-0 z-10 px-1">
                 <div id="target-search-icon" class="flex-1 flex flex-col items-center justify-center text-gray-500 h-full relative">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor" class="w-[20px] h-[20px] mb-0.5 text-gray-600">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-                    </svg>
+                    <i class="fas fa-search text-lg mb-0.5 text-gray-600"></i>
                     <span class="text-[9px] font-medium text-gray-600">검색</span>
                 </div>
                 <div class="w-[200px] flex justify-center relative">
@@ -223,9 +186,7 @@
             </div>
         </div>
 
-        <!-- ========================================== -->
         <!-- [화면 2] 빠른주문 -->
-        <!-- ========================================== -->
         <div id="screen-order" class="flex flex-col h-full w-full absolute inset-0 bg-white z-[5]">
             <header class="flex justify-between items-center px-3 py-2.5 border-b relative h-12">
                 <div class="flex items-center gap-2 z-10 w-20">
@@ -252,24 +213,22 @@
                         <p class="text-[#008c45] text-[14px] mt-0.5">2,700원</p>
                     </div>
                     <div id="target-qty" class="flex items-center border border-gray-200 rounded-lg bg-gray-50 h-7">
-                        <button class="w-7 h-7 flex items-center justify-center text-gray-400 font-bold"><i class="fas fa-minus text-[10px]"></i></button>
-                        <div class="w-7 text-center font-bold text-[15px] bg-white h-7 flex items-center justify-center border-x border-gray-200">0</div>
-                        <button class="w-7 h-7 flex items-center justify-center text-gray-400 font-bold"><i class="fas fa-plus text-[10px]"></i></button>
+                        <button id="btn-qty-minus" class="w-7 h-7 flex items-center justify-center text-gray-400 font-bold"><i class="fas fa-minus text-[10px]"></i></button>
+                        <div id="qty-number" class="w-7 text-center font-bold text-[15px] bg-white h-7 flex items-center justify-center border-x border-gray-200">0</div>
+                        <button id="btn-qty-plus" class="w-7 h-7 flex items-center justify-center text-gray-400 font-bold"><i class="fas fa-plus text-[10px]"></i></button>
                     </div>
                 </div>
             </div>
 
             <div class="h-14 border-t bg-white flex items-center w-full absolute bottom-0 z-10 px-1">
                 <div class="flex-1 flex flex-col items-center justify-center text-gray-500 h-full">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor" class="w-[20px] h-[20px] mb-0.5 text-gray-600">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-                    </svg>
+                    <i class="fas fa-search text-lg mb-0.5 text-gray-600"></i>
                     <span class="text-[9px] font-medium text-gray-600">검색</span>
                 </div>
                 <div id="target-submit-btn" class="w-[200px] flex justify-center relative">
                     <button id="final-order-btn" class="w-full border border-gray-200 rounded-xl py-1 flex flex-col items-center justify-center bg-white shadow-md">
                         <span class="text-[#008c45] text-[8px] font-bold tracking-widest leading-tight">ORDERZ</span>
-                        <span class="font-bold text-gray-800 text-[15px]">상품을 담아주세요</span>
+                        <span id="final-btn-text" class="font-bold text-gray-800 text-[15px]">상품을 담아주세요</span>
                     </button>
                 </div>
                 <div class="flex-1 flex flex-col items-center justify-center text-gray-500 h-full">
@@ -305,24 +264,17 @@
                 </defs>
                 <rect width="100%" height="100%" fill="rgba(0,0,0,0.65)" mask="url(#hole-mask)" />
             </svg>
-            
             <div id="spotlight-borders" class="absolute inset-0 pointer-events-none z-20"></div>
-            
             <div id="extra-boxes-container" class="absolute inset-0 pointer-events-none z-[60]"></div>
             
             <div id="tooltip" class="text-white rounded-xl shadow-2xl p-4 flex flex-col z-30">
                 <div class="flex items-start mb-2.5">
-                    <!-- STEP 배지 배경을 진한 노란색(bg-yellow-400)으로 변경 -->
                     <span id="tooltip-step" class="bg-yellow-400 text-gray-900 text-[11px] font-black px-2.5 py-0.5 rounded-full shadow-sm">STEP 1</span>
                 </div>
-                
                 <div id="tooltip-text-wrapper">
-                    <!-- 제목 텍스트 색상을 노란색으로, 굵기를 font-semibold로 조절 -->
                     <h3 id="tooltip-title" class="flex justify-between items-center font-semibold text-[22px] mb-1 tracking-tight leading-tight text-yellow-400"></h3>
-                    <!-- 서브 텍스트 크기 15.5px 유지 -->
                     <p id="tooltip-desc" class="text-[15.5px] opacity-95 leading-relaxed break-keep"></p>
                 </div>
-                
                 <div class="flex justify-between items-center mt-4 pt-3 border-t border-white/20">
                     <div id="step-dots" class="flex gap-1.5"></div>
                     <button id="next-btn" onclick="nextStep()" class="bg-white text-[#10b981] font-bold px-4 py-2 rounded-lg text-[13px] shadow-md transition-colors duration-300">
@@ -331,7 +283,6 @@
                 </div>
             </div>
         </div>
-
     </div>
 
     <script>
@@ -340,7 +291,7 @@
                 targetIds: ['target-category', 'target-search-icon'],
                 screen: 'home',
                 title: '자주 쓰는 상품 찾기',
-                desc: '<b>카테고리</b> / <b>검색</b>으로 상품을 찾아보세요.',
+                desc: '<b>카테고리/검색</b>으로 상품을 찾아보세요.',
                 tooltipPosition: 'center',
                 theme: '#10b981',
                 extraBoxes: [
@@ -351,17 +302,16 @@
             {
                 targetIds: ['target-checkbox'],
                 screen: 'home',
-                title: 'LIST에 담기',
+                title: '상품 클릭하기',
                 desc: "담을 상품은 <b>체크박스[<i class='fas fa-check'></i>] 클릭!</b><br>매번 찾을 필요 없이 한곳에 모아드려요.",
                 tooltipPosition: 'bottom',
                 theme: '#10b981',
-                action: () => {
-                    const imgEl = document.querySelector('#target-checkbox img');
-                    if(imgEl) {
-                        imgEl.src = 'https://oneapp2.godohosting.com/order_guide/%EC%B2%B4%ED%81%AC%ED%9B%84.png';
-                        imgEl.alt = '체크 후';
-                    }
-                }
+                isInteractive: true,
+                interactiveAction: () => updateCheckboxToAfter(),
+                extraBoxes: [
+                    { targetId: 'target-checkbox', text: '<span class="text-white font-bold text-[18px] animate-pulse-once tracking-tight italic" style="text-shadow: 0 2px 8px rgba(0,0,0,0.5);">클릭!</span>', pos: 'left' }
+                ],
+                action: () => { updateCheckboxToAfter(); }
             },
             {
                 targetIds: ['target-order-btn'],
@@ -378,18 +328,10 @@
                 desc: '체크한 상품들이 모두 모여있어요.<br><b>숫자를 직접 입력</b>하거나 <b>[-, +]버튼</b>으로 쉽게 조절할 수 있어요.',
                 tooltipPosition: 'bottom',
                 theme: '#10b981',
+                isInteractive: true, // 버튼 인터랙션은 유지
+                extraBoxes: [], // 수량 조절 단계의 "클릭!" 라벨 제거
                 action: () => {
-                    const el = document.getElementById('target-qty').querySelector('div');
-                    el.innerText = '1';
-                    const btn = document.getElementById('final-order-btn');
-                    btn.className = "w-full border border-[#A5D6B4] rounded-xl py-1 flex flex-col items-center justify-center bg-[#A5D6B4] shadow-md transition-all duration-300";
-                    btn.innerHTML = `
-                        <span class="text-[#005a2b] text-[8px] font-bold tracking-widest leading-tight opacity-80">ORDERZ</span>
-                        <div class="flex items-center justify-center gap-1.5 mt-[1px]">
-                            <span class="bg-[#ff9f72] text-white text-[9px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center leading-none pt-px">1</span>
-                            <span class="font-bold text-[#1a4a2e] text-[16px]">담은 상품 확인하기</span>
-                        </div>
-                    `;
+                    if (guideQty === 0) updateQty(1);
                 }
             },
             {
@@ -403,6 +345,39 @@
         ];
 
         let currentStep = 0;
+        let guideQty = 0;
+
+        function updateCheckboxToAfter() {
+            const imgEl = document.querySelector('#target-checkbox img');
+            if(imgEl) {
+                imgEl.src = 'http://oneapp2.godohosting.com/order_guide/%C3%BC%C5%A9%C8%C4.png';
+                imgEl.alt = '체크 후';
+            }
+        }
+
+        function updateQty(val) {
+            guideQty = Math.max(0, val);
+            const qtyDisplay = document.getElementById('qty-number');
+            if (qtyDisplay) qtyDisplay.innerText = guideQty;
+            
+            const btn = document.getElementById('final-order-btn');
+            if (guideQty > 0) {
+                btn.className = "w-full border border-[#A5D6B4] rounded-xl py-1 flex flex-col items-center justify-center bg-[#A5D6B4] shadow-md transition-all duration-300";
+                btn.innerHTML = `
+                    <span class="text-[#005a2b] text-[8px] font-bold tracking-widest leading-tight opacity-80">ORDERZ</span>
+                    <div class="flex items-center justify-center gap-1.5 mt-[1px]">
+                        <span class="bg-[#ff9f72] text-white text-[9px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center leading-none pt-px">${guideQty}</span>
+                        <span class="font-bold text-[#1a4a2e] text-[16px]">담은 상품 확인하기</span>
+                    </div>
+                `;
+            } else {
+                btn.className = "w-full border border-gray-200 rounded-xl py-1 flex flex-col items-center justify-center bg-white shadow-md";
+                btn.innerHTML = `
+                    <span class="text-[#008c45] text-[8px] font-bold tracking-widest leading-tight">ORDERZ</span>
+                    <span id="final-btn-text" class="font-bold text-gray-800 text-[15px]">상품을 담아주세요</span>
+                `;
+            }
+        }
 
         function renderDots(activeIndex) {
             const stepDots = document.getElementById('step-dots');
@@ -421,11 +396,12 @@
             const maskHoles = document.getElementById('mask-holes');
             const spotlightBorders = document.getElementById('spotlight-borders');
             
+            document.querySelectorAll('[data-role="interactive-mask"]').forEach(el => el.remove());
+
             tooltip.style.opacity = '0';
             extraContainer.style.opacity = '0';
             
             let delay = 250;
-
             const isScreenChanging = (step.screen === 'order' && !app.classList.contains('show-order')) || 
                                      (step.screen === 'home' && app.classList.contains('show-order'));
 
@@ -469,6 +445,43 @@
                     spotlightBorders.innerHTML += `<div class="absolute border-2 rounded-md pulse-border" style="border-color: var(--tooltip-bg); top:${top}px; left:${left}px; width:${width}px; height:${height}px;"></div>`;
                     
                     lastRect = { top, left, width, height, rect };
+
+                    if (step.isInteractive && targetId === 'target-checkbox') {
+                        const clickArea = document.createElement('div');
+                        clickArea.className = "absolute z-[100] cursor-pointer pointer-events-auto";
+                        clickArea.style.top = `${top}px`;
+                        clickArea.style.left = `${left}px`;
+                        clickArea.style.width = `${width}px`;
+                        clickArea.style.height = `${height}px`;
+                        clickArea.onclick = (e) => {
+                            e.stopPropagation();
+                            step.interactiveAction();
+                        };
+                        document.getElementById('overlay-container').appendChild(clickArea);
+                        clickArea.dataset.role = "interactive-mask";
+                    }
+
+                    if (step.isInteractive && targetId === 'target-qty') {
+                        const minusBtn = document.getElementById('btn-qty-minus');
+                        const plusBtn = document.getElementById('btn-qty-plus');
+                        
+                        [minusBtn, plusBtn].forEach(btn => {
+                            const bRect = btn.getBoundingClientRect();
+                            const mArea = document.createElement('div');
+                            mArea.className = "absolute z-[100] cursor-pointer pointer-events-auto";
+                            mArea.style.top = `${bRect.top - appRect.top}px`;
+                            mArea.style.left = `${bRect.left - appRect.left}px`;
+                            mArea.style.width = `${bRect.width}px`;
+                            mArea.style.height = `${bRect.height}px`;
+                            mArea.onclick = (e) => {
+                                e.stopPropagation();
+                                if (btn === plusBtn) updateQty(guideQty + 1);
+                                else updateQty(guideQty - 1);
+                            };
+                            document.getElementById('overlay-container').appendChild(mArea);
+                            mArea.dataset.role = "interactive-mask";
+                        });
+                    }
                 });
 
                 if (step.extraBoxes) {
@@ -477,21 +490,32 @@
                         if (!target) return;
                         const rect = target.getBoundingClientRect();
                         const div = document.createElement('div');
-                        div.className = `absolute bg-white text-gray-800 text-[15px] font-extrabold px-3.5 py-2 rounded-lg shadow-[0_4px_16px_rgba(0,0,0,0.25)] whitespace-nowrap flex items-center z-[60] opacity-0 translate-y-2 transition-all duration-500 ease-out`;
+                        
+                        if (index === 1) { // STEP 2 "클릭!" 라벨 전용 스타일
+                            div.className = `absolute whitespace-nowrap flex items-center z-[60] opacity-0 transition-all duration-500 ease-out`;
+                        } else {
+                            div.className = `absolute bg-white text-gray-800 text-[15px] font-extrabold px-3.5 py-2 rounded-lg shadow-[0_4px_16px_rgba(0,0,0,0.25)] whitespace-nowrap flex items-center z-[60] opacity-0 translate-y-2 transition-all duration-500 ease-out`;
+                        }
+                        
                         div.innerHTML = box.text;
                         extraContainer.appendChild(div);
 
                         requestAnimationFrame(() => {
                             const boxRect = div.getBoundingClientRect();
                             let top = 0;
-                            let left = rect.left - appRect.left + (rect.width / 2) - (boxRect.width / 2);
+                            let left = 0;
 
                             if (box.pos === 'bottom') {
                                 top = rect.bottom - appRect.top + 12;
+                                left = rect.left - appRect.left + (rect.width / 2) - (boxRect.width / 2);
                                 div.innerHTML += '<div class="absolute -top-[5px] left-1/2 transform -translate-x-1/2 border-l-[6px] border-r-[6px] border-b-[6px] border-transparent border-b-white"></div>';
                             } else if (box.pos === 'top') {
                                 top = rect.top - appRect.top - boxRect.height - 12;
+                                left = rect.left - appRect.left + (rect.width / 2) - (boxRect.width / 2);
                                 div.innerHTML += '<div class="absolute -bottom-[5px] left-1/2 transform -translate-x-1/2 border-l-[6px] border-r-[6px] border-t-[6px] border-transparent border-t-white"></div>';
+                            } else if (box.pos === 'left') {
+                                top = rect.top - appRect.top + (rect.height/2) - (boxRect.height/2);
+                                left = rect.left - appRect.left - boxRect.width - 15;
                             }
                             
                             if (left < 10) left = 10;
@@ -563,7 +587,6 @@
 
         function endGuide() {
             document.getElementById('overlay-container').style.display = 'none';
-            // 가이드 종료 후 오더즈 홈페이지로 이동
             window.location.href = 'https://orderz.kr/';
         }
 
