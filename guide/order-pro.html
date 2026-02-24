@@ -204,15 +204,13 @@
                     </button>
                 </div>
                 <div id="target-inquiry-area" class="flex-1 flex flex-col items-center justify-center text-gray-500 h-full">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.2" stroke="currentColor" class="w-5 h-5 mb-0.5">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.625m3.75 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12.375m3.75 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h.008M12 21a9.003 9.003 0 0 0 8.315-5.647L21.315 15l-1.144-.782c.118-.339.184-.704.184-1.083 0-1.794-1.504-3.25-3.36-3.25H12c-1.856 0-3.36 1.456-3.36 3.25s1.504 3.25 3.36 3.25h.183l1.144.782A9.003 9.003 0 0 0 12 21Z" />
-                    </svg>
+                    <i class="far fa-comment-dots text-lg mb-0.5"></i>
                     <span class="text-[9px]">문의</span>
                 </div>
             </div>
         </div>
 
-        <!-- [페이지 B] 편집 페이지 (전체 상품 5개 적용) -->
+        <!-- [페이지 B] 편집 페이지 -->
         <div id="page-edit" class="flex flex-col h-full w-full absolute inset-0 bg-white" style="display: none;">
             <header class="flex justify-between items-center px-3 py-2.5 border-b relative h-12 bg-white">
                 <div class="flex items-center gap-2">
@@ -233,7 +231,6 @@
             </div>
 
             <div class="flex-1 overflow-y-auto scroll-area border-t border-gray-100 pb-16">
-                <!-- 편집 아이템 1 (가이드 타겟) -->
                 <div class="flex items-center p-3 border-b relative">
                     <i id="target-trash-icon" class="far fa-trash-alt text-gray-300 text-lg mr-4"></i>
                     <div class="flex-1">
@@ -245,7 +242,6 @@
                         <div id="target-btn-2" class="w-8 h-8 border border-gray-200 rounded flex items-center justify-center text-gray-400 text-sm font-bold bg-white">2</div>
                     </div>
                 </div>
-                <!-- 편집 아이템 2 -->
                 <div class="flex items-center p-3 border-b relative">
                     <i class="far fa-trash-alt text-gray-300 text-lg mr-4"></i>
                     <div class="flex-1">
@@ -253,11 +249,10 @@
                         <div class="text-gray-400 text-[12px]">10,900원</div>
                     </div>
                     <div class="flex gap-2">
-                        <div id="target-btn-1" class="w-8 h-8 border border-gray-200 rounded flex items-center justify-center text-gray-400 text-sm font-bold bg-white">1</div>
-                        <div id="target-btn-2" class="w-8 h-8 border border-gray-200 rounded flex items-center justify-center text-gray-400 text-sm font-bold bg-white">2</div>
+                        <div class="w-8 h-8 border border-gray-200 rounded flex items-center justify-center text-gray-400 text-sm font-bold bg-white">1</div>
+                        <div class="w-8 h-8 border border-gray-200 rounded flex items-center justify-center text-gray-400 text-sm font-bold bg-white">2</div>
                     </div>
                 </div>
-                <!-- 편집 아이템 3 -->
                 <div class="flex items-center p-3 border-b relative">
                     <i class="far fa-trash-alt text-gray-300 text-lg mr-4"></i>
                     <div class="flex-1">
@@ -265,11 +260,10 @@
                         <div class="text-gray-400 text-[12px]">23,000원</div>
                     </div>
                     <div class="flex gap-2">
-                        <div id="target-btn-1" class="w-8 h-8 border border-gray-200 rounded flex items-center justify-center text-gray-400 text-sm font-bold bg-white">1</div>
-                        <div id="target-btn-2" class="w-8 h-8 border border-gray-200 rounded flex items-center justify-center text-gray-400 text-sm font-bold bg-white">2</div>
+                        <div class="w-8 h-8 border border-gray-200 rounded flex items-center justify-center text-gray-400 text-sm font-bold bg-white">1</div>
+                        <div class="w-8 h-8 border border-gray-200 rounded flex items-center justify-center text-gray-400 text-sm font-bold bg-white">2</div>
                     </div>
                 </div>
-                <!-- 편집 아이템 4 -->
                 <div class="flex items-center p-3 border-b relative">
                     <i class="far fa-trash-alt text-gray-300 text-lg mr-4"></i>
                     <div class="flex-1">
@@ -277,11 +271,10 @@
                         <div class="text-gray-400 text-[12px]">9,000원</div>
                     </div>
                     <div class="flex gap-2">
-                        <div id="target-btn-1" class="w-8 h-8 border border-gray-200 rounded flex items-center justify-center text-gray-400 text-sm font-bold bg-white">1</div>
-                        <div id="target-btn-2" class="w-8 h-8 border border-gray-200 rounded flex items-center justify-center text-gray-400 text-sm font-bold bg-white">2</div>
+                        <div class="w-8 h-8 border border-gray-200 rounded flex items-center justify-center text-gray-400 text-sm font-bold bg-white">1</div>
+                        <div class="w-8 h-8 border border-gray-200 rounded flex items-center justify-center text-gray-400 text-sm font-bold bg-white">2</div>
                     </div>
                 </div>
-                <!-- 편집 아이템 5 -->
                 <div class="flex items-center p-3 border-b relative">
                     <i class="far fa-trash-alt text-gray-300 text-lg mr-4"></i>
                     <div class="flex-1">
@@ -289,13 +282,12 @@
                         <div class="text-gray-400 text-[12px]">9,300원</div>
                     </div>
                     <div class="flex gap-2">
-                        <div id="target-btn-1" class="w-8 h-8 border border-gray-200 rounded flex items-center justify-center text-gray-400 text-sm font-bold bg-white">1</div>
-                        <div id="target-btn-2" class="w-8 h-8 border border-gray-200 rounded flex items-center justify-center text-gray-400 text-sm font-bold bg-white">2</div>
+                        <div class="w-8 h-8 border border-gray-200 rounded flex items-center justify-center text-gray-400 text-sm font-bold bg-white">1</div>
+                        <div class="w-8 h-8 border border-gray-200 rounded flex items-center justify-center text-gray-400 text-sm font-bold bg-white">2</div>
                     </div>
                 </div>
             </div>
 
-            <!-- 뒤로가기 버튼 -->
             <div class="p-3 border-t bg-white flex justify-start z-10">
                 <button class="bg-gray-100 px-5 py-2 rounded-lg text-gray-600 font-bold text-[13px] border border-gray-200 shadow-sm">뒤로가기</button>
             </div>
@@ -310,9 +302,8 @@
                 <h2 class="text-[20px] font-bold text-gray-800 mb-4 leading-snug tracking-tight break-keep">
                     발주 시간을 절반으로!<br>오더즈 200% 활용법
                 </h2>
-                <!-- 요청하신 대로 문구 수정 -->
                 <p class="text-gray-500 text-sm mb-8 leading-relaxed">
-                    리스트에 상품이 너무 많아 찾기 힘드셨죠?<br>이제 고수들만 아는 팁을 알려드릴게요.
+                    리스트에 상품이 너무 많아 찾기 힘드셨나요?<br>이제 고수들만 아는 팁을 알려드릴게요.
                 </p>
                 <button onclick="startProGuide()" class="w-full bg-[#008c45] text-white font-bold py-4 rounded-2xl shadow-lg text-[16px]">
                     꿀팁 확인하기
@@ -465,7 +456,7 @@
                 currentProStep++;
                 showProStep(currentProStep);
             } else {
-                window.location.href = "https://orderz.kr/";
+                window.location.href = "https://orderz.kr/shop/wishlist.php";
             }
         }
 
