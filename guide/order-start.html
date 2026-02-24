@@ -312,12 +312,14 @@
             
             <div id="tooltip" class="text-white rounded-xl shadow-2xl p-4 flex flex-col z-30">
                 <div class="flex items-start mb-2.5">
-                    <span id="tooltip-step" class="bg-white text-[#10b981] text-[11px] font-black px-2.5 py-0.5 rounded-full shadow-sm">STEP 1</span>
+                    <!-- STEP 배지 배경을 진한 노란색(bg-yellow-400)으로 변경 -->
+                    <span id="tooltip-step" class="bg-yellow-400 text-gray-900 text-[11px] font-black px-2.5 py-0.5 rounded-full shadow-sm">STEP 1</span>
                 </div>
                 
                 <div id="tooltip-text-wrapper">
-                    <h3 id="tooltip-title" class="flex justify-between items-center font-bold text-[22px] mb-1 tracking-tight leading-tight"></h3>
-                    <!-- 서브 텍스트 크기를 text-[15.5px]로 2px 키움 -->
+                    <!-- 제목 텍스트 색상을 노란색으로, 굵기를 font-semibold로 조절 -->
+                    <h3 id="tooltip-title" class="flex justify-between items-center font-semibold text-[22px] mb-1 tracking-tight leading-tight text-yellow-400"></h3>
+                    <!-- 서브 텍스트 크기 15.5px 유지 -->
                     <p id="tooltip-desc" class="text-[15.5px] opacity-95 leading-relaxed break-keep"></p>
                 </div>
                 
@@ -337,7 +339,7 @@
             {
                 targetIds: ['target-category', 'target-search-icon'],
                 screen: 'home',
-                title: '<span>자주 쓰는 상품 찾기</span>',
+                title: '자주 쓰는 상품 찾기',
                 desc: '<b>1, 2번</b> 편하신 방식으로<br>원하는 상품을 찾아보세요.',
                 tooltipPosition: 'center',
                 theme: '#10b981',
@@ -349,7 +351,7 @@
             {
                 targetIds: ['target-checkbox'],
                 screen: 'home',
-                title: '<span>상품 클릭하기</span>',
+                title: '상품 클릭하기',
                 desc: "자주 구매하는 상품은 <b>우측 체크박스[<i class='fas fa-check'></i>]로 클릭!</b><br>매번 찾을 필요 없이 한곳에 모아드려요.",
                 tooltipPosition: 'bottom',
                 theme: '#10b981',
@@ -364,7 +366,7 @@
             {
                 targetIds: ['target-order-btn'],
                 screen: 'home',
-                title: '<span>주문 페이지로 이동</span>',
+                title: '주문 페이지로 이동',
                 desc: '상품을 모두 담았다면,<br>하단의 <b>[주문하러 가기]</b>를 통해 주문 페이지로 이동합니다.',
                 tooltipPosition: 'top',
                 theme: '#10b981'
@@ -372,7 +374,7 @@
             {
                 targetIds: ['target-qty'],
                 screen: 'order',
-                title: '<span>필요한 만큼 수량 조절</span>',
+                title: '필요한 만큼 수량 조절',
                 desc: '체크한 상품들이 모두 모여있어요.<br><b>숫자를 직접 입력</b>하거나 <b>[-+]버튼</b>으로 쉽게 조절할 수 있어요.',
                 tooltipPosition: 'bottom',
                 theme: '#10b981',
@@ -393,7 +395,7 @@
             {
                 targetIds: ['target-submit-btn'],
                 screen: 'order',
-                title: '<span>주문 완료하기</span>',
+                title: '주문 완료하기',
                 desc: '수량 조절이 끝났다면,<br><b>최종 주문 상품을 확인하고 주문을 완료해보세요!</b>',
                 tooltipPosition: 'top',
                 theme: '#10b981'
