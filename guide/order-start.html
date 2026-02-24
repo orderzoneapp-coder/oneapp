@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NH라인 코치마크 가이드</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body {
+            font-family: 'Pretendard', sans-serif;
+            background-color: #e5e7eb;
+            display: flex;
+            justify-content: center;
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .app-container {
+            width: 100%;
+            max-width: 400px;
+            height: 100%;
+            background-color: #ffffff;
+            position: relative;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .pulse-border {
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+            animation: pulse-ring 1.5s infinite;
+        }
+
+        @keyframes pulse-ring {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        #tooltip {
+            position: absolute;
+            z-index: 70;
+            width: 280px;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            visibility: hidden;
+        }
+
+        .scroll-area::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* 화살표 꼬리 위치를 변수로 동적 제어 */
+        .tooltip-arrow-top::before {
+            content: '';
+            position: absolute;
+            top: -8px;
+            left: var(--arrow-pos, 50%);
+            transform: translateX(-50%);
+            border-width: 0 8px 8px 8px;
+            border-color: transparent transparent #10b981 transparent;
+        }
+        .tooltip-arrow-bottom::after {
+            content: '';
+            position: absolute;
+            bottom: -8px;
+            left: var(--arrow-pos, 50%);
+            transform: translateX(-50%);
+            border-width: 8px 8px 0 8px;
+            border-color: #10b981 transparent transparent transparent;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app-container" id="app">
+        
+        <!-- ========================================== -->
+        <!-- [화면 1] 홈/상품목록 -->
+        <!-- ========================================== -->
+        <div id="screen-home" class="flex flex-col h-full w-full absolute inset-0 bg-white">
+            <header class="flex justify-between items-center px-3 py-2.5 border-b relative h-12">
+                <div class="flex items-center gap-2 z-10 w-20">
+                    <i class="fas fa-bars text-lg"></i>
+                    <span class="font-bold text-sm">상품목록</span>
+                </div>
+                <h1 class="text-[#008c45] text-xl font-black tracking-tighter absolute left-1/2 transform -translate-x-1/2">NH라인</h1>
+                <div class="text-xs font-bold z-10 w-20 text-right">0P <i class="fas fa-user ml-1"></i></div>
+            </header>
+
+            <div id="target-category" class="flex justify-between py-2 px-2 border-b text-[9px] text-center text-gray-600 bg-white relative">
+                <div class="flex-1"><i class="fas fa-carrot text-base mb-1 text-gray-400"></i><br>채소/과일</div>
+                <div class="flex-1"><i class="fas fa-fish text-base mb-1 text-gray-400"></i><br>수산/축산</div>
+                <div class="flex-1"><i class="fas fa-snowflake text-base mb-1 text-gray-400"></i><br>식품/가공</div>
+                <div class="flex-1">
+                    <svg viewBox="0 0 24 24" class="w-[18px] h-[18px] mx-auto mb-1 fill-current text-gray-400">
+                        <path d="M12.5 2h-1c-.3 0-.5.2-.5.5v2.6c-1.4.3-2.5 1.5-2.5 3v11.4c0 1.4 1.1 2.5 2.5 2.5h2c1.4 0 2.5-1.1 2.5-2.5V8.1c0-1.5-1.1-2.7-2.5-3V2.5c0-.3-.2-.5-.5-.5zM11 5h2v2h-2V5zm3 14.5c0 .3-.2.5-.5.5h-3c-.3 0-.5-.2-.5-.5v-11c0-.3.2-.5.5-.5h3c.3 0 .5.2.5.5v11z"/>
+                    </svg>
+                    양념/소스
+                </div>
+                <div class="flex-1"><i class="fas fa-utensils text-base mb-1 text-gray-400"></i><br>주방/잡화</div>
+            </div>
+
+            <div class="flex text-center border-b font-bold text-xs">
+                <div class="w-1/2 py-2 text-[#008c45] border-b-2 border-[#008c45]">오늘의행사</div>
+                <div class="w-1/2 py-2 text-gray-400">매장행사</div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto scroll-area pb-16">
+                <div class="flex items-center p-3 border-b relative">
+                    <div class="w-14 h-14 bg-gray-100 rounded flex-shrink-0 flex items-center justify-center overflow-hidden">
+                        <img src="https://placehold.co/100x100/e2e8f0/94a3b8?text=무" class="w-full h-full object-cover">
+                    </div>
+                    <div class="ml-3 flex-1">
+                        <h3 class="font-bold text-gray-800 text-sm">월동무(특) <span class="text-gray-400 text-[10px] font-normal">BOX</span></h3>
+                        <p class="text-[#008c45] font-bold text-base mt-0.5">21,000원</p>
+                    </div>
+                    <div id="target-checkbox" class="w-7 h-7 flex items-center justify-center border-2 border-gray-200 rounded text-gray-200 ml-2 bg-white transition-colors">
+                        <i class="fas fa-check text-xs"></i>
+                    </div>
+                </div>
+                <div class="flex items-center p-3 border-b">
+                    <div class="w-14 h-14 bg-gray-100 rounded flex items-center justify-center overflow-hidden"><img src="https://placehold.co/100x100/e2e8f0/94a3b8?text=배추" class="w-full h-full object-cover"></div>
+                    <div class="ml-3 flex-1">
+                        <h3 class="font-bold text-gray-800 text-sm">배추_3입망 <span class="text-gray-400 text-[10px] font-normal">BOX</span></h3>
+                        <p class="text-[#008c45] font-bold text-base mt-0.5">10,600원</p>
+                    </div>
+                    <div class="w-7 h-7 flex items-center justify-center border-2 border-gray-200 rounded text-gray-200 ml-2"><i class="fas fa-check text-xs"></i></div>
+                </div>
+            </div>
+
+            <!-- 하단 바 (버튼 가로 길이 200px, 양옆 검색/문의 남은 여백 중앙 정렬) -->
+            <div class="h-14 border-t bg-white flex items-center w-full absolute bottom-0 z-10 px-1">
+                <div id="target-search-icon" class="flex-1 flex flex-col items-center justify-center text-gray-500 h-full relative">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.2" stroke="currentColor" class="w-[20px] h-[20px] mb-0.5 text-gray-600">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                    </svg>
+                    <span class="text-[9px] font-medium text-gray-600">검색</span>
+                </div>
+                <div class="w-[200px] flex justify-center relative">
+                    <button id="target-order-btn" class="w-full border border-gray-200 rounded-xl py-1 flex flex-col items-center justify-center bg-white shadow-md transition-all">
+                        <span class="text-[#008c45] text-[8px] font-bold tracking-widest leading-tight">ORDERZ</span>
+                        <span class="font-bold text-gray-800 text-[13px]">주문하러 가기</span>
+                    </button>
+                </div>
+                <div class="flex-1 flex flex-col items-center justify-center text-gray-500 h-full">
+                    <i class="far fa-comment-dots text-lg mb-0.5 text-gray-600"></i>
+                    <span class="text-[9px] font-medium text-gray-600">문의</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- [화면 2] 빠른주문 -->
+        <!-- ========================================== -->
+        <div id="screen-order" class="flex flex-col h-full w-full absolute inset-0 bg-white" style="display: none;">
+            <header class="flex justify-between items-center px-3 py-2.5 border-b relative h-12">
+                <div class="flex items-center gap-2 z-10 w-20">
+                    <i class="fas fa-bars text-lg"></i>
+                    <span class="font-bold text-sm">빠른주문</span>
+                </div>
+                <h1 class="text-[#008c45] text-xl font-black tracking-tighter absolute left-1/2 transform -translate-x-1/2">NH라인</h1>
+                <div class="text-xs font-bold z-10 w-20 text-right">0P <i class="fas fa-user ml-1"></i></div>
+            </header>
+
+            <div class="flex items-center border-b border-gray-200 px-2 text-xs text-gray-500 font-bold bg-white">
+                <div class="flex-1 text-center py-2.5 text-gray-600"><i class="fas fa-star text-yellow-400 mr-1 text-[10px]"></i>단골특가</div>
+                <div class="flex-1 text-center py-2.5 text-[#008c45] border-b-2 border-[#008c45] -mb-[1px] relative z-10">LIST</div>
+                <div class="flex-1 text-center py-2.5 text-gray-300">MY1</div>
+                <div class="flex-1 text-center py-2.5 text-gray-300">MY2</div>
+                <div class="px-2 py-2.5 text-gray-500"><i class="fas fa-sliders-h text-base"></i></div>
+            </div>
+
+            <div class="flex items-center justify-between px-3 py-2 border-b bg-white text-xs">
+                <div class="font-bold text-gray-800 flex items-center gap-1.5">
+                    <i class="far fa-calendar-alt text-[#008c45] text-sm"></i> 1월 12일(월) 도착
+                </div>
+                <div class="text-gray-500 text-[10px] font-bold">
+                    최신순 <i class="fas fa-caret-down ml-0.5"></i>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto scroll-area pb-16">
+                <div class="flex items-center p-3 border-b relative">
+                    <img src="https://placehold.co/60x60/e2e8f0/94a3b8?text=무" class="w-10 h-10 rounded object-cover">
+                    <div class="ml-3 flex-1">
+                        <h3 class="font-bold text-gray-800 text-[13px]">무우(낱개)</h3>
+                        <p class="text-[#008c45] text-[13px] mt-0.5">2,700원</p>
+                    </div>
+                    <div id="target-qty" class="flex items-center border border-gray-200 rounded-lg bg-gray-50 h-7">
+                        <button class="w-7 h-7 flex items-center justify-center text-gray-400 font-bold"><i class="fas fa-minus text-[10px]"></i></button>
+                        <div class="w-7 text-center font-bold text-sm bg-white h-7 flex items-center justify-center border-x border-gray-200">0</div>
+                        <button class="w-7 h-7 flex items-center justify-center text-gray-400 font-bold"><i class="fas fa-plus text-[10px]"></i></button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 하단 바 -->
+            <div class="h-14 border-t bg-white flex items-center w-full absolute bottom-0 z-10 px-1">
+                <div class="flex-1 flex flex-col items-center justify-center text-gray-500 h-full">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.2" stroke="currentColor" class="w-[20px] h-[20px] mb-0.5 text-gray-600">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                    </svg>
+                    <span class="text-[9px] font-medium text-gray-600">검색</span>
+                </div>
+                <div id="target-submit-btn" class="w-[200px] flex justify-center relative">
+                    <button id="final-order-btn" class="w-full border border-gray-200 rounded-xl py-1 flex flex-col items-center justify-center bg-white shadow-md transition-all duration-300">
+                        <span class="text-[#008c45] text-[8px] font-bold tracking-widest leading-tight">ORDERZ</span>
+                        <span class="font-bold text-gray-800 text-[13px]">상품을 담아주세요</span>
+                    </button>
+                </div>
+                <div class="flex-1 flex flex-col items-center justify-center text-gray-500 h-full">
+                    <i class="far fa-comment-dots text-lg mb-0.5 text-gray-600"></i>
+                    <span class="text-[9px] font-medium text-gray-600">문의</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- 도입 팝업 -->
+        <!-- ========================================== -->
+        <div id="intro-popup-overlay" class="absolute inset-0 bg-black/60 z-[100] flex items-center justify-center backdrop-blur-sm" style="display: none;">
+            <div class="bg-white rounded-3xl p-6 w-[85%] max-w-[320px] shadow-2xl text-center">
+                <div class="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-green-100 text-[#008c45]">
+                    <i class="fas fa-mobile-alt text-2xl"></i>
+                </div>
+                <h2 class="text-xl font-bold text-gray-800 mb-6 leading-snug">
+                    내 방식대로 정리하는<br>가장 쉬운 발주
+                </h2>
+                <button onclick="startGuideFromPopup()" class="w-full bg-[#008c45] text-white font-bold py-3.5 rounded-xl shadow-md">
+                    주문 방법 확인하기
+                </button>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- 가이드 오버레이 (X버튼 제거) -->
+        <!-- ========================================== -->
+        <div id="overlay-container" class="absolute inset-0 z-50" style="display: none;">
+            <svg width="100%" height="100%" class="absolute inset-0 pointer-events-none z-10">
+                <defs>
+                    <mask id="hole-mask">
+                        <rect width="100%" height="100%" fill="white" />
+                        <g id="mask-holes"></g>
+                    </mask>
+                </defs>
+                <rect width="100%" height="100%" fill="rgba(0,0,0,0.65)" mask="url(#hole-mask)" />
+            </svg>
+            
+            <div id="spotlight-borders" class="absolute inset-0 pointer-events-none z-20"></div>
+            
+            <div id="tooltip" class="bg-[#10b981] text-white rounded-xl shadow-2xl p-4 flex flex-col z-30">
+                <div class="flex items-start mb-2">
+                    <span id="tooltip-step" class="bg-white text-[#10b981] text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm">STEP 1</span>
+                </div>
+                <h3 id="tooltip-title" class="font-bold text-base mb-2"></h3>
+                <p id="tooltip-desc" class="text-[13px] opacity-95 leading-relaxed"></p>
+                <div class="flex justify-between items-center mt-4 pt-3 border-t border-white/20">
+                    <div id="step-dots" class="flex gap-1.5"></div>
+                    <button id="next-btn" onclick="nextStep()" class="bg-white text-[#10b981] font-bold px-4 py-1.5 rounded-lg text-xs shadow-md">
+                        다음 <i class="fas fa-chevron-right ml-1"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // 오프라인 고객 맞춤형 직관적 문구 반영
+        const guideSteps = [
+            {
+                targetIds: ['target-category', 'target-search-icon'],
+                screen: 'home',
+                title: '원하는 상품 찾기',
+                desc: '<div class="flex flex-col gap-2 mt-1"><div class="flex items-center gap-2"><i class="fas fa-arrow-up text-yellow-300 text-lg"></i> <span>상단 <b>분류(카테고리)</b>나</span></div><div class="flex items-center gap-2"><i class="fas fa-arrow-down text-yellow-300 text-lg"></i> <span>하단 <b>돋보기 버튼</b>을 눌러<br>상품을 찾아보세요.</span></div></div>',
+                tooltipPosition: 'center'
+            },
+            {
+                targetIds: ['target-checkbox'],
+                screen: 'home',
+                title: '자주 사는 상품 체크!',
+                desc: "매일 시키는 상품은 우측 체크박스[<i class='fas fa-check'></i>]를 눌러두세요. <b>매번 새로 찾을 필요 없이 한곳에 모아줍니다.</b>",
+                tooltipPosition: 'bottom',
+                action: () => {
+                    const el = document.getElementById('target-checkbox');
+                    el.classList.replace('border-gray-200', 'border-[#008c45]');
+                    el.classList.replace('text-gray-200', 'text-white');
+                    el.classList.replace('bg-white', 'bg-[#008c45]');
+                }
+            },
+            {
+                targetIds: ['target-order-btn'],
+                screen: 'home',
+                title: '주문 페이지로 이동',
+                desc: '주문할 상품을 모두 골랐다면, 맨 아래 <b>[주문하러 가기]</b> 버튼을 누르세요.',
+                tooltipPosition: 'top'
+            },
+            {
+                targetIds: ['target-qty'],
+                screen: 'order',
+                title: '필요한 수량 맞추기',
+                desc: '내가 체크해둔 상품들만 모여있어요. 오늘 필요한 만큼 <b>[+] 버튼을 눌러 수량을 올려주세요.</b>',
+                tooltipPosition: 'bottom',
+                action: () => {
+                    const el = document.getElementById('target-qty').querySelector('div');
+                    el.innerText = '1';
+                    
+                    const btn = document.getElementById('final-order-btn');
+                    btn.className = "w-full border border-[#A5D6B4] rounded-xl py-1 flex flex-col items-center justify-center bg-[#A5D6B4] shadow-md transition-all duration-300";
+                    btn.innerHTML = `
+                        <span class="text-[#005a2b] text-[8px] font-bold tracking-widest leading-tight opacity-80">ORDERZ</span>
+                        <div class="flex items-center justify-center gap-1.5 mt-[1px]">
+                            <span class="bg-[#ff9f72] text-white text-[9px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center leading-none pt-px">1</span>
+                            <span class="font-bold text-[#1a4a2e] text-[14px]">담은 상품 확인하기</span>
+                        </div>
+                    `;
+                }
+            },
+            {
+                targetIds: ['target-submit-btn'],
+                screen: 'order',
+                title: '담은 상품 확인하기',
+                desc: '수량을 다 맞췄다면 이 버튼을 누르세요.<br><b>담은 상품을 한 번 더 확인한 후 주문을 완료</b>할 수 있습니다.',
+                tooltipPosition: 'top'
+            }
+        ];
+
+        let currentStep = 0;
+
+        function renderDots(activeIndex) {
+            const stepDots = document.getElementById('step-dots');
+            stepDots.innerHTML = '';
+            guideSteps.forEach((_, i) => {
+                const opacity = i === activeIndex ? 'bg-white' : 'bg-white/30';
+                stepDots.innerHTML += `<div class="w-1.5 h-1.5 rounded-full ${opacity} transition-colors"></div>`;
+            });
+        }
+
+        function showStep(index) {
+            const step = guideSteps[index];
+            const homeScreen = document.getElementById('screen-home');
+            const orderScreen = document.getElementById('screen-order');
+            
+            if (step.screen === 'home') {
+                homeScreen.style.display = 'flex';
+                orderScreen.style.display = 'none';
+            } else {
+                homeScreen.style.display = 'none';
+                orderScreen.style.display = 'flex';
+            }
+
+            setTimeout(() => {
+                const maskHoles = document.getElementById('mask-holes');
+                const spotlightBorders = document.getElementById('spotlight-borders');
+                const tooltip = document.getElementById('tooltip');
+                const appRect = document.getElementById('app').getBoundingClientRect();
+                
+                maskHoles.innerHTML = '';
+                spotlightBorders.innerHTML = '';
+                let lastRect = null;
+
+                step.targetIds.forEach(targetId => {
+                    const target = document.getElementById(targetId);
+                    if (!target) return;
+                    
+                    const rect = target.getBoundingClientRect();
+                    const pad = 4;
+                    const top = rect.top - appRect.top - pad;
+                    const left = rect.left - appRect.left - pad;
+                    const width = rect.width + (pad * 2);
+                    const height = rect.height + (pad * 2);
+
+                    maskHoles.innerHTML += `<rect x="${left}" y="${top}" width="${width}" height="${height}" rx="8" fill="black" />`;
+                    spotlightBorders.innerHTML += `<div class="absolute border-2 border-[#10b981] rounded-lg pulse-border" style="top:${top}px; left:${left}px; width:${width}px; height:${height}px;"></div>`;
+                    
+                    lastRect = { top, left, width, height, rect };
+                });
+
+                document.getElementById('tooltip-step').innerText = `STEP ${index + 1}`;
+                document.getElementById('tooltip-title').innerText = step.title;
+                document.getElementById('tooltip-desc').innerHTML = step.desc;
+
+                renderDots(index);
+
+                const nextBtn = document.getElementById('next-btn');
+                nextBtn.innerHTML = index === guideSteps.length - 1 ? '시작하기' : '다음 <i class="fas fa-chevron-right ml-1"></i>';
+
+                tooltip.style.visibility = 'visible';
+                tooltip.classList.remove('tooltip-arrow-top', 'tooltip-arrow-bottom');
+
+                if (step.tooltipPosition === 'center') {
+                    tooltip.style.top = '50%';
+                    tooltip.style.left = '50%';
+                    tooltip.style.transform = 'translate(-50%, -50%)';
+                } else {
+                    tooltip.style.transform = 'none';
+                    if (step.tooltipPosition === 'bottom') {
+                        tooltip.style.top = `${lastRect.rect.bottom - appRect.top + 15}px`;
+                        tooltip.classList.add('tooltip-arrow-top');
+                    } else {
+                        const tooltipHeight = tooltip.offsetHeight || 150;
+                        tooltip.style.top = `${lastRect.rect.top - appRect.top - tooltipHeight - 15}px`;
+                        tooltip.classList.add('tooltip-arrow-bottom');
+                    }
+
+                    let tLeft = (lastRect.rect.left - appRect.left + lastRect.rect.width / 2) - 140; 
+                    if (tLeft < 10) tLeft = 10;
+                    if (tLeft + 280 > appRect.width - 10) tLeft = appRect.width - 290;
+                    tooltip.style.left = `${tLeft}px`;
+
+                    let arrowPos = (lastRect.rect.left - appRect.left + lastRect.rect.width / 2) - tLeft;
+                    arrowPos = Math.max(16, Math.min(arrowPos, 280 - 16));
+                    tooltip.style.setProperty('--arrow-pos', `${arrowPos}px`);
+                }
+            }, 100);
+        }
+
+        function nextStep() {
+            if (guideSteps[currentStep].action) {
+                guideSteps[currentStep].action();
+            }
+
+            if (currentStep < guideSteps.length - 1) {
+                currentStep++;
+                showStep(currentStep);
+            } else {
+                endGuide();
+            }
+        }
+
+        function startGuideFromPopup() {
+            document.getElementById('intro-popup-overlay').style.display = 'none';
+            document.getElementById('overlay-container').style.display = 'block';
+            showStep(0);
+        }
+
+        function endGuide() {
+            document.getElementById('overlay-container').style.display = 'none';
+            window.location.href = 'https://orderz.kr/';
+        }
+
+        window.onload = () => {
+            setTimeout(() => {
+                document.getElementById('intro-popup-overlay').style.display = 'flex';
+            }, 500);
+        };
+    </script>
+</body>
+</html>
