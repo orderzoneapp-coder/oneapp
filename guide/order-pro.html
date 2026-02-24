@@ -55,9 +55,20 @@
             100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0); }
         }
 
-        /* 툴팁 본체 그라데이션 배경 */
+        /* 툴팁 본체 그라데이션 배경 및 부드러운 애니메이션 설정 */
         .tooltip-pro {
             background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+            opacity: 0;
+            transform: scale(0.95) translateY(10px);
+            transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), top 0.4s ease, left 0.4s ease;
+            pointer-events: none;
+        }
+        
+        /* 활성화 상태 */
+        .tooltip-pro.active {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+            pointer-events: auto;
         }
 
         /* 툴팁 화살표 색상 수정: 배경색과 완벽히 일치하도록 조정 */
@@ -68,7 +79,6 @@
             left: var(--arrow-pos, 50%);
             transform: translateX(-50%);
             border-width: 8px 8px 0 8px;
-            /* 말풍선 하단은 연한 초록색(#10b981)에 가깝습니다 */
             border-color: #10b981 transparent transparent transparent;
         }
         
@@ -79,7 +89,6 @@
             left: var(--arrow-pos, 50%);
             transform: translateX(-50%);
             border-width: 0 8px 8px 8px;
-            /* 말풍선 상단은 진한 초록색(#059669)에서 시작합니다 */
             border-color: transparent transparent #059669 transparent;
         }
 
@@ -234,7 +243,7 @@
             </div>
 
             <div class="flex-1 overflow-y-auto scroll-area border-t border-gray-100 pb-16">
-                <!-- 편집 아이템 리스트 -->
+                <!-- 편집 아이템 리스트 (5개) -->
                 <div class="flex items-center p-3 border-b relative">
                     <i id="target-trash-icon" class="far fa-trash-alt text-gray-300 text-lg mr-4"></i>
                     <div class="flex-1">
@@ -339,7 +348,7 @@
             </svg>
             <div id="spotlight-pro" class="absolute inset-0 pointer-events-none z-20"></div>
             
-            <div id="tip-tooltip" class="absolute z-30 w-[305px] tooltip-pro text-white rounded-2xl shadow-2xl p-5 flex flex-col transition-all duration-300" style="visibility: hidden;">
+            <div id="tip-tooltip" class="absolute z-30 w-[305px] tooltip-pro text-white rounded-2xl shadow-2xl p-5 flex flex-col transition-all duration-300">
                 <div class="flex items-center gap-2 mb-2.5">
                     <span class="bg-yellow-400 text-emerald-900 text-[11px] font-black px-2 py-0.5 rounded-md">TIP</span>
                     <h3 id="tip-title" class="font-bold text-[19px] text-yellow-400 tracking-tight"></h3>
@@ -417,6 +426,9 @@
             const tooltip = document.getElementById('tip-tooltip');
             const appRect = document.getElementById('app').getBoundingClientRect();
             
+            // 툴팁을 잠시 투명하게 만들어서 위치 변경 시 튀는 현상 방지
+            tooltip.classList.remove('active');
+            
             maskHoles.innerHTML = '';
             spotlight.innerHTML = '';
             let lastRect = null;
@@ -449,17 +461,16 @@
                 nextBtn.innerHTML = '다음 <i class="fas fa-chevron-right ml-1 text-xs"></i>';
             }
 
-            tooltip.style.visibility = 'visible';
             tooltip.classList.remove('arrow-bottom', 'arrow-top');
 
+            // 위치 계산
             if (step.pos === 'bottom') {
                 tooltip.style.top = `${lastRect.top + lastRect.height + 15}px`;
                 tooltip.classList.add('arrow-top');
             } else {
-                setTimeout(() => {
-                    const tHeight = tooltip.offsetHeight;
-                    tooltip.style.top = `${lastRect.top - tHeight - 15}px`;
-                }, 0);
+                // 이 예시 코드에는 top 포지션이 없지만 확장을 위해 유지
+                const tHeight = tooltip.offsetHeight || 150;
+                tooltip.style.top = `${lastRect.top - tHeight - 15}px`;
                 tooltip.classList.add('arrow-bottom');
             }
             
@@ -469,6 +480,11 @@
             
             const arrowPos = (lastRect.left + lastRect.width/2) - tLeft;
             tooltip.style.setProperty('--arrow-pos', `${arrowPos}px`);
+
+            // 브라우저가 위치 갱신을 인지한 후 애니메이션 활성화
+            requestAnimationFrame(() => {
+                tooltip.classList.add('active');
+            });
         }
 
         async function nextProStep() {
@@ -476,8 +492,11 @@
             isAnimating = true;
 
             const tooltip = document.getElementById('tip-tooltip');
+            
+            // 다음 단계로 넘어가기 전 말풍선 숨기기
+            tooltip.classList.remove('active');
+            
             if (proSteps[currentProStep].action) {
-                tooltip.style.visibility = 'hidden';
                 document.getElementById('mask-holes-pro').innerHTML = '';
                 document.getElementById('spotlight-pro').innerHTML = '';
                 
@@ -485,6 +504,9 @@
                 if (result instanceof Promise) {
                     await result;
                 }
+            } else {
+                // 애니메이션 효과를 위해 짧은 대기
+                await new Promise(r => setTimeout(r, 100));
             }
             
             if (currentProStep < proSteps.length - 1) {
