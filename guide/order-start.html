@@ -9,19 +9,23 @@
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
         
-        /* 카카오톡 등 인앱 브라우저 하단바 잘림 방지 (dvh 적용) */
+        /* 카카오톡 등 인앱 브라우저 스크롤 및 하단 잘림 완벽 방지 */
         html, body {
-            height: 100dvh;
-            min-height: -webkit-fill-available;
-        }
-
-        body {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            overscroll-behavior: none; /* 당겨서 새로고침 방지 */
             font-family: 'Pretendard', sans-serif;
             background-color: #e5e7eb;
             display: flex;
             justify-content: center;
-            margin: 0;
-            overflow: hidden;
         }
         
         .app-container {
@@ -262,9 +266,9 @@
         </div>
 
         <!-- ========================================== -->
-        <!-- 가이드 오버레이 -->
+        <!-- 가이드 오버레이 (overflow-hidden 추가로 영역 이탈 차단) -->
         <!-- ========================================== -->
-        <div id="overlay-container" class="absolute inset-0 z-50" style="display: none;">
+        <div id="overlay-container" class="absolute inset-0 z-50 overflow-hidden" style="display: none;">
             <svg width="100%" height="100%" class="absolute inset-0 pointer-events-none z-10">
                 <defs>
                     <mask id="hole-mask">
@@ -351,7 +355,7 @@
             {
                 targetIds: ['target-submit-btn'],
                 screen: 'order',
-                title: '담은 상품 확인하기',
+                title: '주문 완료하기',
                 desc: '수량 조절을 마쳤다면 아래에 버튼을 눌러주세요. <b>최종 주문 상품을 확인하고 주문을 완료</b>합니다.',
                 tooltipPosition: 'top'
             }
@@ -397,10 +401,16 @@
                     
                     const rect = target.getBoundingClientRect();
                     const pad = 4;
-                    const top = rect.top - appRect.top - pad;
-                    const left = rect.left - appRect.left - pad;
-                    const width = rect.width + (pad * 2);
-                    const height = rect.height + (pad * 2);
+                    let top = rect.top - appRect.top - pad;
+                    let left = rect.left - appRect.left - pad;
+                    let width = rect.width + (pad * 2);
+                    let height = rect.height + (pad * 2);
+
+                    // 하이라이트 영역이 화면을 벗어나 스크롤을 유발하지 않도록 크기 보정 (Clamp)
+                    if (top < 0) { height += top; top = 0; }
+                    if (left < 0) { width += left; left = 0; }
+                    if (top + height > appRect.height) { height = appRect.height - top; }
+                    if (left + width > appRect.width) { width = appRect.width - left; }
 
                     maskHoles.innerHTML += `<rect x="${left}" y="${top}" width="${width}" height="${height}" rx="8" fill="black" />`;
                     spotlightBorders.innerHTML += `<div class="absolute border-2 border-[#10b981] rounded-lg pulse-border" style="top:${top}px; left:${left}px; width:${width}px; height:${height}px;"></div>`;
