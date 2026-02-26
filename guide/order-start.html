@@ -373,7 +373,8 @@
         function updateCheckboxToAfter() {
             const imgEl = document.querySelector('#target-checkbox img');
             if(imgEl) {
-                imgEl.src = 'http://oneapp2.godohosting.com/order_guide/%C3%BC%C5%A9%C8%C4.png';
+                // HTTP -> HTTPS 변경 및 깨진 인코딩 주소('체크후.png') 복구 (모바일 이미지 깨짐 해결)
+                imgEl.src = 'https://oneapp2.godohosting.com/order_guide/%EC%B2%B4%ED%81%AC%ED%9B%84.png';
                 imgEl.alt = '체크 후';
             }
         }
