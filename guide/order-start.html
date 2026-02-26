@@ -106,23 +106,24 @@
             animation: pulseOnce 0.6s ease-out forwards;
         }
 
-        /* 버튼 빛 퍼짐 효과 (움직임 제거, 체크박스 하이라이트 느낌) */
-        @keyframes btnRippleGreen {
-            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
-            70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); } /* 퍼짐 범위 축소 (12px -> 6px) */
-            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-        }
-        .animate-btn-ripple-green {
-            animation: btnRippleGreen 1.5s infinite;
-        }
-
+        /* 시작하기 버튼 노란색 물결 펄스 애니메이션 복구 */
         @keyframes btnRippleYellow {
-            0% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.7); } /* 노란색(yellow-400) 펄스 효과 */
-            70% { box-shadow: 0 0 0 6px rgba(250, 204, 21, 0); }
+            0% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.8); } 
+            70% { box-shadow: 0 0 0 8px rgba(250, 204, 21, 0); }
             100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0); }
         }
         .animate-btn-ripple-yellow {
             animation: btnRippleYellow 1.5s infinite;
+        }
+
+        /* 다음 버튼 화살표 애니메이션 (시선 유도 및 방향성 제시) */
+        @keyframes nudgeRight {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(4px); }
+        }
+        .animate-nudge-right {
+            display: inline-block;
+            animation: nudgeRight 1.2s infinite ease-in-out;
         }
     </style>
 </head>
@@ -266,7 +267,7 @@
                 <h2 class="text-[24px] font-black text-gray-800 mb-6 leading-snug tracking-tighter italic transform -skew-x-6">
                     순식간에 끝나는 주문!
                 </h2>
-                <!-- 시작하기 버튼에도 동일한 노란색 펄스 애니메이션(animate-btn-ripple-yellow) 적용 -->
+                <!-- 첫 시작버튼에 노란색 펄스 효과 적용 -->
                 <button onclick="startGuideFromPopup()" class="w-full bg-[#10b981] text-white font-black py-3.5 rounded-xl shadow-md text-[16px] transition-colors animate-btn-ripple-yellow">
                     바로 시작하기
                 </button>
@@ -297,8 +298,9 @@
                 </div>
                 <div class="flex justify-between items-center mt-4 pt-3 border-t border-white/20">
                     <div id="step-dots" class="flex gap-1.5"></div>
-                    <button id="next-btn" onclick="nextStep()" class="bg-white text-[#10b981] font-bold px-4 py-2 rounded-lg text-[13px] shadow-md transition-colors duration-300 animate-btn-ripple-yellow">
-                        다음 <i class="fas fa-chevron-right ml-1"></i>
+                    <!-- 다음 버튼 강조: 배경 노란색, 글자 진회색, 패딩 및 폰트 크기 확대, 화살표 애니메이션 추가 -->
+                    <button id="next-btn" onclick="nextStep()" class="bg-yellow-400 text-gray-900 font-bold px-5 py-2.5 rounded-lg text-[14px] shadow-[0_4px_10px_rgba(0,0,0,0.2)] transition-transform active:scale-95">
+                        다음 <i class="fas fa-chevron-right ml-1 animate-nudge-right"></i>
                     </button>
                 </div>
             </div>
@@ -329,8 +331,8 @@
                 isInteractive: true,
                 interactiveAction: () => updateCheckboxToAfter(),
                 extraBoxes: [
-                    // 애니메이션을 제거하고, 글씨 두께를 줄인 뒤 우측에 노란색 체크박스 아이콘 배치
-                    { targetId: 'target-checkbox', text: '<div class="flex items-center gap-1.5 text-white font-semibold text-[15px] tracking-wide" style="text-shadow: 0 2px 4px rgba(0,0,0,0.6);">클릭 <i class="far fa-check-square text-yellow-400 text-[18px]"></i></div>', pos: 'left' }
+                    // 아이콘을 체크박스에서 우측 화살표로 변경
+                    { targetId: 'target-checkbox', text: '<div class="flex items-center gap-1.5 text-white font-semibold text-[15px] tracking-wide" style="text-shadow: 0 2px 4px rgba(0,0,0,0.6);">클릭 <i class="fas fa-arrow-right text-yellow-400 text-[16px]"></i></div>', pos: 'left' }
                 ],
                 action: () => { updateCheckboxToAfter(); }
             },
@@ -559,9 +561,14 @@
                 renderDots(index);
 
                 const nextBtn = document.getElementById('next-btn');
-                if (index === guideSteps.length - 1) { nextBtn.innerHTML = '시작하기'; } 
-                else if (index === 2) { nextBtn.innerHTML = '주문 이동 <i class="fas fa-chevron-right ml-1"></i>'; } 
-                else { nextBtn.innerHTML = '다음 <i class="fas fa-chevron-right ml-1"></i>'; }
+                // 각 스텝별 버튼 텍스트와 화살표 애니메이션 적용
+                if (index === guideSteps.length - 1) { 
+                    nextBtn.innerHTML = '시작하기 <i class="fas fa-check ml-1"></i>'; 
+                } else if (index === 2) { 
+                    nextBtn.innerHTML = '주문 이동 <i class="fas fa-chevron-right ml-1 animate-nudge-right"></i>'; 
+                } else { 
+                    nextBtn.innerHTML = '다음 <i class="fas fa-chevron-right ml-1 animate-nudge-right"></i>'; 
+                }
 
                 tooltip.style.visibility = 'visible';
                 tooltip.classList.remove('tooltip-arrow-top', 'tooltip-arrow-bottom');
