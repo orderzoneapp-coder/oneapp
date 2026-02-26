@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <!-- 외부 이미지 로드 시 Referrer를 숨겨 핫링크 차단(이미지 깨짐)을 우회하는 메타 태그 추가 -->
+    <!-- 외부 이미지 로드 시 Referrer를 숨겨 핫링크 차단 및 트래킹 왜곡을 방지 -->
     <meta name="referrer" content="no-referrer">
     
     <title>오더즈 주문 가이드</title>
@@ -109,7 +109,7 @@
             animation: pulseOnce 0.6s ease-out forwards;
         }
 
-        /* 시작하기 버튼 노란색 물결 펄스 애니메이션 복구 */
+        /* 시작하기 버튼 노란색 물결 펄스 애니메이션 */
         @keyframes btnRippleYellow {
             0% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.8); } 
             70% { box-shadow: 0 0 0 8px rgba(250, 204, 21, 0); }
@@ -119,7 +119,7 @@
             animation: btnRippleYellow 1.5s infinite;
         }
 
-        /* 다음 버튼 화살표 애니메이션 (시선 유도 및 방향성 제시) */
+        /* 다음 버튼 화살표 애니메이션 */
         @keyframes nudgeRight {
             0%, 100% { transform: translateX(0); }
             50% { transform: translateX(4px); }
@@ -186,7 +186,8 @@
                         <p class="text-[#008c45] font-bold text-[17px] mt-0.5">21,000원</p>
                     </div>
                     <div id="target-checkbox" class="w-[26px] h-[26px] flex items-center justify-center ml-2 transition-transform">
-                        <img src="https://oneapp2.godohosting.com/order_guide/%EC%B2%B4%ED%81%AC%EC%A0%84.png" alt="체크 전" class="w-full h-full object-contain">
+                        <!-- '체크 전' 이미지 영문 링크로 변경 -->
+                        <img src="https://oneapp2.godohosting.com/order_guide/chk1.png" alt="체크 전" class="w-full h-full object-contain">
                     </div>
                 </div>
             </div>
@@ -355,7 +356,7 @@
                 tooltipPosition: 'bottom',
                 theme: '#10b981',
                 isInteractive: true, // 버튼 인터랙션은 유지
-                extraBoxes: [], // 수량 조절 단계의 "클릭!" 라벨 제거
+                extraBoxes: [],
                 action: () => {
                     if (guideQty === 0) updateQty(1);
                 }
@@ -376,8 +377,8 @@
         function updateCheckboxToAfter() {
             const imgEl = document.querySelector('#target-checkbox img');
             if(imgEl) {
-                // HTTP -> HTTPS 변경 및 깨진 인코딩 주소('체크후.png') 복구 (모바일 이미지 깨짐 해결)
-                imgEl.src = 'https://oneapp2.godohosting.com/order_guide/%EC%B2%B4%ED%81%AC%ED%9B%84.png';
+                // '체크 후' 이미지 영문 링크(chk2.png)로 변경
+                imgEl.src = 'https://oneapp2.godohosting.com/order_guide/chk2.png';
                 imgEl.alt = '체크 후';
             }
         }
@@ -518,7 +519,7 @@
                         const rect = target.getBoundingClientRect();
                         const div = document.createElement('div');
                         
-                        if (index === 1) { // STEP 2 "클릭!" 라벨 전용 스타일
+                        if (index === 1) { 
                             div.className = `absolute whitespace-nowrap flex items-center z-[60] opacity-0 transition-all duration-500 ease-out`;
                         } else {
                             div.className = `absolute bg-white text-gray-800 text-[15px] font-extrabold px-3.5 py-2 rounded-lg shadow-[0_4px_16px_rgba(0,0,0,0.25)] whitespace-nowrap flex items-center z-[60] opacity-0 translate-y-2 transition-all duration-500 ease-out`;
