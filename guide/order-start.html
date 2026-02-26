@@ -105,6 +105,25 @@
         .animate-pulse-once {
             animation: pulseOnce 0.6s ease-out forwards;
         }
+
+        /* 버튼 빛 퍼짐 효과 (움직임 제거, 체크박스 하이라이트 느낌) */
+        @keyframes btnRippleGreen {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
+            70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); } /* 퍼짐 범위 축소 (12px -> 6px) */
+            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+        .animate-btn-ripple-green {
+            animation: btnRippleGreen 1.5s infinite;
+        }
+
+        @keyframes btnRippleYellow {
+            0% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.7); } /* 노란색(yellow-400) 펄스 효과 */
+            70% { box-shadow: 0 0 0 6px rgba(250, 204, 21, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0); }
+        }
+        .animate-btn-ripple-yellow {
+            animation: btnRippleYellow 1.5s infinite;
+        }
     </style>
 </head>
 <body>
@@ -123,18 +142,18 @@
 
             <div id="target-category" class="flex justify-between py-2 px-2 border-b text-[10px] text-center text-gray-600 bg-white relative">
                 <div class="flex-1 flex flex-col items-center justify-center">
-                    <div class="h-[20px] flex items-center justify-center mb-1"><i class="fas fa-carrot text-[16px] text-gray-400"></i></div>
+                    <div class="h-[20px] flex items-center justify-center mb-1"><i class="fas fa-carrot text-[16px]"></i></div>
                     <span>채소/과일</span>
                 </div>
-                <div class="flex-1 flex flex-col items-center justify-center text-gray-300">
+                <div class="flex-1 flex flex-col items-center justify-center">
                     <div class="h-[20px] flex items-center justify-center mb-1"><i class="fas fa-fish text-[16px]"></i></div>
                     <span>수산/축산</span>
                 </div>
-                <div class="flex-1 flex flex-col items-center justify-center text-gray-300">
+                <div class="flex-1 flex flex-col items-center justify-center">
                     <div class="h-[20px] flex items-center justify-center mb-1"><i class="fas fa-snowflake text-[16px]"></i></div>
                     <span>식품/가공</span>
                 </div>
-                <div class="flex-1 flex flex-col items-center justify-center text-gray-300">
+                <div class="flex-1 flex flex-col items-center justify-center">
                     <div class="h-[20px] flex items-center justify-center mb-1">
                         <svg viewBox="0 0 24 24" class="w-[16px] h-[16px] fill-current">
                             <path d="M12.5 2h-1c-.3 0-.5.2-.5.5v2.6c-1.4.3-2.5 1.5-2.5 3v11.4c0 1.4 1.1 2.5 2.5 2.5h2c1.4 0 2.5-1.1 2.5-2.5V8.1c0-1.5-1.1-2.7-2.5-3V2.5c0-.3-.2-.5-.5-.5z"/>
@@ -142,7 +161,7 @@
                     </div>
                     <span>양념/소스</span>
                 </div>
-                <div class="flex-1 flex flex-col items-center justify-center text-gray-300">
+                <div class="flex-1 flex flex-col items-center justify-center">
                     <div class="h-[20px] flex items-center justify-center mb-1"><i class="fas fa-utensils text-[16px]"></i></div>
                     <span>주방/잡화</span>
                 </div>
@@ -247,7 +266,8 @@
                 <h2 class="text-[24px] font-black text-gray-800 mb-6 leading-snug tracking-tighter italic transform -skew-x-6">
                     순식간에 끝나는 주문!
                 </h2>
-                <button onclick="startGuideFromPopup()" class="w-full bg-[#10b981] text-white font-black py-3.5 rounded-xl shadow-md text-[16px] transition-colors">
+                <!-- 시작하기 버튼에도 동일한 노란색 펄스 애니메이션(animate-btn-ripple-yellow) 적용 -->
+                <button onclick="startGuideFromPopup()" class="w-full bg-[#10b981] text-white font-black py-3.5 rounded-xl shadow-md text-[16px] transition-colors animate-btn-ripple-yellow">
                     바로 시작하기
                 </button>
             </div>
@@ -277,7 +297,7 @@
                 </div>
                 <div class="flex justify-between items-center mt-4 pt-3 border-t border-white/20">
                     <div id="step-dots" class="flex gap-1.5"></div>
-                    <button id="next-btn" onclick="nextStep()" class="bg-white text-[#10b981] font-bold px-4 py-2 rounded-lg text-[13px] shadow-md transition-colors duration-300">
+                    <button id="next-btn" onclick="nextStep()" class="bg-white text-[#10b981] font-bold px-4 py-2 rounded-lg text-[13px] shadow-md transition-colors duration-300 animate-btn-ripple-yellow">
                         다음 <i class="fas fa-chevron-right ml-1"></i>
                     </button>
                 </div>
@@ -309,7 +329,8 @@
                 isInteractive: true,
                 interactiveAction: () => updateCheckboxToAfter(),
                 extraBoxes: [
-                    { targetId: 'target-checkbox', text: '<span class="text-white font-bold text-[18px] animate-pulse-once tracking-tight italic" style="text-shadow: 0 2px 8px rgba(0,0,0,0.5);">클릭!</span>', pos: 'left' }
+                    // 애니메이션을 제거하고, 글씨 두께를 줄인 뒤 우측에 노란색 체크박스 아이콘 배치
+                    { targetId: 'target-checkbox', text: '<div class="flex items-center gap-1.5 text-white font-semibold text-[15px] tracking-wide" style="text-shadow: 0 2px 4px rgba(0,0,0,0.6);">클릭 <i class="far fa-check-square text-yellow-400 text-[18px]"></i></div>', pos: 'left' }
                 ],
                 action: () => { updateCheckboxToAfter(); }
             },
