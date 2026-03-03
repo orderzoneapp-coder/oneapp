@@ -317,8 +317,8 @@
             {
                 targetIds: ['target-category', 'target-search-icon'],
                 screen: 'home',
-                title: '자주 쓰는 상품 찾기',
-                desc: '<b>카테고리/검색</b>으로 상품을 찾아보세요.',
+                title: '상품 찾기',
+                desc: '<b>카테고리 또는 검색</b>으로<br>자주 쓰는 상품을 찾아보세요.',
                 tooltipPosition: 'center',
                 theme: '#10b981',
                 extraBoxes: [
@@ -329,14 +329,13 @@
             {
                 targetIds: ['target-checkbox'],
                 screen: 'home',
-                title: '상품 클릭하기',
-                desc: "담을 상품은 <b>체크박스[<i class='fas fa-check'></i>] 클릭!</b><br>매번 찾을 필요 없이 한곳에 모아드려요.",
+                title: '상품 선택',
+                desc: "<b>체크박스 클릭하면</b><br>선택한 상품만 LIST에 모입니다.",
                 tooltipPosition: 'bottom',
                 theme: '#10b981',
                 isInteractive: true,
                 interactiveAction: () => updateCheckboxToAfter(),
                 extraBoxes: [
-                    // 아이콘을 체크박스에서 우측 화살표로 변경
                     { targetId: 'target-checkbox', text: '<div class="flex items-center gap-1.5 text-white font-semibold text-[15px] tracking-wide" style="text-shadow: 0 2px 4px rgba(0,0,0,0.6);">클릭 <i class="fas fa-arrow-right text-yellow-400 text-[16px]"></i></div>', pos: 'left' }
                 ],
                 action: () => { updateCheckboxToAfter(); }
@@ -344,19 +343,19 @@
             {
                 targetIds: ['target-order-btn'],
                 screen: 'home',
-                title: '주문 페이지로 이동',
-                desc: '상품을 모두 담았다면,<br>하단의 <b>[주문하러 가기]</b>를 통해 주문 페이지로 이동합니다.',
+                title: '주문하러 가기',
+                desc: '주문할 상품을 다 담았다면<br><b>[주문하러 가기]</b> 클릭!',
                 tooltipPosition: 'top',
                 theme: '#10b981'
             },
             {
                 targetIds: ['target-qty'],
                 screen: 'order',
-                title: '필요한 만큼 수량 조절',
-                desc: '체크한 상품들이 모두 모여있어요.<br><b>숫자를 직접 입력</b>하거나 <b>[-, +]버튼</b>으로 쉽게 조절할 수 있어요.',
+                title: '수량 조절',
+                desc: '필요한 만큼<br><b>[-, +] 버튼</b>으로 간편 조절',
                 tooltipPosition: 'bottom',
                 theme: '#10b981',
-                isInteractive: true, // 버튼 인터랙션은 유지
+                isInteractive: true, 
                 extraBoxes: [],
                 action: () => {
                     if (guideQty === 0) updateQty(1);
@@ -365,8 +364,8 @@
             {
                 targetIds: ['target-submit-btn'],
                 screen: 'order',
-                title: '주문 완료하기',
-                desc: '수량 조절이 끝났다면,<br><b>최종 주문 상품을 확인하고 주문을 완료해보세요!</b>',
+                title: '주문 완료',
+                desc: '상품 확인 후 결제까지 한 번에!',
                 tooltipPosition: 'top',
                 theme: '#10b981'
             }
@@ -569,7 +568,7 @@
                 const nextBtn = document.getElementById('next-btn');
                 // 각 스텝별 버튼 텍스트와 화살표 애니메이션 적용
                 if (index === guideSteps.length - 1) { 
-                    nextBtn.innerHTML = '시작하기 <i class="fas fa-check ml-1"></i>'; 
+                    nextBtn.innerHTML = '주문 완료 <i class="fas fa-check ml-1"></i>'; 
                 } else if (index === 2) { 
                     nextBtn.innerHTML = '주문 이동 <i class="fas fa-chevron-right ml-1 animate-nudge-right"></i>'; 
                 } else { 
