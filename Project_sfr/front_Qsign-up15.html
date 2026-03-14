@@ -34,7 +34,7 @@
 
         .hero-bg {
             background: linear-gradient(180deg, var(--brand-light) 0%, #ffffff 100%);
-            padding: 80px 24px 40px 24px;
+            padding: 110px 24px 70px 24px;
         }
 
         .form-content {
@@ -455,14 +455,19 @@
                 return;
             }
 
+            // UX 보완: 매장명 입력 완료 시 모바일 키보드를 내리기 위해 blur 처리
+            companyInput.blur();
+
             const stepAuth = document.getElementById('step-auth');
             const kakaoWrapper = document.getElementById('kakao-wrapper');
             stepAuth.classList.remove('hidden-step');
             stepAuth.classList.add('show-step');
+            
+            // 키보드가 내려가는 시간을 고려하여 약간의 지연 후 부드럽게 중앙으로 스크롤
             setTimeout(() => {
                 kakaoWrapper.classList.add('ready-to-auth');
-                stepAuth.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }, 500);
+                stepAuth.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 300);
         }
 
         /* =========================================================
