@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" translate="no" class="notranslate">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
-    <title>오더즈 - 간편가입 경험</title>
+    <title>오더즈 - 간편가입 최종</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
@@ -29,14 +29,21 @@
         .check-container { 
             max-width: 480px; margin: 0 auto; background-color: #ffffff; 
             min-height: 100vh; display: flex; flex-direction: column;
-            padding: 0 24px; position: relative; 
+            position: relative; 
         }
 
-        .input-group {
-            position: relative;
-            width: 100%;
+        .hero-bg {
+            background: linear-gradient(180deg, var(--brand-light) 0%, #ffffff 100%);
+            /* 하단 여백 복구 (기존 버전처럼 안정감 있는 간격) */
+            padding: 110px 24px 64px 24px;
         }
 
+        .form-content {
+            padding: 0 24px 120px 24px; 
+            flex: 1;
+        }
+
+        /* 입력창 디자인 기존(회색 배경)으로 복구 */
         .input-field {
             width: 100%;
             padding: 16px;
@@ -57,7 +64,7 @@
 
         .input-next-btn {
             position: absolute;
-            right: 10px;
+            right: 12px;
             top: 50%;
             transform: translateY(-50%);
             width: 36px;
@@ -79,11 +86,6 @@
         .input-next-btn.visible {
             opacity: 1;
             visibility: visible;
-        }
-        .input-next-btn:active {
-            transform: translateY(-50%) scale(0.9);
-            background-color: var(--brand-primary);
-            color: white;
         }
 
         .btn-action {
@@ -132,126 +134,137 @@
 </head>
 <body>
 
-    <div class="check-container pb-24">
+    <div class="check-container">
         
         <!-- [Branding Hero Area] -->
-        <div class="pt-16 pb-12 text-center slide-up">
-            <div class="inline-block px-3 py-1 bg-[#E9F2EC] rounded-md mb-3">
+        <div class="hero-bg text-center slide-up">
+            <div class="inline-block px-3 py-1 bg-white/60 border border-white rounded-md mb-4 shadow-sm">
                 <span class="text-[11px] font-bold text-[#005A2B] tracking-tight notranslate" translate="no">ORDERZ</span>
             </div>
-            <h2 class="text-3xl font-extrabold text-gray-900 mb-3 tracking-tight">오더즈가 기억합니다</h2>
-            <p class="text-lg text-gray-600 font-medium leading-relaxed">내 방식대로, 쓸수록 손에 익는 플랫폼</p>
+            <h2 class="text-[36px] font-extrabold text-gray-900 mb-2 tracking-tighter leading-tight">오더즈가 기억합니다</h2>
+            <p class="text-[17px] text-gray-500 font-medium leading-relaxed">내 방식대로, 쓸수록 손에 익는 플랫폼</p>
         </div>
 
-        <form id="matchingForm" onsubmit="return false;" class="flex-1 flex flex-col space-y-10">
-            
-            <!-- [STEP 1] 주소 입력 -->
-            <div id="step-address" class="slide-up" style="animation-delay: 0.1s;">
-                <div class="flex items-center justify-between mb-6 px-1">
-                    <div>
-                        <h3 class="text-xl font-bold text-gray-900">지역 맞춤 정보</h3>
-                        <p class="text-sm text-green-700 font-semibold mt-1">지역별 실시간 특가를 매칭합니다.</p>
-                    </div>
-                    <div class="w-12 h-12 bg-green-50 rounded-2xl flex items-center justify-center text-green-700">
-                        <i class="fas fa-map-marker-alt text-xl"></i>
+        <div class="form-content">
+            <form id="matchingForm" onsubmit="return false;" class="flex flex-col space-y-10">
+                
+                <!-- [STEP 1] 주소 입력 -->
+                <div id="step-address" class="slide-up z-10" style="animation-delay: 0.1s;">
+                    
+                    <div class="space-y-2">
+                        <!-- 기존 UI: 라벨 유지 -->
+                        <label class="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">배송지 설정</label>
+
+                        <!-- 주소 선택 폼 (기존 UI 복구) -->
+                        <div class="flex gap-2 relative">
+                            <div class="flex-1">
+                                <input type="text" id="mb_addr1" 
+                                    class="input-field cursor-pointer placeholder:text-gray-400"
+                                    placeholder="주소를 선택해 주세요" readonly onclick="fillTestAddress()">
+                            </div>
+                            <button type="button" onclick="openDaumPostcode()" 
+                                class="px-6 bg-white border-2 border-gray-200 rounded-2xl text-sm font-bold text-gray-700 hover:border-green-600 transition-all active:scale-95 shadow-sm">
+                                검색
+                            </button>
+                        </div>
+                        
+                        <!-- 행동 유도 후 작은 보조 설명 (입력창 하단으로 이동) -->
+                        <p class="text-[12px] text-green-700 font-semibold ml-1 pt-1 tracking-tight opacity-90">
+                            지역별 실시간 특가를 자동 매칭합니다
+                        </p>
+                        
+                        <!-- 상세주소 입력 (주소 선택 후 노출) -->
+                        <div class="relative w-full pt-4">
+                            <input type="text" id="mb_addr2" class="input-field hidden" 
+                                placeholder="상세주소 입력 (예: 2층 좌측)" 
+                                onkeyup="handleAddr2Key(event)"
+                                onfocus="handleInputFocus(this)">
+                            <div id="btn-next-addr2" class="input-next-btn" onclick="moveToCompany()">
+                                ↵
+                            </div>
+                        </div>
                     </div>
                 </div>
-                
-                <div class="space-y-4">
-                    <label class="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">배송지 설정</label>
-                    <div class="flex gap-2">
-                        <div class="flex-1">
-                            <input type="text" id="mb_addr1" 
-                                class="input-field cursor-pointer placeholder:text-gray-400"
-                                placeholder="주소를 선택해 주세요" readonly onclick="fillTestAddress()">
-                        </div>
-                        <button type="button" onclick="openDaumPostcode()" 
-                            class="px-6 bg-white border-2 border-gray-200 rounded-2xl text-sm font-bold text-gray-700 hover:border-green-600 transition-all active:scale-95 shadow-sm">
-                            검색
-                        </button>
+
+                <!-- [STEP 2] 매장명 입력 (필수) -->
+                <div id="step-company-section" class="hidden-step space-y-2">
+                    <div class="flex items-center justify-between px-2 mb-1">
+                        <label class="text-[12px] font-bold text-gray-400 uppercase tracking-wider">매장명 <span class="text-red-500 font-bold">*</span></label>
+                        <span class="text-[10px] font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded-full">사업자 전용</span>
                     </div>
-                    
-                    <div class="input-group">
-                        <input type="text" id="mb_addr2" class="input-field hidden" 
-                            placeholder="상세주소 입력 (예: 2층 좌측)" onkeyup="handleAddr2Key(event)">
-                        <div id="btn-next-addr2" class="input-next-btn" onclick="moveToCompany()">
+                    <div class="relative w-full">
+                        <input type="text" id="mb_company" class="input-field" 
+                            placeholder="가게의 상호명을 입력해 주세요" 
+                            onkeyup="handleCompanyKey(event)"
+                            onfocus="handleInputFocus(this)">
+                        <div id="btn-next-company" class="input-next-btn" onclick="showAuthStep()">
                             ↵
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- [STEP 2] 매장명 입력 (필수) -->
-            <div id="step-company-section" class="hidden-step space-y-3">
-                <label class="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">매장명 <span class="text-red-500 font-bold">*</span></label>
-                <div class="input-group">
-                    <input type="text" id="mb_company" class="input-field" 
-                        placeholder="가게의 상호명을 입력해 주세요" onkeyup="handleCompanyKey(event)">
-                    <div id="btn-next-company" class="input-next-btn" onclick="showAuthStep()">
-                        ↵
+                <!-- [STEP 3] 스마트 인증 카드 -->
+                <div id="step-auth" class="hidden-step relative pt-6">
+                    <div class="absolute -top-2 left-1/2 -translate-x-1/2 bg-white px-4 py-1 border border-gray-100 rounded-full shadow-sm z-10">
+                        <span class="text-[11px] font-bold text-gray-400">마지막 단계</span>
                     </div>
-                </div>
-            </div>
-
-            <!-- [STEP 3] 스마트 인증 카드 -->
-            <div id="step-auth" class="hidden-step relative pt-6">
-                <div class="absolute -top-2 left-1/2 -translate-x-1/2 bg-white px-4 py-1 border border-gray-100 rounded-full shadow-sm z-10">
-                    <span class="text-[11px] font-bold text-gray-400">마지막 단계</span>
-                </div>
-                
-                <div class="bg-white border border-gray-100 rounded-[28px] p-6 shadow-[0_20px_50px_rgba(0,0,0,0.04)] space-y-6">
-                    <div id="kakao-wrapper">
-                        <button type="button" id="btn-kakao-main" onclick="handleKakaoAuth()"
-                            class="w-full btn-action btn-kakao flex items-center justify-center gap-3 bg-[#FEE500] text-[#191919] font-bold shadow-sm">
-                            <i class="fas fa-comment text-xl"></i>
-                            카카오로 바로 보러가기
-                        </button>
-                    </div>
-
-                    <div id="recovery-area" class="hidden-step space-y-6 overflow-hidden">
-                        <div class="flex items-center gap-4 py-2">
-                            <div class="h-[1px] flex-1 bg-gray-100"></div>
-                            <span class="text-[11px] font-bold text-gray-300">또는</span>
-                            <div class="h-[1px] flex-1 bg-gray-100"></div>
+                    
+                    <div class="bg-white border border-gray-100 rounded-[28px] p-6 shadow-[0_20px_50px_rgba(0,0,0,0.04)] space-y-6">
+                        <div id="kakao-wrapper">
+                            <button type="button" id="btn-kakao-main" onclick="handleKakaoAuth()"
+                                class="w-full btn-action btn-kakao flex items-center justify-center gap-3 bg-[#FEE500] text-[#191919] font-bold shadow-sm">
+                                <i class="fas fa-comment text-xl"></i>
+                                카카오로 바로 보러가기
+                            </button>
                         </div>
 
-                        <p class="text-center text-sm font-bold text-green-800">카카오 로그인이 어려우신가요?</p>
-                        
-                        <div class="space-y-4">
-                            <input type="tel" id="mb_phone" class="input-field" placeholder="휴대폰 번호 (- 없이 입력)" oninput="autoHyphen(this);">
-                            
-                            <button type="button" onclick="submitWithPhone()"
-                                class="w-full btn-action bg-[#005A2B] text-white font-bold shadow-[0_8px_25px_rgba(0,90,43,0.2)]">
-                                인증 후 특가 확인하기
-                            </button>
+                        <div id="recovery-area" class="hidden-step space-y-6 overflow-hidden">
+                            <div class="flex items-center gap-4 py-2">
+                                <div class="h-[1px] flex-1 bg-gray-100"></div>
+                                <span class="text-[11px] font-bold text-gray-300">또는</span>
+                                <div class="h-[1px] flex-1 bg-gray-100"></div>
+                            </div>
 
-                            <div class="bg-gray-50 rounded-2xl p-4 space-y-3 text-left">
-                                <div class="flex items-start gap-3">
-                                    <input type="checkbox" id="privacy-check" checked class="mt-1 accent-brand w-5 h-5">
-                                    <label for="privacy-check" class="text-[11px] text-gray-500 leading-snug cursor-pointer">
-                                        번호 입력 시 <a href="#" class="underline text-gray-900 font-semibold" onclick="event.preventDefault(); showNotice('이용약관');">이용약관</a> 및 <a href="#" class="underline text-gray-900 font-semibold" onclick="event.preventDefault(); showNotice('개인정보처리방침');">개인정보 처리방침</a>에 동의한 것으로 간주합니다.
-                                    </label>
-                                </div>
-                                <div class="flex items-start gap-3">
-                                    <input type="checkbox" id="marketing-check" checked class="mt-0.5 accent-brand w-5 h-5">
-                                    <label for="marketing-check" class="text-[11px] text-gray-500 leading-snug font-medium cursor-pointer">
-                                        <span class="text-green-800 font-bold">[선택]</span> 이벤트 및 맞춤 특가 알림 수신 동의
-                                    </label>
+                            <p class="text-center text-sm font-bold text-green-800">카카오 로그인이 어려우신가요?</p>
+                            
+                            <div class="space-y-4">
+                                <input type="tel" id="mb_phone" class="input-field" 
+                                    placeholder="휴대폰 번호 (- 없이 입력)" 
+                                    oninput="autoHyphen(this);"
+                                    onfocus="handleInputFocus(this)">
+                                
+                                <button type="button" onclick="submitWithPhone()"
+                                    class="w-full btn-action bg-[#005A2B] text-white font-bold shadow-[0_8px_25px_rgba(0,90,43,0.2)]">
+                                    인증 후 특가 확인하기
+                                </button>
+
+                                <div class="bg-gray-50 rounded-2xl p-4 space-y-3 text-left">
+                                    <div class="flex items-start gap-3">
+                                        <input type="checkbox" id="privacy-check" checked class="mt-1 accent-[#005A2B] w-5 h-5">
+                                        <label for="privacy-check" class="text-[11px] text-gray-500 leading-snug cursor-pointer">
+                                            번호 입력 시 <a href="#" class="underline text-gray-900 font-semibold">이용약관</a> 및 <a href="#" class="underline text-gray-900 font-semibold">개인정보 처리방침</a>에 동의한 것으로 간주합니다.
+                                        </label>
+                                    </div>
+                                    <div class="flex items-start gap-3">
+                                        <input type="checkbox" id="marketing-check" checked class="mt-0.5 accent-[#005A2B] w-5 h-5">
+                                        <label for="marketing-check" class="text-[11px] text-gray-500 leading-snug font-medium cursor-pointer">
+                                            <span class="text-green-800 font-bold">[선택]</span> 이벤트 및 맞춤 특가 알림 수신 동의
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        </form>
+            </form>
+        </div>
 
-        <div class="version-tag">v5.2 NATIVE APP-TO-APP UI</div>
+        <div class="version-tag">v6.0 FINAL UX</div>
     </div>
 
-    <!-- [수정] 카카오 동의창 앱투앱 방식 기존 디자인 시뮬레이션 -->
+    <!-- [가상 카카오 인증 시트] -->
     <div id="kakao-sim-overlay" class="fixed inset-0 bg-white z-[200] hidden overflow-y-auto">
-        <!-- 상단 바 -->
-        <div class="flex items-center justify-between px-4 h-14 border-b">
+        <div class="flex items-center justify-between px-4 h-14 border-b bg-white">
             <div class="flex items-center gap-2">
                 <img src="https://upload.wikimedia.org/wikipedia/commons/e/e3/KakaoTalk_logo.svg" class="w-6 h-6" alt="Kakao">
                 <span class="font-bold text-sm">카카오톡</span>
@@ -260,43 +273,15 @@
         </div>
         
         <div class="px-6 pt-10 pb-20 max-w-[480px] mx-auto">
-            <!-- 서비스 프로필 -->
             <div class="flex flex-col items-center mb-10">
                 <div class="w-20 h-20 bg-[#005A2B] rounded-3xl flex items-center justify-center mb-4 shadow-sm overflow-hidden">
-                    <!-- 오더즈 로고 대체 텍스트 -->
                     <span class="text-white font-black text-xl">ORDERZ</span>
                 </div>
                 <h3 class="text-xl font-bold text-gray-900">오더즈</h3>
                 <p class="text-sm text-gray-500 mt-1">간편가입 및 서비스 이용동의</p>
             </div>
 
-            <!-- 동의 목록 (표준 디자인) -->
-            <div class="space-y-6">
-                <div class="flex items-center justify-between border-b pb-4">
-                    <span class="font-bold text-[15px]">전체 동의하기</span>
-                    <input type="checkbox" checked class="w-6 h-6 accent-[#FEE500]">
-                </div>
-                
-                <div class="space-y-4 pt-2">
-                    <div class="flex items-center justify-between text-sm text-gray-600">
-                        <span>[필수] 개인정보 제3자 제공 동의</span>
-                        <i class="fas fa-chevron-right text-xs text-gray-300"></i>
-                    </div>
-                    <div class="flex items-center justify-between text-sm text-gray-600">
-                        <span>[필수] 카카오 개인정보 제공 동의</span>
-                        <i class="fas fa-chevron-right text-xs text-gray-300"></i>
-                    </div>
-                    <div class="flex items-center justify-between text-sm text-gray-600">
-                        <span>[선택] 카카오톡 채널 추가 및 홍보 메시지 수신</span>
-                        <i class="fas fa-chevron-right text-xs text-gray-300"></i>
-                    </div>
-                </div>
-            </div>
-
-            <div class="mt-12 text-center">
-                <p class="text-[12px] text-gray-400 leading-relaxed mb-6">
-                    동의 시 사장님의 카카오 계정 정보(이메일, 이름, 연락처)가<br>오더즈에 제공되며, 서비스 이용을 위해 사용됩니다.
-                </p>
+            <div class="space-y-6 text-center">
                 <button onclick="successAuth()" class="w-full py-4 bg-[#FEE500] text-[#191919] rounded-xl font-bold text-[16px] active:bg-[#FADA00] transition-colors mb-4">
                     동의하고 계속하기
                 </button>
@@ -309,7 +294,7 @@
 
     <!-- [성공 모달] -->
     <div id="toast-overlay" class="fixed inset-0 bg-[#005A2B]/90 backdrop-blur-md z-[300] flex items-center justify-center hidden opacity-0 transition-opacity duration-300">
-        <div class="bg-white rounded-[40px] p-10 w-[340px] text-center shadow-2xl scale-90 transition-transform duration-500" id="success-card">
+        <div class="bg-white rounded-[40px] p-10 w-[340px] text-center shadow-2xl" id="success-card">
             <div class="w-20 h-20 bg-green-50 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6 text-3xl"><i class="fas fa-check-double"></i></div>
             <h3 class="text-2xl font-black text-gray-900 mb-3">매칭 완료!</h3>
             <p class="text-gray-500 font-medium leading-relaxed mb-8 text-sm">사장님 매장을 위한<br>맞춤형 특가 상품을 불러오고 있습니다.</p>
@@ -320,11 +305,78 @@
     </div>
 
     <script>
-        // 1. 주소 입력 로직
+        /* =========================================================
+         * [개발자 필수 참고 사항]
+         * 추가 핵심: 외부 랜딩에서 받은 yt_code는 가입 완료 후에도 
+         * 단순 파라미터로 끝나는 값이 아니라, 회원정보에 저장되는 소속값이며 
+         * 이후 상품 노출의 기준값으로 사용합니다.
+         * ========================================================= */
+
+        /* =========================================================
+         * 1. 전역 상태
+         * ========================================================= */
+        const state = {
+            entryParams: {},         // 최초 유입 파라미터 전체
+            ytCode: null,            // 유통사 코드
+            nextUrl: null,           // 최종 목적지
+            address1: "",            // 주소
+            address2: "",            // 상세주소
+            companyName: "",         // 매장명
+            phone: "",               // 휴대폰번호
+            authMethod: null         // "kakao" | "phone"
+        };
+
+        const DEFAULT_YT_CODE = "ORDERZ_DEFAULT";
+        const DEFAULT_NEXT_URL = "/";
+
+        /* =========================================================
+         * 2. 초기 진입
+         * ========================================================= */
+        document.addEventListener('DOMContentLoaded', () => {
+            parseEntryParams();
+            validateEntryParams();
+        });
+
+        /* =========================================================
+         * 3. 유입 파라미터 처리
+         * ========================================================= */
+        function parseEntryParams() {
+            const urlParams = new URLSearchParams(window.location.search);
+            for (const [key, value] of urlParams.entries()) {
+                state.entryParams[key] = value;
+            }
+            state.ytCode = state.entryParams["yt_code"] || null;
+            state.nextUrl = state.entryParams["next_url"] || null;
+        }
+
+        function validateEntryParams() {
+            if (!state.ytCode) state.ytCode = DEFAULT_YT_CODE;
+            if (!state.nextUrl) {
+                state.nextUrl = DEFAULT_NEXT_URL;
+            } else {
+                try {
+                    new URL(state.nextUrl, window.location.origin);
+                } catch (e) {
+                    state.nextUrl = DEFAULT_NEXT_URL;
+                }
+            }
+        }
+
+        function handleInputFocus(el) {
+            setTimeout(() => {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 300);
+        }
+
+        /* =========================================================
+         * 6. 주소 입력
+         * ========================================================= */
         function fillTestAddress() {
             const addr1 = document.getElementById('mb_addr1');
             addr1.value = "서울특별시 강남구 테헤란로 427";
             addr1.classList.add('text-gray-900', 'font-bold');
+            
+            state.address1 = addr1.value;
             finishAddressSelection();
         }
 
@@ -332,8 +384,11 @@
             new daum.Postcode({
                 oncomplete: function(data) {
                     const addr1 = document.getElementById('mb_addr1');
-                    addr1.value = data.roadAddress;
+                    const selectedAddress = data.roadAddress || data.jibunAddress;
+                    addr1.value = selectedAddress;
                     addr1.classList.add('text-gray-900', 'font-bold');
+                    
+                    state.address1 = selectedAddress;
                     finishAddressSelection();
                 }
             }).open();
@@ -343,124 +398,215 @@
             const addr2 = document.getElementById('mb_addr2');
             const nextBtn = document.getElementById('btn-next-addr2');
             addr2.classList.remove('hidden');
-            addr2.classList.add('slide-up');
+            addr2.classList.add('show-step');
             nextBtn.classList.add('visible'); 
-            
-            setTimeout(() => {
-                addr2.focus();
-                addr2.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }, 300);
+            setTimeout(() => { addr2.focus(); }, 300);
         }
 
-        function handleAddr2Key(e) {
-            if (e.key === 'Enter') {
-                moveToCompany();
-            }
+        function handleAddr2Key(event) {
+            if (event.key === 'Enter') moveToCompany();
         }
 
+        /* =========================================================
+         * 7. 매장명 입력
+         * ========================================================= */
         function moveToCompany() {
+            const addr2Input = document.getElementById('mb_addr2');
+            state.address2 = (addr2Input.value || "").trim();
+
+            if (!state.address1) {
+                alert("주소를 먼저 선택해 주세요.");
+                return;
+            }
+
             const stepCompany = document.getElementById('step-company-section');
             const mbCompany = document.getElementById('mb_company');
             stepCompany.classList.remove('hidden-step');
             stepCompany.classList.add('show-step');
-            setTimeout(() => {
-                mbCompany.focus();
-                mbCompany.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }, 300);
+            setTimeout(() => { mbCompany.focus(); }, 300);
         }
 
-        function handleCompanyKey(e) {
-            const val = e.target.value.trim();
+        function handleCompanyKey(event) {
+            const companyInput = event.target;
+            const company = (companyInput.value || "").trim();
+            state.companyName = company;
+
             const nextBtn = document.getElementById('btn-next-company');
-            if (val.length > 0) {
+            if (company.length > 0) {
                 nextBtn.classList.add('visible');
-                if (e.key === 'Enter') showAuthStep();
+                if (event.key === 'Enter') showAuthStep();
             } else {
                 nextBtn.classList.remove('visible');
             }
         }
 
         function showAuthStep() {
-            const val = document.getElementById('mb_company').value.trim();
-            if (val.length === 0) {
-                alert("상호명을 입력해 주세요.");
-                document.getElementById('mb_company').focus();
+            const companyInput = document.getElementById('mb_company');
+            state.companyName = (companyInput.value || "").trim();
+
+            if (!state.companyName) {
+                alert("매장명을 입력해 주세요.");
+                companyInput.focus();
                 return;
             }
 
+            // UX 보완: 매장명 입력 완료 시 모바일 키보드를 내리기 위해 blur 처리
+            companyInput.blur();
+
             const stepAuth = document.getElementById('step-auth');
             const kakaoWrapper = document.getElementById('kakao-wrapper');
-            if (stepAuth.classList.contains('hidden-step')) {
-                stepAuth.classList.remove('hidden-step');
-                stepAuth.classList.add('show-step');
-                setTimeout(() => {
-                    kakaoWrapper.classList.add('ready-to-auth');
-                    stepAuth.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }, 500);
-            }
+            stepAuth.classList.remove('hidden-step');
+            stepAuth.classList.add('show-step');
+            
+            setTimeout(() => {
+                kakaoWrapper.classList.add('ready-to-auth');
+                stepAuth.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 300);
         }
 
-        // 2. 카카오 인증 시뮬레이션
+        /* =========================================================
+         * 8. 카카오 인증
+         * ========================================================= */
         function handleKakaoAuth() {
-            const val = document.getElementById('mb_company').value.trim();
-            if (val.length === 0) return;
-            
-            // [수정] 앱투앱 방식의 전체 화면 오버레이 노출
-            const overlay = document.getElementById('kakao-sim-overlay');
-            overlay.classList.remove('hidden');
+            document.getElementById('kakao-sim-overlay').classList.remove('hidden');
         }
 
         function closeKakaoSim() {
-            const overlay = document.getElementById('kakao-sim-overlay');
-            overlay.classList.add('hidden');
-            // 창을 닫고 돌아오면 리커버리 영역 활성화 (스마트 리커버리 로직)
+            document.getElementById('kakao-sim-overlay').classList.add('hidden');
             activateRecovery();
         }
 
         function activateRecovery() {
             const recoveryArea = document.getElementById('recovery-area');
-            if (recoveryArea.classList.contains('hidden-step')) {
-                recoveryArea.classList.remove('hidden-step');
-                recoveryArea.classList.add('show-step');
-                setTimeout(() => {
-                    document.getElementById('mb_phone').focus();
-                    recoveryArea.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }, 400);
-            }
+            recoveryArea.classList.remove('hidden-step');
+            recoveryArea.classList.add('show-step');
+            setTimeout(() => { document.getElementById('mb_phone').focus(); }, 400);
         }
 
         function successAuth() {
+            state.authMethod = "kakao";
             document.getElementById('kakao-sim-overlay').classList.add('hidden');
+
+            saveLeadDataIfNeeded();
             completeMatching();
         }
 
-        // 3. 기타 유틸리티
+        /* =========================================================
+         * 9. 휴대폰 대체 인증
+         * ========================================================= */
         function submitWithPhone() {
-            const phone = document.getElementById('mb_phone').value.trim();
-            const consent = document.getElementById('privacy-check').checked;
-            if(!phone || phone.length < 10) { alert("올바른 휴대폰 번호를 입력해 주세요."); return; }
-            if(!consent) { alert("서비스 이용 약관 동의가 필요합니다."); return; }
-            completeMatching();
-        }
+            const phoneInput = document.getElementById('mb_phone');
+            const phone = (phoneInput.value || "").trim();
+            const phoneOnlyDigits = phone.replace(/[^0-9]/g, "");
 
-        function completeMatching() {
-            const toast = document.getElementById('toast-overlay');
-            const card = document.getElementById('success-card');
-            toast.classList.remove('hidden');
-            setTimeout(() => {
-                toast.classList.remove('opacity-0');
-                card.classList.remove('scale-90');
-            }, 50);
-            setTimeout(() => { document.getElementById('progress-bar').style.width = "100%"; }, 400);
-            setTimeout(() => { location.reload(); }, 2500);
+            if (!phoneOnlyDigits || phoneOnlyDigits.length < 10) {
+                alert("올바른 휴대폰 번호를 입력해 주세요.");
+                phoneInput.focus();
+                return;
+            }
+
+            state.phone = phone;
+            state.authMethod = "phone";
+
+            saveLeadDataIfNeeded();
+            completeMatching();
         }
 
         function autoHyphen(target) {
-            target.value = target.value.replace(/[^0-9]/g, '').replace(/^(\d{0,3})(\d{0,4})(\d{0,4})$/g, "$1-$2-$3").replace(/(\-{1,2})$/g, "");
+            let raw = target.value.replace(/[^0-9]/g, '');
+            target.value = raw.replace(/^(\d{0,3})(\d{0,4})(\d{0,4})$/g, "$1-$2-$3").replace(/(\-{1,2})$/g, "");
         }
 
-        function showNotice(type) {
-            alert(type + " 내용을 확인하는 팝업이 노출됩니다.");
+        /* =========================================================
+         * 10. 회원 각인 및 데이터 저장 (API 연동 로직)
+         * ========================================================= */
+        function saveLeadDataIfNeeded() {
+            const payload = buildSignupPayload();
+            createOrUpdateMember(payload);
+            applyDistributorMemberType(payload.yt_code);
+            console.log("[API POST /api/landing/join] Payload:", payload);
+        }
+
+        function buildSignupPayload() {
+            return {
+                yt_code: state.ytCode,
+                next_url: state.nextUrl,
+                address1: state.address1,
+                address2: state.address2,
+                company_name: state.companyName,
+                phone: state.authMethod === "phone" ? state.phone.replace(/[^0-9]/g, "") : null,
+                auth_method: state.authMethod,
+                privacy_agreed: document.getElementById('privacy-check')?.checked || false,
+                marketing_agreed: document.getElementById('marketing-check')?.checked || false,
+                entry_params: Object.assign({}, state.entryParams),
+                landing_url: window.location.href,
+                joined_at: new Date().toISOString()
+            };
+        }
+
+        function createOrUpdateMember(payload) {
+            console.log(`[의사코드 로직] DB 회원정보 조회. 신규가입 시 yt_code('${payload.yt_code}') 영구 저장 처리`);
+        }
+
+        function applyDistributorMemberType(ytCode) {
+            if (ytCode && ytCode !== DEFAULT_YT_CODE) {
+                console.log(`[의사코드 로직] 회원 속성을 '유통사 전용(${ytCode})' 회원으로 분류 완료`);
+            }
+        }
+
+        /* =========================================================
+         * 11. 완료 처리 및 최종 이동
+         * ========================================================= */
+        function completeMatching() {
+            const toast = document.getElementById('toast-overlay');
+            toast.classList.remove('hidden');
+            setTimeout(() => { toast.classList.remove('opacity-0'); }, 50);
+            setTimeout(() => { document.getElementById('progress-bar').style.width = "100%"; }, 400);
+
+            const finalUrl = buildFinalRedirectUrl();
+            console.log("최종 이동 URL:", finalUrl);
+
+            setTimeout(() => {
+                location.href = finalUrl;
+            }, 2200);
+        }
+
+        function buildFinalRedirectUrl() {
+            let baseUrl = state.nextUrl;
+            try { baseUrl = decodeURIComponent(state.nextUrl); } catch(e) {}
+
+            const forwardedParams = Object.assign({}, state.entryParams);
+            delete forwardedParams["next_url"]; 
+
+            if (!forwardedParams["yt_code"]) {
+                forwardedParams["yt_code"] = state.ytCode;
+            }
+
+            return appendParamsToUrl(baseUrl, forwardedParams, { duplicatePolicy: "keep_first_entry_param" });
+        }
+
+        /* =========================================================
+         * 12. URL 유틸
+         * ========================================================= */
+        function appendParamsToUrl(baseUrl, params, options) {
+            try {
+                const urlObj = new URL(baseUrl, window.location.origin);
+                for (const key in params) {
+                    if (options.duplicatePolicy === "keep_first_entry_param") {
+                        urlObj.searchParams.set(key, params[key]);
+                    } else if (options.duplicatePolicy === "keep_existing_url_param") {
+                        if (!urlObj.searchParams.has(key)) {
+                            urlObj.searchParams.set(key, params[key]);
+                        }
+                    } else {
+                        urlObj.searchParams.set(key, params[key]);
+                    }
+                }
+                return urlObj.href;
+            } catch (e) {
+                console.error("URL 파싱 오류:", e);
+                return baseUrl;
+            }
         }
     </script>
 </body>
