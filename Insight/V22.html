@@ -26,6 +26,10 @@
         input[type="number"]::-webkit-inner-spin-button, 
         input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         input[type="number"] { -moz-appearance: textfield; }
+
+        /* 치환 모달 애니메이션 */
+        .modal-bounce { animation: modalBounce 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        @keyframes modalBounce { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
     </style>
 </head>
 <body>
@@ -67,10 +71,10 @@
             code: '품목코드, 상품코드, 코드, 품번, 바코드, sku',
             name: '품명, 품목명(규격), 품목명[규격], 상품명, 제품명, 이름, 품목, 상품',
             spec: '규격, 옵션, 사이즈', 
-            qty: '수량, 재고, 기말실사(이월수량), 기말잔량(실사반영), 기말잔량(실사), 기말잔량, 수량(합계), 입고수량, 출고수량, 판매수량, 잔량, 실사, 합계, 기말, 판매량, 출고량, 입고량',
-            price: '단가, 입고단가, 구매단가, 판매단가, 매입단가, 매입가, 판매가, 공급가액, 공급가, 금액, 원가, 가격, 최종(창고)',
-            date: '일자, 날짜, 구매일자, 판매일자, 입고일자, 출고일자',
-            vendor: '거래처명, 거래처, 거래, 매장명, 매장, 고객, 구매처, 판매처, 공급사, 판매, 청과, 3거래',
+            qty: '기말/실사, 수량, 재고, 기말실사(이월수량), 기말잔량(실사반영), 기말잔량(실사), 기말잔량, 수량(합계), 입고수량, 출고수량, 판매수량, 잔량, 실사, 합계, 기말, 판매량, 출고량, 입고량',
+            price: '매입단가(원가), 단가, 입고단가, 구매단가, 판매단가, 매입단가, 매입가, 판매가, 공급가액, 공급가, 금액, 원가, 가격, 최종(창고)',
+            date: '매입일자, 일자, 날짜, 구매일자, 판매일자, 입고일자, 출고일자',
+            vendor: '매입처(거래처), 거래처명, 거래처, 거래, 매장명, 매장, 고객, 구매처, 판매처, 공급사, 판매, 청과, 3거래',
             excludeVendor: '창고이동, 가전표, 폐기, 샘플' 
         };
 
@@ -156,14 +160,11 @@
                 </tr>
             );
         }, (prevProps, nextProps) => {
-            // 변경된 항목만 렌더링되도록 조건 설정
             return prevProps.item === nextProps.item && prevProps.isLinked === nextProps.isLinked && prevProps.idx === nextProps.idx;
         });
 
-        // --- 🚀 성능 최적화: 거래처별 테이블 Row 메모이제이션 ---
         const VendorRow = React.memo(({ item }) => {
             const marginRate = item.판매액 ? (((item.이익) / Math.abs(item.판매액)) * 100).toFixed(1) : 0;
-            
             if (item.isSummary) {
                 return (
                     <tr className="bg-indigo-50 border-t-[2px] border-b-[2px] border-indigo-300">
@@ -178,7 +179,6 @@
                     </tr>
                 );
             }
-
             return (
                 <tr className="hover:bg-gray-50 transition">
                     <td className="p-3 font-bold text-emerald-800 bg-emerald-50 bg-opacity-30">{item.거래처}</td>
@@ -208,15 +208,17 @@
             const [showGuide, setShowGuide] = useState(false);
             const [showSettings, setShowSettings] = useState(false);
             const [isGlobalDragging, setIsGlobalDragging] = useState(false);
-
-            const [activeMenu, setActiveMenu] = useState('single'); 
-            const [insights, setInsights] = useState({ lowMargin: [], highLoss: [], deadStock: [] });
             const [showInsights, setShowInsights] = useState(false);
+
+            const [activeMenu, setActiveMenu] = useState('single');
+            const [insights, setInsights] = useState({ lowMargin: [], highLoss: [], deadStock: [] });
             const [trendData, setTrendData] = useState([]);
             const chartRef = useRef(null);
             const chartInstance = useRef(null);
 
-            // 스페이스바 치환 링크 상태
+            // 소분/대체 치환 상태 및 취소(Undo) 히스토리
+            const [substState, setSubstState] = useState({ step: 0, source: null, target: null, sourceQty: 1, targetQty: 1, sourceIdx: -1, targetIdx: -1 });
+            const [substHistory, setSubstHistory] = useState([]);
             const [linkSourceKey, setLinkSourceKey] = useState(null);
 
             const [mappings, setMappings] = useState(() => {
@@ -247,8 +249,11 @@
                     endingStockAmt: 0, stockDiffQty: 0, stockDiffAmt: 0, lossQty: 0, lossAmt: 0 
                 });
                 setInsights({ lowMargin: [], highLoss: [], deadStock: [] });
-                setLinkSourceKey(null);
+                setAnalysisPeriod('전체 기간');
                 setShowInsights(false);
+                setSubstState({ step: 0, source: null, target: null, sourceQty: 1, targetQty: 1, sourceIdx: -1, targetIdx: -1 });
+                setSubstHistory([]);
+                setLinkSourceKey(null);
                 setError('');
                 document.querySelectorAll('input[type="file"]').forEach(input => input.value = '');
             };
@@ -445,16 +450,13 @@
                 e.target.value = '';
             };
 
-            // 🚀 성능 최적화: productData가 변경될 때마다 백그라운드에서 KPI를 자동 계산 (렌더링 흐름과 분리)
-            useEffect(() => {
-                if (productData.length === 0) return;
-
+            const recalculateKPIs = (pDataArray) => {
                 let revenue = 0, cogs = 0, totalInAmt = 0;
                 let lossQty = 0, lossAmt = 0;
                 let beginningStockAmt = 0, beginningStockQty = 0;
                 let endingStockAmt = 0, endingStockQty = 0;
 
-                productData.forEach(item => {
+                pDataArray.forEach(item => {
                     revenue += item.매출액 || 0;
                     cogs += item.매출원가 || 0;
                     totalInAmt += (item.입고 || 0) * (item.단가 || 0);
@@ -484,41 +486,15 @@
                     revenue, cogs, totalInAmt, profit, opProfit, opProfitRate, cogsRate, 
                     endingStockAmt, stockDiffQty, stockDiffAmt, lossQty, lossAmt 
                 });
-            }, [productData]);
-
-            // 🚀 성능 최적화: 디바운싱(Debounce)을 적용하여, 타자 입력 중에는 무거운 인사이트 계산 보류
-            useEffect(() => {
-                if (productData.length === 0) return;
-
-                const timer = setTimeout(() => {
-                    const lowMargin = productData.filter(item => {
-                        if (item.매출액 <= 0) return false;
-                        const marginRate = ((item.매출액 - item.매출원가) / item.매출액) * 100;
-                        return marginRate < 10; 
-                    }).sort((a, b) => {
-                        const rateA = ((a.매출액 - a.매출원가) / a.매출액) * 100;
-                        const rateB = ((b.매출액 - b.매출원가) / b.매출액) * 100;
-                        return rateA - rateB; 
-                    }).slice(0, 5); 
-
-                    const highLoss = productData.filter(item => item.로스 < 0)
-                        .sort((a, b) => a.로스 - b.로스) 
-                        .slice(0, 5); 
-                        
-                    const deadStock = productData.filter(item => item.무거래재고);
-                    
-                    setInsights({ lowMargin, highLoss, deadStock });
-                }, 300); // 0.3초 대기
-
-                return () => clearTimeout(timer); // 연속 입력 시 이전 계산 취소
-            }, [productData]);
+            };
 
             const runAnalysis = async (demoFiles = null, demoJson = null) => {
                 setIsProcessing(true);
                 setError('');
                 setInsights({ lowMargin: [], highLoss: [], deadStock: [] });
-                setLinkSourceKey(null);
                 setShowInsights(false);
+                setSubstState({ step: 0, source: null, target: null, sourceQty: 1, targetQty: 1, sourceIdx: -1, targetIdx: -1 });
+                setSubstHistory([]);
 
                 try {
                     let parsedPrev = demoJson ? demoJson.prev : rawJson.prev;
@@ -620,6 +596,7 @@
 
                     const addStock = (item, type) => {
                         if (isExcluded(item.거래처)) return;
+
                         const code = String(item.코드 || 'NO_CODE');
                         const price = parseNumber(item.단가);
                         const date = String(item.일자 || '');
@@ -864,22 +841,19 @@
 
             const loadDemoData = () => {
                 const demoPrev = [
-                    { 코드: 'A001', 품명: '양배추_1박스', 수량: 10, 단가: 10000, 일자: '2026/03/20' },
-                    { 코드: 'B001', 품명: '바닐라 시럽', 수량: 30, 단가: 8000, 일자: '2026/03/22' },
-                    { 코드: 'C001', 품명: '종이컵_13oz', 수량: 1000, 단가: 50, 일자: '2026/03/20' }
+                    { 코드: 'A001', 품명: '팽이 1박스', 수량: 10, 단가: 34000, 일자: '2026/03/20' },
+                    { 코드: 'A002', 품명: '팽이 낱개', 수량: 0, 단가: 0, 일자: '2026/03/21' },
+                    { 코드: 'A003', 품명: '팽이 5개입', 수량: 0, 단가: 0, 일자: '2026/03/21' }
                 ];
-                const demoIn = [
-                    { 코드: 'A001', 품명: '양배추_1박스', 수량: 5, 단가: 11000, 일자: '2026/03/28' }
-                ];
+                const demoIn = [];
                 const demoOut = [
-                    { 거래처: '강남본점', 코드: 'A002', 품명: '양배추_소분', 수량: 3, 단가: 4000, 일자: '2026/03/28' }, // 매입 없음(마진오류발생용)
-                    { 거래처: '강남본점', 코드: 'B001', 품명: '바닐라 시럽', 수량: 20, 단가: 12000, 일자: '2026/03/28' }
+                    { 거래처: '강남본점', 코드: 'A002', 품명: '팽이 낱개', 수량: 24, 단가: 1500, 일자: '2026/03/28' }, // 마진 100% 오류 발생
+                    { 거래처: '홍대점', 코드: 'A003', 품명: '팽이 5개입', 수량: 2, 단가: 7000, 일자: '2026/03/28' }
                 ];
                 const demoEnd = [
-                    { 코드: 'A001', 수량: 15, 일자: '2026/03/31' }, 
-                    { 코드: 'A002', 수량: 0, 일자: '2026/03/31' },
-                    { 코드: 'B001', 수량: 10, 일자: '2026/03/31' },   
-                    { 코드: 'C001', 수량: 1000, 일자: '2026/03/31' }
+                    { 코드: 'A001', 수량: 9, 일자: '2026/03/31' }, // 1박스 줄었음 (로스 -1 발생)
+                    { 코드: 'A002', 수량: 0, 일자: '2026/03/31' }, 
+                    { 코드: 'A003', 수량: 0, 일자: '2026/03/31' }
                 ];
 
                 const mockFiles = { 
@@ -895,7 +869,7 @@
                 setTimeout(() => runAnalysis(mockFiles, mockJson), 100); 
             };
 
-            // 🚀 성능 최적화: 타이핑 중 배열 전체 재정렬 방지, 수동 입력 즉시 반영
+            // 🚀 성능 최적화: 타이핑 중 배열 전체 재계산 방지
             const handleManualStockChange = useCallback((batchKey, val) => {
                 setProductData(prev => prev.map(item => {
                     if (item.batchKey === batchKey) {
@@ -907,80 +881,141 @@
                         if (!newIssues.includes('실사 수기조정')) newIssues.push('실사 수기조정');
                         
                         let isDead = false;
-                        if ((item.기초 > 0 || item.입고 > 0) && item.출고 === 0 && lossCalcVal > 0) {
-                            isDead = true;
-                        }
+                        if ((item.기초 > 0 || item.입고 > 0) && item.출고 === 0 && lossCalcVal > 0) isDead = true;
+                        
                         newIssues = newIssues.filter(msg => msg !== '체화재고 (판매 0)' && !msg.includes('소분 대체') && !msg.includes('원물 대체'));
-
                         return { ...item, 실사: newActual, 로스: newLoss, 이슈: newIssues, 무거래재고: isDead };
                     }
                     return item;
                 }));
             }, []);
 
-            // 🚀 성능 최적화: 치환 실행 로직 (Functional State Update 방식)
-            const executeSubstitution = useCallback((sourceKey, targetKey) => {
-                setProductData(prev => {
-                    const sourceItemOrig = prev.find(i => i.batchKey === sourceKey);
-                    const targetItemOrig = prev.find(i => i.batchKey === targetKey);
+            // 🚀 성능 최적화: 디바운싱 적용하여 KPI는 백그라운드에서 자동 재계산
+            useEffect(() => {
+                if (productData.length > 0) recalculateKPIs(productData);
+            }, [productData]);
+
+            // 💡 [실행 취소 로직] 과거 히스토리로 되돌리기
+            const handleUndoSubstitution = useCallback(() => {
+                setSubstHistory(prevHistory => {
+                    if (prevHistory.length === 0) return prevHistory;
                     
-                    if (!sourceItemOrig || !targetItemOrig) return prev;
-
-                    if (sourceItemOrig.로스 >= 0) {
-                        alert(`[${sourceItemOrig.품명}] 원물은 수량이 줄어들어야 합니다. 실사 수량을 전산잔량보다 적게 입력하여 마이너스 로스를 만든 후 진행해주세요.`);
-                        return prev;
-                    }
-                    if (targetItemOrig.로스 <= 0) {
-                        alert(`[${targetItemOrig.품명}] 대체품은 수량이 늘어나야 합니다. 실사 수량을 입력하여 플러스 로스를 만든 후 스페이스바를 눌러주세요.`);
-                        return prev;
-                    }
-
-                    const sQty = Math.abs(sourceItemOrig.로스); 
-                    const tQty = Math.abs(targetItemOrig.로스); 
-                    const transferredCost = sQty * sourceItemOrig.단가;
-
-                    return prev.map(item => {
-                        if (item.batchKey === sourceKey) {
-                            const newItem = { ...item, 이슈: [...item.이슈] };
-                            newItem.대체출고 += sQty;
-                            newItem.전산잔량 = newItem.기초 + newItem.입고 + newItem.대체입고 - newItem.출고 - newItem.대체출고;
-                            newItem.실사 = newItem.실사 === null || newItem.실사 === '' ? newItem.전산잔량 : newItem.실사;
-                            newItem.로스 = newItem.실사 - newItem.전산잔량;
-                            newItem.이슈.push(`🔄 -> ${targetItemOrig.품명}`);
-                            newItem.무거래재고 = (newItem.기초 > 0 || newItem.입고 > 0) && newItem.출고 === 0 && newItem.실사 > 0;
-                            return newItem;
-                        }
-                        if (item.batchKey === targetKey) {
-                            const newItem = { ...item, 이슈: [...item.이슈] };
-                            newItem.대체입고 += tQty;
-                            newItem.전산잔량 = newItem.기초 + newItem.입고 + newItem.대체입고 - newItem.출고 - newItem.대체출고;
-                            newItem.실사 = newItem.실사 === null || newItem.실사 === '' ? newItem.전산잔량 : newItem.실사;
-                            newItem.로스 = newItem.실사 - newItem.전산잔량;
-                            
-                            if (newItem.단가 === 0) newItem.단가 = transferredCost / tQty;
-                            newItem.매출원가 += transferredCost; 
-                            
-                            newItem.이슈 = newItem.이슈.filter(msg => !msg.includes('매입내역 없음') && !msg.includes('전산 재고 부족'));
-                            newItem.이슈.push(`🔄 <- ${sourceItemOrig.품명}`);
-                            newItem.무거래재고 = (newItem.기초 > 0 || newItem.입고 > 0) && newItem.출고 === 0 && newItem.실사 > 0;
-                            return newItem;
-                        }
+                    const last = prevHistory[prevHistory.length - 1];
+                    
+                    // 해당 키를 가진 두 개의 품목만 원상복구
+                    setProductData(prevData => prevData.map(item => {
+                        if (item.batchKey === last.sourceKey) return last.sourcePrev;
+                        if (item.batchKey === last.targetKey) return last.targetPrev;
                         return item;
-                    });
+                    }));
+                    
+                    // 하나 빼고 리턴
+                    return prevHistory.slice(0, -1);
                 });
             }, []);
 
-            // 🚀 성능 최적화: 스페이스바 클릭 시 상태만 가볍게 변경
-            const handleSpacebarLink = useCallback((targetBatchKey) => {
-                setLinkSourceKey(prevKey => {
-                    if (!prevKey) return targetBatchKey;
-                    if (prevKey === targetBatchKey) return null;
+            // 💡 치환 실행 로직 (히스토리 저장 포함)
+            const executeSubstitution = useCallback(() => {
+                if (!substState.source || !substState.target) return;
+
+                setProductData(prev => {
+                    const sIdx = prev.findIndex(d => d.batchKey === substState.source.batchKey);
+                    const tIdx = prev.findIndex(d => d.batchKey === substState.target.batchKey);
+                    if(sIdx < 0 || tIdx < 0) return prev;
+
+                    const sItem = {...prev[sIdx], 이슈: [...prev[sIdx].이슈]};
+                    const tItem = {...prev[tIdx], 이슈: [...prev[tIdx].이슈]};
+
+                    if (sItem.로스 >= 0) {
+                        alert(`[${sItem.품명}] 원물은 수량이 줄어들어야 합니다. 실사 수량을 전산잔량보다 적게 입력하여 마이너스 로스를 만든 후 진행해주세요.`);
+                        return prev;
+                    }
+                    if (tItem.로스 <= 0) {
+                        alert(`[${tItem.품명}] 대체품은 수량이 늘어나야 합니다. 실사 수량을 입력하여 플러스 로스를 만든 후 스페이스바를 눌러주세요.`);
+                        return prev;
+                    }
+
+                    // 1. 현재 상태를 History에 백업
+                    setSubstHistory(h => [...h, {
+                        sourceKey: sItem.batchKey,
+                        targetKey: tItem.batchKey,
+                        sourcePrev: { ...sItem, 이슈: [...sItem.이슈] },
+                        targetPrev: { ...tItem, 이슈: [...tItem.이슈] }
+                    }]);
+
+                    const sQty = substState.sourceQty; 
+                    const tQty = substState.targetQty; 
+                    const transferredCost = sQty * sItem.단가;
+
+                    sItem.대체출고 += sQty;
+                    sItem.전산잔량 = sItem.기초 + sItem.입고 + sItem.대체입고 - sItem.출고 - sItem.대체출고;
+                    sItem.실사 = sItem.실사 === null || sItem.실사 === '' ? sItem.전산잔량 : sItem.실사;
+                    sItem.로스 = sItem.실사 - sItem.전산잔량;
+                    sItem.이슈.push(`🔄 -> ${tItem.품명}`);
+                    sItem.무거래재고 = (sItem.기초 > 0 || sItem.입고 > 0) && sItem.출고 === 0 && sItem.실사 > 0;
+
+                    tItem.대체입고 += tQty;
+                    tItem.전산잔량 = tItem.기초 + tItem.입고 + tItem.대체입고 - tItem.출고 - tItem.대체출고;
+                    tItem.실사 = tItem.실사 === null || tItem.실사 === '' ? tItem.전산잔량 : tItem.실사;
+                    tItem.로스 = tItem.실사 - tItem.전산잔량;
                     
-                    // 두 번째 상품 클릭 시 딜레이 없이 실행 유도
-                    setTimeout(() => executeSubstitution(prevKey, targetBatchKey), 0);
-                    return null;
+                    if (tItem.단가 === 0) tItem.단가 = transferredCost / tQty;
+                    tItem.매출원가 += transferredCost; 
+                    tItem.이슈 = tItem.이슈.filter(msg => !msg.includes('매입내역 없음') && !msg.includes('전산 재고 부족'));
+                    tItem.이슈.push(`🔄 <- ${sItem.품명}`);
+                    tItem.무거래재고 = (tItem.기초 > 0 || tItem.입고 > 0) && tItem.출고 === 0 && tItem.실사 > 0;
+                    
+                    const newData = [...prev];
+                    newData[sIdx] = sItem;
+                    newData[tIdx] = tItem;
+                    return newData;
                 });
-            }, [executeSubstitution]);
+
+                const returnFocusId = `actual-input-${substState.targetIdx}`;
+                setSubstState({ step: 0, source: null, target: null, sourceQty: 1, targetQty: 1, sourceIdx: -1, targetIdx: -1 });
+                setLinkSourceKey(null);
+                
+                // 완료 후 타겟의 숫자 입력칸으로 스무스하게 커서 복귀
+                setTimeout(() => {
+                    const input = document.getElementById(returnFocusId);
+                    if (input) input.focus();
+                }, 50);
+            }, [substState]);
+
+            const handleSpacebarLink = useCallback((targetBatchKey) => {
+                setProductData(prevData => {
+                    const idx = prevData.findIndex(d => d.batchKey === targetBatchKey);
+                    const item = prevData[idx];
+                    
+                    setLinkSourceKey(prevKey => {
+                        if (!prevKey) {
+                            setSubstState({ step: 1, source: item, target: null, sourceQty: Math.abs(item.로스) || 1, targetQty: 1, sourceIdx: idx, targetIdx: -1 });
+                            return targetBatchKey;
+                        }
+                        if (prevKey === targetBatchKey) {
+                            setSubstState({ step: 0, source: null, target: null, sourceQty: 1, targetQty: 1, sourceIdx: -1, targetIdx: -1 });
+                            return null;
+                        }
+                        
+                        const sourceItem = prevData.find(d => d.batchKey === prevKey);
+                        setSubstState({ step: 2, source: sourceItem, target: item, sourceQty: Math.abs(sourceItem.로스) || 1, targetQty: Math.abs(item.로스) || 1, sourceIdx: prevData.findIndex(d => d.batchKey === prevKey), targetIdx: idx });
+                        return prevKey;
+                    });
+                    return prevData;
+                });
+            }, []);
+
+            const handleSwapDirection = () => {
+                setSubstState(prev => ({
+                    ...prev,
+                    source: prev.target,
+                    target: prev.source,
+                    sourceIdx: prev.targetIdx,
+                    targetIdx: prev.sourceIdx,
+                    sourceQty: prev.targetQty,
+                    targetQty: prev.sourceQty
+                }));
+            };
 
             const filteredData = useMemo(() => {
                 let data = viewMode === 'product' ? productData : vendorData;
@@ -1088,11 +1123,26 @@
                 XLSX.writeFile(wb, `경영자보고서_${exportDateStr}.xlsx`);
             }, [productData, vendorData, analysisPeriod, kpis, files]);
 
+            // 🚀 단축키 및 실행 취소 (Ctrl+Z) 감지
             useEffect(() => {
                 const handleKeyDown = (e) => {
+                    // 모달창이 열려있으면 일반 단축키 무시
+                    if (substState.step === 2) return;
+
+                    // Ctrl + Z 치환 취소
+                    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+                        const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+                        if (activeTag !== 'input' && activeTag !== 'textarea') {
+                            e.preventDefault();
+                            handleUndoSubstitution();
+                        }
+                    }
                     if (e.key === 'F8') { e.preventDefault(); if (productData.length > 0 || vendorData.length > 0) handleSaveAndDownload(); }
                     if (e.key === 'F7') { e.preventDefault(); if (productData.length > 0 || vendorData.length > 0) handleReportDownload(); }
-                    if (e.key === 'Escape') setLinkSourceKey(null);
+                    if (e.key === 'Escape' && substState.step === 1) {
+                        setSubstState({ step: 0, source: null, target: null, sourceQty: 1, targetQty: 1, sourceIdx: -1, targetIdx: -1 });
+                        setLinkSourceKey(null);
+                    }
                     if (e.key === 'Enter') {
                         const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
                         if (activeTag !== 'input' && activeTag !== 'textarea') {
@@ -1103,7 +1153,7 @@
                 };
                 window.addEventListener('keydown', handleKeyDown);
                 return () => window.removeEventListener('keydown', handleKeyDown);
-            }, [handleSaveAndDownload, handleReportDownload, productData, vendorData, files, isProcessing, activeMenu]);
+            }, [handleSaveAndDownload, handleReportDownload, handleUndoSubstitution, productData, vendorData, files, isProcessing, activeMenu, substState.step]);
 
             const parseTrendExcel = (file) => {
                 return new Promise((resolve) => {
@@ -1201,14 +1251,64 @@
                         </div>
                     )}
 
-                    {linkSourceKey && (
-                        <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-[100] bg-purple-800 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 animate-bounce border-2 border-purple-400">
-                            <i className="fas fa-link text-purple-300 text-lg"></i>
-                            <span className="text-sm font-medium">
-                                <strong className="text-purple-200">[{productData.find(i => i.batchKey === linkSourceKey)?.품명}]</strong> 원물 선택됨. 
-                                치환될 상품의 <span className="text-yellow-300 font-bold">수량 변경 후</span> <kbd className="bg-purple-600 border border-purple-500 px-2 py-1 rounded text-xs font-black shadow-inner mx-1">Space</kbd> 키를 누르세요.
-                            </span>
-                            <button onClick={() => setLinkSourceKey(null)} className="ml-2 text-purple-300 hover:text-white transition"><i className="fas fa-times-circle text-xl"></i></button>
+                    {/* 소분/대체 치환 팝업 */}
+                    {substState.step === 2 && (
+                        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-gray-900 bg-opacity-50 transition-opacity">
+                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col modal-bounce border-2 border-indigo-500">
+                                <div className="bg-indigo-600 p-4 flex justify-between items-center text-white">
+                                    <h3 className="font-bold text-lg"><i className="fas fa-exchange-alt mr-2"></i>소분 / 대체 상품 원가 치환</h3>
+                                    <button onClick={() => {setSubstState({ step: 0, source: null, target: null, sourceQty: 1, targetQty: 1, sourceIdx: -1, targetIdx: -1 }); setLinkSourceKey(null);}} className="text-white hover:text-indigo-200">
+                                        <i className="fas fa-times text-xl"></i>
+                                    </button>
+                                </div>
+                                <div className="p-6 bg-gray-50">
+                                    <div className="flex items-center justify-between gap-2 mb-6">
+                                        <div className="flex-1 bg-white p-4 rounded-lg border border-indigo-200 shadow-sm text-center relative">
+                                            <div className="text-xs font-bold text-indigo-600 mb-1">차감 (원물)</div>
+                                            <div className="font-bold text-gray-800 text-sm truncate mb-3" title={substState.source.품명}>{substState.source.품명}</div>
+                                            <div className="flex items-center justify-center gap-1">
+                                                <span className="text-lg font-black text-indigo-500">-</span>
+                                                <input type="number" 
+                                                    value={substState.sourceQty} 
+                                                    onChange={e => setSubstState({...substState, sourceQty: Number(e.target.value)})}
+                                                    onKeyDown={e => { if (e.key === 'Enter') document.getElementById('target-qty-input').focus(); }}
+                                                    className="w-14 border-b-2 border-indigo-400 text-center font-black text-lg focus:outline-none focus:border-indigo-600 bg-transparent text-indigo-900"
+                                                    autoFocus
+                                                />
+                                                <span className="text-xs text-gray-500">개</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <button onClick={handleSwapDirection} className="px-2 text-gray-400 hover:text-indigo-600 text-2xl transition-transform hover:scale-110 z-10" title="방향 전환 (원물 ↔ 소분)">
+                                            <i className="fas fa-exchange-alt"></i>
+                                        </button>
+                                        
+                                        <div className="flex-1 bg-white p-4 rounded-lg border border-emerald-200 shadow-sm text-center relative">
+                                            <div className="text-xs font-bold text-emerald-600 mb-1">증가 (소분)</div>
+                                            <div className="font-bold text-gray-800 text-sm truncate mb-3" title={substState.target.품명}>{substState.target.품명}</div>
+                                            <div className="flex items-center justify-center gap-1">
+                                                <span className="text-lg font-black text-emerald-500">+</span>
+                                                <input type="number" 
+                                                    id="target-qty-input"
+                                                    value={substState.targetQty} 
+                                                    onChange={e => setSubstState({...substState, targetQty: Number(e.target.value)})}
+                                                    onKeyDown={e => { if (e.key === 'Enter') executeSubstitution(); }}
+                                                    className="w-14 border-b-2 border-emerald-400 text-center font-black text-lg focus:outline-none focus:border-emerald-600 bg-transparent text-emerald-900"
+                                                />
+                                                <span className="text-xs text-gray-500">개</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="bg-blue-50 text-blue-800 text-xs p-3 rounded-lg border border-blue-100 font-medium">
+                                        <i className="fas fa-info-circle mr-1.5"></i> 
+                                        원물 <strong>{substState.sourceQty}개</strong>의 매입 단가(총 ₩{formatMoney(substState.source.단가 * substState.sourceQty)})가 소분 상품의 <strong>매출 원가로 이관</strong>되어 정확한 마진을 계산합니다.
+                                    </div>
+                                </div>
+                                <div className="bg-white p-4 flex justify-end gap-2 border-t">
+                                    <button onClick={() => {setSubstState({ step: 0, source: null, target: null, sourceQty: 1, targetQty: 1, sourceIdx: -1, targetIdx: -1 }); setLinkSourceKey(null);}} className="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-lg transition">취소</button>
+                                    <button onClick={executeSubstitution} className="px-6 py-2 bg-indigo-600 text-white font-bold rounded-lg shadow-md hover:bg-indigo-700 transition">적용 (Enter)</button>
+                                </div>
+                            </div>
                         </div>
                     )}
 
@@ -1218,7 +1318,7 @@
                                 <span className="text-indigo-600 mr-2">oneapp</span> Insight
                             </h1>
                             <p className="text-gray-500 text-sm mt-1 font-semibold flex items-center">
-                                유통사 통합관리 시스템 <span className="text-purple-500 ml-2 text-xs px-2 py-0.5 bg-purple-50 rounded-full border border-purple-200 font-bold shadow-sm">V2.2 (Spacebar 치환)</span>
+                                유통사 통합관리 시스템 <span className="text-purple-500 ml-2 text-xs px-2 py-0.5 bg-purple-50 rounded-full border border-purple-200 font-bold shadow-sm">V2.3 (치환 취소 지원)</span>
                             </p>
                         </div>
                         <div className="flex flex-col items-end gap-3 mt-4 md:mt-0">
@@ -1301,11 +1401,14 @@
                                 </div>
                                 <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex flex-col justify-between relative">
                                     <div className="text-gray-500 text-sm font-bold mb-2">실사조정액</div>
-                                    <div className="text-2xl font-black text-gray-800">{formatAbsNumber(kpis.lossAmt)}</div>
-                                    <div className="text-xs text-gray-400 mt-2 font-medium">조정수량 {formatAbsNumber(kpis.lossQty)} / 조정액 {formatAbsNumber(kpis.lossAmt)}</div>
+                                    <div className={`text-2xl font-black ${kpis.lossAmt < 0 ? 'text-red-600' : 'text-blue-600'}`}>
+                                        {kpis.lossAmt > 0 ? '+' : ''}₩{formatAbsNumber(kpis.lossAmt)}
+                                    </div>
+                                    <div className="text-xs text-gray-400 mt-2 font-medium">조정수량 <span className={kpis.lossQty < 0 ? 'text-red-500' : 'text-blue-500'}>{kpis.lossQty > 0 ? '+' : ''}{formatAbsNumber(kpis.lossQty)}</span> / 조정액 <span className={kpis.lossAmt < 0 ? 'text-red-500' : 'text-blue-500'}>{kpis.lossAmt > 0 ? '+' : ''}₩{formatAbsNumber(kpis.lossAmt)}</span></div>
                                 </div>
                             </div>
 
+                            {/* 미니 토글: 이슈 요약 리포트 */}
                             {(insights.lowMargin.length > 0 || insights.highLoss.length > 0) && (
                                 <div className="mb-6 -mt-2">
                                     <div className="flex justify-end">
@@ -1342,11 +1445,20 @@
                                         </div>
                                         <div className="flex flex-wrap gap-2 items-center w-full md:w-auto">
                                             {viewMode === 'product' && (
-                                                <>
-                                                    <span className="text-xs font-bold text-gray-400 mr-1"><i className="fas fa-keyboard mr-1"></i>치환: Space</span>
-                                                    <button onClick={() => setFilters({...filters, noTransaction: !filters.noTransaction})} className={`px-3 py-1.5 rounded border text-xs font-bold transition ${filters.noTransaction ? 'bg-orange-50 text-orange-700 border-orange-200 shadow-inner' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>무거래재고</button>
-                                                </>
+                                                <div className="flex items-center gap-1 mr-2">
+                                                    <span className="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-1 rounded"><i className="fas fa-keyboard mr-1"></i>치환: Space</span>
+                                                    {substHistory.length > 0 && (
+                                                        <button 
+                                                            onClick={handleUndoSubstitution}
+                                                            className="px-2 py-1 rounded border border-red-200 text-xs font-bold bg-red-50 text-red-600 hover:bg-red-100 transition shadow-inner flex items-center"
+                                                            title="최근 치환 취소 (Ctrl+Z)"
+                                                        >
+                                                            <i className="fas fa-undo mr-1"></i>취소
+                                                        </button>
+                                                    )}
+                                                </div>
                                             )}
+                                            {viewMode === 'product' && <button onClick={() => setFilters({...filters, noTransaction: !filters.noTransaction})} className={`px-3 py-1.5 rounded border text-xs font-bold transition ${filters.noTransaction ? 'bg-orange-50 text-orange-700 border-orange-200 shadow-inner' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>무거래재고</button>}
                                             <button onClick={() => setFilters({...filters, issuesOnly: !filters.issuesOnly})} className={`px-3 py-1.5 rounded border text-xs font-bold transition ${filters.issuesOnly ? 'bg-red-50 text-red-700 border-red-200 shadow-inner' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>이슈/결과</button>
                                             {viewMode === 'product' && <button onClick={() => setFilters({...filters, excludeZeroActual: !filters.excludeZeroActual})} className={`px-3 py-1.5 rounded border text-xs font-bold transition ${filters.excludeZeroActual ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-inner' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>실사 0 제외</button>}
                                             <div className="relative flex-1 md:w-48 lg:w-56">
@@ -1484,6 +1596,7 @@
                         </div>
                     )}
 
+                    {/* 가이드 모달 */}
                     {showGuide && (
                         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900 bg-opacity-60 transition-opacity">
                             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col animate-[fadeIn_0.3s_ease-out]">
@@ -1506,10 +1619,11 @@
                                             <div className="bg-white p-4 rounded-lg border-2 border-orange-100 hover:border-orange-300 transition-colors">
                                                 <div className="text-orange-500 mb-2"><i className="fas fa-keyboard text-2xl"></i></div>
                                                 <h4 className="font-bold text-gray-800 text-sm mb-2">V2.2: 스페이스바 소분/대체</h4>
-                                                <p className="text-xs text-gray-600 leading-relaxed">
+                                                <p className="text-xs text-gray-600 leading-relaxed mb-2">
                                                     실사 입력칸에서 수량을 바꿔 오차(로스)를 만든 후 <strong>[스페이스바]</strong>를 누르세요. 
                                                     매치할 다른 상품에서도 똑같이 한 뒤 스페이스바를 누르면 <strong>자동으로 1:N 계산되어 원가가 이전</strong>됩니다.
                                                 </p>
+                                                <p className="text-[11px] text-indigo-600 font-bold bg-indigo-50 p-1.5 rounded"><i className="fas fa-undo mr-1"></i>Ctrl+Z 로 언제든 실행 취소가 가능합니다.</p>
                                             </div>
                                             <div className="bg-white p-4 rounded-lg border-2 border-orange-100 hover:border-orange-300 transition-colors">
                                                 <div className="text-orange-500 mb-2"><i className="fas fa-file-export text-2xl"></i></div>
