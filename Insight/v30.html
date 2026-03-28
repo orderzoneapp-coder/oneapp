@@ -1,8 +1,9 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" translate="no">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="google" content="notranslate">
     <title>oneapp Insight - 유통사 통합관리</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -228,13 +229,9 @@
             const [undoUi, setUndoUi] = useState({ state: 'closed' });
             const [substHistory, setSubstHistory] = useState([]);
             const [linkSourceKey, setLinkSourceKey] = useState(null);
-            
-            // 클릭/포커스 상태를 useRef로 관리하여 불필요한 렌더링을 방지
-            const focusedInputRef = useRef({ key: null, idx: -1 });
+            const [focusedInput, setFocusedInput] = useState({ key: null, idx: -1 });
 
-            const handleFocusInput = useCallback((key, idx) => { 
-                focusedInputRef.current = { key, idx }; 
-            }, []);
+            const handleFocusInput = useCallback((key, idx) => { setFocusedInput({ key, idx }); }, []);
 
             const [mappings, setMappings] = useState(() => {
                 const saved = localStorage.getItem('inventoryMappings');
@@ -266,7 +263,7 @@
                 setSubstHistory([]);
                 setUndoUi({ state: 'closed' });
                 setLinkSourceKey(null);
-                focusedInputRef.current = { key: null, idx: -1 };
+                setFocusedInput({ key: null, idx: -1 });
                 setError('');
                 document.querySelectorAll('input[type="file"]').forEach(input => input.value = '');
             };
@@ -454,7 +451,7 @@
 
             const runAnalysis = async (demoFiles = null, demoJson = null) => {
                 setIsProcessing(true); setError(''); setInsights({ lowMargin: [], highLoss: [], deadStock: [] });
-                setShowInsights(false); setLinkSourceKey(null); focusedInputRef.current = { key: null, idx: -1 }; setSubstHistory([]); setUndoUi({ state: 'closed' });
+                setShowInsights(false); setLinkSourceKey(null); setFocusedInput({ key: null, idx: -1 }); setSubstHistory([]); setUndoUi({ state: 'closed' });
 
                 try {
                     let parsedPrev = demoJson ? demoJson.prev : rawJson.prev;
@@ -776,14 +773,12 @@
                 return () => clearTimeout(timer);
             }, [productData]);
 
-            // 💡 [실행 취소 로직] 완벽한 스냅샷 복원 (에러 수정됨)
             const handleUndoAction = useCallback((historyItem) => {
                 setProductData(prev => {
                     const newData = [...prev];
                     const sIdx = newData.findIndex(d => d.batchKey === historyItem.sourceKey);
                     const tIdx = newData.findIndex(d => d.batchKey === historyItem.targetKey);
                     
-                    // 수식 역산 없이 완벽하게 백업된 객체 덩어리를 그대로 덮어씌웁니다.
                     if (sIdx >= 0) newData[sIdx] = { ...historyItem.sourceItemPrev, 이슈: [...historyItem.sourceItemPrev.이슈] };
                     if (tIdx >= 0) newData[tIdx] = { ...historyItem.targetItemPrev, 이슈: [...historyItem.targetItemPrev.이슈] };
                     
@@ -809,21 +804,18 @@
                 setUndoUi({ state: 'closed' });
             }, [substHistory, handleUndoAction]);
 
-            // 💡 [치환 로직] 🌟 개당 원가(unitCost) 정확한 적용 및 스냅샷 백업
             const executeImmediateSubstitution = useCallback((key1, key2, idx2) => {
                 setProductData(prev => {
                     const idx1 = prev.findIndex(d => d.batchKey === key1);
                     const realIdx2 = prev.findIndex(d => d.batchKey === key2);
                     if (idx1 < 0 || realIdx2 < 0) return prev;
 
-                    // 취소(Undo)를 위한 완벽한 이전 상태 백업 (깊은 복사)
                     const sourceItemOrig = { ...prev[idx1], 이슈: [...prev[idx1].이슈] };
                     const targetItemOrig = { ...prev[realIdx2], 이슈: [...prev[realIdx2].이슈] };
 
                     let sourceItem = { ...sourceItemOrig };
                     let targetItem = { ...targetItemOrig };
 
-                    // 자동 방향 판별
                     if (sourceItem.로스 < 0 && targetItem.로스 > 0) { }
                     else if (targetItem.로스 < 0 && sourceItem.로스 > 0) {
                         let temp = sourceItem; sourceItem = targetItem; targetItem = temp;
@@ -844,13 +836,11 @@
                         return prev;
                     }
 
-                    // 🌟 개당 원가(Unit Cost) 정확한 계산 
-                    const transferredCost = sQty * sourceItem.단가; // 원물에서 빠지는 총 원가
-                    const unitCost = transferredCost / tQty;        // 쪼개진 소분 1개당 정확한 원가
+                    const transferredCost = sQty * sourceItem.단가;
+                    const unitCost = transferredCost / tQty;        
 
                     const targetVendorPrevStates = vendorData.filter(v => v.코드 === targetItem.코드).map(v => ({...v}));
 
-                    // 1. 원물(Source) 업데이트
                     sourceItem.대체출고 += sQty;
                     sourceItem.전산잔량 = sourceItem.기초 + sourceItem.입고 + sourceItem.대체입고 - sourceItem.출고 - sourceItem.대체출고;
                     sourceItem.실사 = sourceItem.실사 === null || sourceItem.실사 === '' ? sourceItem.전산잔량 : sourceItem.실사;
@@ -858,35 +848,31 @@
                     sourceItem.이슈.push(`🔄 -> ${targetItem.품명}`);
                     sourceItem.무거래재고 = (sourceItem.기초 > 0 || sourceItem.입고 > 0) && sourceItem.출고 === 0 && sourceItem.실사 > 0;
 
-                    // 2. 소분품(Target) 업데이트
                     targetItem.대체입고 += tQty;
                     targetItem.전산잔량 = targetItem.기초 + targetItem.입고 + targetItem.대체입고 - targetItem.출고 - targetItem.대체출고;
                     targetItem.실사 = targetItem.실사 === null || targetItem.실사 === '' ? targetItem.전산잔량 : targetItem.실사;
                     targetItem.로스 = targetItem.실사 - targetItem.전산잔량;
-                    
-                    // 🌟 핵심: 단가를 개당 원가로 완전히 덮어쓰고, 매출원가는 "판매된 수량 * 개당원가" 로 계산
                     targetItem.단가 = unitCost; 
                     targetItem.매출원가 = targetItem.출고 * unitCost; 
-
                     targetItem.이슈 = targetItem.이슈.filter(msg => !msg.includes('매입내역 없음') && !msg.includes('전산 재고 부족'));
                     targetItem.이슈.push(`🔄 <- ${sourceItem.품명}`);
                     targetItem.무거래재고 = (targetItem.기초 > 0 || targetItem.입고 > 0) && targetItem.출고 === 0 && targetItem.실사 > 0;
                     
-                    // 3. 거래처별(건별) 업데이트 
                     const updatedVendorData = vendorData.map(v => {
                         if (v.코드 === targetItem.코드) {
-                            // 각 거래처별로 실제로 팔린 수량만큼 개당 원가를 곱해서 정확히 배분
-                            const newCogs = v.판매수량 * unitCost;
-                            const newProfit = v.판매액 - newCogs;
-                            let newIssues = v.이슈 || '';
-                            newIssues = newIssues.replace('매입내역 없음', '').replace('전산 재고 부족', '').trim();
-                            if (newIssues.endsWith(',')) newIssues = newIssues.slice(0, -1);
-                            return { ...v, 매출원가: newCogs, 이익: newProfit, 이슈: newIssues };
+                            const totalSold = targetItem.출고;
+                            if (totalSold > 0) {
+                                const newCogs = v.판매수량 * unitCost;
+                                const newProfit = v.판매액 - newCogs;
+                                let newIssues = v.이슈 || '';
+                                newIssues = newIssues.replace('매입내역 없음', '').replace('전산 재고 부족', '').trim();
+                                if (newIssues.endsWith(',')) newIssues = newIssues.slice(0, -1);
+                                return { ...v, 매출원가: newCogs, 이익: newProfit, 이슈: newIssues };
+                            }
                         }
                         return v;
                     });
 
-                    // 4. 완벽한 백업 스냅샷을 히스토리에 저장
                     setSubstHistory(h => [...h, {
                         id: Date.now(), 
                         sourceKey: sourceItem.batchKey, 
@@ -907,7 +893,6 @@
                     return newData;
                 });
 
-                // 포커스 복귀
                 setTimeout(() => {
                     const input = document.getElementById(`actual-input-${idx2}`);
                     if (input) { input.focus(); input.select(); }
@@ -915,7 +900,6 @@
 
             }, [vendorData]);
 
-            // 스페이스바 & 상단 버튼 클릭 이벤트 공통 핸들러
             const handleSpacebarLink = useCallback((targetBatchKey, targetIdx) => {
                 setLinkSourceKey(prevKey => {
                     if (!prevKey) {
@@ -1045,7 +1029,6 @@
                 XLSX.writeFile(wb, `경영자보고서_${exportDateStr}.xlsx`);
             }, [productData, vendorData, analysisPeriod, kpis, files]);
 
-            // Ctrl+Z 기능 완전히 삭제 (전역 키 이벤트 정리)
             useEffect(() => {
                 const handleKeyDown = (e) => {
                     if (e.key === 'F8') { e.preventDefault(); if (productData.length > 0 || vendorData.length > 0) handleSaveAndDownload(); }
@@ -1225,7 +1208,7 @@
                                 <span className="text-indigo-600 mr-2">oneapp</span> Insight
                             </h1>
                             <p className="text-gray-500 text-sm mt-1 font-semibold flex items-center">
-                                유통사 통합관리 시스템 <span className="text-purple-500 ml-2 text-xs px-2 py-0.5 bg-purple-50 rounded-full border border-purple-200 font-bold shadow-sm">V3.0 (개당 정밀원가 치환)</span>
+                                유통사 통합관리 시스템 <span className="text-purple-500 ml-2 text-xs px-2 py-0.5 bg-purple-50 rounded-full border border-purple-200 font-bold shadow-sm">V3.1 (자동 번역 차단)</span>
                             </p>
                         </div>
                         <div className="flex flex-col items-end gap-3 mt-4 md:mt-0">
@@ -1356,12 +1339,11 @@
                                                     <div className="flex items-center bg-white rounded-lg border border-purple-200 shadow-sm overflow-hidden">
                                                         <button 
                                                             onClick={() => {
-                                                                const { key, idx } = focusedInputRef.current;
-                                                                if (!key) {
+                                                                if (!focusedInputRef.current.key) {
                                                                     alert("치환할 상품의 실사 입력칸을 먼저 클릭(선택)해주세요.");
                                                                     return;
                                                                 }
-                                                                handleSpacebarLink(key, idx);
+                                                                handleSpacebarLink(focusedInputRef.current.key, focusedInputRef.current.idx);
                                                             }}
                                                             className={`px-4 py-2 text-xs font-bold transition flex items-center 
                                                                 ${linkSourceKey ? 'bg-purple-600 text-white animate-pulse' : 'text-purple-700 hover:bg-purple-50'}`}
@@ -1403,7 +1385,7 @@
                                                         <th className="p-3 border-b text-right bg-gray-50">재고</th>
                                                         <th className="p-3 border-b text-right bg-emerald-50 text-emerald-700">입고</th>
                                                         <th className="p-3 border-b text-right bg-blue-50 text-blue-700">출고</th>
-                                                        <th className="p-3 border-b text-right bg-purple-50 text-purple-700">실사(Space/버튼 치환)</th>
+                                                        <th className="p-3 border-b text-right bg-purple-50 text-purple-700">실사</th>
                                                         <th className="p-3 border-b text-right bg-red-50 text-red-600 border-r border-gray-200">조정</th>
                                                         <th className="p-3 border-b pl-5">단가/일자/거래처</th>
                                                         <th className="p-3 border-b text-right">매출액</th>
@@ -1544,7 +1526,7 @@
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                                             <div className="bg-white p-4 rounded-lg border-2 border-orange-100 hover:border-orange-300 transition-colors">
                                                 <div className="text-orange-500 mb-2"><i className="fas fa-keyboard text-2xl"></i></div>
-                                                <h4 className="font-bold text-gray-800 text-sm mb-2">V3.0: 상단 치환 버튼과 포커스</h4>
+                                                <h4 className="font-bold text-gray-800 text-sm mb-2">V3.1: 상단 치환 버튼과 포커스</h4>
                                                 <p className="text-xs text-gray-600 leading-relaxed mb-2">
                                                     실사 입력칸을 선택하고 <strong>상단 [치환 시작] 버튼 (또는 Space 키)</strong>을 누르세요. 
                                                     매치할 상품으로 이동해 수량을 바꾼 뒤 <strong>[치환 완료]</strong> 버튼을 누르면 개당 원가가 즉시 이전됩니다.
