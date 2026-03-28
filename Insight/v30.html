@@ -1,0 +1,1577 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>oneapp Insight - 유통사 통합관리</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; }
+        .table-container { max-height: 600px; overflow-y: auto; }
+        thead th { position: sticky; top: 0; z-index: 10; background-color: #f1f5f9; box-shadow: 0 2px 2px -1px rgba(0,0,0,0.1); }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* 숫자 입력칸 화살표 제거 */
+        input[type="number"]::-webkit-inner-spin-button, 
+        input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type="number"] { -moz-appearance: textfield; }
+
+        .modal-bounce { animation: modalBounce 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        @keyframes modalBounce { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useRef, useEffect, useMemo, useCallback } = React;
+
+        const parseNumber = (val) => {
+            if (val === undefined || val === null || val === '') return 0;
+            if (typeof val === 'number') return isNaN(val) ? 0 : val;
+            let strVal = String(val).trim();
+            let isNegative = false;
+            if (strVal.startsWith('(') && strVal.endsWith(')')) {
+                isNegative = true;
+                strVal = strVal.slice(1, -1);
+            } else if (strVal.startsWith('-')) {
+                isNegative = true;
+                strVal = strVal.slice(1);
+            }
+            const cleaned = strVal.replace(/,/g, '').replace(/[^\d.]/g, '');
+            let num = Number(cleaned);
+            if (isNegative) num = -num;
+            return isNaN(num) ? 0 : num;
+        };
+
+        const formatMoney = (num) => {
+            const n = Number(num);
+            return isNaN(n) ? '0' : Math.round(n).toLocaleString();
+        };
+
+        const formatAbsNumber = (num) => {
+            const n = Math.abs(Number(num));
+            return isNaN(n) ? '0' : Math.round(n).toLocaleString();
+        };
+
+        const defaultMappings = {
+            code: '품목코드, 상품코드, 코드, 품번, 바코드, sku',
+            name: '품명, 품목명(규격), 품목명[규격], 상품명, 제품명, 이름, 품목, 상품',
+            spec: '규격, 옵션, 사이즈', 
+            qty: '기말/실사, 수량, 재고, 기말실사(이월수량), 기말잔량(실사반영), 기말잔량(실사), 기말잔량, 수량(합계), 입고수량, 출고수량, 판매수량, 잔량, 실사, 합계, 기말, 판매량, 출고량, 입고량',
+            price: '매입단가(원가), 단가, 입고단가, 구매단가, 판매단가, 매입단가, 매입가, 판매가, 공급가액, 공급가, 금액, 원가, 가격, 최종(창고)',
+            date: '매입일자, 일자, 날짜, 구매일자, 판매일자, 입고일자, 출고일자',
+            vendor: '매입처(거래처), 거래처명, 거래처, 거래, 매장명, 매장, 고객, 구매처, 판매처, 공급사, 판매, 청과, 3거래',
+            excludeVendor: '창고이동, 가전표, 폐기, 샘플' 
+        };
+
+        const ProductRow = React.memo(({ item, idx, isLinked, onStockChange, onSpacebar, onFocusInput }) => {
+            const marginRate = item.매출액 ? (((item.매출액 - item.매출원가) / Math.abs(item.매출액)) * 100).toFixed(1) : 0;
+            const hasIssue = item.이슈 && item.이슈.length > 0;
+            
+            return (
+                <tr className={`transition ${isLinked ? 'bg-indigo-50 ring-2 ring-indigo-400 shadow-md relative z-10 scale-[1.01]' : 'hover:bg-gray-50'} ${!isLinked && item.로스 < 0 ? 'bg-red-50' : ''} ${!isLinked && item.무거래재고 ? 'bg-orange-50' : ''}`}>
+                    <td className={`p-3 sticky left-0 z-10 shadow-[1px_0_0_rgba(0,0,0,0.05)] bg-white group-hover:bg-gray-50 ${isLinked ? 'bg-indigo-50 border-l-4 border-indigo-500' : ''}`}>
+                        <div className="font-bold text-gray-800 truncate max-w-[200px] sm:max-w-xs flex items-center">
+                            {isLinked && <i className="fas fa-link text-indigo-500 mr-2 animate-pulse"></i>}
+                            {item.품명}
+                        </div>
+                        <div className="text-[10px] text-gray-400">{item.코드}</div>
+                    </td>
+                    <td className={`p-3 text-right bg-gray-50 bg-opacity-50 ${item.기초 < 0 ? 'text-red-600 font-bold' : ''}`}>{formatMoney(item.기초)}</td>
+                    <td className={`p-3 text-right font-bold ${item.입고 < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{formatMoney(item.입고)}</td>
+                    <td className={`p-3 text-right font-bold ${item.출고 < 0 ? 'text-red-600' : 'text-blue-600'}`}>{formatMoney(item.출고)}</td>
+                    <td className={`p-2 text-right ${isLinked ? 'bg-purple-200' : 'bg-purple-50 bg-opacity-50'} relative`}>
+                        {isLinked && (
+                            <div className="absolute -top-6 right-0 bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-md whitespace-nowrap animate-bounce">
+                                원물(Source) 선택됨
+                            </div>
+                        )}
+                        <input 
+                            id={`actual-input-${idx}`}
+                            type="number" 
+                            value={item.실사 === null || item.실사 === undefined ? '' : item.실사} 
+                            onChange={(e) => onStockChange(item.batchKey, e.target.value)}
+                            onClick={() => onFocusInput(item.batchKey, idx)}
+                            onFocus={(e) => {
+                                e.target.select();
+                                onFocusInput(item.batchKey, idx);
+                            }}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === 'ArrowDown') {
+                                    e.preventDefault();
+                                    const nextInput = document.getElementById(`actual-input-${idx + 1}`);
+                                    if (nextInput) nextInput.focus();
+                                } else if (e.key === 'ArrowUp') {
+                                    e.preventDefault();
+                                    const prevInput = document.getElementById(`actual-input-${idx - 1}`);
+                                    if (prevInput) prevInput.focus();
+                                } else if (e.key === ' ' || e.code === 'Space') {
+                                    e.preventDefault();
+                                    onSpacebar(item.batchKey, idx);
+                                }
+                            }}
+                            placeholder={item.전산잔량}
+                            title="수량 입력 후 상단 치환버튼 또는 스페이스바를 눌러 치환하세요"
+                            className={`w-[70px] text-right border ${isLinked ? 'border-indigo-500 ring-2 ring-indigo-200 bg-white text-indigo-900' : 'border-purple-300 text-purple-700 bg-white hover:bg-gray-50'} rounded px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-purple-500 font-bold shadow-inner transition-colors cursor-pointer`}
+                        />
+                    </td>
+                    <td className="p-3 text-right border-r border-gray-100">
+                        {item.로스 !== 0 && (
+                            <div className="flex flex-col items-end justify-center mb-1">
+                                <span className={`text-base font-black ${item.로스 < 0 ? 'text-red-600' : 'text-blue-600'}`}>
+                                    {item.로스 > 0 ? '+' : ''}{formatMoney(item.로스)}
+                                </span>
+                                <span className="text-[10px] font-bold text-gray-400">실사오차</span>
+                            </div>
+                        )}
+                        {item.대체출고 > 0 && (
+                            <div className="flex flex-col items-end justify-center mb-1">
+                                <span className="text-base font-black text-red-600">-{formatMoney(item.대체출고)}</span>
+                                <span className="text-[10px] font-bold text-red-400">대체(원물)</span>
+                            </div>
+                        )}
+                        {item.대체입고 > 0 && (
+                            <div className="flex flex-col items-end justify-center">
+                                <span className="text-base font-black text-blue-600">+{formatMoney(item.대체입고)}</span>
+                                <span className="text-[10px] font-bold text-blue-400">대체(소분)</span>
+                            </div>
+                        )}
+                        {item.로스 === 0 && item.대체입고 === 0 && item.대체출고 === 0 && <span className="text-gray-300 font-black">-</span>}
+                    </td>
+                    <td className="p-3 text-center border-r border-gray-100">
+                        <div className="font-bold text-indigo-700">
+                            ₩{formatMoney(item.단가)}
+                            {item.대체입고 > 0 && <span className="block text-[10px] text-blue-500 font-black mt-0.5">(개당원가 적용)</span>}
+                        </div>
+                        <div className="text-[10px] text-gray-500">{item.일자 || '기초/미상'} | <span className="text-gray-400">{item.거래처 || '미지정'}</span></div>
+                    </td>
+                    <td className="p-3 text-right font-bold">₩{formatMoney(item.매출액)}</td>
+                    <td className="p-3 text-right text-gray-600">₩{formatMoney(item.매출원가)}</td>
+                    <td className={`p-3 text-right font-black bg-indigo-50 bg-opacity-30 ${(item.매출액 - item.매출원가) < 0 ? 'text-red-600' : 'text-indigo-600'}`}>
+                        ₩{formatMoney(item.매출액 - item.매출원가)}
+                    </td>
+                    <td className={`p-3 text-right font-bold ${marginRate < 0 ? 'text-red-600' : 'text-blue-600'}`}>{marginRate}%</td>
+                    <td className="p-3 text-center text-[11px]">
+                        {hasIssue ? <span className="px-2 py-1 bg-red-100 text-red-700 rounded-md font-bold">{item.이슈.join(', ')}</span> : '-'}
+                    </td>
+                </tr>
+            );
+        }, (prevProps, nextProps) => {
+            return prevProps.item === nextProps.item && prevProps.isLinked === nextProps.isLinked && prevProps.idx === nextProps.idx;
+        });
+
+        const VendorRow = React.memo(({ item }) => {
+            const marginRate = item.판매액 ? (((item.이익) / Math.abs(item.판매액)) * 100).toFixed(1) : 0;
+            if (item.isSummary) {
+                return (
+                    <tr className="bg-indigo-50 border-t-[2px] border-b-[2px] border-indigo-300">
+                        <td className="p-3 text-center font-black text-indigo-900 border-r border-indigo-200">{item.거래처}</td>
+                        <td className="p-3 text-center font-black text-indigo-800 border-r border-indigo-200">[ 소계 ]</td>
+                        <td className="p-3 text-right font-black text-blue-800 border-l border-indigo-100/50">{formatMoney(item.판매수량)}</td>
+                        <td className="p-3 text-right font-black text-gray-900 border-l border-indigo-100/50">₩{formatMoney(item.판매액)}</td>
+                        <td className="p-3 text-center font-bold text-gray-400 border-l border-indigo-100/50">-</td>
+                        <td className={`p-3 text-right font-black border-l border-indigo-300 bg-indigo-100 bg-opacity-40 ${item.이익 < 0 ? 'text-red-600' : 'text-indigo-900'}`}>₩{formatMoney(item.이익)}</td>
+                        <td className={`p-3 text-right font-black border-l border-indigo-100/50 ${marginRate < 0 ? 'text-red-600' : 'text-blue-700'}`}>{marginRate}%</td>
+                        <td className="p-3 text-center text-indigo-400 border-l border-indigo-100/50">-</td>
+                    </tr>
+                );
+            }
+            return (
+                <tr className="hover:bg-gray-50 transition">
+                    <td className="p-3 font-bold text-emerald-800 bg-emerald-50 bg-opacity-30">{item.거래처}</td>
+                    <td className="p-3">
+                        <div className="font-bold text-gray-800">{item.품명}</div>
+                        <div className="text-[10px] text-gray-400">{item.코드}</div>
+                    </td>
+                    <td className="p-3 text-right font-bold text-blue-700">{formatMoney(item.판매수량)}</td>
+                    <td className="p-3 text-right font-bold">₩{formatMoney(item.판매액)}</td>
+                    <td className="p-3 text-right text-gray-700 bg-gray-50 bg-opacity-50">₩{formatMoney(item.매출원가)}</td>
+                    <td className={`p-3 text-right font-black bg-indigo-50 bg-opacity-50 ${item.이익 < 0 ? 'text-red-600' : 'text-indigo-700'}`}>₩{formatMoney(item.이익)}</td>
+                    <td className={`p-3 text-right font-bold ${marginRate < 0 ? 'text-red-600' : 'text-blue-600'}`}>{marginRate}%</td>
+                    <td className="p-3 text-center text-[11px]">
+                        {item.이슈 ? <span className="px-2 py-1 bg-red-100 text-red-700 rounded-md font-bold">{item.이슈}</span> : '-'}
+                    </td>
+                </tr>
+            );
+        }, (prev, next) => prev.item === next.item);
+
+        function App() {
+            const [files, setFiles] = useState({ prev: null, in: null, out: null, end: null });
+            const [rawJson, setRawJson] = useState({ prev: [], in: [], out: [], end: [] });
+            const [viewMode, setViewMode] = useState('product'); 
+            const [filters, setFilters] = useState({ noTransaction: false, issuesOnly: false, excludeZeroActual: false, search: '' });
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [error, setError] = useState('');
+            const [showGuide, setShowGuide] = useState(false);
+            const [showSettings, setShowSettings] = useState(false);
+            const [isGlobalDragging, setIsGlobalDragging] = useState(false);
+            const [showInsights, setShowInsights] = useState(false);
+
+            const [activeMenu, setActiveMenu] = useState('single');
+            const [insights, setInsights] = useState({ lowMargin: [], highLoss: [], deadStock: [] });
+            const [trendData, setTrendData] = useState([]);
+            const chartRef = useRef(null);
+            const chartInstance = useRef(null);
+
+            const [undoUi, setUndoUi] = useState({ state: 'closed' });
+            const [substHistory, setSubstHistory] = useState([]);
+            const [linkSourceKey, setLinkSourceKey] = useState(null);
+            
+            // 클릭/포커스 상태를 useRef로 관리하여 불필요한 렌더링을 방지
+            const focusedInputRef = useRef({ key: null, idx: -1 });
+
+            const handleFocusInput = useCallback((key, idx) => { 
+                focusedInputRef.current = { key, idx }; 
+            }, []);
+
+            const [mappings, setMappings] = useState(() => {
+                const saved = localStorage.getItem('inventoryMappings');
+                return saved ? JSON.parse(saved) : defaultMappings;
+            });
+
+            const saveMappings = () => {
+                localStorage.setItem('inventoryMappings', JSON.stringify(mappings));
+                setShowSettings(false);
+            };
+
+            const [kpis, setKpis] = useState({ 
+                revenue: 0, cogs: 0, totalInAmt: 0, profit: 0, profitRate: 0, opProfit: 0, opProfitRate: 0, cogsRate: 0, 
+                endingStockAmt: 0, stockDiffQty: 0, stockDiffAmt: 0, lossQty: 0, lossAmt: 0 
+            });
+            const [productData, setProductData] = useState([]);
+            const [vendorData, setVendorData] = useState([]);
+            const [analysisPeriod, setAnalysisPeriod] = useState('전체 기간');
+
+            const handleResetFiles = () => {
+                setFiles({ prev: null, in: null, out: null, end: null });
+                setRawJson({ prev: [], in: [], out: [], end: [] });
+                setProductData([]);
+                setVendorData([]);
+                setKpis({ revenue: 0, cogs: 0, totalInAmt: 0, profit: 0, profitRate: 0, opProfit: 0, opProfitRate: 0, cogsRate: 0, endingStockAmt: 0, stockDiffQty: 0, stockDiffAmt: 0, lossQty: 0, lossAmt: 0 });
+                setInsights({ lowMargin: [], highLoss: [], deadStock: [] });
+                setAnalysisPeriod('전체 기간');
+                setShowInsights(false);
+                setSubstHistory([]);
+                setUndoUi({ state: 'closed' });
+                setLinkSourceKey(null);
+                focusedInputRef.current = { key: null, idx: -1 };
+                setError('');
+                document.querySelectorAll('input[type="file"]').forEach(input => input.value = '');
+            };
+
+            const extractDateFromName = (filename) => {
+                if (!filename) return 0;
+                const match8 = filename.match(/20\d{6}/); 
+                if (match8) return parseInt(match8[0], 10);
+                const match6 = filename.match(/(?:^|[^\d])(\d{6})(?:[^\d]|$)/); 
+                if (match6) return parseInt('20' + match6[1], 10);
+                return 0;
+            };
+
+            const parseExcel = (file, currentMappings) => {
+                return new Promise((resolve, reject) => {
+                    if (!file) return resolve([]);
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const data = new Uint8Array(e.target.result);
+                            const processWorkbook = (wb) => {
+                                const sheet = wb.Sheets[wb.SheetNames[0]];
+                                const jsonAll = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+
+                                let headerRowIdx = -1; let maxScore = 0;
+                                const keywords = {
+                                    code: currentMappings.code.split(',').map(s => s.trim().toLowerCase()),
+                                    name: currentMappings.name.split(',').map(s => s.trim().toLowerCase()),
+                                    qty: currentMappings.qty.split(',').map(s => s.trim().toLowerCase()),
+                                    price: currentMappings.price.split(',').map(s => s.trim().toLowerCase()),
+                                    vendor: currentMappings.vendor.split(',').map(s => s.trim().toLowerCase()),
+                                    spec: currentMappings.spec ? currentMappings.spec.split(',').map(s => s.trim().toLowerCase()) : [],
+                                    date: currentMappings.date ? currentMappings.date.split(',').map(s => s.trim().toLowerCase()) : []
+                                };
+
+                                for (let i = 0; i < Math.min(30, jsonAll.length); i++) {
+                                    const row = jsonAll[i] || [];
+                                    let score = 0;
+                                    const rowStr = row.join('').replace(/\s/g, '');
+                                    if (!rowStr) continue;
+                                    Object.values(keywords).forEach(kwList => {
+                                        if (kwList.some(kw => kw && row.some(cell => String(cell).replace(/\s/g, '').toLowerCase().includes(kw)))) score++;
+                                    });
+                                    if (score > maxScore) { maxScore = score; headerRowIdx = i; }
+                                }
+                                return { jsonAll, headerRowIdx, maxScore, keywords };
+                            };
+
+                            let wb = XLSX.read(data, { type: 'array' });
+                            let { jsonAll, headerRowIdx, maxScore, keywords } = processWorkbook(wb);
+
+                            if (maxScore < 2) {
+                                try {
+                                    const text = new TextDecoder('euc-kr').decode(data);
+                                    const wb2 = XLSX.read(text, { type: 'string' });
+                                    const res2 = processWorkbook(wb2);
+                                    if (res2.maxScore > maxScore) { jsonAll = res2.jsonAll; headerRowIdx = res2.headerRowIdx; maxScore = res2.maxScore; keywords = res2.keywords; }
+                                } catch (error) { console.error("EUC-KR 디코딩 실패", error); }
+                            }
+
+                            if (headerRowIdx === -1 || maxScore < 2) return resolve([]); 
+
+                            const rawHeaders = jsonAll[headerRowIdx];
+                            const uniqueHeaders = []; const headerCounts = {};
+                            for (let j = 0; j < rawHeaders.length; j++) {
+                                let h = rawHeaders[j] ? String(rawHeaders[j]).trim() : `__EMPTY_${j}`;
+                                if (headerCounts[h]) { const orig = h; h = `${h}_${headerCounts[h]}`; headerCounts[orig]++; } else { headerCounts[h] = 1; }
+                                uniqueHeaders.push(h);
+                            }
+
+                            const parsedData = [];
+                            const getValByKeywords = (obj, kwList) => {
+                                const keys = Object.keys(obj);
+                                for (let kw of kwList) {
+                                    if(!kw) continue;
+                                    let match = keys.find(k => k.replace(/\s/g, '').toLowerCase() === kw);
+                                    if (!match) match = keys.find(k => k.replace(/\s/g, '').toLowerCase().includes(kw));
+                                    if (match && obj[match] !== undefined && String(obj[match]).trim() !== '') return obj[match];
+                                }
+                                return null;
+                            };
+
+                            for (let i = headerRowIdx + 1; i < jsonAll.length; i++) {
+                                const row = jsonAll[i];
+                                if (!row || row.join('').trim() === '') continue;
+                                
+                                const rowObj = {};
+                                uniqueHeaders.forEach((h, idx) => { if (h) rowObj[h] = row[idx]; });
+                                
+                                const baseNameRaw = getValByKeywords(rowObj, keywords.name);
+                                const baseName = baseNameRaw !== null && baseNameRaw !== undefined ? String(baseNameRaw).trim() : '이름없음';
+                                const specValRaw = getValByKeywords(rowObj, keywords.spec);
+                                const specVal = specValRaw !== null && specValRaw !== undefined ? String(specValRaw).trim() : '';
+                                
+                                let fullName = baseName;
+                                if (specVal && baseName !== specVal && !baseName.includes(specVal)) fullName = `${baseName}_${specVal}`;
+
+                                const normObj = {
+                                    코드: String(getValByKeywords(rowObj, keywords.code) || 'NO_CODE').trim(),
+                                    품명: fullName,
+                                    수량: parseNumber(getValByKeywords(rowObj, keywords.qty)),
+                                    단가: parseNumber(getValByKeywords(rowObj, keywords.price)),
+                                    거래처: String(getValByKeywords(rowObj, keywords.vendor) || '미지정').trim(),
+                                    일자: String(getValByKeywords(rowObj, keywords.date) || '').trim(),
+                                    _raw: rowObj 
+                                };
+                                parsedData.push(normObj);
+                            }
+                            resolve(parsedData);
+                        } catch (err) { reject(err); }
+                    };
+                    reader.readAsArrayBuffer(file);
+                });
+            };
+
+            const autoAssignFiles = (fileArray) => {
+                setFiles(prev => {
+                    let updated = { ...prev };
+                    const stockCandidates = [];
+
+                    fileArray.forEach(file => {
+                        const name = file.name.toLowerCase();
+                        if (name.includes('구매') || name.includes('매입') || name.includes('입고')) updated.in = file;
+                        else if (name.includes('판매') || name.includes('매출') || name.includes('출고')) updated.out = file;
+                        else stockCandidates.push(file);
+                    });
+
+                    if (stockCandidates.length > 0) {
+                        stockCandidates.sort((a, b) => extractDateFromName(a.name) - extractDateFromName(b.name));
+                        if (stockCandidates.length === 1) {
+                            const name = stockCandidates[0].name.toLowerCase();
+                            if (name.includes('기말') || name.includes('실사') || name.includes('마감')) updated.end = stockCandidates[0];
+                            else updated.prev = stockCandidates[0]; 
+                        } else {
+                            updated.prev = stockCandidates[0];
+                            updated.end = stockCandidates[stockCandidates.length - 1];
+                        }
+                    }
+                    return updated;
+                });
+            };
+
+            const handleGlobalDrop = (e) => {
+                e.preventDefault(); setIsGlobalDragging(false);
+                const droppedFiles = Array.from(e.dataTransfer.files);
+                if (droppedFiles.length > 0) autoAssignFiles(droppedFiles);
+                window.focus(); 
+            };
+
+            const handleFileChange = async (type, e) => {
+                const selectedFiles = Array.from(e.target.files);
+                if (selectedFiles.length > 1) autoAssignFiles(selectedFiles);
+                else if (selectedFiles.length === 1) setFiles(prev => ({ ...prev, [type]: selectedFiles[0] }));
+                e.target.value = '';
+            };
+
+            const recalculateKPIs = (pDataArray) => {
+                let revenue = 0, cogs = 0, totalInAmt = 0;
+                let lossQty = 0, lossAmt = 0;
+                let beginningStockAmt = 0, beginningStockQty = 0;
+                let endingStockAmt = 0, endingStockQty = 0;
+
+                pDataArray.forEach(item => {
+                    revenue += item.매출액 || 0; cogs += item.매출원가 || 0;
+                    totalInAmt += (item.입고 || 0) * (item.단가 || 0);
+
+                    const actualQty = item.실사 === '' || item.실사 === null || item.실사 === undefined ? 0 : Number(item.실사);
+                    const sysQty = Number(item.전산잔량) || 0;
+                    const diff = actualQty - sysQty;
+
+                    lossQty += diff; lossAmt += diff * (item.단가 || 0); 
+
+                    beginningStockQty += (item.기초 || 0); beginningStockAmt += (item.기초 || 0) * (item.단가 || 0);
+                    endingStockQty += actualQty; endingStockAmt += actualQty * (item.단가 || 0);
+                });
+
+                const opProfit = revenue - cogs; const profit = opProfit + lossAmt; 
+                const opProfitRate = revenue > 0 ? (opProfit / revenue) * 100 : 0;
+                const cogsRate = revenue > 0 ? (cogs / revenue) * 100 : 0;
+                const stockDiffQty = endingStockQty - beginningStockQty;
+                const stockDiffAmt = endingStockAmt - beginningStockAmt;
+
+                setKpis({ revenue, cogs, totalInAmt, profit, opProfit, opProfitRate, cogsRate, endingStockAmt, stockDiffQty, stockDiffAmt, lossQty, lossAmt });
+            };
+
+            const runAnalysis = async (demoFiles = null, demoJson = null) => {
+                setIsProcessing(true); setError(''); setInsights({ lowMargin: [], highLoss: [], deadStock: [] });
+                setShowInsights(false); setLinkSourceKey(null); focusedInputRef.current = { key: null, idx: -1 }; setSubstHistory([]); setUndoUi({ state: 'closed' });
+
+                try {
+                    let parsedPrev = demoJson ? demoJson.prev : rawJson.prev;
+                    let parsedIn = demoJson ? demoJson.in : rawJson.in;
+                    let parsedOut = demoJson ? demoJson.out : rawJson.out;
+                    let parsedEnd = demoJson ? demoJson.end : rawJson.end;
+                    
+                    const currentFiles = demoFiles || files;
+
+                    if (currentFiles.prev && !currentFiles.prev.isDemo) parsedPrev = await parseExcel(currentFiles.prev, mappings);
+                    if (currentFiles.in && !currentFiles.in.isDemo) parsedIn = await parseExcel(currentFiles.in, mappings);
+                    if (currentFiles.out && !currentFiles.out.isDemo) parsedOut = await parseExcel(currentFiles.out, mappings);
+                    if (currentFiles.end && !currentFiles.end.isDemo) parsedEnd = await parseExcel(currentFiles.end, mappings);
+
+                    const prevDateNum = extractDateFromName(currentFiles.prev?.name);
+                    const endDateNum = extractDateFromName(currentFiles.end?.name);
+
+                    let refYear = new Date().getFullYear();
+                    if (prevDateNum) refYear = Math.floor(prevDateNum / 10000);
+                    else if (endDateNum) refYear = Math.floor(endDateNum / 10000);
+
+                    const formatItemDate = (dateStr) => {
+                        if (!dateStr) return 0;
+                        const str = String(dateStr).trim();
+                        if (/^\d{5}$/.test(str)) {
+                            const serial = parseInt(str, 10);
+                            if (serial > 30000 && serial < 80000) {
+                                const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
+                                const y = date.getFullYear(); const m = String(date.getMonth() + 1).padStart(2, '0'); const d = String(date.getDate()).padStart(2, '0');
+                                return parseInt(`${y}${m}${d}`, 10);
+                            }
+                        }
+                        const parts = str.match(/\d+/g);
+                        if (!parts) return 0;
+                        if (parts.length >= 3) {
+                            let y = parts[0]; if (y.length === 2) y = '20' + y;
+                            let m = parts[1].padStart(2, '0'); let d = parts[2].padStart(2, '0');
+                            return parseInt(`${y}${m}${d}`, 10);
+                        } else if (parts.length === 2) {
+                            let m = parts[0].padStart(2, '0'); let d = parts[1].padStart(2, '0');
+                            return parseInt(`${refYear}${m}${d}`, 10);
+                        }
+                        const cleaned = str.replace(/[^\d]/g, '');
+                        if (cleaned.length === 8) return parseInt(cleaned, 10);
+                        if (cleaned.length === 6) return parseInt('20' + cleaned, 10);
+                        return 0;
+                    };
+
+                    if (prevDateNum || endDateNum) {
+                        const isDateValid = (itemDateStr) => {
+                            const itemDate = formatItemDate(itemDateStr);
+                            if (itemDate === 0) return true; 
+                            if (prevDateNum && itemDate <= prevDateNum) return false;
+                            if (endDateNum && itemDate > endDateNum) return false;
+                            return true;
+                        };
+                        parsedIn = parsedIn.filter(item => isDateValid(item.일자));
+                        parsedOut = parsedOut.filter(item => isDateValid(item.일자));
+                    }
+
+                    if (!demoJson) setRawJson({ prev: parsedPrev, in: parsedIn, out: parsedOut, end: parsedEnd });
+
+                    let minD = 99999999; let maxD = 0;
+                    const allParsedData = [...parsedPrev, ...parsedIn, ...parsedOut, ...parsedEnd];
+                    allParsedData.forEach(item => {
+                        const d = formatItemDate(item.일자);
+                        if (d > 0) { if (d < minD) minD = d; if (d > maxD) maxD = d; }
+                    });
+                    
+                    const formatStrForPeriod = (num) => {
+                        const s = String(num);
+                        if (s.length === 8) return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`;
+                        return s;
+                    };
+
+                    if (minD !== 99999999 && maxD !== 0) setAnalysisPeriod(minD === maxD ? formatStrForPeriod(minD) : `${formatStrForPeriod(minD)} ~ ${formatStrForPeriod(maxD)}`);
+                    else setAnalysisPeriod('기간 미상 (날짜 데이터 없음)');
+
+                    let pData = {}; let vData = []; const stockPool = {};
+                    const excludeList = (mappings.excludeVendor || '').split(',').map(s => s.trim().toLowerCase()).filter(s => s);
+                    const isExcluded = (vendorName) => vendorName && excludeList.some(keyword => vendorName.toLowerCase().includes(keyword));
+
+                    const addStock = (item, type) => {
+                        if (isExcluded(item.거래처)) return;
+                        const code = String(item.코드 || 'NO_CODE'); const price = parseNumber(item.단가); const date = String(item.일자 || '');
+                        const batchKey = `${code}|${price}|${date}`;
+
+                        if (!pData[batchKey]) {
+                            pData[batchKey] = { 
+                                batchKey, 코드: code, 품명: item.품명, 단가: price, 일자: date, 거래처: item.거래처,
+                                기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 
+                                매출액: 0, 매출원가: 0, 이슈: []
+                            };
+                        }
+                        
+                        if (type === 'prev') pData[batchKey].기초 += item.수량;
+                        if (type === 'in') pData[batchKey].입고 += item.수량;
+                        
+                        if (!stockPool[code]) stockPool[code] = { buckets: [] };
+                        if (item.수량 !== 0) stockPool[code].buckets.push({ batchKey, 단가: price, 일자: date, 수량: item.수량 });
+                    };
+
+                    parsedPrev.forEach(item => addStock(item, 'prev'));
+                    parsedIn.forEach(item => addStock(item, 'in'));
+
+                    Object.values(stockPool).forEach(pool => pool.buckets.sort((a, b) => String(a.일자 || '').localeCompare(String(b.일자 || ''))));
+
+                    parsedOut.forEach(sale => {
+                        if (isExcluded(sale.거래처)) return;
+                        const code = String(sale.코드 || 'NO_CODE');
+                        let qtyToDeduct = sale.수량; let totalMatchedCogs = 0; let issueMsg = null;
+                        const pool = stockPool[code];
+                        
+                        let revenue = 0;
+                        if (sale.단가 !== 0 && sale.수량 !== 0) revenue = sale.수량 * sale.단가;
+
+                        let finalRevenue = revenue;
+                        if (finalRevenue === 0 && sale._raw) {
+                            const amtKeys = ['금액', '합계', '매출금액', '판매금액', '공급가액', '공급가', '총액'];
+                            for (let k of amtKeys) {
+                                const matchedKey = Object.keys(sale._raw).find(rk => rk.replace(/\s/g, '').includes(k));
+                                if (matchedKey && sale._raw[matchedKey] !== undefined && sale._raw[matchedKey] !== '') {
+                                    finalRevenue = parseNumber(sale._raw[matchedKey]); break;
+                                }
+                            }
+                        }
+                        if (finalRevenue === 0 && sale.단가 !== 0 && sale.수량 === 0) finalRevenue = sale.단가;
+                        
+                        if (!pool || pool.buckets.length === 0) {
+                            const bKey = `${code}|0|미상`;
+                            if (!pData[bKey]) pData[bKey] = { batchKey: bKey, 코드: code, 품명: sale.품명, 단가: 0, 일자: '', 거래처: sale.거래처, 기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 매출액: 0, 매출원가: 0, 이슈: ['매입내역 없음'] };
+                            pData[bKey].출고 += qtyToDeduct; pData[bKey].매출액 += finalRevenue; issueMsg = '매입내역 없음';
+                            vData.push({ 거래처: sale.거래처, 코드: code, 품명: sale.품명, 판매수량: sale.수량, 판매액: finalRevenue, 매출원가: 0, 이익: finalRevenue, 이슈: issueMsg });
+                            return;
+                        }
+
+                        let remainingQty = qtyToDeduct;
+
+                        if (remainingQty < 0) {
+                            const lastBucket = pool.buckets[pool.buckets.length - 1];
+                            const cogs = remainingQty * lastBucket.단가; totalMatchedCogs = cogs;
+                            lastBucket.수량 -= remainingQty; 
+                            pData[lastBucket.batchKey].출고 += remainingQty; pData[lastBucket.batchKey].매출액 += finalRevenue; pData[lastBucket.batchKey].매출원가 += cogs;
+                        } else {
+                            for (let i = 0; i < pool.buckets.length && remainingQty > 0; i++) {
+                                const bucket = pool.buckets[i]; if (bucket.수량 <= 0) continue;
+                                const take = Math.min(bucket.수량, remainingQty); const cogs = take * bucket.단가;
+                                bucket.수량 -= take; remainingQty -= take; totalMatchedCogs += cogs;
+                                const revShare = finalRevenue * (take / qtyToDeduct);
+                                pData[bucket.batchKey].출고 += take; pData[bucket.batchKey].매출원가 += cogs; pData[bucket.batchKey].매출액 += revShare;
+                            }
+                            if (remainingQty > 0) {
+                                const lastBucket = pool.buckets[pool.buckets.length - 1];
+                                const cogs = remainingQty * lastBucket.단가; totalMatchedCogs += cogs;
+                                const revShare = finalRevenue * (remainingQty / qtyToDeduct);
+                                pData[lastBucket.batchKey].출고 += remainingQty; pData[lastBucket.batchKey].매출원가 += cogs; pData[lastBucket.batchKey].매출액 += revShare;
+                                issueMsg = '재고 부족';
+                                if (!pData[lastBucket.batchKey].이슈.includes('전산 재고 부족')) pData[lastBucket.batchKey].이슈.push('전산 재고 부족');
+                            }
+                        }
+
+                        vData.push({ 거래처: sale.거래처, 코드: code, 품명: sale.품명, 판매수량: sale.수량, 판매액: finalRevenue, 매출원가: totalMatchedCogs, 이익: finalRevenue - totalMatchedCogs, 이슈: issueMsg });
+                    });
+
+                    Object.values(pData).forEach(item => {
+                        item.전산잔량 = item.기초 + item.입고 - item.출고;
+                        item.실사 = item.전산잔량; item.로스 = 0;
+                    });
+
+                    if (parsedEnd.length > 0) {
+                        const actualDict = {};
+                        parsedEnd.forEach(item => {
+                            const code = String(item.코드); actualDict[code] = (actualDict[code] || 0) + item.수량;
+                            const hasSystemRecord = Object.values(pData).some(p => p.코드 === code);
+                            if (!hasSystemRecord) {
+                                const price = parseNumber(item.단가) || 0; const date = String(item.일자 || '실사등록'); const batchKey = `${code}|${price}|${date}`;
+                                if (!pData[batchKey]) pData[batchKey] = { batchKey, 코드: code, 품명: item.품명, 단가: price, 일자: date, 거래처: item.거래처, 기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 매출액: 0, 매출원가: 0, 이슈: ['전산기록 없음 (실사로 추가됨)'] };
+                            }
+                        });
+
+                        const uniqueCodes = [...new Set(Object.values(pData).map(p => String(p.코드)))];
+                        uniqueCodes.forEach(code => {
+                            const actualQty = actualDict[code] !== undefined ? actualDict[code] : 0;
+                            const batches = Object.values(pData).filter(p => p.코드 === code).sort((a, b) => String(a.일자 || '').localeCompare(String(b.일자 || '')));
+                            let remainingActual = actualQty;
+                            batches.forEach(b => { b.실사 = 0; b.로스 = -b.전산잔량; });
+                            if (remainingActual > 0) {
+                                for (let i = batches.length - 1; i >= 0; i--) {
+                                    const b = batches[i]; const capacity = Math.max(b.전산잔량, 0); 
+                                    if (capacity > 0) {
+                                        if (remainingActual >= capacity) { b.실사 = capacity; remainingActual -= capacity; } 
+                                        else { b.실사 = remainingActual; remainingActual = 0; }
+                                        b.로스 = b.실사 - b.전산잔량;
+                                    }
+                                }
+                                if (remainingActual > 0 && batches.length > 0) {
+                                    const newest = batches[batches.length - 1]; newest.실사 += remainingActual; newest.로스 = newest.실사 - newest.전산잔량;
+                                }
+                            }
+                        });
+                    }
+
+                    Object.values(pData).forEach(item => {
+                        item.무거래재고 = false;
+                        if ((item.기초 > 0 || item.입고 > 0) && item.출고 === 0 && item.실사 > 0) item.무거래재고 = true;
+                    });
+
+                    const finalProductData = Object.values(pData).sort((a, b) => {
+                        const codeA = String(a.코드 || ''); const codeB = String(b.코드 || '');
+                        if (codeA !== codeB) return codeA.localeCompare(codeB);
+                        const dateA = String(a.일자 || ''); const dateB = String(b.일자 || '');
+                        if (dateA !== dateB) return dateA.localeCompare(dateB);
+                        return (a.단가 || 0) - (b.단가 || 0);
+                    });
+                    
+                    setProductData(finalProductData);
+                    
+                    const vGrouped = {};
+                    vData.forEach(v => {
+                        const key = `${v.거래처}_${v.코드}`;
+                        if (!vGrouped[key]) vGrouped[key] = { ...v };
+                        else { vGrouped[key].판매수량 += v.판매수량; vGrouped[key].판매액 += v.판매액; vGrouped[key].매출원가 += v.매출원가; vGrouped[key].이익 += v.이익; }
+                    });
+                    
+                    const sortedVendorData = Object.values(vGrouped).sort((a, b) => {
+                        const vendorA = String(a.거래처 || ''); const vendorB = String(b.거래처 || '');
+                        if (vendorA < vendorB) return -1; if (vendorA > vendorB) return 1;
+                        const codeA = String(a.코드 || ''); const codeB = String(b.코드 || '');
+                        if (codeA < codeB) return -1; if (codeA > codeB) return 1;
+                        return 0;
+                    });
+                    setVendorData(sortedVendorData);
+
+                } catch (err) {
+                    setError('데이터 분석 중 오류가 발생했습니다. 엑셀 파일 형식이나 매핑 규칙을 확인해주세요.');
+                    console.error(err);
+                } finally {
+                    setIsProcessing(false);
+                }
+            };
+
+            const loadDemoData = () => {
+                const demoPrev = [
+                    { 코드: 'A001', 품명: '프리미엄 원두_1kg', 수량: 100, 단가: 10000, 일자: '2026/03/20' },
+                    { 코드: 'A002', 품명: '원두_소분_200g', 수량: 0, 단가: 0, 일자: '2026/03/21' },
+                    { 코드: 'B001', 품명: '바닐라 시럽_1000ml', 수량: 30, 단가: 8000, 일자: '2026/03/22' },
+                    { 코드: 'B002', 품명: '바닐라 시럽_소분_펌프형', 수량: 0, 단가: 0, 일자: '2026/03/22' },
+                    { 코드: 'C001', 품명: '종이컵_13oz', 수량: 1000, 단가: 50, 일자: '2026/03/20' }
+                ];
+                const demoIn = [
+                    { 코드: 'A001', 품명: '프리미엄 원두_1kg', 수량: 10, 단가: 11000, 일자: '2026/03/28' }
+                ];
+                const demoOut = [
+                    { 거래처: '강남본점', 코드: 'A002', 품명: '원두_소분_200g', 수량: 15, 단가: 3000, 일자: '2026/03/28' },
+                    { 거래처: '홍대점', 코드: 'B002', 품명: '바닐라 시럽_소분_펌프형', 수량: 5, 단가: 2000, 일자: '2026/03/28' },
+                    { 거래처: '강남본점', 코드: 'C001', 품명: '종이컵_13oz', 수량: 100, 단가: 80, 일자: '2026/03/28' }
+                ];
+                const demoEnd = [
+                    { 코드: 'A001', 수량: 107, 일자: '2026/03/31' }, 
+                    { 코드: 'A002', 수량: 0, 일자: '2026/03/31' },  
+                    { 코드: 'B001', 수량: 29, 일자: '2026/03/31' },  
+                    { 코드: 'B002', 수량: 0, 일자: '2026/03/31' },   
+                    { 코드: 'C001', 수량: 900, 일자: '2026/03/31' }
+                ];
+
+                const mockFiles = { 
+                    prev: { name: 'demo_기초재고_20260325.xlsx', isDemo: true }, 
+                    in: { name: 'demo_구매현황.xlsx', isDemo: true }, 
+                    out: { name: 'demo_판매현황.xlsx', isDemo: true }, 
+                    end: { name: 'demo_실사_20260331.xlsx', isDemo: true } 
+                };
+                const mockJson = { prev: demoPrev, in: demoIn, out: demoOut, end: demoEnd };
+                
+                setFiles(mockFiles);
+                setRawJson(mockJson);
+                setTimeout(() => runAnalysis(mockFiles, mockJson), 100); 
+            };
+
+            const handleManualStockChange = useCallback((batchKey, val) => {
+                setProductData(prev => prev.map(item => {
+                    if (item.batchKey === batchKey) {
+                        const newActual = val === '' ? '' : Number(val);
+                        const lossCalcVal = val === '' ? 0 : Number(val);
+                        const newLoss = lossCalcVal - item.전산잔량;
+                        
+                        let newIssues = [...item.이슈];
+                        if (!newIssues.includes('실사 수기조정')) newIssues.push('실사 수기조정');
+                        
+                        let isDead = false;
+                        if ((item.기초 > 0 || item.입고 > 0) && item.출고 === 0 && lossCalcVal > 0) isDead = true;
+                        
+                        newIssues = newIssues.filter(msg => msg !== '체화재고 (판매 0)' && !msg.includes('소분 대체') && !msg.includes('원물 대체'));
+                        return { ...item, 실사: newActual, 로스: newLoss, 이슈: newIssues, 무거래재고: isDead };
+                    }
+                    return item;
+                }));
+            }, []);
+
+            useEffect(() => {
+                if (productData.length === 0) return;
+                recalculateKPIs(productData);
+
+                const timer = setTimeout(() => {
+                    const lowMargin = productData.filter(item => {
+                        if (item.매출액 <= 0) return false;
+                        const marginRate = ((item.매출액 - item.매출원가) / item.매출액) * 100;
+                        return marginRate < 10; 
+                    }).sort((a, b) => {
+                        const rateA = ((a.매출액 - a.매출원가) / a.매출액) * 100;
+                        const rateB = ((b.매출액 - b.매출원가) / b.매출액) * 100;
+                        return rateA - rateB; 
+                    }).slice(0, 5); 
+
+                    const highLoss = productData.filter(item => item.로스 < 0).sort((a, b) => a.로스 - b.로스).slice(0, 5); 
+                    const deadStock = productData.filter(item => item.무거래재고);
+                    setInsights({ lowMargin, highLoss, deadStock });
+                }, 300);
+
+                return () => clearTimeout(timer);
+            }, [productData]);
+
+            // 💡 [실행 취소 로직] 완벽한 스냅샷 복원 (에러 수정됨)
+            const handleUndoAction = useCallback((historyItem) => {
+                setProductData(prev => {
+                    const newData = [...prev];
+                    const sIdx = newData.findIndex(d => d.batchKey === historyItem.sourceKey);
+                    const tIdx = newData.findIndex(d => d.batchKey === historyItem.targetKey);
+                    
+                    // 수식 역산 없이 완벽하게 백업된 객체 덩어리를 그대로 덮어씌웁니다.
+                    if (sIdx >= 0) newData[sIdx] = { ...historyItem.sourceItemPrev, 이슈: [...historyItem.sourceItemPrev.이슈] };
+                    if (tIdx >= 0) newData[tIdx] = { ...historyItem.targetItemPrev, 이슈: [...historyItem.targetItemPrev.이슈] };
+                    
+                    return newData;
+                });
+
+                setVendorData(prev => {
+                    let newData = [...prev];
+                    if (historyItem.targetVendorPrevStates) {
+                        historyItem.targetVendorPrevStates.forEach(prevV => {
+                            const vIdx = newData.findIndex(v => v.거래처 === prevV.거래처 && v.코드 === prevV.코드);
+                            if (vIdx >= 0) newData[vIdx] = { ...prevV };
+                        });
+                    }
+                    return newData;
+                });
+
+                setSubstHistory(h => h.filter(item => item.id !== historyItem.id));
+            }, []);
+
+            const handleUndoAll = useCallback(() => {
+                [...substHistory].reverse().forEach(h => handleUndoAction(h));
+                setUndoUi({ state: 'closed' });
+            }, [substHistory, handleUndoAction]);
+
+            // 💡 [치환 로직] 🌟 개당 원가(unitCost) 정확한 적용 및 스냅샷 백업
+            const executeImmediateSubstitution = useCallback((key1, key2, idx2) => {
+                setProductData(prev => {
+                    const idx1 = prev.findIndex(d => d.batchKey === key1);
+                    const realIdx2 = prev.findIndex(d => d.batchKey === key2);
+                    if (idx1 < 0 || realIdx2 < 0) return prev;
+
+                    // 취소(Undo)를 위한 완벽한 이전 상태 백업 (깊은 복사)
+                    const sourceItemOrig = { ...prev[idx1], 이슈: [...prev[idx1].이슈] };
+                    const targetItemOrig = { ...prev[realIdx2], 이슈: [...prev[realIdx2].이슈] };
+
+                    let sourceItem = { ...sourceItemOrig };
+                    let targetItem = { ...targetItemOrig };
+
+                    // 자동 방향 판별
+                    if (sourceItem.로스 < 0 && targetItem.로스 > 0) { }
+                    else if (targetItem.로스 < 0 && sourceItem.로스 > 0) {
+                        let temp = sourceItem; sourceItem = targetItem; targetItem = temp;
+                    }
+                    else if (sourceItem.로스 < 0 && targetItem.로스 === 0) { }
+                    else if (targetItem.로스 < 0 && sourceItem.로스 === 0) {
+                        let temp = sourceItem; sourceItem = targetItem; targetItem = temp;
+                    }
+                    else {
+                        alert(`치환 실패!\n\n두 상품을 매칭하려면 먼저 실사 수량을 변경하여 오차(로스)를 만들어주세요.\n• 원물(차감 대상): 마이너스(-) 로스 발생\n• 소분(증가 대상): 플러스(+) 로스 발생`);
+                        return prev;
+                    }
+
+                    const sQty = Math.abs(sourceItem.로스);
+                    const tQty = Math.abs(targetItem.로스);
+                    if (tQty === 0) {
+                        alert("대체되는 상품(소분품)의 실사 수량이 입력되지 않아 치환 비율을 알 수 없습니다. 수량을 입력해주세요.");
+                        return prev;
+                    }
+
+                    // 🌟 개당 원가(Unit Cost) 정확한 계산 
+                    const transferredCost = sQty * sourceItem.단가; // 원물에서 빠지는 총 원가
+                    const unitCost = transferredCost / tQty;        // 쪼개진 소분 1개당 정확한 원가
+
+                    const targetVendorPrevStates = vendorData.filter(v => v.코드 === targetItem.코드).map(v => ({...v}));
+
+                    // 1. 원물(Source) 업데이트
+                    sourceItem.대체출고 += sQty;
+                    sourceItem.전산잔량 = sourceItem.기초 + sourceItem.입고 + sourceItem.대체입고 - sourceItem.출고 - sourceItem.대체출고;
+                    sourceItem.실사 = sourceItem.실사 === null || sourceItem.실사 === '' ? sourceItem.전산잔량 : sourceItem.실사;
+                    sourceItem.로스 = sourceItem.실사 - sourceItem.전산잔량;
+                    sourceItem.이슈.push(`🔄 -> ${targetItem.품명}`);
+                    sourceItem.무거래재고 = (sourceItem.기초 > 0 || sourceItem.입고 > 0) && sourceItem.출고 === 0 && sourceItem.실사 > 0;
+
+                    // 2. 소분품(Target) 업데이트
+                    targetItem.대체입고 += tQty;
+                    targetItem.전산잔량 = targetItem.기초 + targetItem.입고 + targetItem.대체입고 - targetItem.출고 - targetItem.대체출고;
+                    targetItem.실사 = targetItem.실사 === null || targetItem.실사 === '' ? targetItem.전산잔량 : targetItem.실사;
+                    targetItem.로스 = targetItem.실사 - targetItem.전산잔량;
+                    
+                    // 🌟 핵심: 단가를 개당 원가로 완전히 덮어쓰고, 매출원가는 "판매된 수량 * 개당원가" 로 계산
+                    targetItem.단가 = unitCost; 
+                    targetItem.매출원가 = targetItem.출고 * unitCost; 
+
+                    targetItem.이슈 = targetItem.이슈.filter(msg => !msg.includes('매입내역 없음') && !msg.includes('전산 재고 부족'));
+                    targetItem.이슈.push(`🔄 <- ${sourceItem.품명}`);
+                    targetItem.무거래재고 = (targetItem.기초 > 0 || targetItem.입고 > 0) && targetItem.출고 === 0 && targetItem.실사 > 0;
+                    
+                    // 3. 거래처별(건별) 업데이트 
+                    const updatedVendorData = vendorData.map(v => {
+                        if (v.코드 === targetItem.코드) {
+                            // 각 거래처별로 실제로 팔린 수량만큼 개당 원가를 곱해서 정확히 배분
+                            const newCogs = v.판매수량 * unitCost;
+                            const newProfit = v.판매액 - newCogs;
+                            let newIssues = v.이슈 || '';
+                            newIssues = newIssues.replace('매입내역 없음', '').replace('전산 재고 부족', '').trim();
+                            if (newIssues.endsWith(',')) newIssues = newIssues.slice(0, -1);
+                            return { ...v, 매출원가: newCogs, 이익: newProfit, 이슈: newIssues };
+                        }
+                        return v;
+                    });
+
+                    // 4. 완벽한 백업 스냅샷을 히스토리에 저장
+                    setSubstHistory(h => [...h, {
+                        id: Date.now(), 
+                        sourceKey: sourceItem.batchKey, 
+                        targetKey: targetItem.batchKey,
+                        sourceName: sourceItem.품명, 
+                        targetName: targetItem.품명, 
+                        sQty, tQty, transferredCost, 
+                        targetVendorPrevStates,
+                        sourceItemPrev: sourceItem.batchKey === sourceItemOrig.batchKey ? sourceItemOrig : targetItemOrig,
+                        targetItemPrev: targetItem.batchKey === targetItemOrig.batchKey ? targetItemOrig : sourceItemOrig,
+                    }]);
+
+                    setVendorData(updatedVendorData);
+
+                    const newData = [...prev];
+                    newData[prev.findIndex(d => d.batchKey === sourceItem.batchKey)] = sourceItem;
+                    newData[prev.findIndex(d => d.batchKey === targetItem.batchKey)] = targetItem;
+                    return newData;
+                });
+
+                // 포커스 복귀
+                setTimeout(() => {
+                    const input = document.getElementById(`actual-input-${idx2}`);
+                    if (input) { input.focus(); input.select(); }
+                }, 50);
+
+            }, [vendorData]);
+
+            // 스페이스바 & 상단 버튼 클릭 이벤트 공통 핸들러
+            const handleSpacebarLink = useCallback((targetBatchKey, targetIdx) => {
+                setLinkSourceKey(prevKey => {
+                    if (!prevKey) {
+                        setTimeout(() => {
+                            const input = document.getElementById(`actual-input-${targetIdx}`);
+                            if (input) { input.focus(); input.select(); }
+                        }, 50);
+                        return targetBatchKey; 
+                    }
+                    if (prevKey === targetBatchKey) {
+                        setTimeout(() => {
+                            const input = document.getElementById(`actual-input-${targetIdx}`);
+                            if (input) { input.focus(); input.select(); }
+                        }, 50);
+                        return null; 
+                    }
+                    
+                    setTimeout(() => executeImmediateSubstitution(prevKey, targetBatchKey, targetIdx), 0);
+                    return null; 
+                });
+            }, [executeImmediateSubstitution]);
+
+
+            const filteredData = useMemo(() => {
+                let data = viewMode === 'product' ? productData : vendorData;
+                if (filters.search) {
+                    const q = filters.search.toLowerCase();
+                    data = data.filter(d => (d.품명 && d.품명.toLowerCase().includes(q)) || (d.코드 && d.코드.toLowerCase().includes(q)) || (d.거래처 && d.거래처.toLowerCase().includes(q)));
+                }
+                if (viewMode === 'product') {
+                    if (filters.issuesOnly) data = data.filter(d => d.이슈 && d.이슈.length > 0);
+                    if (filters.noTransaction) data = data.filter(d => d.무거래재고);
+                    if (filters.excludeZeroActual) data = data.filter(d => { const act = d.실사 === '' || d.실사 === null || d.실사 === undefined ? 0 : Number(d.실사); return act !== 0; });
+                    return data;
+                }
+                if (viewMode === 'vendor') {
+                    let withSubtotals = [];
+                    if (data.length > 0) {
+                        let currentVendor = null; let subQty = 0, subRev = 0, subCogs = 0, subProfit = 0;
+                        data.forEach((item, index) => {
+                            if (currentVendor !== null && currentVendor !== item.거래처) {
+                                withSubtotals.push({
+                                    isSummary: true, 거래처: currentVendor, 품명: `[${currentVendor}] 소계 합산`, 판매수량: subQty, 판매액: subRev, 매출원가: subCogs, 이익: subProfit, 코드: '-', 이슈: ''
+                                });
+                                subQty = 0; subRev = 0; subCogs = 0; subProfit = 0;
+                            }
+                            currentVendor = item.거래처; subQty += item.판매수량; subRev += item.판매액; subCogs += item.매출원가; subProfit += item.이익;
+                            withSubtotals.push(item); 
+                            if (index === data.length - 1) {
+                                withSubtotals.push({
+                                    isSummary: true, 거래처: currentVendor, 품명: `[${currentVendor}] 소계 합산`, 판매수량: subQty, 판매액: subRev, 매출원가: subCogs, 이익: subProfit, 코드: '-', 이슈: ''
+                                });
+                            }
+                        });
+                    }
+                    if (filters.issuesOnly) withSubtotals = withSubtotals.filter(d => d.isSummary || (d.이슈 && d.이슈.length > 0));
+                    return withSubtotals;
+                }
+                return data;
+            }, [productData, vendorData, viewMode, filters]);
+
+            const handleSaveAndDownload = useCallback(() => {
+                if (filteredData.length === 0) { alert("다운로드할 데이터가 없습니다."); return; }
+                const today = new Date();
+                let exportDateStr = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
+                if (files.end && files.end.name) { const match = files.end.name.match(/20\d{6}|\d{6}/); if (match) exportDateStr = match[0]; }
+                else if (files.prev && files.prev.name) { const match = files.prev.name.match(/20\d{6}|\d{6}/); if (match) exportDateStr = match[0]; }
+                
+                let exportData = [];
+                if (viewMode === 'product') {
+                    exportData = filteredData.map(item => {
+                        const marginRate = item.매출액 ? (((item.매출액 - item.매출원가) / Math.abs(item.매출액)) * 100).toFixed(1) : 0;
+                        return {
+                            '코드': item.코드 || '', '품명(규격)': item.품명 || '', '단가': Number(item.단가) || 0, '일자': item.일자 || '', '거래처': item.거래처 || '',
+                            '재고': Number(item.기초) || 0,
+                            '입고': Number(item.입고) || 0, 
+                            '출고': Number(item.출고) || 0, 
+                            '전산잔량': Number(item.전산잔량) || 0,
+                            '기말실사(이월수량)': item.실사 === '' || item.실사 === null ? 0 : Number(item.실사),
+                            '조정': (Number(item.로스) || 0) + (Number(item.대체입고) || 0) - (Number(item.대체출고) || 0), 
+                            '매출액': Number(item.매출액) || 0, '매출원가': Number(item.매출원가) || 0,
+                            '매출이익': (Number(item.매출액) || 0) - (Number(item.매출원가) || 0), '마진율(%)': marginRate + '%',
+                            '이슈/결과': item.이슈 && item.이슈.length > 0 ? item.이슈.join(', ') : ''
+                        };
+                    });
+                } else {
+                    exportData = filteredData.map(item => {
+                        const marginRate = item.판매액 ? (((item.이익) / Math.abs(item.판매액)) * 100).toFixed(1) : 0;
+                        if (item.isSummary) {
+                            return { '거래처': item.거래처, '코드': '', '품명(규격)': item.품명, '판매수량': Number(item.판매수량) || 0, '판매액': Number(item.판매액) || 0, '매출원가': '-', '건별이익': Number(item.이익) || 0, '마진율(%)': marginRate + '%', '이슈/결과': '' };
+                        }
+                        return { '거래처': item.거래처 || '', '코드': item.코드 || '', '품명(규격)': item.품명 || '', '판매수량': Number(item.판매수량) || 0, '판매액': Number(item.판매액) || 0, '매출원가': Number(item.매출원가) || 0, '건별이익': Number(item.이익) || 0, '마진율(%)': marginRate + '%', '이슈/결과': item.이슈 || '' };
+                    });
+                }
+                const ws = XLSX.utils.json_to_sheet(exportData); const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, viewMode === 'product' ? '품목별_재고실사' : '거래처별_건별매칭');
+                XLSX.writeFile(wb, `재고_${exportDateStr}.xlsx`);
+            }, [filteredData, viewMode, files]);
+
+            const handleReportDownload = useCallback(() => {
+                if (productData.length === 0 && vendorData.length === 0) { alert("보고서를 추출할 데이터가 없습니다. 분석을 먼저 실행해주세요."); return; }
+                const today = new Date();
+                let exportDateStr = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
+                if (files.end && files.end.name) { const match = files.end.name.match(/20\d{6}|\d{6}/); if (match) exportDateStr = match[0]; }
+
+                const vendorSummaries = vendorData.filter(v => v.isSummary).sort((a, b) => b.판매액 - a.판매액).slice(0, 10);
+                const deadStocks = productData.filter(p => p.무거래재고).sort((a, b) => (b.실사 * b.단가) - (a.실사 * a.단가)).slice(0, 10);
+
+                const wsData = [
+                    ['■ 경영자 요약 보고서 (Executive Summary)'], ['분석 대상 기간:', analysisPeriod], ['보고서 추출일:', exportDateStr], [],
+                    ['1. 종합 손익 현황'], ['항목', '금액', '비율/수량', '비고'],
+                    ['당기 매출액', kpis.revenue, '-', ''], ['당기 매입액', kpis.totalInAmt, '-', ''],
+                    ['매출 원가', kpis.cogs, kpis.cogsRate.toFixed(1) + '%', '원가율'], ['영업 이익', kpis.opProfit, kpis.opProfitRate.toFixed(1) + '%', '이익률'],
+                    ['실사 조정액(로스)', kpis.lossAmt, kpis.lossQty + '개', ''], ['최종 실수익', kpis.profit, '-', '영업이익 + 조정액'], [],
+                    ['2. 재고 자산 현황'], ['항목', '금액', '수량', '비고'],
+                    ['기말 재고 자산', kpis.endingStockAmt, '-', ''], ['재고 증감', kpis.stockDiffAmt, kpis.stockDiffQty, '기초 대비 증감'], [],
+                    ['3. 주요 거래처 매출 TOP 10'], ['순위', '거래처명', '매출액', '매출원가', '영업이익', '마진율']
+                ];
+
+                vendorSummaries.forEach((v, i) => { const margin = v.판매액 ? ((v.이익 / Math.abs(v.판매액)) * 100).toFixed(1) + '%' : '0%'; wsData.push([i + 1, v.거래처, v.판매액, v.매출원가, v.이익, margin]); });
+                wsData.push([]); wsData.push(['4. 주요 무거래(악성) 재고 TOP 10 (당기 판매 0건)']); wsData.push(['순위', '코드', '품명', '단가', '잔여수량', '묶인자산액']);
+                deadStocks.forEach((d, i) => { wsData.push([i + 1, d.코드, d.품명, d.단가, d.실사, d.실사 * d.단가]); });
+
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                ws['!cols'] = [{wch: 25}, {wch: 20}, {wch: 15}, {wch: 15}, {wch: 15}, {wch: 15}];
+                const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '경영자요약보고서');
+                XLSX.writeFile(wb, `경영자보고서_${exportDateStr}.xlsx`);
+            }, [productData, vendorData, analysisPeriod, kpis, files]);
+
+            // Ctrl+Z 기능 완전히 삭제 (전역 키 이벤트 정리)
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if (e.key === 'F8') { e.preventDefault(); if (productData.length > 0 || vendorData.length > 0) handleSaveAndDownload(); }
+                    if (e.key === 'F7') { e.preventDefault(); if (productData.length > 0 || vendorData.length > 0) handleReportDownload(); }
+                    if (e.key === 'Escape') {
+                        if (linkSourceKey) {
+                            setLinkSourceKey(null);
+                            if (focusedInputRef.current.key) {
+                                setTimeout(() => {
+                                    const input = document.getElementById(`actual-input-${focusedInputRef.current.idx}`);
+                                    if (input) { input.focus(); input.select(); }
+                                }, 50);
+                            }
+                        }
+                        setUndoUi({ state: 'closed' });
+                    }
+                    if (e.key === 'Enter') {
+                        const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+                        if (activeTag !== 'input' && activeTag !== 'textarea') {
+                            if ((files.prev || files.in || files.out || files.end) && !isProcessing && activeMenu === 'single') runAnalysis();
+                        }
+                    }
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [handleSaveAndDownload, handleReportDownload, productData, vendorData, files, isProcessing, activeMenu, linkSourceKey]);
+
+            const parseTrendExcel = (file) => {
+                return new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => { try { const data = new Uint8Array(e.target.result); const wb = XLSX.read(data, {type: 'array'}); const ws = wb.Sheets[wb.SheetNames[0]]; resolve(XLSX.utils.sheet_to_json(ws)); } catch (err) { resolve([]); } };
+                    reader.readAsArrayBuffer(file);
+                });
+            };
+
+            const handleTrendFilesDrop = async (e) => {
+                e.preventDefault();
+                let selectedFiles = [];
+                if (e.dataTransfer) selectedFiles = Array.from(e.dataTransfer.files);
+                else if (e.target.files) selectedFiles = Array.from(e.target.files);
+                if (selectedFiles.length === 0) return;
+
+                setIsProcessing(true);
+                try {
+                    const parsedTrend = [...trendData];
+                    for (let file of selectedFiles) {
+                        const dateMatch = file.name.match(/20\d{6}|\d{6}/);
+                        const dateStr = dateMatch ? dateMatch[0] : file.name;
+                        let monthLabel = dateStr;
+                        if (dateStr.length === 8) monthLabel = `${dateStr.substring(0,4)}-${dateStr.substring(4,6)}`;
+                        else if (dateStr.length === 6) monthLabel = `20${dateStr.substring(0,2)}-${dateStr.substring(2,4)}`;
+
+                        const data = await parseTrendExcel(file);
+                        if (data.length === 0) continue;
+
+                        let rev = 0, prof = 0, lossAmt = 0;
+                        data.forEach(row => {
+                            rev += Number(row['매출액']) || 0; prof += Number(row['매출이익']) || 0;
+                            const loss = Number(row['조정']) || 0; if (loss < 0) lossAmt += Math.abs(loss);
+                        });
+                        
+                        const existingIdx = parsedTrend.findIndex(t => t.monthLabel === monthLabel);
+                        if (existingIdx >= 0) parsedTrend[existingIdx] = { monthLabel, rev, prof, lossAmt, filename: file.name };
+                        else parsedTrend.push({ monthLabel, rev, prof, lossAmt, filename: file.name });
+                    }
+                    parsedTrend.sort((a,b) => a.monthLabel.localeCompare(b.monthLabel));
+                    setTrendData(parsedTrend);
+                } catch (err) { alert('트렌드 분석 파일 파싱 중 오류가 발생했습니다. (F8로 다운받은 파일만 지원합니다)'); } 
+                finally { setIsProcessing(false); }
+            };
+
+            useEffect(() => {
+                if (activeMenu === 'trend' && trendData.length > 0 && chartRef.current) {
+                    if (chartInstance.current) chartInstance.current.destroy();
+                    const ctx = chartRef.current.getContext('2d');
+                    chartInstance.current = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: trendData.map(d => d.monthLabel),
+                            datasets: [
+                                { label: '매출이익', data: trendData.map(d => d.prof), type: 'line', borderColor: '#f59e0b', backgroundColor: '#f59e0b', borderWidth: 3, pointBackgroundColor: '#fff', pointBorderWidth: 2, pointRadius: 4, tension: 0.3, yAxisID: 'y', order: 1 },
+                                { label: '매출액', data: trendData.map(d => d.rev), backgroundColor: 'rgba(99, 102, 241, 0.8)', borderRadius: 4, yAxisID: 'y', order: 2 },
+                                { label: '로스(손실)액', data: trendData.map(d => d.lossAmt), backgroundColor: 'rgba(239, 68, 68, 0.8)', borderRadius: 4, yAxisID: 'y1', order: 3 }
+                            ]
+                        },
+                        options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { tooltip: { callbacks: { label: function(context) { let label = context.dataset.label || ''; if (label) label += ': '; if (context.parsed.y !== null) label += '₩' + formatMoney(context.parsed.y); return label; } } } }, scales: { y: { type: 'linear', display: true, position: 'left', title: { display: true, text: '매출/이익 (₩)'} }, y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: '로스액 (₩)'} } } }
+                    });
+                }
+            }, [trendData, activeMenu]);
+
+            const FileBox = ({ title, type, icon, color }) => {
+                const inputRef = useRef(null); const [isDragging, setIsDragging] = useState(false);
+                const handleBoxDrop = (e) => { 
+                    e.preventDefault(); e.stopPropagation(); setIsDragging(false); 
+                    const droppedFiles = Array.from(e.dataTransfer.files); 
+                    if (droppedFiles.length > 1) autoAssignFiles(droppedFiles); 
+                    else if (droppedFiles.length === 1) setFiles(prev => ({ ...prev, [type]: droppedFiles[0] })); 
+                    window.focus(); 
+                };
+                return (
+                    <div className={`relative border-2 border-dashed rounded-xl p-4 text-center bg-white transition-all cursor-pointer flex flex-col items-center justify-center min-h-[120px] z-10 ${isDragging ? `border-${color}-500 bg-${color}-50 scale-105 shadow-md` : (files[type] ? `border-${color}-500 bg-${color}-50` : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50')}`} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }} onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); }} onDrop={handleBoxDrop} onClick={() => inputRef.current.click()}>
+                        <input type="file" ref={inputRef} accept=".xlsx, .xls, .csv" onChange={(e) => { const selectedFiles = Array.from(e.target.files); if (selectedFiles.length > 1) autoAssignFiles(selectedFiles); else if (selectedFiles.length === 1) setFiles(prev => ({ ...prev, [type]: selectedFiles[0] })); e.target.value = ''; }} className="hidden" multiple />
+                        <i className={`fas ${icon} text-2xl mb-2 ${files[type] ? `text-${color}-600` : 'text-gray-400'}`}></i><div className="font-bold text-sm text-gray-700">{title}</div>
+                        <div className="text-xs text-gray-500 mt-1 w-full px-2 break-all">{files[type] ? <span className={`text-${color}-700 font-semibold line-clamp-2`}>{files[type].name}</span> : '클릭 / 드래그'}</div>
+                    </div>
+                );
+            };
+
+            return (
+                <div className="max-w-7xl mx-auto p-4 md:p-6 pb-20 relative min-h-screen" onDragOver={(e) => { e.preventDefault(); setIsGlobalDragging(true); }} onDragLeave={(e) => { e.preventDefault(); setIsGlobalDragging(false); }} onDrop={handleGlobalDrop}>
+                    
+                    {/* 실행 취소 전체 히스토리 리스트 모달 */}
+                    {undoUi.state === 'list' && (
+                        <div className="fixed inset-0 z-[200] bg-gray-900 bg-opacity-70 flex items-center justify-center p-4 transition-opacity">
+                            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col modal-bounce">
+                                <div className="bg-gray-900 p-5 flex justify-between items-center text-white">
+                                    <h3 className="font-black text-lg"><i className="fas fa-history text-yellow-400 mr-2"></i>치환 작업 히스토리 목록</h3>
+                                    <button onClick={() => setUndoUi({ state: 'closed' })} className="text-gray-400 hover:text-white transition"><i className="fas fa-times text-2xl"></i></button>
+                                </div>
+                                <div className="p-6 overflow-y-auto max-h-[60vh] bg-gray-50">
+                                    {substHistory.length === 0 ? (
+                                        <div className="text-center text-gray-500 py-10 font-medium">치환 내역이 없습니다.</div>
+                                    ) : (
+                                        <table className="w-full text-sm text-left border-collapse bg-white rounded-lg shadow-sm overflow-hidden">
+                                            <thead className="bg-gray-100 text-gray-600">
+                                                <tr>
+                                                    <th className="p-3 font-bold border-b">원물 (차감 내역)</th>
+                                                    <th className="p-3 font-bold border-b">소분/대체 (증가 내역)</th>
+                                                    <th className="p-3 text-right font-bold border-b">작업</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-100">
+                                                {[...substHistory].reverse().map(h => (
+                                                    <tr key={h.id} className="hover:bg-blue-50 transition-colors">
+                                                        <td className="p-3">
+                                                            <span className="inline-block w-8 text-red-500 font-black">-{h.sQty}</span> 
+                                                            <span className="font-medium text-gray-800">{h.sourceName}</span>
+                                                        </td>
+                                                        <td className="p-3">
+                                                            <span className="inline-block w-8 text-blue-500 font-black">+{h.tQty}</span> 
+                                                            <span className="font-medium text-gray-800">{h.targetName}</span>
+                                                        </td>
+                                                        <td className="p-3 text-right">
+                                                            <button onClick={() => handleUndoAction(h)} className="bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded hover:bg-gray-100 hover:text-red-600 text-xs font-bold transition shadow-sm">개별 취소</button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    )}
+                                </div>
+                                <div className="bg-white p-4 border-t border-gray-200 flex justify-between items-center">
+                                    {substHistory.length > 0 ? (
+                                        <button onClick={handleUndoAll} className="text-red-600 font-bold hover:text-red-800 hover:bg-red-50 px-4 py-2 rounded-lg text-sm transition"><i className="fas fa-trash-alt mr-2"></i>모두 취소</button>
+                                    ) : <div></div>}
+                                    <button onClick={() => setUndoUi({ state: 'closed' })} className="bg-gray-800 text-white px-8 py-2.5 rounded-xl font-bold hover:bg-gray-900 shadow-md transition">닫기</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {isProcessing && (
+                        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-gray-900 bg-opacity-70 backdrop-blur-sm">
+                            <i className="fas fa-circle-notch fa-spin text-6xl text-indigo-400 mb-4"></i><h2 className="text-2xl font-black text-white drop-shadow-md">데이터 분석 중...</h2>
+                        </div>
+                    )}
+
+                    {isGlobalDragging && (
+                        <div className="absolute inset-0 z-[60] bg-indigo-600 bg-opacity-10 backdrop-blur-sm border-4 border-dashed border-indigo-500 rounded-2xl flex flex-col items-center justify-center pointer-events-none transition-all">
+                            <i className="fas fa-file-import text-6xl text-indigo-600 mb-4 animate-bounce"></i><h2 className="text-2xl md:text-4xl font-black text-indigo-800 drop-shadow-md">파일 드롭 자동 인식</h2>
+                        </div>
+                    )}
+
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-6 border-b border-gray-200 pb-4">
+                        <div>
+                            <h1 className="text-2xl md:text-3xl font-black text-gray-800 flex items-center tracking-tight">
+                                <span className="text-indigo-600 mr-2">oneapp</span> Insight
+                            </h1>
+                            <p className="text-gray-500 text-sm mt-1 font-semibold flex items-center">
+                                유통사 통합관리 시스템 <span className="text-purple-500 ml-2 text-xs px-2 py-0.5 bg-purple-50 rounded-full border border-purple-200 font-bold shadow-sm">V3.0 (개당 정밀원가 치환)</span>
+                            </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-3 mt-4 md:mt-0">
+                            <div className="flex bg-gray-100 p-1 rounded-lg shadow-inner">
+                                <button onClick={() => setActiveMenu('single')} className={`px-4 py-1.5 text-sm font-bold rounded-md transition ${activeMenu === 'single' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                                    <i className="fas fa-calculator mr-2 text-indigo-500"></i>당기 결산
+                                </button>
+                                <button onClick={() => setActiveMenu('trend')} className={`px-4 py-1.5 text-sm font-bold rounded-md transition ${activeMenu === 'trend' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                                    <i className="fas fa-chart-line mr-2 text-emerald-500"></i>트렌드 대시보드
+                                </button>
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={() => setShowSettings(!showSettings)} className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded text-sm font-bold shadow-sm hover:bg-gray-50 transition">매핑설정</button>
+                                <button onClick={() => setShowGuide(true)} className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded text-sm font-bold shadow-sm hover:bg-gray-50 transition">가이드</button>
+                                <button onClick={loadDemoData} className="px-3 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded text-sm font-bold shadow-sm hover:bg-indigo-100 transition">
+                                    <i className="fas fa-play mr-1"></i>데모 테스트
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {showSettings && (
+                        <div className="mb-6 bg-white border-2 border-indigo-200 p-6 rounded-xl shadow-lg relative overflow-hidden z-10 animate-[fadeIn_0.3s_ease-out]">
+                            <div className="absolute top-0 left-0 w-2 h-full bg-indigo-500"></div>
+                            <div className="flex justify-between items-center mb-5">
+                                <div><h3 className="text-lg font-bold text-gray-800"><i className="fas fa-sitemap text-indigo-500 mr-2"></i>엑셀 열(Header) 인식 규칙 설정</h3></div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-100">
+                                {Object.entries({ code: '품목코드 (필수)', name: '품목명 (필수)', spec: '규격 열 (선택)', qty: '수량/실사 (필수)', price: '매입단가 (필수)', date: '일자 (필수)', vendor: '거래처명, 거래처 (선택)', excludeVendor: '제외 거래처(창고이동 등)' }).map(([key, label]) => (
+                                    <div key={key} className="flex flex-col">
+                                        <label className={`text-xs font-bold mb-1 ${key === 'excludeVendor' ? 'text-red-600' : 'text-gray-600'}`}>{key === 'excludeVendor' && <i className="fas fa-ban mr-1"></i>}{label}</label>
+                                        <input type="text" value={mappings[key]} onChange={(e) => setMappings({...mappings, [key]: e.target.value})} className={`border rounded-md px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 shadow-sm ${key === 'excludeVendor' ? 'border-red-300 focus:ring-red-400 bg-red-50 text-red-800' : 'border-gray-300 focus:ring-indigo-400 bg-white'}`} />
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="mt-4 flex justify-end items-center gap-4">
+                                <button onClick={() => setMappings(defaultMappings)} className="text-sm text-gray-500 hover:text-red-500 font-bold transition-colors">기본값 복원</button>
+                                <button onClick={saveMappings} className="bg-gray-800 text-white px-6 py-2 rounded-lg text-sm font-bold hover:bg-gray-900 shadow-md">설정 저장 및 닫기</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {activeMenu === 'single' && (
+                        <div className="fade-in space-y-6">
+                            {error && <div className="bg-red-50 text-red-600 p-4 rounded-xl font-bold flex items-center border border-red-200"><i className="fas fa-exclamation-triangle mr-3 text-xl"></i>{error}</div>}
+
+                            <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+                                <div className="flex justify-between items-center mb-4">
+                                    <span className="text-base font-bold text-gray-800">파일 업로드(선택/드래그)</span>
+                                    <div className="flex gap-2 items-center">
+                                        {(files.prev || files.in || files.out || files.end) && <button onClick={handleResetFiles} className="px-3 py-1.5 bg-gray-100 text-gray-500 rounded text-xs font-bold hover:bg-gray-200 transition">초기화</button>}
+                                        <button onClick={() => runAnalysis()} disabled={isProcessing || (!files.in && !files.out && !files.prev && !files.end && Object.keys(rawJson.in).length === 0)} className={`px-6 py-2 rounded-lg text-white font-bold text-sm shadow-md transition flex items-center ${isProcessing || (!files.in && !files.out && !files.prev && !files.end && Object.keys(rawJson.in).length === 0) ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+                                            {isProcessing ? '처리중...' : <>분석 실행 <span className="ml-2 px-1.5 py-0.5 bg-indigo-800 text-indigo-200 text-[10px] rounded border border-indigo-400 opacity-80">Enter</span></>}
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 relative z-20">
+                                    <FileBox title="1. 기초 재고" type="prev" icon="fa-history" color="blue" />
+                                    <FileBox title="2. 당기 매입" type="in" icon="fa-truck-loading" color="emerald" />
+                                    <FileBox title="3. 당기 매출" type="out" icon="fa-receipt" color="indigo" />
+                                    <FileBox title="4. 실사 (옵션)" type="end" icon="fa-clipboard-check" color="purple" />
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex flex-col justify-between">
+                                    <div className="text-gray-500 text-sm font-bold mb-2">실수익(조정액 포함)</div>
+                                    <div className="text-3xl font-black text-gray-800">{formatAbsNumber(kpis.profit)}</div>
+                                    <div className="text-xs text-gray-400 mt-2 font-medium">영업이익 {formatAbsNumber(kpis.opProfit)} / 이익률 {kpis.opProfitRate.toFixed(1)}%</div>
+                                </div>
+                                <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex flex-col justify-between">
+                                    <div className="text-gray-500 text-sm font-bold mb-2">당기매출액</div>
+                                    <div className="text-2xl font-black text-gray-800">{formatAbsNumber(kpis.revenue)}</div>
+                                    <div className="text-xs text-gray-400 mt-2 font-medium">매입액 {formatAbsNumber(kpis.totalInAmt)} / 원가율 {kpis.cogsRate.toFixed(1)}%</div>
+                                </div>
+                                <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex flex-col justify-between">
+                                    <div className="text-gray-500 text-sm font-bold mb-2">재고현황</div>
+                                    <div className="text-2xl font-black text-gray-800">{formatAbsNumber(kpis.endingStockAmt)}</div>
+                                    <div className="text-xs text-gray-400 mt-2 font-medium">증감수량 {formatAbsNumber(kpis.stockDiffQty)} / 증감액 {formatAbsNumber(kpis.stockDiffAmt)}</div>
+                                </div>
+                                <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 flex flex-col justify-between relative">
+                                    <div className="text-gray-500 text-sm font-bold mb-2">실사조정액</div>
+                                    <div className={`text-2xl font-black ${kpis.lossAmt < 0 ? 'text-red-600' : 'text-blue-600'}`}>
+                                        {kpis.lossAmt > 0 ? '+' : ''}₩{formatAbsNumber(kpis.lossAmt)}
+                                    </div>
+                                    <div className="text-xs text-gray-400 mt-2 font-medium">조정수량 <span className={kpis.lossQty < 0 ? 'text-red-500' : 'text-blue-500'}>{kpis.lossQty > 0 ? '+' : ''}{formatAbsNumber(kpis.lossQty)}</span> / 조정액 <span className={kpis.lossAmt < 0 ? 'text-red-500' : 'text-blue-500'}>{kpis.lossAmt > 0 ? '+' : ''}₩{formatAbsNumber(kpis.lossAmt)}</span></div>
+                                </div>
+                            </div>
+
+                            {/* 미니 토글: 이슈 요약 리포트 */}
+                            {(insights.lowMargin.length > 0 || insights.highLoss.length > 0) && (
+                                <div className="mb-6 -mt-2">
+                                    <div className="flex justify-end">
+                                        <button onClick={() => setShowInsights(!showInsights)} className="flex items-center text-xs font-bold text-gray-500 hover:text-gray-700 bg-white border border-gray-200 px-3 py-1.5 rounded-full shadow-sm transition-colors">
+                                            <i className="fas fa-lightbulb text-yellow-500 mr-1.5"></i>이슈 품목 자동 분석 {showInsights ? '닫기' : '보기'} <i className={`fas fa-chevron-${showInsights ? 'up' : 'down'} ml-1.5`}></i>
+                                        </button>
+                                    </div>
+                                    {showInsights && (
+                                        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm fade-in">
+                                            {insights.lowMargin.length > 0 && (
+                                                <div>
+                                                    <h4 className="text-orange-600 text-xs font-bold mb-2 flex items-center border-b pb-1"><i className="fas fa-exclamation-circle mr-1.5"></i>마진율 10% 미만 품목</h4>
+                                                    <ul className="space-y-1">{insights.lowMargin.map((item, i) => <li key={i} className="text-xs flex justify-between items-center bg-orange-50 px-2 py-1 rounded text-gray-700"><span className="truncate pr-2">{item.품명}</span><span className="text-orange-600 font-bold shrink-0">{((item.매출액 - item.매출원가) / item.매출액 * 100).toFixed(1)}%</span></li>)}</ul>
+                                                </div>
+                                            )}
+                                            {insights.highLoss.length > 0 && (
+                                                <div>
+                                                    <h4 className="text-red-500 text-xs font-bold mb-2 flex items-center border-b pb-1"><i className="fas fa-exclamation-triangle mr-1.5"></i>조정(Loss) 수량 과다 품목</h4>
+                                                    <ul className="space-y-1">{insights.highLoss.map((item, i) => <li key={i} className="text-xs flex justify-between items-center bg-red-50 px-2 py-1 rounded text-gray-700"><span className="truncate pr-2">{item.품명}</span><span className="text-red-600 font-bold shrink-0">{item.로스}개</span></li>)}</ul>
+                                                </div>
+                                            )}
+                                            <div className="col-span-1 md:col-span-2 text-[10px] text-gray-400 mt-1">* 박스/망 단위 매입 후 낱개 소분 판매 시 수량 오차(로스)가 크게 나타날 수 있습니다. 위 데이터는 참고용으로만 활용하세요.</div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {(productData.length > 0 || vendorData.length > 0) && (
+                                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden fade-in">
+                                    <div className="p-4 bg-gray-50 border-b border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                        <div className="flex bg-white rounded-lg shadow-sm border border-gray-200 p-1">
+                                            <button onClick={() => setViewMode('product')} className={`px-4 py-1.5 text-sm font-bold rounded-md transition ${viewMode === 'product' ? 'bg-indigo-50 text-indigo-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>품목별(원가)</button>
+                                            <button onClick={() => setViewMode('vendor')} className={`px-4 py-1.5 text-sm font-bold rounded-md transition ${viewMode === 'vendor' ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>거래처별(건별)</button>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2 items-center w-full md:w-auto">
+                                            {viewMode === 'product' && (
+                                                <div className="flex items-center gap-2 mr-2">
+                                                    <div className="flex items-center bg-white rounded-lg border border-purple-200 shadow-sm overflow-hidden">
+                                                        <button 
+                                                            onClick={() => {
+                                                                const { key, idx } = focusedInputRef.current;
+                                                                if (!key) {
+                                                                    alert("치환할 상품의 실사 입력칸을 먼저 클릭(선택)해주세요.");
+                                                                    return;
+                                                                }
+                                                                handleSpacebarLink(key, idx);
+                                                            }}
+                                                            className={`px-4 py-2 text-xs font-bold transition flex items-center 
+                                                                ${linkSourceKey ? 'bg-purple-600 text-white animate-pulse' : 'text-purple-700 hover:bg-purple-50'}`}
+                                                        >
+                                                            <i className="fas fa-exchange-alt mr-1.5"></i>
+                                                            {linkSourceKey ? '치환 완료' : '치환 시작'} 
+                                                            <span className={`ml-1 px-1 py-0.5 rounded text-[10px] border ${linkSourceKey ? 'bg-purple-700 border-purple-500 text-purple-200' : 'bg-gray-100 border-gray-200 text-gray-500'}`}>Space</span>
+                                                        </button>
+                                                    </div>
+
+                                                    {substHistory.length > 0 && (
+                                                        <button 
+                                                            onClick={() => setUndoUi({ state: 'list' })}
+                                                            className="px-4 py-2 rounded-lg border border-red-200 text-xs font-bold bg-red-50 text-red-600 hover:bg-red-100 transition shadow-sm flex items-center"
+                                                            title="치환 작업 히스토리 목록 보기"
+                                                        >
+                                                            <i className="fas fa-undo mr-1.5 animate-spin-reverse-slow"></i>치환 취소 ({substHistory.length})
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {viewMode === 'product' && <button onClick={() => setFilters({...filters, noTransaction: !filters.noTransaction})} className={`px-3 py-1.5 rounded border text-xs font-bold transition ${filters.noTransaction ? 'bg-orange-50 text-orange-700 border-orange-200 shadow-inner' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>무거래재고</button>}
+                                            <button onClick={() => setFilters({...filters, issuesOnly: !filters.issuesOnly})} className={`px-3 py-1.5 rounded border text-xs font-bold transition ${filters.issuesOnly ? 'bg-red-50 text-red-700 border-red-200 shadow-inner' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>이슈/결과</button>
+                                            {viewMode === 'product' && <button onClick={() => setFilters({...filters, excludeZeroActual: !filters.excludeZeroActual})} className={`px-3 py-1.5 rounded border text-xs font-bold transition ${filters.excludeZeroActual ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-inner' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>실사 0 제외</button>}
+                                            <div className="relative flex-1 md:w-48 lg:w-56">
+                                                <input type="text" placeholder="검색..." value={filters.search} onChange={e => setFilters({...filters, search: e.target.value})} className="w-full pl-3 pr-8 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-medium placeholder-gray-400" />
+                                            </div>
+                                            <button onClick={handleReportDownload} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-bold shadow transition flex items-center whitespace-nowrap">엑셀 보고서 <span className="ml-1 opacity-60 font-normal">[F7]</span></button>
+                                            <button onClick={handleSaveAndDownload} className="px-3 py-1.5 bg-gray-800 hover:bg-gray-900 text-white rounded text-xs font-bold shadow transition flex items-center whitespace-nowrap">재고 <span className="ml-1 opacity-60 font-normal">[F8]</span></button>
+                                        </div>
+                                    </div>
+
+                                    <div className="table-container">
+                                        <table className="w-full text-left border-collapse whitespace-nowrap text-sm">
+                                            <thead className="bg-gray-100 text-gray-600 font-bold uppercase tracking-wider text-[11px]">
+                                                {viewMode === 'product' ? (
+                                                    <tr>
+                                                        <th className="p-3 border-b sticky left-0 bg-gray-100 z-20 shadow-[1px_0_0_rgba(0,0,0,0.1)]">코드/품명(규격)</th>
+                                                        <th className="p-3 border-b text-right bg-gray-50">재고</th>
+                                                        <th className="p-3 border-b text-right bg-emerald-50 text-emerald-700">입고</th>
+                                                        <th className="p-3 border-b text-right bg-blue-50 text-blue-700">출고</th>
+                                                        <th className="p-3 border-b text-right bg-purple-50 text-purple-700">실사(Space/버튼 치환)</th>
+                                                        <th className="p-3 border-b text-right bg-red-50 text-red-600 border-r border-gray-200">조정</th>
+                                                        <th className="p-3 border-b pl-5">단가/일자/거래처</th>
+                                                        <th className="p-3 border-b text-right">매출액</th>
+                                                        <th className="p-3 border-b text-right">매출원가</th>
+                                                        <th className="p-3 border-b text-right text-indigo-600">매출이익</th>
+                                                        <th className="p-3 border-b text-right">마진율(%)</th>
+                                                        <th className="p-3 border-b text-center">이슈/결과</th>
+                                                    </tr>
+                                                ) : (
+                                                    <tr>
+                                                        <th className="p-3 border-b text-emerald-700">거래처명</th>
+                                                        <th className="p-3 border-b">코드/품명(규격)</th>
+                                                        <th className="p-3 border-b text-right bg-blue-50">판매수량</th>
+                                                        <th className="p-3 border-b text-right bg-blue-50">판매액</th>
+                                                        <th className="p-3 border-b text-right bg-orange-50 text-orange-700">매출원가</th>
+                                                        <th className="p-3 border-b text-right text-indigo-600 bg-indigo-50">건별이익</th>
+                                                        <th className="p-3 border-b text-right">마진율(%)</th>
+                                                        <th className="p-3 border-b text-center">이슈/결과</th>
+                                                    </tr>
+                                                )}
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-100">
+                                                {filteredData.length === 0 ? (
+                                                    <tr><td colSpan="12" className="p-8 text-center text-gray-400">표시할 데이터가 없습니다.</td></tr>
+                                                ) : viewMode === 'product' ? (
+                                                    filteredData.map((item, idx) => (
+                                                        <ProductRow 
+                                                            key={item.batchKey} 
+                                                            item={item} 
+                                                            idx={idx} 
+                                                            isLinked={linkSourceKey === item.batchKey} 
+                                                            onStockChange={handleManualStockChange} 
+                                                            onSpacebar={handleSpacebarLink}
+                                                            onFocusInput={handleFocusInput}
+                                                        />
+                                                    ))
+                                                ) : (
+                                                    filteredData.map((item, idx) => (
+                                                        <VendorRow key={`${item.거래처}-${item.코드}-${idx}`} item={item} />
+                                                    ))
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {activeMenu === 'trend' && (
+                        <div className="fade-in space-y-6">
+                            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4">
+                                    <div>
+                                        <h2 className="text-xl font-black text-gray-800 mb-1"><i className="fas fa-chart-area text-emerald-500 mr-2"></i>기간별 트렌드 대시보드</h2>
+                                        <p className="text-sm text-gray-500 font-medium">과거에 마감 후 다운로드한 엑셀 파일(<span className="font-bold text-gray-700">재고_YYYYMMDD.xlsx</span>)들을 한 번에 여러 개 선택해서 올리면 흐름이 나타납니다.</p>
+                                    </div>
+                                    <div className="mt-4 md:mt-0 relative">
+                                        <input type="file" id="trendFileUploader" multiple accept=".xlsx" className="hidden" onChange={handleTrendFilesDrop} />
+                                        <label htmlFor="trendFileUploader" className="cursor-pointer bg-emerald-50 text-emerald-700 border-2 border-emerald-200 hover:bg-emerald-100 font-bold px-6 py-3 rounded-xl transition shadow-sm inline-flex items-center">
+                                            <i className="fas fa-folder-open mr-2 text-xl"></i> 과거 마감파일 묶음 업로드
+                                        </label>
+                                    </div>
+                                </div>
+                                
+                                {trendData.length > 0 ? (
+                                    <div className="mt-6 border border-gray-100 rounded-xl p-4 bg-gray-50">
+                                        <div className="h-[400px] w-full relative">
+                                            <canvas ref={chartRef}></canvas>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="mt-6 border-2 border-dashed border-gray-300 rounded-xl p-12 text-center bg-gray-50 text-gray-400">
+                                        <i className="fas fa-chart-bar text-6xl mb-4 text-gray-300"></i>
+                                        <p className="font-bold text-lg text-gray-600">데이터가 없습니다.</p>
+                                        <p className="text-sm mt-2">우측 상단의 버튼을 눌러 여러 달의 마감 엑셀 파일을 올려주세요.</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {trendData.length > 0 && (
+                                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                                    <h3 className="font-bold text-gray-800 mb-4 text-lg">월별 세부 수치 요약</h3>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left border-collapse text-sm">
+                                            <thead className="bg-gray-50 border-y border-gray-200 text-gray-600">
+                                                <tr>
+                                                    <th className="p-3 font-bold">월/기간 (파일명)</th>
+                                                    <th className="p-3 font-bold text-right text-indigo-600">매출액</th>
+                                                    <th className="p-3 font-bold text-right text-emerald-600">매출이익</th>
+                                                    <th className="p-3 font-bold text-right">이익률(%)</th>
+                                                    <th className="p-3 font-bold text-right text-red-500">로스손실액</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-100">
+                                                {trendData.map((d, i) => {
+                                                    const rate = d.rev ? ((d.prof / d.rev) * 100).toFixed(1) : 0;
+                                                    return (
+                                                        <tr key={i} className="hover:bg-gray-50 transition">
+                                                            <td className="p-3">
+                                                                <div className="font-bold text-gray-800">{d.monthLabel}</div>
+                                                                <div className="text-[10px] text-gray-400">{d.filename}</div>
+                                                            </td>
+                                                            <td className="p-3 text-right font-bold text-gray-700">₩{formatMoney(d.rev)}</td>
+                                                            <td className="p-3 text-right font-black text-emerald-600">₩{formatMoney(d.prof)}</td>
+                                                            <td className="p-3 text-right font-bold text-orange-500">{rate}%</td>
+                                                            <td className="p-3 text-right font-bold text-red-500">₩{formatMoney(d.lossAmt)}</td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* 가이드 모달 */}
+                    {showGuide && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900 bg-opacity-60 transition-opacity">
+                            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col animate-[fadeIn_0.3s_ease-out]">
+                                <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 flex justify-between items-center text-white shrink-0 shadow-md relative overflow-hidden">
+                                    <div className="absolute right-0 top-0 opacity-10 text-9xl transform translate-x-4 -translate-y-4"><i className="fas fa-book-open"></i></div>
+                                    <h2 className="text-xl md:text-2xl font-black flex items-center relative z-10">
+                                        <i className="fas fa-book-reader mr-3 text-3xl"></i>
+                                        유통사 정밀 경영 결산 100% 활용 가이드
+                                    </h2>
+                                    <button onClick={() => setShowGuide(false)} className="text-white hover:text-indigo-200 transition-colors relative z-10">
+                                        <i className="fas fa-times text-2xl"></i>
+                                    </button>
+                                </div>
+                                <div className="p-6 md:p-8 overflow-y-auto bg-gray-50 text-gray-800 space-y-6 md:space-y-8">
+                                    <section className="bg-white p-5 md:p-6 rounded-xl shadow-sm border border-gray-200">
+                                        <h3 className="text-lg md:text-xl font-black text-orange-500 mb-4 border-b-2 border-orange-100 pb-2 flex items-center">
+                                            <i className="fas fa-bolt mr-2"></i> 실무자를 위한 초간편 기능
+                                        </h3>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                            <div className="bg-white p-4 rounded-lg border-2 border-orange-100 hover:border-orange-300 transition-colors">
+                                                <div className="text-orange-500 mb-2"><i className="fas fa-keyboard text-2xl"></i></div>
+                                                <h4 className="font-bold text-gray-800 text-sm mb-2">V3.0: 상단 치환 버튼과 포커스</h4>
+                                                <p className="text-xs text-gray-600 leading-relaxed mb-2">
+                                                    실사 입력칸을 선택하고 <strong>상단 [치환 시작] 버튼 (또는 Space 키)</strong>을 누르세요. 
+                                                    매치할 상품으로 이동해 수량을 바꾼 뒤 <strong>[치환 완료]</strong> 버튼을 누르면 개당 원가가 즉시 이전됩니다.
+                                                    작업 후에도 커서가 빠지지 않아 연속 타이핑이 가능합니다.
+                                                </p>
+                                                <p className="text-[11px] text-indigo-600 font-bold bg-indigo-50 p-1.5 rounded"><i className="fas fa-undo mr-1"></i>상단 [치환 취소] 버튼을 눌러 언제든 실행 취소가 가능합니다.</p>
+                                            </div>
+                                            <div className="bg-white p-4 rounded-lg border-2 border-orange-100 hover:border-orange-300 transition-colors">
+                                                <div className="text-orange-500 mb-2"><i className="fas fa-file-export text-2xl"></i></div>
+                                                <h4 className="font-bold text-gray-800 text-sm mb-2">단축키 [Enter] 와 [F8]</h4>
+                                                <p className="text-xs text-gray-600 leading-relaxed">파일 업로드 후 <strong>Enter 키</strong>로 즉시 분석하고, <strong>F8 키</strong>를 눌러 엑셀 보고서로 다운로드합니다.</p>
+                                            </div>
+                                        </div>
+                                    </section>
+                                </div>
+                                <div className="bg-gray-100 p-5 border-t border-gray-200 flex justify-end shrink-0">
+                                    <button onClick={() => setShowGuide(false)} className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold shadow-md hover:bg-indigo-700 hover:shadow-lg transition-all transform hover:-translate-y-0.5">확인했습니다</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
