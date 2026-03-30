@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>oneapp Insight - 핵심 수불부 관리 (V1.7)</title>
+    <title>oneapp Insight - 핵심 수불부 관리 (V1.8)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -375,7 +375,6 @@
                 
                 productData.forEach(p => {
                     if (p.isDummy && p.단가 === 0 && !p.수기확인완료) missingPriceCount++;
-                    // 수기 확인 완료되지 않은 오차만 카운트합니다 (To-Do 역할)
                     if ((p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0)) && !p.수기확인완료) lossCount++;
                     if (priceOptionsMap[p.코드] && priceOptionsMap[p.코드].length >= 2 && p.출고 > 0) multiPriceCodes.add(p.코드);
                 });
@@ -564,7 +563,7 @@
                     targetItem.실사 = targetItem.실사 === null || targetItem.실사 === '' ? targetItem.전산잔량 : targetItem.실사;
                     targetItem.로스 = targetItem.실사 - targetItem.전산잔량;
                     targetItem.단가 = unitCost; 
-                    targetItem.매출원가 = targetItem.출고 * unitCost; // 단가가 바뀌었으므로 출고된 수량에 대해 매출원가 재계산
+                    targetItem.매출원가 = targetItem.출고 * unitCost; 
                     targetItem.이슈 = targetItem.이슈.filter(msg => !msg.includes('매입내역 없음') && !msg.includes('전산 재고 부족'));
                     targetItem.이슈.push(`🔄 <- ${sourceItem.품명}`);
                     targetItem.수기확인완료 = true;
@@ -736,16 +735,31 @@
                                 const rowObj = {};
                                 uniqueHeaders.forEach((h, idx) => { if (h) rowObj[h] = row[idx]; });
                                 
+                                const codeRaw = getValByKeywords(rowObj, keywords.code);
+                                const codeStr = codeRaw !== null && codeRaw !== undefined ? String(codeRaw).trim() : '';
+
                                 const baseNameRaw = getValByKeywords(rowObj, keywords.name);
-                                const baseName = baseNameRaw !== null && baseNameRaw !== undefined ? String(baseNameRaw).trim() : '이름없음';
+                                const baseName = baseNameRaw !== null && baseNameRaw !== undefined ? String(baseNameRaw).trim() : '';
+
+                                // V1.8 추가: 코드와 품명이 모두 없으면 무효행으로 간주하고 스킵
+                                if (!codeStr && !baseName) continue;
+                                
+                                // V1.8 추가: 업로드 파일 하단에 있는 '합계', '총계' 행을 원천 배제
+                                if (codeStr.includes('합계') || codeStr.includes('총계') || 
+                                    baseName.includes('합계') || baseName.includes('총계') || baseName.includes('총합')) {
+                                    continue;
+                                }
+
                                 const specValRaw = getValByKeywords(rowObj, keywords.spec);
                                 const specVal = specValRaw !== null && specValRaw !== undefined ? String(specValRaw).trim() : '';
                                 
-                                let fullName = baseName;
+                                let fullName = baseName || '이름없음';
                                 if (specVal && baseName !== specVal && !baseName.includes(specVal)) fullName = `${baseName}_${specVal}`;
 
+                                const finalCode = codeStr || 'NO_CODE';
+
                                 const normObj = {
-                                    코드: String(getValByKeywords(rowObj, keywords.code) || 'NO_CODE').trim(),
+                                    코드: finalCode,
                                     품명: fullName,
                                     수량: parseNumber(getValByKeywords(rowObj, keywords.qty)),
                                     단가: parseNumber(getValByKeywords(rowObj, keywords.price)),
@@ -1150,35 +1164,37 @@
                 const today = new Date();
                 let exportDateStr = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
                 
-                // Sheet 1: 재고
-                const exportData1 = filteredProductData.map(item => {
-                    let displayIssues = item.이슈 ? [...item.이슈] : [];
-                    displayIssues = displayIssues.filter(msg => !msg.includes('매입내역 없음'));
-                    
-                    const qty = item.실사 === '' || item.실사 === null ? 0 : Number(item.실사);
-                    const rev = Number(item.매출액) || 0;
-                    const cogs = Number(item.매출원가) || 0;
-                    const profit = rev - cogs;
-                    const margin = rev !== 0 ? ((profit / rev) * 100).toFixed(1) + '%' : '0%';
-                    const adjust = (Number(item.로스) || 0) + (Number(item.대체입고) || 0) - (Number(item.대체출고) || 0);
+                // Sheet 1: 재고 (코드가 없는 무효한 정보성 행 배제)
+                const exportData1 = filteredProductData
+                    .filter(item => item.코드 && item.코드 !== 'NO_CODE' && item.코드 !== '-')
+                    .map(item => {
+                        let displayIssues = item.이슈 ? [...item.이슈] : [];
+                        displayIssues = displayIssues.filter(msg => !msg.includes('매입내역 없음'));
+                        
+                        const qty = item.실사 === '' || item.실사 === null ? 0 : Number(item.실사);
+                        const rev = Number(item.매출액) || 0;
+                        const cogs = Number(item.매출원가) || 0;
+                        const profit = rev - cogs;
+                        const margin = rev !== 0 ? ((profit / rev) * 100).toFixed(1) + '%' : '0%';
+                        const adjust = (Number(item.로스) || 0) + (Number(item.대체입고) || 0) - (Number(item.대체출고) || 0);
 
-                    return {
-                        '코드': item.코드 !== 'NO_CODE' && item.코드 !== '-' ? item.코드 : '',
-                        '품명(규격)': item.품명, 
-                        '수량': qty,
-                        '단가': Number(item.단가) || 0,
-                        '일자': item.일자 || '미상',
-                        '거래': item.거래처 || '미지정',
-                        '매출액': rev,
-                        '매출원가': cogs,
-                        '매출이익': profit,
-                        '마진율': margin,
-                        '조정': adjust,
-                        '이슈/결과': displayIssues.length > 0 ? displayIssues.join(', ') : ''
-                    };
-                });
+                        return {
+                            '코드': item.코드,
+                            '품명(규격)': item.품명, 
+                            '수량': qty,
+                            '단가': Number(item.단가) || 0,
+                            '일자': item.일자 || '미상',
+                            '거래': item.거래처 || '미지정',
+                            '매출액': rev,
+                            '매출원가': cogs,
+                            '매출이익': profit,
+                            '마진율': margin,
+                            '조정': adjust,
+                            '이슈/결과': displayIssues.length > 0 ? displayIssues.join(', ') : ''
+                        };
+                    });
 
-                // Sheet 2: 실사
+                // Sheet 2: 실사 (코드가 없는 무효한 정보성 행 및 수량 0인 항목 배제)
                 const aggregated = {};
                 productData.forEach(item => {
                     const code = item.코드;
@@ -1210,8 +1226,13 @@
                 const wb = XLSX.utils.book_new();
 
                 // Sheet 1 추가
-                const ws1 = XLSX.utils.json_to_sheet(exportData1); 
-                XLSX.utils.book_append_sheet(wb, ws1, '재고');
+                if (exportData1.length > 0) {
+                    const ws1 = XLSX.utils.json_to_sheet(exportData1); 
+                    XLSX.utils.book_append_sheet(wb, ws1, '재고');
+                } else {
+                    const ws1 = XLSX.utils.json_to_sheet([{'메시지': '유효한 품목 데이터가 없습니다.'}]); 
+                    XLSX.utils.book_append_sheet(wb, ws1, '재고');
+                }
 
                 // Sheet 2 추가
                 if (exportData2.length > 0) {
@@ -1294,7 +1315,7 @@
                             <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
                                 <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight flex items-center">
                                     <span className="text-indigo-600 mr-2">oneapp</span> Insight
-                                    <span className="text-purple-500 text-[10px] px-2 py-0.5 bg-purple-50 rounded-full border border-purple-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">Light V1.7</span>
+                                    <span className="text-purple-500 text-[10px] px-2 py-0.5 bg-purple-50 rounded-full border border-purple-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">Light V1.8</span>
                                 </h1>
                             </div>
 
