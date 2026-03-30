@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>oneapp Insight - 핵심 수불부 관리 (V1.3)</title>
+    <title>oneapp Insight - 핵심 수불부 관리 (V1.4)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -379,7 +379,6 @@
                     if (priceOptionsMap[p.코드] && priceOptionsMap[p.코드].length >= 2 && p.출고 > 0) multiPriceCodes.add(p.코드);
                 });
 
-                // 거래처별이 아니므로 복수 단가를 가진 고유 품목 수로 계산합니다.
                 let multiPriceCount = multiPriceCodes.size;
 
                 return { missingPriceCount, lossCount, multiPriceCount, total: productData.length };
@@ -471,10 +470,20 @@
 
             const handleSalesMove = useCallback((sourceKey, targetKey, vendorName, qtyToMove, sourceCode, targetCode) => {
                 setProductData(prevP => {
+                    let sPrice = 0; let tPrice = 0;
+                    let sRevUnit = 0; 
+                    
+                    prevP.forEach(p => {
+                        if (p.batchKey === sourceKey) { sPrice = p.단가; sRevUnit = p.출고 > 0 ? p.매출액 / p.출고 : 0; }
+                        if (p.batchKey === targetKey) tPrice = p.단가;
+                    });
+
                     return prevP.map(p => {
                         if (p.batchKey === sourceKey) {
                             const np = { ...p, 출고내역: { ...p.출고내역 } };
                             np.출고 -= qtyToMove;
+                            np.매출원가 -= (qtyToMove * sPrice);
+                            np.매출액 -= (qtyToMove * sRevUnit);
                             if (np.출고내역[vendorName]) {
                                 np.출고내역[vendorName] -= qtyToMove;
                                 if (np.출고내역[vendorName] <= 0) delete np.출고내역[vendorName];
@@ -489,6 +498,8 @@
                         if (p.batchKey === targetKey) {
                             const np = { ...p, 출고내역: { ...p.출고내역 }, 이슈: [...p.이슈] };
                             np.출고 += qtyToMove;
+                            np.매출원가 += (qtyToMove * tPrice);
+                            np.매출액 += (qtyToMove * sRevUnit);
                             np.출고내역[vendorName] = (np.출고내역[vendorName] || 0) + qtyToMove;
                             np.전산잔량 = np.기초 + np.입고 + np.대체입고 - np.출고 - np.대체출고;
                             if (np.실사 !== null && np.실사 !== '') {
@@ -549,6 +560,7 @@
                     targetItem.실사 = targetItem.실사 === null || targetItem.실사 === '' ? targetItem.전산잔량 : targetItem.실사;
                     targetItem.로스 = targetItem.실사 - targetItem.전산잔량;
                     targetItem.단가 = unitCost; 
+                    targetItem.매출원가 = targetItem.출고 * unitCost; // 단가가 바뀌었으므로 출고된 수량에 대해 매출원가 재계산
                     targetItem.이슈 = targetItem.이슈.filter(msg => !msg.includes('매입내역 없음') && !msg.includes('전산 재고 부족'));
                     targetItem.이슈.push(`🔄 <- ${sourceItem.품명}`);
 
@@ -888,7 +900,7 @@
                             pData[batchKey] = { 
                                 batchKey, 코드: code, 품명: item.품명, 단가: price, 일자: date, 거래처: item.거래처,
                                 기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 
-                                메모: '', 이슈: [], 출고내역: {}, _orig: {기초:0, 입고:0, 출고:0, 단가: price}, isDummy: false
+                                매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig: {기초:0, 입고:0, 출고:0, 단가: price}, isDummy: false
                             };
                         }
                         
@@ -910,10 +922,26 @@
                         let qtyToDeduct = sale.수량; 
                         const pool = stockPool[code];
                         
+                        let revenue = 0;
+                        if (sale.단가 !== 0 && sale.수량 !== 0) revenue = sale.수량 * sale.단가;
+
+                        let finalRevenue = revenue;
+                        if (finalRevenue === 0 && sale._raw) {
+                            const amtKeys = ['금액', '합계', '매출금액', '판매금액', '공급가액', '공급가', '총액'];
+                            for (let k of amtKeys) {
+                                const matchedKey = Object.keys(sale._raw).find(rk => rk.replace(/\s/g, '').includes(k));
+                                if (matchedKey && sale._raw[matchedKey] !== undefined && sale._raw[matchedKey] !== '') {
+                                    finalRevenue = parseNumber(sale._raw[matchedKey]); break;
+                                }
+                            }
+                        }
+                        if (finalRevenue === 0 && sale.단가 !== 0 && sale.수량 === 0) finalRevenue = sale.단가;
+                        
                         if (!pool || pool.buckets.length === 0) {
                             const bKey = `${code}|0|미상`;
-                            if (!pData[bKey]) pData[bKey] = { batchKey: bKey, 코드: code, 품명: sale.품명, 단가: 0, 일자: '', 거래처: sale.거래처, 기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 메모: '', 이슈: [], 출고내역: {}, _orig:{기초:0,입고:0,출고:0,단가:0}, isDummy: true };
+                            if (!pData[bKey]) pData[bKey] = { batchKey: bKey, 코드: code, 품명: sale.품명, 단가: 0, 일자: '', 거래처: sale.거래처, 기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig:{기초:0,입고:0,출고:0,단가:0}, isDummy: true };
                             pData[bKey].출고 += qtyToDeduct; 
+                            pData[bKey].매출액 += finalRevenue;
                             pData[bKey].출고내역[sale.거래처] = (pData[bKey].출고내역[sale.거래처] || 0) + qtyToDeduct;
                             return;
                         }
@@ -922,20 +950,32 @@
 
                         if (remainingQty < 0) {
                             const lastBucket = pool.buckets[pool.buckets.length - 1];
+                            const cogs = remainingQty * lastBucket.단가;
                             lastBucket.수량 -= remainingQty; 
                             pData[lastBucket.batchKey].출고 += remainingQty;
+                            pData[lastBucket.batchKey].매출원가 += cogs;
+                            pData[lastBucket.batchKey].매출액 += finalRevenue;
                             pData[lastBucket.batchKey].출고내역[sale.거래처] = (pData[lastBucket.batchKey].출고내역[sale.거래처] || 0) + remainingQty;
                         } else {
                             for (let i = 0; i < pool.buckets.length && remainingQty > 0; i++) {
                                 const bucket = pool.buckets[i]; if (bucket.수량 <= 0) continue;
                                 const take = Math.min(bucket.수량, remainingQty);
+                                const cogs = take * bucket.단가;
+                                const revShare = qtyToDeduct > 0 ? finalRevenue * (take / qtyToDeduct) : 0;
+                                
                                 bucket.수량 -= take; remainingQty -= take;
                                 pData[bucket.batchKey].출고 += take;
+                                pData[bucket.batchKey].매출원가 += cogs;
+                                pData[bucket.batchKey].매출액 += revShare;
                                 pData[bucket.batchKey].출고내역[sale.거래처] = (pData[bucket.batchKey].출고내역[sale.거래처] || 0) + take;
                             }
                             if (remainingQty > 0) {
                                 const lastBucket = pool.buckets[pool.buckets.length - 1];
+                                const cogs = remainingQty * lastBucket.단가;
+                                const revShare = qtyToDeduct > 0 ? finalRevenue * (remainingQty / qtyToDeduct) : 0;
                                 pData[lastBucket.batchKey].출고 += remainingQty;
+                                pData[lastBucket.batchKey].매출원가 += cogs;
+                                pData[lastBucket.batchKey].매출액 += revShare;
                                 pData[lastBucket.batchKey].출고내역[sale.거래처] = (pData[lastBucket.batchKey].출고내역[sale.거래처] || 0) + remainingQty;
                             }
                         }
@@ -954,7 +994,7 @@
                             const hasSystemRecord = Object.values(pData).some(p => p.코드 === code);
                             if (!hasSystemRecord) {
                                 const price = parseNumber(item.단가) || 0; const date = String(item.일자 || '실사등록'); const batchKey = `${code}|${price}|${date}`;
-                                if (!pData[batchKey]) pData[batchKey] = { batchKey, 코드: code, 품명: item.품명, 단가: price, 일자: date, 거래처: item.거래처, 기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 메모: '', 이슈: [], 출고내역: {}, _orig:{기초:0,입고:0,출고:0} };
+                                if (!pData[batchKey]) pData[batchKey] = { batchKey, 코드: code, 품명: item.품명, 단가: price, 일자: date, 거래처: item.거래처, 기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig:{기초:0,입고:0,출고:0} };
                             }
                         });
 
@@ -1076,7 +1116,7 @@
             const loadDemoData = () => {
                 const demoPrev = [{ 코드: 'A001', 품명: '프리미엄 원두_1kg', 수량: 100, 단가: 10000, 일자: '2026/03/20' }, { 코드: 'A002', 품명: '원두_소분_200g', 수량: 0, 단가: 0, 일자: '2026/03/21' }, { 코드: 'B001', 품명: '바닐라 시럽_1000ml', 수량: 30, 단가: 8000, 일자: '2026/03/22' }, { 코드: 'B002', 품명: '바닐라 시럽_소분_펌프형', 수량: 0, 단가: 0, 일자: '2026/03/22' }];
                 const demoIn = [{ 코드: 'A001', 품명: '프리미엄 원두_1kg', 수량: 10, 단가: 11000, 일자: '2026/03/28' }];
-                const demoOut = [{ 거래처: '강남본점', 코드: 'A002', 품명: '원두_소분_200g', 수량: 15, 단가: 3000, 일자: '2026/03/28' }, { 거래처: '홍대점', 코드: 'B002', 품명: '바닐라 시럽_소분_펌프형', 수량: 5, 단가: 2000, 일자: '2026/03/28' }];
+                const demoOut = [{ 거래처: '강남본점', 코드: 'A002', 품명: '원두_소분_200g', 수량: 15, 단가: 3000, 일자: '2026/03/28', 금액: 45000 }, { 거래처: '홍대점', 코드: 'B002', 품명: '바닐라 시럽_소분_펌프형', 수량: 5, 단가: 2000, 일자: '2026/03/28', 금액: 10000 }];
                 const demoEnd = [{ 코드: 'A001', 수량: 107, 일자: '2026/03/31' }, { 코드: 'A002', 수량: 0, 일자: '2026/03/31' }, { 코드: 'B001', 수량: 29, 일자: '2026/03/31' }, { 코드: 'B002', 수량: 0, 일자: '2026/03/31' }];
 
                 const mockFiles = { prev: { name: 'demo_기초재고.xlsx', isDemo: true }, in: { name: 'demo_구매현황.xlsx', isDemo: true }, out: { name: 'demo_판매현황.xlsx', isDemo: true }, end: { name: 'demo_실사.xlsx', isDemo: true } };
@@ -1093,21 +1133,28 @@
                 let exportDateStr = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
                 
                 const exportData = filteredProductData.map(item => {
-                    const totalIn = Number(item.입고) + Number(item.대체입고) + (Number(item.로스) > 0 ? Number(item.로스) : 0);
-                    const totalOut = Number(item.출고) + Number(item.대체출고) + (Number(item.로스) < 0 ? Math.abs(Number(item.로스)) : 0);
                     let displayIssues = item.이슈 ? [...item.이슈] : [];
                     displayIssues = displayIssues.filter(msg => !msg.includes('매입내역 없음'));
                     
+                    const qty = item.실사 === '' || item.실사 === null ? 0 : Number(item.실사);
+                    const rev = Number(item.매출액) || 0;
+                    const cogs = Number(item.매출원가) || 0;
+                    const profit = rev - cogs;
+                    const margin = rev !== 0 ? ((profit / rev) * 100).toFixed(1) + '%' : '0%';
+                    const adjust = (Number(item.로스) || 0) + (Number(item.대체입고) || 0) - (Number(item.대체출고) || 0);
+
                     return {
-                        '품목코드': item.코드 !== 'NO_CODE' && item.코드 !== '-' ? item.코드 : '',
-                        '품명(규격) / 일자 / 거래처': `${item.품명} / ${item.일자 || '미상'} / ${item.거래처 || '미지정'}`, 
+                        '코드': item.코드 !== 'NO_CODE' && item.코드 !== '-' ? item.코드 : '',
+                        '품명(규격)': item.품명, 
+                        '수량': qty,
                         '단가': Number(item.단가) || 0,
-                        '재고': Number(item.기초) || 0, 
-                        '입고': totalIn, 
-                        '출고': totalOut, 
-                        '기말실사(이월수량)': item.실사 === '' || item.실사 === null ? 0 : Number(item.실사),
-                        '조정': (Number(item.로스) || 0) + (Number(item.대체입고) || 0) - (Number(item.대체출고) || 0), 
-                        '메모': item.메모 || '',
+                        '일자': item.일자 || '미상',
+                        '거래': item.거래처 || '미지정',
+                        '매출액': rev,
+                        '매출원가': cogs,
+                        '매출이익': profit,
+                        '마진율': margin,
+                        '조정': adjust,
                         '이슈/결과': displayIssues.length > 0 ? displayIssues.join(', ') : ''
                     };
                 });
@@ -1177,7 +1224,7 @@
                             <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
                                 <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight flex items-center">
                                     <span className="text-indigo-600 mr-2">oneapp</span> Insight
-                                    <span className="text-purple-500 text-[10px] px-2 py-0.5 bg-purple-50 rounded-full border border-purple-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">Light V1.3</span>
+                                    <span className="text-purple-500 text-[10px] px-2 py-0.5 bg-purple-50 rounded-full border border-purple-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">Light V1.4</span>
                                 </h1>
                             </div>
 
