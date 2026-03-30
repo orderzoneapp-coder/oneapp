@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>oneapp Insight - 핵심 수불부 관리</title>
+    <title>oneapp Insight - 핵심 수불부 관리 (V1.2)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -422,23 +422,51 @@
 
             const handleFocusInput = useCallback((key, idx) => { focusedInputRef.current = { key, idx }; }, []);
 
-            const handleLossCardClick = useCallback(() => {
-                const targetItem = productData.find(p => p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0));
-                if (targetItem) {
-                    setFilters(prev => ({ ...prev, search: '', cardFilter: null, issuesOnly: false, excludeZeroActual: false }));
-                    setTimeout(() => {
-                        const row = document.querySelector(`tr[data-batch="${targetItem.batchKey}"]`);
-                        if (row) {
-                            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            row.classList.add('bg-orange-100');
-                            setTimeout(() => row.classList.remove('bg-orange-100'), 1500);
-                            const input = row.querySelector('input[id^="actual-input-"]');
-                            if (input) { input.focus(); input.select(); }
-                        }
-                    }, 150);
-                } else {
+            const handleLossCardClick = useCallback((direction = 'next') => {
+                const lossItems = productData.filter(p => p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0));
+                if (lossItems.length === 0) {
                     setAlertMsg("현재 재고 오차가 있는 품목이 없습니다.");
+                    return;
                 }
+
+                setFilters(prev => ({ ...prev, search: '', cardFilter: null, issuesOnly: false, excludeZeroActual: false }));
+
+                const activeEl = document.activeElement;
+                let currentDataIndex = -1;
+                if (activeEl) {
+                    const row = activeEl.closest('tr[data-batch]');
+                    if (row) {
+                        const batchKey = row.getAttribute('data-batch');
+                        currentDataIndex = productData.findIndex(p => p.batchKey === batchKey);
+                    }
+                }
+
+                let targetItem = null;
+
+                if (direction === 'next') {
+                    targetItem = productData.find((p, idx) => idx > currentDataIndex && (p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0)));
+                    if (!targetItem) targetItem = lossItems[0];
+                } else {
+                    for (let i = currentDataIndex - 1; i >= 0; i--) {
+                        const p = productData[i];
+                        if (p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0)) {
+                            targetItem = p;
+                            break;
+                        }
+                    }
+                    if (!targetItem) targetItem = lossItems[lossItems.length - 1];
+                }
+
+                setTimeout(() => {
+                    const row = document.querySelector(`tr[data-batch="${targetItem.batchKey}"]`);
+                    if (row) {
+                        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        row.classList.add('bg-orange-100');
+                        setTimeout(() => row.classList.remove('bg-orange-100'), 1500);
+                        const input = row.querySelector('input[id^="actual-input-"]');
+                        if (input) { input.focus(); input.select(); }
+                    }
+                }, 150);
             }, [productData]);
 
             const handleSalesMove = useCallback((sourceKey, targetKey, vendorName, qtyToMove, sourceCode, targetCode) => {
@@ -1041,6 +1069,9 @@
 
             const runAnalysisRef = useRef(runAnalysis);
             useEffect(() => { runAnalysisRef.current = runAnalysis; }, [runAnalysis]);
+            
+            const handleLossCardClickRef = useRef(handleLossCardClick);
+            useEffect(() => { handleLossCardClickRef.current = handleLossCardClick; }, [handleLossCardClick]);
 
             const loadDemoData = () => {
                 const demoPrev = [{ 코드: 'A001', 품명: '프리미엄 원두_1kg', 수량: 100, 단가: 10000, 일자: '2026/03/20' }, { 코드: 'A002', 품명: '원두_소분_200g', 수량: 0, 단가: 0, 일자: '2026/03/21' }, { 코드: 'B001', 품명: '바닐라 시럽_1000ml', 수량: 30, 단가: 8000, 일자: '2026/03/22' }, { 코드: 'B002', 품명: '바닐라 시럽_소분_펌프형', 수량: 0, 단가: 0, 일자: '2026/03/22' }];
@@ -1087,7 +1118,11 @@
             }, [filteredProductData]);
 
             useEffect(() => {
-                actionRefs.current = { downloadDetail: handleSaveAndDownload, runAnalysis: () => runAnalysisRef.current() };
+                actionRefs.current = { 
+                    downloadDetail: handleSaveAndDownload, 
+                    runAnalysis: () => runAnalysisRef.current(),
+                    handleLossCardClick: (dir) => handleLossCardClickRef.current(dir)
+                };
             }, [handleSaveAndDownload]);
 
             useEffect(() => {
@@ -1120,6 +1155,12 @@
                             }, 50);
                         }
                     }
+                    if (e.key === 'Tab' && appStep === 'closing') {
+                        e.preventDefault();
+                        if (actionRefs.current.handleLossCardClick) {
+                            actionRefs.current.handleLossCardClick(e.shiftKey ? 'prev' : 'next');
+                        }
+                    }
                 };
 
                 window.addEventListener('keydown', handleGlobalEnter);
@@ -1135,7 +1176,7 @@
                             <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
                                 <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight flex items-center">
                                     <span className="text-indigo-600 mr-2">oneapp</span> Insight
-                                    <span className="text-purple-500 text-[10px] px-2 py-0.5 bg-purple-50 rounded-full border border-purple-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">Light</span>
+                                    <span className="text-purple-500 text-[10px] px-2 py-0.5 bg-purple-50 rounded-full border border-purple-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">Light V1.2</span>
                                 </h1>
                             </div>
 
@@ -1270,13 +1311,13 @@
                                                 <div className="text-[10px] text-red-500 font-bold mt-1"><i className="fas fa-filter mr-1"></i>모아서 보기</div>
                                             </div>
                                             <div 
-                                                onClick={handleLossCardClick}
+                                                onClick={() => handleLossCardClick('next')}
                                                 className={`p-3 rounded-lg border flex flex-col justify-between cursor-pointer transition-all ${closingStats.lossCount > 0 ? 'bg-orange-50 border-orange-400 shadow-sm hover:shadow-md hover:bg-orange-100' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'}`}
-                                                title="클릭하면 대체 품목을 확인할 수 있도록 전체 리스트 상태에서 첫 번째 오차 품목으로 바로 이동합니다"
+                                                title="클릭하거나 Tab 키를 누르면 다음 오차 품목으로 이동합니다"
                                             >
                                                 <div className="text-xs font-bold text-gray-500 mb-1 flex items-center"><i className="fas fa-balance-scale mr-1.5 text-orange-400"></i>재고 오차 (로스발생)</div>
                                                 <div className={`text-xl font-black ${closingStats.lossCount > 0 ? 'text-orange-600' : 'text-gray-700'}`}>{closingStats.lossCount}건</div>
-                                                <div className="text-[10px] text-orange-500 font-bold mt-1"><i className="fas fa-arrow-down mr-1"></i>오차 품목으로 스크롤 이동</div>
+                                                <div className="text-[10px] text-orange-500 font-bold mt-1"><i className="fas fa-arrow-down mr-1"></i>오차 품목으로 스크롤 [Tab]</div>
                                             </div>
                                             <div 
                                                 onClick={() => { setFilters(f => ({...f, cardFilter: f.cardFilter === 'multiPrice' ? null : 'multiPrice', search: '', issuesOnly: false, excludeZeroActual: false})); }}
