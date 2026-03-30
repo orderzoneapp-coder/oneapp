@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="ko" translate="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="google" content="notranslate">
+    <title>oneapp Insight - 비즈니스 인텔리전스</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f1f5f9; color: #334155; }
+        .fade-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .card-hover { transition: transform 0.2s, box-shadow 0.2s; }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+        // --- Data Parsing Utils ---
+        const parseNumber = (val) => {
+            if (!val) return 0;
+            if (typeof val === 'number') return val;
+            return Number(String(val).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0;
+        };
+
+        const formatMoney = (num) => Math.round(num).toLocaleString();
+
+        function App() {
+            // DB State (누적형)
+            const [db, setDb] = useState({ sales: [], inventory: [] });
+            
+            // UI State
+            const [currentView, setCurrentView] = useState('dashboard'); // dashboard, sales, inventory
+            const [isUploading, setIsUploading] = useState(false);
+            const [uploadModalOpen, setUploadModalOpen] = useState(false);
+            const fileInputRef = useRef(null);
+
+            // --- Excel Upload & Append Logic ---
+            const handleFileUpload = async (e) => {
+                const files = Array.from(e.target.files);
+                if (files.length === 0) return;
+                setIsUploading(true);
+
+                let newSales = [];
+                let newInventory = [];
+
+                for (let file of files) {
+                    const data = await new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => resolve(new Uint8Array(e.target.result));
+                        reader.readAsArrayBuffer(file);
+                    });
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    
+                    workbook.SheetNames.forEach(sheetName => {
+                        const sheet = workbook.Sheets[sheetName];
+                        const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+                        
+                        if (json.length === 0) return;
+                        
+                        // 시트 헤더 판별
+                        const headers = Object.keys(json[0]).join('');
+                        if (headers.includes('거래처명') && headers.includes('매출액')) {
+                            // 거래처매출(Raw) 시트
+                            const parsed = json.map(row => ({
+                                date: String(row['결산일자'] || row['일자'] || ''),
+                                vendor: String(row['거래처명'] || '미지정'),
+                                code: String(row['품목코드'] || row['코드'] || ''),
+                                name: String(row['품명(규격)'] || row['품명'] || ''),
+                                qty: parseNumber(row['판매수량'] || row['수량']),
+                                cost: parseNumber(row['단가(원가)'] || row['원가']),
+                                rev: parseNumber(row['매출액']),
+                                cogs: parseNumber(row['매출원가']),
+                                profit: parseNumber(row['매출이익'])
+                            })).filter(item => item.code && item.rev !== undefined);
+                            newSales = [...newSales, ...parsed];
+                        } 
+                        else if (headers.includes('기말재고액') || headers.includes('기말실사')) {
+                            // 재고(이월용) 시트
+                            const parsed = json.map(row => ({
+                                date: String(row['결산일자'] || row['일자'] || ''),
+                                code: String(row['품목코드'] || row['코드'] || ''),
+                                name: String(row['품명'] || ''),
+                                qty: parseNumber(row['기말실사(이월수량)'] || row['재고량']),
+                                price: parseNumber(row['매입단가(원가)'] || row['단가']),
+                                asset: parseNumber(row['기말재고액(자산가치)'] || row['자산가치']),
+                                outQty: parseNumber(row['출고량']),
+                                lossVal: parseNumber(row['조정']) * parseNumber(row['매입단가(원가)'] || row['단가'])
+                            })).filter(item => item.code && item.qty !== undefined);
+                            newInventory = [...newInventory, ...parsed];
+                        }
+                    });
+                }
+
+                // 기존 데이터에 Append (누적)
+                setDb(prev => ({
+                    sales: [...prev.sales, ...newSales],
+                    inventory: [...prev.inventory, ...newInventory]
+                }));
+                
+                setIsUploading(false);
+                setUploadModalOpen(false);
+                if (fileInputRef.current) fileInputRef.current.value = '';
+            };
+
+            const clearData = () => {
+                if(confirm("모든 누적 데이터를 삭제하시겠습니까?")) {
+                    setDb({ sales: [], inventory: [] });
+                    setCurrentView('dashboard');
+                }
+            };
+
+            // --- Aggregations & KPIs ---
+            const kpis = useMemo(() => {
+                const totalRev = db.sales.reduce((sum, item) => sum + (item.rev || 0), 0);
+                const totalCogs = db.sales.reduce((sum, item) => sum + (item.cogs || 0), 0);
+                const totalProfit = totalRev - totalCogs;
+                const margin = totalRev > 0 ? ((totalProfit / totalRev) * 100).toFixed(1) : 0;
+                
+                // 자산과 로스는 가장 최근 날짜의 스냅샷 기준 합산이 정확하지만, 
+                // 여기서는 업로드된 전체 누적 합계로 단순화 (고도화 시 최근 결산일 기준 필터 필요)
+                const totalAsset = db.inventory.reduce((sum, item) => sum + (item.asset || 0), 0);
+                const totalLoss = db.inventory.reduce((sum, item) => sum + (item.lossVal || 0), 0);
+
+                return { totalRev, totalProfit, margin, totalAsset, totalLoss };
+            }, [db]);
+
+            // 진성 거래처 분석 (매출이익 순 정렬)
+            const topVendors = useMemo(() => {
+                const map = {};
+                db.sales.forEach(s => {
+                    if (!map[s.vendor]) map[s.vendor] = { name: s.vendor, rev: 0, profit: 0 };
+                    map[s.vendor].rev += s.rev;
+                    map[s.vendor].profit += s.profit;
+                });
+                return Object.values(map)
+                    .sort((a, b) => b.profit - a.profit)
+                    .map(v => ({ ...v, margin: v.rev > 0 ? ((v.profit/v.rev)*100).toFixed(1) : 0 }));
+            }, [db.sales]);
+
+            // 수발주 필요 품목 (선택하신 내용 반영: 출고량 대비 재고 부족)
+            const reorderAlerts = useMemo(() => {
+                const map = {};
+                db.inventory.forEach(i => {
+                    if (!map[i.code]) map[i.code] = { code: i.code, name: i.name, totalOut: 0, currentQty: 0 };
+                    map[i.code].totalOut += i.outQty;
+                    map[i.code].currentQty = i.qty; // 가장 마지막에 덮어씌워진 값이 최신 재고라 가정
+                });
+                return Object.values(map)
+                    .filter(item => item.totalOut > 0 && item.currentQty <= item.totalOut) // 재고가 총 출고량보다 적으면 경고
+                    .sort((a, b) => (a.currentQty - a.totalOut) - (b.currentQty - b.totalOut)) // 시급한 순
+                    .slice(0, 5);
+            }, [db.inventory]);
+
+            // 악성 재고 (재고는 많은데 출고가 0인 항목)
+            const deadStocks = useMemo(() => {
+                const map = {};
+                db.inventory.forEach(i => {
+                    if (!map[i.code]) map[i.code] = { code: i.code, name: i.name, totalOut: 0, currentQty: 0, asset: 0 };
+                    map[i.code].totalOut += i.outQty;
+                    map[i.code].currentQty = i.qty;
+                    map[i.code].asset = i.asset;
+                });
+                return Object.values(map)
+                    .filter(item => item.totalOut === 0 && item.currentQty > 0)
+                    .sort((a, b) => b.asset - a.asset);
+            }, [db.inventory]);
+
+            // --- UI Components ---
+            const Sidebar = () => (
+                <div className="w-64 bg-slate-900 text-slate-300 flex flex-col h-screen shrink-0 relative">
+                    <div className="p-6 border-b border-slate-800">
+                        <h1 className="text-xl font-black text-white flex items-center tracking-tight">
+                            <span className="text-indigo-500 mr-2">oneapp</span> Insight
+                        </h1>
+                        <p className="text-xs text-slate-500 mt-1">경영 지표 통합 분석기</p>
+                    </div>
+                    
+                    <div className="flex-1 py-4 flex flex-col gap-2">
+                        <button onClick={() => setCurrentView('dashboard')} className={`flex items-center w-full px-6 py-3 text-sm font-medium transition-colors ${currentView === 'dashboard' ? 'bg-indigo-600 text-white border-r-4 border-indigo-400' : 'hover:bg-slate-800 hover:text-white'}`}>
+                            <i className="fas fa-home w-6"></i> 요약 대시보드
+                        </button>
+                        <button onClick={() => setCurrentView('sales')} className={`flex items-center w-full px-6 py-3 text-sm font-medium transition-colors ${currentView === 'sales' ? 'bg-indigo-600 text-white border-r-4 border-indigo-400' : 'hover:bg-slate-800 hover:text-white'}`}>
+                            <i className="fas fa-chart-line w-6"></i> 거래처/수익성 분석
+                        </button>
+                        <button onClick={() => setCurrentView('inventory')} className={`flex items-center w-full px-6 py-3 text-sm font-medium transition-colors ${currentView === 'inventory' ? 'bg-indigo-600 text-white border-r-4 border-indigo-400' : 'hover:bg-slate-800 hover:text-white'}`}>
+                            <i className="fas fa-boxes w-6"></i> 자산/로스/수발주 분석
+                        </button>
+                    </div>
+
+                    <div className="p-6 border-t border-slate-800">
+                        <div className="bg-slate-800 rounded-lg p-4 text-xs">
+                            <div className="flex justify-between items-center mb-2">
+                                <span className="font-bold text-white">누적 데이터</span>
+                                <span className="bg-indigo-500 text-white px-2 py-0.5 rounded-full text-[10px]">{db.sales.length + db.inventory.length}건</span>
+                            </div>
+                            <button onClick={() => setUploadModalOpen(true)} className="w-full bg-indigo-500 hover:bg-indigo-400 text-white py-2 rounded mt-2 font-bold transition">
+                                <i className="fas fa-plus mr-1"></i> 데이터 추가하기
+                            </button>
+                            {(db.sales.length > 0 || db.inventory.length > 0) && (
+                                <button onClick={clearData} className="w-full text-slate-400 hover:text-red-400 py-2 rounded mt-1 font-medium transition">
+                                    초기화
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+
+            // 1. 요약 대시보드 뷰
+            const DashboardView = () => (
+                <div className="fade-in space-y-6">
+                    <h2 className="text-2xl font-bold text-slate-800">경영 요약 지표</h2>
+                    
+                    {/* KPI Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 card-hover">
+                            <div className="text-slate-500 text-sm font-bold mb-1"><i className="fas fa-wallet text-indigo-500 mr-2"></i>총 누적 매출</div>
+                            <div className="text-2xl font-black text-slate-800">₩{formatMoney(kpis.totalRev)}</div>
+                        </div>
+                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 card-hover relative overflow-hidden">
+                            <div className="absolute right-0 top-0 bottom-0 w-2 bg-emerald-500"></div>
+                            <div className="text-slate-500 text-sm font-bold mb-1"><i className="fas fa-chart-pie text-emerald-500 mr-2"></i>총 매출이익 (마진 {kpis.margin}%)</div>
+                            <div className="text-2xl font-black text-emerald-600">₩{formatMoney(kpis.totalProfit)}</div>
+                        </div>
+                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 card-hover">
+                            <div className="text-slate-500 text-sm font-bold mb-1"><i className="fas fa-cubes text-blue-500 mr-2"></i>총 재고자산 가치</div>
+                            <div className="text-2xl font-black text-slate-800">₩{formatMoney(kpis.totalAsset)}</div>
+                        </div>
+                        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 card-hover relative overflow-hidden">
+                            <div className="absolute right-0 top-0 bottom-0 w-2 bg-red-500"></div>
+                            <div className="text-slate-500 text-sm font-bold mb-1"><i className="fas fa-exclamation-triangle text-red-500 mr-2"></i>누적 로스 비용 (증발액)</div>
+                            <div className="text-2xl font-black text-red-600">₩{formatMoney(Math.abs(kpis.totalLoss))}</div>
+                        </div>
+                    </div>
+
+                    {/* AI Alerts (선택하신 텍스트 반영) */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div className="bg-red-50 px-5 py-3 border-b border-red-100 flex justify-between items-center">
+                                <h3 className="font-bold text-red-800"><i className="fas fa-bell text-red-500 mr-2"></i>AI 발주 경고 (품절 임박)</h3>
+                                <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded font-bold">최우선 처리</span>
+                            </div>
+                            <div className="p-0">
+                                {reorderAlerts.length === 0 ? (
+                                    <div className="p-8 text-center text-slate-400 text-sm">발주가 시급한 품목이 없습니다.</div>
+                                ) : (
+                                    <ul className="divide-y divide-slate-100">
+                                        {reorderAlerts.map(item => (
+                                            <li key={item.code} className="p-4 hover:bg-slate-50 flex justify-between items-center">
+                                                <div>
+                                                    <div className="font-bold text-slate-800 text-sm">{item.name}</div>
+                                                    <div className="text-xs text-slate-500 mt-0.5">최근 출고: {item.totalOut}개 / 현재고: <span className="text-red-500 font-bold">{item.currentQty}개</span></div>
+                                                </div>
+                                                <button className="px-3 py-1.5 bg-slate-800 text-white text-xs font-bold rounded shadow-sm hover:bg-slate-700">발주서 담기</button>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div className="bg-indigo-50 px-5 py-3 border-b border-indigo-100">
+                                <h3 className="font-bold text-indigo-800"><i className="fas fa-trophy text-indigo-500 mr-2"></i>진성 거래처 TOP 3 (이익 기여도)</h3>
+                            </div>
+                            <div className="p-0">
+                                {topVendors.length === 0 ? (
+                                    <div className="p-8 text-center text-slate-400 text-sm">데이터가 없습니다.</div>
+                                ) : (
+                                    <ul className="divide-y divide-slate-100">
+                                        {topVendors.slice(0, 3).map((v, i) => (
+                                            <li key={i} className="p-4 hover:bg-slate-50 flex items-center">
+                                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mr-3 ${i===0 ? 'bg-yellow-100 text-yellow-600' : (i===1 ? 'bg-slate-200 text-slate-600' : 'bg-orange-100 text-orange-600')}`}>{i+1}</div>
+                                                <div className="flex-1">
+                                                    <div className="font-bold text-slate-800 text-sm">{v.name}</div>
+                                                    <div className="text-xs text-slate-500 mt-0.5">매출: ₩{formatMoney(v.rev)}</div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="font-black text-emerald-600 text-sm">₩{formatMoney(v.profit)}</div>
+                                                    <div className="text-[10px] text-emerald-500 bg-emerald-50 px-1.5 rounded inline-block mt-0.5">마진 {v.margin}%</div>
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            // 2. 상세 뷰 (거래처/수익성)
+            const SalesView = () => (
+                <div className="fade-in bg-white rounded-xl shadow-sm border border-slate-200 h-full flex flex-col">
+                    <div className="p-5 border-b border-slate-200">
+                        <h2 className="text-lg font-bold text-slate-800">거래처별 이익률 (진성 고객 분석)</h2>
+                        <p className="text-sm text-slate-500 mt-1">매출액 규모가 아닌 '실제 남는 이익금' 순으로 정렬되어 있습니다.</p>
+                    </div>
+                    <div className="flex-1 overflow-auto p-0">
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-slate-50 text-slate-600 font-bold sticky top-0">
+                                <tr>
+                                    <th className="py-3 px-5 border-b">거래처명</th>
+                                    <th className="py-3 px-5 border-b text-right">총 매출액</th>
+                                    <th className="py-3 px-5 border-b text-right">총 매출원가</th>
+                                    <th className="py-3 px-5 border-b text-right text-emerald-600">순 매출이익</th>
+                                    <th className="py-3 px-5 border-b text-right">마진율</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {topVendors.map((v, idx) => (
+                                    <tr key={idx} className="hover:bg-slate-50">
+                                        <td className="py-3 px-5 font-medium text-slate-800">{v.name}</td>
+                                        <td className="py-3 px-5 text-right">₩{formatMoney(v.rev)}</td>
+                                        <td className="py-3 px-5 text-right text-slate-500">₩{formatMoney(v.rev - v.profit)}</td>
+                                        <td className="py-3 px-5 text-right font-bold text-emerald-600">₩{formatMoney(v.profit)}</td>
+                                        <td className="py-3 px-5 text-right">
+                                            <span className={`px-2 py-1 rounded text-xs font-bold ${v.margin > 20 ? 'bg-emerald-100 text-emerald-700' : (v.margin > 5 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700')}`}>
+                                                {v.margin}%
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+
+            // 3. 상세 뷰 (자산/재고)
+            const InventoryView = () => (
+                <div className="fade-in h-full flex flex-col gap-6">
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 flex flex-col min-h-[300px]">
+                        <div className="p-5 border-b border-slate-200 flex justify-between items-center">
+                            <div>
+                                <h2 className="text-lg font-bold text-slate-800">잠자는 악성 재고 (Dead Stock)</h2>
+                                <p className="text-sm text-slate-500 mt-1">출고 이력은 없는데 창고 자산만 차지하고 있는 품목입니다.</p>
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-auto p-0">
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-slate-50 text-slate-600 font-bold sticky top-0">
+                                    <tr>
+                                        <th className="py-3 px-5 border-b">품명</th>
+                                        <th className="py-3 px-5 border-b text-right">현재고</th>
+                                        <th className="py-3 px-5 border-b text-right">총 출고량</th>
+                                        <th className="py-3 px-5 border-b text-right text-red-600">묶인 자산액</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {deadStocks.map((item, idx) => (
+                                        <tr key={idx} className="hover:bg-slate-50">
+                                            <td className="py-3 px-5 font-medium text-slate-800">{item.name}</td>
+                                            <td className="py-3 px-5 text-right font-bold">{item.currentQty}</td>
+                                            <td className="py-3 px-5 text-right text-slate-400">{item.totalOut}</td>
+                                            <td className="py-3 px-5 text-right font-bold text-red-500">₩{formatMoney(item.asset)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            return (
+                <div className="flex h-screen overflow-hidden">
+                    <Sidebar />
+                    
+                    <main className="flex-1 overflow-y-auto p-8 relative">
+                        {db.sales.length === 0 && db.inventory.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center h-full text-slate-400 fade-in">
+                                <i className="fas fa-database text-6xl mb-4 text-slate-300"></i>
+                                <h2 className="text-2xl font-bold text-slate-600 mb-2">데이터가 없습니다.</h2>
+                                <p className="mb-6 text-sm text-center">DataOps에서 추출한 마감 엑셀 파일을<br/>추가하여 분석을 시작하세요.</p>
+                                <button onClick={() => setUploadModalOpen(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-lg font-bold shadow-md hover:bg-indigo-700 transition card-hover">
+                                    엑셀 데이터 추가하기
+                                </button>
+                            </div>
+                        ) : (
+                            <>
+                                {currentView === 'dashboard' && <DashboardView />}
+                                {currentView === 'sales' && <SalesView />}
+                                {currentView === 'inventory' && <InventoryView />}
+                            </>
+                        )}
+                    </main>
+
+                    {/* Upload Modal */}
+                    {uploadModalOpen && (
+                        <div className="fixed inset-0 bg-slate-900 bg-opacity-60 flex items-center justify-center z-50 p-4">
+                            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md fade-in">
+                                <div className="flex justify-between items-center mb-5">
+                                    <h3 className="font-bold text-lg text-slate-800">마감 데이터 추가(Append)</h3>
+                                    <button onClick={() => setUploadModalOpen(false)} className="text-slate-400 hover:text-slate-600"><i className="fas fa-times"></i></button>
+                                </div>
+                                <p className="text-sm text-slate-600 mb-4">
+                                    DataOps에서 추출한 엑셀 파일들을 선택하세요. 기존 데이터에 병합되어 입체적인 트렌드 분석이 가능해집니다.
+                                </p>
+                                <div className="border-2 border-dashed border-indigo-200 bg-indigo-50 p-8 rounded-xl text-center cursor-pointer hover:bg-indigo-100 transition" onClick={() => fileInputRef.current.click()}>
+                                    <i className="fas fa-cloud-upload-alt text-4xl text-indigo-400 mb-3"></i>
+                                    <div className="font-bold text-indigo-700">엑셀 파일 선택 또는 드래그</div>
+                                    <input type="file" ref={fileInputRef} className="hidden" multiple accept=".xlsx, .xls" onChange={handleFileUpload} />
+                                </div>
+                                {isUploading && <div className="text-center text-sm font-bold text-indigo-600 mt-4"><i className="fas fa-circle-notch fa-spin mr-2"></i>데이터를 분석하며 병합 중입니다...</div>}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
