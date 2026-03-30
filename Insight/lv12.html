@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>oneapp Insight - 핵심 수불부 관리 (V1.2)</title>
+    <title>oneapp Insight - 핵심 수불부 관리 (V1.3)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -1099,6 +1099,7 @@
                     displayIssues = displayIssues.filter(msg => !msg.includes('매입내역 없음'));
                     
                     return {
+                        '품목코드': item.코드 !== 'NO_CODE' && item.코드 !== '-' ? item.코드 : '',
                         '품명(규격) / 일자 / 거래처': `${item.품명} / ${item.일자 || '미상'} / ${item.거래처 || '미지정'}`, 
                         '단가': Number(item.단가) || 0,
                         '재고': Number(item.기초) || 0, 
@@ -1114,7 +1115,7 @@
                 const ws = XLSX.utils.json_to_sheet(exportData); 
                 const wb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb, ws, '수불부_마감데이터');
-                XLSX.writeFile(wb, `수불부_${exportDateStr}.xlsx`);
+                XLSX.writeFile(wb, `재고_${exportDateStr}.xlsx`);
             }, [filteredProductData]);
 
             useEffect(() => {
@@ -1176,7 +1177,7 @@
                             <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
                                 <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight flex items-center">
                                     <span className="text-indigo-600 mr-2">oneapp</span> Insight
-                                    <span className="text-purple-500 text-[10px] px-2 py-0.5 bg-purple-50 rounded-full border border-purple-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">Light V1.2</span>
+                                    <span className="text-purple-500 text-[10px] px-2 py-0.5 bg-purple-50 rounded-full border border-purple-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">Light V1.3</span>
                                 </h1>
                             </div>
 
