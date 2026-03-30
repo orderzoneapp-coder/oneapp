@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>oneapp Insight - 핵심 수불부 관리 (V1.4)</title>
+    <title>oneapp Insight - 핵심 수불부 관리 (V1.7)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -374,8 +374,9 @@
                 let multiPriceCodes = new Set();
                 
                 productData.forEach(p => {
-                    if (p.isDummy && p.단가 === 0) missingPriceCount++;
-                    if (p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0)) lossCount++;
+                    if (p.isDummy && p.단가 === 0 && !p.수기확인완료) missingPriceCount++;
+                    // 수기 확인 완료되지 않은 오차만 카운트합니다 (To-Do 역할)
+                    if ((p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0)) && !p.수기확인완료) lossCount++;
                     if (priceOptionsMap[p.코드] && priceOptionsMap[p.코드].length >= 2 && p.출고 > 0) multiPriceCodes.add(p.코드);
                 });
 
@@ -422,9 +423,9 @@
             const handleFocusInput = useCallback((key, idx) => { focusedInputRef.current = { key, idx }; }, []);
 
             const handleLossCardClick = useCallback((direction = 'next') => {
-                const lossItems = productData.filter(p => p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0));
+                const lossItems = productData.filter(p => (p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0)) && !p.수기확인완료);
                 if (lossItems.length === 0) {
-                    setAlertMsg("현재 재고 오차가 있는 품목이 없습니다.");
+                    setAlertMsg("현재 확인이 필요한 재고 오차 품목이 없습니다.");
                     return;
                 }
 
@@ -443,12 +444,12 @@
                 let targetItem = null;
 
                 if (direction === 'next') {
-                    targetItem = productData.find((p, idx) => idx > currentDataIndex && (p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0)));
+                    targetItem = productData.find((p, idx) => idx > currentDataIndex && (p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0)) && !p.수기확인완료);
                     if (!targetItem) targetItem = lossItems[0];
                 } else {
                     for (let i = currentDataIndex - 1; i >= 0; i--) {
                         const p = productData[i];
-                        if (p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0)) {
+                        if ((p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0)) && !p.수기확인완료) {
                             targetItem = p;
                             break;
                         }
@@ -493,6 +494,7 @@
                                 np.실사 = Number(np.실사) + qtyToMove;
                                 np.로스 = np.실사 - np.전산잔량;
                             } else { np.실사 = np.전산잔량; np.로스 = 0; }
+                            np.수기확인완료 = true;
                             return np;
                         }
                         if (p.batchKey === targetKey) {
@@ -507,6 +509,7 @@
                                 np.로스 = np.실사 - np.전산잔량;
                             } else { np.실사 = np.전산잔량; np.로스 = 0; }
                             np.이슈 = np.이슈.filter(msg => msg !== '매입내역 없음' && !msg.includes('전산 재고 부족'));
+                            np.수기확인완료 = true;
                             return np;
                         }
                         return p;
@@ -554,6 +557,7 @@
                     sourceItem.실사 = sourceItem.실사 === null || sourceItem.실사 === '' ? sourceItem.전산잔량 : sourceItem.실사;
                     sourceItem.로스 = sourceItem.실사 - sourceItem.전산잔량;
                     sourceItem.이슈.push(`🔄 -> ${targetItem.품명}`);
+                    sourceItem.수기확인완료 = true;
 
                     targetItem.대체입고 += tQty;
                     targetItem.전산잔량 = targetItem.기초 + targetItem.입고 + targetItem.대체입고 - targetItem.출고 - targetItem.대체출고;
@@ -563,6 +567,7 @@
                     targetItem.매출원가 = targetItem.출고 * unitCost; // 단가가 바뀌었으므로 출고된 수량에 대해 매출원가 재계산
                     targetItem.이슈 = targetItem.이슈.filter(msg => !msg.includes('매입내역 없음') && !msg.includes('전산 재고 부족'));
                     targetItem.이슈.push(`🔄 <- ${sourceItem.품명}`);
+                    targetItem.수기확인완료 = true;
 
                     setSubstHistory(h => [...h, {
                         id: Date.now(), 
@@ -900,7 +905,8 @@
                             pData[batchKey] = { 
                                 batchKey, 코드: code, 품명: item.품명, 단가: price, 일자: date, 거래처: item.거래처,
                                 기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 
-                                매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig: {기초:0, 입고:0, 출고:0, 단가: price}, isDummy: false
+                                매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig: {기초:0, 입고:0, 출고:0, 단가: price}, 
+                                isDummy: false, 수기확인완료: false 
                             };
                         }
                         
@@ -939,7 +945,13 @@
                         
                         if (!pool || pool.buckets.length === 0) {
                             const bKey = `${code}|0|미상`;
-                            if (!pData[bKey]) pData[bKey] = { batchKey: bKey, 코드: code, 품명: sale.품명, 단가: 0, 일자: '', 거래처: sale.거래처, 기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig:{기초:0,입고:0,출고:0,단가:0}, isDummy: true };
+                            if (!pData[bKey]) pData[bKey] = { 
+                                batchKey: bKey, 코드: code, 품명: sale.품명, 단가: 0, 일자: '', 
+                                거래처: '매입내역 없음', 
+                                기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 
+                                매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig:{기초:0,입고:0,출고:0,단가:0}, 
+                                isDummy: true, 수기확인완료: false
+                            };
                             pData[bKey].출고 += qtyToDeduct; 
                             pData[bKey].매출액 += finalRevenue;
                             pData[bKey].출고내역[sale.거래처] = (pData[bKey].출고내역[sale.거래처] || 0) + qtyToDeduct;
@@ -994,7 +1006,13 @@
                             const hasSystemRecord = Object.values(pData).some(p => p.코드 === code);
                             if (!hasSystemRecord) {
                                 const price = parseNumber(item.단가) || 0; const date = String(item.일자 || '실사등록'); const batchKey = `${code}|${price}|${date}`;
-                                if (!pData[batchKey]) pData[batchKey] = { batchKey, 코드: code, 품명: item.품명, 단가: price, 일자: date, 거래처: item.거래처, 기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig:{기초:0,입고:0,출고:0} };
+                                if (!pData[batchKey]) pData[batchKey] = { 
+                                    batchKey, 코드: code, 품명: item.품명, 단가: price, 일자: date, 
+                                    거래처: '기록없음(실사)', 
+                                    기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 
+                                    매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig:{기초:0,입고:0,출고:0}, 
+                                    isDummy: true, 수기확인완료: false
+                                };
                             }
                         });
 
@@ -1045,7 +1063,7 @@
                 setProductData(prevP => {
                     const newP = prevP.map(item => {
                         if (item.batchKey === batchKey) {
-                            const newItem = { ...item, [field]: numVal };
+                            const newItem = { ...item, [field]: numVal, 수기확인완료: true };
                             
                             if (field === '단가') {
                                 let newIssues = [...newItem.이슈].filter(msg => msg !== '원가수정(수기)');
@@ -1083,7 +1101,7 @@
                         
                         let newIssues = [...item.이슈].filter(msg => msg !== '실사 수기조정');
                         if (val !== '' && newLoss !== 0) newIssues.push('실사 수기조정');
-                        return { ...item, 실사: newActual, 로스: newLoss, 이슈: newIssues };
+                        return { ...item, 실사: newActual, 로스: newLoss, 이슈: newIssues, 수기확인완료: true }; 
                     }
                     return item;
                 }));
@@ -1127,12 +1145,13 @@
                 setTimeout(() => runAnalysisRef.current(mockFiles, mockJson), 100); 
             };
 
-            const handleSaveAndDownload = useCallback(() => {
+            const handleCombinedExport = useCallback(() => {
                 if (filteredProductData.length === 0) { setAlertMsg("다운로드할 데이터가 없습니다."); return; }
                 const today = new Date();
                 let exportDateStr = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
                 
-                const exportData = filteredProductData.map(item => {
+                // Sheet 1: 재고
+                const exportData1 = filteredProductData.map(item => {
                     let displayIssues = item.이슈 ? [...item.이슈] : [];
                     displayIssues = displayIssues.filter(msg => !msg.includes('매입내역 없음'));
                     
@@ -1159,19 +1178,70 @@
                     };
                 });
 
-                const ws = XLSX.utils.json_to_sheet(exportData); 
+                // Sheet 2: 실사
+                const aggregated = {};
+                productData.forEach(item => {
+                    const code = item.코드;
+                    if (!code || code === 'NO_CODE' || code === '-') return;
+                    
+                    const qty = item.실사 === '' || item.실사 === null ? 0 : Number(item.실사);
+                    if (!aggregated[code]) {
+                        aggregated[code] = { 품명: item.품명, 수량: 0 };
+                    }
+                    aggregated[code].수량 += qty;
+                });
+
+                const exportData2 = [];
+                Object.keys(aggregated).forEach(code => {
+                    if (aggregated[code].수량 !== 0) {
+                        exportData2.push({
+                            '일자': exportDateStr,
+                            '순번': '',
+                            '담당자': '',
+                            '창고': '01',
+                            '코드': code,
+                            '품명(규격)': aggregated[code].품명,
+                            '수량': aggregated[code].수량,
+                            '적요': ''
+                        });
+                    }
+                });
+
                 const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, '수불부_마감데이터');
+
+                // Sheet 1 추가
+                const ws1 = XLSX.utils.json_to_sheet(exportData1); 
+                XLSX.utils.book_append_sheet(wb, ws1, '재고');
+
+                // Sheet 2 추가
+                if (exportData2.length > 0) {
+                    const ws2 = XLSX.utils.json_to_sheet(exportData2);
+                    // 창고 열(D)과 코드 열(E)을 텍스트로 강제 변환
+                    Object.keys(ws2).forEach(cellAddress => {
+                        if (cellAddress === '!ref' || cellAddress === '!margins') return;
+                        const cell = ws2[cellAddress];
+                        if (cellAddress.startsWith('D') && cellAddress !== 'D1') {
+                            cell.t = 's'; 
+                            cell.v = '01'; 
+                            cell.w = '01'; 
+                        }
+                        if (cellAddress.startsWith('E') && cellAddress !== 'E1') {
+                            cell.t = 's'; 
+                        }
+                    });
+                    XLSX.utils.book_append_sheet(wb, ws2, '실사');
+                }
+
                 XLSX.writeFile(wb, `재고_${exportDateStr}.xlsx`);
-            }, [filteredProductData]);
+            }, [filteredProductData, productData]);
 
             useEffect(() => {
                 actionRefs.current = { 
-                    downloadDetail: handleSaveAndDownload, 
+                    handleCombinedExport: handleCombinedExport,
                     runAnalysis: () => runAnalysisRef.current(),
                     handleLossCardClick: (dir) => handleLossCardClickRef.current(dir)
                 };
-            }, [handleSaveAndDownload]);
+            }, [handleCombinedExport]);
 
             useEffect(() => {
                 const handleGlobalEnter = (e) => {
@@ -1193,7 +1263,7 @@
                     if (document.querySelector('.modal-bounce')) {
                         if (e.key === 'Escape') setUndoUi({ state: 'closed' }); return;
                     }
-                    if (e.key === 'F8') { e.preventDefault(); actionRefs.current.downloadDetail(); }
+                    if (e.key === 'F8') { e.preventDefault(); actionRefs.current.handleCombinedExport(); }
                     if (e.key === 'Escape' && linkSourceKey) {
                         setLinkSourceKey(null);
                         if (focusedInputRef.current.key) {
@@ -1224,7 +1294,7 @@
                             <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
                                 <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight flex items-center">
                                     <span className="text-indigo-600 mr-2">oneapp</span> Insight
-                                    <span className="text-purple-500 text-[10px] px-2 py-0.5 bg-purple-50 rounded-full border border-purple-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">Light V1.4</span>
+                                    <span className="text-purple-500 text-[10px] px-2 py-0.5 bg-purple-50 rounded-full border border-purple-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">Light V1.7</span>
                                 </h1>
                             </div>
 
@@ -1363,7 +1433,7 @@
                                                 className={`p-3 rounded-lg border flex flex-col justify-between cursor-pointer transition-all ${closingStats.lossCount > 0 ? 'bg-orange-50 border-orange-400 shadow-sm hover:shadow-md hover:bg-orange-100' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'}`}
                                                 title="클릭하거나 Tab 키를 누르면 다음 오차 품목으로 이동합니다"
                                             >
-                                                <div className="text-xs font-bold text-gray-500 mb-1 flex items-center"><i className="fas fa-balance-scale mr-1.5 text-orange-400"></i>재고 오차 (로스발생)</div>
+                                                <div className="text-xs font-bold text-gray-500 mb-1 flex items-center"><i className="fas fa-balance-scale mr-1.5 text-orange-400"></i>재고 오차 (확인필요)</div>
                                                 <div className={`text-xl font-black ${closingStats.lossCount > 0 ? 'text-orange-600' : 'text-gray-700'}`}>{closingStats.lossCount}건</div>
                                                 <div className="text-[10px] text-orange-500 font-bold mt-1"><i className="fas fa-arrow-down mr-1"></i>오차 품목으로 스크롤 [Tab]</div>
                                             </div>
@@ -1427,7 +1497,7 @@
                                                 <button onClick={() => setFilters({...filters, issuesOnly: !filters.issuesOnly})} className={`px-3 py-2 rounded border text-[12px] font-bold transition shrink-0 ${filters.issuesOnly ? 'bg-red-50 text-red-700 border-red-200 shadow-inner' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>이슈/결과 필터</button>
                                                 <button onClick={() => setFilters({...filters, excludeZeroActual: !filters.excludeZeroActual})} className={`px-3 py-2 rounded border text-[12px] font-bold transition shrink-0 ${filters.excludeZeroActual ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-inner' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>실사 0 제외</button>
                                                 
-                                                <button onClick={actionRefs.current.downloadDetail} className="px-4 py-2 bg-gray-800 hover:bg-gray-900 text-white rounded text-[12px] font-bold shadow transition flex items-center shrink-0">
+                                                <button onClick={actionRefs.current.handleCombinedExport} className="px-4 py-2 bg-gray-800 hover:bg-gray-900 text-white rounded text-[12px] font-bold shadow transition flex items-center shrink-0" title="1.재고, 2.실사 탭으로 나누어 저장합니다">
                                                     엑셀저장 (F8)
                                                 </button>
                                             </div>
