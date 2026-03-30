@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>oneapp Insight - 핵심 수불부 관리 (V1.10)</title>
+    <title>oneapp Insight - 핵심 수불부 관리 (V1.11)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -323,7 +323,8 @@
             const [files, setFiles] = useState({ prev: null, in: null, out: null, end: null });
             const [rawJson, setRawJson] = useState({ prev: [], in: [], out: [], end: [] });
             
-            const [filters, setFilters] = useState({ cardFilter: null, issuesOnly: false, excludeZeroActual: false, search: '' });
+            const [filters, setFilters] = useState({ issuesOnly: false, excludeZeroActual: false, search: '' });
+            const [activeIssueMode, setActiveIssueMode] = useState(null); // Tab 이동을 위한 활성 이슈 모드
             
             const [isProcessing, setIsProcessing] = useState(false);
             const [error, setError] = useState('');
@@ -340,6 +341,8 @@
             const [hasAutoSave, setHasAutoSave] = useState(false);
 
             const actionRefs = useRef({});
+            const activeIssueModeRef = useRef(activeIssueMode);
+            useEffect(() => { activeIssueModeRef.current = activeIssueMode; }, [activeIssueMode]);
 
             const [mappings, setMappings] = useState(() => {
                 const saved = localStorage.getItem('inventoryMappingsLight');
@@ -421,14 +424,24 @@
 
             const handleFocusInput = useCallback((key, idx) => { focusedInputRef.current = { key, idx }; }, []);
 
-            const handleLossCardClick = useCallback((direction = 'next') => {
-                const lossItems = productData.filter(p => (p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0)) && !p.수기확인완료);
-                if (lossItems.length === 0) {
-                    setAlertMsg("현재 확인이 필요한 재고 오차 품목이 없습니다.");
+            // 통합된 이슈 탐색(점프) 로직
+            const handleIssueJump = useCallback((type, direction = 'next') => {
+                setActiveIssueMode(type);
+                setFilters(prev => ({ ...prev, search: '', issuesOnly: false, excludeZeroActual: false }));
+
+                const condition = (p) => {
+                    if (type === 'missingPrice') return p.isDummy && p.단가 === 0 && !p.수기확인완료;
+                    if (type === 'loss') return (p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0)) && !p.수기확인완료;
+                    if (type === 'multiPrice') return priceOptionsMap[p.코드] && priceOptionsMap[p.코드].length >= 2 && p.출고 > 0;
+                    return false;
+                };
+
+                const targetItems = productData.filter(condition);
+                if (targetItems.length === 0) {
+                    setAlertMsg("해당하는 이슈 품목이 없습니다.");
+                    setActiveIssueMode(null);
                     return;
                 }
-
-                setFilters(prev => ({ ...prev, search: '', cardFilter: null, issuesOnly: false, excludeZeroActual: false }));
 
                 const activeEl = document.activeElement;
                 let currentDataIndex = -1;
@@ -443,30 +456,30 @@
                 let targetItem = null;
 
                 if (direction === 'next') {
-                    targetItem = productData.find((p, idx) => idx > currentDataIndex && (p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0)) && !p.수기확인완료);
-                    if (!targetItem) targetItem = lossItems[0];
+                    targetItem = productData.find((p, idx) => idx > currentDataIndex && condition(p));
+                    if (!targetItem) targetItem = targetItems[0]; // 없으면 첫 번째로 랩어라운드
                 } else {
                     for (let i = currentDataIndex - 1; i >= 0; i--) {
-                        const p = productData[i];
-                        if ((p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0)) && !p.수기확인완료) {
-                            targetItem = p;
+                        if (condition(productData[i])) {
+                            targetItem = productData[i];
                             break;
                         }
                     }
-                    if (!targetItem) targetItem = lossItems[lossItems.length - 1];
+                    if (!targetItem) targetItem = targetItems[targetItems.length - 1]; // 없으면 마지막으로 랩어라운드
                 }
 
                 setTimeout(() => {
                     const row = document.querySelector(`tr[data-batch="${targetItem.batchKey}"]`);
                     if (row) {
                         row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        row.classList.add('bg-orange-100');
-                        setTimeout(() => row.classList.remove('bg-orange-100'), 1500);
+                        const colorClass = type === 'missingPrice' ? 'bg-red-100' : (type === 'loss' ? 'bg-orange-100' : 'bg-blue-100');
+                        row.classList.add(colorClass);
+                        setTimeout(() => row.classList.remove(colorClass), 1500);
                         const input = row.querySelector('input[id^="actual-input-"]');
                         if (input) { input.focus(); input.select(); }
                     }
                 }, 150);
-            }, [productData]);
+            }, [productData, priceOptionsMap]);
 
             const handleSalesMove = useCallback((sourceKey, targetKey, vendorName, qtyToMove, sourceCode, targetCode) => {
                 setProductData(prevP => {
@@ -623,17 +636,11 @@
                     const q = filters.search.toLowerCase();
                     data = data.filter(d => (d.품명 && d.품명.toLowerCase().includes(q)) || (d.코드 && d.코드.toLowerCase().includes(q)) || (d.거래처 && d.거래처.toLowerCase().includes(q)));
                 }
-                
-                if (filters.cardFilter === 'missingPrice') {
-                    data = data.filter(d => d.isDummy && d.단가 === 0);
-                } else if (filters.cardFilter === 'multiPrice') {
-                    data = data.filter(p => priceOptionsMap[p.코드] && priceOptionsMap[p.코드].length >= 2 && p.출고 > 0);
-                }
 
                 if (filters.issuesOnly) data = data.filter(d => d.이슈 && d.이슈.length > 0);
                 if (filters.excludeZeroActual) data = data.filter(d => { const act = d.실사 === '' || d.실사 === null || d.실사 === undefined ? 0 : Number(d.실사); return act !== 0; });
                 return data;
-            }, [productData, filters, priceOptionsMap]);
+            }, [productData, filters]);
 
             const handleResetFiles = () => {
                 setFiles({ prev: null, in: null, out: null, end: null });
@@ -643,8 +650,9 @@
                 setSubstHistory([]);
                 setUndoUi({ state: 'closed' });
                 setLinkSourceKey(null);
+                setActiveIssueMode(null);
                 focusedInputRef.current = { key: null, idx: -1 };
-                setFilters({ cardFilter: null, issuesOnly: false, excludeZeroActual: false, search: '' });
+                setFilters({ issuesOnly: false, excludeZeroActual: false, search: '' });
                 setError('');
                 setAppStep('upload');
                 document.querySelectorAll('input[type="file"]').forEach(input => input.value = '');
@@ -811,7 +819,7 @@
 
             const runAnalysis = async (demoFiles = null, demoJson = null) => {
                 setIsProcessing(true); setError('');
-                setLinkSourceKey(null); focusedInputRef.current = { key: null, idx: -1 }; setSubstHistory([]); setUndoUi({ state: 'closed' });
+                setLinkSourceKey(null); setActiveIssueMode(null); focusedInputRef.current = { key: null, idx: -1 }; setSubstHistory([]); setUndoUi({ state: 'closed' });
 
                 try {
                     let parsedPrev = demoJson ? demoJson.prev : rawJson.prev;
@@ -1140,8 +1148,9 @@
             const runAnalysisRef = useRef(runAnalysis);
             useEffect(() => { runAnalysisRef.current = runAnalysis; }, [runAnalysis]);
             
-            const handleLossCardClickRef = useRef(handleLossCardClick);
-            useEffect(() => { handleLossCardClickRef.current = handleLossCardClick; }, [handleLossCardClick]);
+            // 공통 이슈 점프 (스크롤) 핸들러
+            const handleIssueJumpRef = useRef(handleIssueJump);
+            useEffect(() => { handleIssueJumpRef.current = handleIssueJump; }, [handleIssueJump]);
 
             const loadDemoData = () => {
                 const demoPrev = [{ 코드: 'A001', 품명: '프리미엄 원두_1kg', 수량: 100, 단가: 10000, 일자: '2026/03/20' }, { 코드: 'A002', 품명: '원두_소분_200g', 수량: 0, 단가: 0, 일자: '2026/03/21' }, { 코드: 'B001', 품명: '바닐라 시럽_1000ml', 수량: 30, 단가: 8000, 일자: '2026/03/22' }, { 코드: 'B002', 품명: '바닐라 시럽_소분_펌프형', 수량: 0, 단가: 0, 일자: '2026/03/22' }];
@@ -1258,7 +1267,11 @@
                 actionRefs.current = { 
                     handleCombinedExport: handleCombinedExport,
                     runAnalysis: () => runAnalysisRef.current(),
-                    handleLossCardClick: (dir) => handleLossCardClickRef.current(dir)
+                    handleIssueJump: (dir) => {
+                        if (activeIssueModeRef.current) {
+                            handleIssueJumpRef.current(activeIssueModeRef.current, dir);
+                        }
+                    }
                 };
             }, [handleCombinedExport]);
 
@@ -1293,9 +1306,9 @@
                         }
                     }
                     if (e.key === 'Tab' && appStep === 'closing') {
-                        e.preventDefault();
-                        if (actionRefs.current.handleLossCardClick) {
-                            actionRefs.current.handleLossCardClick(e.shiftKey ? 'prev' : 'next');
+                        if (activeIssueModeRef.current) {
+                            e.preventDefault();
+                            actionRefs.current.handleIssueJump(e.shiftKey ? 'prev' : 'next');
                         }
                     }
                 };
@@ -1313,7 +1326,7 @@
                             <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
                                 <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight flex items-center">
                                     <span className="text-indigo-600 mr-2">oneapp</span> Insight
-                                    <span className="text-purple-500 text-[10px] px-2 py-0.5 bg-purple-50 rounded-full border border-purple-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">Light V1.10</span>
+                                    <span className="text-purple-500 text-[10px] px-2 py-0.5 bg-purple-50 rounded-full border border-purple-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">Light V1.11</span>
                                 </h1>
                             </div>
 
@@ -1439,31 +1452,28 @@
 
                                         <div className="grid grid-cols-3 gap-3">
                                             <div 
-                                                onClick={() => { setFilters(f => ({...f, cardFilter: f.cardFilter === 'missingPrice' ? null : 'missingPrice', search: '', issuesOnly: false, excludeZeroActual: false})); }}
-                                                className={`p-3 rounded-lg border flex flex-col justify-between cursor-pointer transition-all ${filters.cardFilter === 'missingPrice' ? 'bg-red-100 border-red-400 ring-2 ring-red-200 scale-[1.02] shadow-md' : (closingStats.missingPriceCount > 0 ? 'bg-red-50 border-red-200 hover:bg-red-100' : 'bg-gray-50 border-gray-200 hover:bg-gray-100')}`}
-                                                title="클릭하면 단가 누락 품목만 모아서 봅니다"
+                                                onClick={() => handleIssueJump('missingPrice')}
+                                                className={`p-3 rounded-lg border flex flex-col justify-between cursor-pointer transition-all ${activeIssueMode === 'missingPrice' ? 'bg-red-100 border-red-400 ring-2 ring-red-200 scale-[1.02] shadow-md' : (closingStats.missingPriceCount > 0 ? 'bg-red-50 border-red-200 hover:bg-red-100' : 'bg-gray-50 border-gray-200 hover:bg-gray-100')}`}
                                             >
                                                 <div className="text-xs font-bold text-gray-500 mb-1 flex items-center"><i className="fas fa-exclamation-circle mr-1.5 text-red-400"></i>단가 누락 (매입없음)</div>
                                                 <div className={`text-xl font-black ${closingStats.missingPriceCount > 0 ? 'text-red-600' : 'text-gray-700'}`}>{closingStats.missingPriceCount}건</div>
-                                                <div className="text-[10px] text-red-500 font-bold mt-1"><i className="fas fa-filter mr-1"></i>모아서 보기</div>
+                                                <div className="text-[10px] text-red-500 font-bold mt-1"><i className="fas fa-arrow-down mr-1"></i>[Tab] 다음 항목 이동</div>
                                             </div>
                                             <div 
-                                                onClick={() => handleLossCardClick('next')}
-                                                className={`p-3 rounded-lg border flex flex-col justify-between cursor-pointer transition-all ${closingStats.lossCount > 0 ? 'bg-orange-50 border-orange-400 shadow-sm hover:shadow-md hover:bg-orange-100' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'}`}
-                                                title="클릭하거나 Tab 키를 누르면 다음 오차 품목으로 이동합니다"
+                                                onClick={() => handleIssueJump('loss')}
+                                                className={`p-3 rounded-lg border flex flex-col justify-between cursor-pointer transition-all ${activeIssueMode === 'loss' ? 'bg-orange-100 border-orange-400 ring-2 ring-orange-200 scale-[1.02] shadow-md' : (closingStats.lossCount > 0 ? 'bg-orange-50 border-orange-200 hover:bg-orange-100' : 'bg-gray-50 border-gray-200 hover:bg-gray-100')}`}
                                             >
                                                 <div className="text-xs font-bold text-gray-500 mb-1 flex items-center"><i className="fas fa-balance-scale mr-1.5 text-orange-400"></i>재고 오차 (확인필요)</div>
                                                 <div className={`text-xl font-black ${closingStats.lossCount > 0 ? 'text-orange-600' : 'text-gray-700'}`}>{closingStats.lossCount}건</div>
-                                                <div className="text-[10px] text-orange-500 font-bold mt-1"><i className="fas fa-arrow-down mr-1"></i>오차 품목으로 스크롤 [Tab]</div>
+                                                <div className="text-[10px] text-orange-500 font-bold mt-1"><i className="fas fa-arrow-down mr-1"></i>[Tab] 다음 항목 이동</div>
                                             </div>
                                             <div 
-                                                onClick={() => { setFilters(f => ({...f, cardFilter: f.cardFilter === 'multiPrice' ? null : 'multiPrice', search: '', issuesOnly: false, excludeZeroActual: false})); }}
-                                                className={`p-3 rounded-lg border flex flex-col justify-between cursor-pointer transition-all ${filters.cardFilter === 'multiPrice' ? 'bg-blue-100 border-blue-400 ring-2 ring-blue-200 scale-[1.02] shadow-md' : (closingStats.multiPriceCount > 0 ? 'bg-blue-50 border-blue-200 hover:bg-blue-100' : 'bg-gray-50 border-gray-200 hover:bg-gray-100')}`}
-                                                title="클릭하면 매입 단가가 여러 개인 품목만 수불부 탭에서 모아서 봅니다"
+                                                onClick={() => handleIssueJump('multiPrice')}
+                                                className={`p-3 rounded-lg border flex flex-col justify-between cursor-pointer transition-all ${activeIssueMode === 'multiPrice' ? 'bg-blue-100 border-blue-400 ring-2 ring-blue-200 scale-[1.02] shadow-md' : (closingStats.multiPriceCount > 0 ? 'bg-blue-50 border-blue-200 hover:bg-blue-100' : 'bg-gray-50 border-gray-200 hover:bg-gray-100')}`}
                                             >
                                                 <div className="text-xs font-bold text-gray-500 mb-1 flex items-center"><i className="fas fa-tags mr-1.5 text-blue-500"></i>원가 매칭 (복수단가)</div>
                                                 <div className={`text-xl font-black ${closingStats.multiPriceCount > 0 ? 'text-blue-600' : 'text-gray-700'}`}>{closingStats.multiPriceCount}건</div>
-                                                <div className="text-[10px] text-blue-600 font-bold mt-1"><i className="fas fa-filter mr-1"></i>모아서 보기</div>
+                                                <div className="text-[10px] text-blue-600 font-bold mt-1"><i className="fas fa-arrow-down mr-1"></i>[Tab] 다음 항목 이동</div>
                                             </div>
                                         </div>
 
@@ -1480,7 +1490,6 @@
                                                         onChange={e => setFilters(f => ({
                                                             ...f, 
                                                             search: e.target.value, 
-                                                            cardFilter: e.target.value ? null : f.cardFilter, 
                                                             issuesOnly: e.target.value ? false : f.issuesOnly, 
                                                             excludeZeroActual: e.target.value ? false : f.excludeZeroActual
                                                         }))} 
