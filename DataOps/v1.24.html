@@ -185,6 +185,7 @@
                                 qty: currentMappings.qty.split(',').map(s => s.trim().toLowerCase()),
                                 price: currentMappings.price.split(',').map(s => s.trim().toLowerCase()),
                                 vendor: currentMappings.vendor.split(',').map(s => s.trim().toLowerCase()),
+                                matchVendor: currentMappings.matchVendor ? currentMappings.matchVendor.split(',').map(s => s.trim().toLowerCase()) : [], // [NEW] 매칭정보
                                 spec: currentMappings.spec ? currentMappings.spec.split(',').map(s => s.trim().toLowerCase()) : [],
                                 date: currentMappings.date ? currentMappings.date.split(',').map(s => s.trim().toLowerCase()) : []
                             };
@@ -256,7 +257,7 @@
                                 continue;
                             }
                             
-                            // [NEW] 엑셀 하단 실행 로그, 날짜, 시간 등 노이즈 데이터 철저히 배제
+                            // 엑셀 하단 실행 로그, 날짜, 시간 등 노이즈 데이터 배제
                             if (/^\d{4}[\/\-]\d{2}[\/\-]\d{2}/.test(codeStr) || /^\d{4}[\/\-]\d{2}[\/\-]\d{2}/.test(baseName)) continue;
                             if (codeStr.includes('오전') || codeStr.includes('오후') || baseName.includes('오전') || baseName.includes('오후')) continue;
                             if (codeStr.includes('실사등록') || baseName.includes('실사등록')) continue;
@@ -276,6 +277,7 @@
                                 수량: parseNumber(getValByKeywords(rowObj, keywords.qty)),
                                 단가: parseNumber(getValByKeywords(rowObj, keywords.price)),
                                 거래처: String(getValByKeywords(rowObj, keywords.vendor) || '미지정').trim(),
+                                매입처매칭: String(getValByKeywords(rowObj, keywords.matchVendor) || '').trim(), // [NEW] 구매처 매칭정보
                                 일자: String(getValByKeywords(rowObj, keywords.date) || '').trim(),
                                 메모: '', 
                                 _raw: rowObj 
@@ -297,6 +299,7 @@
             price: '매입단가(원가), 단가, 입고단가, 구매단가, 판매단가, 매입단가, 매입가, 판매가, 공급가액, 공급가, 금액, 원가, 가격, 최종(창고)',
             date: '매입일자, 일자, 날짜, 구매일자, 판매일자, 입고일자, 출고일자',
             vendor: '매입처(거래처), 거래처명, 거래처, 거래, 매장명, 매장, 고객, 구매처, 판매처, 공급사, 판매, 청과, 3거래',
+            matchVendor: '구매처, 매입처, 매칭정보, 원매입처', // [NEW] 우선 차감용 매칭 정보
             excludeVendor: '3우리, 우리농산, 1전송, 창고이동, 폐기, 샘플' 
         };
 
@@ -565,7 +568,7 @@
             const [memoModal, setMemoModal] = useState({ isOpen: false, batchKey: null, text: '' });
             const [hasAutoSave, setHasAutoSave] = useState(false);
             
-            // [NEW] 결산일자 (분석 기간의 마지막 날짜) 보관
+            // 결산일자 (분석 기간의 마지막 날짜) 보관
             const [targetDateStr, setTargetDateStr] = useState('');
 
             const actionRefs = useRef({});
@@ -981,15 +984,13 @@
                 try {
                     const { parsedPrev, parsedIn, parsedOut, parsedEnd, periodStr, targetDateStrFromData } = payload;
                     setAnalysisPeriod(periodStr);
-                    setTargetDateStr(targetDateStrFromData); // [NEW] 분석 데이터 기반 결산일자 셋팅
+                    setTargetDateStr(targetDateStrFromData); 
                     
                     let pData = {}; const stockPool = {};
                     const excludeList = (mappings.excludeVendor || '').split(',').map(s => s.trim().toLowerCase()).filter(s => s);
                     const isExcluded = (vendorName) => vendorName && excludeList.some(keyword => vendorName.toLowerCase().includes(keyword));
 
                     const addStock = (item, type) => {
-                        // [UPDATE] 구매(in) 전표인 경우에만 거래처명 기준으로 제외 로직 적용
-                        // 기초재고(prev)의 경우 부가정보로 표기될 수 있으므로 제외하지 않음
                         if (type === 'in' && isExcluded(item.거래처)) return;
                         
                         const code = String(item.코드 || 'NO_CODE'); const price = parseNumber(item.단가); const date = String(item.일자 || '');
@@ -1008,7 +1009,8 @@
                         if (type === 'in') pData[batchKey].입고 += item.수량;
                         
                         if (!stockPool[code]) stockPool[code] = { buckets: [] };
-                        if (item.수량 !== 0) stockPool[code].buckets.push({ batchKey, 단가: price, 일자: date, 수량: item.수량 });
+                        // 버킷에 거래처 정보를 보존하여 나중에 매칭할 수 있도록 함
+                        if (item.수량 !== 0) stockPool[code].buckets.push({ batchKey, 단가: price, 일자: date, 수량: item.수량, 거래처: item.거래처 });
                     };
 
                     parsedPrev.forEach(item => addStock(item, 'prev'));
@@ -1017,7 +1019,6 @@
                     Object.values(stockPool).forEach(pool => pool.buckets.sort((a, b) => String(a.일자 || '').localeCompare(String(b.일자 || ''))));
 
                     parsedOut.forEach(sale => {
-                        // [UPDATE] 매출(out) 전표는 제외 거래처 필터링 적용
                         if (isExcluded(sale.거래처)) return;
                         
                         const code = String(sale.코드 || 'NO_CODE');
@@ -1056,35 +1057,56 @@
 
                         let remainingQty = qtyToDeduct;
 
+                        // [NEW] 공통 차감 처리 함수
+                        const deductFromBucket = (bucket, take) => {
+                            const cogs = take * bucket.단가;
+                            const revShare = qtyToDeduct > 0 ? finalRevenue * (take / qtyToDeduct) : 0;
+                            
+                            bucket.수량 -= take; 
+                            pData[bucket.batchKey].출고 += take;
+                            pData[bucket.batchKey].매출원가 += cogs;
+                            pData[bucket.batchKey].매출액 += revShare;
+                            pData[bucket.batchKey].출고내역[sale.거래처] = (pData[bucket.batchKey].출고내역[sale.거래처] || 0) + take;
+                        };
+
                         if (remainingQty < 0) {
+                            // 반품 등 음수 수량 처리 로직 (기존과 동일하게 마지막 버킷에 반영)
                             const lastBucket = pool.buckets[pool.buckets.length - 1];
-                            const cogs = remainingQty * lastBucket.단가;
-                            lastBucket.수량 -= remainingQty; 
-                            pData[lastBucket.batchKey].출고 += remainingQty;
-                            pData[lastBucket.batchKey].매출원가 += cogs;
-                            pData[lastBucket.batchKey].매출액 += finalRevenue;
-                            pData[lastBucket.batchKey].출고내역[sale.거래처] = (pData[lastBucket.batchKey].출고내역[sale.거래처] || 0) + remainingQty;
+                            deductFromBucket(lastBucket, remainingQty);
                         } else {
-                            for (let i = 0; i < pool.buckets.length && remainingQty > 0; i++) {
-                                const bucket = pool.buckets[i]; if (bucket.수량 <= 0) continue;
-                                const take = Math.min(bucket.수량, remainingQty);
-                                const cogs = take * bucket.단가;
-                                const revShare = qtyToDeduct > 0 ? finalRevenue * (take / qtyToDeduct) : 0;
-                                
-                                bucket.수량 -= take; remainingQty -= take;
-                                pData[bucket.batchKey].출고 += take;
-                                pData[bucket.batchKey].매출원가 += cogs;
-                                pData[bucket.batchKey].매출액 += revShare;
-                                pData[bucket.batchKey].출고내역[sale.거래처] = (pData[bucket.batchKey].출고내역[sale.거래처] || 0) + take;
+                            // 1. 지정 매칭(구매처 매칭정보) 기반 우선 차감
+                            if (sale.매입처매칭 && sale.매입처매칭 !== '미지정') {
+                                const matchStr = sale.매입처매칭.replace(/\s/g, '').toLowerCase();
+                                for (let i = 0; i < pool.buckets.length && remainingQty > 0; i++) {
+                                    const bucket = pool.buckets[i];
+                                    if (bucket.수량 <= 0) continue;
+                                    
+                                    const bVendorStr = String(bucket.거래처 || '').replace(/\s/g, '').toLowerCase();
+                                    // 매칭 조건: 서로 포함 관계가 성립하면 동일한 거래처로 인정 (예: "가락(랑희유통)" <-> "랑희유통")
+                                    if (bVendorStr && matchStr && (bVendorStr.includes(matchStr) || matchStr.includes(bVendorStr))) {
+                                        const take = Math.min(bucket.수량, remainingQty);
+                                        deductFromBucket(bucket, take);
+                                        remainingQty -= take;
+                                    }
+                                }
                             }
+
+                            // 2. 매칭정보가 없거나 차감 후에도 남은 수량이 있을 경우 선입선출(FIFO) 차감
+                            if (remainingQty > 0) {
+                                for (let i = 0; i < pool.buckets.length && remainingQty > 0; i++) {
+                                    const bucket = pool.buckets[i];
+                                    if (bucket.수량 <= 0) continue;
+                                    
+                                    const take = Math.min(bucket.수량, remainingQty);
+                                    deductFromBucket(bucket, take);
+                                    remainingQty -= take;
+                                }
+                            }
+
+                            // 3. 그래도 남는 수량 (전산재고 부족 상태에서의 출고) -> 마지막 버킷에서 마이너스 차감
                             if (remainingQty > 0) {
                                 const lastBucket = pool.buckets[pool.buckets.length - 1];
-                                const cogs = remainingQty * lastBucket.단가;
-                                const revShare = qtyToDeduct > 0 ? finalRevenue * (remainingQty / qtyToDeduct) : 0;
-                                pData[lastBucket.batchKey].출고 += remainingQty;
-                                pData[lastBucket.batchKey].매출원가 += cogs;
-                                pData[lastBucket.batchKey].매출액 += revShare;
-                                pData[lastBucket.batchKey].출고내역[sale.거래처] = (pData[lastBucket.batchKey].출고내역[sale.거래처] || 0) + remainingQty;
+                                deductFromBucket(lastBucket, remainingQty);
                             }
                         }
                     });
@@ -1252,7 +1274,7 @@
                     }
                     const periodStr = (minD === 99999999 || maxD === 0) ? '기간 미상' : `${formatStrForPeriod(minD)} ~ ${formatStrForPeriod(maxD)}${daysText}`;
 
-                    // [NEW] 결산 기준일자 (maxD) 포맷팅
+                    // 결산 기준일자 (maxD) 포맷팅
                     let targetDateStrFromData = '';
                     if (maxD !== 0) {
                         targetDateStrFromData = `${Math.floor(maxD/10000)}${String(Math.floor((maxD%10000)/100)).padStart(2,'0')}${String(maxD%100).padStart(2,'0')}`;
@@ -1363,7 +1385,6 @@
             const handleCombinedExport = useCallback(() => {
                 if (filteredProductData.length === 0) { setAlertMsg("다운로드할 데이터가 없습니다."); return; }
                 
-                // [NEW] 파일명에는 다운로드 받는 현재 시점을 쓰지만, 내부 결산일은 철저히 데이터 기준(targetDateStr)을 따름
                 const today = new Date();
                 let exportFileNameDate = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
                 
@@ -1395,7 +1416,7 @@
                         const issueResultStr = [...displayIssues, ...vendorStrs].join(', ');
 
                         return {
-                            '결산일자': targetDateStr, // [NEW] DB 누적(Append)을 위한 핵심 키값 추가
+                            '결산일자': targetDateStr, 
                             '품목코드': item.코드, 
                             '품명': item.품명, 
                             '기말실사(이월수량)': qty, 
@@ -1424,7 +1445,7 @@
                 Object.keys(aggregated).forEach(code => {
                     if (aggregated[code].수량 !== 0) {
                         exportData2.push({
-                            '일자': targetDateStr, // [UPDATE] 현실 시간이 아닌 분석 결산일자 적용
+                            '일자': targetDateStr, 
                             '순번': '',
                             '담당자': '',
                             '창고': '01',
@@ -1438,7 +1459,7 @@
 
                 // Sheet 3: 거래처매출 Raw (BI 연동용, 소계 없음)
                 const exportData3 = [];
-                // [NEW] Sheet 4: 거래처별 집계 (엑셀 확인용, 소계 전용)
+                // Sheet 4: 거래처별 집계 (엑셀 확인용, 소계 전용)
                 const vendorAggregated = {};
 
                 filteredProductData.forEach(item => {
@@ -1454,9 +1475,9 @@
                             const vProfit = vRev - vCogs;
                             const vMargin = vRev !== 0 ? ((vProfit / vRev) * 100).toFixed(1) : '0';
 
-                            // 1. Raw Data 축적 (원앱 인사이트 판매 트렌드 분석용 완벽한 형태)
+                            // 1. Raw Data 축적 
                             exportData3.push({
-                                '결산일자': targetDateStr, // [NEW] DB 누적(Append)을 위한 핵심 키값 추가
+                                '결산일자': targetDateStr, 
                                 '거래처명': vendor, 
                                 '품목코드': item.코드,
                                 '품명(규격)': item.품명,
@@ -1498,7 +1519,7 @@
                 const totalMargin = totalRev !== 0 ? ((totalProfit / totalRev) * 100).toFixed(1) : '0';
                 
                 const exportData5 = [{
-                    '결산일자': targetDateStr, // [UPDATE] 현실 시간이 아닌 분석 결산일자 적용
+                    '결산일자': targetDateStr, 
                     '분석기간': analysisPeriod,
                     '총 매출액(₩)': totalRev,
                     '총 매출원가(₩)': totalCogs,
@@ -1645,11 +1666,25 @@
                                 <div className="flex justify-between items-center mb-5">
                                     <div><h3 className="text-lg font-bold text-gray-800"><i className="fas fa-sitemap text-indigo-500 mr-2"></i>엑셀 열(Header) 인식 규칙 설정</h3></div>
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-100">
-                                    {Object.entries({ code: '품목코드 (필수)', name: '품목명 (필수)', spec: '규격 열 (선택)', qty: '수량/실사 (필수)', price: '매입단가 (필수)', date: '일자 (필수)', vendor: '거래처명, 거래처 (선택)', excludeVendor: '제외 거래처(창고이동 등)' }).map(([key, label]) => (
+                                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-100">
+                                    {Object.entries({ 
+                                        code: '품목코드 (필수)', 
+                                        name: '품목명 (필수)', 
+                                        spec: '규격 열 (선택)', 
+                                        qty: '수량/실사 (필수)', 
+                                        price: '매입단가 (필수)', 
+                                        date: '일자 (필수)', 
+                                        vendor: '거래처명, 거래처 (선택)', 
+                                        matchVendor: '판매전표 내 구매처 (Lot 매칭)',
+                                        excludeVendor: '제외 거래처(창고이동 등)' 
+                                    }).map(([key, label]) => (
                                         <div key={key} className="flex flex-col">
-                                            <label className={`text-xs font-bold mb-1 ${key === 'excludeVendor' ? 'text-red-600' : 'text-gray-600'}`}>{key === 'excludeVendor' && <i className="fas fa-ban mr-1"></i>}{label}</label>
-                                            <input type="text" value={mappings[key]} onChange={(e) => setMappings({...mappings, [key]: e.target.value})} className={`border rounded-md px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 shadow-sm ${key === 'excludeVendor' ? 'border-red-300 focus:ring-red-400 bg-red-50 text-red-800' : 'border-gray-300 focus:ring-indigo-400 bg-white'}`} />
+                                            <label className={`text-xs font-bold mb-1 ${key === 'excludeVendor' ? 'text-red-600' : (key === 'matchVendor' ? 'text-blue-600' : 'text-gray-600')}`}>
+                                                {key === 'excludeVendor' && <i className="fas fa-ban mr-1"></i>}
+                                                {key === 'matchVendor' && <i className="fas fa-link mr-1"></i>}
+                                                {label}
+                                            </label>
+                                            <input type="text" value={mappings[key]} onChange={(e) => setMappings({...mappings, [key]: e.target.value})} className={`border rounded-md px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 shadow-sm ${key === 'excludeVendor' ? 'border-red-300 focus:ring-red-400 bg-red-50 text-red-800' : (key === 'matchVendor' ? 'border-blue-300 focus:ring-blue-400 bg-blue-50 text-blue-800' : 'border-gray-300 focus:ring-indigo-400 bg-white')}`} />
                                         </div>
                                     ))}
                                 </div>
