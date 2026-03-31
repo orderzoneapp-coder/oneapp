@@ -354,39 +354,37 @@
                     className={`transition duration-200 border-b border-slate-100 ${isActiveMulti ? 'multi-price-highlight z-10 relative' : (isLinked ? 'bg-slate-50 ring-1 ring-blue-400 shadow-md relative z-10 scale-[1.01]' : 'hover:bg-slate-50')} ${isDragOver ? 'drag-over' : ''} ${!isActiveMulti && item.isDummy && item.단가 === 0 ? 'bg-rose-50/30' : ''}`}
                 >
                     <td className={`py-2 px-3 sticky left-0 z-10 shadow-[1px_0_0_rgba(0,0,0,0.03)] border-r border-slate-200 ${isActiveMulti ? 'bg-slate-50' : (item.isDummy && item.단가 === 0 ? 'bg-rose-50' : 'bg-white group-hover:bg-slate-50')} ${isLinked ? 'bg-blue-50/50 border-l-4 border-blue-500' : ''}`}>
-                        <div className="flex flex-col max-w-[280px]">
-                            <div className="flex justify-between items-center mb-1">
-                                <div className="font-semibold text-slate-800 text-[13px] flex items-start gap-1">
+                        {/* [UPDATE] 단가를 우측에 세로 중앙 정렬로 배치하여 다른 입력칸들과 완벽한 행(가로) 라인을 맞춤 */}
+                        <div className="flex items-center justify-between w-full">
+                            {/* 품명, 코드, 일자, 거래처 등 정보 영역 */}
+                            <div className="flex flex-col justify-center flex-1 pr-3 overflow-hidden max-w-[280px]">
+                                <div className="font-semibold text-slate-800 text-[13px] flex items-start gap-1 mb-0.5">
                                     {isLinked && <i className="fas fa-link text-blue-500 mr-1 mt-0.5 animate-pulse"></i>}
                                     {isActiveMulti && <i className="fas fa-tags text-blue-500 mr-1 mt-0.5"></i>}
-                                    <div className="flex flex-col">
-                                        <span title={item.품명} className="truncate max-w-[180px] leading-tight text-slate-900">{item.품명}</span>
-                                    </div>
+                                    <span title={item.품명} className="truncate leading-tight text-slate-900">{item.품명}</span>
                                 </div>
-                                <div className="flex flex-col items-end shrink-0 pl-2">
-                                    <div className="flex items-center justify-end">
-                                        <span className="text-slate-400 font-semibold text-[10px] mr-1">₩</span>
-                                        <input 
-                                            id={`price-input-${idx}`}
-                                            type="number" 
-                                            className={`${cellInputBase} w-[70px] font-bold ${item.단가 === 0 ? 'border-rose-300 bg-rose-50 text-rose-600' : 'text-slate-800'}`} 
-                                            value={item.단가 === 0 ? '' : item.단가}
-                                            onChange={(e) => onBaseDataChange(item.batchKey, '단가', e.target.value)}
-                                            onClick={(e) => e.stopPropagation()}
-                                            onFocus={e => e.target.select()}
-                                            onKeyDown={(e) => handleKd(e, 'price-input')}
-                                            placeholder="0"
-                                            title="원가(단가) 수기 수정"
-                                        />
-                                    </div>
+                                <div className="text-[10px] text-slate-500 truncate font-medium tracking-tight flex items-center">
+                                    {item.코드 !== '-' && item.코드 !== 'NO_CODE' ? <span className="mr-1">{item.코드}</span> : ''}
+                                    {item.일자 || '미상'} <span className="mx-1 text-slate-300">|</span> <span className="truncate">{item.거래처 || '미지정'}</span>
+                                    {item.대체입고 > 0 && <span className="text-[9px] text-blue-500 font-semibold whitespace-nowrap ml-1 shrink-0">(조정됨)</span>}
                                 </div>
                             </div>
-                            <div className="flex justify-between items-center mt-0.5">
-                                <div className="text-[10px] text-slate-500 truncate flex-1 pr-1 font-medium tracking-tight">
-                                    {item.코드 !== '-' && item.코드 !== 'NO_CODE' ? <span className="mr-1">{item.코드}</span> : ''}
-                                    {item.일자 || '미상'} <span className="mx-1 text-slate-300">|</span> {item.거래처 || '미지정'}
-                                </div>
-                                {item.대체입고 > 0 && <div className="text-[9px] text-blue-500 font-semibold whitespace-nowrap ml-1">(조정됨)</div>}
+                            
+                            {/* 단가 입력칸 영역 (테두리로 구분감 부여) */}
+                            <div className="flex items-center justify-end shrink-0 pl-3 border-l border-slate-200">
+                                <span className="text-slate-400 font-semibold text-[10px] mr-1">₩</span>
+                                <input 
+                                    id={`price-input-${idx}`}
+                                    type="number" 
+                                    className={`${cellInputBase} w-[70px] font-bold ${item.단가 === 0 ? 'border-rose-300 bg-rose-50 text-rose-600' : 'text-slate-800'}`} 
+                                    value={item.단가 === 0 ? '' : item.단가}
+                                    onChange={(e) => onBaseDataChange(item.batchKey, '단가', e.target.value)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onFocus={e => e.target.select()}
+                                    onKeyDown={(e) => handleKd(e, 'price-input')}
+                                    placeholder="0"
+                                    title="원가(단가) 수기 수정"
+                                />
                             </div>
                         </div>
                     </td>
@@ -692,7 +690,7 @@
                             });
                         }
                         setAppStep(saved.appStep || 'closing');
-                        setAlertMsg("이전 작업 내역이 성공적으로 복구되었습니다.");
+                        setAlertMsg("이전 작업 내역이 성공 복구되었습니다.");
                     } catch(e) { setAlertMsg("저장된 내역을 불러오는데 실패했습니다."); }
                 }
             };
@@ -769,13 +767,12 @@
                             const rows = document.querySelectorAll(`tr[data-code="${targetCode}"]`);
                             if (rows.length > 0) {
                                 rows[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                const input = rows[0].querySelector('input[id^="price-input-"]');
-                                if (input) { input.focus(); input.select(); }
+                                // [UPDATE] 포커스 강제 이동 제거, 그룹 행 전체 강조(하이라이트)만 유지
                             }
                         }, 150);
                     } else {
                         setActiveMultiCode(null);
-                        setAlertMsg("모든 원가 매칭 항목을 확인했습니다.");
+                        setAlertMsg("모든 Lot 매치 항목을 확인했습니다.");
                         setActiveIssueMode(null);
                     }
                     return;
@@ -791,12 +788,6 @@
 
                 const targetItems = productData.map((p, i) => ({...p, index: i})).filter(p => condition(p));
                 
-                if (targetItems.length === 0) {
-                    setAlertMsg(`해당하는 이슈 품목이 없습니다.`);
-                    setActiveIssueMode(null);
-                    return;
-                }
-
                 const activeEl = document.activeElement;
                 let currentDataIndex = -1;
                 if (activeEl) {
@@ -809,6 +800,23 @@
 
                 let currIdx = fromCardClick ? -1 : currentIssueIdxRef.current;
                 if (currentDataIndex !== -1 && !fromCardClick) currIdx = currentDataIndex;
+
+                // [NEW] 단가 누락 항목에서 탭 이동 시 즉시 확인 처리 (카운트 차감)
+                if (type === 'missingPrice' && currIdx !== -1 && !fromCardClick) {
+                    setProductData(prev => {
+                        const newData = [...prev];
+                        if (newData[currIdx] && !newData[currIdx].수기확인완료) {
+                            newData[currIdx] = { ...newData[currIdx], 수기확인완료: true };
+                        }
+                        return newData;
+                    });
+                }
+
+                if (targetItems.length === 0) {
+                    setAlertMsg(`해당하는 이슈 품목이 없습니다.`);
+                    setActiveIssueMode(null);
+                    return;
+                }
 
                 let targetItem = null;
 
@@ -1377,7 +1385,6 @@
 
                             newItem.전산잔량 = newItem.기초 + newItem.입고 + newItem.대체입고 - newItem.출고 - newItem.대체출고;
                             
-                            // [UPDATE] 기초, 입고, 출고 수동 변경 시 실사 수량을 변경된 전산잔량에 맞춰 강제 동기화 (로스 0 초기화)
                             newItem.실사 = newItem.전산잔량;
                             newItem.로스 = 0;
                             
@@ -1829,13 +1836,13 @@
                                         </div>
 
                                         <div className="grid grid-cols-3 gap-3">
-                                            {/* 순서 1: 원가 매칭 */}
+                                            {/* 순서 1: Lot 매치 */}
                                             <div 
                                                 onClick={() => handleIssueJump('multiPrice', 'next', true)}
                                                 className={`p-4 rounded-lg border transition-all cursor-pointer flex flex-col justify-between ${activeIssueMode === 'multiPrice' ? 'bg-white border-slate-800 shadow-md ring-1 ring-slate-800' : 'bg-white border-slate-200 hover:border-blue-400 hover:shadow-sm'}`}
                                             >
                                                 <div className="text-xs font-bold text-slate-500 mb-2 flex items-center justify-between">
-                                                    <span className="flex items-center"><i className="fas fa-tags text-blue-500 mr-2 text-sm"></i>원가 매칭</span>
+                                                    <span className="flex items-center"><i className="fas fa-tags text-blue-500 mr-2 text-sm"></i>Lot 매치(판매처)</span>
                                                     {closingStats.multiPriceCount > 0 && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>}
                                                 </div>
                                                 <div className="flex items-end justify-between">
