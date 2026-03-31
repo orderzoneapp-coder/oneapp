@@ -988,7 +988,10 @@
                     const isExcluded = (vendorName) => vendorName && excludeList.some(keyword => vendorName.toLowerCase().includes(keyword));
 
                     const addStock = (item, type) => {
-                        if (isExcluded(item.거래처)) return;
+                        // [UPDATE] 구매(in) 전표인 경우에만 거래처명 기준으로 제외 로직 적용
+                        // 기초재고(prev)의 경우 부가정보로 표기될 수 있으므로 제외하지 않음
+                        if (type === 'in' && isExcluded(item.거래처)) return;
+                        
                         const code = String(item.코드 || 'NO_CODE'); const price = parseNumber(item.단가); const date = String(item.일자 || '');
                         const batchKey = `${code}|${price}|${date}`;
 
@@ -1014,7 +1017,9 @@
                     Object.values(stockPool).forEach(pool => pool.buckets.sort((a, b) => String(a.일자 || '').localeCompare(String(b.일자 || ''))));
 
                     parsedOut.forEach(sale => {
+                        // [UPDATE] 매출(out) 전표는 제외 거래처 필터링 적용
                         if (isExcluded(sale.거래처)) return;
+                        
                         const code = String(sale.코드 || 'NO_CODE');
                         let qtyToDeduct = sale.수량; 
                         const pool = stockPool[code];
