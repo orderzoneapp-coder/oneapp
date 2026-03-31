@@ -255,6 +255,12 @@
                                 baseName.includes('합계') || baseName.includes('총계') || baseName.includes('총합')) {
                                 continue;
                             }
+                            
+                            // [NEW] 엑셀 하단 실행 로그, 날짜, 시간 등 노이즈 데이터 철저히 배제
+                            if (/^\d{4}[\/\-]\d{2}[\/\-]\d{2}/.test(codeStr) || /^\d{4}[\/\-]\d{2}[\/\-]\d{2}/.test(baseName)) continue;
+                            if (codeStr.includes('오전') || codeStr.includes('오후') || baseName.includes('오전') || baseName.includes('오후')) continue;
+                            if (codeStr.includes('실사등록') || baseName.includes('실사등록')) continue;
+                            if (codeStr.includes('기록없음') || baseName.includes('기록없음')) continue;
 
                             const specValRaw = getValByKeywords(rowObj, keywords.spec);
                             const specVal = specValRaw !== null && specValRaw !== undefined ? String(specValRaw).trim() : '';
@@ -558,6 +564,9 @@
 
             const [memoModal, setMemoModal] = useState({ isOpen: false, batchKey: null, text: '' });
             const [hasAutoSave, setHasAutoSave] = useState(false);
+            
+            // [NEW] 결산일자 (분석 기간의 마지막 날짜) 보관
+            const [targetDateStr, setTargetDateStr] = useState('');
 
             const actionRefs = useRef({});
             const activeIssueModeRef = useRef(activeIssueMode);
@@ -970,8 +979,9 @@
                 setConfirmModal({ isOpen: false, warnings: [], payload: null });
                 
                 try {
-                    const { parsedPrev, parsedIn, parsedOut, parsedEnd, periodStr } = payload;
+                    const { parsedPrev, parsedIn, parsedOut, parsedEnd, periodStr, targetDateStrFromData } = payload;
                     setAnalysisPeriod(periodStr);
+                    setTargetDateStr(targetDateStrFromData); // [NEW] 분석 데이터 기반 결산일자 셋팅
                     
                     let pData = {}; const stockPool = {};
                     const excludeList = (mappings.excludeVendor || '').split(',').map(s => s.trim().toLowerCase()).filter(s => s);
@@ -1237,6 +1247,16 @@
                     }
                     const periodStr = (minD === 99999999 || maxD === 0) ? '기간 미상' : `${formatStrForPeriod(minD)} ~ ${formatStrForPeriod(maxD)}${daysText}`;
 
+                    // [NEW] 결산 기준일자 (maxD) 포맷팅
+                    let targetDateStrFromData = '';
+                    if (maxD !== 0) {
+                        targetDateStrFromData = `${Math.floor(maxD/10000)}${String(Math.floor((maxD%10000)/100)).padStart(2,'0')}${String(maxD%100).padStart(2,'0')}`;
+                    } else {
+                        // 날짜가 파악 안되면 오늘 날짜 기본값
+                        const today = new Date();
+                        targetDateStrFromData = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
+                    }
+
                     let warnings = [];
                     if (prevDateNum && minD !== 99999999 && minD <= prevDateNum) {
                         warnings.push(`매입/매출에 기초재고 파일명 기준일(${formatStrForPeriod(prevDateNum)}) 이전의 과거 데이터가 포함되어 있습니다.`);
@@ -1245,7 +1265,7 @@
                         warnings.push(`매입/매출에 실사 파일명 기준일(${formatStrForPeriod(endDateNum)}) 이후의 미래 데이터가 포함되어 있습니다.`);
                     }
 
-                    const payload = { parsedPrev, parsedIn: validIn, parsedOut: validOut, parsedEnd, periodStr };
+                    const payload = { parsedPrev, parsedIn: validIn, parsedOut: validOut, parsedEnd, periodStr, targetDateStrFromData };
 
                     if (warnings.length > 0 && !demoJson) {
                         setConfirmModal({ isOpen: true, warnings, payload });
@@ -1337,10 +1357,14 @@
 
             const handleCombinedExport = useCallback(() => {
                 if (filteredProductData.length === 0) { setAlertMsg("다운로드할 데이터가 없습니다."); return; }
-                const today = new Date();
-                let exportDateStr = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
                 
-                // Sheet 1: 재고
+                // [NEW] 파일명에는 다운로드 받는 현재 시점을 쓰지만, 내부 결산일은 철저히 데이터 기준(targetDateStr)을 따름
+                const today = new Date();
+                let exportFileNameDate = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
+                
+                let totalRev = 0; let totalCogs = 0; let totalAsset = 0; let totalLossValue = 0;
+
+                // Sheet 1: 재고 (이월용 및 재고/로스 트렌드 아카이브용)
                 const exportData1 = filteredProductData
                     .filter(item => item.코드 && item.코드 !== 'NO_CODE' && item.코드 !== '-')
                     .map(item => {
@@ -1355,31 +1379,25 @@
                         const qty = item.실사 === '' || item.실사 === null ? 0 : Number(item.실사);
                         const rev = Number(item.매출액) || 0;
                         const cogs = Number(item.매출원가) || 0;
-                        const profit = rev - cogs;
-                        const margin = rev !== 0 ? ((profit / rev) * 100).toFixed(1) : '0';
                         const adjust = (Number(item.로스) || 0) + (Number(item.대체입고) || 0) - (Number(item.대체출고) || 0);
 
-                        // [NEW] 재고자산 및 권장발주량 산출
-                        const inventoryAsset = qty * (Number(item.단가) || 0);
-                        const recommendedOrder = Math.max(0, (Number(item.출고) || 0) - qty); // 출고량(판매량) - 현재재고 기준 단순 산출
+                        const price = Number(item.단가) || 0;
+                        const inventoryAsset = qty * price;
+                        const lossValue = (Number(item.로스) || 0) * price;
+
+                        totalRev += rev; totalCogs += cogs; totalAsset += inventoryAsset; totalLossValue += lossValue;
 
                         const issueResultStr = [...displayIssues, ...vendorStrs].join(', ');
 
                         return {
-                            '코드': item.코드,
-                            '품명(규격)': item.품명, 
-                            '기말실사(이월수량)': qty,
-                            '단가': Number(item.단가) || 0,
-                            '기말재고액(자산가치)': inventoryAsset, // 신규 추가: 자산화 금액
-                            '권장발주량': recommendedOrder, // 신규 추가: 수발주 참고용
-                            '일자': item.일자 || '미상',
-                            '거래처': item.거래처 || '미지정',
-                            '조정': adjust,
+                            '결산일자': targetDateStr, // [NEW] DB 누적(Append)을 위한 핵심 키값 추가
+                            '품목코드': item.코드, 
+                            '품명': item.품명, 
+                            '기말실사(이월수량)': qty, 
+                            '매입단가(원가)': price, 
+                            '기말재고액(자산가치)': inventoryAsset, 
                             '출고량': item.출고, 
-                            '매출액': rev,
-                            '매출원가': cogs,
-                            '매출이익': profit,
-                            '마진율(%)': margin + '%',
+                            '조정': adjust,
                             '이슈/결과': issueResultStr
                         };
                     });
@@ -1401,7 +1419,7 @@
                 Object.keys(aggregated).forEach(code => {
                     if (aggregated[code].수량 !== 0) {
                         exportData2.push({
-                            '일자': exportDateStr,
+                            '일자': targetDateStr, // [UPDATE] 현실 시간이 아닌 분석 결산일자 적용
                             '순번': '',
                             '담당자': '',
                             '창고': '01',
@@ -1413,13 +1431,15 @@
                     }
                 });
 
-                // [NEW] Sheet 3: 거래처별 매출
+                // Sheet 3: 거래처매출 Raw (BI 연동용, 소계 없음)
                 const exportData3 = [];
+                // [NEW] Sheet 4: 거래처별 집계 (엑셀 확인용, 소계 전용)
+                const vendorAggregated = {};
+
                 filteredProductData.forEach(item => {
                     if (!item.코드 || item.코드 === 'NO_CODE' || item.코드 === '-') return;
                     if (item.출고내역 && Object.keys(item.출고내역).length > 0) {
-                        const totalOut = item.출고 || 1; // 0으로 나누기 방지
-                        // 엑셀에서 보기 좋게 수량 비율만큼 원가/매출액 분배
+                        const totalOut = item.출고 || 1; 
                         const revPerUnit = item.매출액 / totalOut;
                         const cogsPerUnit = item.매출원가 / totalOut;
 
@@ -1429,10 +1449,12 @@
                             const vProfit = vRev - vCogs;
                             const vMargin = vRev !== 0 ? ((vProfit / vRev) * 100).toFixed(1) : '0';
 
+                            // 1. Raw Data 축적 (원앱 인사이트 판매 트렌드 분석용 완벽한 형태)
                             exportData3.push({
-                                '코드': item.코드,
+                                '결산일자': targetDateStr, // [NEW] DB 누적(Append)을 위한 핵심 키값 추가
+                                '거래처명': vendor, 
+                                '품목코드': item.코드,
                                 '품명(규격)': item.품명,
-                                '거래처명': vendor,
                                 '판매수량': qty,
                                 '단가(원가)': Number(item.단가) || 0,
                                 '매출액': vRev,
@@ -1440,18 +1462,56 @@
                                 '매출이익': vProfit,
                                 '마진율(%)': vMargin + '%'
                             });
+
+                            // 2. 집계용 Data 축적
+                            if (!vendorAggregated[vendor]) {
+                                vendorAggregated[vendor] = { 매출액: 0, 매출원가: 0 };
+                            }
+                            vendorAggregated[vendor].매출액 += vRev;
+                            vendorAggregated[vendor].매출원가 += vCogs;
                         });
                     }
                 });
+
+                // 거래처별 집계 시트 데이터 포맷팅
+                const exportData4 = Object.keys(vendorAggregated).sort().map(vendor => {
+                    const rev = vendorAggregated[vendor].매출액;
+                    const cogs = vendorAggregated[vendor].매출원가;
+                    const profit = rev - cogs;
+                    const margin = rev !== 0 ? ((profit / rev) * 100).toFixed(1) : '0';
+                    return {
+                        '거래처명': vendor,
+                        '총 매출액': rev,
+                        '총 매출원가': cogs,
+                        '총 매출이익': profit,
+                        '종합 마진율(%)': margin + '%'
+                    };
+                });
+
+                // Sheet 5: 마감 요약 (경영 아카이브용)
+                const totalProfit = totalRev - totalCogs;
+                const totalMargin = totalRev !== 0 ? ((totalProfit / totalRev) * 100).toFixed(1) : '0';
+                
+                const exportData5 = [{
+                    '결산일자': targetDateStr, // [UPDATE] 현실 시간이 아닌 분석 결산일자 적용
+                    '분석기간': analysisPeriod,
+                    '총 매출액(₩)': totalRev,
+                    '총 매출원가(₩)': totalCogs,
+                    '매출 총이익(₩)': totalProfit,
+                    '종합 마진율(%)': totalMargin + '%',
+                    '기말 재고자산 총액(₩)': totalAsset,
+                    '발생 로스 총액(₩)': totalLossValue,
+                    '운영 코멘트': '※ 이 행의 데이터를 일일/월간 경영 대시보드에 복사하여 누적(Archive)하세요.'
+                }];
 
                 const wb = XLSX.utils.book_new();
 
                 if (exportData1.length > 0) {
                     const ws1 = XLSX.utils.json_to_sheet(exportData1); 
-                    XLSX.utils.book_append_sheet(wb, ws1, '재고');
+                    XLSX.utils.book_append_sheet(wb, ws1, '재고(이월용)');
                 } else {
                     const ws1 = XLSX.utils.json_to_sheet([{'메시지': '유효한 품목 데이터가 없습니다.'}]); 
-                    XLSX.utils.book_append_sheet(wb, ws1, '재고');
+                    XLSX.utils.book_append_sheet(wb, ws1, '재고(이월용)');
                 }
 
                 if (exportData2.length > 0) {
@@ -1468,17 +1528,32 @@
                             cell.t = 's'; 
                         }
                     });
-                    XLSX.utils.book_append_sheet(wb, ws2, '실사');
+                    XLSX.utils.book_append_sheet(wb, ws2, '실사양식');
                 }
 
-                // [NEW] 거래처별 매출 탭 추가
                 if (exportData3.length > 0) {
                     const ws3 = XLSX.utils.json_to_sheet(exportData3);
-                    XLSX.utils.book_append_sheet(wb, ws3, '거래처별매출');
+                    XLSX.utils.book_append_sheet(wb, ws3, '거래처매출(Raw)');
                 }
 
-                XLSX.writeFile(wb, `재고_${exportDateStr}.xlsx`);
-            }, [filteredProductData, productData]);
+                if (exportData4.length > 0) {
+                    const ws4 = XLSX.utils.json_to_sheet(exportData4);
+                    XLSX.utils.book_append_sheet(wb, ws4, '거래처별집계');
+                }
+
+                if (exportData5.length > 0) {
+                    const ws5 = XLSX.utils.json_to_sheet(exportData5);
+                    ws5['!cols'] = [{wch:12}, {wch:20}, {wch:15}, {wch:15}, {wch:15}, {wch:15}, {wch:20}, {wch:18}, {wch:60}];
+                    XLSX.utils.book_append_sheet(wb, ws5, '마감요약(아카이브)');
+                }
+
+                XLSX.writeFile(wb, `수불마감_${exportFileNameDate}.xlsx`);
+                
+                setTimeout(() => {
+                    setAlertMsg("✅ 마감 데이터가 엑셀로 추출되었습니다.\n\n[💡 데이터 운영 노하우]\n1. 방금 다운받은 엑셀의 첫 번째 탭[재고(이월용)]은 내일의 '1번. 기초 재고' 파일로 그대로 다시 업로드하세요.\n\n2. 마지막 탭[마감요약]의 딱 한 줄 데이터는 경영 아카이브 시트에 매일/매월 복사해 두시면 회사의 핵심 지표 추이가 완성됩니다.");
+                }, 500);
+
+            }, [filteredProductData, productData, analysisPeriod, targetDateStr]);
 
             useEffect(() => {
                 actionRefs.current = { 
@@ -1770,8 +1845,8 @@
                                                 <button onClick={() => setFilters({...filters, issuesOnly: !filters.issuesOnly})} className={`px-3 py-2 rounded border text-[12px] font-bold transition shrink-0 ${filters.issuesOnly ? 'bg-red-50 text-red-700 border-red-200 shadow-inner' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>이슈/결과 필터</button>
                                                 <button onClick={() => setFilters({...filters, excludeZeroActual: !filters.excludeZeroActual})} className={`px-3 py-2 rounded border text-[12px] font-bold transition shrink-0 ${filters.excludeZeroActual ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-inner' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>실사 0 제외</button>
                                                 
-                                                <button onClick={actionRefs.current.handleCombinedExport} className="px-4 py-2 bg-gray-800 hover:bg-gray-900 text-white rounded text-[12px] font-bold shadow transition flex items-center shrink-0" title="1.재고, 2.실사, 3.거래처별매출 탭으로 나누어 저장합니다">
-                                                    엑셀저장 (F8)
+                                                <button onClick={actionRefs.current.handleCombinedExport} className="px-4 py-2 bg-indigo-800 hover:bg-indigo-900 text-white rounded text-[12px] font-bold shadow-md transition flex items-center shrink-0" title="마감 데이터를 엑셀로 추출하고 아카이브합니다">
+                                                    <i className="fas fa-file-excel mr-1.5"></i>마감 추출 및 아카이브 (F8)
                                                 </button>
                                             </div>
                                         </div>
