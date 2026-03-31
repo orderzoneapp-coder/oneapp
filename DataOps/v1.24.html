@@ -27,18 +27,6 @@
         input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         input[type="number"] { -moz-appearance: textfield; }
 
-        .base-input { 
-            width: 100%; 
-            background: transparent; 
-            border-bottom: 1px dashed #cbd5e1; 
-            text-align: right; 
-            transition: all 0.2s; 
-            cursor: text; 
-            padding: 2px 0; 
-        }
-        .base-input:hover { background: #f1f5f9; border-bottom-color: #94a3b8; }
-        .base-input:focus { outline: none; background: white; border-bottom-style: solid; border-bottom-color: #6366f1; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
-
         .modal-bounce { animation: modalBounce 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         @keyframes modalBounce { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
 
@@ -185,7 +173,7 @@
                                 qty: currentMappings.qty.split(',').map(s => s.trim().toLowerCase()),
                                 price: currentMappings.price.split(',').map(s => s.trim().toLowerCase()),
                                 vendor: currentMappings.vendor.split(',').map(s => s.trim().toLowerCase()),
-                                matchVendor: currentMappings.matchVendor ? currentMappings.matchVendor.split(',').map(s => s.trim().toLowerCase()) : [], // [NEW] 매칭정보
+                                matchVendor: currentMappings.matchVendor ? currentMappings.matchVendor.split(',').map(s => s.trim().toLowerCase()) : [], 
                                 spec: currentMappings.spec ? currentMappings.spec.split(',').map(s => s.trim().toLowerCase()) : [],
                                 date: currentMappings.date ? currentMappings.date.split(',').map(s => s.trim().toLowerCase()) : []
                             };
@@ -277,7 +265,7 @@
                                 수량: parseNumber(getValByKeywords(rowObj, keywords.qty)),
                                 단가: parseNumber(getValByKeywords(rowObj, keywords.price)),
                                 거래처: String(getValByKeywords(rowObj, keywords.vendor) || '미지정').trim(),
-                                매입처매칭: String(getValByKeywords(rowObj, keywords.matchVendor) || '').trim(), // [NEW] 구매처 매칭정보
+                                매입처매칭: String(getValByKeywords(rowObj, keywords.matchVendor) || '').trim(),
                                 일자: String(getValByKeywords(rowObj, keywords.date) || '').trim(),
                                 메모: '', 
                                 _raw: rowObj 
@@ -299,7 +287,7 @@
             price: '매입단가(원가), 단가, 입고단가, 구매단가, 판매단가, 매입단가, 매입가, 판매가, 공급가액, 공급가, 금액, 원가, 가격, 최종(창고)',
             date: '매입일자, 일자, 날짜, 구매일자, 판매일자, 입고일자, 출고일자',
             vendor: '매입처(거래처), 거래처명, 거래처, 거래, 매장명, 매장, 고객, 구매처, 판매처, 공급사, 판매, 청과, 3거래',
-            matchVendor: '구매처, 매입처, 매칭정보, 원매입처', // [NEW] 우선 차감용 매칭 정보
+            matchVendor: '판매전표 내 구매처 (Lot 매칭), 매입처, 매칭정보, 원매입처', 
             excludeVendor: '3우리, 우리농산, 1전송, 창고이동, 폐기, 샘플' 
         };
 
@@ -375,7 +363,7 @@
                                         <input 
                                             id={`price-input-${idx}`}
                                             type="number" 
-                                            className={`w-16 bg-transparent border-b border-dashed px-1 py-0.5 text-right font-black focus:outline-none focus:border-indigo-500 focus:bg-white text-[13px] transition-colors ${item.단가 === 0 ? 'text-red-500 border-red-300 placeholder-red-300' : 'text-indigo-700 border-indigo-200 hover:border-indigo-400'}`} 
+                                            className={`w-[70px] text-right border rounded px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner text-[13px] font-black transition-colors ${item.단가 === 0 ? 'bg-red-50 border-red-300 text-red-600 placeholder-red-300' : 'bg-white border-gray-300 text-indigo-700 hover:border-indigo-400'}`} 
                                             value={item.단가 === 0 ? '' : item.단가}
                                             onChange={(e) => onBaseDataChange(item.batchKey, '단가', e.target.value)}
                                             onClick={(e) => e.stopPropagation()}
@@ -398,14 +386,16 @@
                     </td>
                     
                     <td className={`py-2 px-2 text-right ${isActiveMulti ? 'bg-blue-50' : 'bg-gray-50 bg-opacity-50'} border-r border-gray-100`}>
-                        <input id={`base-prev-${idx}`} type="number" className={`base-input font-bold ${item.기초 < 0 ? 'text-red-600' : 'text-gray-700'}`} value={item.기초 === 0 ? '' : item.기초} onChange={e => onBaseDataChange(item.batchKey, '기초', e.target.value)} onFocus={e => e.target.select()} onKeyDown={(e) => handleKd(e, 'base-prev')} onWheel={e => e.target.blur()} placeholder="0" title="기초 재고 수정" />
+                        <input id={`base-prev-${idx}`} type="number" 
+                            className={`w-full text-right border bg-white rounded px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-gray-400 shadow-inner font-bold text-[13px] transition-colors ${item.기초 < 0 ? 'border-red-300 text-red-600' : 'border-gray-300 text-gray-700 hover:border-gray-400'}`} 
+                            value={item.기초 === 0 ? '' : item.기초} onChange={e => onBaseDataChange(item.batchKey, '기초', e.target.value)} onFocus={e => e.target.select()} onKeyDown={(e) => handleKd(e, 'base-prev')} onWheel={e => e.target.blur()} placeholder="0" title="기초 재고 수정" />
                     </td>
                     
                     <td className={`py-2 px-2 text-right border-r border-gray-100`}>
                         <input 
                             id={`base-in-${idx}`} 
                             type="number" 
-                            className={`base-input font-bold ${totalIn > 0 ? 'text-emerald-700' : 'text-gray-400'}`} 
+                            className={`w-full text-right border bg-white rounded px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-inner font-bold text-[13px] transition-colors ${totalIn > 0 ? 'border-emerald-300 text-emerald-700 hover:border-emerald-400' : 'border-gray-300 text-gray-400 hover:border-gray-400'}`} 
                             value={totalIn === 0 ? '' : totalIn} 
                             onChange={e => {
                                 const val = e.target.value === '' ? 0 : Number(e.target.value);
@@ -423,7 +413,7 @@
                         <input 
                             id={`base-out-${idx}`} 
                             type="number" 
-                            className={`base-input font-black ${totalOut > 0 ? 'text-red-600' : 'text-gray-400'}`} 
+                            className={`w-full text-right border bg-white rounded px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-red-500 shadow-inner font-black text-[13px] transition-colors ${totalOut > 0 ? 'border-red-300 text-red-600 hover:border-red-400' : 'border-gray-300 text-gray-400 hover:border-gray-400'}`} 
                             value={totalOut === 0 ? '' : totalOut} 
                             onChange={e => {
                                 const val = e.target.value === '' ? 0 : Number(e.target.value);
@@ -454,7 +444,7 @@
                             onWheel={e => e.target.blur()}
                             placeholder={item.전산잔량}
                             title="실사 수량 수정"
-                            className={`w-full text-right border ${isLinked ? 'border-indigo-500 ring-2 ring-indigo-200 bg-white text-indigo-900' : 'border-purple-300 text-purple-700 bg-white hover:bg-gray-50'} ${isNegativeActual ? 'bg-red-100 border-red-400 text-red-700 font-black' : 'font-bold'} rounded px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-inner transition-colors cursor-pointer`}
+                            className={`w-full text-right border ${isLinked ? 'border-indigo-500 ring-2 ring-indigo-200 bg-white text-indigo-900' : 'border-purple-300 text-purple-700 bg-white hover:bg-gray-50'} ${isNegativeActual ? 'bg-red-100 border-red-400 text-red-700 font-black' : 'font-bold'} rounded px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-inner transition-colors cursor-pointer hover:border-purple-400`}
                         />
                     </td>
                     
@@ -570,6 +560,10 @@
             
             // 결산일자 (분석 기간의 마지막 날짜) 보관
             const [targetDateStr, setTargetDateStr] = useState('');
+
+            // [NEW] 마감 화면에서의 개별 파일 업로드 처리를 위한 Ref 및 상태
+            const closingFileInputRef = useRef(null);
+            const [uploadTarget, setUploadTarget] = useState(null);
 
             const actionRefs = useRef({});
             const activeIssueModeRef = useRef(activeIssueMode);
@@ -1009,7 +1003,6 @@
                         if (type === 'in') pData[batchKey].입고 += item.수량;
                         
                         if (!stockPool[code]) stockPool[code] = { buckets: [] };
-                        // 버킷에 거래처 정보를 보존하여 나중에 매칭할 수 있도록 함
                         if (item.수량 !== 0) stockPool[code].buckets.push({ batchKey, 단가: price, 일자: date, 수량: item.수량, 거래처: item.거래처 });
                     };
 
@@ -1057,7 +1050,6 @@
 
                         let remainingQty = qtyToDeduct;
 
-                        // [NEW] 공통 차감 처리 함수
                         const deductFromBucket = (bucket, take) => {
                             const cogs = take * bucket.단가;
                             const revShare = qtyToDeduct > 0 ? finalRevenue * (take / qtyToDeduct) : 0;
@@ -1070,11 +1062,9 @@
                         };
 
                         if (remainingQty < 0) {
-                            // 반품 등 음수 수량 처리 로직 (기존과 동일하게 마지막 버킷에 반영)
                             const lastBucket = pool.buckets[pool.buckets.length - 1];
                             deductFromBucket(lastBucket, remainingQty);
                         } else {
-                            // 1. 지정 매칭(구매처 매칭정보) 기반 우선 차감
                             if (sale.매입처매칭 && sale.매입처매칭 !== '미지정') {
                                 const matchStr = sale.매입처매칭.replace(/\s/g, '').toLowerCase();
                                 for (let i = 0; i < pool.buckets.length && remainingQty > 0; i++) {
@@ -1082,7 +1072,6 @@
                                     if (bucket.수량 <= 0) continue;
                                     
                                     const bVendorStr = String(bucket.거래처 || '').replace(/\s/g, '').toLowerCase();
-                                    // 매칭 조건: 서로 포함 관계가 성립하면 동일한 거래처로 인정 (예: "가락(랑희유통)" <-> "랑희유통")
                                     if (bVendorStr && matchStr && (bVendorStr.includes(matchStr) || matchStr.includes(bVendorStr))) {
                                         const take = Math.min(bucket.수량, remainingQty);
                                         deductFromBucket(bucket, take);
@@ -1091,7 +1080,6 @@
                                 }
                             }
 
-                            // 2. 매칭정보가 없거나 차감 후에도 남은 수량이 있을 경우 선입선출(FIFO) 차감
                             if (remainingQty > 0) {
                                 for (let i = 0; i < pool.buckets.length && remainingQty > 0; i++) {
                                     const bucket = pool.buckets[i];
@@ -1103,7 +1091,6 @@
                                 }
                             }
 
-                            // 3. 그래도 남는 수량 (전산재고 부족 상태에서의 출고) -> 마지막 버킷에서 마이너스 차감
                             if (remainingQty > 0) {
                                 const lastBucket = pool.buckets[pool.buckets.length - 1];
                                 deductFromBucket(lastBucket, remainingQty);
@@ -1149,17 +1136,16 @@
 
                             const batches = Object.values(pData).filter(p => p.코드 === code).sort((a, b) => String(a.일자 || '').localeCompare(String(b.일자 || '')));
                             
-                            // 실사 파일의 단가 덮어쓰기 로직
                             if (targetEndPrice !== undefined && targetEndPrice > 0) {
                                 batches.forEach(b => {
                                     if (b.단가 !== targetEndPrice) {
                                         b.단가 = targetEndPrice;
-                                        b.매출원가 = b.출고 * targetEndPrice; // 바뀐 단가로 원가 재계산
+                                        b.매출원가 = b.출고 * targetEndPrice;
                                         
                                         let newIssues = [...b.이슈].filter(msg => msg !== '매입내역 없음' && !msg.includes('원가수정'));
                                         newIssues.push('원가수정(실사반영)');
                                         b.이슈 = newIssues;
-                                        b.수기확인완료 = true; // 실사파일에서 단가를 잡아줬으므로 확인 완료 처리
+                                        b.수기확인완료 = true; 
                                     }
                                 });
                             }
@@ -1201,7 +1187,7 @@
                 }
             }, [mappings]);
 
-            const runAnalysis = async (demoFiles = null, demoJson = null) => {
+            const runAnalysis = async (overrideFiles = null, demoJson = null) => {
                 setIsProcessing(true); setError('');
                 setLinkSourceKey(null); setActiveIssueMode(null); focusedInputRef.current = { key: null, idx: -1 }; setSubstHistory([]); setUndoUi({ state: 'closed' });
                 setAckMultiCodes(new Set()); setActiveMultiCode(null); currentIssueIdxRef.current = -1;
@@ -1212,7 +1198,8 @@
                     let parsedOut = demoJson ? demoJson.out : rawJson.out;
                     let parsedEnd = demoJson ? demoJson.end : rawJson.end;
                     
-                    const currentFiles = demoFiles || files;
+                    // [UPDATE] 전달받은 overrideFiles가 있으면 그것을 기준으로 분석 실행 (추가 업로드 기능용)
+                    const currentFiles = overrideFiles || files;
 
                     if (currentFiles.prev && !currentFiles.prev.isDemo) parsedPrev = await parseExcelData(currentFiles.prev, mappings);
                     if (currentFiles.in && !currentFiles.in.isDemo) parsedIn = await parseExcelData(currentFiles.in, mappings);
@@ -1265,21 +1252,23 @@
                         });
                     }
 
-                    let daysText = '';
-                    if (minD !== 99999999 && maxD !== 0) {
+                    // [UPDATE] 분석 기간 표기 로직 업데이트 (하루치면 ~ 없이 표기)
+                    let periodStr = '';
+                    if (minD === 99999999 || maxD === 0) {
+                        periodStr = '기간 미상';
+                    } else if (minD === maxD) {
+                        periodStr = formatStrForPeriod(minD);
+                    } else {
                         const d1 = new Date(Math.floor(minD/10000), Math.floor((minD%10000)/100)-1, minD%100);
                         const d2 = new Date(Math.floor(maxD/10000), Math.floor((maxD%10000)/100)-1, maxD%100);
                         const days = Math.round((d2 - d1) / 86400000) + 1;
-                        daysText = days > 1 ? ` (총 ${days}일간)` : ' (당일)';
+                        periodStr = `${formatStrForPeriod(minD)} ~ ${formatStrForPeriod(maxD)} (총 ${days}일간)`;
                     }
-                    const periodStr = (minD === 99999999 || maxD === 0) ? '기간 미상' : `${formatStrForPeriod(minD)} ~ ${formatStrForPeriod(maxD)}${daysText}`;
 
-                    // 결산 기준일자 (maxD) 포맷팅
                     let targetDateStrFromData = '';
                     if (maxD !== 0) {
                         targetDateStrFromData = `${Math.floor(maxD/10000)}${String(Math.floor((maxD%10000)/100)).padStart(2,'0')}${String(maxD%100).padStart(2,'0')}`;
                     } else {
-                        // 날짜가 파악 안되면 오늘 날짜 기본값
                         const today = new Date();
                         targetDateStrFromData = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
                     }
@@ -1306,6 +1295,23 @@
                     console.error(err);
                     setIsProcessing(false);
                 }
+            };
+
+            // [NEW] 마감 화면 내 추가 업로드 처리 로직
+            const handleClosingFileUpload = (type) => {
+                setUploadTarget(type);
+                if (closingFileInputRef.current) {
+                    closingFileInputRef.current.click();
+                }
+            };
+
+            const onClosingFileChange = (e) => {
+                const selectedFile = e.target.files[0];
+                if (!selectedFile) return;
+                const newFiles = { ...files, [uploadTarget]: selectedFile };
+                setFiles(newFiles);
+                e.target.value = ''; // 파일 선택값 초기화 (연속 선택 방지용)
+                runAnalysisRef.current(newFiles); // 새로운 파일 조합으로 즉시 재분석
             };
 
             const handleBaseDataChange = useCallback((batchKey, field, val) => {
@@ -1779,48 +1785,56 @@
                         )}
 
                         {appStep === 'closing' && (
-                            <div className="flex-1 flex flex-col h-full fade-in w-full">
+                            <div className="flex-1 flex flex-col h-full fade-in w-full relative">
+                                {isProcessing && (
+                                    <div className="absolute inset-0 z-[100] bg-white bg-opacity-60 backdrop-blur-sm flex items-center justify-center">
+                                        <div className="bg-indigo-600 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center font-bold text-lg animate-pulse">
+                                            <i className="fas fa-spinner fa-spin mr-3 text-2xl"></i> 데이터를 다시 분석하고 있습니다...
+                                        </div>
+                                    </div>
+                                )}
                                 <div className="shrink-0 bg-[#f8fafc] pt-4 pb-2 z-30 shadow-sm border-b border-gray-200 w-full">
                                     <div className="max-w-7xl mx-auto px-4 md:px-6 flex flex-col gap-3">
                                         
-                                        <div className="flex items-center justify-between bg-white px-4 py-2 rounded-lg border border-gray-200 shadow-sm">
-                                            <div className="flex items-center text-xs font-bold text-gray-500 overflow-x-auto whitespace-nowrap hide-scrollbar flex-1">
-                                                <span className="flex items-center"><span className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mr-1.5 shrink-0">1</span> <span className="truncate max-w-[100px]">{files.prev ? <span className="text-gray-800">{files.prev.name}</span> : '(공백)'}</span></span>
-                                                <span className="text-gray-300 mx-3">|</span>
-                                                <span className="flex items-center"><span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mr-1.5 shrink-0">2</span> <span className="truncate max-w-[100px]">{files.in ? <span className="text-gray-800">{files.in.name}</span> : '(공백)'}</span></span>
-                                                <span className="text-gray-300 mx-3">|</span>
-                                                <span className="flex items-center"><span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center mr-1.5 shrink-0">3</span> <span className="truncate max-w-[100px]">{files.out ? <span className="text-gray-800">{files.out.name}</span> : '(공백)'}</span></span>
-                                                <span className="text-gray-300 mx-3">|</span>
-                                                <span className="flex items-center"><span className="w-5 h-5 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center mr-1.5 shrink-0">4</span> <span className="truncate max-w-[100px]">{files.end ? <span className="text-gray-800">{files.end.name}</span> : '(공백)'}</span></span>
+                                        <div className="flex items-center justify-between bg-white px-4 py-2 rounded-lg border border-gray-200 shadow-sm relative">
+                                            {/* 숨겨진 파일 업로드 인풋 */}
+                                            <input type="file" ref={closingFileInputRef} accept=".xlsx, .xls, .csv" onChange={onClosingFileChange} className="hidden" />
+
+                                            <div className="flex items-center text-xs overflow-x-auto whitespace-nowrap hide-scrollbar flex-1 gap-2">
+                                                <button onClick={() => handleClosingFileUpload('prev')} className={`flex items-center px-2 py-1.5 rounded border transition-all ${files.prev ? 'bg-white border-gray-200 hover:border-blue-400 shadow-sm' : 'bg-gray-50 border-dashed border-gray-300 hover:border-gray-400'} group`} title="1. 기초 재고 업로드/변경">
+                                                    <span className={`w-5 h-5 rounded-full flex items-center justify-center mr-1.5 shrink-0 font-bold text-[10px] transition-colors ${files.prev ? 'bg-blue-100 text-blue-600 group-hover:bg-blue-200' : 'bg-gray-200 text-gray-500'}`}>1</span>
+                                                    <span className={`truncate max-w-[100px] ${files.prev ? 'text-gray-800 font-bold' : 'text-gray-400'}`}>{files.prev ? files.prev.name : '+ 파일 추가'}</span>
+                                                </button>
+                                                <span className="text-gray-300">|</span>
+                                                <button onClick={() => handleClosingFileUpload('in')} className={`flex items-center px-2 py-1.5 rounded border transition-all ${files.in ? 'bg-white border-gray-200 hover:border-emerald-400 shadow-sm' : 'bg-gray-50 border-dashed border-gray-300 hover:border-gray-400'} group`} title="2. 당기 매입 업로드/변경">
+                                                    <span className={`w-5 h-5 rounded-full flex items-center justify-center mr-1.5 shrink-0 font-bold text-[10px] transition-colors ${files.in ? 'bg-emerald-100 text-emerald-600 group-hover:bg-emerald-200' : 'bg-gray-200 text-gray-500'}`}>2</span>
+                                                    <span className={`truncate max-w-[100px] ${files.in ? 'text-gray-800 font-bold' : 'text-gray-400'}`}>{files.in ? files.in.name : '+ 파일 추가'}</span>
+                                                </button>
+                                                <span className="text-gray-300">|</span>
+                                                <button onClick={() => handleClosingFileUpload('out')} className={`flex items-center px-2 py-1.5 rounded border transition-all ${files.out ? 'bg-white border-gray-200 hover:border-indigo-400 shadow-sm' : 'bg-gray-50 border-dashed border-gray-300 hover:border-gray-400'} group`} title="3. 당기 매출 업로드/변경">
+                                                    <span className={`w-5 h-5 rounded-full flex items-center justify-center mr-1.5 shrink-0 font-bold text-[10px] transition-colors ${files.out ? 'bg-indigo-100 text-indigo-600 group-hover:bg-indigo-200' : 'bg-gray-200 text-gray-500'}`}>3</span>
+                                                    <span className={`truncate max-w-[100px] ${files.out ? 'text-gray-800 font-bold' : 'text-gray-400'}`}>{files.out ? files.out.name : '+ 파일 추가'}</span>
+                                                </button>
+                                                <span className="text-gray-300">|</span>
+                                                {/* 4번 파일은 없으면 회색 */}
+                                                <button onClick={() => handleClosingFileUpload('end')} className={`flex items-center px-2 py-1.5 rounded border transition-all ${files.end ? 'bg-white border-gray-200 hover:border-purple-400 shadow-sm' : 'bg-gray-50 border-dashed border-gray-300 hover:border-gray-400'} group`} title="4. 실사 업로드/변경">
+                                                    <span className={`w-5 h-5 rounded-full flex items-center justify-center mr-1.5 shrink-0 font-bold text-[10px] transition-colors ${files.end ? 'bg-purple-100 text-purple-600 group-hover:bg-purple-200' : 'bg-gray-200 text-gray-500'}`}>4</span>
+                                                    <span className={`truncate max-w-[100px] ${files.end ? 'text-gray-800 font-bold' : 'text-gray-400'}`}>{files.end ? files.end.name : '+ 실사 추가'}</span>
+                                                </button>
                                                 
-                                                <span className="text-[11px] text-gray-700 font-bold ml-4 border-l pl-4 border-gray-200">
-                                                    분석기간: {analysisPeriod}
+                                                <span className="text-[12px] text-indigo-600 font-black ml-4 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 shadow-inner shrink-0">
+                                                    {analysisPeriod}
                                                 </span>
                                             </div>
                                             <div className="flex gap-2 shrink-0 ml-4 items-center">
-                                                <button onClick={handleResetFiles} className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded text-[11px] font-bold hover:bg-gray-200 transition shadow-sm flex items-center">
+                                                <button onClick={handleResetFiles} className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded text-[11px] font-bold hover:bg-red-50 hover:text-red-600 transition shadow-sm flex items-center border border-transparent hover:border-red-200">
                                                     <i className="fas fa-redo-alt mr-1"></i>초기화
                                                 </button>
                                             </div>
                                         </div>
 
                                         <div className="grid grid-cols-3 gap-3">
-                                            <div 
-                                                onClick={() => handleIssueJump('missingPrice', 'next', true)}
-                                                className={`p-3 rounded-lg border flex flex-col justify-between cursor-pointer transition-all ${activeIssueMode === 'missingPrice' ? 'bg-red-100 border-red-400 ring-2 ring-red-200 scale-[1.02] shadow-md' : (closingStats.missingPriceCount > 0 ? 'bg-red-50 border-red-200 hover:bg-red-100' : 'bg-gray-50 border-gray-200 hover:bg-gray-100')}`}
-                                            >
-                                                <div className="text-xs font-bold text-gray-500 mb-1 flex items-center"><i className="fas fa-exclamation-circle mr-1.5 text-red-400"></i>단가 누락 (매입없음)</div>
-                                                <div className={`text-xl font-black ${closingStats.missingPriceCount > 0 ? 'text-red-600' : 'text-gray-700'}`}>{closingStats.missingPriceCount}건</div>
-                                                <div className="text-[10px] text-red-500 font-bold mt-1"><i className="fas fa-arrow-down mr-1"></i>[Tab] 다음 항목 이동</div>
-                                            </div>
-                                            <div 
-                                                onClick={() => handleIssueJump('loss', 'next', true)}
-                                                className={`p-3 rounded-lg border flex flex-col justify-between cursor-pointer transition-all ${activeIssueMode === 'loss' ? 'bg-orange-100 border-orange-400 ring-2 ring-orange-200 scale-[1.02] shadow-md' : (closingStats.lossCount > 0 ? 'bg-orange-50 border-orange-200 hover:bg-orange-100' : 'bg-gray-50 border-gray-200 hover:bg-gray-100')}`}
-                                            >
-                                                <div className="text-xs font-bold text-gray-500 mb-1 flex items-center"><i className="fas fa-balance-scale mr-1.5 text-orange-400"></i>재고 오차 (확인필요)</div>
-                                                <div className={`text-xl font-black ${closingStats.lossCount > 0 ? 'text-orange-600' : 'text-gray-700'}`}>{closingStats.lossCount}건</div>
-                                                <div className="text-[10px] text-orange-500 font-bold mt-1"><i className="fas fa-arrow-down mr-1"></i>[Tab] 다음 항목 이동</div>
-                                            </div>
+                                            {/* 순서 1: 원가 매칭 */}
                                             <div 
                                                 onClick={() => handleIssueJump('multiPrice', 'next', true)}
                                                 className={`p-3 rounded-lg border flex flex-col justify-between cursor-pointer transition-all ${activeIssueMode === 'multiPrice' ? 'bg-blue-100 border-blue-400 ring-2 ring-blue-200 scale-[1.02] shadow-md' : (closingStats.multiPriceCount > 0 ? 'bg-blue-50 border-blue-200 hover:bg-blue-100' : 'bg-gray-50 border-gray-200 hover:bg-gray-100')}`}
@@ -1829,13 +1843,32 @@
                                                 <div className={`text-xl font-black ${closingStats.multiPriceCount > 0 ? 'text-blue-600' : 'text-gray-700'}`}>{closingStats.multiPriceCount}건</div>
                                                 <div className="text-[10px] text-blue-600 font-bold mt-1"><i className="fas fa-arrow-down mr-1"></i>[Tab] 다음 그룹 이동</div>
                                             </div>
+                                            {/* 순서 2: 재고 오차 */}
+                                            <div 
+                                                onClick={() => handleIssueJump('loss', 'next', true)}
+                                                className={`p-3 rounded-lg border flex flex-col justify-between cursor-pointer transition-all ${activeIssueMode === 'loss' ? 'bg-orange-100 border-orange-400 ring-2 ring-orange-200 scale-[1.02] shadow-md' : (closingStats.lossCount > 0 ? 'bg-orange-50 border-orange-200 hover:bg-orange-100' : 'bg-gray-50 border-gray-200 hover:bg-gray-100')}`}
+                                            >
+                                                <div className="text-xs font-bold text-gray-500 mb-1 flex items-center"><i className="fas fa-balance-scale mr-1.5 text-orange-400"></i>재고 오차 (확인필요)</div>
+                                                <div className={`text-xl font-black ${closingStats.lossCount > 0 ? 'text-orange-600' : 'text-gray-700'}`}>{closingStats.lossCount}건</div>
+                                                <div className="text-[10px] text-orange-500 font-bold mt-1"><i className="fas fa-arrow-down mr-1"></i>[Tab] 다음 항목 이동</div>
+                                            </div>
+                                            {/* 순서 3: 단가 누락 */}
+                                            <div 
+                                                onClick={() => handleIssueJump('missingPrice', 'next', true)}
+                                                className={`p-3 rounded-lg border flex flex-col justify-between cursor-pointer transition-all ${activeIssueMode === 'missingPrice' ? 'bg-red-100 border-red-400 ring-2 ring-red-200 scale-[1.02] shadow-md' : (closingStats.missingPriceCount > 0 ? 'bg-red-50 border-red-200 hover:bg-red-100' : 'bg-gray-50 border-gray-200 hover:bg-gray-100')}`}
+                                            >
+                                                <div className="text-xs font-bold text-gray-500 mb-1 flex items-center"><i className="fas fa-exclamation-circle mr-1.5 text-red-400"></i>단가 누락 (매입없음)</div>
+                                                <div className={`text-xl font-black ${closingStats.missingPriceCount > 0 ? 'text-red-600' : 'text-gray-700'}`}>{closingStats.missingPriceCount}건</div>
+                                                <div className="text-[10px] text-red-500 font-bold mt-1"><i className="fas fa-arrow-down mr-1"></i>[Tab] 다음 항목 이동</div>
+                                            </div>
                                         </div>
 
                                         <div className="flex flex-col md:flex-row justify-between items-end md:items-center gap-2 mt-4 mb-2">
                                             <div className="flex items-center gap-2 w-full md:w-auto">
-                                                <div className="relative w-full md:w-64 shrink-0">
-                                                    <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
-                                                        <i className="fas fa-search text-gray-400 text-xs"></i>
+                                                {/* 검색창 돋보이게 스타일 업그레이드 */}
+                                                <div className="relative w-full md:w-80 shrink-0">
+                                                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                                                        <i className="fas fa-search text-indigo-400 text-sm"></i>
                                                     </div>
                                                     <input 
                                                         type="text" 
@@ -1853,7 +1886,7 @@
                                                                 e.target.select();
                                                             }
                                                         }}
-                                                        className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 font-medium shadow-sm transition-all placeholder-gray-400 text-gray-800" 
+                                                        className="w-full pl-9 pr-4 py-2.5 border-2 border-indigo-200 bg-indigo-50/50 rounded-lg text-sm focus:outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 font-bold shadow-sm transition-all placeholder-indigo-300 text-indigo-900" 
                                                     />
                                                 </div>
                                             </div>
@@ -1867,7 +1900,7 @@
                                                                 if (!key) { setAlertMsg("조정할 상품의 실사칸을 클릭(선택)하여 커서를 위치시킨 후 버튼을 눌러주세요."); return; }
                                                                 handleSpacebarLink(key, idx);
                                                             }}
-                                                            className={`px-4 py-2 text-[12px] font-bold transition flex items-center 
+                                                            className={`px-4 py-2.5 text-[12px] font-bold transition flex items-center 
                                                                 ${linkSourceKey ? 'bg-purple-600 text-white animate-pulse' : 'text-purple-700 hover:bg-purple-50'}`}
                                                         >
                                                             <i className="fas fa-exchange-alt mr-1.5"></i>
@@ -1876,17 +1909,17 @@
                                                         </button>
                                                     </div>
                                                     {substHistory.length > 0 && (
-                                                        <button onClick={() => setUndoUi({ state: 'list' })} className="px-3 py-2 rounded-lg border border-red-200 text-[12px] font-bold bg-red-50 text-red-600 hover:bg-red-100 transition shadow-sm flex items-center shrink-0" title="재고조정 내역 목록 보기">
+                                                        <button onClick={() => setUndoUi({ state: 'list' })} className="px-3 py-2.5 rounded-lg border border-red-200 text-[12px] font-bold bg-red-50 text-red-600 hover:bg-red-100 transition shadow-sm flex items-center shrink-0" title="재고조정 내역 목록 보기">
                                                             <i className="fas fa-undo mr-1.5"></i>조정 취소 ({substHistory.length})
                                                         </button>
                                                     )}
                                                 </div>
 
-                                                <button onClick={() => setFilters({...filters, issuesOnly: !filters.issuesOnly})} className={`px-3 py-2 rounded border text-[12px] font-bold transition shrink-0 ${filters.issuesOnly ? 'bg-red-50 text-red-700 border-red-200 shadow-inner' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>이슈/결과 필터</button>
-                                                <button onClick={() => setFilters({...filters, excludeZeroActual: !filters.excludeZeroActual})} className={`px-3 py-2 rounded border text-[12px] font-bold transition shrink-0 ${filters.excludeZeroActual ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-inner' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>실사 0 제외</button>
+                                                <button onClick={() => setFilters({...filters, issuesOnly: !filters.issuesOnly})} className={`px-3 py-2.5 rounded-lg border text-[12px] font-bold transition shrink-0 ${filters.issuesOnly ? 'bg-red-50 text-red-700 border-red-200 shadow-inner' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50 shadow-sm'}`}>이슈/결과 필터</button>
+                                                <button onClick={() => setFilters({...filters, excludeZeroActual: !filters.excludeZeroActual})} className={`px-3 py-2.5 rounded-lg border text-[12px] font-bold transition shrink-0 ${filters.excludeZeroActual ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-inner' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50 shadow-sm'}`}>실사 0 제외</button>
                                                 
-                                                <button onClick={actionRefs.current.handleCombinedExport} className="px-4 py-2 bg-indigo-800 hover:bg-indigo-900 text-white rounded text-[12px] font-bold shadow-md transition flex items-center shrink-0" title="마감 데이터를 엑셀로 추출하고 아카이브합니다">
-                                                    <i className="fas fa-file-excel mr-1.5"></i>마감 추출 및 아카이브 (F8)
+                                                <button onClick={actionRefs.current.handleCombinedExport} className="px-4 py-2.5 bg-indigo-800 hover:bg-indigo-900 text-white rounded-lg text-[12px] font-bold shadow-md transition flex items-center shrink-0" title="수불부 마감 데이터를 엑셀로 추출합니다">
+                                                    <i className="fas fa-file-excel mr-1.5"></i>마감 엑셀 다운로드 (F8)
                                                 </button>
                                             </div>
                                         </div>
