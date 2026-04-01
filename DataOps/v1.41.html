@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>oneapp DataOps - 핵심 수불부 관리 (V1.40)</title>
+    <title>oneapp DataOps - 핵심 수불부 관리 (V1.41)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -41,7 +41,6 @@
     <script type="text/babel">
         const { useState, useRef, useEffect, useMemo, useCallback } = React;
 
-        // --- 공통 유틸리티 함수 영역 ---
         const parseNumber = (val) => {
             if (val === undefined || val === null || val === '') return 0;
             if (typeof val === 'number') return isNaN(val) ? 0 : val;
@@ -828,6 +827,205 @@
                 }
             }, [productData, multiPriceCodes, ackMultiCodes, activeMultiCode]);
 
+            const handleSalesMove = useCallback((sourceKey, targetKey, vendorName, qtyToMove, sourceCode, targetCode) => {
+                setProductData(prevP => {
+                    let sPrice = 0; let tPrice = 0;
+                    let sRevUnit = 0; 
+                    
+                    prevP.forEach(p => {
+                        if (p.batchKey === sourceKey) { 
+                            sPrice = p.단가; 
+                            if(p.출고내역[vendorName] && p.출고내역[vendorName].qty > 0) {
+                                 sRevUnit = p.출고내역[vendorName].rev / p.출고내역[vendorName].qty;
+                            } else {
+                                 sRevUnit = p.출고 > 0 ? p.매출액 / p.출고 : 0; 
+                            }
+                        }
+                        if (p.batchKey === targetKey) tPrice = p.단가;
+                    });
+
+                    return prevP.map(p => {
+                        if (p.batchKey === sourceKey) {
+                            const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역)) };
+                            np.출고 -= qtyToMove;
+                            const movedCogs = qtyToMove * sPrice;
+                            const movedRev = qtyToMove * sRevUnit;
+                            np.매출원가 -= movedCogs;
+                            np.매출액 -= movedRev;
+                            
+                            if (np.출고내역[vendorName]) {
+                                np.출고내역[vendorName].qty -= qtyToMove;
+                                np.출고내역[vendorName].rev -= movedRev;
+                                np.출고내역[vendorName].cogs -= movedCogs;
+                                if (np.출고내역[vendorName].qty <= 0) delete np.출고내역[vendorName];
+                            }
+                            np.전산잔량 = np.기초 + np.입고 + np.대체입고 - np.출고 - np.대체출고;
+                            if (np.실사 !== null && np.실사 !== '') {
+                                np.실사 = Number(np.실사) + qtyToMove;
+                                np.로스 = np.실사 - np.전산잔량;
+                            } else { np.실사 = np.전산잔량; np.로스 = 0; }
+                            np.수기확인완료 = true;
+                            return np;
+                        }
+                        if (p.batchKey === targetKey) {
+                            const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역)), 이슈: [...p.이슈] };
+                            np.출고 += qtyToMove;
+                            const movedCogs = qtyToMove * tPrice;
+                            const movedRev = qtyToMove * sRevUnit;
+                            np.매출원가 += movedCogs;
+                            np.매출액 += movedRev;
+                            
+                            if (!np.출고내역[vendorName]) np.출고내역[vendorName] = {qty: 0, rev: 0, cogs: 0};
+                            np.출고내역[vendorName].qty += qtyToMove;
+                            np.출고내역[vendorName].rev += movedRev;
+                            np.출고내역[vendorName].cogs += movedCogs;
+                            
+                            np.전산잔량 = np.기초 + np.입고 + np.대체입고 - np.출고 - np.대체출고;
+                            if (np.실사 !== null && np.실사 !== '') {
+                                np.실사 = Number(np.실사) - qtyToMove;
+                                np.로스 = np.실사 - np.전산잔량;
+                            } else { np.실사 = np.전산잔량; np.로스 = 0; }
+                            np.이슈 = np.이슈.filter(msg => msg !== '매입내역 없음' && !msg.includes('전산 재고 부족'));
+                            np.수기확인완료 = true;
+                            return np;
+                        }
+                        return p;
+                    });
+                });
+            }, []);
+
+            const executeImmediateSubstitution = useCallback((key1, key2, idx2) => {
+                setProductData(prev => {
+                    const idx1 = prev.findIndex(d => d.batchKey === key1);
+                    const realIdx2 = prev.findIndex(d => d.batchKey === key2);
+                    if (idx1 < 0 || realIdx2 < 0) return prev;
+
+                    const sourceItemOrig = { ...prev[idx1], 이슈: [...prev[idx1].이슈] };
+                    const targetItemOrig = { ...prev[realIdx2], 이슈: [...prev[realIdx2].이슈] };
+
+                    let sourceItem = { ...sourceItemOrig };
+                    let targetItem = { ...targetItemOrig };
+
+                    if (sourceItem.로스 < 0 && targetItem.로스 > 0) { }
+                    else if (targetItem.로스 < 0 && sourceItem.로스 > 0) {
+                        let temp = sourceItem; sourceItem = targetItem; targetItem = temp;
+                    }
+                    else if (sourceItem.로스 < 0 && targetItem.로스 === 0) { }
+                    else if (targetItem.로스 < 0 && sourceItem.로스 === 0) {
+                        let temp = sourceItem; sourceItem = targetItem; targetItem = temp;
+                    }
+                    else {
+                        setAlertMsg(`재고조정 실패!\n\n두 상품을 연결하려면 먼저 실사 수량을 변경하여 오차(로스)를 만들어주세요.\n• 원물(차감 대상): 마이너스(-) 로스 발생\n• 소분(증가 대상): 플러스(+) 로스 발생`);
+                        return prev;
+                    }
+
+                    const sQty = Math.abs(sourceItem.로스);
+                    const tQty = Math.abs(targetItem.로스);
+                    if (tQty === 0) {
+                        setAlertMsg("대체되는 상품(소분품)의 실사 수량이 입력되지 않아 조정 비율을 알 수 없습니다.\n수량을 입력해주세요.");
+                        return prev;
+                    }
+
+                    const transferredCost = sQty * sourceItem.단가;
+                    const unitCost = transferredCost / tQty;        
+
+                    sourceItem.대체출고 += sQty;
+                    sourceItem.전산잔량 = sourceItem.기초 + sourceItem.입고 + sourceItem.대체입고 - sourceItem.출고 - sourceItem.대체출고;
+                    sourceItem.실사 = sourceItem.실사 === null || sourceItem.실사 === '' ? sourceItem.전산잔량 : sourceItem.실사;
+                    sourceItem.로스 = sourceItem.실사 - sourceItem.전산잔량;
+                    sourceItem.이슈.push(`🔄 -> ${targetItem.품명}`);
+                    sourceItem.수기확인완료 = true;
+
+                    targetItem.대체입고 += tQty;
+                    targetItem.전산잔량 = targetItem.기초 + targetItem.입고 + targetItem.대체입고 - targetItem.출고 - targetItem.대체출고;
+                    targetItem.실사 = targetItem.실사 === null || targetItem.실사 === '' ? targetItem.전산잔량 : targetItem.실사;
+                    targetItem.로스 = targetItem.실사 - targetItem.전산잔량;
+                    targetItem.단가 = unitCost; 
+                    targetItem.매출원가 = targetItem.출고 * unitCost; 
+                    targetItem.이슈 = targetItem.이슈.filter(msg => !msg.includes('매입내역 없음') && !msg.includes('전산 재고 부족'));
+                    targetItem.이슈.push(`🔄 <- ${sourceItem.품명}`);
+                    targetItem.수기확인완료 = true;
+
+                    setSubstHistory(h => [...h, {
+                        id: Date.now(), 
+                        sourceKey: sourceItem.batchKey, 
+                        targetKey: targetItem.batchKey,
+                        sourceName: sourceItem.품명, 
+                        targetName: targetItem.품명, 
+                        sQty, tQty, transferredCost, 
+                        sourceItemPrev: sourceItem.batchKey === sourceItemOrig.batchKey ? sourceItemOrig : targetItemOrig,
+                        targetItemPrev: targetItem.batchKey === targetItemOrig.batchKey ? targetItemOrig : sourceItemOrig,
+                    }]);
+
+                    const newData = [...prev];
+                    newData[prev.findIndex(d => d.batchKey === sourceItem.batchKey)] = sourceItem;
+                    newData[prev.findIndex(d => d.batchKey === targetItem.batchKey)] = targetItem;
+                    return newData;
+                });
+
+                setTimeout(() => {
+                    const input = document.getElementById(`actual-input-${idx2}`);
+                    if (input) { input.focus(); input.select(); }
+                }, 50);
+
+            }, []);
+
+            const handleSpacebarLink = useCallback((targetBatchKey, targetIdx) => {
+                setLinkSourceKey(prevKey => {
+                    if (!prevKey) {
+                        setTimeout(() => {
+                            const input = document.getElementById(`actual-input-${targetIdx}`);
+                            if (input) { input.focus(); input.select(); }
+                        }, 50);
+                        return targetBatchKey; 
+                    }
+                    if (prevKey === targetBatchKey) {
+                        setTimeout(() => {
+                            const input = document.getElementById(`actual-input-${targetIdx}`);
+                            if (input) { input.focus(); input.select(); }
+                        }, 50);
+                        return null; 
+                    }
+                    setTimeout(() => executeImmediateSubstitution(prevKey, targetBatchKey, targetIdx), 0);
+                    return null; 
+                });
+            }, [executeImmediateSubstitution]);
+
+            const handleSaveMemo = useCallback((batchKey, text) => {
+                setProductData(prev => prev.map(item => item.batchKey === batchKey ? { ...item, 메모: text } : item));
+            }, []);
+
+            const filteredProductData = useMemo(() => {
+                let data = productData;
+                if (filters.search) {
+                    const q = filters.search.toLowerCase();
+                    data = data.filter(d => (d.품명 && d.품명.toLowerCase().includes(q)) || (d.코드 && d.코드.toLowerCase().includes(q)) || (d.거래처 && d.거래처.toLowerCase().includes(q)));
+                }
+
+                if (filters.issuesOnly) data = data.filter(d => d.이슈 && d.이슈.length > 0);
+                if (filters.excludeZeroActual) data = data.filter(d => { const act = d.실사 === '' || d.실사 === null || d.실사 === undefined ? 0 : Number(d.실사); return act !== 0; });
+                return data;
+            }, [productData, filters]);
+
+            const handleResetFiles = () => {
+                setFiles({ prev: null, in: null, out: null, end: null });
+                setRawJson({ prev: [], in: [], out: [], end: [] });
+                setProductData([]);
+                setAnalysisPeriod('전체 기간');
+                setSubstHistory([]);
+                setUndoUi({ state: 'closed' });
+                setLinkSourceKey(null);
+                setActiveIssueMode(null);
+                setAckMultiCodes(new Set());
+                setActiveMultiCode(null);
+                currentIssueIdxRef.current = -1;
+                focusedInputRef.current = { key: null, idx: -1 };
+                setFilters({ issuesOnly: false, excludeZeroActual: false, search: '' });
+                setError('');
+                setAppStep('upload');
+                document.querySelectorAll('input[type="file"]').forEach(input => input.value = '');
+            };
+
             const executeAnalysis = useCallback((payload) => {
                 setIsProcessing(true);
                 setConfirmModal({ isOpen: false, warnings: [], payload: null });
@@ -1163,7 +1361,6 @@
                     const validIn = [];
                     const validOut = [];
 
-                    // [UPDATE] 날짜 포맷 강제 정규화 (YYYY-MM-DD)
                     parsedPrev.forEach(item => {
                         const d = formatItemDate(item.일자, refYear);
                         if (d > 0) item.일자 = formatStrForPeriod(d);
@@ -1252,25 +1449,6 @@
                 }
             };
 
-            const handleResetFiles = () => {
-                setFiles({ prev: null, in: null, out: null, end: null });
-                setRawJson({ prev: [], in: [], out: [], end: [] });
-                setProductData([]);
-                setAnalysisPeriod('전체 기간');
-                setSubstHistory([]);
-                setUndoUi({ state: 'closed' });
-                setLinkSourceKey(null);
-                setActiveIssueMode(null);
-                setAckMultiCodes(new Set());
-                setActiveMultiCode(null);
-                currentIssueIdxRef.current = -1;
-                focusedInputRef.current = { key: null, idx: -1 };
-                setFilters({ issuesOnly: false, excludeZeroActual: false, search: '' });
-                setError('');
-                setAppStep('upload');
-                document.querySelectorAll('input[type="file"]').forEach(input => input.value = '');
-            };
-
             const handleBaseDataChange = useCallback((batchKey, field, val) => {
                 const numVal = val === '' ? 0 : Number(val);
                 
@@ -1341,6 +1519,13 @@
             
             const handleIssueJumpRef = useRef(handleIssueJump);
             useEffect(() => { handleIssueJumpRef.current = handleIssueJump; }, [handleIssueJump]);
+
+            const handleClosingFileUpload = (type) => {
+                setUploadTarget(type);
+                if (closingFileInputRef.current) {
+                    closingFileInputRef.current.click();
+                }
+            };
 
             const onClosingFileChange = (e) => {
                 const selectedFile = e.target.files[0];
@@ -1509,9 +1694,8 @@
                     '운영 코멘트': '※ 마감 요약 데이터입니다.'
                 }];
 
-                // [NEW] 시트 6: 업체별 매입현황 (매입 추적 Raw Data)
                 const exportData6 = productData
-                    .filter(item => item.입고 !== 0) // 수기 조정을 위해 매입 수량이 변동(입고가 있는)된 내역 추출
+                    .filter(item => item.입고 !== 0) 
                     .map(item => {
                         return {
                             '결산일자': targetDateStr,
@@ -1572,7 +1756,6 @@
                     XLSX.utils.book_append_sheet(wb, ws5, '마감요약');
                 }
 
-                // [NEW] 시트 6 추가 및 엑셀 내보내기 병합
                 if (exportData6.length > 0) {
                     const ws6 = XLSX.utils.json_to_sheet(exportData6);
                     XLSX.utils.book_append_sheet(wb, ws6, '업체별매입현황');
@@ -1672,7 +1855,7 @@
                             <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
                                 <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center">
                                     <span className="text-blue-600 mr-2">oneapp</span> DataOps
-                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">Light V1.40</span>
+                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">Light V1.41</span>
                                 </h1>
                             </div>
 
