@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>oneapp DataOps - 핵심 수불부 관리 (V2.8 Stable)</title>
+    <title>oneapp DataOps - 핵심 수불부 관리 (V2.9 Stable)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -790,13 +790,16 @@
                     setAnalysisPeriod(periodStr); setTargetDateStr(targetDateStrFromData); 
                     
                     const isClosingItem = (item) => item._raw && ('로스/조정수량' in item._raw || '기초수량' in item._raw || '기말실사(이월수량)' in item._raw);
-                    const allInputFiles = [...parsedPrev, ...parsedIn, ...parsedOut, ...parsedEnd];
-                    const closingRows = allInputFiles.filter(isClosingItem);
-                    const rawTransactions = allInputFiles.filter(item => !isClosingItem(item));
+                    
+                    // [핵심 버그 수정] 스마트 재마감(마감엑셀 복원)은 오직 1번(prev)이나 4번(end) 박스에 올라온 파일에만 적용합니다.
+                    // 2번(in)이나 3번(out) 박스에 올라온 파일은 무조건 매입/매출 전표로 취급하여 출고(또는 입고)가 부활하는 현상을 원천 차단합니다.
+                    const prevEndFiles = [...parsedPrev, ...parsedEnd];
+                    const closingRows = prevEndFiles.filter(isClosingItem);
+                    const rawTransactions = [...prevEndFiles.filter(item => !isClosingItem(item)), ...parsedIn, ...parsedOut];
 
                     let pData = {}; 
                     
-                    if (rawTransactions.length === 0 && closingRows.length > 0) {
+                    if (rawTransactions.length === 0 && closingRows.length > 0 && parsedIn.length === 0 && parsedOut.length === 0) {
                         closingRows.forEach(item => {
                             const code = String(item.코드 || item._raw['상품코드'] || 'NO_CODE');
                             const price = parseNumber(item._raw['매입단가(원가)'] !== undefined ? item._raw['매입단가(원가)'] : item.단가);
@@ -828,6 +831,14 @@
                             if (type === 'in' && isExcluded(item.거래처)) return;
                             const code = String(item.코드 || 'NO_CODE'); const price = parseNumber(item.단가); const date = String(item.일자 || '');
                             const batchKey = `${code}|${price}|${date}`;
+                            
+                            // 매입 박스에 마감 양식이 올라와도 오직 입고수량만 발라냅니다.
+                            let qtyToApply = item.수량;
+                            if (item._raw) {
+                                if (type === 'in' && item._raw['입고수량'] !== undefined) qtyToApply = parseNumber(item._raw['입고수량']);
+                                if (type === 'prev' && item._raw['기초수량'] !== undefined) qtyToApply = parseNumber(item._raw['기초수량']);
+                            }
+
                             if (!pData[batchKey]) {
                                 pData[batchKey] = { 
                                     batchKey, 코드: code, 품명: item.품명, 단가: price, 일자: date, 거래처: item.거래처 || (type === 'prev' ? '이월재고' : '미지정'),
@@ -836,10 +847,10 @@
                                     isDummy: false, 수기확인완료: false 
                                 };
                             }
-                            if (type === 'prev') pData[batchKey].기초 += item.수량;
-                            if (type === 'in') pData[batchKey].입고 += item.수량;
+                            if (type === 'prev') pData[batchKey].기초 += qtyToApply;
+                            if (type === 'in') pData[batchKey].입고 += qtyToApply;
                             if (!stockPool[code]) stockPool[code] = { buckets: [] };
-                            if (item.수량 !== 0) stockPool[code].buckets.push({ batchKey, 단가: price, 일자: date, 수량: item.수량, 거래처: item.거래처 || (type === 'prev' ? '이월재고' : '미지정') });
+                            if (qtyToApply !== 0) stockPool[code].buckets.push({ batchKey, 단가: price, 일자: date, 수량: qtyToApply, 거래처: item.거래처 || (type === 'prev' ? '이월재고' : '미지정') });
                         };
 
                         parsedPrev.forEach(item => {
@@ -869,13 +880,19 @@
                             }
                         });
 
-                        parsedIn.filter(item => !isClosingItem(item)).forEach(item => addStock(item, 'in'));
+                        parsedIn.forEach(item => addStock(item, 'in')); // isClosingItem 필터 제거
                         Object.values(stockPool).forEach(pool => pool.buckets.sort((a, b) => String(a.일자 || '').localeCompare(String(b.일자 || ''))));
 
-                        parsedOut.filter(item => !isClosingItem(item)).forEach(sale => {
+                        parsedOut.forEach(sale => { // isClosingItem 필터 제거
                             if (isExcluded(sale.거래처)) return;
-                            const code = String(sale.코드 || 'NO_CODE'); let qtyToDeduct = sale.수량; const pool = stockPool[code];
-                            let revenue = 0; if (sale.단가 !== 0 && sale.수량 !== 0) revenue = sale.수량 * sale.단가;
+                            const code = String(sale.코드 || 'NO_CODE'); 
+                            
+                            // 매출 박스에 마감 양식이 올라와도 오직 출고량만 발라냅니다.
+                            let qtyToDeduct = sale.수량;
+                            if (sale._raw && sale._raw['출고량'] !== undefined) qtyToDeduct = parseNumber(sale._raw['출고량']);
+
+                            const pool = stockPool[code];
+                            let revenue = 0; if (sale.단가 !== 0 && qtyToDeduct !== 0) revenue = qtyToDeduct * sale.단가;
                             let finalRevenue = revenue;
                             if (finalRevenue === 0 && sale._raw) {
                                 const amtKeys = ['금액', '합계', '매출금액', '판매금액', '공급가액', '공급가', '총액'];
@@ -884,7 +901,7 @@
                                     if (matchedKey && sale._raw[matchedKey] !== undefined && sale._raw[matchedKey] !== '') { finalRevenue = parseNumber(sale._raw[matchedKey]); break; }
                                 }
                             }
-                            if (finalRevenue === 0 && sale.단가 !== 0 && sale.수량 === 0) finalRevenue = sale.단가;
+                            if (finalRevenue === 0 && sale.단가 !== 0 && qtyToDeduct === 0) finalRevenue = sale.단가;
                             
                             if (!pool || pool.buckets.length === 0) {
                                 const bKey = `${code}|0|미상`;
@@ -1284,7 +1301,7 @@
                             <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
                                 <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center">
                                     <span className="text-blue-600 mr-2">oneapp</span> DataOps
-                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">V2.8 Stable</span>
+                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">V2.9 Stable</span>
                                 </h1>
                             </div>
 
