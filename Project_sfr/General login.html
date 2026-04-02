@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>오더즈 - 내 방식대로, 쓸수록 손에 익는 플랫폼</title>
+    
+    <!-- Tailwind CSS (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons (CDN) -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Noto Sans KR Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+
+    <!-- Custom Animations & Font -->
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+        }
+        
+        /* 커스텀 애니메이션 정의 */
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideInRight { from { opacity: 0; transform: translateX(1rem); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes slideInBottom { from { opacity: 0; transform: translateY(1rem); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes zoomIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+
+        .animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
+        .animate-slide-in-right { animation: slideInRight 0.5s ease-out forwards; }
+        .animate-slide-in-bottom { animation: slideInBottom 0.5s ease-out forwards; }
+        .animate-zoom-in { animation: zoomIn 0.5s ease-out forwards; }
+
+        /* 스크롤바 숨기기 (모바일 친화적) */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+
+    <!-- 메인 앱 컨테이너 -->
+    <div class="w-full max-w-md bg-white min-h-[800px] shadow-2xl rounded-[2.5rem] overflow-hidden flex flex-col relative border-8 border-gray-900">
+        
+        <!-- 공통 헤더 (회원가입 시에만 노출) -->
+        <header id="app-header" class="px-4 py-4 flex items-center bg-white border-b border-gray-50 hidden">
+            <button onclick="goToDefault()" class="p-2 -ml-2 text-gray-900 hover:bg-gray-100 rounded-full transition-colors">
+                <i data-lucide="chevron-left" class="w-6 h-6"></i>
+            </button>
+            <h1 class="text-lg font-black text-gray-900 ml-2">회원가입</h1>
+        </header>
+
+        <!-- ==========================================
+             1. 기본 로그인 화면
+        =========================================== -->
+        <div id="view-default" class="flex-1 overflow-y-auto no-scrollbar px-6 py-6 flex flex-col animate-fade-in bg-gradient-to-b from-[#f2f6f4] to-white to-40%">
+            <div class="my-auto space-y-8">
+                
+                <!-- 메인 타이틀 -->
+                <div class="flex flex-col items-center justify-center text-center pt-4 pb-2">
+                    <div class="bg-white border border-gray-100 rounded-lg px-3.5 py-1.5 shadow-sm mb-5">
+                        <span class="text-[#006633] font-black text-[13px] tracking-wider">ORDERZ</span>
+                    </div>
+                    <h1 class="text-xl font-black text-gray-900 mb-2 tracking-tight">오더즈가 기억합니다</h1>
+                    <p class="text-[14px] text-gray-500 font-medium">내 방식대로, 쓸수록 손에 익는 플랫폼</p>
+                </div>
+
+                <!-- 소셜 로그인 & 계정 연결 -->
+                <div class="space-y-3">
+                    <button class="w-full flex items-center justify-center space-x-2 bg-[#FEE500] text-[#3c1e1e] py-4 rounded-xl font-bold text-[15px] shadow-sm active:scale-[0.98] transition-transform">
+                        <svg width="20" height="20" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path fill-rule="evenodd" clip-rule="evenodd" d="M9 2C4.029 2 0 4.966 0 8.625C0 10.999 1.574 13.076 4.021 14.248L3.151 17.437C3.079 17.697 3.376 17.886 3.585 17.747L7.387 15.22C7.908 15.289 8.448 15.326 9 15.326C13.971 15.326 18 12.361 18 8.625C18 4.966 13.971 2 9 2Z" fill="#3c1e1e"/>
+                        </svg>
+                        <span>카카오로 시작하기</span>
+                    </button>
+
+                    <div class="flex justify-center py-1">
+                        <button onclick="toggleLinkModal(true)" class="text-[12px] font-bold text-gray-700 underline underline-offset-2 hover:text-black flex items-center">
+                            일반 계정에 카카오톡 연동하기 <i data-lucide="chevron-right" class="w-3 h-3 ml-0.5"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 일반 로그인 폼 -->
+                <div class="space-y-5">
+                    <div class="relative flex items-center">
+                        <div class="flex-grow border-t border-gray-100"></div>
+                        <span class="mx-4 text-[12px] text-gray-400 font-bold text-center">일반 로그인</span>
+                        <div class="flex-grow border-t border-gray-100"></div>
+                    </div>
+
+                    <div class="space-y-3">
+                        <div class="relative">
+                            <i data-lucide="user" class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5"></i>
+                            <input type="text" placeholder="아이디" class="w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500/20" />
+                        </div>
+                        <div class="relative">
+                            <i data-lucide="lock" class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5"></i>
+                            <input type="password" placeholder="비밀번호" class="w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500/20" />
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between text-[11px] text-gray-400 relative py-2 px-1">
+                        <label class="flex items-center space-x-1.5 cursor-pointer">
+                            <input type="checkbox" class="w-3.5 h-3.5 rounded border-gray-300 text-emerald-600" />
+                            <span>자동 로그인</span>
+                        </label>
+                        
+                        <div class="absolute left-1/2 -translate-x-1/2">
+                            <button class="hover:text-gray-600 font-medium">아이디/비밀번호 찾기</button>
+                        </div>
+                        
+                        <button onclick="goToSignup()" class="text-emerald-700 font-extrabold hover:underline">회원가입</button>
+                    </div>
+
+                    <button class="w-full bg-[#66bb6a] hover:bg-[#57a95b] text-white font-bold py-4 rounded-xl text-lg shadow-lg shadow-emerald-100 transition-all active:scale-[0.99]">
+                        로그인
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==========================================
+             2. 회원가입 페이지
+        =========================================== -->
+        <div id="view-signup" class="flex-1 flex flex-col p-6 overflow-y-auto no-scrollbar animate-slide-in-bottom hidden">
+            
+            <!-- 진행 상태 인디케이터 -->
+            <div class="flex items-center justify-between mb-8 px-2">
+                <!-- Step 1 -->
+                <div class="flex flex-col items-center flex-1 relative">
+                    <div id="ind-1-circle" class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold z-10 transition-colors bg-emerald-600 text-white">1</div>
+                    <span id="ind-1-text" class="text-[10px] mt-2 font-bold text-emerald-600">계정 정보</span>
+                    <div id="ind-1-line" class="absolute top-4 left-[60%] w-full h-[2px] bg-gray-100 transition-colors"></div>
+                </div>
+                <!-- Step 2 -->
+                <div class="flex flex-col items-center flex-1 relative">
+                    <div id="ind-2-circle" class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold z-10 transition-colors bg-gray-100 text-gray-400">2</div>
+                    <span id="ind-2-text" class="text-[10px] mt-2 font-bold text-gray-400">사업자 정보</span>
+                    <div id="ind-2-line" class="absolute top-4 left-[60%] w-full h-[2px] bg-gray-100 transition-colors"></div>
+                </div>
+                <!-- Step 3 -->
+                <div class="flex flex-col items-center flex-1 relative">
+                    <div id="ind-3-circle" class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold z-10 transition-colors bg-gray-100 text-gray-400">3</div>
+                    <span id="ind-3-text" class="text-[10px] mt-2 font-bold text-gray-400">가입 완료</span>
+                </div>
+            </div>
+
+            <div class="flex-1 space-y-6">
+                <!-- STEP 1: 계정 정보 -->
+                <div id="signup-step-1" class="space-y-6 animate-slide-in-right">
+                    <div class="text-center">
+                        <h2 class="text-lg font-black text-gray-900">로그인 정보를 만들어주세요</h2>
+                        <p class="text-xs text-gray-500 mt-2 leading-relaxed">
+                            추후에 카카오 계정을 연결하여<br/>직원들과 함께 관리할 수 있습니다.
+                        </p>
+                    </div>
+                    
+                    <div class="space-y-4 pt-4">
+                        <div class="space-y-3">
+                            <div>
+                                <div class="relative">
+                                    <input type="text" placeholder="아이디 (3자 이상)" class="w-full px-4 pr-10 py-4 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500/20" />
+                                    <span class="absolute right-4 top-1/2 -translate-y-1/2 text-red-500 font-bold">*</span>
+                                </div>
+                                <p class="text-[10px] text-gray-500 mt-1.5 ml-1">영문자, 숫자, _ 만 입력 가능. 최소 3자이상 입력하세요.</p>
+                            </div>
+                            <div class="relative">
+                                <input type="password" placeholder="비밀번호" class="w-full px-4 pr-10 py-4 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500/20" />
+                                <span class="absolute right-4 top-1/2 -translate-y-1/2 text-red-500 font-bold">*</span>
+                            </div>
+                            <div class="relative">
+                                <input type="password" placeholder="비밀번호 확인" class="w-full px-4 pr-10 py-4 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500/20" />
+                                <span class="absolute right-4 top-1/2 -translate-y-1/2 text-red-500 font-bold">*</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button onclick="setSignupStep(2)" class="w-full bg-gray-900 text-white font-bold py-4 rounded-xl mt-4 hover:bg-black transition-colors">다음 단계로</button>
+                </div>
+
+                <!-- STEP 2: 사업자 정보 -->
+                <div id="signup-step-2" class="space-y-4 animate-slide-in-right hidden">
+                    <div class="text-center mb-6">
+                        <h2 class="text-lg font-black text-gray-900">상호(업체)정보를 입력해주세요</h2>
+                    </div>
+                    
+                    <div class="space-y-3">
+                        <div class="relative">
+                            <i data-lucide="building-2" class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5"></i>
+                            <input type="text" placeholder="상호명(업체명)" class="w-full pl-12 pr-10 py-4 bg-gray-50 border border-gray-100 rounded-xl text-sm" />
+                            <span class="absolute right-4 top-1/2 -translate-y-1/2 text-red-500 font-bold">*</span>
+                        </div>
+                        <div class="relative">
+                            <i data-lucide="user" class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5"></i>
+                            <input type="text" placeholder="대표자명" class="w-full pl-12 pr-10 py-4 bg-gray-50 border border-gray-100 rounded-xl text-sm" />
+                            <span class="absolute right-4 top-1/2 -translate-y-1/2 text-red-500 font-bold">*</span>
+                        </div>
+                        <div class="relative">
+                            <i data-lucide="phone" class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5"></i>
+                            <input type="text" placeholder="휴대폰 번호" class="w-full pl-12 pr-10 py-4 bg-gray-50 border border-gray-100 rounded-xl text-sm" />
+                            <span class="absolute right-4 top-1/2 -translate-y-1/2 text-red-500 font-bold">*</span>
+                        </div>
+                        
+                        <div class="space-y-2">
+                            <div class="flex space-x-2">
+                                <div class="relative flex-1">
+                                    <i data-lucide="map-pin" class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5"></i>
+                                    <input type="text" placeholder="주소 검색" readonly class="w-full pl-12 pr-10 py-4 bg-gray-50 border border-gray-100 rounded-xl text-sm cursor-pointer" />
+                                    <span class="absolute right-4 top-1/2 -translate-y-1/2 text-red-500 font-bold">*</span>
+                                </div>
+                                <button class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 rounded-xl text-sm font-bold whitespace-nowrap transition-colors">주소검색</button>
+                            </div>
+                            <div class="relative">
+                                <input type="text" placeholder="상세주소 입력" class="w-full px-4 pr-10 py-4 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500/20" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 전체 동의 -->
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-100 mt-2">
+                        <label class="flex items-center space-x-2.5 cursor-pointer font-black text-gray-900">
+                            <input type="checkbox" id="agreeAll" onchange="handleAgreeAll(event)" class="w-5 h-5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
+                            <span class="text-[14px]">회원가입 약관에 모두 동의합니다</span>
+                        </label>
+                    </div>
+                    
+                    <button onclick="setSignupStep(3)" class="w-full bg-emerald-600 text-white font-bold py-4 rounded-xl mt-4 shadow-lg hover:bg-emerald-700 transition-colors">가입 완료하기</button>
+
+                    <!-- 상세 약관 -->
+                    <div class="mt-6 pt-6 border-t border-gray-200 text-[11px] space-y-4 pl-1 pb-4">
+                        <div class="space-y-2">
+                            <!-- 약관 스크롤 박스 -->
+                            <div id="terms-box" class="h-40 overflow-y-auto bg-gray-50 border border-gray-200 rounded-lg p-3 text-[10px] text-gray-500 leading-relaxed whitespace-pre-wrap"></div>
+                            
+                            <label class="flex items-center space-x-2 cursor-pointer text-gray-700 font-bold mt-2">
+                                <input type="checkbox" id="agreeTerms" onchange="handleSingleAgree('terms', event)" class="w-3.5 h-3.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
+                                <span>회원가입약관의 내용에 동의합니다. <span class="text-emerald-600">(필수)</span></span>
+                            </label>
+                        </div>
+
+                        <div class="space-y-2">
+                            <label class="flex items-center space-x-2 cursor-pointer text-gray-700 font-bold">
+                                <input type="checkbox" id="agreePrivacy" onchange="handleSingleAgree('privacy', event)" class="w-3.5 h-3.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
+                                <span>개인정보처리방침안내의 내용에 동의합니다. <span class="text-emerald-600">(필수)</span></span>
+                            </label>
+                            <div class="bg-gray-50 p-2.5 rounded-lg border border-gray-100 text-[10px] text-gray-500 leading-relaxed">
+                                <div class="grid grid-cols-[50px_1fr] gap-1">
+                                    <span class="font-bold text-gray-700">목적</span><span>이용자 식별 및 본인확인, CS대응</span>
+                                    <span class="font-bold text-gray-700">항목</span><span>아이디, 이름, 비밀번호, 연락처</span>
+                                    <span class="font-bold text-gray-700">보유기간</span><span class="font-bold text-emerald-600">회원 탈퇴 시까지</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="pt-2 border-t border-gray-100">
+                            <div class="flex items-center justify-between cursor-pointer py-1" onclick="toggleOptionalTerms()">
+                                <p class="font-bold text-gray-800">마케팅 정보 수신 동의 <span class="text-gray-400 font-normal text-[10px]">(선택)</span></p>
+                                <i id="icon-chevron-down" data-lucide="chevron-down" class="w-4 h-4 text-gray-400"></i>
+                                <i id="icon-chevron-up" data-lucide="chevron-up" class="w-4 h-4 text-gray-400 hidden"></i>
+                            </div>
+                            
+                            <div id="optional-terms" class="mt-2 space-y-2 text-gray-600 animate-fade-in hidden">
+                                <label class="flex items-center space-x-2 cursor-pointer hover:text-gray-900 transition-colors">
+                                    <input type="checkbox" id="agreeEmail" onchange="handleSingleAgree('email', event)" class="w-3.5 h-3.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
+                                    <span>정보 메일을 받겠습니다.</span>
+                                </label>
+                                <label class="flex items-center space-x-2 cursor-pointer hover:text-gray-900 transition-colors">
+                                    <input type="checkbox" id="agreeSms" onchange="handleSingleAgree('sms', event)" class="w-3.5 h-3.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
+                                    <span>휴대폰 문자메세지를 받겠습니다.</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- STEP 3: 가입 완료 -->
+                <div id="signup-step-3" class="flex flex-col items-center justify-center pt-6 animate-zoom-in hidden">
+                    <div class="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mb-6">
+                        <i data-lucide="clipboard-check" class="w-10 h-10 text-emerald-600"></i>
+                    </div>
+                    <div class="text-center w-full space-y-6">
+                        <h2 class="text-2xl font-black text-gray-900">회원가입 완료!</h2>
+                        
+                        <div class="bg-blue-50 p-5 rounded-2xl border border-blue-100 text-center space-y-2">
+                            <div class="flex items-center justify-center space-x-2 text-blue-700 font-bold mb-1">
+                                <i data-lucide="message-circle" class="w-5 h-5"></i>
+                                <span>사업자 증빙 안내</span>
+                            </div>
+                            <p class="text-[13px] text-gray-800 leading-relaxed font-bold">
+                                세금계산서 발행을 위한 사업자 등록증을<br/>
+                                카카오톡으로 보내주세요.
+                            </p>
+                        </div>
+                        
+                        <div class="w-full space-y-3 pt-4">
+                            <button class="w-full bg-[#FEE500] text-[#3c1e1e] font-black py-4 rounded-xl text-base flex items-center justify-center shadow-md hover:bg-[#FDD800] transition-colors">
+                                사업자등록증 발송하기
+                            </button>
+                            <button onclick="goToDefault()" class="w-full bg-gray-900 text-white font-bold py-4 rounded-xl shadow-lg text-base hover:bg-black transition-colors">
+                                오더즈 시작하기
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==========================================
+             3. 기존 계정 연결 팝업 (모달)
+        =========================================== -->
+        <div id="link-modal" class="absolute inset-0 z-50 flex items-center justify-center bg-black/60 animate-fade-in hidden">
+            <div class="bg-white w-[85%] max-w-sm rounded-2xl p-6 relative shadow-2xl animate-zoom-in">
+                
+                <button onclick="toggleLinkModal(false)" class="absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-900 transition-colors">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+
+                <h2 class="text-xl font-black text-gray-900 text-center mt-2 mb-4 tracking-tight">일반 계정에 카카오톡 연동하기</h2>
+                
+                <div class="bg-[#e8f5e9] p-4 rounded-xl mb-6">
+                    <p class="text-[13px] text-emerald-700 font-bold leading-relaxed">
+                        💡 일반 계정에 여러 명의 직원이 각자의 카카오톡을 연결하여 함께 관리할 수 있습니다.
+                    </p>
+                </div>
+
+                <div class="space-y-4">
+                    <div class="space-y-1">
+                        <label class="text-[11px] font-bold text-gray-500 ml-1">아이디 (필수)</label>
+                        <div class="relative">
+                            <input type="text" class="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500/20" />
+                            <span class="absolute right-4 top-1/2 -translate-y-1/2 text-red-500 font-bold">*</span>
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-1">
+                        <label class="text-[11px] font-bold text-gray-500 ml-1">비밀번호 (필수)</label>
+                        <div class="relative">
+                            <input type="password" class="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500/20" />
+                            <span class="absolute right-4 top-1/2 -translate-y-1/2 text-red-500 font-bold">*</span>
+                        </div>
+                    </div>
+
+                    <button onclick="toggleLinkModal(false)" class="w-full bg-[#66bb6a] hover:bg-[#57a95b] text-white font-bold py-4 rounded-xl text-base shadow-lg shadow-emerald-100 transition-all mt-2">
+                        연결하기
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 기능 구현 JavaScript -->
+    <script>
+        // 초기화 데이터 및 상태 변수
+        let currentStep = 1;
+        let isOptionalOpen = false;
+        let agreements = { terms: false, privacy: false, email: false, sms: false };
+
+        // 텍스트 박스에 약관 내용 삽입
+        const termsText = `약관제1조 (목적)
+본 약관은 원앱(이하 '회사')이 오더즈 사이트(이하 ‘사이트’)를 통하여 인터넷상에서 제공하는 서비스(이하 ‘서비스’)를 이용하는 고객 (이하 '고객')간의 권리와 의무 및 책임 등 기타 제반사항을 규정함을 목적으로 합니다.
+
+제2조 (용어의 정의)
+이 약관에서 사용하는 용어의 정의는 다음과 같습니다.
+가. '회원'이라 함은 이 약관에 동의하고 회원가입을 통하여 이용자ID(고유번호)와 비밀번호를 발급받은 자로서, 회사가 제공하는 서비스를 이용할 수 있는 이용자를 말합니다.
+나. '이용자ID'라 함은 회원의 식별 및 서비스 이용을 위하여 회원의 신청에 따라 회사가 회원 별로 부여하는 고유한 문자와 숫자의 조합을 말합니다.
+다. '비밀번호'라 함은 이용자ID로 식별되는 회원의 본인 여부를 검증하기 위하여 회원이 설정하여 회사에 등록한 고유의 문자와 숫자의 조합을 말합니다.
+라. ‘로그인’이라 함은 이용자ID와 비밀번호를 통하여 서비스 신청 및 사용 중 서비스의 세부정보를 확인할 수 있는 행위를 말합니다.
+마. '탈퇴'라 함은 회원이 서비스 이용을 해지하는 것을 말합니다.
+바. ‘휴면ID’ 라 함은 회사에서 정한 일정 기간 동안 사이트 접속 및 미 로그인 시 고객의 정보 악용방지를 위하여 보호되는 계정입니다.
+이 약관에서 사용하는 용어 중 제1항에서 정하지 아니한 것은 관계 법령 및 서비스 별 안내에서 정하는 바에 따르며, 그 외에는 일반 관례에 따릅니다.
+
+제3조 (이용약관의 효력 및 개정)
+1. 이 약관은 사이트를 통해 온라인으로 공시하고 회원의 동의로 효력을 발생합니다. 본 약관의 공시는 사이트에 게시하는 방법으로 합니다.
+2. 회사는 합리적인 사유가 발생할 경우 관련 법령에 위배되지 않는 범위 내에서 약관을 개정할 수 있습니다. 개정된 약관은 사이트를 통해 공지하거나 기타의 방법으로 회원에게 공지함으로써 그 효력이 발생하며, 이용자의 권리 또는 의무에 관한 변경은 최소한 7일 전에 공지합니다.
+3. 변경된 약관에 대한 정보를 알지 못해 발생하는 회원의 피해는 회사에서 책임지지 않습니다.
+4. 회원은 변경된 약관에 동의하지 않을 경우 서비스 이용을 중단하고 회원 탈퇴를 요청할 수 있습니다. 단, 이의가 있음에도 불구하고 제 2항에서 정한 바에 따른 회사의 고지가 있은 후 30일 이내에 이용계약을 하지 않은 회원은 변경된 약관에 동의한 것으로 간주합니다. 
+
+제4조 (약관외 준칙)
+회사는 필요한 경우 기타 유ㆍ무료 서비스 내의 운영원칙 또는 개별약관(이하 '서비스 별 약관'이라 합니다)를 정할 수 있으며, 본 약관과 서비스 별 약관의 내용이 상충되는 경우에는 서비스 별 약관의 내용을 우선하여 적용합니다.
+
+제5조 (회원 가입)
+1. 이 약관의 동의는 회원가입 당시 절차 상의 이용약관 및 개인정보처리방침에 동의한다는 의사표시와 함께 회사가 요청하는 정보를 제공하여 회원가입 신청을 완료함으로써 이루어집니다. 
+2. 회원으로 가입하여 서비스를 이용하고자 하는 이용자는 회사에서 요청하는 제반 정보(개인정보처리방침 제 1항 ‘수집하는 개인정보의 항목’)를 제공하여야 합니다.
+3. 만 14세 미만의 미성년자는 반드시 법정대리인의 가입동의를 받아야 정상적인 회원가입 및 서비스 이용이 가능하며, 법정대리인은 회원가입 시 파일을 첨부하는 방법을 이용하여 의사표시를 할 수 있습니다.
+
+부칙 (시행일)
+본 약관은 2022년 2월 5일부터 적용합니다.`;
+        document.getElementById('terms-box').textContent = termsText;
+
+        // 아이콘 렌더링
+        lucide.createIcons();
+
+        // 뷰 전환 관련 함수
+        function goToSignup() {
+            document.getElementById('view-default').classList.add('hidden');
+            document.getElementById('view-signup').classList.remove('hidden');
+            document.getElementById('app-header').classList.remove('hidden');
+            setSignupStep(1);
+        }
+
+        function goToDefault() {
+            document.getElementById('view-signup').classList.add('hidden');
+            document.getElementById('app-header').classList.add('hidden');
+            document.getElementById('view-default').classList.remove('hidden');
+        }
+
+        function toggleLinkModal(isOpen) {
+            const modal = document.getElementById('link-modal');
+            if(isOpen) {
+                modal.classList.remove('hidden');
+            } else {
+                modal.classList.add('hidden');
+            }
+        }
+
+        // 선택 약관 펼치기/접기
+        function toggleOptionalTerms() {
+            isOptionalOpen = !isOptionalOpen;
+            if(isOptionalOpen) {
+                document.getElementById('optional-terms').classList.remove('hidden');
+                document.getElementById('icon-chevron-down').classList.add('hidden');
+                document.getElementById('icon-chevron-up').classList.remove('hidden');
+            } else {
+                document.getElementById('optional-terms').classList.add('hidden');
+                document.getElementById('icon-chevron-down').classList.remove('hidden');
+                document.getElementById('icon-chevron-up').classList.add('hidden');
+            }
+        }
+
+        // 약관 동의 로직
+        function updateAgreementsUI() {
+            const isAllAgreed = Object.values(agreements).every(Boolean);
+            document.getElementById('agreeAll').checked = isAllAgreed;
+            document.getElementById('agreeTerms').checked = agreements.terms;
+            document.getElementById('agreePrivacy').checked = agreements.privacy;
+            document.getElementById('agreeEmail').checked = agreements.email;
+            document.getElementById('agreeSms').checked = agreements.sms;
+        }
+
+        function handleAgreeAll(e) {
+            const isChecked = e.target.checked;
+            agreements = { terms: isChecked, privacy: isChecked, email: isChecked, sms: isChecked };
+            updateAgreementsUI();
+        }
+
+        function handleSingleAgree(key, e) {
+            agreements[key] = e.target.checked;
+            updateAgreementsUI();
+        }
+
+        // 회원가입 단계 변경 로직
+        function setSignupStep(step) {
+            currentStep = step;
+            
+            // 모든 스텝 숨기기
+            document.getElementById('signup-step-1').classList.add('hidden');
+            document.getElementById('signup-step-2').classList.add('hidden');
+            document.getElementById('signup-step-3').classList.add('hidden');
+            
+            // 해당 스텝 노출
+            document.getElementById(`signup-step-${step}`).classList.remove('hidden');
+
+            // 상단 인디케이터 UI 업데이트
+            // Step 1
+            const c1 = document.getElementById('ind-1-circle');
+            const t1 = document.getElementById('ind-1-text');
+            const l1 = document.getElementById('ind-1-line');
+            // Step 2
+            const c2 = document.getElementById('ind-2-circle');
+            const t2 = document.getElementById('ind-2-text');
+            const l2 = document.getElementById('ind-2-line');
+            // Step 3
+            const c3 = document.getElementById('ind-3-circle');
+            const t3 = document.getElementById('ind-3-text');
+
+            // 초기화(회색)
+            [c1, c2, c3].forEach(el => { el.className = "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold z-10 transition-colors bg-gray-100 text-gray-400"; });
+            [t1, t2, t3].forEach(el => { el.className = "text-[10px] mt-2 font-bold text-gray-400"; });
+            [l1, l2].forEach(el => { el.className = "absolute top-4 left-[60%] w-full h-[2px] bg-gray-100 transition-colors"; });
+
+            // 활성화(초록색)
+            if(step >= 1) {
+                c1.className = "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold z-10 transition-colors bg-emerald-600 text-white";
+                t1.className = "text-[10px] mt-2 font-bold text-emerald-600";
+            }
+            if(step >= 2) {
+                l1.className = "absolute top-4 left-[60%] w-full h-[2px] bg-emerald-600 transition-colors";
+                c2.className = "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold z-10 transition-colors bg-emerald-600 text-white";
+                t2.className = "text-[10px] mt-2 font-bold text-emerald-600";
+            }
+            if(step >= 3) {
+                l2.className = "absolute top-4 left-[60%] w-full h-[2px] bg-emerald-600 transition-colors";
+                c3.className = "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold z-10 transition-colors bg-emerald-600 text-white";
+                t3.className = "text-[10px] mt-2 font-bold text-emerald-600";
+            }
+        }
+    </script>
+</body>
+</html>
