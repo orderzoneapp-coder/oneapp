@@ -1044,7 +1044,13 @@
                         }
                     }
 
-                    const finalProductData = Object.values(pData).sort((a, b) => {
+                    const finalProductData = Object.values(pData).filter(item => {
+                        const totalMovement = Math.abs(item.기초) + Math.abs(item.입고) + Math.abs(item.출고) + Math.abs(item.대체입고) + Math.abs(item.대체출고);
+                        const actualQty = parseNumber(item.실사);
+                        // 변동 내역이 전혀 없고 잔고(실사)도 0인 항목 제외 (데이터 누적 방지)
+                        if (totalMovement === 0 && actualQty === 0) return false;
+                        return true;
+                    }).sort((a, b) => {
                         const codeA = String(a.코드 || ''); const codeB = String(b.코드 || '');
                         if (codeA !== codeB) return codeA.localeCompare(codeB);
                         const dateA = String(a.일자 || ''); const dateB = String(b.일자 || '');
