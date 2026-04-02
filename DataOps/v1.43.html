@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>oneapp DataOps - 핵심 수불부 관리 (V1.43)</title>
+    <title>oneapp DataOps - 핵심 수불부 관리 (V2.7 Stable)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -30,9 +30,7 @@
         .modal-bounce { animation: modalBounce 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         @keyframes modalBounce { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
 
-        .drag-over { background-color: #f1f5f9 !important; outline: 2px dashed #94a3b8 !important; outline-offset: -2px; transform: scale(1.005); z-index: 20; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
-        
-        .multi-price-highlight { background-color: #f8fafc !important; box-shadow: inset 3px 0 0 0 #3b82f6; }
+        .drag-over { background-color: #e2e8f0 !important; outline: 3px dashed #64748b !important; outline-offset: -2px; transform: scale(1.005); z-index: 20; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
     </style>
 </head>
 <body>
@@ -41,7 +39,7 @@
     <script type="text/babel">
         const { useState, useRef, useEffect, useMemo, useCallback } = React;
 
-        // --- 공통 유틸리티 함수 영역 ---
+        // --- 공통 유틸리티 ---
         const parseNumber = (val) => {
             if (val === undefined || val === null || val === '') return 0;
             if (typeof val === 'number') return isNaN(val) ? 0 : val;
@@ -87,7 +85,6 @@
             if (!dateStr) return 0;
             const str = String(dateStr).trim();
             if (str.includes('실사등록') || str.includes('미지정')) return 0; 
-
             if (/^\d{5}$/.test(str)) {
                 const serial = parseInt(str, 10);
                 if (serial > 30000 && serial < 80000) {
@@ -98,49 +95,22 @@
             }
             const parts = str.match(/\d+/g);
             if (!parts) return 0;
-            
             let y, m, d;
             if (parts.length >= 3) {
                 y = parts[0]; if (y.length === 2) y = '20' + y;
-                m = parts[1].padStart(2, '0'); 
-                d = parts[2].padStart(2, '0');
+                m = parts[1].padStart(2, '0'); d = parts[2].padStart(2, '0');
             } else if (parts.length === 2) {
-                if (parts[0].length === 4) {
-                    y = parts[0];
-                    m = parts[1].padStart(2, '0');
-                    d = '01'; 
-                } else {
-                    y = String(refYear);
-                    m = parts[0].padStart(2, '0'); 
-                    d = parts[1].padStart(2, '0');
-                }
+                if (parts[0].length === 4) { y = parts[0]; m = parts[1].padStart(2, '0'); d = '01'; }
+                else { y = String(refYear); m = parts[0].padStart(2, '0'); d = parts[1].padStart(2, '0'); }
             } else if (parts.length === 1) {
                 const cleaned = parts[0];
-                if (cleaned.length === 8) {
-                    y = cleaned.substring(0, 4);
-                    m = cleaned.substring(4, 6);
-                    d = cleaned.substring(6, 8);
-                } else if (cleaned.length === 6) {
-                    if (cleaned.startsWith('20')) {
-                        y = cleaned.substring(0, 4);
-                        m = cleaned.substring(4, 6);
-                        d = '01';
-                    } else {
-                        y = '20' + cleaned.substring(0, 2);
-                        m = cleaned.substring(2, 4);
-                        d = cleaned.substring(4, 6);
-                    }
-                } else {
-                    return 0;
-                }
-            } else {
-                return 0;
-            }
-
-            const numY = parseInt(y, 10);
-            const numM = parseInt(m, 10);
-            const numD = parseInt(d, 10);
-
+                if (cleaned.length === 8) { y = cleaned.substring(0, 4); m = cleaned.substring(4, 6); d = cleaned.substring(6, 8); }
+                else if (cleaned.length === 6) {
+                    if (cleaned.startsWith('20')) { y = cleaned.substring(0, 4); m = cleaned.substring(4, 6); d = '01'; }
+                    else { y = '20' + cleaned.substring(0, 2); m = cleaned.substring(2, 4); d = cleaned.substring(4, 6); }
+                } else { return 0; }
+            } else { return 0; }
+            const numY = parseInt(y, 10); const numM = parseInt(m, 10); const numD = parseInt(d, 10);
             if (numY > 2000 && numY < 2100 && numM >= 1 && numM <= 12 && numD >= 1 && numD <= 31) {
                 return numY * 10000 + numM * 100 + numD;
             }
@@ -153,6 +123,36 @@
             return s;
         };
 
+        // --- V2.0 역방향 파싱 ---
+        const parseIssuesAndVendors = (str, price) => {
+            if (!str) return { issues: [], vendors: {} };
+            const parts = str.match(/[^,]+(?:\([^)]+\))*/g) || [];
+            const issues = [];
+            const vendors = {};
+            const knownIssues = ['과다로스', '원가수정', '수기조정', '매입내역 없음', '전산 재고 부족', '재고 부족', '변동됨', '삭제됨', '🔄', '🚨'];
+
+            parts.forEach(p => {
+                const part = p.trim();
+                if (!part) return;
+                let isKnownIssue = knownIssues.some(ki => part.includes(ki));
+                if (isKnownIssue) {
+                    issues.push(part);
+                } else {
+                    const match = part.match(/(.+)\((\d+)\)$/);
+                    if (match) {
+                        const vendorName = match[1].trim();
+                        const qty = parseInt(match[2], 10);
+                        if (!isNaN(qty)) vendors[vendorName] = { qty, rev: qty * price, cogs: qty * price };
+                        else issues.push(part);
+                    } else {
+                        issues.push(part);
+                    }
+                }
+            });
+            return { issues, vendors };
+        };
+
+        // --- 엑셀 파서 ---
         const parseExcelData = (file, currentMappings) => {
             return new Promise((resolve, reject) => {
                 if (!file) return resolve([]);
@@ -163,7 +163,6 @@
                         const processWorkbook = (wb) => {
                             const sheet = wb.Sheets[wb.SheetNames[0]];
                             const jsonAll = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
-
                             let headerRowIdx = -1; let maxScore = 0;
                             const keywords = {
                                 code: currentMappings.code.split(',').map(s => s.trim().toLowerCase()),
@@ -177,8 +176,7 @@
                             };
 
                             for (let i = 0; i < Math.min(30, jsonAll.length); i++) {
-                                const row = jsonAll[i] || [];
-                                let score = 0;
+                                const row = jsonAll[i] || []; let score = 0;
                                 const rowStr = row.join('').replace(/\s/g, '');
                                 if (!rowStr) continue;
                                 Object.values(keywords).forEach(kwList => {
@@ -200,7 +198,6 @@
                                 if (res2.maxScore > maxScore) { jsonAll = res2.jsonAll; headerRowIdx = res2.headerRowIdx; maxScore = res2.maxScore; keywords = res2.keywords; }
                             } catch (error) { console.error("EUC-KR 디코딩 실패", error); }
                         }
-
                         if (headerRowIdx === -1 || maxScore < 2) return resolve([]); 
 
                         const rawHeaders = jsonAll[headerRowIdx];
@@ -212,13 +209,24 @@
                         }
 
                         const parsedData = [];
+                        
                         const getValByKeywords = (obj, kwList) => {
                             const keys = Object.keys(obj);
+                            const cleanKeys = keys.map(k => k.replace(/\s/g, '').toLowerCase());
+                            
                             for (let kw of kwList) {
-                                if(!kw) continue;
-                                let match = keys.find(k => k.replace(/\s/g, '').toLowerCase() === kw);
-                                if (!match) match = keys.find(k => k.replace(/\s/g, '').toLowerCase().includes(kw));
-                                if (match && obj[match] !== undefined && String(obj[match]).trim() !== '') return obj[match];
+                                if (!kw) continue;
+                                const idx = cleanKeys.indexOf(kw);
+                                if (idx !== -1 && obj[keys[idx]] !== undefined && String(obj[keys[idx]]).trim() !== '') {
+                                    return obj[keys[idx]];
+                                }
+                            }
+                            for (let kw of kwList) {
+                                if (!kw) continue;
+                                const idx = cleanKeys.findIndex(k => k.includes(kw));
+                                if (idx !== -1 && obj[keys[idx]] !== undefined && String(obj[keys[idx]]).trim() !== '') {
+                                    return obj[keys[idx]];
+                                }
                             }
                             return null;
                         };
@@ -226,22 +234,16 @@
                         for (let i = headerRowIdx + 1; i < jsonAll.length; i++) {
                             const row = jsonAll[i];
                             if (!row || row.join('').trim() === '') continue;
-                            
                             const rowObj = {};
                             uniqueHeaders.forEach((h, idx) => { if (h) rowObj[h] = row[idx]; });
                             
                             const codeRaw = getValByKeywords(rowObj, keywords.code);
                             const codeStr = codeRaw !== null && codeRaw !== undefined ? String(codeRaw).trim() : '';
-
                             const baseNameRaw = getValByKeywords(rowObj, keywords.name);
                             const baseName = baseNameRaw !== null && baseNameRaw !== undefined ? String(baseNameRaw).trim() : '';
 
                             if (!codeStr && !baseName) continue;
-                            if (codeStr.includes('합계') || codeStr.includes('총계') || 
-                                baseName.includes('합계') || baseName.includes('총계') || baseName.includes('총합')) {
-                                continue;
-                            }
-                            
+                            if (codeStr.includes('합계') || codeStr.includes('총계') || baseName.includes('합계') || baseName.includes('총계') || baseName.includes('총합')) continue;
                             if (/^\d{4}[\/\-]\d{2}[\/\-]\d{2}/.test(codeStr) || /^\d{4}[\/\-]\d{2}[\/\-]\d{2}/.test(baseName)) continue;
                             if (codeStr.includes('오전') || codeStr.includes('오후') || baseName.includes('오전') || baseName.includes('오후')) continue;
                             if (codeStr.includes('실사등록') || baseName.includes('실사등록')) continue;
@@ -249,7 +251,6 @@
 
                             const specValRaw = getValByKeywords(rowObj, keywords.spec);
                             const specVal = specValRaw !== null && specValRaw !== undefined ? String(specValRaw).trim() : '';
-                            
                             let fullName = baseName || '이름없음';
                             if (specVal && baseName !== specVal && !baseName.includes(specVal)) fullName = `${baseName}_${specVal}`;
 
@@ -279,48 +280,15 @@
             code: '품목코드, 상품코드, 코드, 품번, 바코드, sku',
             name: '품명, 품목명(규격), 품목명[규격], 상품명, 제품명, 이름, 품목, 상품',
             spec: '규격, 옵션, 사이즈', 
-            qty: '기말/실사, 수량, 재고, 기말실사(이월수량), 기말잔량(실사반영), 기말잔량(실사), 기말잔량, 수량(합계), 입고수량, 출고수량, 판매수량, 잔량, 실사, 합계, 기말, 판매량, 출고량, 입고량',
+            qty: '기말실사(이월수량), 기말실사, 기말/실사, 수량, 재고, 기말잔량(실사반영), 기말잔량(실사), 기말잔량, 수량(합계), 입고수량, 출고수량, 판매수량, 잔량, 실사, 합계, 기말, 판매량, 출고량, 입고량',
             price: '매입단가(원가), 단가, 입고단가, 구매단가, 판매단가, 매입단가, 매입가, 판매가, 공급가액, 공급가, 금액, 원가, 가격, 최종(창고)',
-            date: '매입일자, 일자, 날짜, 구매일자, 판매일자, 입고일자, 출고일자',
-            vendor: '매입처(거래처), 거래처명, 거래처, 거래, 매장명, 매장, 고객, 판매처, 공급사, 판매, 청과, 3거래',
+            date: '결산일자, 매입일자, 일자, 날짜, 구매일자, 판매일자, 입고일자, 출고일자',
+            vendor: '매출처명, 매입처(Lot), 매입처(거래처), 거래처명, 거래처, 거래, 매장명, 매장, 고객, 판매처, 공급사, 판매, 청과, 3거래',
             matchVendor: '구매처, 매입처, 매칭정보, 원매입처, lot', 
             excludeVendor: '3우리, 우리농산, 1전송, 창고이동, 폐기, 샘플' 
         };
 
-        const DeadStockTable = React.memo(({ title, data, valueKey, valueLabel, icon, colorClass }) => (
-            <div className="flex-1 bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden flex flex-col">
-                <div className="bg-white p-4 border-b border-slate-200 font-bold text-slate-800 text-sm flex items-center justify-between">
-                    <span className="flex items-center"><span className={`w-2 h-2 rounded-full ${colorClass} mr-2`}></span>{title}</span>
-                </div>
-                <div className="overflow-y-auto flex-1 p-0">
-                    <table className="w-full text-xs text-left">
-                        <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 text-slate-500">
-                            <tr>
-                                <th className="p-3 font-semibold uppercase tracking-wide">품명</th>
-                                <th className="p-3 font-semibold uppercase tracking-wide text-right">{valueLabel}</th>
-                                <th className="p-3 font-semibold uppercase tracking-wide text-right">잔량/단가</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {data.length === 0 ? (
-                                <tr><td colSpan="3" className="p-8 text-center text-slate-400 font-medium">체화 재고가 없습니다.</td></tr>
-                            ) : data.map((item, i) => (
-                                <tr key={i} className="hover:bg-slate-50 transition-colors">
-                                    <td className="p-3 font-semibold text-slate-800 truncate max-w-[150px]" title={item.품명}>{item.품명}</td>
-                                    <td className={`p-3 text-right font-black ${valueKey === 'qty' ? 'text-blue-600' : 'text-emerald-600'}`}>
-                                        {valueKey === 'qty' ? item.전산잔량 : `₩${formatMoney(item.전산잔량 * item.단가)}`}
-                                    </td>
-                                    <td className="p-3 text-right text-slate-500">
-                                        {valueKey === 'qty' ? `₩${formatMoney(item.단가)}` : item.전산잔량}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        ));
-
+        // --- UI 컴포넌트 ---
         const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGroupItem, targetDateStr, onStockChange, onSpacebar, onFocusInput, onBaseDataChange, onOpenMemo, onSalesMove }) => {
             const [isDragOver, setIsDragOver] = useState(false);
 
@@ -328,37 +296,25 @@
             displayIssues = displayIssues.filter(msg => !msg.includes('매입내역 없음') && !msg.includes('전산 재고 부족') && !msg.includes('재고 부족'));
             
             const totalAvailable = item.기초 + item.입고 + item.대체입고;
-            if (item.로스 < 0 && totalAvailable > 0 && (Math.abs(item.로스) / totalAvailable) > 0.2) {
-                displayIssues.push('🚨과다로스(20%↑)');
-            }
-            
+            if (item.로스 < 0 && totalAvailable > 0 && (Math.abs(item.로스) / totalAvailable) > 0.2) displayIssues.push('🚨과다로스(20%↑)');
             const hasIssue = displayIssues.length > 0;
             
             const addedIn = item.대체입고 + (item.로스 > 0 ? item.로스 : 0);
             const addedOut = item.대체출고 + (item.로스 < 0 ? Math.abs(item.로스) : 0);
-            
             const totalIn = item.입고 + addedIn;
             const totalOut = item.출고 + addedOut;
-            
             const actualQty = item.실사 === null || item.실사 === undefined ? '' : Number(item.실사);
             const isNegativeActual = typeof actualQty === 'number' && actualQty < 0;
-
             const isToday = item.일자 && targetDateStr && item.일자 === targetDateStr;
 
             const handleKd = (e, type) => {
                 const cols = ['price-input', 'base-prev', 'base-in', 'base-out', 'actual-input'];
                 const colIdx = cols.indexOf(type);
-                if (e.key === 'ArrowRight') {
-                    if (colIdx < cols.length - 1) { e.preventDefault(); const n = document.getElementById(`${cols[colIdx+1]}-${idx}`); if(n) { n.focus(); n.select(); } }
-                } else if (e.key === 'ArrowLeft') {
-                    if (colIdx > 0) { e.preventDefault(); const p = document.getElementById(`${cols[colIdx-1]}-${idx}`); if(p) { p.focus(); p.select(); } }
-                } else if (e.key === 'ArrowDown' || e.key === 'Enter') {
-                    e.preventDefault(); const n = document.getElementById(`${type}-${idx+1}`); if(n) { n.focus(); n.select(); }
-                } else if (e.key === 'ArrowUp') {
-                    e.preventDefault(); const p = document.getElementById(`${type}-${idx-1}`); if(p) { p.focus(); p.select(); }
-                } else if (e.key === ' ' || e.code === 'Space') {
-                    if (type === 'actual-input') { e.preventDefault(); onSpacebar(item.batchKey, idx); }
-                }
+                if (e.key === 'ArrowRight') { if (colIdx < cols.length - 1) { e.preventDefault(); const n = document.getElementById(`${cols[colIdx+1]}-${idx}`); if(n) { n.focus(); n.select(); } } }
+                else if (e.key === 'ArrowLeft') { if (colIdx > 0) { e.preventDefault(); const p = document.getElementById(`${cols[colIdx-1]}-${idx}`); if(p) { p.focus(); p.select(); } } }
+                else if (e.key === 'ArrowDown' || e.key === 'Enter') { e.preventDefault(); const n = document.getElementById(`${type}-${idx+1}`); if(n) { n.focus(); n.select(); } }
+                else if (e.key === 'ArrowUp') { e.preventDefault(); const p = document.getElementById(`${type}-${idx-1}`); if(p) { p.focus(); p.select(); } }
+                else if (e.key === ' ' || e.code === 'Space') { if (type === 'actual-input') { e.preventDefault(); onSpacebar(item.batchKey, idx); } }
             };
 
             const handleDragOver = (e) => { e.preventDefault(); setIsDragOver(true); };
@@ -369,9 +325,7 @@
                     const dataStr = e.dataTransfer.getData('text/plain');
                     if (!dataStr) return;
                     const data = JSON.parse(dataStr);
-                    if (data.sourceKey !== item.batchKey) {
-                        onSalesMove(data.sourceKey, item.batchKey, data.vendor, data.qty, data.code, item.코드);
-                    }
+                    if (data.sourceKey !== item.batchKey) onSalesMove(data.sourceKey, item.batchKey, data.vendor, data.qty, data.code, item.코드);
                 } catch (err) {}
             };
 
@@ -379,17 +333,10 @@
             
             return (
                 <tr 
-                    data-code={item.코드} 
-                    data-batch={item.batchKey} 
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
+                    data-code={item.코드} data-batch={item.batchKey} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
                     className={`transition duration-200 ${isActiveMulti ? 'bg-blue-50/60 outline outline-2 outline-blue-500 z-20 relative shadow-md' : (isLinked ? 'bg-slate-50 ring-1 ring-blue-400 shadow-md relative z-10 scale-[1.01]' : 'border-b border-slate-100 hover:bg-slate-50')} ${isDragOver ? 'drag-over' : ''} ${!isActiveMulti && item.isDummy && item.단가 === 0 ? 'bg-rose-50/30' : ''}`}
                 >
-                    <td className={`py-2 px-3 sticky left-0 z-10 shadow-[1px_0_0_rgba(0,0,0,0.03)] border-r border-slate-200 
-                        ${isMultiGroupItem && !isLinked ? 'border-l-4 border-l-blue-400' : ''} 
-                        ${isLinked ? 'bg-blue-50/50 border-l-4 border-l-blue-600' : ''} 
-                        ${isActiveMulti ? 'bg-blue-50/60' : (item.isDummy && item.단가 === 0 ? 'bg-rose-50' : 'bg-white group-hover:bg-slate-50')}`}>
+                    <td className={`py-2 px-3 sticky left-0 z-10 shadow-[1px_0_0_rgba(0,0,0,0.03)] border-r border-slate-200 ${isMultiGroupItem && !isLinked ? 'border-l-4 border-l-blue-400' : ''} ${isLinked ? 'bg-blue-50/50 border-l-4 border-l-blue-600' : ''} ${isActiveMulti ? 'bg-blue-50/60' : (item.isDummy && item.단가 === 0 ? 'bg-rose-50' : 'bg-white group-hover:bg-slate-50')}`}>
                         <div className="flex items-center justify-between w-full">
                             <div className="flex flex-col justify-center flex-1 pr-3 overflow-hidden max-w-[280px]">
                                 <div className="font-semibold text-slate-800 text-[13px] flex items-start gap-1 mb-0.5">
@@ -399,160 +346,64 @@
                                 </div>
                                 <div className="text-[10px] text-slate-500 truncate font-medium tracking-tight flex items-center">
                                     {item.코드 !== '-' && item.코드 !== 'NO_CODE' ? <span className="mr-1">{item.코드}</span> : ''}
-                                    <span className={isToday ? "text-blue-700 bg-blue-100 px-1 rounded border border-blue-200 font-bold" : ""}>
-                                        {item.일자 || '미상'}
-                                    </span>
+                                    <span className={isToday ? "text-blue-700 bg-blue-100 px-1 rounded border border-blue-200 font-bold" : ""}>{item.일자 || '미상'}</span>
                                     <span className="mx-1 text-slate-300">|</span> 
-                                    <span className={`truncate ${isToday ? 'text-blue-700 font-bold' : ''}`}>
-                                        {item.거래처 || '미지정'}
-                                    </span>
+                                    <span className={`truncate ${isToday ? 'text-blue-700 font-bold' : ''}`}>{item.거래처 || '미지정'}</span>
                                     {item.대체입고 > 0 && <span className="text-[9px] text-blue-500 font-semibold whitespace-nowrap ml-1 shrink-0">(조정됨)</span>}
                                 </div>
                             </div>
-                            
                             <div className="flex items-center justify-end shrink-0 pl-3 border-l border-slate-200">
                                 <span className="text-slate-400 font-semibold text-[10px] mr-1">₩</span>
-                                <input 
-                                    id={`price-input-${idx}`}
-                                    type="number" 
-                                    className={`${cellInputBase} w-[70px] font-bold ${item.단가 === 0 ? 'border-rose-300 bg-rose-50 text-rose-600' : 'text-slate-800'}`} 
-                                    value={item.단가 === 0 ? '' : item.단가}
-                                    onChange={(e) => onBaseDataChange(item.batchKey, '단가', e.target.value)}
-                                    onClick={(e) => e.stopPropagation()}
-                                    onFocus={e => e.target.select()}
-                                    onKeyDown={(e) => handleKd(e, 'price-input')}
-                                    placeholder="0"
-                                    title="원가(단가) 수기 수정"
-                                />
+                                <input id={`price-input-${idx}`} type="number" className={`${cellInputBase} w-[70px] font-bold ${item.단가 === 0 ? 'border-rose-300 bg-rose-50 text-rose-600' : 'text-slate-800'}`} value={item.단가 === 0 ? '' : item.단가} onChange={(e) => onBaseDataChange(item.batchKey, '단가', e.target.value)} onClick={(e) => e.stopPropagation()} onFocus={e => e.target.select()} onKeyDown={(e) => handleKd(e, 'price-input')} placeholder="0" title="원가(단가) 수기 수정" />
                             </div>
                         </div>
                     </td>
-                    
                     <td className={`py-2 px-2 text-right ${isActiveMulti ? 'bg-slate-50/50' : ''} border-r border-slate-100`}>
-                        <input id={`base-prev-${idx}`} type="number" 
-                            className={`${cellInputBase} font-semibold ${item.기초 < 0 ? 'text-rose-600 border-rose-200' : 'text-slate-700'}`} 
-                            value={item.기초 === 0 ? '' : item.기초} onChange={e => onBaseDataChange(item.batchKey, '기초', e.target.value)} onFocus={e => e.target.select()} onKeyDown={(e) => handleKd(e, 'base-prev')} onWheel={e => e.target.blur()} placeholder="0" title="기초 재고 수정" />
+                        <input id={`base-prev-${idx}`} type="number" className={`${cellInputBase} font-semibold ${item.기초 < 0 ? 'text-rose-600 border-rose-200' : 'text-slate-700'}`} value={item.기초 === 0 ? '' : item.기초} onChange={e => onBaseDataChange(item.batchKey, '기초', e.target.value)} onFocus={e => e.target.select()} onKeyDown={(e) => handleKd(e, 'base-prev')} onWheel={e => e.target.blur()} placeholder="0" title="기초 재고 수정" />
                     </td>
-                    
                     <td className={`py-2 px-2 text-right border-r border-slate-100`}>
-                        <input 
-                            id={`base-in-${idx}`} 
-                            type="number" 
-                            className={`${cellInputBase} font-bold ${totalIn > 0 ? 'text-emerald-600' : 'text-slate-400'}`} 
-                            value={totalIn === 0 ? '' : totalIn} 
-                            onChange={e => {
-                                const val = e.target.value === '' ? 0 : Number(e.target.value);
-                                onBaseDataChange(item.batchKey, '입고', val - addedIn);
-                            }} 
-                            onFocus={e => e.target.select()} 
-                            onKeyDown={(e) => handleKd(e, 'base-in')} 
-                            onWheel={e => e.target.blur()} 
-                            placeholder="0" 
-                            title="입고 수량 수정"
-                        />
+                        <input id={`base-in-${idx}`} type="number" className={`${cellInputBase} font-bold ${totalIn > 0 ? 'text-emerald-600' : 'text-slate-400'}`} value={totalIn === 0 ? '' : totalIn} onChange={e => onBaseDataChange(item.batchKey, '입고', (e.target.value === '' ? 0 : Number(e.target.value)) - addedIn)} onFocus={e => e.target.select()} onKeyDown={(e) => handleKd(e, 'base-in')} onWheel={e => e.target.blur()} placeholder="0" title="입고 수량 수정" />
                     </td>
-                    
                     <td className={`py-2 px-2 text-right border-r border-slate-100`}>
-                        <input 
-                            id={`base-out-${idx}`} 
-                            type="number" 
-                            className={`${cellInputBase} font-bold ${totalOut > 0 ? 'text-rose-600' : 'text-slate-400'}`} 
-                            value={totalOut === 0 ? '' : totalOut} 
-                            onChange={e => {
-                                const val = e.target.value === '' ? 0 : Number(e.target.value);
-                                onBaseDataChange(item.batchKey, '출고', val - addedOut);
-                            }} 
-                            onFocus={e => e.target.select()} 
-                            onKeyDown={(e) => handleKd(e, 'base-out')} 
-                            onWheel={e => e.target.blur()} 
-                            placeholder="0" 
-                            title="출고 수량 수정"
-                        />
+                        <input id={`base-out-${idx}`} type="number" className={`${cellInputBase} font-bold ${totalOut > 0 ? 'text-rose-600' : 'text-slate-400'}`} value={totalOut === 0 ? '' : totalOut} onChange={e => onBaseDataChange(item.batchKey, '출고', (e.target.value === '' ? 0 : Number(e.target.value)) - addedOut)} onFocus={e => e.target.select()} onKeyDown={(e) => handleKd(e, 'base-out')} onWheel={e => e.target.blur()} placeholder="0" title="출고 수량 수정" />
                     </td>
-
                     <td className={`py-2 px-2 text-right border-r border-slate-100 ${isLinked ? 'bg-blue-50' : ''} relative`}>
-                        {isLinked && (
-                            <div className="absolute -top-6 right-0 bg-slate-800 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-md whitespace-nowrap animate-bounce">
-                                조정 대상
-                            </div>
-                        )}
-                        <input 
-                            id={`actual-input-${idx}`}
-                            type="number" 
-                            value={item.실사 === null || item.실사 === undefined ? '' : item.실사} 
-                            onChange={(e) => onStockChange(item.batchKey, e.target.value)}
-                            onClick={() => onFocusInput(item.batchKey, idx)}
-                            onFocus={(e) => { e.target.select(); onFocusInput(item.batchKey, idx); }}
-                            onKeyDown={(e) => handleKd(e, 'actual-input')}
-                            onWheel={e => e.target.blur()}
-                            placeholder={item.전산잔량}
-                            title="실사 수량 수정"
-                            className={`w-full text-right bg-white border ${isLinked ? 'border-blue-500 ring-1 ring-blue-500 text-blue-900' : 'border-slate-300 text-slate-800 hover:border-slate-400'} ${isNegativeActual ? 'bg-rose-50 border-rose-400 text-rose-700 font-bold' : 'font-semibold'} rounded text-[13px] px-1.5 py-1 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-sm transition-all cursor-pointer`}
-                        />
+                        {isLinked && <div className="absolute -top-6 right-0 bg-slate-800 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-md whitespace-nowrap animate-bounce">조정 대상</div>}
+                        <input id={`actual-input-${idx}`} type="number" value={item.실사 === null || item.실사 === undefined ? '' : item.실사} onChange={(e) => onStockChange(item.batchKey, e.target.value)} onClick={() => onFocusInput(item.batchKey, idx)} onFocus={(e) => { e.target.select(); onFocusInput(item.batchKey, idx); }} onKeyDown={(e) => handleKd(e, 'actual-input')} onWheel={e => e.target.blur()} placeholder={item.전산잔량} title="실사 수량 수정" className={`w-full text-right bg-white border ${isLinked ? 'border-blue-500 ring-1 ring-blue-500 text-blue-900' : 'border-slate-300 text-slate-800 hover:border-slate-400'} ${isNegativeActual ? 'bg-rose-50 border-rose-400 text-rose-700 font-bold' : 'font-semibold'} rounded text-[13px] px-1.5 py-1 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-sm transition-all cursor-pointer`} />
                     </td>
-                    
                     <td className="py-2 px-2 text-right border-r border-slate-100">
-                        {item.로스 !== 0 && (
-                            <div className="flex flex-col items-end justify-center mb-0.5">
-                                <span className={`text-[12px] font-bold ${item.로스 < 0 ? 'text-rose-600' : 'text-blue-600'}`}>
-                                    {item.로스 > 0 ? '+' : ''}{formatMoney(item.로스)}
-                                </span>
-                            </div>
-                        )}
+                        {item.로스 !== 0 && <div className="flex flex-col items-end justify-center mb-0.5"><span className={`text-[12px] font-bold ${item.로스 < 0 ? 'text-rose-600' : 'text-blue-600'}`}>{item.로스 > 0 ? '+' : ''}{formatMoney(item.로스)}</span></div>}
                         {item.로스 === 0 && <span className="text-slate-300 font-bold">-</span>}
                     </td>
-                    
                     <td className="py-2 px-3 text-left w-full min-w-[200px]">
                         <div className="flex justify-between items-start w-full">
                             <div className="flex flex-col gap-1.5 w-full flex-1 pr-2">
                                 <div className="flex items-center gap-1 flex-wrap text-left">
-                                    {hasIssue && displayIssues.map((msg, i) => (
-                                        <span key={i} className={`px-2 py-0.5 rounded border font-semibold text-[10px] whitespace-nowrap ${msg.includes('원가수정') ? 'bg-slate-100 text-slate-700 border-slate-200' : (msg.includes('과다로스') ? 'bg-rose-100 text-rose-700 border-rose-200' : 'bg-orange-50 text-orange-700 border-orange-200')}`}>
-                                            {msg}
-                                        </span>
-                                    ))}
+                                    {hasIssue && displayIssues.map((msg, i) => <span key={i} className={`px-2 py-0.5 rounded border font-semibold text-[10px] whitespace-nowrap ${msg.includes('원가수정') ? 'bg-slate-100 text-slate-700 border-slate-200' : (msg.includes('과다로스') ? 'bg-rose-100 text-rose-700 border-rose-200' : 'bg-orange-50 text-orange-700 border-orange-200')}`}>{msg}</span>)}
                                 </div>
-                                
                                 {item.출고내역 && Object.keys(item.출고내역).length > 0 && (
                                     <div className="mt-0.5 flex flex-wrap gap-1.5 items-center">
                                         {Object.entries(item.출고내역).map(([vendor, data]) => (
-                                            <div 
-                                                key={vendor}
-                                                draggable
-                                                onDragStart={(e) => {
-                                                    e.stopPropagation();
-                                                    e.dataTransfer.setData('text/plain', JSON.stringify({sourceKey: item.batchKey, vendor, qty: data.qty, code: item.코드}));
-                                                    e.currentTarget.classList.add('opacity-40', 'scale-95');
-                                                }}
-                                                onDragEnd={(e) => { e.currentTarget.classList.remove('opacity-40', 'scale-95'); }}
-                                                className="flex items-center bg-white border border-slate-200 text-slate-600 px-2 py-0.5 rounded text-[10px] font-semibold cursor-grab active:cursor-grabbing hover:bg-slate-50 hover:border-slate-300 shadow-sm transition-all hover:-translate-y-0.5"
-                                                title={`${data.qty}개 출고 (드래그하여 다른 품목/단가로 이동)`}
-                                            >
+                                            <div key={vendor} draggable onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.setData('text/plain', JSON.stringify({sourceKey: item.batchKey, vendor, qty: data.qty, code: item.코드})); e.currentTarget.classList.add('opacity-40', 'scale-95'); }} onDragEnd={(e) => { e.currentTarget.classList.remove('opacity-40', 'scale-95'); }} className="flex items-center bg-white border border-slate-200 text-slate-600 px-2 py-0.5 rounded text-[10px] font-semibold cursor-grab active:cursor-grabbing hover:bg-slate-50 hover:border-slate-300 shadow-sm transition-all hover:-translate-y-0.5" title={`${data.qty}개 출고 (드래그하여 이동)`}>
                                                 <span className="truncate max-w-[120px]">{vendor}({data.qty})</span>
                                             </div>
                                         ))}
                                     </div>
                                 )}
                             </div>
-                            
                             <div className="flex flex-col items-end gap-1.5 text-right shrink-0 ml-2">
-                                <button onClick={() => onOpenMemo(item.batchKey, item.메모 || '')} className={`transition-colors ${item.메모 ? 'text-blue-500 hover:text-blue-700' : 'text-slate-300 hover:text-slate-400'}`} title="메모 추가/수정">
-                                    <i className="fas fa-edit text-base"></i>
-                                </button>
+                                <button onClick={() => onOpenMemo(item.batchKey, item.메모 || '')} className={`transition-colors ${item.메모 ? 'text-blue-500 hover:text-blue-700' : 'text-slate-300 hover:text-slate-400'}`} title="메모 추가/수정"><i className="fas fa-edit text-base"></i></button>
                                 {item.메모 && <span className="px-2 py-1 bg-yellow-50 text-yellow-800 border border-yellow-200 rounded font-semibold text-[10px] whitespace-nowrap max-w-[100px] truncate" title={item.메모}>{item.메모}</span>}
                             </div>
                         </div>
                     </td>
                 </tr>
             );
-        }, (prevProps, nextProps) => {
-            return prevProps.item === nextProps.item && prevProps.isLinked === nextProps.isLinked && prevProps.idx === nextProps.idx && prevProps.isActiveMulti === nextProps.isActiveMulti && prevProps.isMultiGroupItem === nextProps.isMultiGroupItem && prevProps.targetDateStr === nextProps.targetDateStr;
-        });
+        }, (prevProps, nextProps) => prevProps.item === nextProps.item && prevProps.isLinked === nextProps.isLinked && prevProps.idx === nextProps.idx && prevProps.isActiveMulti === nextProps.isActiveMulti && prevProps.isMultiGroupItem === nextProps.isMultiGroupItem && prevProps.targetDateStr === nextProps.targetDateStr);
 
         const FileBox = React.memo(({ title, type, icon, files, setFiles, autoAssignFiles }) => {
             const inputRef = useRef(null); 
             const [isDragging, setIsDragging] = useState(false);
-            
             const handleBoxDrop = (e) => { 
                 e.preventDefault(); e.stopPropagation(); setIsDragging(false); 
                 const droppedFiles = Array.from(e.dataTransfer.files); 
@@ -560,13 +411,11 @@
                 else if (droppedFiles.length === 1) setFiles(prev => ({ ...prev, [type]: droppedFiles[0] })); 
                 if (document.activeElement) document.activeElement.blur(); window.focus(); 
             };
-            
             const handleOnChange = (e) => {
                 const selectedFiles = Array.from(e.target.files); 
                 if (selectedFiles.length > 1) autoAssignFiles(selectedFiles); 
                 else if (selectedFiles.length === 1) setFiles(prev => ({ ...prev, [type]: selectedFiles[0] })); 
-                e.target.value = ''; 
-                e.target.blur(); if (document.activeElement) document.activeElement.blur(); window.focus();
+                e.target.value = ''; e.target.blur(); if (document.activeElement) document.activeElement.blur(); window.focus();
             };
 
             return (
@@ -578,53 +427,44 @@
             );
         });
 
+        // --- Main App Component ---
         function App() {
             const [appStep, setAppStep] = useState('upload'); 
             const [files, setFiles] = useState({ prev: null, in: null, out: null, end: null });
-            const [rawJson, setRawJson] = useState({ prev: [], in: [], out: [], end: [] });
-            
             const [filters, setFilters] = useState({ issuesOnly: false, excludeZeroActual: false, search: '', reviewType: null });
-            
             const [activeIssueMode, setActiveIssueMode] = useState(null); 
-            const currentIssueIdxRef = useRef(-1);
             const [activeMultiCode, setActiveMultiCode] = useState(null);
             const [ackMultiCodes, setAckMultiCodes] = useState(new Set());
-            
             const [isProcessing, setIsProcessing] = useState(false);
             const [error, setError] = useState('');
             const [alertMsg, setAlertMsg] = useState('');
             const [confirmModal, setConfirmModal] = useState({ isOpen: false, warnings: [], payload: null });
             const [showSettings, setShowSettings] = useState(false);
             const [isGlobalDragging, setIsGlobalDragging] = useState(false);
-
             const [undoUi, setUndoUi] = useState({ state: 'closed' });
             const [substHistory, setSubstHistory] = useState([]);
             const [linkSourceKey, setLinkSourceKey] = useState(null);
-            const focusedInputRef = useRef({ key: null, idx: -1 });
-
             const [memoModal, setMemoModal] = useState({ isOpen: false, batchKey: null, text: '' });
-            
             const [targetDateStr, setTargetDateStr] = useState('');
-
-            const closingFileInputRef = useRef(null);
+            const [productData, setProductData] = useState([]);
+            const [analysisPeriod, setAnalysisPeriod] = useState('전체 기간');
             const [uploadTarget, setUploadTarget] = useState(null);
 
+            const currentIssueIdxRef = useRef(-1);
+            const focusedInputRef = useRef({ key: null, idx: -1 });
+            const closingFileInputRef = useRef(null);
             const actionRefs = useRef({});
             const activeIssueModeRef = useRef(activeIssueMode);
+            const runAnalysisRef = useRef(() => {});
+            const handleIssueJumpRef = useRef(() => {});
+
             useEffect(() => { activeIssueModeRef.current = activeIssueMode; }, [activeIssueMode]);
 
             const [mappings, setMappings] = useState(() => {
                 const saved = localStorage.getItem('inventoryMappingsLight');
                 return saved ? JSON.parse(saved) : defaultMappings;
             });
-
-            const saveMappings = () => {
-                localStorage.setItem('inventoryMappingsLight', JSON.stringify(mappings));
-                setShowSettings(false);
-            };
-
-            const [productData, setProductData] = useState([]);
-            const [analysisPeriod, setAnalysisPeriod] = useState('전체 기간');
+            const saveMappings = () => { localStorage.setItem('inventoryMappingsLight', JSON.stringify(mappings)); setShowSettings(false); };
 
             const priceOptionsMap = useMemo(() => {
                 const map = {};
@@ -633,18 +473,14 @@
                     if (p.단가 > 0 && !p.isDummy) map[p.코드].add(p.단가);
                 });
                 const result = {};
-                for(let code in map) {
-                    result[code] = Array.from(map[code]);
-                }
+                for(let code in map) { result[code] = Array.from(map[code]); }
                 return result;
             }, [productData]);
 
             const multiPriceCodes = useMemo(() => {
                 const codes = new Set();
                 productData.forEach(p => {
-                    if (priceOptionsMap[p.코드] && priceOptionsMap[p.코드].length >= 2 && p.출고 > 0) {
-                        codes.add(p.코드);
-                    }
+                    if (priceOptionsMap[p.코드] && priceOptionsMap[p.코드].length >= 2 && p.출고 > 0) codes.add(p.코드);
                 });
                 return Array.from(codes);
             }, [productData, priceOptionsMap]);
@@ -652,60 +488,37 @@
             const closingStats = useMemo(() => {
                 let missingPriceCount = 0, totalMissingPriceCount = 0;
                 let lossCount = 0, totalLossCount = 0;
-                let totalRevenue = 0;
-                let totalInventoryAsset = 0;
-                let totalLossValue = 0;
+                let totalRevenue = 0, totalInventoryAsset = 0, totalLossValue = 0;
                 
                 productData.forEach(p => {
                     const isMissing = p.isDummy && p.단가 === 0;
-                    if (isMissing) {
-                        totalMissingPriceCount++;
-                        if (!p.수기확인완료) missingPriceCount++;
-                    }
-
+                    if (isMissing) { totalMissingPriceCount++; if (!p.수기확인완료) missingPriceCount++; }
                     const hasLoss = p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0);
-                    if (hasLoss) {
-                        totalLossCount++;
-                        if (!p.수기확인완료) lossCount++;
-                    }
+                    if (hasLoss) { totalLossCount++; if (!p.수기확인완료) lossCount++; }
                     
                     totalRevenue += (Number(p.매출액) || 0);
-                    
                     const actualQty = p.실사 === '' || p.실사 === null ? 0 : Number(p.실사);
                     const price = Number(p.단가) || 0;
                     totalInventoryAsset += (actualQty * price);
-                    
-                    if (p.로스 !== 0) {
-                        totalLossValue += Math.abs(Number(p.로스) * price);
-                    }
+                    if (p.로스 !== 0) totalLossValue += Math.abs(Number(p.로스) * price);
                 });
-
                 let totalMultiPriceCount = multiPriceCodes.length;
                 let multiPriceCount = multiPriceCodes.filter(c => !ackMultiCodes.has(c)).length;
-
-                return { 
-                    missingPriceCount, totalMissingPriceCount,
-                    lossCount, totalLossCount,
-                    multiPriceCount, totalMultiPriceCount,
-                    totalRevenue, totalInventoryAsset, totalLossValue,
-                    total: productData.length 
-                };
+                return { missingPriceCount, totalMissingPriceCount, lossCount, totalLossCount, multiPriceCount, totalMultiPriceCount, totalRevenue, totalInventoryAsset, totalLossValue, total: productData.length };
             }, [productData, multiPriceCodes, ackMultiCodes]);
 
             const handleFocusInput = useCallback((key, idx) => { focusedInputRef.current = { key, idx }; }, []);
 
-            const autoAssignFiles = (fileArray) => {
+            const autoAssignFiles = useCallback((fileArray) => {
                 setFiles(prev => {
                     let updated = { ...prev };
                     const stockCandidates = [];
-
                     fileArray.forEach(file => {
                         const name = file.name.toLowerCase();
                         if (name.includes('구매') || name.includes('매입') || name.includes('입고')) updated.in = file;
                         else if (name.includes('판매') || name.includes('매출') || name.includes('출고')) updated.out = file;
                         else stockCandidates.push(file);
                     });
-
                     if (stockCandidates.length > 0) {
                         stockCandidates.sort((a, b) => extractDateFromName(a.name) - extractDateFromName(b.name));
                         if (stockCandidates.length === 1) {
@@ -713,80 +526,119 @@
                             if (name.includes('기말') || name.includes('실사') || name.includes('마감')) updated.end = stockCandidates[0];
                             else updated.prev = stockCandidates[0]; 
                         } else {
-                            updated.prev = stockCandidates[0];
-                            updated.end = stockCandidates[stockCandidates.length - 1];
+                            updated.prev = stockCandidates[0]; updated.end = stockCandidates[stockCandidates.length - 1];
                         }
                     }
                     return updated;
                 });
-            };
+            }, []);
 
-            const handleGlobalDrop = (e) => {
+            const handleGlobalDrop = useCallback((e) => {
                 e.preventDefault(); setIsGlobalDragging(false);
                 const droppedFiles = Array.from(e.dataTransfer.files);
                 if (droppedFiles.length > 0) autoAssignFiles(droppedFiles);
                 window.focus(); 
-            };
+            }, [autoAssignFiles]);
+
+            const handleResetFiles = useCallback(() => {
+                setFiles({ prev: null, in: null, out: null, end: null });
+                setProductData([]); setAnalysisPeriod('전체 기간'); setSubstHistory([]); setUndoUi({ state: 'closed' });
+                setLinkSourceKey(null); setActiveIssueMode(null); setAckMultiCodes(new Set()); setActiveMultiCode(null);
+                currentIssueIdxRef.current = -1; focusedInputRef.current = { key: null, idx: -1 };
+                setFilters({ issuesOnly: false, excludeZeroActual: false, search: '', reviewType: null });
+                setError(''); setAppStep('upload');
+                document.querySelectorAll('input[type="file"]').forEach(input => input.value = '');
+            }, []);
+
+            const handleSaveMemo = useCallback((batchKey, text) => {
+                setProductData(prev => prev.map(item => item.batchKey === batchKey ? { ...item, 메모: text } : item));
+            }, []);
+
+            const handleBaseDataChange = useCallback((batchKey, field, val) => {
+                const numVal = val === '' ? 0 : Number(val);
+                setProductData(prevP => {
+                    return prevP.map(item => {
+                        if (item.batchKey === batchKey) {
+                            const newItem = { ...item, [field]: numVal, 수기확인완료: true };
+                            if (field === '단가') {
+                                let newIssues = [...newItem.이슈].filter(msg => msg !== '원가수정(수기)' && msg !== '원가수정(실사반영)');
+                                if (numVal !== item._orig?.단가) newIssues.push('원가수정(수기)');
+                                newItem.이슈 = newIssues.filter(msg => msg !== '매입내역 없음'); return newItem;
+                            }
+                            newItem.전산잔량 = newItem.기초 + newItem.입고 + newItem.대체입고 - newItem.출고 - newItem.대체출고;
+                            newItem.실사 = newItem.전산잔량; newItem.로스 = 0;
+                            let newIssues = [...newItem.이슈].filter(msg => msg !== '장부 수기조정');
+                            const isBaseChanged = newItem.기초 !== (newItem._orig?.기초 || 0) || newItem.입고 !== (newItem._orig?.입고 || 0) || newItem.출고 !== (newItem._orig?.출고 || 0);
+                            if (isBaseChanged) newIssues.push('장부 수기조정');
+                            return newItem;
+                        }
+                        return item;
+                    });
+                });
+            }, []);
+
+            const handleManualStockChange = useCallback((batchKey, val) => {
+                setProductData(prev => prev.map(item => {
+                    if (item.batchKey === batchKey) {
+                        const newActual = val === '' ? '' : Number(val);
+                        const lossCalcVal = val === '' ? 0 : Number(val);
+                        const newLoss = lossCalcVal - item.전산잔량;
+                        let newIssues = [...item.이슈].filter(msg => msg !== '실사 수기조정');
+                        if (val !== '' && newLoss !== 0) newIssues.push('실사 수기조정');
+                        return { ...item, 실사: newActual, 로스: newLoss, 이슈: newIssues, 수기확인완료: true }; 
+                    }
+                    return item;
+                }));
+            }, []);
+
+            const handleUndoAction = useCallback((historyItem) => {
+                setProductData(prev => {
+                    const newData = [...prev];
+                    const sIdx = newData.findIndex(d => d.batchKey === historyItem.sourceKey);
+                    const tIdx = newData.findIndex(d => d.batchKey === historyItem.targetKey);
+                    if (sIdx >= 0) newData[sIdx] = { ...historyItem.sourceItemPrev, 이슈: [...historyItem.sourceItemPrev.이슈] };
+                    if (tIdx >= 0) newData[tIdx] = { ...historyItem.targetItemPrev, 이슈: [...historyItem.targetItemPrev.이슈] };
+                    return newData;
+                });
+                setSubstHistory(h => h.filter(item => item.id !== historyItem.id));
+            }, []);
+
+            const handleUndoAll = useCallback(() => {
+                [...substHistory].reverse().forEach(h => handleUndoAction(h));
+                setUndoUi({ state: 'closed' });
+            }, [substHistory, handleUndoAction]);
 
             const handleIssueJump = useCallback((type, direction = 'next', fromCardClick = false) => {
                 setActiveIssueMode(type);
                 setFilters(prev => ({ ...prev, search: '', issuesOnly: false, excludeZeroActual: false, reviewType: null }));
 
                 let currentActiveMultiCode = activeMultiCode;
-
-                if (fromCardClick) {
-                    currentIssueIdxRef.current = -1;
-                    setActiveMultiCode(null);
-                    currentActiveMultiCode = null;
-                }
+                if (fromCardClick) { currentIssueIdxRef.current = -1; setActiveMultiCode(null); currentActiveMultiCode = null; }
 
                 if (type === 'multiPrice') {
                     let nextAckCodes = new Set(ackMultiCodes);
-                    if (currentActiveMultiCode && direction === 'next' && !fromCardClick) {
-                        nextAckCodes.add(currentActiveMultiCode);
-                        setAckMultiCodes(nextAckCodes);
-                    }
-                    
+                    if (currentActiveMultiCode && direction === 'next' && !fromCardClick) { nextAckCodes.add(currentActiveMultiCode); setAckMultiCodes(nextAckCodes); }
                     const remaining = multiPriceCodes.filter(c => !nextAckCodes.has(c));
                     let targetCode = null;
-
-                    if (direction === 'next') {
-                        targetCode = remaining.length > 0 ? remaining[0] : null;
-                    } else {
-                        targetCode = remaining.length > 0 ? remaining[remaining.length - 1] : null;
-                    }
+                    if (direction === 'next') targetCode = remaining.length > 0 ? remaining[0] : null;
+                    else targetCode = remaining.length > 0 ? remaining[remaining.length - 1] : null;
 
                     if (targetCode) {
                         setActiveMultiCode(targetCode);
-                        setTimeout(() => {
-                            const rows = document.querySelectorAll(`tr[data-code="${targetCode}"]`);
-                            if (rows.length > 0) {
-                                rows[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            }
-                        }, 150);
+                        setTimeout(() => { const rows = document.querySelectorAll(`tr[data-code="${targetCode}"]`); if (rows.length > 0) rows[0].scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 150);
                     } else {
                         setActiveMultiCode(null);
-                        if (!fromCardClick) {
-                            setAlertMsg("모든 Lot 매치 항목을 확인했습니다.");
-                        } else if (multiPriceCodes.length === 0) {
-                            setAlertMsg("해당하는 이슈 항목이 없습니다. (모두 확인 완료)");
-                        }
+                        if (!fromCardClick) setAlertMsg("모든 Lot 매치 항목을 확인했습니다.");
+                        else if (multiPriceCodes.length === 0) setAlertMsg("해당하는 이슈 항목이 없습니다. (모두 확인 완료)");
                         setActiveIssueMode(null);
                     }
                     return;
                 }
 
                 setActiveMultiCode(null);
-
                 const activeEl = document.activeElement;
                 let currentDataIndex = -1;
-                if (activeEl) {
-                    const row = activeEl.closest('tr[data-batch]');
-                    if (row) {
-                        const batchKey = row.getAttribute('data-batch');
-                        currentDataIndex = productData.findIndex(p => p.batchKey === batchKey);
-                    }
-                }
+                if (activeEl) { const row = activeEl.closest('tr[data-batch]'); if (row) currentDataIndex = productData.findIndex(p => p.batchKey === row.getAttribute('data-batch')); }
 
                 let currIdx = fromCardClick ? -1 : currentIssueIdxRef.current;
                 if (currentDataIndex !== -1 && !fromCardClick) currIdx = currentDataIndex;
@@ -794,9 +646,7 @@
                 if (type === 'missingPrice' && currIdx !== -1 && !fromCardClick) {
                     setProductData(prev => {
                         const newData = [...prev];
-                        if (newData[currIdx] && !newData[currIdx].수기확인완료) {
-                            newData[currIdx] = { ...newData[currIdx], 수기확인완료: true };
-                        }
+                        if (newData[currIdx] && !newData[currIdx].수기확인완료) newData[currIdx] = { ...newData[currIdx], 수기확인완료: true };
                         return newData;
                     });
                 }
@@ -810,24 +660,15 @@
                 const targetItems = productData.map((p, i) => ({...p, index: i})).filter((p, i) => condition(p, type === 'missingPrice' && i === currIdx && !fromCardClick));
                 
                 if (targetItems.length === 0) {
-                    if (!fromCardClick) {
-                        setAlertMsg(`모든 항목의 확인이 완료되었습니다.`);
-                    } else {
-                        setAlertMsg(`해결해야 할 이슈 항목이 없습니다. (모두 확인 완료)`);
-                    }
-                    setActiveIssueMode(null);
-                    return;
+                    if (!fromCardClick) setAlertMsg(`모든 항목의 확인이 완료되었습니다.`);
+                    else setAlertMsg(`해결해야 할 이슈 항목이 없습니다. (모두 확인 완료)`);
+                    setActiveIssueMode(null); return;
                 }
 
                 let targetItem = null;
-
-                if (direction === 'next') {
-                    targetItem = targetItems.find(p => p.index > currIdx);
-                    if (!targetItem) targetItem = targetItems[0]; 
-                } else {
-                    for (let i = targetItems.length - 1; i >= 0; i--) {
-                        if (targetItems[i].index < currIdx) { targetItem = targetItems[i]; break; }
-                    }
+                if (direction === 'next') { targetItem = targetItems.find(p => p.index > currIdx) || targetItems[0]; }
+                else {
+                    for (let i = targetItems.length - 1; i >= 0; i--) { if (targetItems[i].index < currIdx) { targetItem = targetItems[i]; break; } }
                     if (!targetItem) targetItem = targetItems[targetItems.length - 1]; 
                 }
 
@@ -840,81 +681,12 @@
                             const colorClass = type === 'missingPrice' ? 'bg-rose-50' : 'bg-orange-50';
                             row.classList.add(colorClass);
                             setTimeout(() => row.classList.remove(colorClass), 1500);
-                            
-                            const inputId = type === 'missingPrice' ? `price-input-${targetItem.index}` : `actual-input-${targetItem.index}`;
-                            const input = document.getElementById(inputId);
+                            const input = document.getElementById(type === 'missingPrice' ? `price-input-${targetItem.index}` : `actual-input-${targetItem.index}`);
                             if (input) { input.focus(); input.select(); }
                         }
                     }, 150);
                 }
             }, [productData, multiPriceCodes, ackMultiCodes, activeMultiCode]);
-
-            const handleSalesMove = useCallback((sourceKey, targetKey, vendorName, qtyToMove, sourceCode, targetCode) => {
-                setProductData(prevP => {
-                    let sPrice = 0; let tPrice = 0;
-                    let sRevUnit = 0; 
-                    
-                    prevP.forEach(p => {
-                        if (p.batchKey === sourceKey) { 
-                            sPrice = p.단가; 
-                            if(p.출고내역[vendorName] && p.출고내역[vendorName].qty > 0) {
-                                 sRevUnit = p.출고내역[vendorName].rev / p.출고내역[vendorName].qty;
-                            } else {
-                                 sRevUnit = p.출고 > 0 ? p.매출액 / p.출고 : 0; 
-                            }
-                        }
-                        if (p.batchKey === targetKey) tPrice = p.단가;
-                    });
-
-                    return prevP.map(p => {
-                        if (p.batchKey === sourceKey) {
-                            const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역)) };
-                            np.출고 -= qtyToMove;
-                            const movedCogs = qtyToMove * sPrice;
-                            const movedRev = qtyToMove * sRevUnit;
-                            np.매출원가 -= movedCogs;
-                            np.매출액 -= movedRev;
-                            
-                            if (np.출고내역[vendorName]) {
-                                np.출고내역[vendorName].qty -= qtyToMove;
-                                np.출고내역[vendorName].rev -= movedRev;
-                                np.출고내역[vendorName].cogs -= movedCogs;
-                                if (np.출고내역[vendorName].qty <= 0) delete np.출고내역[vendorName];
-                            }
-                            np.전산잔량 = np.기초 + np.입고 + np.대체입고 - np.출고 - np.대체출고;
-                            if (np.실사 !== null && np.실사 !== '') {
-                                np.실사 = Number(np.실사) + qtyToMove;
-                                np.로스 = np.실사 - np.전산잔량;
-                            } else { np.실사 = np.전산잔량; np.로스 = 0; }
-                            np.수기확인완료 = true;
-                            return np;
-                        }
-                        if (p.batchKey === targetKey) {
-                            const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역)), 이슈: [...p.이슈] };
-                            np.출고 += qtyToMove;
-                            const movedCogs = qtyToMove * tPrice;
-                            const movedRev = qtyToMove * sRevUnit;
-                            np.매출원가 += movedCogs;
-                            np.매출액 += movedRev;
-                            
-                            if (!np.출고내역[vendorName]) np.출고내역[vendorName] = {qty: 0, rev: 0, cogs: 0};
-                            np.출고내역[vendorName].qty += qtyToMove;
-                            np.출고내역[vendorName].rev += movedRev;
-                            np.출고내역[vendorName].cogs += movedCogs;
-                            
-                            np.전산잔량 = np.기초 + np.입고 + np.대체입고 - np.출고 - np.대체출고;
-                            if (np.실사 !== null && np.실사 !== '') {
-                                np.실사 = Number(np.실사) - qtyToMove;
-                                np.로스 = np.실사 - np.전산잔량;
-                            } else { np.실사 = np.전산잔량; np.로스 = 0; }
-                            np.이슈 = np.이슈.filter(msg => msg !== '매입내역 없음' && !msg.includes('전산 재고 부족'));
-                            np.수기확인완료 = true;
-                            return np;
-                        }
-                        return p;
-                    });
-                });
-            }, []);
 
             const executeImmediateSubstitution = useCallback((key1, key2, idx2) => {
                 setProductData(prev => {
@@ -925,58 +697,36 @@
                     const sourceItemOrig = { ...prev[idx1], 이슈: [...prev[idx1].이슈] };
                     const targetItemOrig = { ...prev[realIdx2], 이슈: [...prev[realIdx2].이슈] };
 
-                    let sourceItem = { ...sourceItemOrig };
-                    let targetItem = { ...targetItemOrig };
+                    let sourceItem = { ...sourceItemOrig }; let targetItem = { ...targetItemOrig };
 
                     if (sourceItem.로스 < 0 && targetItem.로스 > 0) { }
-                    else if (targetItem.로스 < 0 && sourceItem.로스 > 0) {
-                        let temp = sourceItem; sourceItem = targetItem; targetItem = temp;
-                    }
+                    else if (targetItem.로스 < 0 && sourceItem.로스 > 0) { let temp = sourceItem; sourceItem = targetItem; targetItem = temp; }
                     else if (sourceItem.로스 < 0 && targetItem.로스 === 0) { }
-                    else if (targetItem.로스 < 0 && sourceItem.로스 === 0) {
-                        let temp = sourceItem; sourceItem = targetItem; targetItem = temp;
-                    }
-                    else {
-                        setAlertMsg(`재고조정 실패!\n\n두 상품을 연결하려면 먼저 실사 수량을 변경하여 오차(로스)를 만들어주세요.\n• 원물(차감 대상): 마이너스(-) 로스 발생\n• 소분(증가 대상): 플러스(+) 로스 발생`);
-                        return prev;
-                    }
+                    else if (targetItem.로스 < 0 && sourceItem.로스 === 0) { let temp = sourceItem; sourceItem = targetItem; targetItem = temp; }
+                    else { setAlertMsg(`재고조정 실패!\n\n두 상품을 연결하려면 먼저 실사 수량을 변경하여 오차(로스)를 만들어주세요.\n• 원물(차감 대상): 마이너스(-) 로스 발생\n• 소분(증가 대상): 플러스(+) 로스 발생`); return prev; }
 
-                    const sQty = Math.abs(sourceItem.로스);
-                    const tQty = Math.abs(targetItem.로스);
-                    if (tQty === 0) {
-                        setAlertMsg("대체되는 상품(소분품)의 실사 수량이 입력되지 않아 조정 비율을 알 수 없습니다.\n수량을 입력해주세요.");
-                        return prev;
-                    }
+                    const sQty = Math.abs(sourceItem.로스); const tQty = Math.abs(targetItem.로스);
+                    if (tQty === 0) { setAlertMsg("대체되는 상품(소분품)의 실사 수량이 입력되지 않아 조정 비율을 알 수 없습니다.\n수량을 입력해주세요."); return prev; }
 
-                    const transferredCost = sQty * sourceItem.단가;
-                    const unitCost = transferredCost / tQty;        
+                    const transferredCost = sQty * sourceItem.단가; const unitCost = transferredCost / tQty;        
 
                     sourceItem.대체출고 += sQty;
                     sourceItem.전산잔량 = sourceItem.기초 + sourceItem.입고 + sourceItem.대체입고 - sourceItem.출고 - sourceItem.대체출고;
                     sourceItem.실사 = sourceItem.실사 === null || sourceItem.실사 === '' ? sourceItem.전산잔량 : sourceItem.실사;
                     sourceItem.로스 = sourceItem.실사 - sourceItem.전산잔량;
-                    sourceItem.이슈.push(`🔄 -> ${targetItem.품명}`);
-                    sourceItem.수기확인완료 = true;
+                    sourceItem.이슈.push(`🔄 -> ${targetItem.품명}`); sourceItem.수기확인완료 = true;
 
                     targetItem.대체입고 += tQty;
                     targetItem.전산잔량 = targetItem.기초 + targetItem.입고 + targetItem.대체입고 - targetItem.출고 - targetItem.대체출고;
                     targetItem.실사 = targetItem.실사 === null || targetItem.실사 === '' ? targetItem.전산잔량 : targetItem.실사;
                     targetItem.로스 = targetItem.실사 - targetItem.전산잔량;
-                    targetItem.단가 = unitCost; 
-                    targetItem.매출원가 = targetItem.출고 * unitCost; 
+                    targetItem.단가 = unitCost; targetItem.매출원가 = targetItem.출고 * unitCost; 
                     targetItem.이슈 = targetItem.이슈.filter(msg => !msg.includes('매입내역 없음') && !msg.includes('전산 재고 부족'));
-                    targetItem.이슈.push(`🔄 <- ${sourceItem.품명}`);
-                    targetItem.수기확인완료 = true;
+                    targetItem.이슈.push(`🔄 <- ${sourceItem.품명}`); targetItem.수기확인완료 = true;
 
                     setSubstHistory(h => [...h, {
-                        id: Date.now(), 
-                        sourceKey: sourceItem.batchKey, 
-                        targetKey: targetItem.batchKey,
-                        sourceName: sourceItem.품명, 
-                        targetName: targetItem.품명, 
-                        sQty, tQty, transferredCost, 
-                        sourceItemPrev: sourceItem.batchKey === sourceItemOrig.batchKey ? sourceItemOrig : targetItemOrig,
-                        targetItemPrev: targetItem.batchKey === targetItemOrig.batchKey ? targetItemOrig : sourceItemOrig,
+                        id: Date.now(), sourceKey: sourceItem.batchKey, targetKey: targetItem.batchKey, sourceName: sourceItem.품명, targetName: targetItem.품명, 
+                        sQty, tQty, transferredCost, sourceItemPrev: sourceItem.batchKey === sourceItemOrig.batchKey ? sourceItemOrig : targetItemOrig, targetItemPrev: targetItem.batchKey === targetItemOrig.batchKey ? targetItemOrig : sourceItemOrig,
                     }]);
 
                     const newData = [...prev];
@@ -984,323 +734,280 @@
                     newData[prev.findIndex(d => d.batchKey === targetItem.batchKey)] = targetItem;
                     return newData;
                 });
-
-                setTimeout(() => {
-                    const input = document.getElementById(`actual-input-${idx2}`);
-                    if (input) { input.focus(); input.select(); }
-                }, 50);
-
+                setTimeout(() => { const input = document.getElementById(`actual-input-${idx2}`); if (input) { input.focus(); input.select(); } }, 50);
             }, []);
 
             const handleSpacebarLink = useCallback((targetBatchKey, targetIdx) => {
                 setLinkSourceKey(prevKey => {
-                    if (!prevKey) {
-                        setTimeout(() => {
-                            const input = document.getElementById(`actual-input-${targetIdx}`);
-                            if (input) { input.focus(); input.select(); }
-                        }, 50);
-                        return targetBatchKey; 
-                    }
-                    if (prevKey === targetBatchKey) {
-                        setTimeout(() => {
-                            const input = document.getElementById(`actual-input-${targetIdx}`);
-                            if (input) { input.focus(); input.select(); }
-                        }, 50);
-                        return null; 
-                    }
+                    if (!prevKey) { setTimeout(() => { const input = document.getElementById(`actual-input-${targetIdx}`); if (input) { input.focus(); input.select(); } }, 50); return targetBatchKey; }
+                    if (prevKey === targetBatchKey) { setTimeout(() => { const input = document.getElementById(`actual-input-${targetIdx}`); if (input) { input.focus(); input.select(); } }, 50); return null; }
                     setTimeout(() => executeImmediateSubstitution(prevKey, targetBatchKey, targetIdx), 0);
                     return null; 
                 });
             }, [executeImmediateSubstitution]);
 
-            const handleSaveMemo = useCallback((batchKey, text) => {
-                setProductData(prev => prev.map(item => item.batchKey === batchKey ? { ...item, 메모: text } : item));
+            const handleSalesMove = useCallback((sourceKey, targetKey, vendorName, qtyToMove, sourceCode, targetCode) => {
+                setProductData(prevP => {
+                    let sPrice = 0; let tPrice = 0; let sRevUnit = 0; 
+                    prevP.forEach(p => {
+                        if (p.batchKey === sourceKey) { 
+                            sPrice = p.단가; 
+                            if(p.출고내역[vendorName] && p.출고내역[vendorName].qty > 0) sRevUnit = p.출고내역[vendorName].rev / p.출고내역[vendorName].qty;
+                            else sRevUnit = p.출고 > 0 ? p.매출액 / p.출고 : 0; 
+                        }
+                        if (p.batchKey === targetKey) tPrice = p.단가;
+                    });
+
+                    return prevP.map(p => {
+                        if (p.batchKey === sourceKey) {
+                            const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역)) };
+                            np.출고 -= qtyToMove;
+                            const movedCogs = qtyToMove * sPrice; const movedRev = qtyToMove * sRevUnit;
+                            np.매출원가 -= movedCogs; np.매출액 -= movedRev;
+                            if (np.출고내역[vendorName]) {
+                                np.출고내역[vendorName].qty -= qtyToMove; np.출고내역[vendorName].rev -= movedRev; np.출고내역[vendorName].cogs -= movedCogs;
+                                if (np.출고내역[vendorName].qty <= 0) delete np.출고내역[vendorName];
+                            }
+                            np.전산잔량 = np.기초 + np.입고 + np.대체입고 - np.출고 - np.대체출고;
+                            if (np.실사 !== null && np.실사 !== '') { np.실사 = Number(np.실사) + qtyToMove; np.로스 = np.실사 - np.전산잔량; } else { np.실사 = np.전산잔량; np.로스 = 0; }
+                            np.수기확인완료 = true; return np;
+                        }
+                        if (p.batchKey === targetKey) {
+                            const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역)), 이슈: [...p.이슈] };
+                            np.출고 += qtyToMove;
+                            const movedCogs = qtyToMove * tPrice; const movedRev = qtyToMove * sRevUnit;
+                            np.매출원가 += movedCogs; np.매출액 += movedRev;
+                            if (!np.출고내역[vendorName]) np.출고내역[vendorName] = {qty: 0, rev: 0, cogs: 0};
+                            np.출고내역[vendorName].qty += qtyToMove; np.출고내역[vendorName].rev += movedRev; np.출고내역[vendorName].cogs += movedCogs;
+                            np.전산잔량 = np.기초 + np.입고 + np.대체입고 - np.출고 - np.대체출고;
+                            if (np.실사 !== null && np.실사 !== '') { np.실사 = Number(np.실사) - qtyToMove; np.로스 = np.실사 - np.전산잔량; } else { np.실사 = np.전산잔량; np.로스 = 0; }
+                            np.이슈 = np.이슈.filter(msg => msg !== '매입내역 없음' && !msg.includes('전산 재고 부족'));
+                            np.수기확인완료 = true; return np;
+                        }
+                        return p;
+                    });
+                });
             }, []);
 
-            const handleResetFiles = () => {
-                setFiles({ prev: null, in: null, out: null, end: null });
-                setRawJson({ prev: [], in: [], out: [], end: [] });
-                setProductData([]);
-                setAnalysisPeriod('전체 기간');
-                setSubstHistory([]);
-                setUndoUi({ state: 'closed' });
-                setLinkSourceKey(null);
-                setActiveIssueMode(null);
-                setAckMultiCodes(new Set());
-                setActiveMultiCode(null);
-                currentIssueIdxRef.current = -1;
-                focusedInputRef.current = { key: null, idx: -1 };
-                setFilters({ issuesOnly: false, excludeZeroActual: false, search: '', reviewType: null });
-                setError('');
-                setAppStep('upload');
-                document.querySelectorAll('input[type="file"]').forEach(input => input.value = '');
-            };
-
             const executeAnalysis = useCallback((payload) => {
-                setIsProcessing(true);
-                setConfirmModal({ isOpen: false, warnings: [], payload: null });
-                
+                setIsProcessing(true); setConfirmModal({ isOpen: false, warnings: [], payload: null });
                 try {
                     const { parsedPrev, parsedIn, parsedOut, parsedEnd, periodStr, targetDateStrFromData } = payload;
-                    setAnalysisPeriod(periodStr);
-                    setTargetDateStr(targetDateStrFromData); 
+                    setAnalysisPeriod(periodStr); setTargetDateStr(targetDateStrFromData); 
                     
-                    let pData = {}; const stockPool = {};
-                    const excludeList = (mappings.excludeVendor || '').split(',').map(s => s.trim().toLowerCase()).filter(s => s);
-                    const isExcluded = (vendorName) => vendorName && excludeList.some(keyword => vendorName.toLowerCase().includes(keyword));
+                    const isClosingItem = (item) => item._raw && ('로스/조정수량' in item._raw || '기초수량' in item._raw || '기말실사(이월수량)' in item._raw);
+                    const allInputFiles = [...parsedPrev, ...parsedIn, ...parsedOut, ...parsedEnd];
+                    const closingRows = allInputFiles.filter(isClosingItem);
+                    const rawTransactions = allInputFiles.filter(item => !isClosingItem(item));
 
-                    const addStock = (item, type) => {
-                        if (type === 'in' && isExcluded(item.거래처)) return;
-                        
-                        const code = String(item.코드 || 'NO_CODE'); const price = parseNumber(item.단가); const date = String(item.일자 || '');
-                        const batchKey = `${code}|${price}|${date}`;
-
-                        if (!pData[batchKey]) {
-                            pData[batchKey] = { 
-                                batchKey, 코드: code, 품명: item.품명, 단가: price, 일자: date, 거래처: item.거래처,
-                                기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 
-                                매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig: {기초:0, 입고:0, 출고:0, 단가: price}, 
-                                isDummy: false, 수기확인완료: false 
-                            };
-                        }
-                        
-                        if (type === 'prev') pData[batchKey].기초 += item.수량;
-                        if (type === 'in') pData[batchKey].입고 += item.수량;
-                        
-                        if (!stockPool[code]) stockPool[code] = { buckets: [] };
-                        if (item.수량 !== 0) stockPool[code].buckets.push({ batchKey, 단가: price, 일자: date, 수량: item.수량, 거래처: item.거래처 });
-                    };
-
-                    parsedPrev.forEach(item => addStock(item, 'prev'));
-                    parsedIn.forEach(item => addStock(item, 'in'));
-
-                    Object.values(stockPool).forEach(pool => pool.buckets.sort((a, b) => String(a.일자 || '').localeCompare(String(b.일자 || ''))));
-
-                    parsedOut.forEach(sale => {
-                        if (isExcluded(sale.거래처)) return;
-                        
-                        const code = String(sale.코드 || 'NO_CODE');
-                        let qtyToDeduct = sale.수량; 
-                        const pool = stockPool[code];
-                        
-                        let revenue = 0;
-                        if (sale.단가 !== 0 && sale.수량 !== 0) revenue = sale.수량 * sale.단가;
-
-                        let finalRevenue = revenue;
-                        if (finalRevenue === 0 && sale._raw) {
-                            const amtKeys = ['금액', '합계', '매출금액', '판매금액', '공급가액', '공급가', '총액'];
-                            for (let k of amtKeys) {
-                                const matchedKey = Object.keys(sale._raw).find(rk => rk.replace(/\s/g, '').includes(k));
-                                if (matchedKey && sale._raw[matchedKey] !== undefined && sale._raw[matchedKey] !== '') {
-                                    finalRevenue = parseNumber(sale._raw[matchedKey]); break;
-                                }
-                            }
-                        }
-                        if (finalRevenue === 0 && sale.단가 !== 0 && sale.수량 === 0) finalRevenue = sale.단가;
-                        
-                        if (!pool || pool.buckets.length === 0) {
-                            const bKey = `${code}|0|미상`;
-                            if (!pData[bKey]) pData[bKey] = { 
-                                batchKey: bKey, 코드: code, 품명: sale.품명, 단가: 0, 일자: '', 
-                                거래처: '매입내역 없음', 
-                                기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 
-                                매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig:{기초:0,입고:0,출고:0,단가:0}, 
-                                isDummy: true, 수기확인완료: false
-                            };
-                            pData[bKey].출고 += qtyToDeduct; 
-                            pData[bKey].매출액 += finalRevenue;
-                            if (!pData[bKey].출고내역[sale.거래처]) pData[bKey].출고내역[sale.거래처] = {qty: 0, rev: 0, cogs: 0};
-                            pData[bKey].출고내역[sale.거래처].qty += qtyToDeduct;
-                            pData[bKey].출고내역[sale.거래처].rev += finalRevenue;
-                            return;
-                        }
-
-                        let remainingQty = qtyToDeduct;
-
-                        const deductFromBucket = (bucket, take) => {
-                            const cogs = take * bucket.단가;
-                            const revShare = qtyToDeduct > 0 ? finalRevenue * (take / qtyToDeduct) : 0;
+                    let pData = {}; 
+                    
+                    if (rawTransactions.length === 0 && closingRows.length > 0) {
+                        closingRows.forEach(item => {
+                            const code = String(item.코드 || item._raw['상품코드'] || 'NO_CODE');
+                            const price = parseNumber(item._raw['매입단가(원가)'] !== undefined ? item._raw['매입단가(원가)'] : item.단가);
+                            const date = String(item.일자 || targetDateStrFromData);
+                            const batchKey = `${code}|${price}|${date}`;
+                            const { issues, vendors } = parseIssuesAndVendors(item._raw['이슈/결과'] || '', price);
                             
-                            bucket.수량 -= take; 
-                            pData[bucket.batchKey].출고 += take;
-                            pData[bucket.batchKey].매출원가 += cogs;
-                            pData[bucket.batchKey].매출액 += revShare;
-                            
-                            if (!pData[bucket.batchKey].출고내역[sale.거래처]) {
-                                pData[bucket.batchKey].출고내역[sale.거래처] = {qty: 0, rev: 0, cogs: 0};
+                            pData[batchKey] = {
+                                batchKey, 코드: code, 품명: item._raw['상품명(규격)'] || item.품명, 단가: price, 일자: date, 
+                                거래처: item._raw['매입처(Lot)'] || '이전 마감자료',
+                                기초: parseNumber(item._raw['기초수량']), 입고: parseNumber(item._raw['입고수량']), 출고: parseNumber(item._raw['출고량']), 
+                                대체입고: 0, 대체출고: 0, 
+                                전산잔량: parseNumber(item._raw['기초수량']) + parseNumber(item._raw['입고수량']) - parseNumber(item._raw['출고량']), 
+                                실사: parseNumber(item._raw['기말실사(이월수량)']), 로스: parseNumber(item._raw['로스/조정수량']), 
+                                매출액: 0, 매출원가: 0, 메모: item._raw['수기메모'] || '', 이슈: issues, 출고내역: vendors, 
+                                _orig: { 기초: parseNumber(item._raw['기초수량']), 입고: parseNumber(item._raw['입고수량']), 출고: parseNumber(item._raw['출고량']), 단가: price }, 
+                                isDummy: (!code || code === 'NO_CODE'), 수기확인완료: true
+                            };
+                            let tRev = 0, tCogs = 0; Object.values(vendors).forEach(v => { tRev += v.rev; tCogs += v.cogs; });
+                            pData[batchKey].매출액 = tRev; pData[batchKey].매출원가 = tCogs;
+                        });
+                        setTimeout(() => { setAlertMsg("🔄 [스마트 재마감 V2.0 작동]\n\n마감 엑셀 파일이 단독으로 업로드되었습니다.\n\n내부 텍스트를 정밀 분석하여 '거래처별 판매 수량(출고내역)'을 완벽하게 원상 복구했습니다.\n\n이 상태에서 바로 실사 수량이나 오타를 수정한 뒤 마감 엑셀을 다시 다운로드하시면 됩니다."); }, 800);
+                    } else {
+                        const stockPool = {};
+                        const excludeList = (mappings.excludeVendor || '').split(',').map(s => s.trim().toLowerCase()).filter(s => s);
+                        const isExcluded = (vendorName) => vendorName && excludeList.some(keyword => vendorName.toLowerCase().includes(keyword));
+
+                        const addStock = (item, type) => {
+                            if (type === 'in' && isExcluded(item.거래처)) return;
+                            const code = String(item.코드 || 'NO_CODE'); const price = parseNumber(item.단가); const date = String(item.일자 || '');
+                            const batchKey = `${code}|${price}|${date}`;
+                            if (!pData[batchKey]) {
+                                pData[batchKey] = { 
+                                    batchKey, 코드: code, 품명: item.품명, 단가: price, 일자: date, 거래처: item.거래처 || (type === 'prev' ? '이월재고' : '미지정'),
+                                    기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 
+                                    매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig: {기초:0, 입고:0, 출고:0, 단가: price}, 
+                                    isDummy: false, 수기확인완료: false 
+                                };
                             }
-                            pData[bucket.batchKey].출고내역[sale.거래처].qty += take;
-                            pData[bucket.batchKey].출고내역[sale.거래처].rev += revShare;
-                            pData[bucket.batchKey].출고내역[sale.거래처].cogs += cogs;
+                            if (type === 'prev') pData[batchKey].기초 += item.수량;
+                            if (type === 'in') pData[batchKey].입고 += item.수량;
+                            if (!stockPool[code]) stockPool[code] = { buckets: [] };
+                            if (item.수량 !== 0) stockPool[code].buckets.push({ batchKey, 단가: price, 일자: date, 수량: item.수량, 거래처: item.거래처 || (type === 'prev' ? '이월재고' : '미지정') });
                         };
 
-                        if (remainingQty < 0) {
-                            const lastBucket = pool.buckets[pool.buckets.length - 1];
-                            deductFromBucket(lastBucket, remainingQty);
-                        } else {
-                            let matchedBuckets = [];
-                            if (sale.매입처매칭 && sale.매입처매칭 !== '미지정') {
-                                const matchStr = sale.매입처매칭.replace(/\s/g, '').toLowerCase();
-                                for (let i = 0; i < pool.buckets.length; i++) {
-                                    const bucket = pool.buckets[i];
-                                    const bVendorStr = String(bucket.거래처 || '').replace(/\s/g, '').toLowerCase();
-                                    if (bVendorStr && matchStr && (bVendorStr.includes(matchStr) || matchStr.includes(bVendorStr))) {
-                                        matchedBuckets.push(bucket);
-                                    }
-                                }
-                            }
-
-                            if (matchedBuckets.length > 0) {
-                                for (let i = 0; i < matchedBuckets.length && remainingQty > 0; i++) {
-                                    const bucket = matchedBuckets[i];
-                                    if (bucket.수량 <= 0) continue;
-                                    
-                                    const take = Math.min(bucket.수량, remainingQty);
-                                    deductFromBucket(bucket, take);
-                                    remainingQty -= take;
-                                }
+                        parsedPrev.forEach(item => {
+                            if (isClosingItem(item)) {
+                                const code = String(item.코드 || item._raw['상품코드'] || 'NO_CODE');
+                                const price = parseNumber(item._raw['매입단가(원가)'] !== undefined ? item._raw['매입단가(원가)'] : item.단가);
+                                const date = String(item.일자 || '');
+                                const batchKey = `${code}|${price}|${date}`;
                                 
-                                if (remainingQty > 0) {
-                                    const lastMatchedBucket = matchedBuckets[matchedBuckets.length - 1];
-                                    deductFromBucket(lastMatchedBucket, remainingQty);
-                                    remainingQty = 0;
-                                }
-                            } else {
-                                if (remainingQty > 0) {
-                                    for (let i = 0; i < pool.buckets.length && remainingQty > 0; i++) {
-                                        const bucket = pool.buckets[i];
-                                        if (bucket.수량 <= 0) continue;
-                                        
-                                        const take = Math.min(bucket.수량, remainingQty);
-                                        deductFromBucket(bucket, take);
-                                        remainingQty -= take;
-                                    }
-                                }
+                                let carryOverQty = item.수량;
+                                if (item._raw['기말실사(이월수량)'] !== undefined) carryOverQty = parseNumber(item._raw['기말실사(이월수량)']);
+                                else if (item._raw['기말실사'] !== undefined) carryOverQty = parseNumber(item._raw['기말실사']);
 
-                                if (remainingQty > 0) {
-                                    const lastBucket = pool.buckets[pool.buckets.length - 1];
-                                    deductFromBucket(lastBucket, remainingQty);
+                                if (!pData[batchKey]) {
+                                    pData[batchKey] = { 
+                                        batchKey, 코드: code, 품명: item._raw['상품명(규격)'] || item.품명, 단가: price, 일자: date, 거래처: '이월재고',
+                                        기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 
+                                        매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig: {기초:0, 입고:0, 출고:0, 단가: price}, 
+                                        isDummy: (!code || code === 'NO_CODE'), 수기확인완료: false 
+                                    };
+                                }
+                                pData[batchKey].기초 += carryOverQty;
+                                if (!stockPool[code]) stockPool[code] = { buckets: [] };
+                                if (carryOverQty !== 0) stockPool[code].buckets.push({ batchKey, 단가: price, 일자: date, 수량: carryOverQty, 거래처: '이월재고' });
+                            } else {
+                                addStock(item, 'prev');
+                            }
+                        });
+
+                        parsedIn.filter(item => !isClosingItem(item)).forEach(item => addStock(item, 'in'));
+                        Object.values(stockPool).forEach(pool => pool.buckets.sort((a, b) => String(a.일자 || '').localeCompare(String(b.일자 || ''))));
+
+                        parsedOut.filter(item => !isClosingItem(item)).forEach(sale => {
+                            if (isExcluded(sale.거래처)) return;
+                            const code = String(sale.코드 || 'NO_CODE'); let qtyToDeduct = sale.수량; const pool = stockPool[code];
+                            let revenue = 0; if (sale.단가 !== 0 && sale.수량 !== 0) revenue = sale.수량 * sale.단가;
+                            let finalRevenue = revenue;
+                            if (finalRevenue === 0 && sale._raw) {
+                                const amtKeys = ['금액', '합계', '매출금액', '판매금액', '공급가액', '공급가', '총액'];
+                                for (let k of amtKeys) {
+                                    const matchedKey = Object.keys(sale._raw).find(rk => rk.replace(/\s/g, '').includes(k));
+                                    if (matchedKey && sale._raw[matchedKey] !== undefined && sale._raw[matchedKey] !== '') { finalRevenue = parseNumber(sale._raw[matchedKey]); break; }
                                 }
                             }
-                        }
-                    });
+                            if (finalRevenue === 0 && sale.단가 !== 0 && sale.수량 === 0) finalRevenue = sale.단가;
+                            
+                            if (!pool || pool.buckets.length === 0) {
+                                const bKey = `${code}|0|미상`;
+                                if (!pData[bKey]) pData[bKey] = { 
+                                    batchKey: bKey, 코드: code, 품명: sale.품명, 단가: 0, 일자: '', 거래처: '매입내역 없음', 
+                                    기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 
+                                    매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig:{기초:0,입고:0,출고:0,단가:0}, 
+                                    isDummy: true, 수기확인완료: false
+                                };
+                                pData[bKey].출고 += qtyToDeduct; pData[bKey].매출액 += finalRevenue;
+                                if (!pData[bKey].출고내역[sale.거래처]) pData[bKey].출고내역[sale.거래처] = {qty: 0, rev: 0, cogs: 0};
+                                pData[bKey].출고내역[sale.거래처].qty += qtyToDeduct; pData[bKey].출고내역[sale.거래처].rev += finalRevenue;
+                                return;
+                            }
 
-                    Object.values(pData).forEach(item => {
-                        item._orig = { 기초: item.기초, 입고: item.입고, 출고: item.출고 };
-                        item.전산잔량 = item.기초 + item.입고 - item.출고;
-                        item.실사 = item.전산잔량; item.로스 = 0;
-                    });
+                            let remainingQty = qtyToDeduct;
+                            const deductFromBucket = (bucket, take) => {
+                                const cogs = take * bucket.단가; const revShare = qtyToDeduct > 0 ? finalRevenue * (take / qtyToDeduct) : 0;
+                                bucket.수량 -= take; pData[bucket.batchKey].출고 += take; pData[bucket.batchKey].매출원가 += cogs; pData[bucket.batchKey].매출액 += revShare;
+                                if (!pData[bucket.batchKey].출고내역[sale.거래처]) pData[bucket.batchKey].출고내역[sale.거래처] = {qty: 0, rev: 0, cogs: 0};
+                                pData[bucket.batchKey].출고내역[sale.거래처].qty += take; pData[bucket.batchKey].출고내역[sale.거래처].rev += revShare; pData[bucket.batchKey].출고내역[sale.거래처].cogs += cogs;
+                            };
 
-                    if (parsedEnd.length > 0) {
-                        const isClosingFile = parsedEnd.some(item => item._raw && ('로스/조정수량' in item._raw || '기초수량' in item._raw));
-
-                        if (isClosingFile) {
-                            const endByCode = {};
-                            parsedEnd.forEach(item => {
-                                const c = String(item.코드);
-                                if (!endByCode[c]) endByCode[c] = [];
-                                endByCode[c].push(item);
-                            });
-
-                            Object.keys(endByCode).forEach(code => {
-                                const endItems = endByCode[code];
-                                const pItems = Object.values(pData).filter(p => p.코드 === code);
-
-                                endItems.forEach(eItem => {
-                                    const oldBasePrev = parseNumber(eItem._raw['기초수량']);
-                                    const oldBaseIn = parseNumber(eItem._raw['입고수량']);
-                                    const oldBaseOut = parseNumber(eItem._raw['출고량']);
-                                    const oldPrice = parseNumber(eItem._raw['매입단가(원가)'] || eItem.단가);
-                                    const oldActual = parseNumber(eItem._raw['기말실사(이월수량)'] || eItem.수량);
-                                    const oldIssuesStr = String(eItem._raw['이슈/결과'] || '');
-                                    const oldMemo = String(eItem._raw['수기메모'] || '');
-
-                                    let matchedPItem = pItems.find(p => p.단가 === oldPrice);
-                                    if (!matchedPItem && pItems.length > 0) {
-                                        matchedPItem = pItems.find(p => p.단가 === 0) || pItems[0];
+                            if (remainingQty < 0) {
+                                deductFromBucket(pool.buckets[pool.buckets.length - 1], remainingQty);
+                            } else {
+                                let matchedBuckets = [];
+                                if (sale.매입처매칭 && sale.매입처매칭 !== '미지정') {
+                                    const matchStr = sale.매입처매칭.replace(/\s/g, '').toLowerCase();
+                                    pool.buckets.forEach(bucket => {
+                                        const bVendorStr = String(bucket.거래처 || '').replace(/\s/g, '').toLowerCase();
+                                        if (bVendorStr && matchStr && (bVendorStr.includes(matchStr) || matchStr.includes(bVendorStr))) matchedBuckets.push(bucket);
+                                    });
+                                }
+                                if (matchedBuckets.length > 0) {
+                                    for (let i = 0; i < matchedBuckets.length && remainingQty > 0; i++) {
+                                        const bucket = matchedBuckets[i]; if (bucket.수량 <= 0) continue;
+                                        const take = Math.min(bucket.수량, remainingQty); deductFromBucket(bucket, take); remainingQty -= take;
                                     }
+                                    if (remainingQty > 0) { deductFromBucket(matchedBuckets[matchedBuckets.length - 1], remainingQty); remainingQty = 0; }
+                                } else {
+                                    for (let i = 0; i < pool.buckets.length && remainingQty > 0; i++) {
+                                        const bucket = pool.buckets[i]; if (bucket.수량 <= 0) continue;
+                                        const take = Math.min(bucket.수량, remainingQty); deductFromBucket(bucket, take); remainingQty -= take;
+                                    }
+                                    if (remainingQty > 0) deductFromBucket(pool.buckets[pool.buckets.length - 1], remainingQty);
+                                }
+                            }
+                        });
+
+                        Object.values(pData).forEach(item => {
+                            item._orig = { 기초: item.기초, 입고: item.입고, 출고: item.출고, 단가: item.단가 };
+                            item.전산잔량 = item.기초 + item.입고 - item.출고;
+                            item.실사 = item.전산잔량; item.로스 = 0;
+                        });
+
+                        const closingEndItems = parsedEnd.filter(isClosingItem);
+                        
+                        if (closingEndItems.length > 0) {
+                            const endByCode = {}; 
+                            closingEndItems.forEach(item => { const c = String(item.코드); if (!endByCode[c]) endByCode[c] = []; endByCode[c].push(item); });
+                            
+                            Object.keys(endByCode).forEach(code => {
+                                const endItems = endByCode[code]; const pItems = Object.values(pData).filter(p => p.코드 === code);
+                                endItems.forEach(eItem => {
+                                    const oldBasePrev = parseNumber(eItem._raw['기초수량']); const oldBaseIn = parseNumber(eItem._raw['입고수량']); const oldBaseOut = parseNumber(eItem._raw['출고량']);
+                                    const oldPrice = parseNumber(eItem._raw['매입단가(원가)'] !== undefined ? eItem._raw['매입단가(원가)'] : eItem.단가);
+                                    
+                                    let oldActual = eItem.수량;
+                                    if (eItem._raw['기말실사(이월수량)'] !== undefined) oldActual = parseNumber(eItem._raw['기말실사(이월수량)']);
+                                    else if (eItem._raw['기말실사'] !== undefined) oldActual = parseNumber(eItem._raw['기말실사']);
+
+                                    const oldIssuesStr = String(eItem._raw['이슈/결과'] || ''); const oldMemo = String(eItem._raw['수기메모'] || '');
+                                    let matchedPItem = pItems.find(p => p.단가 === oldPrice);
+                                    if (!matchedPItem && pItems.length > 0) matchedPItem = pItems.find(p => p.단가 === 0) || pItems[0];
 
                                     if (matchedPItem) {
-                                        if (matchedPItem.단가 !== oldPrice && oldPrice > 0) {
-                                            matchedPItem.단가 = oldPrice;
-                                            matchedPItem.매출원가 = matchedPItem.출고 * oldPrice;
-                                        }
-                                        matchedPItem.실사 = oldActual;
-                                        matchedPItem.로스 = matchedPItem.실사 - matchedPItem.전산잔량;
-                                        matchedPItem.메모 = oldMemo;
-
+                                        if (matchedPItem.단가 !== oldPrice && oldPrice > 0) { matchedPItem.단가 = oldPrice; matchedPItem.매출원가 = matchedPItem.출고 * oldPrice; }
+                                        
+                                        matchedPItem.실사 = oldActual; matchedPItem.로스 = matchedPItem.실사 - matchedPItem.전산잔량; matchedPItem.메모 = oldMemo;
                                         const isDataChanged = (matchedPItem.기초 !== oldBasePrev) || (matchedPItem.입고 !== oldBaseIn) || (matchedPItem.출고 !== oldBaseOut);
-
-                                        if (!isDataChanged) {
-                                            matchedPItem.수기확인완료 = true;
-                                            matchedPItem.이슈 = []; 
-                                        } else {
-                                            matchedPItem.수기확인완료 = false;
-                                            matchedPItem.이슈 = ['🚨전일대비 원장 변동됨(재확인)'];
-                                        }
+                                        if (!isDataChanged) { matchedPItem.수기확인완료 = true; matchedPItem.이슈 = []; } 
+                                        else { matchedPItem.수기확인완료 = false; matchedPItem.이슈 = ['🚨전일대비 원장 변동됨(재확인)']; }
                                     } else {
-                                        const batchKey = `${code}|${oldPrice}|삭제됨`;
+                                        const batchKey = `${code}|${oldPrice}|삭제됨`; const { vendors } = parseIssuesAndVendors(oldIssuesStr, oldPrice);
                                         pData[batchKey] = { 
-                                            batchKey, 코드: code, 품명: eItem.품명, 단가: oldPrice, 일자: '', 
-                                            거래처: '전일 마감항목(현재 삭제됨)', 
+                                            batchKey, 코드: code, 품명: eItem.품명, 단가: oldPrice, 일자: '', 거래처: '전일 마감항목(현재 삭제됨)', 
                                             기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: oldActual, 로스: oldActual, 
-                                            매출액: 0, 매출원가: 0, 메모: oldMemo, 이슈: ['🚨전일대비 원장 삭제됨'], 출고내역: {}, _orig:{기초:0,입고:0,출고:0,단가:oldPrice}, 
+                                            매출액: 0, 매출원가: 0, 메모: oldMemo, 이슈: ['🚨전일대비 원장 삭제됨'], 출고내역: vendors, _orig:{기초:0,입고:0,출고:0,단가:oldPrice}, 
                                             isDummy: true, 수기확인완료: false 
                                         };
+                                        let tRev = 0, tCogs = 0; Object.values(vendors).forEach(v => { tRev += v.rev; tCogs += v.cogs; });
+                                        pData[batchKey].매출액 = tRev; pData[batchKey].매출원가 = tCogs;
                                     }
                                 });
                             });
-                            
-                            setTimeout(() => {
-                                setAlertMsg("🔄 [스마트 재마감 모드 작동]\n\n업로드된 파일이 '과거 마감 파일'로 인식되었습니다.\n\n어제 수기 조정한 내역과 메모는 그대로 자동 복원되어 [이슈 0] 처리되었으며,\n새롭게 추가/수정되어 전산잔량이 틀어진 항목만 '이슈' 카드로 검출되었습니다.");
-                            }, 800);
-
+                            setTimeout(() => { setAlertMsg("🔄 [스마트 재마감 모드 작동]\n\n업로드된 4번 파일이 '과거 마감 파일'로 인식되었습니다.\n\n어제 수기 조정한 내역과 메모는 그대로 자동 복원되어 [이슈 0] 처리되었으며,\n새롭게 추가/수정되어 전산잔량이 틀어진 항목만 '이슈' 카드로 검출되었습니다."); }, 800);
                         } else {
-                            const actualDict = {};
-                            const actualPriceDict = {};
-                            
-                            parsedEnd.forEach(item => {
-                                const code = String(item.코드); 
-                                actualDict[code] = (actualDict[code] || 0) + item.수량;
-                                
-                                if (item.단가 > 0) {
-                                    actualPriceDict[code] = item.단가;
-                                }
-
-                                const hasSystemRecord = Object.values(pData).some(p => p.코드 === code);
-                                if (!hasSystemRecord) {
-                                    const price = parseNumber(item.단가) || 0; const date = String(item.일자 || '실사등록'); const batchKey = `${code}|${price}|${date}`;
-                                    if (!pData[batchKey]) pData[batchKey] = { 
-                                        batchKey, 코드: code, 품명: item.품명, 단가: price, 일자: date, 
-                                        거래처: '기록없음(실사)', 
-                                        기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 
-                                        매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig:{기초:0,입고:0,출고:0}, 
-                                        isDummy: true, 수기확인완료: price > 0 ? true : false
-                                    };
-                                }
+                            const actualDict = {}; const actualPriceDict = {};
+                            parsedEnd.filter(item => !isClosingItem(item)).forEach(item => {
+                                const code = String(item.코드); actualDict[code] = (actualDict[code] || 0) + item.수량;
+                                if (item.단가 > 0) actualPriceDict[code] = item.단가;
                             });
-
                             const uniqueCodes = [...new Set(Object.values(pData).map(p => String(p.코드)))];
                             uniqueCodes.forEach(code => {
                                 const actualQty = actualDict[code] !== undefined ? actualDict[code] : 0;
                                 const targetEndPrice = actualPriceDict[code];
-
                                 const batches = Object.values(pData).filter(p => p.코드 === code).sort((a, b) => String(a.일자 || '').localeCompare(String(b.일자 || '')));
-                                
                                 if (targetEndPrice !== undefined && targetEndPrice > 0) {
                                     batches.forEach(b => {
                                         if (b.단가 !== targetEndPrice) {
-                                            b.단가 = targetEndPrice;
-                                            b.매출원가 = b.출고 * targetEndPrice;
-                                            
+                                            b.단가 = targetEndPrice; b.매출원가 = b.출고 * targetEndPrice;
                                             let newIssues = [...b.이슈].filter(msg => msg !== '매입내역 없음' && !msg.includes('원가수정'));
-                                            newIssues.push('원가수정(실사반영)');
-                                            b.이슈 = newIssues;
-                                            b.수기확인완료 = true; 
+                                            newIssues.push('원가수정(실사반영)'); b.이슈 = newIssues; b.수기확인완료 = true; 
                                         }
                                     });
                                 }
-
                                 let remainingActual = actualQty;
                                 batches.forEach(b => { b.실사 = 0; b.로스 = -b.전산잔량; });
                                 if (remainingActual > 0) {
@@ -1334,23 +1041,14 @@
                 } catch(err) {
                     setAlertMsg('데이터 분석 중 오류가 발생했습니다. 엑셀 파일 형식이나 매핑 규칙을 확인해주세요.');
                     console.error(err);
-                } finally {
-                    setIsProcessing(false);
-                }
+                } finally { setIsProcessing(false); }
             }, [mappings]);
 
-            const runAnalysis = async (overrideFiles = null, demoJson = null) => {
-                setIsProcessing(true); setError('');
-                setLinkSourceKey(null); setActiveIssueMode(null); focusedInputRef.current = { key: null, idx: -1 }; setSubstHistory([]); setUndoUi({ state: 'closed' });
-                setAckMultiCodes(new Set()); setActiveMultiCode(null); currentIssueIdxRef.current = -1;
-
+            const runAnalysis = useCallback(async (overrideFiles = null, demoJson = null) => {
+                setIsProcessing(true); setError(''); setLinkSourceKey(null); setActiveIssueMode(null); focusedInputRef.current = { key: null, idx: -1 }; setSubstHistory([]); setUndoUi({ state: 'closed' }); setAckMultiCodes(new Set()); setActiveMultiCode(null); currentIssueIdxRef.current = -1;
                 try {
-                    let parsedPrev = [];
-                    let parsedIn = [];
-                    let parsedOut = [];
-                    let parsedEnd = [];
-                    
-                    const currentFiles = overrideFiles || files;
+                    let parsedPrev = []; let parsedIn = []; let parsedOut = []; let parsedEnd = [];
+                    const currentFiles = overrideFiles && !overrideFiles.nativeEvent ? overrideFiles : files;
 
                     if (currentFiles.prev) parsedPrev = await parseExcelData(currentFiles.prev, mappings);
                     if (currentFiles.in) parsedIn = await parseExcelData(currentFiles.in, mappings);
@@ -1359,68 +1057,34 @@
 
                     const prevDateNum = extractDateFromName(currentFiles.prev?.name);
                     const endDateNum = extractDateFromName(currentFiles.end?.name);
-
                     const startDateNum = prevDateNum ? addOneDay(prevDateNum) : 0;
                     const targetEndDateNum = endDateNum || 0;
-
                     let refYear = new Date().getFullYear();
                     if (targetEndDateNum) refYear = Math.floor(targetEndDateNum / 10000);
                     else if (prevDateNum) refYear = Math.floor(prevDateNum / 10000);
 
-                    let outOfBoundsCount = 0;
-                    const validIn = [];
-                    const validOut = [];
-
-                    parsedPrev.forEach(item => {
-                        const d = formatItemDate(item.일자, refYear);
-                        if (d > 0) item.일자 = formatStrForPeriod(d);
-                    });
-
-                    parsedEnd.forEach(item => {
-                        const d = formatItemDate(item.일자, refYear);
-                        if (d > 0) item.일자 = formatStrForPeriod(d);
-                    });
+                    let outOfBoundsCount = 0; const validIn = []; const validOut = [];
+                    parsedPrev.forEach(item => { const d = formatItemDate(item.일자, refYear); if (d > 0) item.일자 = formatStrForPeriod(d); });
+                    parsedEnd.forEach(item => { const d = formatItemDate(item.일자, refYear); if (d > 0) item.일자 = formatStrForPeriod(d); });
 
                     parsedIn.forEach(item => {
-                        const d = formatItemDate(item.일자, refYear);
-                        if (d > 0) item.일자 = formatStrForPeriod(d);
-                        if (d > 0 && ((startDateNum && d < startDateNum) || (targetEndDateNum && d > targetEndDateNum))) {
-                            outOfBoundsCount++;
-                        } else {
-                            validIn.push(item);
-                        }
+                        const d = formatItemDate(item.일자, refYear); if (d > 0) item.일자 = formatStrForPeriod(d);
+                        if (d > 0 && ((startDateNum && d < startDateNum) || (targetEndDateNum && d > targetEndDateNum))) outOfBoundsCount++; else validIn.push(item);
                     });
-
                     parsedOut.forEach(item => {
-                        const d = formatItemDate(item.일자, refYear);
-                        if (d > 0) item.일자 = formatStrForPeriod(d);
-                        if (d > 0 && ((startDateNum && d < startDateNum) || (targetEndDateNum && d > targetEndDateNum))) {
-                            outOfBoundsCount++;
-                        } else {
-                            validOut.push(item);
-                        }
+                        const d = formatItemDate(item.일자, refYear); if (d > 0) item.일자 = formatStrForPeriod(d);
+                        if (d > 0 && ((startDateNum && d < startDateNum) || (targetEndDateNum && d > targetEndDateNum))) outOfBoundsCount++; else validOut.push(item);
                     });
 
-                    let minD = startDateNum || 99999999; 
-                    let maxD = targetEndDateNum || 0;
-                    
+                    let minD = startDateNum || 99999999; let maxD = targetEndDateNum || 0;
                     if (!startDateNum || !targetEndDateNum) {
                         const tempPeriodData = [...validIn, ...validOut, ...parsedEnd];
-                        tempPeriodData.forEach(item => {
-                            const d = formatItemDate(item.일자, refYear);
-                            if (d > 0) { 
-                                if (!startDateNum && d < minD) minD = d; 
-                                if (!targetEndDateNum && d > maxD) maxD = d; 
-                            }
-                        });
+                        tempPeriodData.forEach(item => { const d = formatItemDate(item.일자, refYear); if (d > 0) { if (!startDateNum && d < minD) minD = d; if (!targetEndDateNum && d > maxD) maxD = d; } });
                     }
-
                     let periodStr = '';
-                    if (minD === 99999999 || maxD === 0) {
-                        periodStr = '기간 미상';
-                    } else if (minD === maxD) {
-                        periodStr = formatStrForPeriod(minD);
-                    } else {
+                    if (minD === 99999999 || maxD === 0) periodStr = '기간 미상';
+                    else if (minD === maxD) periodStr = formatStrForPeriod(minD);
+                    else {
                         const d1 = new Date(Math.floor(minD/10000), Math.floor((minD%10000)/100)-1, minD%100);
                         const d2 = new Date(Math.floor(maxD/10000), Math.floor((maxD%10000)/100)-1, maxD%100);
                         const days = Math.round((d2 - d1) / 86400000) + 1;
@@ -1428,113 +1092,141 @@
                     }
 
                     let targetDateStrFromData = '';
-                    if (maxD !== 0) {
-                        targetDateStrFromData = `${Math.floor(maxD/10000)}-${String(Math.floor((maxD%10000)/100)).padStart(2,'0')}-${String(maxD%100).padStart(2,'0')}`;
-                    } else {
-                        const today = new Date();
-                        targetDateStrFromData = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
-                    }
+                    if (maxD !== 0) targetDateStrFromData = `${Math.floor(maxD/10000)}-${String(Math.floor((maxD%10000)/100)).padStart(2,'0')}-${String(maxD%100).padStart(2,'0')}`;
+                    else { const today = new Date(); targetDateStrFromData = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`; }
 
                     let warnings = [];
-                    if (prevDateNum && minD !== 99999999 && minD <= prevDateNum) {
-                        warnings.push(`매입/매출에 기초재고 파일명 기준일(${formatStrForPeriod(prevDateNum)}) 이전의 과거 데이터가 포함되어 있습니다.`);
-                    }
-                    if (endDateNum && maxD !== 0 && maxD > endDateNum) {
-                        warnings.push(`매입/매출에 실사 파일명 기준일(${formatStrForPeriod(endDateNum)}) 이후의 미래 데이터가 포함되어 있습니다.`);
-                    }
+                    if (prevDateNum && minD !== 99999999 && minD <= prevDateNum) warnings.push(`매입/매출에 기초재고 파일명 기준일(${formatStrForPeriod(prevDateNum)}) 이전의 과거 데이터가 포함되어 있습니다.`);
+                    if (endDateNum && maxD !== 0 && maxD > endDateNum) warnings.push(`매입/매출에 실사 파일명 기준일(${formatStrForPeriod(endDateNum)}) 이후의 미래 데이터가 포함되어 있습니다.`);
 
                     const payload = { parsedPrev, parsedIn: validIn, parsedOut: validOut, parsedEnd, periodStr, targetDateStrFromData };
-
-                    if (warnings.length > 0 && !demoJson) {
-                        setConfirmModal({ isOpen: true, warnings, payload });
-                        setIsProcessing(false);
-                    } else {
-                        executeAnalysis(payload);
-                    }
-
+                    if (warnings.length > 0 && !demoJson) { setConfirmModal({ isOpen: true, warnings, payload }); setIsProcessing(false); } 
+                    else { executeAnalysis(payload); }
                 } catch (err) {
                     setAlertMsg('데이터 분석 중 오류가 발생했습니다. 엑셀 파일 형식이나 매핑 규칙을 확인해주세요.');
-                    console.error(err);
-                    setIsProcessing(false);
+                    console.error(err); setIsProcessing(false);
                 }
-            };
+            }, [files, mappings, executeAnalysis]);
 
-            const handleBaseDataChange = useCallback((batchKey, field, val) => {
-                const numVal = val === '' ? 0 : Number(val);
+            const handleCombinedExport = useCallback(() => {
+                if (productData.length === 0) { setAlertMsg("다운로드할 데이터가 없습니다."); return; }
                 
-                setProductData(prevP => {
-                    const newP = prevP.map(item => {
-                        if (item.batchKey === batchKey) {
-                            const newItem = { ...item, [field]: numVal, 수기확인완료: true };
-                            
-                            if (field === '단가') {
-                                let newIssues = [...newItem.이슈].filter(msg => msg !== '원가수정(수기)' && msg !== '원가수정(실사반영)');
-                                if (numVal !== item._orig?.단가) newIssues.push('원가수정(수기)');
-                                newItem.이슈 = newIssues.filter(msg => msg !== '매입내역 없음');
-                                return newItem;
-                            }
+                const exportFileNameDate = targetDateStr ? targetDateStr.replace(/-/g, '') : (() => {
+                    const today = new Date(); return `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
+                })();
 
-                            newItem.전산잔량 = newItem.기초 + newItem.입고 + newItem.대체입고 - newItem.출고 - newItem.대체출고;
-                            
-                            newItem.실사 = newItem.전산잔량;
-                            newItem.로스 = 0;
-                            
-                            let newIssues = [...newItem.이슈].filter(msg => msg !== '장부 수기조정');
-                            const isBaseChanged = newItem.기초 !== (newItem._orig?.기초 || 0) || newItem.입고 !== (newItem._orig?.입고 || 0) || newItem.출고 !== (newItem._orig?.출고 || 0);
-                            if (isBaseChanged) newIssues.push('장부 수기조정');
-                            return newItem;
-                        }
-                        return item;
-                    });
+                const exportData1 = productData.filter(item => item.품명 || item.코드).map(item => {
+                    let displayIssues = item.이슈 ? [...item.이슈] : [];
+                    displayIssues = displayIssues.filter(msg => !msg.includes('매입내역 없음'));
+
+                    const totalAvailable = item.기초 + item.입고 + item.대체입고;
+                    if (item.로스 < 0 && totalAvailable > 0 && (Math.abs(item.로스) / totalAvailable) > 0.2) displayIssues.push('과다로스(20%↑)');
+
+                    let vendorStrs = [];
+                    if (item.출고내역 && Object.keys(item.출고내역).length > 0) vendorStrs = Object.entries(item.출고내역).map(([v, data]) => `${v}(${data.qty})`);
                     
-                    return newP;
-                });
-            }, []);
+                    const qty = item.실사 === '' || item.실사 === null ? 0 : Number(item.실사);
+                    const adjust = (Number(item.로스) || 0) + (Number(item.대체입고) || 0) - (Number(item.대체출고) || 0);
+                    const price = Number(item.단가) || 0;
+                    const inventoryAsset = qty * price;
+                    const issueResultStr = [...displayIssues, ...vendorStrs].join(', ');
 
-            const handleManualStockChange = useCallback((batchKey, val) => {
-                setProductData(prev => prev.map(item => {
-                    if (item.batchKey === batchKey) {
-                        const newActual = val === '' ? '' : Number(val);
-                        const lossCalcVal = val === '' ? 0 : Number(val);
-                        const newLoss = lossCalcVal - item.전산잔량;
-                        
-                        let newIssues = [...item.이슈].filter(msg => msg !== '실사 수기조정');
-                        if (val !== '' && newLoss !== 0) newIssues.push('실사 수기조정');
-                        return { ...item, 실사: newActual, 로스: newLoss, 이슈: newIssues, 수기확인완료: true }; 
+                    return {
+                        '결산일자': targetDateStr, '상품코드': item.코드 === 'NO_CODE' ? '' : item.코드, '상품명(규격)': item.품명, 
+                        '기초수량': item.기초, '입고수량': item.입고, '출고량': item.출고, '기말실사(이월수량)': qty, 
+                        '매입단가(원가)': price, '기말재고액(자산가치)': inventoryAsset, '로스/조정수량': adjust, '이슈/결과': issueResultStr, '수기메모': item.메모 || '' 
+                    };
+                });
+
+                const aggregated = {};
+                productData.forEach(item => {
+                    const actualCode = (!item.코드 || item.코드 === 'NO_CODE' || item.코드 === '-') ? '' : item.코드;
+                    const key = actualCode + '|' + item.품명;
+                    const qty = item.실사 === '' || item.실사 === null ? 0 : Number(item.실사);
+                    if (!aggregated[key]) aggregated[key] = { 코드: actualCode, 품명: item.품명, 수량: 0 };
+                    aggregated[key].수량 += qty;
+                });
+
+                const exportData2 = [];
+                Object.keys(aggregated).forEach(key => {
+                    if (aggregated[key].수량 !== 0) {
+                        exportData2.push({ '일자': targetDateStr, '순번': '', '담당자': '', '창고': '01', '상품코드': aggregated[key].코드, '상품명(규격)': aggregated[key].품명, '수량': aggregated[key].수량, '적요': '' });
                     }
-                    return item;
-                }));
-            }, []);
-
-            const handleUndoAction = useCallback((historyItem) => {
-                setProductData(prev => {
-                    const newData = [...prev];
-                    const sIdx = newData.findIndex(d => d.batchKey === historyItem.sourceKey);
-                    const tIdx = newData.findIndex(d => d.batchKey === historyItem.targetKey);
-                    
-                    if (sIdx >= 0) newData[sIdx] = { ...historyItem.sourceItemPrev, 이슈: [...historyItem.sourceItemPrev.이슈] };
-                    if (tIdx >= 0) newData[tIdx] = { ...historyItem.targetItemPrev, 이슈: [...historyItem.targetItemPrev.이슈] };
-                    return newData;
                 });
-                setSubstHistory(h => h.filter(item => item.id !== historyItem.id));
-            }, []);
 
-            const handleUndoAll = useCallback(() => {
-                [...substHistory].reverse().forEach(h => handleUndoAction(h));
-                setUndoUi({ state: 'closed' });
-            }, [substHistory, handleUndoAction]);
+                const exportData3 = []; const vendorProductAggregated = {}; const productActualQtyMap = {};
+                productData.forEach(item => {
+                    const actualCode = item.코드 === 'NO_CODE' ? '' : item.코드;
+                    const pKey = `${actualCode}|${item.품명}`;
+                    if (!productActualQtyMap[pKey]) productActualQtyMap[pKey] = 0;
+                    productActualQtyMap[pKey] += (item.실사 === '' || item.실사 === null ? 0 : Number(item.실사));
 
-            const runAnalysisRef = useRef(runAnalysis);
-            useEffect(() => { runAnalysisRef.current = runAnalysis; }, [runAnalysis]);
-            
-            const handleIssueJumpRef = useRef(handleIssueJump);
-            useEffect(() => { handleIssueJumpRef.current = handleIssueJump; }, [handleIssueJump]);
+                    if (item.출고내역 && Object.keys(item.출고내역).length > 0) {
+                        Object.entries(item.출고내역).forEach(([vendor, data]) => {
+                            const qty = data.qty; const vRev = Math.round(data.rev) || 0; const vCogs = Math.round(data.cogs) || 0;
+                            const vProfit = vRev - vCogs; const vMargin = vRev !== 0 ? ((vProfit / vRev) * 100).toFixed(1) : '0';
+
+                            exportData3.push({
+                                '결산일자': targetDateStr, '매출처명': vendor, '상품코드': actualCode, '상품명(규격)': item.품명, '매입처(Lot)': item.거래처 || '미지정',
+                                '판매수량(반품포함)': qty, '판매단가': qty !== 0 ? Math.round(vRev / qty) : 0, '최종공급가액(할인적용)': vRev,
+                                '매입단가(원가)': qty !== 0 ? Math.round(vCogs / qty) : 0, '총원가': vCogs, '이익': vProfit, '이익률(%)': vMargin + '%',
+                                '해당Lot기말실사': item.실사 === '' || item.실사 === null ? 0 : Number(item.실사)
+                            });
+
+                            const vpKey = `${vendor}|${actualCode}|${item.품명}`;
+                            if (!vendorProductAggregated[vpKey]) { vendorProductAggregated[vpKey] = { vendor: vendor, code: actualCode, name: item.품명, qty: 0, rev: 0, cogs: 0 }; }
+                            vendorProductAggregated[vpKey].qty += qty; vendorProductAggregated[vpKey].rev += vRev; vendorProductAggregated[vpKey].cogs += vCogs;
+                        });
+                    }
+                });
+
+                const exportData4 = Object.values(vendorProductAggregated).sort((a, b) => a.vendor.localeCompare(b.vendor) || a.name.localeCompare(b.name)).map(vp => {
+                    const profit = vp.rev - vp.cogs; const margin = vp.rev !== 0 ? ((profit / vp.rev) * 100).toFixed(1) : '0';
+                    const pKey = `${vp.code}|${vp.name}`;
+                    return {
+                        '결산일자': targetDateStr, '매출처명': vp.vendor, '상품코드': vp.code, '상품명(규격)': vp.name, '총판매수량': vp.qty,
+                        '평균판매단가': vp.qty !== 0 ? Math.round(vp.rev / vp.qty) : 0, '총최종공급가액': vp.rev,
+                        '평균매입단가(원가)': vp.qty !== 0 ? Math.round(vp.cogs / vp.qty) : 0, '총원가': vp.cogs, '이익': profit, '이익률(%)': margin + '%', '상품총기말실사': productActualQtyMap[pKey] || 0
+                    };
+                });
+
+                const exportData5 = [{ '결산일자': targetDateStr, '분석기간': analysisPeriod, '총 공급가액(매출액 ₩)': closingStats.totalRevenue, '기말 재고자산 총액(₩)': closingStats.totalInventoryAsset, '발생 로스 총액(₩)': closingStats.totalLossValue, '운영 코멘트': '※ 마진/수익률을 제외한 재고 자산 및 로스 관리용 요약 데이터입니다.' }];
+
+                const exportData6 = productData.filter(item => item.입고 !== 0).map(item => {
+                    return { '결산일자': targetDateStr, '매입일자': item.일자 || targetDateStr, '매입처명(공급사)': item.거래처 || '미지정', '상품코드': item.코드 === 'NO_CODE' ? '' : item.코드, '상품명(규격)': item.품명, '매입수량': item.입고, '매입단가': item.단가, '매입총액(합계)': item.입고 * item.단가 };
+                });
+
+                const wb = XLSX.utils.book_new();
+
+                if (exportData1.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportData1), '재고수불_마감'); else XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([{'메시지': '유효한 데이터가 없습니다.'}]), '재고수불_마감');
+                if (exportData2.length > 0) {
+                    const ws2 = XLSX.utils.json_to_sheet(exportData2);
+                    Object.keys(ws2).forEach(cellAddress => {
+                        if (cellAddress === '!ref' || cellAddress === '!margins') return;
+                        const cell = ws2[cellAddress];
+                        if (cellAddress.startsWith('D') && cellAddress !== 'D1') { cell.t = 's'; cell.v = '01'; cell.w = '01'; }
+                        if (cellAddress.startsWith('E') && cellAddress !== 'E1') { cell.t = 's'; }
+                    });
+                    XLSX.utils.book_append_sheet(wb, ws2, '실사양식');
+                }
+                if (exportData3.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportData3), '업체별판매현황'); else XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([{'메시지': '판매내역이 없습니다.'}]), '업체별판매현황');
+                if (exportData4.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportData4), '업체별판매소계'); else XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([{'메시지': '판매내역이 없습니다.'}]), '업체별판매소계');
+                if (exportData5.length > 0) { const ws5 = XLSX.utils.json_to_sheet(exportData5); ws5['!cols'] = [{wch:12}, {wch:20}, {wch:18}, {wch:20}, {wch:18}, {wch:60}]; XLSX.utils.book_append_sheet(wb, ws5, '마감요약'); }
+                if (exportData6.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportData6), '업체별매입현황'); else XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([{'메시지': '매입내역이 없습니다.'}]), '업체별매입현황');
+
+                try {
+                    const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a'); a.href = url; a.download = `수불마감_${exportFileNameDate}.xlsx`;
+                    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+                    setTimeout(() => { setAlertMsg("✅ 수불부 마감 데이터가 엑셀로 다운로드되었습니다.\n\n[💡 업무 노하우]\n가장 첫 번째 탭[재고수불_마감]은 내일의 '1번. 기초 재고' 파일로 그대로 다시 업로드하여 재고를 이어가세요."); }, 500);
+                } catch (err) { console.error('엑셀 생성 중 오류:', err); setAlertMsg("엑셀 파일 생성 중 오류가 발생했습니다. 시스템 관리자에게 문의하세요."); }
+            }, [productData, analysisPeriod, targetDateStr, closingStats]);
 
             const handleClosingFileUpload = (type) => {
                 setUploadTarget(type);
-                if (closingFileInputRef.current) {
-                    closingFileInputRef.current.click();
-                }
+                if (closingFileInputRef.current) closingFileInputRef.current.click();
             };
 
             const onClosingFileChange = (e) => {
@@ -1543,339 +1235,52 @@
                 const newFiles = { ...files, [uploadTarget]: selectedFile };
                 setFiles(newFiles);
                 e.target.value = ''; 
-                runAnalysisRef.current(newFiles); 
+                runAnalysis(newFiles); 
             };
 
-            const handleCombinedExport = useCallback(() => {
-                if (productData.length === 0) { setAlertMsg("다운로드할 데이터가 없습니다."); return; }
-                
-                const exportFileNameDate = targetDateStr ? targetDateStr.replace(/-/g, '') : (() => {
-                    const today = new Date();
-                    return `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
-                })();
-
-                const exportData1 = productData
-                    .filter(item => item.품명 || item.코드) 
-                    .map(item => {
-                        let displayIssues = item.이슈 ? [...item.이슈] : [];
-                        displayIssues = displayIssues.filter(msg => !msg.includes('매입내역 없음'));
-
-                        const totalAvailable = item.기초 + item.입고 + item.대체입고;
-                        if (item.로스 < 0 && totalAvailable > 0 && (Math.abs(item.로스) / totalAvailable) > 0.2) {
-                            displayIssues.push('과다로스(20%↑)');
-                        }
-
-                        let vendorStrs = [];
-                        if (item.출고내역 && Object.keys(item.출고내역).length > 0) {
-                            vendorStrs = Object.entries(item.출고내역).map(([v, data]) => `${v}(${data.qty})`);
-                        }
-                        
-                        const qty = item.실사 === '' || item.실사 === null ? 0 : Number(item.실사);
-                        const adjust = (Number(item.로스) || 0) + (Number(item.대체입고) || 0) - (Number(item.대체출고) || 0);
-                        const price = Number(item.단가) || 0;
-                        const inventoryAsset = qty * price;
-                        const issueResultStr = [...displayIssues, ...vendorStrs].join(', ');
-
-                        return {
-                            '결산일자': targetDateStr, 
-                            '상품코드': item.코드 === 'NO_CODE' ? '' : item.코드, 
-                            '상품명(규격)': item.품명, 
-                            '기초수량': item.기초,
-                            '입고수량': item.입고,
-                            '출고량': item.출고, 
-                            '기말실사(이월수량)': qty, 
-                            '매입단가(원가)': price, 
-                            '기말재고액(자산가치)': inventoryAsset, 
-                            '로스/조정수량': adjust,
-                            '이슈/결과': issueResultStr,
-                            '수기메모': item.메모 || '' 
-                        };
-                    });
-
-                const aggregated = {};
-                productData.forEach(item => {
-                    const actualCode = (!item.코드 || item.코드 === 'NO_CODE' || item.코드 === '-') ? '' : item.코드;
-                    const key = actualCode + '|' + item.품명;
-
-                    const qty = item.실사 === '' || item.실사 === null ? 0 : Number(item.실사);
-                    if (!aggregated[key]) {
-                        aggregated[key] = { 코드: actualCode, 품명: item.품명, 수량: 0 };
-                    }
-                    aggregated[key].수량 += qty;
-                });
-
-                const exportData2 = [];
-                Object.keys(aggregated).forEach(key => {
-                    if (aggregated[key].수량 !== 0) {
-                        exportData2.push({
-                            '일자': targetDateStr, 
-                            '순번': '',
-                            '담당자': '',
-                            '창고': '01',
-                            '상품코드': aggregated[key].코드, 
-                            '상품명(규격)': aggregated[key].품명,
-                            '수량': aggregated[key].수량,
-                            '적요': ''
-                        });
-                    }
-                });
-
-                const exportData3 = [];
-                const vendorProductAggregated = {};
-                const productActualQtyMap = {};
-
-                productData.forEach(item => {
-                    const actualCode = item.코드 === 'NO_CODE' ? '' : item.코드;
-                    const pKey = `${actualCode}|${item.품명}`;
-
-                    if (!productActualQtyMap[pKey]) {
-                        productActualQtyMap[pKey] = 0;
-                    }
-                    productActualQtyMap[pKey] += (item.실사 === '' || item.실사 === null ? 0 : Number(item.실사));
-
-                    if (item.출고내역 && Object.keys(item.출고내역).length > 0) {
-                        Object.entries(item.출고내역).forEach(([vendor, data]) => {
-                            const qty = data.qty;
-                            const vRev = Math.round(data.rev) || 0;
-                            const vCogs = Math.round(data.cogs) || 0;
-                            const vProfit = vRev - vCogs;
-                            const vMargin = vRev !== 0 ? ((vProfit / vRev) * 100).toFixed(1) : '0';
-
-                            exportData3.push({
-                                '결산일자': targetDateStr, 
-                                '매출처명': vendor, 
-                                '상품코드': actualCode,
-                                '상품명(규격)': item.품명,
-                                '매입처(Lot)': item.거래처 || '미지정',
-                                '판매수량(반품포함)': qty,
-                                '판매단가': qty !== 0 ? Math.round(vRev / qty) : 0, 
-                                '최종공급가액(할인적용)': vRev,
-                                '매입단가(원가)': qty !== 0 ? Math.round(vCogs / qty) : 0, 
-                                '총원가': vCogs,
-                                '이익': vProfit,
-                                '이익률(%)': vMargin + '%',
-                                '해당Lot기말실사': item.실사 === '' || item.실사 === null ? 0 : Number(item.실사)
-                            });
-
-                            const vpKey = `${vendor}|${actualCode}|${item.품명}`;
-                            if (!vendorProductAggregated[vpKey]) {
-                                vendorProductAggregated[vpKey] = {
-                                    vendor: vendor,
-                                    code: actualCode,
-                                    name: item.품명,
-                                    qty: 0,
-                                    rev: 0,
-                                    cogs: 0
-                                };
-                            }
-                            vendorProductAggregated[vpKey].qty += qty;
-                            vendorProductAggregated[vpKey].rev += vRev;
-                            vendorProductAggregated[vpKey].cogs += vCogs;
-                        });
-                    }
-                });
-
-                const exportData4 = Object.values(vendorProductAggregated)
-                    .sort((a, b) => a.vendor.localeCompare(b.vendor) || a.name.localeCompare(b.name))
-                    .map(vp => {
-                        const profit = vp.rev - vp.cogs;
-                        const margin = vp.rev !== 0 ? ((profit / vp.rev) * 100).toFixed(1) : '0';
-                        const pKey = `${vp.code}|${vp.name}`;
-                        return {
-                            '결산일자': targetDateStr,
-                            '매출처명': vp.vendor,
-                            '상품코드': vp.code,
-                            '상품명(규격)': vp.name,
-                            '총판매수량': vp.qty,
-                            '평균판매단가': vp.qty !== 0 ? Math.round(vp.rev / vp.qty) : 0,
-                            '총최종공급가액': vp.rev,
-                            '평균매입단가(원가)': vp.qty !== 0 ? Math.round(vp.cogs / vp.qty) : 0,
-                            '총원가': vp.cogs,
-                            '이익': profit,
-                            '이익률(%)': margin + '%',
-                            '상품총기말실사': productActualQtyMap[pKey] || 0
-                        };
-                });
-
-                const exportData5 = [{
-                    '결산일자': targetDateStr, 
-                    '분석기간': analysisPeriod,
-                    '총 공급가액(매출액 ₩)': closingStats.totalRevenue, 
-                    '기말 재고자산 총액(₩)': closingStats.totalInventoryAsset,
-                    '발생 로스 총액(₩)': closingStats.totalLossValue,
-                    '운영 코멘트': '※ 마진/수익률을 제외한 재고 자산 및 로스 관리용 요약 데이터입니다.'
-                }];
-
-                const exportData6 = productData
-                    .filter(item => item.입고 !== 0) 
-                    .map(item => {
-                        return {
-                            '결산일자': targetDateStr,
-                            '매입일자': item.일자 || targetDateStr,
-                            '매입처명(공급사)': item.거래처 || '미지정',
-                            '상품코드': item.코드 === 'NO_CODE' ? '' : item.코드,
-                            '상품명(규격)': item.품명,
-                            '매입수량': item.입고,
-                            '매입단가': item.단가,
-                            '매입총액(합계)': item.입고 * item.단가
-                        };
-                    });
-
-                const wb = XLSX.utils.book_new();
-
-                if (exportData1.length > 0) {
-                    const ws1 = XLSX.utils.json_to_sheet(exportData1); 
-                    XLSX.utils.book_append_sheet(wb, ws1, '재고수불_마감');
-                } else {
-                    const ws1 = XLSX.utils.json_to_sheet([{'메시지': '유효한 품목 데이터가 없습니다.'}]); 
-                    XLSX.utils.book_append_sheet(wb, ws1, '재고수불_마감');
-                }
-
-                if (exportData2.length > 0) {
-                    const ws2 = XLSX.utils.json_to_sheet(exportData2);
-                    Object.keys(ws2).forEach(cellAddress => {
-                        if (cellAddress === '!ref' || cellAddress === '!margins') return;
-                        const cell = ws2[cellAddress];
-                        if (cellAddress.startsWith('D') && cellAddress !== 'D1') {
-                            cell.t = 's'; cell.v = '01'; cell.w = '01'; 
-                        }
-                        if (cellAddress.startsWith('E') && cellAddress !== 'E1') {
-                            cell.t = 's'; 
-                        }
-                    });
-                    XLSX.utils.book_append_sheet(wb, ws2, '실사양식');
-                }
-
-                if (exportData3.length > 0) {
-                    const ws3 = XLSX.utils.json_to_sheet(exportData3);
-                    XLSX.utils.book_append_sheet(wb, ws3, '업체별판매현황');
-                } else {
-                    const ws3 = XLSX.utils.json_to_sheet([{'메시지': '판매(출고) 내역이 존재하지 않습니다.'}]);
-                    XLSX.utils.book_append_sheet(wb, ws3, '업체별판매현황');
-                }
-
-                if (exportData4.length > 0) {
-                    const ws4 = XLSX.utils.json_to_sheet(exportData4);
-                    XLSX.utils.book_append_sheet(wb, ws4, '업체별판매소계');
-                } else {
-                    const ws4 = XLSX.utils.json_to_sheet([{'메시지': '판매(출고) 내역이 존재하지 않습니다.'}]);
-                    XLSX.utils.book_append_sheet(wb, ws4, '업체별판매소계');
-                }
-
-                if (exportData5.length > 0) {
-                    const ws5 = XLSX.utils.json_to_sheet(exportData5);
-                    ws5['!cols'] = [{wch:12}, {wch:20}, {wch:18}, {wch:20}, {wch:18}, {wch:60}];
-                    XLSX.utils.book_append_sheet(wb, ws5, '마감요약');
-                }
-
-                if (exportData6.length > 0) {
-                    const ws6 = XLSX.utils.json_to_sheet(exportData6);
-                    XLSX.utils.book_append_sheet(wb, ws6, '업체별매입현황');
-                } else {
-                    const ws6 = XLSX.utils.json_to_sheet([{'메시지': '매입(입고) 내역이 존재하지 않습니다.'}]);
-                    XLSX.utils.book_append_sheet(wb, ws6, '업체별매입현황');
-                }
-
-                try {
-                    const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-                    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `수불마감_${exportFileNameDate}.xlsx`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                    
-                    setTimeout(() => {
-                        setAlertMsg("✅ 수불부 마감 데이터가 엑셀로 다운로드되었습니다.\n\n[💡 업무 노하우]\n가장 첫 번째 탭[재고수불_마감]은 내일의 '1번. 기초 재고' 파일로 그대로 다시 업로드하여 재고를 이어가세요.");
-                    }, 500);
-                } catch (err) {
-                    console.error('엑셀 생성 중 오류:', err);
-                    setAlertMsg("엑셀 파일 생성 중 오류가 발생했습니다. 시스템 관리자에게 문의하세요.");
-                }
-
-            }, [productData, analysisPeriod, targetDateStr, closingStats]);
-
             useEffect(() => {
-                actionRefs.current = { 
-                    handleCombinedExport: handleCombinedExport,
-                    runAnalysis: () => runAnalysisRef.current(),
-                    handleIssueJump: (dir) => {
-                        if (activeIssueModeRef.current) {
-                            handleIssueJumpRef.current(activeIssueModeRef.current, dir, false);
-                        }
-                    }
-                };
-            }, [handleCombinedExport]);
+                actionRefs.current = { handleCombinedExport, runAnalysis, handleIssueJump: (dir) => { if (activeIssueModeRef.current) handleIssueJump(activeIssueModeRef.current, dir, false); } };
+            }, [handleCombinedExport, runAnalysis, handleIssueJump]);
 
             useEffect(() => {
                 const handleGlobalEnter = (e) => {
                     if (e.key === 'Enter') {
                         if (document.querySelector('.modal-bounce')) return;
-                        const activeEl = document.activeElement;
-                        const tag = activeEl ? activeEl.tagName.toLowerCase() : '';
-                        const type = activeEl ? activeEl.type : '';
+                        const activeEl = document.activeElement; const tag = activeEl ? activeEl.tagName.toLowerCase() : ''; const type = activeEl ? activeEl.type : '';
                         const isTyping = tag === 'textarea' || (tag === 'input' && (type === 'text' || type === 'number' || type === 'search'));
                         if (!isTyping && tag !== 'button') {
-                            if (appStep === 'upload' && !isProcessing && (files.in || files.out || files.prev || files.end)) {
-                                e.preventDefault(); actionRefs.current.runAnalysis();
-                            }
+                            if (appStep === 'upload' && !isProcessing && (files.in || files.out || files.prev || files.end)) { e.preventDefault(); actionRefs.current.runAnalysis(); }
                         }
                     }
                 };
 
                 const handleGlobalKeys = (e) => {
-                    if (document.querySelector('.modal-bounce')) {
-                        if (e.key === 'Escape') { setUndoUi({ state: 'closed' }); }
-                        return;
-                    }
+                    if (document.querySelector('.modal-bounce')) { if (e.key === 'Escape') setUndoUi({ state: 'closed' }); return; }
                     if (e.key === 'F8') { e.preventDefault(); actionRefs.current.handleCombinedExport(); }
                     if (e.key === 'Escape') {
                         if (linkSourceKey) {
                             setLinkSourceKey(null);
-                            if (focusedInputRef.current.key) {
-                                setTimeout(() => {
-                                    const input = document.getElementById(`actual-input-${focusedInputRef.current.idx}`);
-                                    if (input) { input.focus(); input.select(); }
-                                }, 50);
-                            }
+                            if (focusedInputRef.current.key) setTimeout(() => { const input = document.getElementById(`actual-input-${focusedInputRef.current.idx}`); if (input) { input.focus(); input.select(); } }, 50);
                         }
-                        if (activeIssueModeRef.current) {
-                            setActiveIssueMode(null);
-                        }
+                        if (activeIssueModeRef.current) setActiveIssueMode(null);
                     }
-                    if (e.key === 'Tab' && appStep === 'closing') {
-                        if (activeIssueModeRef.current) {
-                            e.preventDefault();
-                            actionRefs.current.handleIssueJump(e.shiftKey ? 'prev' : 'next');
-                        }
-                    }
+                    if (e.key === 'Tab' && appStep === 'closing') { if (activeIssueModeRef.current) { e.preventDefault(); actionRefs.current.handleIssueJump(e.shiftKey ? 'prev' : 'next'); } }
                 };
 
-                window.addEventListener('keydown', handleGlobalEnter);
-                window.addEventListener('keydown', handleGlobalKeys);
+                window.addEventListener('keydown', handleGlobalEnter); window.addEventListener('keydown', handleGlobalKeys);
                 return () => { window.removeEventListener('keydown', handleGlobalEnter); window.removeEventListener('keydown', handleGlobalKeys); };
             }, [linkSourceKey, appStep, isProcessing, files]);
 
-            // [NEW] 필터 초기화(다시보기 취소) 버튼 렌더링용 변수
             const filteredProductData = useMemo(() => {
                 let data = productData;
-                
-                if (filters.reviewType === 'loss') {
-                    data = data.filter(p => p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0));
-                } else if (filters.reviewType === 'missingPrice') {
-                    data = data.filter(p => p.isDummy && p.단가 === 0);
-                } else if (filters.reviewType === 'multiPrice') {
-                    data = data.filter(p => multiPriceCodes.includes(p.코드));
-                }
+                if (filters.reviewType === 'loss') data = data.filter(p => p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0));
+                else if (filters.reviewType === 'missingPrice') data = data.filter(p => p.isDummy && p.단가 === 0);
+                else if (filters.reviewType === 'multiPrice') data = data.filter(p => multiPriceCodes.includes(p.코드));
 
                 if (filters.search) {
                     const q = filters.search.toLowerCase();
                     data = data.filter(d => (d.품명 && d.품명.toLowerCase().includes(q)) || (d.코드 && d.코드.toLowerCase().includes(q)) || (d.거래처 && d.거래처.toLowerCase().includes(q)));
                 }
-
                 if (filters.issuesOnly) data = data.filter(d => d.이슈 && d.이슈.length > 0);
                 if (filters.excludeZeroActual) data = data.filter(d => { const act = d.실사 === '' || d.실사 === null || d.실사 === undefined ? 0 : Number(d.실사); return act !== 0; });
                 return data;
@@ -1889,7 +1294,7 @@
                             <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
                                 <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center">
                                     <span className="text-blue-600 mr-2">oneapp</span> DataOps
-                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">Light V1.43</span>
+                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">V2.7 Stable</span>
                                 </h1>
                             </div>
 
@@ -1908,21 +1313,11 @@
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
                                     {Object.entries({ 
-                                        code: '품목코드 (필수)', 
-                                        name: '품목명 (필수)', 
-                                        spec: '규격 열 (선택)', 
-                                        qty: '수량/실사 (필수)', 
-                                        price: '매입단가 (필수)', 
-                                        date: '일자 (필수)', 
-                                        vendor: '거래처명, 거래처 (선택)', 
-                                        matchVendor: '판매전표 내 구매처 (Lot 매칭)',
-                                        excludeVendor: '제외 거래처(창고이동 등)' 
+                                        code: '품목코드 (필수)', name: '품목명 (필수)', spec: '규격 열 (선택)', qty: '수량/실사 (필수)', price: '매입단가 (필수)', date: '일자 (필수)', vendor: '거래처명, 거래처 (선택)', matchVendor: '판매전표 내 구매처 (Lot 매칭)', excludeVendor: '제외 거래처(창고이동 등)' 
                                     }).map(([key, label]) => (
                                         <div key={key} className="flex flex-col">
                                             <label className={`text-xs font-bold mb-1 ${key === 'excludeVendor' ? 'text-rose-600' : (key === 'matchVendor' ? 'text-blue-600' : 'text-slate-600')}`}>
-                                                {key === 'excludeVendor' && <i className="fas fa-ban mr-1"></i>}
-                                                {key === 'matchVendor' && <i className="fas fa-link mr-1"></i>}
-                                                {label}
+                                                {key === 'excludeVendor' && <i className="fas fa-ban mr-1"></i>} {key === 'matchVendor' && <i className="fas fa-link mr-1"></i>} {label}
                                             </label>
                                             <input type="text" value={mappings[key]} onChange={(e) => setMappings({...mappings, [key]: e.target.value})} className={`border rounded-md px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 shadow-sm ${key === 'excludeVendor' ? 'border-rose-300 focus:ring-rose-400 bg-rose-50 text-rose-800' : (key === 'matchVendor' ? 'border-blue-300 focus:ring-blue-400 bg-blue-50 text-blue-800' : 'border-slate-300 focus:ring-blue-400 bg-white')}`} />
                                         </div>
@@ -1943,16 +1338,9 @@
                                     <i className="fas fa-exclamation-circle text-orange-500 text-2xl mr-3"></i>
                                     <h3 className="font-bold text-slate-800 text-lg">데이터 필터링 알림</h3>
                                 </div>
-                                <p className="text-slate-700 font-medium mb-3 text-sm leading-relaxed">
-                                    파일명 기준의 분석 기간에 포함되지 매입/매출 데이터가 발견되었습니다.
-                                </p>
-                                <ul className="list-disc pl-5 space-y-1.5 mb-5 text-sm text-rose-600 font-bold">
-                                    {confirmModal.warnings.map((w, i) => <li key={i}>{w}</li>)}
-                                </ul>
-                                <p className="text-xs text-slate-600 mb-6 bg-slate-50 p-3 rounded border border-slate-200">
-                                    ※ 시스템은 <strong>업로드하신 파일명 날짜를 우선 기준</strong>으로 데이터를 필터링합니다.<br/> (해당 기간을 벗어나는 데이터는 분석에서 제외됩니다)
-                                </p>
-                                
+                                <p className="text-slate-700 font-medium mb-3 text-sm leading-relaxed">파일명 기준의 분석 기간에 포함되지 않는 매입/매출 데이터가 발견되었습니다.</p>
+                                <ul className="list-disc pl-5 space-y-1.5 mb-5 text-sm text-rose-600 font-bold">{confirmModal.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+                                <p className="text-xs text-slate-600 mb-6 bg-slate-50 p-3 rounded border border-slate-200">※ 시스템은 <strong>업로드하신 파일명 날짜를 우선 기준</strong>으로 데이터를 필터링합니다.<br/> (해당 기간을 벗어나는 데이터는 분석에서 제외됩니다)</p>
                                 <div className="flex justify-end gap-2">
                                     <button onClick={() => { setConfirmModal({isOpen: false, warnings: [], payload: null}); setIsProcessing(false); }} className="px-5 py-2.5 bg-slate-100 text-slate-600 rounded-lg text-sm font-bold hover:bg-slate-200 transition">취소 (재업로드)</button>
                                     <button onClick={() => executeAnalysis(confirmModal.payload)} className="px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition shadow-sm">확인 및 분석 진행</button>
@@ -1975,14 +1363,7 @@
                         <div className="fixed inset-0 z-[250] bg-slate-900 bg-opacity-60 flex items-center justify-center p-4">
                             <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm modal-bounce">
                                 <h3 className="font-bold text-slate-800 mb-4 text-lg"><i className="fas fa-edit text-blue-500 mr-2"></i>조정 사유 메모</h3>
-                                <textarea 
-                                    className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none font-medium"
-                                    rows="3"
-                                    placeholder="오차 발생 원인이나 특이사항을 기재하세요."
-                                    value={memoModal.text}
-                                    onChange={(e) => setMemoModal(prev => ({...prev, text: e.target.value}))}
-                                    autoFocus
-                                ></textarea>
+                                <textarea className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none font-medium" rows="3" placeholder="오차 발생 원인이나 특이사항을 기재하세요." value={memoModal.text} onChange={(e) => setMemoModal(prev => ({...prev, text: e.target.value}))} autoFocus></textarea>
                                 <div className="flex justify-end gap-2 mt-4">
                                     <button onClick={() => setMemoModal({isOpen: false, batchKey: null, text: ''})} className="px-4 py-2 bg-slate-100 text-slate-600 rounded-lg text-sm font-bold hover:bg-slate-200 transition">취소</button>
                                     <button onClick={() => { handleSaveMemo(memoModal.batchKey, memoModal.text); setMemoModal({isOpen: false, batchKey: null, text: ''}); }} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition shadow-sm">저장</button>
@@ -2002,7 +1383,7 @@
                                             <span className="text-base font-bold text-slate-800"><i className="fas fa-file-upload text-blue-500 mr-2"></i>엑셀 파일 업로드(선택/드래그)</span>
                                             <div className="flex gap-2 items-center">
                                                 {(files.prev || files.in || files.out || files.end) && <button onClick={handleResetFiles} className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded text-xs font-bold hover:bg-slate-200 transition">초기화</button>}
-                                                <button onClick={() => runAnalysisRef.current()} disabled={isProcessing || (!files.in && !files.out && !files.prev && !files.end)} className={`px-6 py-2 rounded-lg text-white font-bold text-sm shadow-md transition flex items-center ${isProcessing || (!files.in && !files.out && !files.prev && !files.end) ? 'bg-slate-400 cursor-not-allowed' : 'bg-slate-800 hover:bg-slate-900'}`}>
+                                                <button onClick={() => runAnalysis()} disabled={isProcessing || (!files.in && !files.out && !files.prev && !files.end)} className={`px-6 py-2 rounded-lg text-white font-bold text-sm shadow-md transition flex items-center ${isProcessing || (!files.in && !files.out && !files.prev && !files.end) ? 'bg-slate-400 cursor-not-allowed' : 'bg-slate-800 hover:bg-slate-900'}`}>
                                                     {isProcessing ? '처리중...' : <>분석 실행 (수불부 생성) <span className="ml-2 px-1.5 py-0.5 bg-slate-700 text-slate-200 text-[10px] rounded border border-slate-600 opacity-80">Enter</span></>}
                                                 </button>
                                             </div>
@@ -2056,7 +1437,7 @@
                                                 </div>
                                             </div>
                                             <div className="flex gap-2 shrink-0 ml-4 items-center">
-                                                <button onClick={() => runAnalysisRef.current(files)} className="px-3 py-1.5 bg-white text-slate-700 rounded text-[11px] font-bold hover:bg-slate-100 transition shadow-sm flex items-center border border-slate-300">
+                                                <button onClick={() => runAnalysis(files)} className="px-3 py-1.5 bg-white text-slate-700 rounded text-[11px] font-bold hover:bg-slate-100 transition shadow-sm flex items-center border border-slate-300">
                                                     <i className="fas fa-play mr-1.5"></i>재분석
                                                 </button>
                                                 <button onClick={handleResetFiles} className="px-3 py-1.5 bg-white text-slate-500 rounded text-[11px] font-bold hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition shadow-sm flex items-center border border-slate-200">
@@ -2215,7 +1596,7 @@
                                                 
                                                 <div className="w-px h-6 bg-slate-300 mx-1"></div>
 
-                                                <button onClick={actionRefs.current.handleCombinedExport} className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-md text-[12px] font-bold shadow-md transition flex items-center shrink-0 border border-slate-700" title="수불부 마감 데이터를 엑셀로 추출합니다">
+                                                <button onClick={handleCombinedExport} className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-md text-[12px] font-bold shadow-md transition flex items-center shrink-0 border border-slate-700" title="수불부 마감 데이터를 엑셀로 추출합니다">
                                                     <i className="fas fa-file-excel mr-1.5 text-emerald-400"></i>마감 엑셀 다운로드 (F8)
                                                 </button>
                                             </div>
