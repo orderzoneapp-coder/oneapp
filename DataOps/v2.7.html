@@ -280,10 +280,10 @@
             code: '품목코드, 상품코드, 코드, 품번, 바코드, sku',
             name: '품명, 품목명(규격), 품목명[규격], 상품명, 제품명, 이름, 품목, 상품',
             spec: '규격, 옵션, 사이즈', 
-            qty: '기말실사(이월수량), 기말실사, 기말/실사, 수량, 재고, 기말잔량(실사반영), 기말잔량(실사), 기말잔량, 수량(합계), 입고수량, 출고수량, 판매수량, 잔량, 실사, 합계, 기말, 판매량, 출고량, 입고량',
-            price: '매입단가(원가), 단가, 입고단가, 구매단가, 판매단가, 매입단가, 매입가, 판매가, 공급가액, 공급가, 금액, 원가, 가격, 최종(창고)',
+            qty: '기말실사(이월수량), 기말실사, 기말/실사, 실사, 수량, 입고수량, 출고수량, 판매수량, 입고량, 출고량, 판매량, 재고, 기말잔량(실사반영), 기말잔량(실사), 기말잔량, 기말, 잔량, 합계, 수량(합계)',
+            price: '매입단가(원가), 매입단가, 입고단가, 구매단가, 원가, 매입가, 공급가액, 공급가, 단가, 판매단가, 판매가, 금액, 가격, 최종(창고)',
             date: '결산일자, 매입일자, 일자, 날짜, 구매일자, 판매일자, 입고일자, 출고일자',
-            vendor: '매출처명, 매입처(Lot), 매입처(거래처), 거래처명, 거래처, 거래, 매장명, 매장, 고객, 판매처, 공급사, 판매, 청과, 3거래',
+            vendor: '거래처명, 거래처, 매입처(Lot), 매입처(거래처), 매입처, 공급사, 매출처명, 고객, 판매처, 매장명, 매장, 거래, 판매, 청과, 3거래',
             matchVendor: '구매처, 매입처, 매칭정보, 원매입처, lot', 
             excludeVendor: '3우리, 우리농산, 1전송, 창고이동, 폐기, 샘플' 
         };
@@ -299,8 +299,8 @@
             if (item.로스 < 0 && totalAvailable > 0 && (Math.abs(item.로스) / totalAvailable) > 0.2) displayIssues.push('🚨과다로스(20%↑)');
             const hasIssue = displayIssues.length > 0;
             
-            const addedIn = item.대체입고 + (item.로스 > 0 ? item.로스 : 0);
-            const addedOut = item.대체출고 + (item.로스 < 0 ? Math.abs(item.로스) : 0);
+            const addedIn = item.대체입고;
+            const addedOut = item.대체출고;
             const totalIn = item.입고 + addedIn;
             const totalOut = item.출고 + addedOut;
             const actualQty = item.실사 === null || item.실사 === undefined ? '' : Number(item.실사);
@@ -461,10 +461,10 @@
             useEffect(() => { activeIssueModeRef.current = activeIssueMode; }, [activeIssueMode]);
 
             const [mappings, setMappings] = useState(() => {
-                const saved = localStorage.getItem('inventoryMappingsLight');
+                const saved = localStorage.getItem('inventoryMappingsLight_v2.7.1');
                 return saved ? JSON.parse(saved) : defaultMappings;
             });
-            const saveMappings = () => { localStorage.setItem('inventoryMappingsLight', JSON.stringify(mappings)); setShowSettings(false); };
+            const saveMappings = () => { localStorage.setItem('inventoryMappingsLight_v2.7.1', JSON.stringify(mappings)); setShowSettings(false); };
 
             const priceOptionsMap = useMemo(() => {
                 const map = {};
@@ -515,8 +515,22 @@
                     const stockCandidates = [];
                     fileArray.forEach(file => {
                         const name = file.name.toLowerCase();
-                        if (name.includes('구매') || name.includes('매입') || name.includes('입고')) updated.in = file;
-                        else if (name.includes('판매') || name.includes('매출') || name.includes('출고')) updated.out = file;
+                        let inScore = 0; let outScore = 0;
+                        
+                        // 구체적인 문서명에 높은 가중치 부여
+                        if (name.includes('매입내역') || name.includes('매입장') || name.includes('입고내역') || name.includes('사입')) inScore += 10;
+                        if (name.includes('매출내역') || name.includes('매출장') || name.includes('판매내역') || name.includes('출고내역') || name.includes('주문')) outScore += 10;
+                        
+                        // 일반 키워드 가중치
+                        if (name.includes('매입') || name.includes('구매') || name.includes('입고')) inScore += 3;
+                        if (name.includes('매출') || name.includes('판매') || name.includes('출고')) outScore += 3;
+
+                        // 혼동하기 쉬운 단어(페널티) 방어 로직
+                        if (name.includes('판매처') || name.includes('매출처')) outScore -= 5;
+                        if (name.includes('매입처') || name.includes('공급사')) inScore -= 5;
+
+                        if (inScore > outScore && inScore > 0) updated.in = file;
+                        else if (outScore > inScore && outScore > 0) updated.out = file;
                         else stockCandidates.push(file);
                     });
                     if (stockCandidates.length > 0) {
@@ -524,9 +538,12 @@
                         if (stockCandidates.length === 1) {
                             const name = stockCandidates[0].name.toLowerCase();
                             if (name.includes('기말') || name.includes('실사') || name.includes('마감')) updated.end = stockCandidates[0];
-                            else updated.prev = stockCandidates[0]; 
+                            else if (!updated.prev) updated.prev = stockCandidates[0];
+                            else if (!updated.in) updated.in = stockCandidates[0];
+                            else if (!updated.out) updated.out = stockCandidates[0];
                         } else {
-                            updated.prev = stockCandidates[0]; updated.end = stockCandidates[stockCandidates.length - 1];
+                            if (!updated.prev) { updated.prev = stockCandidates[0]; stockCandidates.shift(); }
+                            if (stockCandidates.length > 0 && !updated.end) { updated.end = stockCandidates[stockCandidates.length - 1]; }
                         }
                     }
                     return updated;
@@ -988,7 +1005,7 @@
                                 });
                             });
                             setTimeout(() => { setAlertMsg("🔄 [스마트 재마감 모드 작동]\n\n업로드된 4번 파일이 '과거 마감 파일'로 인식되었습니다.\n\n어제 수기 조정한 내역과 메모는 그대로 자동 복원되어 [이슈 0] 처리되었으며,\n새롭게 추가/수정되어 전산잔량이 틀어진 항목만 '이슈' 카드로 검출되었습니다."); }, 800);
-                        } else {
+                        } else if (parsedEnd.length > 0) {
                             const actualDict = {}; const actualPriceDict = {};
                             parsedEnd.filter(item => !isClosingItem(item)).forEach(item => {
                                 const code = String(item.코드); actualDict[code] = (actualDict[code] || 0) + item.수량;
