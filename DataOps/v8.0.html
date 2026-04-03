@@ -1108,6 +1108,9 @@
             const [memoModal, setMemoModal] = useState({ isOpen: false, batchKey: null, text: '' });
             const [guideModalOpen, setGuideModalOpen] = useState(false);
             
+            // 🌟 성능 최적화: 검색창 디바운스(Debounce) 처리를 위한 로컬 상태 분리
+            const [searchInputVal, setSearchInputVal] = useState('');
+            
             // Native Sticky Scroll 적용을 위한 반응형 상태
             const [cardHeight, setCardHeight] = useState(0);
             const cardContainerRef = useRef(null);
@@ -1136,12 +1139,24 @@
 
             useEffect(() => { activeIssueModeRef.current = activeIssueMode; }, [activeIssueMode]);
 
-            // ResizeObserver를 통해 Card View의 높이를 실시간으로 추적하여 Table Header의 Sticky Top 위치를 동기화
+            // 🌟 성능 최적화: 검색 입력 시 타이핑 딜레이 방지 (0.25초 뒤 필터링 적용)
+            useEffect(() => {
+                const timer = setTimeout(() => {
+                    setFilters(f => {
+                        if (f.search === searchInputVal) return f;
+                        return { ...f, search: searchInputVal, issuesOnly: searchInputVal ? false : f.issuesOnly, excludeZeroActual: searchInputVal ? false : f.excludeZeroActual };
+                    });
+                }, 250);
+                return () => clearTimeout(timer);
+            }, [searchInputVal]);
+
+            // 🌟 성능 최적화: ResizeObserver 불필요한 재렌더링 방지 및 의존성 최소화
             useEffect(() => {
                 if (appStep !== 'closing') return;
                 const updateHeight = () => {
                     if (cardContainerRef.current) {
-                        setCardHeight(cardContainerRef.current.offsetHeight);
+                        const newHeight = cardContainerRef.current.offsetHeight;
+                        setCardHeight(prev => prev !== newHeight ? newHeight : prev);
                     }
                 };
                 updateHeight();
@@ -1151,7 +1166,7 @@
                     if (cardContainerRef.current) observer.observe(cardContainerRef.current);
                     return () => observer.disconnect();
                 }
-            }, [appStep, activeIssueMode, filters.reviewType, closingStats]);
+            }, [appStep]); // closingStats 등 불필요한 잦은 의존성 제거
 
             const saveMappings = () => { localStorage.setItem('inventoryMappingsLight', JSON.stringify(mappings)); localStorage.setItem('inventoryGroupingV79', JSON.stringify(grouping)); setShowSettings(false); };
 
@@ -1377,6 +1392,12 @@
                 } catch (err) { console.error('엑셀 생성 중 오류:', err); setAlertMsg("엑셀 파일 생성 중 오류가 발생했습니다."); }
             }, [productData, analysisPeriod, targetDateStr, closingStats]);
 
+            // 🌟 성능 최적화: 전역 이벤트 리스너의 잦은 재생성을 막기 위한 콜백 참조 저장
+            const latestHandlers = useRef({ handleIssueJump, runAnalysis, handleCombinedExport });
+            useEffect(() => {
+                latestHandlers.current = { handleIssueJump, runAnalysis, handleCombinedExport };
+            });
+
             useEffect(() => {
                 const handleGlobalEnter = (e) => {
                     if (e.key === 'Enter') {
@@ -1385,7 +1406,7 @@
                         if (document.querySelector('.modal-bounce')) return;
                         const activeEl = document.activeElement; const tag = activeEl ? activeEl.tagName.toLowerCase() : ''; const type = activeEl ? activeEl.type : '';
                         const isTyping = tag === 'textarea' || (tag === 'input' && (type === 'text' || type === 'number' || type === 'search'));
-                        if (!isTyping && tag !== 'button') { if (!isProcessing && (files.in || files.out || files.prev || files.end)) { e.preventDefault(); runAnalysis(files); } }
+                        if (!isTyping && tag !== 'button') { if (!isProcessing && (files.in || files.out || files.prev || files.end)) { e.preventDefault(); latestHandlers.current.runAnalysis(files); } }
                     }
                 };
                 const handleGlobalKeys = (e) => {
@@ -1393,17 +1414,17 @@
                     if (e.key === 'F3') { e.preventDefault(); const searchInput = document.getElementById('searchInput'); if (searchInput) { searchInput.focus(); searchInput.select(); } }
                     if (e.key === 'F7') { e.preventDefault(); setGuideModalOpen(true); }
                     if (e.key === 'F8') { e.preventDefault(); setFilters(f => ({...f, excludeZeroActual: !f.excludeZeroActual})); }
-                    if (e.key === 'F9') { e.preventDefault(); handleCombinedExport(); }
+                    if (e.key === 'F9') { e.preventDefault(); latestHandlers.current.handleCombinedExport(); }
                     if (e.key === 'Escape') {
                         if (guideModalOpen) setGuideModalOpen(false);
                         if (linkSourceKey) { setLinkSourceKey(null); if (focusedInputRef.current.key) setTimeout(() => { const input = document.getElementById(`actual-input-${focusedInputRef.current.idx}`); if (input) { input.focus(); input.select(); } }, 50); }
                         if (activeIssueModeRef.current) setActiveIssueMode(null);
                     }
-                    if (e.key === 'Tab' && appStep === 'closing') { if (activeIssueModeRef.current) { e.preventDefault(); handleIssueJump(activeIssueModeRef.current, e.shiftKey ? 'prev' : 'next'); } }
+                    if (e.key === 'Tab' && appStep === 'closing') { if (activeIssueModeRef.current) { e.preventDefault(); latestHandlers.current.handleIssueJump(activeIssueModeRef.current, e.shiftKey ? 'prev' : 'next'); } }
                 };
                 window.addEventListener('keydown', handleGlobalEnter); window.addEventListener('keydown', handleGlobalKeys);
                 return () => { window.removeEventListener('keydown', handleGlobalEnter); window.removeEventListener('keydown', handleGlobalKeys); };
-            }, [linkSourceKey, appStep, isProcessing, files, runAnalysis, handleCombinedExport, handleIssueJump, guideModalOpen]);
+            }, [linkSourceKey, appStep, isProcessing, files, guideModalOpen]);
 
             const filteredProductData = useMemo(() => {
                 let data = productData;
@@ -1825,8 +1846,8 @@
                                                                         id="searchInput"
                                                                         type="text" 
                                                                         placeholder="품명(규격) / 일자 / 거래처 | 단가 검색 (F3)" 
-                                                                        value={filters.search} 
-                                                                        onChange={e => setFilters(f => ({ ...f, search: e.target.value, issuesOnly: e.target.value ? false : f.issuesOnly, excludeZeroActual: e.target.value ? false : f.excludeZeroActual }))} 
+                                                                        value={searchInputVal} 
+                                                                        onChange={e => setSearchInputVal(e.target.value)} 
                                                                         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.select(); } }}
                                                                         className="w-full py-1.5 pl-3 pr-8 bg-white border border-slate-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-700 font-bold outline-none placeholder-slate-400 transition-colors rounded-md shadow-sm" 
                                                                     />
