@@ -298,7 +298,8 @@
             date: '결산일자, 매입일자, 일자, 날짜, 구매일자, 판매일자, 입고일자, 출고일자',
             vendor: '매출처명, 매입처(Lot), 매입처(거래처), 거래처명, 거래처, 거래, 매장명, 매장, 고객, 판매처, 공급사, 판매, 청과, 3거래',
             matchVendor: '구매처, 매입처, 매칭정보, 원매입처, lot', 
-            excludeVendor: '3우리, 우리농산, 1전송, 창고이동, 폐기, 샘플' 
+            excludeVendor: '3우리, 우리농산, 1전송, 창고이동, 폐기, 샘플',
+            lifoVendor: '쿠팡, B2B, 당일우선'
         };
 
         // --- UI 컴포넌트 ---
@@ -547,7 +548,7 @@
 
             const [mappings, setMappings] = useState(() => {
                 const saved = localStorage.getItem('inventoryMappingsLight');
-                return saved ? JSON.parse(saved) : defaultMappings;
+                return saved ? { ...defaultMappings, ...JSON.parse(saved) } : defaultMappings;
             });
             const saveMappings = () => { localStorage.setItem('inventoryMappingsLight', JSON.stringify(mappings)); setShowSettings(false); };
 
@@ -1247,6 +1248,20 @@
 
                     Object.values(stockPool).forEach(pool => pool.buckets.sort((a, b) => String(a.일자 || '').localeCompare(String(b.일자 || ''))));
 
+                    // [v7.7 업데이트] 1. 출고량 미리 계산 및 대량 주문 우선 배정(내림차순 정렬)
+                    outItems.forEach(sale => {
+                        let qty = parseNumber(sale.수량);
+                        if (sale._raw && sale._raw['출고량'] !== undefined) qty = parseNumber(sale._raw['출고량']);
+                        sale._computedQty = qty;
+                    });
+
+                    outItems.sort((a, b) => {
+                        const codeA = String(a.코드 || 'NO_CODE');
+                        const codeB = String(b.코드 || 'NO_CODE');
+                        if (codeA !== codeB) return codeA.localeCompare(codeB); // 품목 그룹별 묶기
+                        return (b._computedQty || 0) - (a._computedQty || 0);   // 수량 큰 업체부터 우선 배정 (새치기)
+                    });
+
                     outItems.forEach(sale => { 
                         // 💡 [절대 마스터 법칙] 4번 파일이 존재하면, 3번(매출) 데이터는 아예 무시합니다. (4번에 이미 출고내역이 완벽 복원됨)
                         // 단, 바코드가 없는(NO_CODE) 상품은 4번과 매칭이 안 되므로 매출 전표를 반영합니다.
@@ -1256,8 +1271,7 @@
 
                         if (isExcluded(sale.거래처)) return;
                         
-                        let qtyToDeduct = parseNumber(sale.수량);
-                        if (sale._raw && sale._raw['출고량'] !== undefined) qtyToDeduct = parseNumber(sale._raw['출고량']);
+                        let qtyToDeduct = sale._computedQty;
 
                         const pool = stockPool[code];
                         let revenue = 0; if (sale.단가 !== 0 && qtyToDeduct !== 0) revenue = qtyToDeduct * sale.단가;
@@ -1301,46 +1315,70 @@
                             pData[bucket.batchKey].출고내역[sale.거래처].qty += take; pData[bucket.batchKey].출고내역[sale.거래처].rev += revShare; pData[bucket.batchKey].출고내역[sale.거래처].cogs += cogs;
                         };
 
-                        if (remainingQty < 0) deductFromBucket(pool.buckets[pool.buckets.length - 1], remainingQty);
-                        else {
+                        if (remainingQty < 0) {
+                            // 반품 등 마이너스 출고인 경우 (가장 최근 버킷에 반영)
+                            deductFromBucket(pool.buckets[pool.buckets.length - 1], remainingQty);
+                        } else {
                             let matchedBuckets = [];
+                            let matchFailedFlag = false;
+
+                            // [v7.7 업데이트] 2. 매입처(Lot) 완벽 절대 매칭
                             if (sale.매입처매칭 && sale.매입처매칭 !== '미지정') {
                                 const matchStr = sale.매입처매칭.replace(/\s/g, '').toLowerCase();
                                 pool.buckets.forEach(bucket => {
                                     const bVendorStr = String(bucket.거래처 || '').replace(/\s/g, '').toLowerCase();
-                                    if (bVendorStr && matchStr && (bVendorStr.includes(matchStr) || matchStr.includes(bVendorStr))) matchedBuckets.push(bucket);
+                                    if (bVendorStr && matchStr && (bVendorStr.includes(matchStr) || matchStr.includes(bVendorStr))) {
+                                        matchedBuckets.push(bucket);
+                                    }
                                 });
-                            }
-                            if (matchedBuckets.length > 0) {
-                                for (let i = 0; i < matchedBuckets.length && remainingQty > 0; i++) {
-                                    const bucket = matchedBuckets[i]; if (bucket.수량 <= 0) continue;
-                                    const take = Math.min(bucket.수량, remainingQty); deductFromBucket(bucket, take); remainingQty -= take;
+                                // 절대 매칭 실패 시에만 전체 풀 사용 및 에러 기록
+                                if (matchedBuckets.length === 0) {
+                                    matchFailedFlag = true;
+                                    matchedBuckets = [...pool.buckets];
                                 }
-                                if (remainingQty > 0) { deductFromBucket(matchedBuckets[matchedBuckets.length - 1], remainingQty); remainingQty = 0; }
                             } else {
-                                // [v7.1 업데이트] 매치 실패 시, 선입선출로 강제 소진하되 이슈를 기록
-                                const matchFailedFlag = (sale.매입처매칭 && sale.매입처매칭 !== '미지정');
+                                matchedBuckets = [...pool.buckets];
+                            }
 
-                                for (let i = 0; i < pool.buckets.length && remainingQty > 0; i++) {
-                                    const bucket = pool.buckets[i]; if (bucket.수량 <= 0) continue;
-                                    const take = Math.min(bucket.수량, remainingQty); deductFromBucket(bucket, take); remainingQty -= take;
-                                    
-                                    if (matchFailedFlag && take > 0) {
+                            // [v7.7 업데이트] 3. LIFO / FIFO 자동 스위칭
+                            const lifoKeywords = (mappings.lifoVendor || '').split(',').map(s => s.trim().toLowerCase()).filter(s => s);
+                            const isLifo = sale.거래처 && lifoKeywords.some(kw => sale.거래처.toLowerCase().includes(kw));
+
+                            // 기본 버킷은 과거순(FIFO)이므로, 당일우선 업체의 경우 역순(LIFO)으로 변경
+                            if (isLifo) {
+                                matchedBuckets.reverse();
+                            }
+
+                            // [v7.7 업데이트] 4. 마이너스 차감 허용 및 알림
+                            for (let i = 0; i < matchedBuckets.length && remainingQty > 0; i++) {
+                                const bucket = matchedBuckets[i];
+                                const isLastBucket = (i === matchedBuckets.length - 1);
+                                
+                                let take = 0;
+                                if (isLastBucket) {
+                                    take = remainingQty; // 모자라도 임의 교차 금지, 마지막 매칭 로트에 전부 차감(마이너스 발생)
+                                } else {
+                                    take = Math.min(bucket.수량 > 0 ? bucket.수량 : 0, remainingQty);
+                                }
+
+                                if (take > 0) {
+                                    deductFromBucket(bucket, take);
+                                    remainingQty -= take;
+
+                                    if (matchFailedFlag) {
                                         const errorMsg = `🚨Lot매치실패(${sale.매입처매칭})`;
                                         if (!pData[bucket.batchKey].이슈.includes(errorMsg)) {
                                             pData[bucket.batchKey].이슈.push(errorMsg);
                                             pData[bucket.batchKey].수기확인완료 = false;
                                         }
                                     }
-                                }
-                                if (remainingQty > 0) { 
-                                    const lastBucket = pool.buckets[pool.buckets.length - 1];
-                                    deductFromBucket(lastBucket, remainingQty);
-                                    if (matchFailedFlag) {
-                                        const errorMsg = `🚨Lot매치실패(${sale.매입처매칭})`;
-                                        if (!pData[lastBucket.batchKey].이슈.includes(errorMsg)) {
-                                            pData[lastBucket.batchKey].이슈.push(errorMsg);
-                                            pData[lastBucket.batchKey].수기확인완료 = false;
+
+                                    // 마이너스 재고가 발생한 경우 강력 알림 부여
+                                    if (bucket.수량 < 0) {
+                                        const errorMsg = `🚨수량부족`;
+                                        if (!pData[bucket.batchKey].이슈.includes(errorMsg)) {
+                                            pData[bucket.batchKey].이슈.push(errorMsg);
+                                            pData[bucket.batchKey].수기확인완료 = false;
                                         }
                                     }
                                 }
@@ -1764,15 +1802,15 @@
                                 <div className="flex justify-between items-center mb-5">
                                     <div><h3 className="text-lg font-bold text-slate-800"><i className="fas fa-sitemap text-blue-500 mr-2"></i>엑셀 열(Header) 인식 규칙 설정</h3></div>
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
                                     {Object.entries({ 
-                                        code: '품목코드 (필수)', name: '품목명 (필수)', spec: '규격 열 (선택)', qty: '수량/실사 (필수)', price: '매입단가 (필수)', date: '일자 (필수)', vendor: '거래처명, 거래처 (선택)', matchVendor: '판매전표 내 구매처 (Lot 매칭)', excludeVendor: '제외 거래처(창고이동 등)' 
+                                        code: '품목코드 (필수)', name: '품목명 (필수)', spec: '규격 열 (선택)', qty: '수량/실사 (필수)', price: '매입단가 (필수)', date: '일자 (필수)', vendor: '거래처명, 거래처 (선택)', matchVendor: '판매전표 내 구매처 (Lot 매칭)', excludeVendor: '제외 거래처(창고이동 등)', lifoVendor: '당일우선 출고 (LIFO 적용)'
                                     }).map(([key, label]) => (
                                         <div key={key} className="flex flex-col">
-                                            <label className={`text-xs font-bold mb-1 ${key === 'excludeVendor' ? 'text-rose-600' : (key === 'matchVendor' ? 'text-blue-600' : 'text-slate-600')}`}>
-                                                {key === 'excludeVendor' && <i className="fas fa-ban mr-1"></i>} {key === 'matchVendor' && <i className="fas fa-link mr-1"></i>} {label}
+                                            <label className={`text-xs font-bold mb-1 ${key === 'excludeVendor' ? 'text-rose-600' : (key === 'matchVendor' ? 'text-blue-600' : (key === 'lifoVendor' ? 'text-purple-600' : 'text-slate-600'))}`}>
+                                                {key === 'excludeVendor' && <i className="fas fa-ban mr-1"></i>} {key === 'matchVendor' && <i className="fas fa-link mr-1"></i>} {key === 'lifoVendor' && <i className="fas fa-bolt mr-1"></i>} {label}
                                             </label>
-                                            <input type="text" value={mappings[key]} onChange={(e) => setMappings({...mappings, [key]: e.target.value})} className={`border rounded-md px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 shadow-sm ${key === 'excludeVendor' ? 'border-rose-300 focus:ring-rose-400 bg-rose-50 text-rose-800' : (key === 'matchVendor' ? 'border-blue-300 focus:ring-blue-400 bg-blue-50 text-blue-800' : 'border-slate-300 focus:ring-blue-400 bg-white')}`} />
+                                            <input type="text" value={mappings[key] || ''} onChange={(e) => setMappings({...mappings, [key]: e.target.value})} className={`border rounded-md px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 shadow-sm ${key === 'excludeVendor' ? 'border-rose-300 focus:ring-rose-400 bg-rose-50 text-rose-800' : (key === 'matchVendor' ? 'border-blue-300 focus:ring-blue-400 bg-blue-50 text-blue-800' : (key === 'lifoVendor' ? 'border-purple-300 focus:ring-purple-400 bg-purple-50 text-purple-800' : 'border-slate-300 focus:ring-blue-400 bg-white'))}`} />
                                         </div>
                                     ))}
                                 </div>
