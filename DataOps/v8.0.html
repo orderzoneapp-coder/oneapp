@@ -310,15 +310,33 @@
                     sourceItem.전산잔량 = sourceItem.기초 + sourceItem.입고 + sourceItem.대체입고 - sourceItem.출고 - sourceItem.대체출고;
                     sourceItem.실사 = sourceItem.실사 === null || sourceItem.실사 === '' ? sourceItem.전산잔량 : sourceItem.실사;
                     sourceItem.로스 = sourceItem.실사 - sourceItem.전산잔량;
-                    sourceItem.이슈.push(`🔄 -> ${targetItem.품명}`); sourceItem.수기확인완료 = true;
+                    
+                    // 🌟 대체 차감 후 로스가 0이 되면 수량 관련 경고 칩 완전 삭제
+                    if (sourceItem.로스 === 0) {
+                        sourceItem.이슈 = sourceItem.이슈.filter(msg => !msg.includes('수량변동') && !msg.includes('실사 수기조정') && !msg.includes('과다로스') && !msg.includes('수량부족'));
+                    }
+                    sourceItem.이슈.push(`🔄 (${sQty})`); 
+                    sourceItem.수기확인완료 = true;
 
                     targetItem.대체입고 += tQty;
                     targetItem.전산잔량 = targetItem.기초 + targetItem.입고 + targetItem.대체입고 - targetItem.출고 - targetItem.대체출고;
                     targetItem.실사 = targetItem.실사 === null || targetItem.실사 === '' ? targetItem.전산잔량 : targetItem.실사;
                     targetItem.로스 = targetItem.실사 - targetItem.전산잔량;
                     targetItem.단가 = unitCost; targetItem.매출원가 = targetItem.출고 * unitCost; 
+                    
+                    // 🌟 소분 대상도 로스가 0이 되면 관련 에러 칩 일괄 삭제
+                    if (targetItem.로스 === 0) {
+                        targetItem.이슈 = targetItem.이슈.filter(msg => !msg.includes('수량변동') && !msg.includes('실사 수기조정') && !msg.includes('과다로스') && !msg.includes('수량부족'));
+                    }
                     targetItem.이슈 = targetItem.이슈.filter(msg => !msg.includes('매입내역 없음') && !msg.includes('전산 재고 부족'));
-                    targetItem.이슈.push(`🔄 <- ${sourceItem.품명}`); targetItem.수기확인완료 = true;
+                    
+                    // 🌟 대체 품목(원물) 정보를 거래처 칩과 혼동되지 않도록 우측 '메모' 영역으로 자동 삽입
+                    const autoMemo = `[${sourceItem.품명}]`;
+                    if (!(targetItem.메모 || '').includes(autoMemo)) {
+                        targetItem.메모 = targetItem.메모 ? targetItem.메모 + ' ' + autoMemo : autoMemo;
+                    }
+                    
+                    targetItem.수기확인완료 = true;
 
                     setSubstHistory(h => [...h, {
                         id: Date.now(), sourceKey: sourceItem.batchKey, targetKey: targetItem.batchKey, sourceName: sourceItem.품명, targetName: targetItem.품명, 
@@ -826,8 +844,9 @@
                 shortMsg = "✅수기조정"; tooltip = `사용자가 기초/입고/출고/단가를 직접 수정함: ${msg}`;
                 colorClass = "bg-slate-50 text-slate-500 border-slate-200 shadow-sm";
             } else if (msg.includes('🔄')) {
-                shortMsg = msg; tooltip = `스페이스바 재고조정 완료: ${msg}`;
-                colorClass = "bg-slate-100 text-slate-600 border-slate-200 font-medium";
+                shortMsg = msg; tooltip = `스페이스바 대체 내역`;
+                // 긴 품명이 들어올 수 있으므로 max-w 와 truncate 클래스 적용
+                colorClass = "bg-slate-100 text-slate-600 border-slate-200 font-medium max-w-[200px] truncate inline-block align-bottom";
             }
 
             return (
