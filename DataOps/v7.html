@@ -324,17 +324,20 @@
             const focusAndEnsureVisible = (id) => {
                 const el = document.getElementById(id);
                 if (el) {
-                    el.focus();
+                    // 브라우저 기본 스크롤 동작 차단 (중앙 정렬 스크롤과 충돌 방지)
+                    el.focus({ preventScroll: true });
                     el.select();
                     const container = document.getElementById('main-scroll-container');
                     if (container) {
                         const cRect = container.getBoundingClientRect();
                         const eRect = el.getBoundingClientRect();
-                        // 헤더(약 120px)와 하단 여유(60px)를 벗어날 경우 부드럽게 중앙으로 스크롤
-                        if (eRect.top < cRect.top + 120 || eRect.bottom > cRect.bottom - 60) {
+                        // 헤더 높이 여유를 조금 더 줌 (150px)
+                        if (eRect.top < cRect.top + 150 || eRect.bottom > cRect.bottom - 60) {
                             const targetScrollTop = container.scrollTop + (eRect.top - cRect.top) - (cRect.height / 2) + (eRect.height / 2);
                             container.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
                         }
+                    } else {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     }
                 }
             };
@@ -790,6 +793,14 @@
                     setTimeout(() => {
                         const row = document.querySelector(`tr[data-batch="${targetItem.batchKey}"]`);
                         if (row) {
+                            // 1. 먼저 포커스를 맞추되 브라우저 기본 스크롤 동작은 막음
+                            const input = document.getElementById(type === 'missingPrice' ? `price-input-${targetItem.index}` : `actual-input-${targetItem.index}`);
+                            if (input) { 
+                                input.focus({ preventScroll: true }); 
+                                input.select(); 
+                            }
+
+                            // 2. 강제로 화면 중앙으로 부드럽게 스크롤
                             const container = document.getElementById('main-scroll-container');
                             if (container) {
                                 const cRect = container.getBoundingClientRect();
@@ -803,8 +814,6 @@
                             const colorClass = type === 'missingPrice' ? 'bg-rose-50' : (type === 'multiPrice' ? 'bg-blue-50' : 'bg-orange-50');
                             row.classList.add(colorClass);
                             setTimeout(() => row.classList.remove(colorClass), 1500);
-                            const input = document.getElementById(type === 'missingPrice' ? `price-input-${targetItem.index}` : `actual-input-${targetItem.index}`);
-                            if (input) { input.focus(); input.select(); }
                         }
                     }, 150);
                 }
