@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>oneapp DataOps - 핵심 수불부 관리 (v7.15 Refactored)</title>
+    <title>oneapp DataOps - 핵심 수불부 관리 (v7.16 Engine)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -107,7 +107,7 @@
             if (!str) return { issues: [], vendors: {} };
             const parts = str.match(/[^,]+(?:\([^)]+\))*/g) || [];
             const issues = []; const vendors = {};
-            const knownIssues = ['과다로스', '원가수정', '수기조정', '매입내역 없음', '전산 재고 부족', '재고 부족', '변동됨', '변경됨', '삭제됨', '신규추가', '수량변동', '단가변경', '매치변경', '원가추출됨', '원가추출', '단가없음', 'Lot불일치', '매입처없음', '수량부족', '🔄', '🚨', '✅'];
+            const knownIssues = ['과다로스', '원가수정', '수기조정', '매입내역 없음', '전산 재고 부족', '재고 부족', '변동됨', '변경됨', '삭제됨', '신규추가', '수량변동', '단가변경', '매치변경', '원가추출됨', '원가추출', '단가없음', 'Lot불일치', 'Lot매치실패', '매입처없음', '수량부족', '🔄', '🚨', '✅'];
 
             parts.forEach(p => {
                 const part = p.trim(); if (!part) return;
@@ -620,13 +620,21 @@
                             return (a.단가 || 0) - (b.단가 || 0);
                         });
                     
-                    setProductData(finalProductData); setAckMultiCodes(autoAckCodes); setAppStep('closing');
+                    setProductData(finalProductData);
+                    setAckMultiCodes(autoAckCodes);
+                    setAppStep('closing');
                     
-                    if (hasClosingEnd) setTimeout(() => { setAlertMsg("🔄 [스마트 복원 완료]\n\n업로드된 4번 수불마감 파일의 내용이 절대 기준이 되어 완벽하게 복원되었습니다.\n\n이전에 수기로 조정한 내역은 100% 유지되며, 1~3번 원시 데이터는 4번 파일에 없는 '새로운 품목'을 찾을 때만 사용되었습니다."); }, 800);
-                    else if (parsedEnd.length > 0) setTimeout(() => { setAlertMsg("🔄 [실사 교차 검증 모드]\n\n실사 엑셀(단순수량)과 원시 데이터가 함께 업로드되었습니다.\n\n전산 수량(기초+입고-출고)과 실사 수량을 비교하여 변동된 항목만 이슈 카드로 안내합니다."); }, 800);
+                    if (hasClosingEnd) {
+                        setTimeout(() => { setAlertMsg("🔄 [스마트 복원 완료]\n\n업로드된 4번 수불마감 파일의 내용이 절대 기준이 되어 완벽하게 복원되었습니다.\n\n이전에 수기로 조정한 내역은 100% 유지되며, 1~3번 원시 데이터는 4번 파일에 없는 '새로운 품목'을 찾을 때만 사용되었습니다."); }, 800);
+                    } else if (parsedEnd.length > 0) {
+                        setTimeout(() => { setAlertMsg("🔄 [실사 교차 검증 모드]\n\n실사 엑셀(단순수량)과 원시 데이터가 함께 업로드되었습니다.\n\n전산 수량(기초+입고-출고)과 실사 수량을 비교하여 변동된 항목만 이슈 카드로 안내합니다."); }, 800);
+                    }
 
-                } catch(err) { setAlertMsg('데이터 분석 중 오류가 발생했습니다. 엑셀 파일 형식이나 매핑 규칙을 확인해주세요.'); console.error(err); } finally { setIsProcessing(false); }
-            }, [grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep]);
+                } catch(err) {
+                    setAlertMsg('데이터 분석 중 오류가 발생했습니다. 엑셀 파일 형식이나 매핑 규칙을 확인해주세요.');
+                    console.error(err);
+                } finally { setIsProcessing(false); }
+            }, [grouping, mappings, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep]); 
 
             const runAnalysis = useCallback(async (filesObj) => {
                 setIsProcessing(true); setConfirmModal({ isOpen: false, warnings: [], payload: null });
@@ -750,19 +758,13 @@
            4. UI 컴포넌트 (View Layer)
            ======================================================================= */
         
-        // [V7.15 신규] 이슈 칩 간소화 및 툴팁 제공 컴포넌트
-        const IssueChip = React.memo(({ msg, internalLotKeywords }) => {
+        // [V7.16 업데이트] 불필요한 isInternalMsg 내부 조건 로직(Dead Code) 제거 완료
+        const IssueChip = React.memo(({ msg }) => {
             let shortMsg = msg;
             let tooltip = msg;
             let colorClass = "bg-slate-100 text-slate-700 border-slate-200";
 
-            const lowerMsg = msg.toLowerCase();
-            const isInternalMsg = msg.startsWith('✅') && !msg.includes('원가추출') && internalLotKeywords.some(kw => lowerMsg.replace('✅', '').includes(kw));
-
-            if (isInternalMsg) {
-                shortMsg = "✅Lot"; tooltip = `내부분배/공용 로트 처리됨 (${msg.replace('✅', '')})`;
-                colorClass = "bg-teal-50 text-teal-700 border-teal-200 font-bold shadow-sm";
-            } else if (msg.includes('Lot불일치') || msg.includes('Lot매치실패') || msg.includes('매입처없음') || msg.includes('매치변경')) {
+            if (msg.includes('Lot불일치') || msg.includes('Lot매치실패') || msg.includes('매입처없음') || msg.includes('매치변경')) {
                 shortMsg = msg.includes('✅') ? "✅Lot" : "🚨Lot"; tooltip = `매입처 불일치: ${msg}`;
                 colorClass = shortMsg.includes('🚨') ? "bg-rose-100 text-rose-700 border-rose-200 font-bold shadow-sm" : "bg-blue-100 text-blue-700 border-blue-200 font-bold shadow-sm";
             } else if (msg.includes('단가없음') || msg.includes('단가변경')) {
@@ -804,7 +806,6 @@
             );
         });
 
-        // [V7.15 신규] 가이드북 모달
         const GuideModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
             return (
@@ -819,9 +820,9 @@
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto pr-2">
                             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                                <div className="flex items-center gap-2 mb-2"><span className="px-2 py-0.5 rounded border font-bold text-[10px] bg-rose-100 text-rose-700 border-rose-200">🚨Lot</span><span className="px-2 py-0.5 rounded border font-bold text-[10px] bg-teal-50 text-teal-700 border-teal-200">✅Lot</span></div>
+                                <div className="flex items-center gap-2 mb-2"><span className="px-2 py-0.5 rounded border font-bold text-[10px] bg-rose-100 text-rose-700 border-rose-200">🚨Lot</span><span className="px-2 py-0.5 rounded border font-bold text-[10px] bg-blue-100 text-blue-700 border-blue-200">✅Lot</span></div>
                                 <p className="text-sm font-bold text-slate-800 mb-1">매입처(Lot) 불일치</p>
-                                <p className="text-xs text-slate-600 leading-relaxed">매출 전표의 '구매처'와 매입 내역의 '거래처'가 다를 때 발생합니다. <br/>👉 <span className="font-semibold text-blue-600">조치:</span> 매핑 설정을 수정하거나, 로스가 발생한 원물/소분품을 스페이스바로 상계하세요. (내부 공용 로트는 ✅Lot으로 자동 표시됩니다)</p>
+                                <p className="text-xs text-slate-600 leading-relaxed">매출 전표의 '구매처'와 매입 내역의 '거래처'가 다를 때 발생합니다. <br/>👉 <span className="font-semibold text-blue-600">조치:</span> 매핑 설정을 수정하거나, 로스가 발생한 원물/소분품을 스페이스바로 상계하세요. (내부 공용 로트는 우측 메모에 ℹ️ 로 자동 표시됩니다)</p>
                             </div>
                             
                             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
@@ -871,7 +872,22 @@
             
             const totalAvailable = item.기초 + item.입고 + item.대체입고;
             if (item.로스 < 0 && totalAvailable > 0 && (Math.abs(item.로스) / totalAvailable) > 0.2) displayIssues.push('🚨과다로스(20%↑)');
-            const hasIssue = displayIssues.length > 0;
+            
+            const internalLotKeywords = useMemo(() => (internalLotMapping || '').split(',').map(s => s.trim().toLowerCase()).filter(s => s), [internalLotMapping]);
+            
+            const regularIssues = [];
+            const internalMemos = [];
+
+            displayIssues.forEach(msg => {
+                const isInternalMsg = msg.startsWith('✅') && !msg.includes('원가추출') && internalLotKeywords.some(kw => msg.toLowerCase().replace('✅', '').includes(kw));
+                if (isInternalMsg) {
+                    internalMemos.push(msg);
+                } else {
+                    regularIssues.push(msg);
+                }
+            });
+
+            const hasIssue = regularIssues.length > 0;
             
             const addedIn = item.대체입고 + (item.로스 > 0 ? item.로스 : 0);
             const addedOut = item.대체출고 + (item.로스 < 0 ? Math.abs(item.로스) : 0);
@@ -880,8 +896,6 @@
             const actualQty = item.실사 === null || item.실사 === undefined ? '' : Number(item.실사);
             const isNegativeActual = typeof actualQty === 'number' && actualQty < 0;
             const isToday = item.일자 && targetDateStr && item.일자 === targetDateStr;
-
-            const internalLotKeywords = useMemo(() => (internalLotMapping || '').split(',').map(s => s.trim().toLowerCase()).filter(s => s), [internalLotMapping]);
 
             const focusAndEnsureVisible = (id) => {
                 const el = document.getElementById(id);
@@ -958,8 +972,8 @@
                         <div className="flex justify-between items-start w-full">
                             <div className="flex flex-col gap-1.5 w-full flex-1 pr-2">
                                 <div className="flex items-center gap-1 flex-wrap text-left">
-                                    {hasIssue && displayIssues.map((msg, i) => (
-                                        <IssueChip key={i} msg={msg} internalLotKeywords={internalLotKeywords} />
+                                    {hasIssue && regularIssues.map((msg, i) => (
+                                        <IssueChip key={i} msg={msg} />
                                     ))}
                                 </div>
                                 {item.출고내역 && Object.keys(item.출고내역).length > 0 && (
@@ -974,9 +988,14 @@
                                     </div>
                                 )}
                             </div>
-                            <div className="flex flex-col items-end gap-1.5 text-right shrink-0 ml-2">
-                                <button onClick={() => onOpenMemo(item.batchKey, item.메모 || '')} className={`transition-colors ${item.메모 ? 'text-blue-500 hover:text-blue-700' : 'text-slate-300 hover:text-slate-400'}`}><i className="fas fa-edit text-base"></i></button>
-                                {item.메모 && <span className="px-2 py-1 bg-yellow-50 text-yellow-800 border border-yellow-200 rounded font-semibold text-[10px] whitespace-nowrap max-w-[100px] truncate" title={item.메모}>{item.메모}</span>}
+                            <div className="flex flex-col items-end gap-1 text-right shrink-0 ml-2">
+                                <button onClick={() => onOpenMemo(item.batchKey, item.메모 || '')} className={`transition-colors ${item.메모 ? 'text-blue-500 hover:text-blue-700 mb-0.5' : 'text-slate-300 hover:text-slate-400'}`} title="메모 추가/수정"><i className="fas fa-edit text-base"></i></button>
+                                {item.메모 && <span className="px-2 py-1 bg-yellow-50 text-yellow-800 border border-yellow-200 rounded font-semibold text-[10px] whitespace-nowrap max-w-[100px] truncate mb-0.5" title={item.메모}>{item.메모}</span>}
+                                {internalMemos.length > 0 && internalMemos.map((msg, i) => (
+                                    <span key={`int-${i}`} className="px-2 py-0.5 bg-slate-50 text-slate-500 border border-slate-200 border-dashed rounded font-medium text-[10px] whitespace-nowrap shadow-sm mt-0.5" title="내부 분배 기록">
+                                        <i className="fas fa-info-circle text-[9px] mr-1 text-slate-400"></i>{msg.replace('✅', '')}
+                                    </span>
+                                ))}
                             </div>
                         </div>
                     </td>
@@ -1279,14 +1298,13 @@
                             <div className="flex flex-col md:flex-row md:items-center gap-4">
                                 <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center">
                                     <span className="text-blue-600 mr-2">oneapp</span> DataOps
-                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">v7.15 Refactored</span>
+                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">v7.16 Engine</span>
                                 </h1>
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
                                 {appStep === 'closing' && (
                                     <>
-                                        {/* [V7.15 신규] 가이드북 버튼 추가 */}
                                         <button onClick={() => setGuideModalOpen(true)} className="px-3 py-1.5 bg-white text-blue-600 border border-blue-200 hover:bg-blue-50 rounded text-[12px] font-bold shadow-sm transition flex items-center mr-1">
                                             <i className="fas fa-book-open mr-1.5"></i>이슈 가이드
                                         </button>
