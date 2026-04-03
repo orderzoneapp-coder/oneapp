@@ -236,7 +236,7 @@
         /* =======================================================================
            3. 비즈니스 로직 훅 (useInventoryEngine)
            ======================================================================= */
-        const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep, setSystemIoCollapsed }) => {
+        const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep }) => {
             const [productData, setProductData] = useState([]);
             const [analysisPeriod, setAnalysisPeriod] = useState('전체 기간');
             const [targetDateStr, setTargetDateStr] = useState('');
@@ -543,7 +543,7 @@
                         };
 
                         if (remainingQty < 0) { deductFromBucket(pool.buckets[pool.buckets.length - 1], remainingQty); } 
-                        else {
+                        else if (remainingQty > 0) {
                             let matchedBuckets = []; let matchFailedFlag = false;
 
                             if (sale.매입처매칭 && sale.매입처매칭 !== '미지정') {
@@ -557,13 +557,28 @@
                                 }
                             } else { matchedBuckets = [...pool.buckets]; }
 
-                            let targetBucket = null;
-                            if (isLifo) { targetBucket = matchedBuckets[matchedBuckets.length - 1]; } 
-                            else { targetBucket = matchedBuckets.find(b => b.수량 >= remainingQty); if (!targetBucket) targetBucket = matchedBuckets.find(b => b.수량 > 0); if (!targetBucket) targetBucket = matchedBuckets[0]; }
+                            // 🌟 핵심: 진정한 선입선출(FIFO) / 후입선출(LIFO) 연쇄 분할 차감 로직
+                            while (remainingQty > 0) {
+                                let availableBuckets = matchedBuckets.filter(b => b.수량 > 0);
+                                let targetBucket = null;
+                                let take = 0;
 
-                            if (targetBucket) {
-                                deductFromBucket(targetBucket, remainingQty);
+                                if (availableBuckets.length > 0) {
+                                    // 잔여 재고가 있는 묶음 중 타겟 선정 (LIFO는 최신 재고, FIFO는 오래된 재고부터)
+                                    targetBucket = isLifo ? availableBuckets[availableBuckets.length - 1] : availableBuckets[0];
+                                    take = Math.min(targetBucket.수량, remainingQty);
+                                } else {
+                                    // 모든 가용 재고가 소진되었는데도 출고량이 남은 경우 (강제 차감 -> 🚨수량부족 발생)
+                                    targetBucket = isLifo ? matchedBuckets[0] : matchedBuckets[matchedBuckets.length - 1];
+                                    take = remainingQty;
+                                }
 
+                                if (!targetBucket) break;
+
+                                deductFromBucket(targetBucket, take);
+                                remainingQty -= take;
+
+                                // 이슈 라벨링
                                 if (matchFailedFlag) {
                                     const errorMsg = `🚨Lot불일치(${sale.매입처매칭})`;
                                     if (!pData[targetBucket.batchKey].이슈.includes(errorMsg)) { pData[targetBucket.batchKey].이슈.push(errorMsg); pData[targetBucket.batchKey].수기확인완료 = false; }
@@ -621,7 +636,6 @@
                     setProductData(finalProductData);
                     setAckMultiCodes(autoAckCodes);
                     setAppStep('closing');
-                    if (setSystemIoCollapsed) setSystemIoCollapsed(false); 
                     
                     if (hasClosingEnd) {
                         setTimeout(() => { setAlertMsg("🔄 [스마트 복원 완료]\n\n업로드된 4번 수불마감 파일의 내용이 절대 기준이 되어 완벽하게 복원되었습니다.\n\n이전에 수기로 조정한 내역은 100% 유지되며, 1~3번 원시 데이터는 4번 파일에 없는 '새로운 품목'을 찾을 때만 사용되었습니다."); }, 800);
@@ -633,7 +647,7 @@
                     setAlertMsg('데이터 분석 중 오류가 발생했습니다. 엑셀 파일 형식이나 매핑 규칙을 확인해주세요.');
                     console.error(err);
                 } finally { setIsProcessing(false); }
-            }, [grouping, mappings, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep, setSystemIoCollapsed]); 
+            }, [grouping, mappings, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep]); 
 
             const runAnalysis = useCallback(async (filesObj) => {
                 setIsProcessing(true); setConfirmModal({ isOpen: false, warnings: [], payload: null });
@@ -743,10 +757,9 @@
 
                     const finalProductData = Object.values(pData).filter(item => !(item.기초 === 0 && item.입고 === 0 && item.출고 === 0 && item.실사 === 0 && item.로스 === 0)).sort((a, b) => a.품명.localeCompare(b.품명));
                     setProductData(finalProductData); setAppStep('closing'); 
-                    if (setSystemIoCollapsed) setSystemIoCollapsed(false);
                     setTimeout(() => { setAlertMsg("✨ [초기 재고 셋업 완료]\n\n현재 물리 재고(4번)를 매입 내역(2번)을 바탕으로 분할하여 자산화 데이터를 추출했습니다."); }, 800);
                 } catch (err) { setAlertMsg('원가 추출 중 오류가 발생했습니다.'); console.error(err); } finally { setIsProcessing(false); }
-            }, [mappings, setAlertMsg, setIsProcessing, setAppStep, setSystemIoCollapsed]);
+            }, [mappings, setAlertMsg, setIsProcessing, setAppStep]);
 
             return {
                 productData, setProductData, analysisPeriod, targetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes,
@@ -839,7 +852,7 @@
                             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
                                 <div className="flex items-center gap-2 mb-2"><span className="px-2 py-0.5 rounded border font-bold text-[10px] bg-rose-100 text-rose-700 border-rose-200">🚨잔량</span></div>
                                 <p className="text-sm font-bold text-slate-800 mb-1">출고 시 전산 재고 부족 (마이너스)</p>
-                                <p className="text-xs text-slate-600 leading-relaxed">보유한 가용 재고보다 판매/출고된 수량이 더 많아 마이너스 재고가 발생했습니다.<br/>👉 <span className="font-semibold text-blue-600">조치:</span> 입고 내역이 누락되었거나 타 매입처 재고가 잘못 차감된 것이 아닌지 확인하세요.</p>
+                                <p className="text-xs text-slate-600 leading-relaxed">보유한 가용 재고보다 판매/출고된 수량이 더 많아 마이너스 재고가 발생했습니다.<br/>👉 <span className="font-semibold text-blue-600">조치:</span> 입고 내역이 누락되었거나 타 매입처 재고가 잘못 차감된 단서가 될 수 있습니다.</p>
                             </div>
 
                             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
@@ -1043,7 +1056,10 @@
             const [linkSourceKey, setLinkSourceKey] = useState(null);
             const [memoModal, setMemoModal] = useState({ isOpen: false, batchKey: null, text: '' });
             const [guideModalOpen, setGuideModalOpen] = useState(false);
-            const [systemIoCollapsed, setSystemIoCollapsed] = useState(false);
+            
+            // Native Sticky Scroll 적용을 위한 반응형 상태
+            const [cardHeight, setCardHeight] = useState(0);
+            const cardContainerRef = useRef(null);
 
             const currentIssueIdxRef = useRef(-1);
             const focusedInputRef = useRef({ key: null, idx: -1 });
@@ -1056,7 +1072,7 @@
             const { 
                 productData, setProductData, analysisPeriod, targetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes,
                 resetEngine, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction
-            } = useInventoryEngine({ mappings, grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep, setSystemIoCollapsed });
+            } = useInventoryEngine({ mappings, grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep });
 
             const isCostExtractionMode = !files.prev && files.in && !files.out && files.end;
             const hasEndFile = !!files.end;
@@ -1068,6 +1084,23 @@
             }, [files, isProcessing, isCostExtractionMode]);
 
             useEffect(() => { activeIssueModeRef.current = activeIssueMode; }, [activeIssueMode]);
+
+            // ResizeObserver를 통해 Card View의 높이를 실시간으로 추적하여 Table Header의 Sticky Top 위치를 동기화
+            useEffect(() => {
+                if (appStep !== 'closing') return;
+                const updateHeight = () => {
+                    if (cardContainerRef.current) {
+                        setCardHeight(cardContainerRef.current.offsetHeight);
+                    }
+                };
+                updateHeight();
+                
+                if (typeof ResizeObserver !== 'undefined') {
+                    const observer = new ResizeObserver(updateHeight);
+                    if (cardContainerRef.current) observer.observe(cardContainerRef.current);
+                    return () => observer.disconnect();
+                }
+            }, [appStep, activeIssueMode, filters.reviewType, closingStats]);
 
             const saveMappings = () => { localStorage.setItem('inventoryMappingsLight', JSON.stringify(mappings)); localStorage.setItem('inventoryGroupingV79', JSON.stringify(grouping)); setShowSettings(false); };
 
@@ -1114,7 +1147,7 @@
             const handleResetFiles = useCallback(() => {
                 setFiles({ prev: null, in: null, out: null, end: null }); resetEngine();
                 setLinkSourceKey(null); setActiveIssueMode(null); setActiveMultiCode(null); currentIssueIdxRef.current = -1; focusedInputRef.current = { key: null, idx: -1 };
-                setFilters({ issuesOnly: false, excludeZeroActual: false, search: '', reviewType: null }); setError(''); setAppStep('upload'); setSystemIoCollapsed(false);
+                setFilters({ issuesOnly: false, excludeZeroActual: false, search: '', reviewType: null }); setError(''); setAppStep('upload'); 
                 document.querySelectorAll('input[type="file"]').forEach(input => input.value = '');
             }, [resetEngine]);
 
@@ -1288,14 +1321,6 @@
                 } catch (err) { console.error('엑셀 생성 중 오류:', err); setAlertMsg("엑셀 파일 생성 중 오류가 발생했습니다."); }
             }, [productData, analysisPeriod, targetDateStr, closingStats]);
 
-            const handleMainScroll = useCallback((e) => {
-                if (appStep !== 'closing') return;
-                const st = e.target.scrollTop;
-                if (st > 50 && !systemIoCollapsed) {
-                    setSystemIoCollapsed(true);
-                }
-            }, [appStep, systemIoCollapsed]);
-
             useEffect(() => {
                 const handleGlobalEnter = (e) => {
                     if (e.key === 'Enter') {
@@ -1343,7 +1368,7 @@
                             <div className="flex flex-col md:flex-row md:items-center gap-4">
                                 <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition" onClick={() => document.getElementById('main-scroll-container')?.scrollTo({top:0, behavior:'smooth'})} title="클릭시 최상단 이동">
                                     <span className="text-blue-600 mr-2">ONEAPP</span> DataOps
-                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">v7.16 Engine</span>
+                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">v8 Engine</span>
                                 </h1>
                             </div>
 
@@ -1403,7 +1428,7 @@
                                         <h4 className="text-sm font-bold text-slate-800"><i className="fas fa-layer-group text-indigo-500 mr-2"></i>품목 관리 기준 설정</h4>
                                         <p className="text-xs text-slate-500 mt-1.5 ml-6">
                                             ※ 시스템은 기본적으로 <strong>'품목코드'</strong> 기준으로 구동됩니다.<br/>
-                                            같은 '품목코드' 상품을 아래 설정을 통해 단가, 매입처, 일자별로 나누거나 합쳐서 관리할 수 있습니다.
+                                            같은 '품목코드' 상품을 아래 설정을 통해 단가, 매입처, 일자별로 나누거나 합쳐서 관리할 수 시있습니다.
                                         </p>
                                     </div>
                                     <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 flex flex-col md:flex-row gap-6">
@@ -1557,262 +1582,262 @@
 
                         {appStep === 'closing' && (
                             <div className="flex-1 flex flex-col w-full relative bg-[#f8fafc] overflow-hidden">
-                                {/* System.IO 영역 (애니메이션 접힘/펼침 지원) */}
-                                <div className={`shrink-0 transition-all duration-500 ease-in-out origin-top ${systemIoCollapsed ? 'max-h-0 opacity-0 overflow-hidden' : 'max-h-[500px] opacity-100'}`}>
-                                    <div className="px-4 md:px-6 pt-4 max-w-7xl mx-auto w-full pb-2">
-                                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden shrink-0 fade-in">
-                                            <div className="bg-slate-900 p-4 md:px-6 md:py-4 flex flex-col md:flex-row md:justify-between md:items-center gap-4 border-b border-slate-800 relative shadow-inner">
-                                                <div className="flex flex-col md:flex-row items-start md:items-center gap-3 w-full md:w-auto flex-1 overflow-hidden">
-                                                    <span className="text-base font-bold text-slate-200 shrink-0 flex items-center tracking-tight">
-                                                        System.IO
-                                                    </span>
-                                                    
-                                                    <div className="w-full max-w-lg bg-black rounded-md border border-slate-700 px-3 py-1.5 flex items-center shadow-inner overflow-hidden relative ml-1">
-                                                        <span className="text-[12px] font-mono font-semibold text-emerald-400 truncate w-full" title={terminalMessage}>
-                                                            {`> system.io: ${terminalMessage}`}
+                                {/* 스크롤 컨테이너를 하나로 통일하여 System.IO가 물리적 스크롤에 의해 자연스럽게 넘어가도록 완전히 구조를 개편했습니다. */}
+                                <div id="main-scroll-container" className="flex-1 overflow-auto w-full relative">
+                                    <div className="w-full min-w-[1000px] flex flex-col min-h-full">
+                                        
+                                        {/* 1. System.IO 영역 (스크롤에 의해 가장 먼저 자연스럽게 화면 밖으로 사라짐) */}
+                                        <div className="px-4 md:px-6 pt-4 pb-2 max-w-7xl mx-auto w-full shrink-0">
+                                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden fade-in">
+                                                <div className="bg-slate-900 p-4 md:px-6 md:py-4 flex flex-col md:flex-row md:justify-between md:items-center gap-4 border-b border-slate-800 relative shadow-inner">
+                                                    <div className="flex flex-col md:flex-row items-start md:items-center gap-3 w-full md:w-auto flex-1 overflow-hidden">
+                                                        <span className="text-base font-bold text-slate-200 shrink-0 flex items-center tracking-tight">
+                                                            System.IO
                                                         </span>
-                                                        <span className="w-1.5 h-3.5 bg-emerald-400 ml-1 animate-[pulse_1s_infinite] inline-block shrink-0"></span>
+                                                        
+                                                        <div className="w-full max-w-lg bg-black rounded-md border border-slate-700 px-3 py-1.5 flex items-center shadow-inner overflow-hidden relative ml-1">
+                                                            <span className="text-[12px] font-mono font-semibold text-emerald-400 truncate w-full" title={terminalMessage}>
+                                                                {`> system.io: ${terminalMessage}`}
+                                                            </span>
+                                                            <span className="w-1.5 h-3.5 bg-emerald-400 ml-1 animate-[pulse_1s_infinite] inline-block shrink-0"></span>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex gap-4 items-center shrink-0 self-end md:self-auto">
+                                                        <div className="flex items-center gap-1.5 text-[13px] font-bold text-slate-300 border-b border-slate-600 pb-0.5 px-1 whitespace-nowrap hover:text-white hover:border-slate-400 transition-colors cursor-default">
+                                                            <i className="fas fa-calendar-alt text-slate-400"></i> {analysisPeriod}
+                                                        </div>
+                                                        
+                                                        {isCostExtractionMode ? (
+                                                            <button onClick={() => runCostExtraction(files)} disabled={isProcessing} className="px-5 py-2 rounded-lg bg-emerald-500 text-slate-900 font-black text-sm shadow-[0_0_15px_rgba(16,185,129,0.25)] hover:bg-emerald-400 transition-all flex items-center transform hover:scale-105 whitespace-nowrap">
+                                                                <i className="fas fa-magic mr-1.5"></i>✨ 원가 추출 ▶
+                                                            </button>
+                                                        ) : (
+                                                            <button onClick={() => runAnalysis(files)} disabled={isProcessing || (!files.in && !files.out && !files.prev && !files.end)} className={`px-5 py-1.5 rounded font-black text-[13px] transition-all flex items-center shadow-md whitespace-nowrap ${isProcessing || (!files.in && !files.out && !files.prev && !files.end) ? 'bg-slate-700 text-slate-500 border border-slate-600 cursor-not-allowed' : 'bg-slate-100 text-slate-900 hover:bg-white hover:shadow-[0_0_15px_rgba(255,255,255,0.15)] transform hover:-translate-y-0.5'}`}>
+                                                                재분석 <span className="text-[10px] ml-1.5 opacity-70 border border-slate-400 rounded px-1 hidden sm:inline-block">Enter</span>
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </div>
 
-                                                <div className="flex gap-4 items-center shrink-0 self-end md:self-auto">
-                                                    <div className="flex items-center gap-1.5 text-[13px] font-bold text-slate-300 border-b border-slate-600 pb-0.5 px-1 whitespace-nowrap hover:text-white hover:border-slate-400 transition-colors cursor-default">
-                                                        <i className="fas fa-calendar-alt text-slate-400"></i> {analysisPeriod}
+                                                <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-slate-800 border-t border-slate-700 shadow-inner">
+                                                    <span className="text-[11px] font-bold text-slate-400 mr-1"><i className="fas fa-file-excel mr-1.5"></i>데이터 소스:</span>
+                                                    <FileBox isCompact={true} title="1. 기초" type="prev" icon="fa-history" files={files} setFiles={setFiles} autoAssignFiles={autoAssignFiles} />
+                                                    <i className="fas fa-chevron-right text-slate-600 text-[10px]"></i>
+                                                    <FileBox isCompact={true} title="2. 매입" type="in" icon="fa-truck-loading" files={files} setFiles={setFiles} autoAssignFiles={autoAssignFiles} />
+                                                    <i className="fas fa-chevron-right text-slate-600 text-[10px]"></i>
+                                                    <FileBox isCompact={true} title="3. 매출" type="out" icon="fa-receipt" files={files} setFiles={setFiles} autoAssignFiles={autoAssignFiles} />
+                                                    <i className="fas fa-chevron-right text-slate-600 text-[10px]"></i>
+                                                    <FileBox isCompact={true} title="4. 실사" type="end" icon="fa-clipboard-check" files={files} setFiles={setFiles} autoAssignFiles={autoAssignFiles} />
+                                                    
+                                                    {(files.prev || files.in || files.out || files.end) && (
+                                                        <button onClick={handleResetFiles} className="flex items-center justify-center font-bold transition-colors rounded ml-auto px-4 py-2 text-[12px] text-slate-400 hover:text-slate-100 hover:bg-slate-700/50">
+                                                            <i className="fas fa-redo-alt mr-1.5"></i>초기화
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* 2. 카드뷰 영역 (최상단 스크롤 도달 시 브라우저 네이티브 동작으로 자석처럼 찰칵 고정됨) */}
+                                        <div 
+                                            ref={cardContainerRef}
+                                            className="sticky top-0 z-40 bg-[#f8fafc] w-full border-b border-slate-200 shadow-[0_4px_6px_-4px_rgba(0,0,0,0.05)] shrink-0"
+                                        >
+                                            <div className="px-4 md:px-6 pt-2 pb-3 max-w-7xl mx-auto w-full">
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                    {/* Lot 매치 */}
+                                                    <div 
+                                                        onClick={() => { setFilters({...filters, reviewType: null}); handleIssueJump('multiPrice', 'next', true); }}
+                                                        className={`p-4 rounded-xl border-[3px] transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${activeIssueMode === 'multiPrice' ? 'bg-white border-slate-800 shadow-lg' : 'bg-white border-blue-200 hover:border-blue-400 hover:shadow-md'}`}
+                                                    >
+                                                        <div className="text-xs font-bold text-slate-600 mb-1 flex items-center justify-between">
+                                                            <span className="flex items-center"><i className="fas fa-tags text-blue-500 mr-2 text-base"></i>Lot 매치(판매처)</span>
+                                                            {closingStats.multiPriceCount > 0 && <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]"></span>}
+                                                        </div>
+                                                        <div className="flex items-end justify-between mt-2">
+                                                            <div>
+                                                                <div className="text-3xl font-black text-slate-800">{closingStats.multiPriceCount}<span className="text-sm font-bold text-slate-500 ml-1">건</span></div>
+                                                                {closingStats.multiPriceCount > 0 ? (
+                                                                    <div className="text-[12px] text-blue-600 font-bold mt-1">{hasEndFile ? "새로운 불일치 발견" : "상품의 판매처 확인하세요"}</div>
+                                                                ) : (
+                                                                    <div className="text-[12px] text-slate-400 font-semibold mt-1">모든 사항 일치함</div>
+                                                                )}
+                                                            </div>
+                                                            {closingStats.multiPriceCount === 0 ? (
+                                                                <div className="text-emerald-500 font-bold text-sm bg-emerald-50 px-2 py-1 rounded flex items-center mb-1"><i className="fas fa-check-circle mr-1"></i>완료</div>
+                                                            ) : (
+                                                                <div className="text-xs text-slate-400 font-bold mb-1 bg-slate-50 px-2 py-1 rounded border border-slate-100 shadow-sm">Tab <i className="fas fa-arrow-right ml-0.5"></i></div>
+                                                            )}
+                                                        </div>
+                                                        {filters.reviewType === 'multiPrice' ? (
+                                                            <button onClick={(e) => { e.stopPropagation(); handleAcknowledgeAll('multiPrice'); }} className="absolute top-3 right-3 text-[11px] font-bold px-2.5 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition shadow-md z-10">
+                                                                <i className="fas fa-check-double mr-1"></i>모두 확인
+                                                            </button>
+                                                        ) : (
+                                                            <button onClick={(e) => { e.stopPropagation(); setActiveIssueMode(null); setFilters({...filters, reviewType: 'multiPrice', issuesOnly: false}); }} className="absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-blue-600 transition shadow-sm z-10" title="해결된 항목을 포함해 전체 대상 리스트를 필터링하여 보여줍니다.">
+                                                                <i className="fas fa-list mr-1"></i>모아보기
+                                                            </button>
+                                                        )}
                                                     </div>
                                                     
-                                                    {isCostExtractionMode ? (
-                                                        <button onClick={() => runCostExtraction(files)} disabled={isProcessing} className="px-5 py-2 rounded-lg bg-emerald-500 text-slate-900 font-black text-sm shadow-[0_0_15px_rgba(16,185,129,0.25)] hover:bg-emerald-400 transition-all flex items-center transform hover:scale-105 whitespace-nowrap">
-                                                            <i className="fas fa-magic mr-1.5"></i>✨ 원가 추출 ▶
-                                                        </button>
-                                                    ) : (
-                                                        <button onClick={() => runAnalysis(files)} disabled={isProcessing || (!files.in && !files.out && !files.prev && !files.end)} className={`px-5 py-1.5 rounded font-black text-[13px] transition-all flex items-center shadow-md whitespace-nowrap ${isProcessing || (!files.in && !files.out && !files.prev && !files.end) ? 'bg-slate-700 text-slate-500 border border-slate-600 cursor-not-allowed' : 'bg-slate-100 text-slate-900 hover:bg-white hover:shadow-[0_0_15px_rgba(255,255,255,0.15)] transform hover:-translate-y-0.5'}`}>
-                                                            재분석 <span className="text-[10px] ml-1.5 opacity-70 border border-slate-400 rounded px-1 hidden sm:inline-block">Enter</span>
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-slate-800 border-t border-slate-700 shadow-inner">
-                                                <span className="text-[11px] font-bold text-slate-400 mr-1"><i className="fas fa-file-excel mr-1.5"></i>데이터 소스:</span>
-                                                <FileBox isCompact={true} title="1. 기초" type="prev" icon="fa-history" files={files} setFiles={setFiles} autoAssignFiles={autoAssignFiles} />
-                                                <i className="fas fa-chevron-right text-slate-600 text-[10px]"></i>
-                                                <FileBox isCompact={true} title="2. 매입" type="in" icon="fa-truck-loading" files={files} setFiles={setFiles} autoAssignFiles={autoAssignFiles} />
-                                                <i className="fas fa-chevron-right text-slate-600 text-[10px]"></i>
-                                                <FileBox isCompact={true} title="3. 매출" type="out" icon="fa-receipt" files={files} setFiles={setFiles} autoAssignFiles={autoAssignFiles} />
-                                                <i className="fas fa-chevron-right text-slate-600 text-[10px]"></i>
-                                                <FileBox isCompact={true} title="4. 실사" type="end" icon="fa-clipboard-check" files={files} setFiles={setFiles} autoAssignFiles={autoAssignFiles} />
-                                                
-                                                {(files.prev || files.in || files.out || files.end) && (
-                                                    <button onClick={handleResetFiles} className="flex items-center justify-center font-bold transition-colors rounded ml-auto px-4 py-2 text-[12px] text-slate-400 hover:text-slate-100 hover:bg-slate-700/50">
-                                                        <i className="fas fa-redo-alt mr-1.5"></i>초기화
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* System.IO 펼치기 버튼 (숨겨졌을 때 노출) */}
-                                {systemIoCollapsed && (
-                                    <div className="shrink-0 flex justify-center mb-1 -mt-1 relative z-50">
-                                        <button onClick={() => setSystemIoCollapsed(false)} className="px-6 py-1.5 bg-slate-800 text-slate-300 hover:text-white rounded-b-xl text-[11px] font-bold shadow-md flex items-center transition-colors">
-                                            <i className="fas fa-chevron-down mr-1.5"></i> System.IO 펼치기
-                                        </button>
-                                    </div>
-                                )}
-
-                                {/* 카드뷰 영역 (완전 고정 레이어) */}
-                                <div className="shrink-0 px-4 md:px-6 pt-2 pb-4 z-40 bg-[#f8fafc] relative max-w-7xl mx-auto w-full shadow-[0_4px_6px_-4px_rgba(0,0,0,0.05)] border-b border-slate-200 mb-2">
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        {/* Lot 매치 */}
-                                        <div 
-                                            onClick={() => { setFilters({...filters, reviewType: null}); handleIssueJump('multiPrice', 'next', true); }}
-                                            className={`p-4 rounded-xl border-[3px] transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${activeIssueMode === 'multiPrice' ? 'bg-white border-slate-800 shadow-lg' : 'bg-white border-blue-200 hover:border-blue-400 hover:shadow-md'}`}
-                                        >
-                                            <div className="text-xs font-bold text-slate-600 mb-1 flex items-center justify-between">
-                                                <span className="flex items-center"><i className="fas fa-tags text-blue-500 mr-2 text-base"></i>Lot 매치(판매처)</span>
-                                                {closingStats.multiPriceCount > 0 && <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]"></span>}
-                                            </div>
-                                            <div className="flex items-end justify-between mt-2">
-                                                <div>
-                                                    <div className="text-3xl font-black text-slate-800">{closingStats.multiPriceCount}<span className="text-sm font-bold text-slate-500 ml-1">건</span></div>
-                                                    {closingStats.multiPriceCount > 0 ? (
-                                                        <div className="text-[12px] text-blue-600 font-bold mt-1">{hasEndFile ? "새로운 불일치 발견" : "상품의 판매처 확인하세요"}</div>
-                                                    ) : (
-                                                        <div className="text-[12px] text-slate-400 font-semibold mt-1">모든 사항 일치함</div>
-                                                    )}
-                                                </div>
-                                                {closingStats.multiPriceCount === 0 ? (
-                                                    <div className="text-emerald-500 font-bold text-sm bg-emerald-50 px-2 py-1 rounded flex items-center mb-1"><i className="fas fa-check-circle mr-1"></i>완료</div>
-                                                ) : (
-                                                    <div className="text-xs text-slate-400 font-bold mb-1 bg-slate-50 px-2 py-1 rounded border border-slate-100 shadow-sm">Tab <i className="fas fa-arrow-right ml-0.5"></i></div>
-                                                )}
-                                            </div>
-                                            {filters.reviewType === 'multiPrice' ? (
-                                                <button onClick={(e) => { e.stopPropagation(); handleAcknowledgeAll('multiPrice'); }} className="absolute top-3 right-3 text-[11px] font-bold px-2.5 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition shadow-md z-10">
-                                                    <i className="fas fa-check-double mr-1"></i>모두 확인
-                                                </button>
-                                            ) : (
-                                                <button onClick={(e) => { e.stopPropagation(); setActiveIssueMode(null); setFilters({...filters, reviewType: 'multiPrice', issuesOnly: false}); }} className="absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-blue-600 transition shadow-sm z-10" title="해결된 항목을 포함해 전체 대상 리스트를 필터링하여 보여줍니다.">
-                                                    <i className="fas fa-list mr-1"></i>모아보기
-                                                </button>
-                                            )}
-                                        </div>
-                                        
-                                        {/* 재고/전표 변동 확인 */}
-                                        <div 
-                                            onClick={() => { setFilters({...filters, reviewType: null}); handleIssueJump('loss', 'next', true); }}
-                                            className={`p-4 rounded-xl border-[3px] transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${activeIssueMode === 'loss' ? 'bg-white border-slate-800 shadow-lg' : 'bg-white border-orange-200 hover:border-orange-400 hover:shadow-md'}`}
-                                        >
-                                            <div className="text-xs font-bold text-slate-600 mb-1 flex items-center justify-between">
-                                                <span className="flex items-center"><i className="fas fa-balance-scale text-orange-500 mr-2 text-base"></i>재고/전표 변동 확인</span>
-                                                {closingStats.lossCount > 0 && <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.6)]"></span>}
-                                            </div>
-                                            <div className="flex items-end justify-between mt-2">
-                                                <div>
-                                                    <div className="text-3xl font-black text-slate-800">{closingStats.lossCount}<span className="text-sm font-bold text-slate-500 ml-1">건</span></div>
-                                                    {closingStats.lossCount > 0 ? (
-                                                        <div className="text-[12px] text-orange-600 font-bold mt-1">{hasEndFile ? "새로운 변동사항 발견" : "실사 수량 확인하세요"}</div>
-                                                    ) : (
-                                                        <div className="text-[12px] text-slate-400 font-semibold mt-1">모든 변동 확인됨</div>
-                                                    )}
-                                                </div>
-                                                {closingStats.lossCount === 0 ? (
-                                                    <div className="text-emerald-500 font-bold text-sm bg-emerald-50 px-2 py-1 rounded flex items-center mb-1"><i className="fas fa-check-circle mr-1"></i>완료</div>
-                                                ) : (
-                                                    <div className="text-xs text-slate-400 font-bold mb-1 bg-slate-50 px-2 py-1 rounded border border-slate-100 shadow-sm">Tab <i className="fas fa-arrow-right ml-0.5"></i></div>
-                                                )}
-                                            </div>
-                                            {filters.reviewType === 'loss' ? (
-                                                <button onClick={(e) => { e.stopPropagation(); handleAcknowledgeAll('loss'); }} className="absolute top-3 right-3 text-[11px] font-bold px-2.5 py-1.5 rounded bg-orange-600 text-white hover:bg-orange-700 transition shadow-md z-10">
-                                                    <i className="fas fa-check-double mr-1"></i>모두 확인
-                                                </button>
-                                            ) : (
-                                                <button onClick={(e) => { e.stopPropagation(); setActiveIssueMode(null); setFilters({...filters, reviewType: 'loss', issuesOnly: false}); }} className="absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-orange-600 transition shadow-sm z-10" title="해결된 항목을 포함해 전체 대상 리스트를 필터링하여 보여줍니다.">
-                                                    <i className="fas fa-list mr-1"></i>모아보기
-                                                </button>
-                                            )}
-                                        </div>
-                                        
-                                        {/* 단가 검증 */}
-                                        <div 
-                                            onClick={() => { setFilters({...filters, reviewType: null}); handleIssueJump('missingPrice', 'next', true); }}
-                                            className={`p-4 rounded-xl border-[3px] transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${activeIssueMode === 'missingPrice' ? 'bg-white border-slate-800 shadow-lg' : 'bg-white border-rose-200 hover:border-rose-400 hover:shadow-md'}`}
-                                        >
-                                            <div className="text-xs font-bold text-slate-600 mb-1 flex items-center justify-between">
-                                                <span className="flex items-center"><i className="fas fa-exclamation-circle text-rose-500 mr-2 text-base"></i>단가 검증</span>
-                                                {closingStats.missingPriceCount > 0 && <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.6)]"></span>}
-                                            </div>
-                                            <div className="flex items-end justify-between mt-2">
-                                                <div>
-                                                    <div className="text-3xl font-black text-slate-800">{closingStats.missingPriceCount}<span className="text-sm font-bold text-slate-500 ml-1">건</span></div>
-                                                    {closingStats.missingPriceCount > 0 ? (
-                                                        <div className="text-[12px] text-rose-600 font-bold mt-1">{hasEndFile ? "신규/변동 단가 발견" : "단가 확인하세요"}</div>
-                                                    ) : (
-                                                        <div className="text-[12px] text-slate-400 font-semibold mt-1">모든 단가 일치함</div>
-                                                    )}
-                                                </div>
-                                                {closingStats.missingPriceCount === 0 ? (
-                                                    <div className="text-emerald-500 font-bold text-sm bg-emerald-50 px-2 py-1 rounded flex items-center mb-1"><i className="fas fa-check-circle mr-1"></i>완료</div>
-                                                ) : (
-                                                    <div className="text-xs text-slate-400 font-bold mb-1 bg-slate-50 px-2 py-1 rounded border border-slate-100 shadow-sm">Tab <i className="fas fa-arrow-right ml-0.5"></i></div>
-                                                )}
-                                            </div>
-                                            {filters.reviewType === 'missingPrice' ? (
-                                                <button onClick={(e) => { e.stopPropagation(); handleAcknowledgeAll('missingPrice'); }} className="absolute top-3 right-3 text-[11px] font-bold px-2.5 py-1.5 rounded bg-rose-600 text-white hover:bg-rose-700 transition shadow-md z-10">
-                                                    <i className="fas fa-check-double mr-1"></i>모두 확인
-                                                </button>
-                                            ) : (
-                                                <button onClick={(e) => { e.stopPropagation(); setActiveIssueMode(null); setFilters({...filters, reviewType: 'missingPrice', issuesOnly: false}); }} className="absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-rose-600 transition shadow-sm z-10" title="해결된 항목을 포함해 전체 대상 리스트를 필터링하여 보여줍니다.">
-                                                    <i className="fas fa-list mr-1"></i>모아보기
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* 테이블 영역 (단독 스크롤 컨테이너 적용으로 헤더 완전 고정) */}
-                                <div id="main-scroll-container" onScroll={handleMainScroll} className="flex-1 overflow-auto px-4 md:px-6 pb-6 relative max-w-7xl mx-auto w-full">
-                                    <div className="bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col min-h-max">
-                                        <div className="w-full rounded-xl">
-                                            <table className="w-full text-left border-collapse whitespace-nowrap text-sm min-w-[1000px]">
-                                                <thead className="bg-slate-50 text-slate-600 font-extrabold text-[12px] tracking-tight sticky top-0 z-[35] border-b-2 border-slate-200 shadow-md">
-                                                    <tr>
-                                                        <th className="p-2 border-r border-slate-200 sticky left-0 bg-slate-50 z-30 shadow-[1px_0_0_#e2e8f0] w-[320px] min-w-[280px]">
-                                                            <div className="relative w-full flex items-center">
-                                                                <input 
-                                                                    id="searchInput"
-                                                                    type="text" 
-                                                                    placeholder="품명(규격) / 일자 / 거래처 | 단가 검색 (F3)" 
-                                                                    value={filters.search} 
-                                                                    onChange={e => setFilters(f => ({ ...f, search: e.target.value, issuesOnly: e.target.value ? false : f.issuesOnly, excludeZeroActual: e.target.value ? false : f.excludeZeroActual }))} 
-                                                                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.select(); } }}
-                                                                    className="w-full py-1.5 pl-3 pr-8 bg-white border border-slate-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-700 font-bold outline-none placeholder-slate-400 transition-colors rounded-md shadow-sm" 
-                                                                />
-                                                                <div className="absolute right-3 text-slate-400 pointer-events-none">
-                                                                    <i className="fas fa-search text-sm"></i>
-                                                                </div>
+                                                    {/* 재고/전표 변동 확인 */}
+                                                    <div 
+                                                        onClick={() => { setFilters({...filters, reviewType: null}); handleIssueJump('loss', 'next', true); }}
+                                                        className={`p-4 rounded-xl border-[3px] transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${activeIssueMode === 'loss' ? 'bg-white border-slate-800 shadow-lg' : 'bg-white border-orange-200 hover:border-orange-400 hover:shadow-md'}`}
+                                                    >
+                                                        <div className="text-xs font-bold text-slate-600 mb-1 flex items-center justify-between">
+                                                            <span className="flex items-center"><i className="fas fa-balance-scale text-orange-500 mr-2 text-base"></i>재고/전표 변동 확인</span>
+                                                            {closingStats.lossCount > 0 && <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.6)]"></span>}
+                                                        </div>
+                                                        <div className="flex items-end justify-between mt-2">
+                                                            <div>
+                                                                <div className="text-3xl font-black text-slate-800">{closingStats.lossCount}<span className="text-sm font-bold text-slate-500 ml-1">건</span></div>
+                                                                {closingStats.lossCount > 0 ? (
+                                                                    <div className="text-[12px] text-orange-600 font-bold mt-1">{hasEndFile ? "새로운 변동사항 발견" : "실사 수량 확인하세요"}</div>
+                                                                ) : (
+                                                                    <div className="text-[12px] text-slate-400 font-semibold mt-1">모든 변동 확인됨</div>
+                                                                )}
                                                             </div>
-                                                        </th>
-                                                        
-                                                        <th className="py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]">기초 재고</th>
-                                                        <th className="py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]">입고</th>
-                                                        <th className="py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]">출고</th>
-                                                        <th className="py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]">실사 수량</th>
-                                                        <th className="py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]">로스/오차</th>
-                                                        
-                                                        <th className="py-1.5 px-4 text-left w-full min-w-[250px] align-middle">
-                                                            <div className="flex justify-between items-center w-full">
-                                                                <span>이슈/결과 및 메모</span>
-                                                                <div className="flex items-center gap-2">
-                                                                    {substHistory.length > 0 && (
-                                                                        <button onClick={() => setUndoUi({ state: 'list' })} className="px-2.5 py-1 rounded border border-rose-200 text-[11px] font-bold bg-white text-rose-600 hover:bg-rose-50 transition flex items-center shadow-sm">
-                                                                            <i className="fas fa-undo mr-1.5"></i>취소 ({substHistory.length})
+                                                            {closingStats.lossCount === 0 ? (
+                                                                <div className="text-emerald-500 font-bold text-sm bg-emerald-50 px-2 py-1 rounded flex items-center mb-1"><i className="fas fa-check-circle mr-1"></i>완료</div>
+                                                            ) : (
+                                                                <div className="text-xs text-slate-400 font-bold mb-1 bg-slate-50 px-2 py-1 rounded border border-slate-100 shadow-sm">Tab <i className="fas fa-arrow-right ml-0.5"></i></div>
+                                                            )}
+                                                        </div>
+                                                        {filters.reviewType === 'loss' ? (
+                                                            <button onClick={(e) => { e.stopPropagation(); handleAcknowledgeAll('loss'); }} className="absolute top-3 right-3 text-[11px] font-bold px-2.5 py-1.5 rounded bg-orange-600 text-white hover:bg-orange-700 transition shadow-md z-10">
+                                                                <i className="fas fa-check-double mr-1"></i>모두 확인
+                                                            </button>
+                                                        ) : (
+                                                            <button onClick={(e) => { e.stopPropagation(); setActiveIssueMode(null); setFilters({...filters, reviewType: 'loss', issuesOnly: false}); }} className="absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-orange-600 transition shadow-sm z-10" title="해결된 항목을 포함해 전체 대상 리스트를 필터링하여 보여줍니다.">
+                                                                <i className="fas fa-list mr-1"></i>모아보기
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    
+                                                    {/* 단가 검증 */}
+                                                    <div 
+                                                        onClick={() => { setFilters({...filters, reviewType: null}); handleIssueJump('missingPrice', 'next', true); }}
+                                                        className={`p-4 rounded-xl border-[3px] transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${activeIssueMode === 'missingPrice' ? 'bg-white border-slate-800 shadow-lg' : 'bg-white border-rose-200 hover:border-rose-400 hover:shadow-md'}`}
+                                                    >
+                                                        <div className="text-xs font-bold text-slate-600 mb-1 flex items-center justify-between">
+                                                            <span className="flex items-center"><i className="fas fa-exclamation-circle text-rose-500 mr-2 text-base"></i>단가 검증</span>
+                                                            {closingStats.missingPriceCount > 0 && <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.6)]"></span>}
+                                                        </div>
+                                                        <div className="flex items-end justify-between mt-2">
+                                                            <div>
+                                                                <div className="text-3xl font-black text-slate-800">{closingStats.missingPriceCount}<span className="text-sm font-bold text-slate-500 ml-1">건</span></div>
+                                                                {closingStats.missingPriceCount > 0 ? (
+                                                                    <div className="text-[12px] text-rose-600 font-bold mt-1">{hasEndFile ? "신규/변동 단가 발견" : "단가 확인하세요"}</div>
+                                                                ) : (
+                                                                    <div className="text-[12px] text-slate-400 font-semibold mt-1">모든 단가 일치함</div>
+                                                                )}
+                                                            </div>
+                                                            {closingStats.missingPriceCount === 0 ? (
+                                                                <div className="text-emerald-500 font-bold text-sm bg-emerald-50 px-2 py-1 rounded flex items-center mb-1"><i className="fas fa-check-circle mr-1"></i>완료</div>
+                                                            ) : (
+                                                                <div className="text-xs text-slate-400 font-bold mb-1 bg-slate-50 px-2 py-1 rounded border border-slate-100 shadow-sm">Tab <i className="fas fa-arrow-right ml-0.5"></i></div>
+                                                            )}
+                                                        </div>
+                                                        {filters.reviewType === 'missingPrice' ? (
+                                                            <button onClick={(e) => { e.stopPropagation(); handleAcknowledgeAll('missingPrice'); }} className="absolute top-3 right-3 text-[11px] font-bold px-2.5 py-1.5 rounded bg-rose-600 text-white hover:bg-rose-700 transition shadow-md z-10">
+                                                                <i className="fas fa-check-double mr-1"></i>모두 확인
+                                                            </button>
+                                                        ) : (
+                                                            <button onClick={(e) => { e.stopPropagation(); setActiveIssueMode(null); setFilters({...filters, reviewType: 'missingPrice', issuesOnly: false}); }} className="absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-rose-600 transition shadow-sm z-10" title="해결된 항목을 포함해 전체 대상 리스트를 필터링하여 보여줍니다.">
+                                                                <i className="fas fa-list mr-1"></i>모아보기
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* 3. 테이블 영역 (고정된 카드뷰 바로 밑에 이어서 Sticky 되도록 ResizeObserver가 높이를 계산하여 자동 밀착) */}
+                                        <div className="px-4 md:px-6 py-4 pb-12 max-w-7xl mx-auto w-full flex-1 flex flex-col">
+                                            <div className="bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col flex-1">
+                                                <table className="w-full text-left border-collapse whitespace-nowrap text-sm">
+                                                    <thead 
+                                                        className="bg-slate-50 text-slate-600 font-extrabold text-[12px] tracking-tight sticky z-[35] border-b-2 border-slate-200 shadow-md transition-all duration-75"
+                                                        style={{ top: `${cardHeight}px` }}
+                                                    >
+                                                        <tr>
+                                                            <th className="p-2 border-r border-slate-200 sticky left-0 bg-slate-50 z-30 shadow-[1px_0_0_#e2e8f0] w-[320px] min-w-[280px]">
+                                                                <div className="relative w-full flex items-center">
+                                                                    <input 
+                                                                        id="searchInput"
+                                                                        type="text" 
+                                                                        placeholder="품명(규격) / 일자 / 거래처 | 단가 검색 (F3)" 
+                                                                        value={filters.search} 
+                                                                        onChange={e => setFilters(f => ({ ...f, search: e.target.value, issuesOnly: e.target.value ? false : f.issuesOnly, excludeZeroActual: e.target.value ? false : f.excludeZeroActual }))} 
+                                                                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.select(); } }}
+                                                                        className="w-full py-1.5 pl-3 pr-8 bg-white border border-slate-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-700 font-bold outline-none placeholder-slate-400 transition-colors rounded-md shadow-sm" 
+                                                                    />
+                                                                    <div className="absolute right-3 text-slate-400 pointer-events-none">
+                                                                        <i className="fas fa-search text-sm"></i>
+                                                                    </div>
+                                                                </div>
+                                                            </th>
+                                                            
+                                                            <th className="py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]">기초 재고</th>
+                                                            <th className="py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]">입고</th>
+                                                            <th className="py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]">출고</th>
+                                                            <th className="py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]">실사 수량</th>
+                                                            <th className="py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]">로스/오차</th>
+                                                            
+                                                            <th className="py-1.5 px-4 text-left w-full min-w-[250px] align-middle">
+                                                                <div className="flex justify-between items-center w-full">
+                                                                    <span>이슈/결과 및 메모</span>
+                                                                    <div className="flex items-center gap-2">
+                                                                        {substHistory.length > 0 && (
+                                                                            <button onClick={() => setUndoUi({ state: 'list' })} className="px-2.5 py-1 rounded border border-rose-200 text-[11px] font-bold bg-white text-rose-600 hover:bg-rose-50 transition flex items-center shadow-sm">
+                                                                                <i className="fas fa-undo mr-1.5"></i>취소 ({substHistory.length})
+                                                                            </button>
+                                                                        )}
+                                                                        <button 
+                                                                            onClick={() => {
+                                                                                const { key, idx } = focusedInputRef.current;
+                                                                                if (!key) { setAlertMsg("조정할 상품의 실사칸을 클릭(선택)하여 커서를 위치시킨 후 버튼을 눌러주세요."); return; }
+                                                                                handleSpacebarLink(key, idx);
+                                                                            }}
+                                                                            className={`px-3 py-1.5 text-[11px] rounded font-bold transition flex items-center border ${linkSourceKey ? 'bg-slate-800 border-slate-900 text-white shadow-md animate-pulse' : 'bg-transparent border-transparent text-slate-400 hover:text-slate-600 hover:bg-slate-200'}`}
+                                                                        >
+                                                                            <i className="fas fa-exchange-alt mr-1.5"></i>
+                                                                            {linkSourceKey ? '대상 선택...' : '재고 조정(로스상계)'} 
+                                                                            <span className={`ml-1.5 px-1 py-0.5 rounded text-[9px] border hidden sm:inline-block font-normal tracking-wide ${linkSourceKey ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-slate-200/50 border-transparent text-slate-400'}`}>Space</span>
                                                                         </button>
-                                                                    )}
-                                                                    <button 
-                                                                        onClick={() => {
-                                                                            const { key, idx } = focusedInputRef.current;
-                                                                            if (!key) { setAlertMsg("조정할 상품의 실사칸을 클릭(선택)하여 커서를 위치시킨 후 버튼을 눌러주세요."); return; }
-                                                                            handleSpacebarLink(key, idx);
-                                                                        }}
-                                                                        className={`px-3 py-1.5 text-[11px] rounded font-bold transition flex items-center border ${linkSourceKey ? 'bg-slate-800 border-slate-900 text-white shadow-md animate-pulse' : 'bg-transparent border-transparent text-slate-400 hover:text-slate-600 hover:bg-slate-200'}`}
-                                                                    >
-                                                                        <i className="fas fa-exchange-alt mr-1.5"></i>
-                                                                        {linkSourceKey ? '대상 선택...' : '재고 조정(로스상계)'} 
-                                                                        <span className={`ml-1.5 px-1 py-0.5 rounded text-[9px] border hidden sm:inline-block font-normal tracking-wide ${linkSourceKey ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-slate-200/50 border-transparent text-slate-400'}`}>Space</span>
-                                                                    </button>
+                                                                    </div>
                                                                 </div>
-                                                            </div>
-                                                        </th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100 bg-white">
-                                                    {filteredProductData.length === 0 ? (
-                                                        <tr><td colSpan="7" className="p-12 text-center text-slate-400 font-bold bg-slate-50/50"><i className="fas fa-box-open mb-3 text-3xl opacity-50 block"></i>표시할 데이터가 없습니다.</td></tr>
-                                                    ) : (
-                                                        filteredProductData.map((item, idx) => {
-                                                            // 모아보기 (multiPrice) 적용 시, 품목 코드가 달라질 때 명확한 구분선을 추가
-                                                            const isGroupStart = filters.reviewType === 'multiPrice' && idx > 0 && item.코드 !== filteredProductData[idx - 1].코드;
-                                                            return (
-                                                                <ProductRow 
-                                                                    key={item.batchKey} item={item} idx={idx} 
-                                                                    isLinked={linkSourceKey === item.batchKey} 
-                                                                    isActiveMulti={activeMultiCode === item.코드}
-                                                                    isMultiGroupItem={multiPriceCodes.includes(item.코드)} 
-                                                                    targetDateStr={targetDateStr}
-                                                                    onStockChange={handleManualStockChange} onSpacebar={handleSpacebarLink} 
-                                                                    onFocusInput={handleFocusInput} onBaseDataChange={handleBaseDataChange}
-                                                                    onOpenMemo={(key, text) => setMemoModal({ isOpen: true, batchKey: key, text })}
-                                                                    onSalesMove={handleSalesMove}
-                                                                    internalLotMapping={mappings.internalLot}
-                                                                    isGroupStart={isGroupStart}
-                                                                />
-                                                            );
-                                                        })
-                                                    )}
-                                                </tbody>
-                                            </table>
+                                                            </th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-100 bg-white">
+                                                        {filteredProductData.length === 0 ? (
+                                                            <tr><td colSpan="7" className="p-12 text-center text-slate-400 font-bold bg-slate-50/50"><i className="fas fa-box-open mb-3 text-3xl opacity-50 block"></i>표시할 데이터가 없습니다.</td></tr>
+                                                        ) : (
+                                                            filteredProductData.map((item, idx) => {
+                                                                const isGroupStart = filters.reviewType === 'multiPrice' && idx > 0 && item.코드 !== filteredProductData[idx - 1].코드;
+                                                                return (
+                                                                    <ProductRow 
+                                                                        key={item.batchKey} item={item} idx={idx} 
+                                                                        isLinked={linkSourceKey === item.batchKey} 
+                                                                        isActiveMulti={activeMultiCode === item.코드}
+                                                                        isMultiGroupItem={multiPriceCodes.includes(item.코드)} 
+                                                                        targetDateStr={targetDateStr}
+                                                                        onStockChange={handleManualStockChange} onSpacebar={handleSpacebarLink} 
+                                                                        onFocusInput={handleFocusInput} onBaseDataChange={handleBaseDataChange}
+                                                                        onOpenMemo={(key, text) => setMemoModal({ isOpen: true, batchKey: key, text })}
+                                                                        onSalesMove={handleSalesMove}
+                                                                        internalLotMapping={mappings.internalLot}
+                                                                        isGroupStart={isGroupStart}
+                                                                    />
+                                                                );
+                                                            })
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
