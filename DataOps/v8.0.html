@@ -116,7 +116,7 @@
                     const match = part.match(/(.+)\((\d+)\)$/);
                     if (match) {
                         const vendorName = safeStr(match[1], '미지정'); const qty = parseInt(match[2], 10);
-                        if (!isNaN(qty)) vendors[vendorName] = { qty, rev: qty * price, cogs: qty * price, isLifo: false }; else issues.push(part);
+                        if (!isNaN(qty)) vendors[vendorName] = { qty, rev: qty * price, cogs: qty * price, isLifo: false, isPerfectMatch: false, displayVendor: vendorName }; else issues.push(part);
                     } else issues.push(part);
                 }
             });
@@ -363,8 +363,12 @@
                             np.출고 += qtyToMove;
                             const movedCogs = qtyToMove * tPrice; const movedRev = qtyToMove * sRevUnit;
                             np.매출원가 += movedCogs; np.매출액 += movedRev;
-                            if (!np.출고내역[vendorName]) np.출고내역[vendorName] = {qty: 0, rev: 0, cogs: 0, isLifo: false};
-                            np.출고내역[vendorName].qty += qtyToMove; np.출고내역[vendorName].rev += movedRev; np.출고내역[vendorName].cogs += movedCogs;
+                            
+                            // 수동으로 드래그 앤 드롭 이동된 건이므로 _perfect 태그를 지우고 일반 상태로 귀속시킴
+                            const cleanVendorName = vendorName.replace('_perfect', '');
+                            if (!np.출고내역[cleanVendorName]) np.출고내역[cleanVendorName] = {qty: 0, rev: 0, cogs: 0, isLifo: false, isPerfectMatch: false, displayVendor: cleanVendorName};
+                            np.출고내역[cleanVendorName].qty += qtyToMove; np.출고내역[cleanVendorName].rev += movedRev; np.출고내역[cleanVendorName].cogs += movedCogs;
+                            
                             np.전산잔량 = np.기초 + np.입고 + np.대체입고 - np.출고 - np.대체출고;
                             if (np.실사 !== null && np.실사 !== '') { np.실사 = Number(np.실사) - qtyToMove; np.로스 = np.실사 - np.전산잔량; } else { np.실사 = np.전산잔량; np.로스 = 0; }
                             np.이슈 = np.이슈.filter(msg => msg !== '매입내역 없음' && !msg.includes('전산 재고 부족'));
@@ -434,7 +438,7 @@
                                 else if (grouping.priceMode === 'average') { const totalQty = pData[batchKey].기초 + pData[batchKey].입고; if (totalQty > 0) pData[batchKey].단가 = pData[batchKey]._totalCostForAvg / totalQty; }
 
                                 Object.entries(vendors).forEach(([vName, vData]) => {
-                                    if (!pData[batchKey].출고내역[vName]) pData[batchKey].출고내역[vName] = {qty:0, rev:0, cogs:0, isLifo: vData.isLifo || false};
+                                    if (!pData[batchKey].출고내역[vName]) pData[batchKey].출고내역[vName] = {qty:0, rev:0, cogs:0, isLifo: vData.isLifo || false, isPerfectMatch: false, displayVendor: vName};
                                     pData[batchKey].출고내역[vName].qty += vData.qty; pData[batchKey].출고내역[vName].rev += vData.rev; pData[batchKey].출고내역[vName].cogs += vData.cogs;
                                     pData[batchKey].매출액 += vData.rev; pData[batchKey].매출원가 += vData.cogs;
                                 });
@@ -528,21 +532,31 @@
                                 if (code === 'NO_CODE') pData[bKey].이슈.push('🚨코드없음(수기확인)'); else if (hasClosingEnd) pData[bKey].이슈.push('🚨신규발생(마감자료에없음)');
                             }
                             pData[bKey].출고 += qtyToDeduct; pData[bKey].매출액 += finalRevenue;
-                            if (!pData[bKey].출고내역[sale.거래처]) pData[bKey].출고내역[sale.거래처] = {qty: 0, rev: 0, cogs: 0, isLifo: isLifo};
+                            if (!pData[bKey].출고내역[sale.거래처]) pData[bKey].출고내역[sale.거래처] = {qty: 0, rev: 0, cogs: 0, isLifo: isLifo, isPerfectMatch: false, displayVendor: sale.거래처};
                             pData[bKey].출고내역[sale.거래처].qty += qtyToDeduct; pData[bKey].출고내역[sale.거래처].rev += finalRevenue;
                             return;
                         }
 
                         let remainingQty = qtyToDeduct;
-                        const deductFromBucket = (bucket, take) => {
+                        const deductFromBucket = (bucket, take, isPerfect) => {
                             const cogs = take * bucket.단가; const revShare = qtyToDeduct > 0 ? finalRevenue * (take / qtyToDeduct) : 0;
                             if (bucket.수량 !== undefined) bucket.수량 -= take; 
                             pData[bucket.batchKey].출고 += take; pData[bucket.batchKey].매출원가 += cogs; pData[bucket.batchKey].매출액 += revShare;
-                            if (!pData[bucket.batchKey].출고내역[sale.거래처]) pData[bucket.batchKey].출고내역[sale.거래처] = {qty: 0, rev: 0, cogs: 0, isLifo: isLifo};
-                            pData[bucket.batchKey].출고내역[sale.거래처].qty += take; pData[bucket.batchKey].출고내역[sale.거래처].rev += revShare; pData[bucket.batchKey].출고내역[sale.거래처].cogs += cogs;
+                            
+                            // 완벽 일치 여부에 따라 키를 쪼개어 저장하여 화면에서도 분할된 칩으로 표시되도록 유도
+                            const vKey = isPerfect ? sale.거래처 + '_perfect' : sale.거래처;
+                            if (!pData[bucket.batchKey].출고내역[vKey]) pData[bucket.batchKey].출고내역[vKey] = {qty: 0, rev: 0, cogs: 0, isLifo: isLifo, isPerfectMatch: isPerfect, displayVendor: sale.거래처};
+                            pData[bucket.batchKey].출고내역[vKey].qty += take; pData[bucket.batchKey].출고내역[vKey].rev += revShare; pData[bucket.batchKey].출고내역[vKey].cogs += cogs;
                         };
 
-                        if (remainingQty < 0) { deductFromBucket(pool.buckets[pool.buckets.length - 1], remainingQty); } 
+                        if (remainingQty < 0) { 
+                            const targetBucket = pool.buckets[pool.buckets.length - 1];
+                            const saleMatchStr = String(sale.매입처매칭 || '').replace(/\s/g, '').toLowerCase();
+                            const bucketVendorStr = String(targetBucket.거래처 || '').replace(/\s/g, '').toLowerCase();
+                            const isPerfect = saleMatchStr !== '' && saleMatchStr !== '미지정' && bucketVendorStr !== '' && bucketVendorStr !== '미지정' && (saleMatchStr.includes(bucketVendorStr) || bucketVendorStr.includes(saleMatchStr));
+                            
+                            deductFromBucket(targetBucket, remainingQty, isPerfect); 
+                        } 
                         else if (remainingQty > 0) {
                             let matchedBuckets = []; let matchFailedFlag = false;
 
@@ -575,7 +589,12 @@
 
                                 if (!targetBucket) break;
 
-                                deductFromBucket(targetBucket, take);
+                                // 해당 루프 단위에서 매입처와 버킷의 거래처가 서로 완벽히 일치하는지 개별 검증
+                                const saleMatchStr = String(sale.매입처매칭 || '').replace(/\s/g, '').toLowerCase();
+                                const bucketVendorStr = String(targetBucket.거래처 || '').replace(/\s/g, '').toLowerCase();
+                                const isPerfect = saleMatchStr !== '' && saleMatchStr !== '미지정' && bucketVendorStr !== '' && bucketVendorStr !== '미지정' && (saleMatchStr.includes(bucketVendorStr) || bucketVendorStr.includes(saleMatchStr));
+
+                                deductFromBucket(targetBucket, take, isPerfect);
                                 remainingQty -= take;
 
                                 // 이슈 라벨링
@@ -991,13 +1010,26 @@
                                 </div>
                                 {item.출고내역 && Object.keys(item.출고내역).length > 0 && (
                                     <div className="mt-0.5 flex flex-wrap gap-1.5 items-center">
-                                        {Object.entries(item.출고내역).map(([vendor, data]) => (
-                                            <div key={vendor} draggable onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.setData('text/plain', JSON.stringify({sourceKey: item.batchKey, vendor, qty: data.qty, code: item.코드})); e.currentTarget.classList.add('opacity-40', 'scale-95'); }} onDragEnd={(e) => { e.currentTarget.classList.remove('opacity-40', 'scale-95'); }} 
-                                                className={`flex items-center px-2 py-0.5 rounded text-[10px] font-semibold cursor-grab active:cursor-grabbing border shadow-sm transition-all hover:-translate-y-0.5 ${data.isLifo ? "bg-sky-50 border-sky-200 text-sky-600 hover:bg-sky-100 hover:border-sky-300" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300"}`} 
-                                                title={`${data.qty}개 출고 ${data.isLifo ? '(당일우선 LIFO)' : '(일반 FIFO)'} - 드래그하여 이동`}>
-                                                <span className="truncate max-w-[120px]">{safeStr(vendor, '미지정')}({data.qty})</span>
-                                            </div>
-                                        ))}
+                                        {Object.entries(item.출고내역).map(([vendor, data]) => {
+                                            // 🌟 완벽 일치만 회색, 나머지는 기존 조건 적용 (LIFO -> 하늘색, FIFO -> 흰색)
+                                            const displayVendor = data.displayVendor || vendor.replace('_perfect', '');
+                                            const isPerfect = data.isPerfectMatch;
+                                            
+                                            let chipClass = "bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300";
+                                            if (isPerfect) {
+                                                chipClass = "bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200 hover:border-slate-300";
+                                            } else if (data.isLifo) {
+                                                chipClass = "bg-sky-50 border-sky-200 text-sky-600 hover:bg-sky-100 hover:border-sky-300";
+                                            }
+
+                                            return (
+                                                <div key={vendor} draggable onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.setData('text/plain', JSON.stringify({sourceKey: item.batchKey, vendor, qty: data.qty, code: item.코드})); e.currentTarget.classList.add('opacity-40', 'scale-95'); }} onDragEnd={(e) => { e.currentTarget.classList.remove('opacity-40', 'scale-95'); }} 
+                                                    className={`flex items-center px-2 py-0.5 rounded text-[10px] font-semibold cursor-grab active:cursor-grabbing border shadow-sm transition-all hover:-translate-y-0.5 ${chipClass}`} 
+                                                    title={`${data.qty}개 출고 ${data.isLifo ? '(당일우선 LIFO)' : '(일반 FIFO)'}${isPerfect ? ' - 완벽 일치' : ' - 검수 필요'} - 드래그하여 이동`}>
+                                                    <span className="truncate max-w-[120px]">{safeStr(displayVendor, '미지정')}({data.qty})</span>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 )}
                             </div>
@@ -1273,7 +1305,10 @@
                 const exportData1 = productData.filter(item => item.품명 || item.코드).map(item => {
                     let displayIssues = item.이슈 ? [...item.이슈] : []; displayIssues = displayIssues.filter(msg => !msg.includes('매입내역 없음'));
                     const totalAvailable = item.기초 + item.입고 + item.대체입고; if (item.로스 < 0 && totalAvailable > 0 && (Math.abs(item.로스) / totalAvailable) > 0.2) displayIssues.push('과다로스(20%↑)');
-                    let vendorStrs = []; if (item.출고내역 && Object.keys(item.출고내역).length > 0) vendorStrs = Object.entries(item.출고내역).map(([v, data]) => `${safeStr(v, '미지정')}(${safeNum(data.qty)})`);
+                    
+                    // 엑셀 내보낼 때는 뒤에 붙은 '_perfect' 숨은 키 값을 제거하고 합산하여 표기
+                    let vendorStrs = []; if (item.출고내역 && Object.keys(item.출고내역).length > 0) vendorStrs = Object.entries(item.출고내역).map(([v, data]) => `${safeStr(data.displayVendor || v.replace('_perfect', ''), '미지정')}(${safeNum(data.qty)})`);
+                    
                     const qty = item.실사 === '' || item.실사 === null ? 0 : safeNum(item.실사); const adjust = (safeNum(item.로스) || 0) + (safeNum(item.대체입고) || 0) - (safeNum(item.대체출고) || 0); const price = safeNum(item.단가) || 0;
                     return { '결산일자': targetDateStr, '매입처(Lot)': safeStr(item.거래처, '미지정'), '상품코드': item.코드 === 'NO_CODE' ? '' : item.코드, '상품명(규격)': item.품명, '기초수량': item.기초, '입고수량': item.입고, '출고량': item.출고, '기말실사(이월수량)': qty, '매입단가(원가)': price, '기말재고액(자산가치)': qty * price, '로스/조정수량': adjust, '이슈/결과': [...displayIssues, ...vendorStrs].join(', '), '수기메모': item.메모 || '' };
                 });
@@ -1287,7 +1322,9 @@
                     if (!productActualQtyMap[pKey]) productActualQtyMap[pKey] = 0; productActualQtyMap[pKey] += (item.실사 === '' || item.실사 === null ? 0 : safeNum(item.실사));
                     if (item.출고내역 && Object.keys(item.출고내역).length > 0) {
                         Object.entries(item.출고내역).forEach(([vendor, data]) => {
-                            const vendorName = safeStr(vendor, '미지정'); const qty = safeNum(data.qty); const vRev = Math.round(safeNum(data.rev)) || 0; const vCogs = Math.round(safeNum(data.cogs)) || 0; const vProfit = vRev - vCogs; const vMargin = vRev !== 0 ? ((vProfit / vRev) * 100).toFixed(1) : '0';
+                            // 엑셀 내보낼 때 displayVendor 사용
+                            const vendorName = safeStr(data.displayVendor || vendor.replace('_perfect', ''), '미지정'); 
+                            const qty = safeNum(data.qty); const vRev = Math.round(safeNum(data.rev)) || 0; const vCogs = Math.round(safeNum(data.cogs)) || 0; const vProfit = vRev - vCogs; const vMargin = vRev !== 0 ? ((vProfit / vRev) * 100).toFixed(1) : '0';
                             exportData3.push({ '결산일자': targetDateStr, '매출처명': vendorName, '상품코드': actualCode, '상품명(규격)': safeStr(item.품명), '매입처(Lot)': safeStr(item.거래처, '미지정'), '판매수량(반품포함)': qty, '판매단가': qty !== 0 ? Math.round(vRev / qty) : 0, '최종공급가액(할인적용)': vRev, '매입단가(원가)': qty !== 0 ? Math.round(vCogs / qty) : 0, '총원가': vCogs, '이익': vProfit, '이익률(%)': vMargin + '%', '해당Lot기말실사': safeNum(item.실사) });
                             const vpKey = `${vendorName}|${actualCode}|${item.품명}`; if (!vendorProductAggregated[vpKey]) { vendorProductAggregated[vpKey] = { vendor: vendorName, code: actualCode, name: safeStr(item.품명), qty: 0, rev: 0, cogs: 0 }; }
                             vendorProductAggregated[vpKey].qty += qty; vendorProductAggregated[vpKey].rev += vRev; vendorProductAggregated[vpKey].cogs += vCogs;
