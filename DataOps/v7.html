@@ -320,13 +320,32 @@
             const isNegativeActual = typeof actualQty === 'number' && actualQty < 0;
             const isToday = item.일자 && targetDateStr && item.일자 === targetDateStr;
 
+            // [NEW] 방향키 이동 시 화면 중앙 스크롤 보장
+            const focusAndEnsureVisible = (id) => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.focus();
+                    el.select();
+                    const container = document.getElementById('main-scroll-container');
+                    if (container) {
+                        const cRect = container.getBoundingClientRect();
+                        const eRect = el.getBoundingClientRect();
+                        // 헤더(약 120px)와 하단 여유(60px)를 벗어날 경우 부드럽게 중앙으로 스크롤
+                        if (eRect.top < cRect.top + 120 || eRect.bottom > cRect.bottom - 60) {
+                            const targetScrollTop = container.scrollTop + (eRect.top - cRect.top) - (cRect.height / 2) + (eRect.height / 2);
+                            container.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
+                        }
+                    }
+                }
+            };
+
             const handleKd = (e, type) => {
                 const cols = ['price-input', 'base-prev', 'base-in', 'base-out', 'actual-input'];
                 const colIdx = cols.indexOf(type);
-                if (e.key === 'ArrowRight') { if (colIdx < cols.length - 1) { e.preventDefault(); const n = document.getElementById(`${cols[colIdx+1]}-${idx}`); if(n) { n.focus(); n.select(); } } }
-                else if (e.key === 'ArrowLeft') { if (colIdx > 0) { e.preventDefault(); const p = document.getElementById(`${cols[colIdx-1]}-${idx}`); if(p) { p.focus(); p.select(); } } }
-                else if (e.key === 'ArrowDown' || e.key === 'Enter') { e.preventDefault(); const n = document.getElementById(`${type}-${idx+1}`); if(n) { n.focus(); n.select(); } }
-                else if (e.key === 'ArrowUp') { e.preventDefault(); const p = document.getElementById(`${type}-${idx-1}`); if(p) { p.focus(); p.select(); } }
+                if (e.key === 'ArrowRight') { if (colIdx < cols.length - 1) { e.preventDefault(); focusAndEnsureVisible(`${cols[colIdx+1]}-${idx}`); } }
+                else if (e.key === 'ArrowLeft') { if (colIdx > 0) { e.preventDefault(); focusAndEnsureVisible(`${cols[colIdx-1]}-${idx}`); } }
+                else if (e.key === 'ArrowDown' || e.key === 'Enter') { e.preventDefault(); focusAndEnsureVisible(`${type}-${idx+1}`); }
+                else if (e.key === 'ArrowUp') { e.preventDefault(); focusAndEnsureVisible(`${type}-${idx-1}`); }
                 else if (e.key === ' ' || e.code === 'Space') { if (type === 'actual-input') { e.preventDefault(); onSpacebar(item.batchKey, idx); } }
             };
 
@@ -427,7 +446,7 @@
             );
         }, (prevProps, nextProps) => prevProps.item === nextProps.item && prevProps.isLinked === nextProps.isLinked && prevProps.idx === nextProps.idx && prevProps.isActiveMulti === nextProps.isActiveMulti && prevProps.isMultiGroupItem === nextProps.isMultiGroupItem && prevProps.targetDateStr === nextProps.targetDateStr);
 
-        // V4.5: 가변형 UI FileBox (isCompact 분기 부활 + 보더라인 회색)
+        // V4.5: 가변형 UI FileBox
         const FileBox = React.memo(({ title, type, icon, files, setFiles, autoAssignFiles, isCompact }) => {
             const inputRef = useRef(null); 
             const [isDragging, setIsDragging] = useState(false);
@@ -695,6 +714,7 @@
                 setUndoUi({ state: 'closed' });
             }, [substHistory, handleUndoAction]);
 
+            // [NEW] 이슈 점프 시 중앙 스크롤 보장
             const handleIssueJump = useCallback((type, direction = 'next', fromCardClick = false) => {
                 setActiveIssueMode(type);
                 setFilters(prev => ({ ...prev, search: '', issuesOnly: false, excludeZeroActual: false, reviewType: null }));
@@ -770,7 +790,16 @@
                     setTimeout(() => {
                         const row = document.querySelector(`tr[data-batch="${targetItem.batchKey}"]`);
                         if (row) {
-                            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            const container = document.getElementById('main-scroll-container');
+                            if (container) {
+                                const cRect = container.getBoundingClientRect();
+                                const rRect = row.getBoundingClientRect();
+                                const targetScrollTop = container.scrollTop + (rRect.top - cRect.top) - (cRect.height / 2) + (rRect.height / 2);
+                                container.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
+                            } else {
+                                row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
+                            
                             const colorClass = type === 'missingPrice' ? 'bg-rose-50' : (type === 'multiPrice' ? 'bg-blue-50' : 'bg-orange-50');
                             row.classList.add(colorClass);
                             setTimeout(() => row.classList.remove(colorClass), 1500);
@@ -1631,7 +1660,12 @@
                 const handleGlobalKeys = (e) => {
                     if (document.querySelector('.modal-bounce')) { if (e.key === 'Escape') setUndoUi({ state: 'closed' }); return; }
                     
-                    // --- 단축키 적용: F7, F8, F9 ---
+                    // --- 단축키 적용: F3, F7, F8, F9 ---
+                    if (e.key === 'F3') {
+                        e.preventDefault();
+                        const searchInput = document.getElementById('searchInput');
+                        if (searchInput) { searchInput.focus(); searchInput.select(); }
+                    }
                     if (e.key === 'F7') { 
                         e.preventDefault(); 
                         setFilters(f => ({...f, issuesOnly: !f.issuesOnly, reviewType: null})); 
@@ -1693,7 +1727,6 @@
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
-                                {/* 화살표 4번 방향: 필터 및 다운로드 버튼을 우측 최상단으로 이동 */}
                                 {appStep === 'closing' && (
                                     <>
                                         <button onClick={() => setFilters(f => ({...f, issuesOnly: !f.issuesOnly, reviewType: null}))} className={`px-3 py-1.5 rounded text-[12px] font-bold transition border ${filters.issuesOnly ? 'bg-blue-600 text-white border-blue-700 shadow-sm' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
@@ -1708,7 +1741,6 @@
                                         </button>
                                     </>
                                 )}
-                                {/* 매핑설정 버튼 */}
                                 <button onClick={() => setShowSettings(!showSettings)} className="px-3 py-1.5 ml-2 bg-white border border-slate-300 text-slate-700 rounded text-[12px] font-bold shadow-sm hover:bg-slate-50 transition shrink-0">
                                     매핑설정
                                 </button>
@@ -1784,15 +1816,14 @@
                         </div>
                     )}
 
-                    <div className="flex-1 overflow-y-auto w-full relative scroll-smooth bg-[#f8fafc]">
+                    {/* [NEW] 메인 스크롤 컨테이너: overflow-y-auto -> overflow-auto 로 변경하여 테이블 가로스크롤을 이 레벨에서 통합 처리 */}
+                    <div id="main-scroll-container" className="flex-1 overflow-auto w-full relative scroll-smooth bg-[#f8fafc]">
                         {error && <div className="shrink-0 bg-rose-50 text-rose-600 p-3 text-sm font-bold flex items-center justify-center border-b border-rose-200 w-full"><div className="max-w-7xl w-full px-4"><i className="fas fa-exclamation-triangle mr-2 text-lg"></i>{error}</div></div>}
 
                         <div className="max-w-7xl mx-auto p-4 md:p-6 flex flex-col gap-5 w-full">
                             
-                            {/* 파일 업로드 영역 및 터미널 */}
                             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden shrink-0 fade-in">
                                 
-                                {/* 헤더 (Dark Theme - DOS Console Style) */}
                                 <div className="bg-slate-900 p-4 md:px-6 md:py-4 flex flex-col md:flex-row md:justify-between md:items-center gap-4 border-b border-slate-800 relative shadow-inner">
                                     <div className="flex flex-col md:flex-row items-start md:items-center gap-3 w-full md:w-auto flex-1 overflow-hidden">
                                         <span className="text-base font-bold text-slate-200 shrink-0 flex items-center tracking-tight">
@@ -1807,9 +1838,7 @@
                                         </div>
                                     </div>
 
-                                    {/* 액션 버튼들 */}
                                     <div className="flex gap-4 items-center shrink-0 self-end md:self-auto">
-                                        {/* 분석 기간 고스트 스타일 (크기 확대 + 하단 밑줄) */}
                                         {appStep === 'closing' && (
                                             <div className="flex items-center gap-1.5 text-[13px] font-bold text-slate-300 border-b border-slate-600 pb-0.5 px-1 whitespace-nowrap hover:text-white hover:border-slate-400 transition-colors cursor-default">
                                                 <i className="fas fa-calendar-alt text-slate-400"></i> {analysisPeriod}
@@ -1828,7 +1857,6 @@
                                     </div>
                                 </div>
 
-                                {/* 플랫한 파일 업로드 박스 */}
                                 <div className={`flex flex-wrap items-center ${appStep === 'closing' ? 'gap-3 px-4 py-3 bg-slate-800 border-t border-slate-700 shadow-inner' : 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5 p-5 md:p-6 bg-white relative z-20'}`}>
                                     {appStep === 'closing' && <span className="text-[11px] font-bold text-slate-400 mr-1"><i className="fas fa-file-excel mr-1.5"></i>데이터 소스:</span>}
                                     <FileBox isCompact={appStep === 'closing'} title={appStep === 'closing' ? "1. 기초" : "1. 기초 재고"} type="prev" icon="fa-history" files={files} setFiles={setFiles} autoAssignFiles={autoAssignFiles} />
@@ -1839,7 +1867,6 @@
                                     {appStep === 'closing' && <i className="fas fa-chevron-right text-slate-600 text-[10px]"></i>}
                                     <FileBox isCompact={appStep === 'closing'} title={appStep === 'closing' ? "4. 실사" : "4. 실사 (옵션)"} type="end" icon="fa-clipboard-check" files={files} setFiles={setFiles} autoAssignFiles={autoAssignFiles} />
                                     
-                                    {/* 초기화 버튼 위치 이동 (파일 소스 영역 우측 끝) */}
                                     {(files.prev || files.in || files.out || files.end) && (
                                         <button onClick={handleResetFiles} className={`flex items-center justify-center font-bold transition-colors rounded ${appStep === 'closing' ? 'ml-auto px-4 py-2 text-[12px] text-slate-400 hover:text-slate-100 hover:bg-slate-700/50' : 'mx-auto mt-4 px-4 py-2 text-[13px] bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200 col-span-full shadow-sm'}`}>
                                             <i className="fas fa-redo-alt mr-1.5"></i>초기화
@@ -1848,7 +1875,6 @@
                                 </div>
                             </div>
 
-                            {/* 분석 프로세싱 오버레이 */}
                             {isProcessing && (
                                 <div className="fixed inset-0 z-[100] bg-slate-900/20 backdrop-blur-sm flex items-center justify-center">
                                     <div className="bg-slate-800 text-white px-6 py-4 rounded-xl shadow-xl flex items-center font-bold text-lg animate-pulse border border-slate-700">
@@ -1865,13 +1891,10 @@
                                 </div>
                             )}
 
-                            {/* --- 분석 실행 이후 결과 화면 (appStep === 'closing') --- */}
                             {appStep === 'closing' && (
                                 <div className="flex flex-col fade-in relative mt-1">
                                     
-                                    {/* 3대 요약 카드 원복 */}
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                                        {/* 순서 1: Lot 매치 */}
                                         <div 
                                             onClick={() => { setFilters({...filters, reviewType: null}); handleIssueJump('multiPrice', 'next', true); }}
                                             className={`p-4 rounded-xl border-[3px] transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${activeIssueMode === 'multiPrice' ? 'bg-white border-slate-800 shadow-lg' : 'bg-white border-blue-200 hover:border-blue-400 hover:shadow-md'}`}
@@ -1904,7 +1927,6 @@
                                             </button>
                                         </div>
                                         
-                                        {/* 순서 2: 재고/전표 변동 확인 */}
                                         <div 
                                             onClick={() => { setFilters({...filters, reviewType: null}); handleIssueJump('loss', 'next', true); }}
                                             className={`p-4 rounded-xl border-[3px] transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${activeIssueMode === 'loss' ? 'bg-white border-slate-800 shadow-lg' : 'bg-white border-orange-200 hover:border-orange-400 hover:shadow-md'}`}
@@ -1937,7 +1959,6 @@
                                             </button>
                                         </div>
                                         
-                                        {/* 순서 3: 단가 검증 */}
                                         <div 
                                             onClick={() => { setFilters({...filters, reviewType: null}); handleIssueJump('missingPrice', 'next', true); }}
                                             className={`p-4 rounded-xl border-[3px] transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${activeIssueMode === 'missingPrice' ? 'bg-white border-slate-800 shadow-lg' : 'bg-white border-rose-200 hover:border-rose-400 hover:shadow-md'}`}
@@ -1971,18 +1992,19 @@
                                         </div>
                                     </div>
 
-                                    {/* 테이블 그리드 (중간 툴바 없이 바로 연결) */}
                                     <div className="bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col">
-                                        <div className="w-full overflow-x-auto rounded-xl">
+                                        {/* [NEW] overflow-x-auto를 이 레벨에서 제거하여 테이블 헤더가 상위 스크롤에 제대로 고정(sticky) 되게 함 */}
+                                        <div className="w-full rounded-xl">
                                             <table className="w-full text-left border-collapse whitespace-nowrap text-sm min-w-[1000px]">
-                                                <thead className="bg-slate-50 text-slate-600 font-extrabold text-[12px] tracking-tight sticky top-0 z-30 border-b-2 border-slate-200 shadow-sm">
+                                                {/* [NEW] z-index를 높이고 shadow 효과를 추가하여 고정 헤더임을 강조 */}
+                                                <thead className="bg-slate-50 text-slate-600 font-extrabold text-[12px] tracking-tight sticky top-0 z-[45] border-b-2 border-slate-200 shadow-md">
                                                     <tr>
-                                                        {/* 화살표 1번 방향: 테이블 헤더에 검색창 일체화 및 보더 추가 */}
                                                         <th className="p-2 border-r border-slate-200 sticky left-0 bg-slate-50 z-30 shadow-[1px_0_0_#e2e8f0] w-[320px] min-w-[280px]">
                                                             <div className="relative w-full flex items-center">
                                                                 <input 
+                                                                    id="searchInput" /* [NEW] F3 키보드 포커싱을 위한 ID 추가 */
                                                                     type="text" 
-                                                                    placeholder="품명(규격) / 일자 / 거래처 | 단가 검색..." 
+                                                                    placeholder="품명(규격) / 일자 / 거래처 | 단가 검색 (F3)" 
                                                                     value={filters.search} 
                                                                     onChange={e => setFilters(f => ({ ...f, search: e.target.value, issuesOnly: e.target.value ? false : f.issuesOnly, excludeZeroActual: e.target.value ? false : f.excludeZeroActual }))} 
                                                                     onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.select(); } }}
@@ -1997,11 +2019,9 @@
                                                         <th className="py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]">기초 재고</th>
                                                         <th className="py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]">입고</th>
                                                         <th className="py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]">출고</th>
-                                                        {/* 파란색 배경 제거하여 통일 */}
                                                         <th className="py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]">실사 수량</th>
                                                         <th className="py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]">로스/오차</th>
                                                         
-                                                        {/* 화살표 3번 방향: 재고 조정 및 취소 버튼 우측 헤더로 이동 */}
                                                         <th className="py-1.5 px-4 text-left w-full min-w-[250px] align-middle">
                                                             <div className="flex justify-between items-center w-full">
                                                                 <span>이슈/결과 및 메모</span>
