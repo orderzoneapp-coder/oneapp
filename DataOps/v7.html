@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>oneapp DataOps - 핵심 수불부 관리 (v7 Engine)</title>
+    <title>oneapp DataOps - 핵심 수불부 관리 (v7.1 Engine)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -142,7 +142,7 @@
             const parts = str.match(/[^,]+(?:\([^)]+\))*/g) || [];
             const issues = [];
             const vendors = {};
-            const knownIssues = ['과다로스', '원가수정', '수기조정', '매입내역 없음', '전산 재고 부족', '재고 부족', '변동됨', '변경됨', '삭제됨', '신규추가', '수량변동', '단가변경', '매치변경', '원가추출됨', '원가추출', '단가없음', '🔄', '🚨', '✅'];
+            const knownIssues = ['과다로스', '원가수정', '수기조정', '매입내역 없음', '전산 재고 부족', '재고 부족', '변동됨', '변경됨', '삭제됨', '신규추가', '수량변동', '단가변경', '매치변경', '원가추출됨', '원가추출', '단가없음', 'Lot매치실패', '🔄', '🚨', '✅'];
 
             parts.forEach(p => {
                 const part = p.trim();
@@ -397,9 +397,9 @@
                                             className={`px-2 py-0.5 rounded border font-semibold text-[10px] whitespace-nowrap transition-all ${
                                                 msg.includes('원가수정') ? 'bg-slate-100 text-slate-700 border-slate-200' : 
                                                 (msg.includes('✅') && !msg.includes('원가추출') ? 'bg-slate-50 text-slate-400 border-slate-200 shadow-sm' :
-                                                (msg.includes('단가변경') || msg.includes('수량변동') || msg.includes('과다로스') || msg.includes('삭제됨') || msg.includes('단가없음') || msg.includes('추출실패') ? 'bg-rose-100 text-rose-700 border-rose-200 font-bold shadow-sm' : 
-                                                (msg.includes('매치변경') ? 'bg-blue-100 text-blue-700 border-blue-200 font-bold shadow-sm' :
-                                                (msg.includes('신규추가') || msg.includes('원가추출') ? 'bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm font-bold' : 
+                                                (msg.includes('단가변경') || msg.includes('수량변동') || msg.includes('과다로스') || msg.includes('삭제됨') || msg.includes('단가없음') || msg.includes('추출실패') || msg.includes('Lot매치실패') ? 'bg-rose-100 text-rose-700 border-rose-200 font-bold shadow-sm' : 
+                                                (msg.includes('매치변경') || msg.includes('코드없음') ? 'bg-blue-100 text-blue-700 border-blue-200 font-bold shadow-sm' :
+                                                (msg.includes('신규발생') || msg.includes('원가추출') ? 'bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm font-bold' : 
                                                 'bg-orange-50 text-orange-700 border-orange-200'))))
                                             }`}
                                         >
@@ -562,14 +562,14 @@
                     if (hasPriceTotal) totalMissingPriceCount++;
                     if (hasPriceUnresolved) missingPriceCount++;
 
-                    const hasQtyTotal = p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0) || (p.이슈 && p.이슈.some(i => i.includes('수량변동') || i.includes('신규추가') || i.includes('삭제됨')));
-                    const hasQtyUnresolved = (!p.수기확인완료 && (p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0))) || (p.이슈 && p.이슈.some(i => i.includes('🚨수량변동') || i.includes('🚨신규추가') || i.includes('🚨삭제됨')));
+                    const hasQtyTotal = p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0) || (p.이슈 && p.이슈.some(i => i.includes('수량변동') || i.includes('신규발생') || i.includes('코드없음')));
+                    const hasQtyUnresolved = (!p.수기확인완료 && (p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0))) || (p.이슈 && p.이슈.some(i => i.includes('🚨수량변동') || i.includes('🚨신규발생') || i.includes('🚨코드없음')));
                     if (hasQtyTotal) totalLossCount++;
                     if (hasQtyUnresolved) lossCount++;
 
                     const isMultiPriceItem = multiPriceSet.has(p.코드);
-                    const hasMatchTotal = (p.이슈 && p.이슈.some(i => i.includes('매치변경'))) || isMultiPriceItem;
-                    const hasMatchUnresolved = (p.이슈 && p.이슈.some(i => i.includes('🚨매치변경'))) || (isMultiPriceItem && !ackMultiCodes.has(p.코드));
+                    const hasMatchTotal = (p.이슈 && p.이슈.some(i => i.includes('매치변경') || i.includes('Lot매치실패'))) || isMultiPriceItem;
+                    const hasMatchUnresolved = (p.이슈 && p.이슈.some(i => i.includes('🚨매치변경') || i.includes('🚨Lot매치실패'))) || (isMultiPriceItem && !ackMultiCodes.has(p.코드));
                     if (hasMatchTotal) totalMatchCount++;
                     if (hasMatchUnresolved) matchCount++;
 
@@ -597,12 +597,19 @@
                     });
                     if (stockCandidates.length > 0) {
                         stockCandidates.sort((a, b) => extractDateFromName(a.name) - extractDateFromName(b.name));
-                        if (stockCandidates.length === 1) {
-                            const name = stockCandidates[0].name.toLowerCase();
-                            if (name.includes('기말') || name.includes('실사') || name.includes('마감')) updated.end = stockCandidates[0];
-                            else updated.prev = stockCandidates[0]; 
-                        } else {
-                            updated.prev = stockCandidates[0]; updated.end = stockCandidates[stockCandidates.length - 1];
+                        if (stockCandidates.length === 2) {
+                            updated.prev = stockCandidates[0]; 
+                            updated.end = stockCandidates[1];
+                        } else if (stockCandidates.length === 1) {
+                            const file = stockCandidates[0];
+                            const name = file.name.toLowerCase();
+                            // [수정] 매입/매출 파일과 함께 업로드된 경우, 이 파일은 '마감'이라는 글자가 있어도 무조건 1번(기초)로 배정
+                            if (updated.in || updated.out) {
+                                updated.prev = file;
+                            } else {
+                                if (name.includes('기말') || name.includes('실사') || name.includes('마감')) updated.end = file;
+                                else updated.prev = file;
+                            }
                         }
                     }
                     return updated;
@@ -733,8 +740,8 @@
                 const condition = (p, isCurrentIdx = false) => {
                     if (isCurrentIdx) return false; 
                     if (type === 'missingPrice') return (!p.수기확인완료 && p.isDummy && p.단가 === 0) || (p.이슈 && p.이슈.some(i => i.includes('🚨단가변경') || i.includes('🚨단가없음')));
-                    if (type === 'loss') return (!p.수기확인완료 && (p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0))) || (p.이슈 && p.이슈.some(i => i.includes('🚨수량변동') || i.includes('🚨신규추가') || i.includes('🚨삭제됨')));
-                    if (type === 'multiPrice') return (p.이슈 && p.이슈.some(i => i.includes('🚨매치변경'))) || (multiPriceCodes.includes(p.코드) && !effectivelyAckedCodes.has(p.코드));
+                    if (type === 'loss') return (!p.수기확인완료 && (p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0))) || (p.이슈 && p.이슈.some(i => i.includes('🚨수량변동') || i.includes('🚨신규발생') || i.includes('🚨코드없음')));
+                    if (type === 'multiPrice') return (p.이슈 && p.이슈.some(i => i.includes('🚨매치변경') || i.includes('🚨Lot매치실패'))) || (multiPriceCodes.includes(p.코드) && !effectivelyAckedCodes.has(p.코드));
                     return false;
                 };
 
@@ -1113,31 +1120,45 @@
                         const name = item.품명;
                         const batchKey = generateBatchKey(code, name, price);
                         
-                        // 💡 [핵심 업데이트] 4번 파일(마스터)에 존재하는 품목인지 확인
+                        // 💡 [핵심 업데이트] 4번 파일(마스터)에 존재하는 품목인지 확인 (단, 코드가 없는 상품은 제외)
                         const matchingFile4Items = (hasClosingEnd && code !== 'NO_CODE') 
                             ? Object.values(pData).filter(p => p.코드 === code && p._fromFile4) 
                             : [];
 
                         if (matchingFile4Items.length > 0) {
-                            // [메타데이터 보강] 수량 계산은 4번에 전적으로 맡기되, 
-                            // 1번(기초)이나 2번(매입) 원장에 있는 '거래처'와 '일자' 정보를 4번 항목에 보강해줍니다.
+                            // [메타데이터 정밀 매칭] 수량 계산은 4번에 전적으로 맡기되, 
+                            // 1번(기초)이나 2번(매입) 원장에 있는 '거래처'와 '일자' 정보를 4번 항목에 보강합니다.
                             if (type === 'prev' || type === 'in') {
-                                matchingFile4Items.forEach(targetP => {
-                                    const validVendor = item.거래처 && item.거래처 !== '미지정' && item.거래처 !== '이월재고';
-                                    const currentIsMissing = !targetP.거래처 || targetP.거래처 === '미지정' || targetP.거래처 === '이전 마감자료' || targetP.거래처 === '매입내역 없음';
-                                    
-                                    if (validVendor && currentIsMissing) {
-                                        targetP.거래처 = item.거래처;
-                                    } else if (validVendor && type === 'in') {
-                                        targetP.거래처 = item.거래처; // 당기 매입처가 우선
-                                    }
-
-                                    if (item.일자 && (!targetP.일자 || targetP.일자 === targetDateStrFromData || targetP.일자 === '')) {
-                                        targetP.일자 = item.일자;
-                                    }
-                                });
+                                const validVendor = item.거래처 && item.거래처 !== '미지정' && item.거래처 !== '이월재고';
+                                
+                                // ✅ 오직 '단가(Price)'가 완벽하게 일치하는 버킷(줄)만 찾아서 해당 거래처를 업데이트합니다!
+                                const exactPriceItems = matchingFile4Items.filter(p => p.단가 === price);
+                                
+                                if (exactPriceItems.length > 0) {
+                                    exactPriceItems.forEach(targetP => {
+                                        const currentIsMissing = !targetP.거래처 || targetP.거래처 === '미지정' || targetP.거래처 === '이전 마감자료' || targetP.거래처 === '매입내역 없음';
+                                        if (validVendor) {
+                                            if (type === 'in') {
+                                                targetP.거래처 = item.거래처; // 당기 매입처(새로운 구매)가 무조건 최우선으로 덮어씀
+                                            } else if (currentIsMissing) {
+                                                targetP.거래처 = item.거래처; // 기초재고는 거래처가 비어있을 때만 채움
+                                            }
+                                        }
+                                        if (item.일자 && (!targetP.일자 || targetP.일자 === targetDateStrFromData || targetP.일자 === '')) {
+                                            targetP.일자 = item.일자;
+                                        }
+                                    });
+                                } else {
+                                    // 만약 단가가 정확히 일치하는 줄이 없다면(예: 수기 원가수정 등), 거래처가 텅 빈 줄에만 예외적으로 채워줍니다.
+                                    matchingFile4Items.forEach(targetP => {
+                                        const currentIsMissing = !targetP.거래처 || targetP.거래처 === '미지정' || targetP.거래처 === '이전 마감자료' || targetP.거래처 === '매입내역 없음';
+                                        if (validVendor && currentIsMissing) {
+                                            targetP.거래처 = item.거래처;
+                                        }
+                                    });
+                                }
                             }
-                            return; // ⭐️ 수량 합산 및 검증 로직은 여기서 중단 (4번 마스터 파일 보호)
+                            return; // ⭐️ 수량 합산 및 검증 로직은 여기서 완벽히 중단 (4번 마스터 파일 수량 절대 보호)
                         }
 
                         if (!pData[batchKey]) {
@@ -1155,7 +1176,10 @@
                                 pData[batchKey].이슈.push('🚨신규발생(마감자료에없음)');
                             }
                         } else {
-                            if (type === 'in' && pData[batchKey].기초 > 0 && pData[batchKey].거래처 === '이월재고') {
+                            if (type === 'in' && item.거래처 && item.거래처 !== '미지정' && item.거래처 !== '이월재고') {
+                                pData[batchKey].거래처 = item.거래처; // 매입처 우선 덮어쓰기
+                                if (date) pData[batchKey].일자 = date;
+                            } else if (type === 'in' && pData[batchKey].기초 > 0 && pData[batchKey].거래처 === '이월재고') {
                                 pData[batchKey].거래처 = item.거래처 || pData[batchKey].거래처;
                                 pData[batchKey].일자 = date || pData[batchKey].일자;
                             }
@@ -1186,13 +1210,14 @@
                     Object.values(stockPool).forEach(pool => pool.buckets.sort((a, b) => String(a.일자 || '').localeCompare(String(b.일자 || ''))));
 
                     outItems.forEach(sale => { 
-                        if (isExcluded(sale.거래처)) return;
+                        // 💡 [절대 마스터 법칙] 4번 파일이 존재하면, 3번(매출) 데이터는 아예 무시합니다. (4번에 이미 출고내역이 완벽 복원됨)
+                        // 단, 바코드가 없는(NO_CODE) 상품은 4번과 매칭이 안 되므로 매출 전표를 반영합니다.
                         const code = String(sale.코드 || 'NO_CODE'); 
-                        
-                        // 💡 [원칙 적용] 매출 데이터 역시 오직 '품목코드'로만 4번 파일과 매칭 확인
                         const handledByFile4 = hasClosingEnd && code !== 'NO_CODE' && Object.values(pData).some(p => p.코드 === code && p._fromFile4);
                         if (handledByFile4) return;
 
+                        if (isExcluded(sale.거래처)) return;
+                        
                         let qtyToDeduct = parseNumber(sale.수량);
                         if (sale._raw && sale._raw['출고량'] !== undefined) qtyToDeduct = parseNumber(sale._raw['출고량']);
 
@@ -1255,11 +1280,32 @@
                                 }
                                 if (remainingQty > 0) { deductFromBucket(matchedBuckets[matchedBuckets.length - 1], remainingQty); remainingQty = 0; }
                             } else {
+                                // [v7.1 업데이트] 매치 실패 시, 선입선출로 강제 소진하되 이슈를 기록
+                                const matchFailedFlag = (sale.매입처매칭 && sale.매입처매칭 !== '미지정');
+
                                 for (let i = 0; i < pool.buckets.length && remainingQty > 0; i++) {
                                     const bucket = pool.buckets[i]; if (bucket.수량 <= 0) continue;
                                     const take = Math.min(bucket.수량, remainingQty); deductFromBucket(bucket, take); remainingQty -= take;
+                                    
+                                    if (matchFailedFlag && take > 0) {
+                                        const errorMsg = `🚨Lot매치실패(${sale.매입처매칭})`;
+                                        if (!pData[bucket.batchKey].이슈.includes(errorMsg)) {
+                                            pData[bucket.batchKey].이슈.push(errorMsg);
+                                            pData[bucket.batchKey].수기확인완료 = false;
+                                        }
+                                    }
                                 }
-                                if (remainingQty > 0) deductFromBucket(pool.buckets[pool.buckets.length - 1], remainingQty);
+                                if (remainingQty > 0) { 
+                                    const lastBucket = pool.buckets[pool.buckets.length - 1];
+                                    deductFromBucket(lastBucket, remainingQty);
+                                    if (matchFailedFlag) {
+                                        const errorMsg = `🚨Lot매치실패(${sale.매입처매칭})`;
+                                        if (!pData[lastBucket.batchKey].이슈.includes(errorMsg)) {
+                                            pData[lastBucket.batchKey].이슈.push(errorMsg);
+                                            pData[lastBucket.batchKey].수기확인완료 = false;
+                                        }
+                                    }
+                                }
                             }
                         }
                     });
