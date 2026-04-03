@@ -331,7 +331,7 @@
                     targetItem.이슈 = targetItem.이슈.filter(msg => !msg.includes('매입내역 없음') && !msg.includes('전산 재고 부족'));
                     
                     // 🌟 대체 품목(원물) 정보를 거래처 칩과 혼동되지 않도록 우측 '메모' 영역으로 자동 삽입
-                    const autoMemo = `[${sourceItem.품명}]`;
+                    const autoMemo = `🔄 [${sourceItem.품명}]`;
                     if (!(targetItem.메모 || '').includes(autoMemo)) {
                         targetItem.메모 = targetItem.메모 ? targetItem.메모 + ' ' + autoMemo : autoMemo;
                     }
