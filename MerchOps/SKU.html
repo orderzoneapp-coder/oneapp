@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="ko" translate="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>농산물 단가 일괄등록 (DataOps Style)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f1f5f9; overflow: hidden; margin: 0; padding: 0; }
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* DataOps 스타일 입력 셀 디자인 */
+        .cell-input {
+            width: 100%; height: 100%; background: transparent; border: 1px solid transparent; 
+            text-align: right; padding: 6px 8px; outline: none; font-variant-numeric: tabular-nums;
+            transition: all 0.1s; border-radius: 4px;
+        }
+        .cell-input:hover { border-color: #cbd5e1; background-color: #f8fafc; }
+        .cell-input:focus { border-color: #3b82f6; background-color: #fff; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); z-index: 10; position: relative; font-weight: 700; color: #1e40af; }
+        
+        /* 숫자 증감 화살표 숨김 */
+        input[type="number"]::-webkit-inner-spin-button, 
+        input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type="number"] { -moz-appearance: textfield; }
+
+        /* =========================================
+           인쇄 전용 (Print) 스타일 시트
+           ========================================= */
+        @media print {
+            @page { margin: 1cm; size: A4 landscape; } /* 가로 방향 인쇄 권장 */
+            body { background: white; overflow: visible; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            
+            /* 불필요한 UI 숨김 */
+            header, footer, .no-print { display: none !important; }
+            
+            /* 스크롤 해제 및 전체 내용 펼치기 */
+            main { 
+                margin: 0 !important; padding: 0 !important; border: none !important; 
+                box-shadow: none !important; overflow: visible !important; height: auto !important; 
+            }
+            
+            /* 프린트용 테이블 스타일 최적화 */
+            table { border-collapse: collapse; width: 100%; page-break-inside: auto; }
+            tr { page-break-inside: avoid; page-break-after: auto; }
+            thead { display: table-header-group; } /* 페이지 넘어갈 때 헤더 반복 */
+            th, td { 
+                border: 1px solid #94a3b8 !important; 
+                padding: 6px 4px !important; 
+                font-size: 11px !important; 
+                color: #000 !important; 
+            }
+            th { background-color: #e2e8f0 !important; text-align: center !important; }
+            
+            /* 입력창(Input)을 일반 텍스트처럼 보이게 처리 */
+            .cell-input { 
+                border: none !important; 
+                padding: 0 !important; 
+                color: #000 !important; 
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        // 1. 카테고리 마스터 데이터
+        const CAT_DATA = {
+            cat1: [
+                { id: '10', name: '채소.과일' },
+                { id: '20', name: '수산.축산' },
+                { id: '50', name: '주방.잡화' }
+            ],
+            cat2: {
+                '10': [
+                    { id: '1010', name: '무/배추/대파/마늘' },
+                    { id: '1040', name: '양채류/고급채소' }
+                ],
+                '20': [
+                    { id: '2010', name: '생선/해산물' }
+                ],
+                '50': [
+                    { id: '5020', name: '일회용품/비닐/호일' },
+                    { id: '5050', name: '비닐봉투/쓰레기봉투' }
+                ]
+            }
+        };
+
+        // 2. 상품 Mock 데이터 (BOX와 EA로 나뉨)
+        const INITIAL_PRODUCTS = [
+            { id: 1, baseCode: '104010101', name: '적채 (특)', spec: 'BOX', cost: 14000, stock: 999, priceA: 17000, priceB: 16000, priceC: 15000, priceD: 14000, cat1: '10', cat2: '1040', cat3: '적채(104010)' },
+            { id: 2, baseCode: '104010101', name: '적채 (특)', spec: 'EA', cost: 2500, stock: 50, priceA: 3000, priceB: 2800, priceC: 2700, priceD: 2500, cat1: '10', cat2: '1040', cat3: '적채(104010)' },
+            
+            { id: 3, baseCode: '104010116', name: '양상추 포장_12입', spec: 'BOX', cost: 18000, stock: 120, priceA: 22000, priceB: 21000, priceC: 20000, priceD: 18500, cat1: '10', cat2: '1040', cat3: '양상추(104011)' },
+            { id: 4, baseCode: '104010116', name: '양상추 포장_12입', spec: 'EA', cost: 1600, stock: 30, priceA: 2000, priceB: 1900, priceC: 1800, priceD: 1650, cat1: '10', cat2: '1040', cat3: '양상추(104011)' },
+            
+            { id: 5, baseCode: '101010110', name: '월동무우 (특)', spec: 'BOX', cost: 14000, stock: 500, priceA: 17200, priceB: 16500, priceC: 15000, priceD: 14000, cat1: '10', cat2: '1010', cat3: '무우(11010)' },
+            { id: 6, baseCode: '101010110', name: '월동무우 (특)', spec: 'EA', cost: 1500, stock: 100, priceA: 1800, priceB: 1700, priceC: 1600, priceD: 1500, cat1: '10', cat2: '1010', cat3: '무우(11010)' },
+
+            { id: 7, baseCode: '505030400', name: '비닐봉투100L (흰색)', spec: 'BOX', cost: 17800, stock: 99, priceA: 20200, priceB: 19500, priceC: 18800, priceD: 17800, cat1: '50', cat2: '5050', cat3: '쓰레기봉투(54010)' },
+            { id: 8, baseCode: '505030400', name: '비닐봉투100L (흰색)', spec: 'EA', cost: 200, stock: 999, priceA: 250, priceB: 230, priceC: 210, priceD: 200, cat1: '50', cat2: '5050', cat3: '쓰레기봉투(54010)' },
+            
+            // 프린트 테스트를 위한 추가 데이터
+            { id: 9, baseCode: '101020000', name: '대파 1단', spec: 'BOX', cost: 25000, stock: 50, priceA: 30000, priceB: 29000, priceC: 28000, priceD: 27000, cat1: '10', cat2: '1010', cat3: '대파(11020)' },
+            { id: 10, baseCode: '101020000', name: '대파 1단', spec: 'EA', cost: 2500, stock: 150, priceA: 3000, priceB: 2900, priceC: 2800, priceD: 2700, cat1: '10', cat2: '1010', cat3: '대파(11020)' },
+        ];
+
+        // 입력 가능한 컬럼 목록 (키보드 네비게이션용)
+        const EDIT_COLS = ['cost', 'stock', 'priceA', 'priceB', 'priceC', 'priceD'];
+
+        function App() {
+            // 브라우저 로컬 스토리지에서 1/2차 카테고리 불러오기
+            const [savedCat1, setSavedCat1] = useState(localStorage.getItem('merchops_cat1') || '10');
+            const [savedCat2, setSavedCat2] = useState(localStorage.getItem('merchops_cat2') || '1040');
+            const [searchTerm, setSearchTerm] = useState('');
+            const [products, setProducts] = useState(INITIAL_PRODUCTS);
+
+            // 로컬스토리지 저장 로직
+            const handleCat1Change = (e) => {
+                const val = e.target.value;
+                setSavedCat1(val);
+                localStorage.setItem('merchops_cat1', val);
+                // 1차 카테고리가 바뀌면 2차 카테고리 초기화
+                const firstChild = CAT_DATA.cat2[val]?.[0]?.id || '';
+                setSavedCat2(firstChild);
+                localStorage.setItem('merchops_cat2', firstChild);
+            };
+
+            const handleCat2Change = (e) => {
+                const val = e.target.value;
+                setSavedCat2(val);
+                localStorage.setItem('merchops_cat2', val);
+            };
+
+            // 프린트 실행 함수
+            const handlePrint = () => {
+                window.print();
+            };
+
+            // 데이터 변경 핸들러
+            const handleInputChange = (idx, field, value) => {
+                const numVal = value === '' ? '' : Number(value);
+                setProducts(prev => {
+                    const next = [...prev];
+                    next[idx] = { ...next[idx], [field]: numVal };
+                    return next;
+                });
+            };
+
+            // 🌟 [핵심] DataOps 스타일 키보드 자유 이동 로직
+            const handleKeyDown = (e, rIdx, cIdx) => {
+                let nextR = rIdx;
+                let nextC = cIdx;
+
+                if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    nextR = Math.max(0, rIdx - 1);
+                } 
+                else if (e.key === 'ArrowDown' || e.key === 'Enter') {
+                    e.preventDefault();
+                    nextR = Math.min(filteredProducts.length - 1, rIdx + 1);
+                } 
+                else if (e.key === 'ArrowLeft') {
+                    if (e.target.selectionStart === 0) { // 커서가 맨 앞일때만 셀 이동
+                        e.preventDefault();
+                        nextC = Math.max(0, cIdx - 1);
+                    }
+                } 
+                else if (e.key === 'ArrowRight') {
+                    if (e.target.selectionEnd === String(e.target.value).length) { // 커서가 맨 뒤일때만 셀 이동
+                        e.preventDefault();
+                        nextC = Math.min(EDIT_COLS.length - 1, cIdx + 1);
+                    }
+                }
+                else if (e.key === 'Tab') {
+                    e.preventDefault();
+                    if (e.shiftKey) { // Shift + Tab (이전 셀)
+                        if (cIdx > 0) nextC = cIdx - 1;
+                        else if (rIdx > 0) { nextR = rIdx - 1; nextC = EDIT_COLS.length - 1; }
+                    } else { // Tab (다음 셀)
+                        if (cIdx < EDIT_COLS.length - 1) nextC = cIdx + 1;
+                        else if (rIdx < filteredProducts.length - 1) { nextR = rIdx + 1; nextC = 0; }
+                    }
+                }
+
+                if (nextR !== rIdx || nextC !== cIdx) {
+                    const nextId = `cell-${nextR}-${nextC}`;
+                    const nextEl = document.getElementById(nextId);
+                    if (nextEl) {
+                        nextEl.focus();
+                        nextEl.select(); // 이동 시 자동 블록 지정 (빠른 덮어쓰기용)
+                    }
+                }
+            };
+
+            // 검색창에서 아래 화살표 누를 시 표 첫번째 셀로 진입
+            const handleSearchKeyDown = (e) => {
+                if (e.key === 'ArrowDown' || e.key === 'Enter') {
+                    e.preventDefault();
+                    const firstCell = document.getElementById('cell-0-0');
+                    if (firstCell) {
+                        firstCell.focus();
+                        firstCell.select();
+                    }
+                }
+            };
+
+            // 필터링 적용
+            const filteredProducts = useMemo(() => {
+                return products.filter(p => {
+                    const matchCat = p.cat1 === savedCat1 && p.cat2 === savedCat2;
+                    const matchSearch = p.name.includes(searchTerm) || p.baseCode.includes(searchTerm);
+                    // 검색어가 있으면 카테고리 무시하고 전체 검색
+                    return searchTerm ? matchSearch : matchCat;
+                });
+            }, [products, savedCat1, savedCat2, searchTerm]);
+
+            return (
+                <div className="h-screen flex flex-col bg-[#f1f5f9]">
+                    
+                    {/* 상단 헤더 & 컨트롤 패널 */}
+                    <header className="bg-slate-900 text-white shrink-0 shadow-md z-20">
+                        <div className="px-6 py-3 flex justify-between items-center">
+                            <h1 className="text-xl font-black tracking-tight"><span className="text-blue-400">ONEAPP</span> DataOps <span className="ml-2 text-[12px] font-medium text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full">단가 일괄등록 엔진</span></h1>
+                            <div className="flex items-center gap-3">
+                                <button onClick={handlePrint} className="px-4 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-sm font-bold rounded shadow-sm transition-colors border border-slate-600">
+                                    <i className="fas fa-print mr-1.5"></i>프린트 출력
+                                </button>
+                                <button className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded shadow-sm transition-colors">
+                                    <i className="fas fa-save mr-1.5"></i>변경사항 저장
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div className="no-print px-6 py-3 bg-white border-b border-slate-200 flex gap-4 items-center shadow-sm">
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-slate-500 w-16">1차 분류</span>
+                                <select value={savedCat1} onChange={handleCat1Change} className="border border-slate-300 rounded px-3 py-1.5 text-sm font-bold text-slate-800 bg-slate-50 focus:border-blue-500 outline-none w-40">
+                                    {CAT_DATA.cat1.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                </select>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-slate-500 w-16">2차 분류</span>
+                                <select value={savedCat2} onChange={handleCat2Change} className="border border-slate-300 rounded px-3 py-1.5 text-sm font-bold text-slate-800 bg-slate-50 focus:border-blue-500 outline-none w-48">
+                                    {CAT_DATA.cat2[savedCat1]?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                </select>
+                            </div>
+                            
+                            <div className="w-px h-6 bg-slate-300 mx-2"></div>
+
+                            <div className="flex items-center gap-2 flex-1 max-w-sm relative">
+                                <i className="fas fa-search absolute left-3 text-slate-400"></i>
+                                <input 
+                                    type="text" 
+                                    placeholder="품명 또는 상품코드 검색 (↓키로 표 진입)" 
+                                    value={searchTerm}
+                                    onChange={e => setSearchTerm(e.target.value)}
+                                    onKeyDown={handleSearchKeyDown}
+                                    className="w-full border border-slate-300 rounded pl-9 pr-3 py-1.5 text-sm font-bold focus:border-blue-500 outline-none shadow-inner bg-slate-50 focus:bg-white"
+                                />
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* 데이터 그리드 영역 */}
+                    <main className="flex-1 overflow-y-auto custom-scrollbar p-4 bg-white m-4 rounded-xl border border-slate-200 shadow-sm relative">
+                        {/* 프린트 시에만 상단에 표시될 타이틀 */}
+                        <div className="hidden print:block text-xl font-black mb-4 text-center">
+                            단가표 / 견적서 ({CAT_DATA.cat2[savedCat1]?.find(c => c.id === savedCat2)?.name})
+                        </div>
+                        <table className="w-full text-left border-collapse text-sm whitespace-nowrap">
+                            <thead className="bg-slate-50 sticky top-0 z-10 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+                                <tr>
+                                    <th className="py-3 px-3 border-b-2 border-slate-200 text-slate-600 font-black text-xs">상품코드</th>
+                                    <th className="py-3 px-3 border-b-2 border-slate-200 text-slate-600 font-black text-xs w-[200px]">품명</th>
+                                    <th className="py-3 px-3 border-b-2 border-slate-200 text-slate-600 font-black text-xs text-center bg-slate-100">규격</th>
+                                    <th className="py-3 px-3 border-b-2 border-slate-200 text-slate-600 font-black text-xs text-right">구매가 (원가)</th>
+                                    <th className="py-3 px-3 border-b-2 border-slate-200 text-slate-600 font-black text-xs text-right">재고수량</th>
+                                    <th className="py-3 px-3 border-b-2 border-slate-200 text-blue-700 font-black text-xs text-right bg-blue-50/50 print:bg-transparent">판매가 A</th>
+                                    <th className="py-3 px-3 border-b-2 border-slate-200 text-blue-700 font-black text-xs text-right bg-blue-50/50 print:bg-transparent">판매가 B</th>
+                                    <th className="py-3 px-3 border-b-2 border-slate-200 text-blue-700 font-black text-xs text-right bg-blue-50/50 print:bg-transparent">판매가 C</th>
+                                    <th className="py-3 px-3 border-b-2 border-slate-200 text-blue-700 font-black text-xs text-right bg-blue-50/50 print:bg-transparent">판매가 D</th>
+                                    <th className="py-3 px-3 border-b-2 border-slate-200 text-slate-400 font-bold text-xs">3차 분류 (참고)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredProducts.length === 0 ? (
+                                    <tr>
+                                        <td colSpan="10" className="py-20 text-center text-slate-400 font-bold">
+                                            <i className="fas fa-ghost text-4xl mb-3 block opacity-30"></i>
+                                            조건에 맞는 상품이 없습니다.
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    filteredProducts.map((item, rIdx) => {
+                                        // BOX와 EA 구분을 위한 스타일링 (짝수/홀수 베이스 코드별 묶음)
+                                        const isBox = item.spec === 'BOX';
+                                        const borderClass = isBox ? 'border-t-2 border-t-slate-200' : 'border-t border-t-slate-100 border-dashed print:border-t-slate-300 print:border-solid';
+                                        
+                                        return (
+                                            <tr key={item.id} className={`${borderClass} hover:bg-blue-50/30 transition-colors group`}>
+                                                
+                                                {/* 정보 영역 (읽기 전용) */}
+                                                <td className="py-1 px-3 font-mono text-[13px] text-slate-500">{item.baseCode}-{item.spec}</td>
+                                                <td className="py-1 px-3 font-bold text-slate-800">
+                                                    {isBox ? item.name : <span className="text-slate-400 pl-4 print:text-slate-800">└ {item.name}</span>}
+                                                </td>
+                                                <td className="py-1 px-3 text-center bg-slate-50 print:bg-transparent">
+                                                    <span className={`text-[11px] font-black px-2 py-0.5 rounded ${isBox ? 'bg-slate-800 text-white print:text-black print:border' : 'bg-slate-200 text-slate-600 print:text-black'}`}>{item.spec}</span>
+                                                </td>
+
+                                                {/* 입력 영역 (DataOps 네비게이션) */}
+                                                {EDIT_COLS.map((colName, cIdx) => (
+                                                    <td key={colName} className={`p-1 ${colName.startsWith('price') ? 'bg-blue-50/10 print:bg-transparent' : ''}`}>
+                                                        <input 
+                                                            id={`cell-${rIdx}-${cIdx}`}
+                                                            type="number"
+                                                            className={`cell-input ${colName === 'stock' ? 'text-emerald-600 font-bold' : (colName === 'cost' ? 'text-rose-600 font-bold' : 'text-slate-700 font-bold')}`}
+                                                            value={item[colName]}
+                                                            onChange={(e) => handleInputChange(rIdx, colName, e.target.value)}
+                                                            onKeyDown={(e) => handleKeyDown(e, rIdx, cIdx)}
+                                                            onFocus={(e) => e.target.select()}
+                                                        />
+                                                    </td>
+                                                ))}
+
+                                                {/* 3차 카테고리 표시 (읽기 전용) */}
+                                                <td className="py-1 px-3 text-xs text-slate-400 font-medium print:text-black">
+                                                    <i className="fas fa-tag mr-1 opacity-50 no-print"></i>{item.cat3}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })
+                                )}
+                            </tbody>
+                        </table>
+                    </main>
+                    
+                    {/* 하단 단축키 가이드 */}
+                    <footer className="no-print bg-slate-800 text-slate-400 text-xs px-6 py-2.5 shrink-0 flex gap-6 shadow-inner">
+                        <span><strong className="text-white bg-slate-700 px-1.5 rounded mr-1 border border-slate-600">Tab / 방향키</strong> 셀 이동</span>
+                        <span><strong className="text-white bg-slate-700 px-1.5 rounded mr-1 border border-slate-600">Enter</strong> 아래로 이동</span>
+                        <span><strong className="text-white bg-slate-700 px-1.5 rounded mr-1 border border-slate-600">Shift + Tab</strong> 이전 셀 이동</span>
+                    </footer>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
