@@ -665,7 +665,17 @@
                         const lifoKeywords = (mappings.lifoVendor || '').split(',').map(s => s.trim().toLowerCase()).filter(s => s);
                         const isLifo = lifoKeywords.some(kw => kw && sale._rawCombinedStr.includes(kw));
                         const internalLotKeywords = (mappings.internalLot || '').split(',').map(s => s.trim().toLowerCase()).filter(s => s);
+                        
+                        // 🌟 핵심 변경: 매입처 매칭 키워드를 미리 검사하여 내부분배 여부를 판단
                         let isInternalDistribution = false;
+                        let matchStr = '';
+                        if (sale.매입처매칭 && sale.매입처매칭 !== '미지정') {
+                            matchStr = sale.매입처매칭.replace(/\s/g, '').toLowerCase();
+                            isInternalDistribution = internalLotKeywords.some(kw => matchStr.includes(kw));
+                        }
+                        
+                        // 🌟 당일우선(LIFO) 거래처라도, 내부분배용으로 지정된 전표면 LIFO를 무시하고 FIFO(기존 재고 우선 선출) 적용
+                        const effectiveIsLifo = isInternalDistribution ? false : isLifo;
 
                         if (!pool || pool.buckets.length === 0) {
                             const bKey = generateBatchKey(code, sale.품명, 0, '매입내역 없음', '');
@@ -676,7 +686,7 @@
                                 if (code === 'NO_CODE') pData[bKey].이슈.push('🚨코드없음(수기확인)'); else if (hasClosingEnd) pData[bKey].이슈.push('🚨신규발생(마감자료에없음)');
                             }
                             pData[bKey].출고 += qtyToDeduct; pData[bKey].매출액 += finalRevenue;
-                            if (!pData[bKey].출고내역[sale.거래처]) pData[bKey].출고내역[sale.거래처] = {qty: 0, rev: 0, cogs: 0, isLifo: isLifo, isPerfectMatch: false, displayVendor: sale.거래처};
+                            if (!pData[bKey].출고내역[sale.거래처]) pData[bKey].출고내역[sale.거래처] = {qty: 0, rev: 0, cogs: 0, isLifo: effectiveIsLifo, isPerfectMatch: false, displayVendor: sale.거래처};
                             pData[bKey].출고내역[sale.거래처].qty += qtyToDeduct; pData[bKey].출고내역[sale.거래처].rev += finalRevenue;
                             return;
                         }
@@ -692,7 +702,7 @@
                             if (!pData[bucket.batchKey].출고내역[vendorKey]) {
                                 pData[bucket.batchKey].출고내역[vendorKey] = {
                                     qty: 0, rev: 0, cogs: 0, 
-                                    isLifo: isLifo, 
+                                    isLifo: effectiveIsLifo, 
                                     isPerfectMatch: isPerfect, 
                                     displayVendor: sale.거래처
                                 };
@@ -707,10 +717,7 @@
                             let matchedBuckets = []; let matchFailedFlag = false;
 
                             // [1단계] 매입처(Lot) 기반 1차 필터링
-                            if (sale.매입처매칭 && sale.매입처매칭 !== '미지정') {
-                                const matchStr = sale.매입처매칭.replace(/\s/g, '').toLowerCase();
-                                isInternalDistribution = internalLotKeywords.some(kw => matchStr.includes(kw));
-
+                            if (matchStr) {
                                 if (isInternalDistribution) { matchedBuckets = [...pool.buckets]; } 
                                 else {
                                     pool.buckets.forEach(bucket => { const bVendorStr = String(bucket.거래처 || '').replace(/\s/g, '').toLowerCase(); if (bVendorStr && matchStr && (bVendorStr.includes(matchStr) || matchStr.includes(bVendorStr))) { matchedBuckets.push(bucket); } });
@@ -726,7 +733,7 @@
                             
                             // 2순위: 정확한 수량이 없다면, 수량이 넉넉한(그 이상인) 묶음에서 차감 (LIFO/FIFO 방향 고려)
                             if (!exactMatchBucket) {
-                                const searchList = isLifo ? [...availableBucketsForPuzzle].reverse() : availableBucketsForPuzzle;
+                                const searchList = effectiveIsLifo ? [...availableBucketsForPuzzle].reverse() : availableBucketsForPuzzle;
                                 exactMatchBucket = searchList.find(b => b.수량 > remainingQty);
                             }
                             
@@ -757,10 +764,10 @@
                                 let take = 0;
 
                                 if (availableBuckets.length > 0) {
-                                    targetBucket = isLifo ? availableBuckets[availableBuckets.length - 1] : availableBuckets[0];
+                                    targetBucket = effectiveIsLifo ? availableBuckets[availableBuckets.length - 1] : availableBuckets[0];
                                     take = Math.min(targetBucket.수량, remainingQty);
                                 } else {
-                                    targetBucket = isLifo ? matchedBuckets[0] : matchedBuckets[matchedBuckets.length - 1];
+                                    targetBucket = effectiveIsLifo ? matchedBuckets[0] : matchedBuckets[matchedBuckets.length - 1];
                                     take = remainingQty;
                                 }
 
