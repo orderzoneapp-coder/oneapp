@@ -659,14 +659,21 @@
                                 }
                             } else { matchedBuckets = [...pool.buckets]; }
 
-                            // [2단계] 🌟 수량 퍼즐 매칭 (Exact Quantity Match) - 신규 도입
-                            // 팔아야 할 수량과 남아있는 재고 수량이 정확히 '일치'하는 묶음이 있다면 우선적으로 강제 매칭
+                            // [2단계] 🌟 단일 버킷 매칭 (정확한 수량 -> 넉넉한 수량)
                             let availableBucketsForPuzzle = matchedBuckets.filter(b => b.수량 > 0);
+                            
+                            // 1순위: 팔아야 할 수량과 정확히 일치하는 묶음
                             let exactMatchBucket = availableBucketsForPuzzle.find(b => b.수량 === remainingQty);
+                            
+                            // 2순위: 정확한 수량이 없다면, 수량이 넉넉한(그 이상인) 묶음에서 차감 (LIFO/FIFO 방향 고려)
+                            if (!exactMatchBucket) {
+                                const searchList = isLifo ? [...availableBucketsForPuzzle].reverse() : availableBucketsForPuzzle;
+                                exactMatchBucket = searchList.find(b => b.수량 > remainingQty);
+                            }
                             
                             if (exactMatchBucket) {
                                 deductFromBucket(exactMatchBucket, remainingQty, true);
-                                remainingQty = 0; // 퍼즐이 맞춰졌으므로 남은 출고량은 0
+                                remainingQty = 0; // 단일 버킷에서 전량 소화 완료
 
                                 // 이슈 라벨링 처리
                                 if (matchFailedFlag) {
@@ -1129,7 +1136,7 @@
                                 {item.출고내역 && Object.keys(item.출고내역).length > 0 && (
                                     <div className="mt-0.5 flex flex-wrap gap-1.5 items-center">
                                         {Object.entries(item.출고내역).map(([vendor, data]) => {
-                                            // 🌟 완벽 일치만 회색, 나머지는 기존 조건 적용 (LIFO -> 하늘색, FIFO -> 흰색)
+                                            // 🌟 단일 묶음 매칭(isPerfect)은 회색, 일반 분할 매칭은 흰색/하늘색
                                             const displayVendor = data.displayVendor || vendor.replace('_perfect', '');
                                             const isPerfect = data.isPerfectMatch;
                                             
@@ -1143,8 +1150,8 @@
                                             return (
                                                 <div key={vendor} draggable onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.setData('text/plain', JSON.stringify({sourceKey: item.batchKey, vendor, qty: data.qty, code: item.코드})); e.currentTarget.classList.add('opacity-40', 'scale-95'); }} onDragEnd={(e) => { e.currentTarget.classList.remove('opacity-40', 'scale-95'); }} 
                                                     className={`flex items-center px-2 py-0.5 rounded text-[10px] font-semibold cursor-grab active:cursor-grabbing border shadow-sm transition-all hover:-translate-y-0.5 ${chipClass}`} 
-                                                    title={`${data.qty}개 출고 ${data.isLifo ? '(당일우선 LIFO)' : '(일반 FIFO)'}${isPerfect ? ' - 완벽 일치' : ' - 검수 필요'} - 드래그 이동 (Ctrl+드롭: 분할)`}>
-                                                    <span className="truncate max-w-[120px] flex items-center">{safeStr(displayVendor, '미지정')}({data.qty}){isPerfect && <span className="ml-0.5 text-[9px]" title="수량 완벽 일치 자동 매칭">🧲</span>}</span>
+                                                    title={`${data.qty}개 출고 ${data.isLifo ? '(당일우선 LIFO)' : '(일반 FIFO)'} - 드래그 이동 (Ctrl+드롭: 분할)`}>
+                                                    <span className="truncate max-w-[120px] flex items-center">{safeStr(displayVendor, '미지정')}({data.qty})</span>
                                                 </div>
                                             );
                                         })}
