@@ -137,8 +137,9 @@
             vendor: '매출처명, 매입처(Lot), 매입처(거래처), 거래처명, 거래처, 거래, 매장명, 매장, 고객, 판매처, 공급사, 판매, 청과, 3거래',
             matchVendor: '구매처, 매입처, 매칭정보, 원매입처, lot', 
             excludeVendor: '3우리, 우리농산, 1전송, 창고이동, 폐기, 샘플',
-            lifoVendor: '2전송, 쿠팡, B2B, 당일우선',
-            internalLot: '우리, 공용, 분배, 담당자' 
+            lifoVendor: '2전송, 쿠팡, B2B, 당일우선, 현금판매',
+            internalLot: '우리, 공용, 분배, 담당자',
+            priorityVendor: '2전송>1창고' 
         };
 
         /* =======================================================================
@@ -566,13 +567,32 @@
                         aggregatedSales[aggKey]._rawCombinedStr += ' ' + Object.values(sale._raw || {}).map(v => String(v)).join(' ').toLowerCase();
                     });
 
-                    // 3. 병합된 전표 리스트를 큰 수량부터 차감되도록 정렬
+                    // 3. 병합된 전표 리스트를 우선순위 및 큰 수량부터 차감되도록 정렬
+                    const priorityGroups = (mappings.priorityVendor || '')
+                        .split('>')
+                        .map(group => group.split(',').map(s => s.trim().toLowerCase()).filter(s => s))
+                        .filter(group => group.length > 0);
+
+                    const getVendorRank = (vendorName) => {
+                        if (!vendorName) return priorityGroups.length;
+                        const lowerName = vendorName.toLowerCase();
+                        for (let i = 0; i < priorityGroups.length; i++) {
+                            if (priorityGroups[i].some(kw => lowerName.includes(kw))) return i;
+                        }
+                        return priorityGroups.length; // 매핑 안 된 거래처는 가장 후순위
+                    };
+
                     const mergedOutItems = Object.values(aggregatedSales);
                     mergedOutItems.sort((a, b) => { 
                         const codeA = String(a.코드 || 'NO_CODE'); 
                         const codeB = String(b.코드 || 'NO_CODE'); 
                         if (codeA !== codeB) return codeA.localeCompare(codeB); 
-                        return (b._computedQty || 0) - (a._computedQty || 0); 
+
+                        const rankA = getVendorRank(a.거래처);
+                        const rankB = getVendorRank(b.거래처);
+                        if (rankA !== rankB) return rankA - rankB; // 우선순위가 높은(숫자가 작은) 거래처가 먼저 차감됨
+
+                        return (b._computedQty || 0) - (a._computedQty || 0); // 순위가 같으면 수량순
                     });
 
                     // 4. 차감 로직 시작
@@ -1587,15 +1607,15 @@
                                 <div className="flex justify-between items-center mb-5">
                                     <div><h3 className="text-lg font-bold text-slate-800"><i className="fas fa-sitemap text-blue-500 mr-2"></i>엑셀 데이터 매핑 및 재고 표시 기준 설정</h3></div>
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
                                     {Object.entries({ 
-                                        code: '품목코드 (필수)', name: '품목명 (필수)', spec: '규격 열 (선택)', qty: '수량/실사 (필수)', price: '매입단가 (필수)', date: '일자 (필수)', vendor: '거래처명, 거래처 (선택)', matchVendor: '판매전표 내 구매처 (Lot 매칭)', excludeVendor: '제외 거래처(창고이동 등)', lifoVendor: '당일우선 출고 (LIFO 적용)', internalLot: '내부 분배/공용 로트 (매치 예외)'
+                                        code: '품목코드 (필수)', name: '품목명 (필수)', spec: '규격 열 (선택)', qty: '수량/실사 (필수)', price: '매입단가 (필수)', date: '일자 (필수)', vendor: '거래처명, 거래처 (선택)', matchVendor: '판매전표 내 구매처 (Lot 매칭)', excludeVendor: '제외 거래처(창고이동 등)', lifoVendor: '당일우선 출고 (LIFO 적용)', internalLot: '내부 분배/공용 로트 (매치 예외)', priorityVendor: '출고 우선순위 (A > B > C)'
                                     }).map(([key, label]) => (
                                         <div key={key} className="flex flex-col">
-                                            <label className={`text-xs font-bold mb-1 ${key === 'excludeVendor' ? 'text-rose-600' : (key === 'matchVendor' ? 'text-blue-600' : (key === 'lifoVendor' ? 'text-purple-600' : (key === 'internalLot' ? 'text-teal-600' : 'text-slate-600')))}`}>
-                                                {key === 'excludeVendor' && <i className="fas fa-ban mr-1"></i>} {key === 'matchVendor' && <i className="fas fa-link mr-1"></i>} {key === 'lifoVendor' && <i className="fas fa-bolt mr-1"></i>} {key === 'internalLot' && <i className="fas fa-users mr-1"></i>} {label}
+                                            <label className={`text-xs font-bold mb-1 ${key === 'excludeVendor' ? 'text-rose-600' : (key === 'matchVendor' ? 'text-blue-600' : (key === 'lifoVendor' ? 'text-purple-600' : (key === 'internalLot' ? 'text-teal-600' : (key === 'priorityVendor' ? 'text-orange-600' : 'text-slate-600'))))}`}>
+                                                {key === 'excludeVendor' && <i className="fas fa-ban mr-1"></i>} {key === 'matchVendor' && <i className="fas fa-link mr-1"></i>} {key === 'lifoVendor' && <i className="fas fa-bolt mr-1"></i>} {key === 'internalLot' && <i className="fas fa-users mr-1"></i>} {key === 'priorityVendor' && <i className="fas fa-sort-amount-down mr-1"></i>} {label}
                                             </label>
-                                            <input type="text" value={mappings[key] || ''} onChange={(e) => setMappings({...mappings, [key]: e.target.value})} className={`border rounded-md px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 shadow-sm ${key === 'excludeVendor' ? 'border-rose-300 focus:ring-rose-400 bg-rose-50 text-rose-800' : (key === 'matchVendor' ? 'border-blue-300 focus:ring-blue-400 bg-blue-50 text-blue-800' : (key === 'lifoVendor' ? 'border-purple-300 focus:ring-purple-400 bg-purple-50 text-purple-800' : (key === 'internalLot' ? 'border-teal-300 focus:ring-teal-400 bg-teal-50 text-teal-800' : 'border-slate-300 focus:ring-blue-400 bg-white')))}`} />
+                                            <input type="text" value={mappings[key] || ''} onChange={(e) => setMappings({...mappings, [key]: e.target.value})} placeholder={key === 'priorityVendor' ? '예: 쿠팡 > 이마트 > 동네마트' : ''} className={`border rounded-md px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 shadow-sm ${key === 'excludeVendor' ? 'border-rose-300 focus:ring-rose-400 bg-rose-50 text-rose-800' : (key === 'matchVendor' ? 'border-blue-300 focus:ring-blue-400 bg-blue-50 text-blue-800' : (key === 'lifoVendor' ? 'border-purple-300 focus:ring-purple-400 bg-purple-50 text-purple-800' : (key === 'internalLot' ? 'border-teal-300 focus:ring-teal-400 bg-teal-50 text-teal-800' : (key === 'priorityVendor' ? 'border-orange-300 focus:ring-orange-400 bg-orange-50 text-orange-800' : 'border-slate-300 focus:ring-blue-400 bg-white'))))}`} />
                                         </div>
                                     ))}
                                 </div>
