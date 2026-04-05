@@ -990,8 +990,8 @@
                         </div>
                     )}
 
-                    {/* ✨ 메인 앱 래퍼: 최대 너비 1600px, 중앙 정렬 */}
-                    <div className="w-full max-w-[1600px] h-full flex flex-col bg-slate-50 relative shadow-2xl border-x border-slate-300 overflow-hidden">
+                    {/* ✨ 메인 앱 래퍼: 최대 너비 1280px로 축소하여 중앙 집중도 강화 */}
+                    <div className="w-full max-w-[1280px] h-full flex flex-col bg-slate-50 relative shadow-2xl border-x border-slate-300 overflow-hidden">
                         
                         {/* 헤더 */}
                         <header className="shrink-0 bg-white border-b border-slate-200 w-full z-[60] relative shadow-sm">
@@ -1174,7 +1174,8 @@
 
                             <div className="flex-1 flex flex-col w-full relative overflow-hidden">
                                 <div id="main-scroll-container" className="flex-1 overflow-auto w-full relative custom-scrollbar">
-                                    <div className="w-full min-w-[1200px] flex flex-col min-h-full relative">
+                                    {/* ✨ 내부 컨테이너 최소 너비를 1100px로 줄여서 1280px 화면에 잘 맞도록 조정 */}
+                                    <div className="w-full min-w-[1100px] flex flex-col min-h-full relative">
                                         
                                         <div ref={cardContainerRef} className="sticky top-0 z-30 bg-white w-full border-b border-slate-300 shadow-[0_2px_4px_rgba(0,0,0,0.02)] shrink-0">
                                             {/* 수기 상품 추가 패널 */}
