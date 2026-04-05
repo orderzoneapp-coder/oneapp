@@ -23,9 +23,6 @@
         .fade-in { animation: fadeIn 0.2s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         
-        .slide-down { animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1); transform-origin: top; }
-        @keyframes slideDown { from { opacity: 0; transform: scaleY(0.95) translateY(-10px); } to { opacity: 1; transform: scaleY(1) translateY(0); } }
-
         input[type="number"]::-webkit-inner-spin-button, 
         input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         input[type="number"] { -moz-appearance: textfield; }
@@ -36,6 +33,7 @@
         .filter-checkbox:checked + div { background-color: #3b82f6; border-color: #3b82f6; }
         .filter-checkbox:checked + div svg { display: block; }
 
+        /* 수량 입력칸 공통 스타일 */
         .qty-input {
             width: 100%; text-align: center; background-color: transparent; border: 1px solid transparent; 
             border-radius: 4px; padding: 4px 2px; font-size: 13px; font-weight: 700; outline: none; transition: all 0.2s;
@@ -81,6 +79,7 @@
             if (isNegative) num = -num; return isNaN(num) ? 0 : num;
         };
 
+        // 분리 키 생성 유틸리티
         const generateStockKey = (code, vendor, price, date, options) => {
             let key = String(code);
             if (options.vendor) key += `|V:${vendor || ''}`;
@@ -89,6 +88,7 @@
             return key;
         };
 
+        // 일자-넘버 포맷 변환기 (MM/DD-NO)
         const formatDateNumber = (dateStr, slipNo) => {
             let d = (dateStr || '').trim();
             if (d.includes('/')) {
@@ -104,6 +104,7 @@
             return `${d}${d && slipNo ? '-' : ''}${slipNo}`;
         };
 
+        // ✨ 매핑 기본값 업데이트 (그룹 간소화)
         const defaultMappings = {
             code: '복사원코드, 본사코드, 품목코드, 상품코드, 코드, 품번, sku, 2코드',
             name: '상품명, 품명, 품목명, 이름, 품목(상품명)',
@@ -111,7 +112,7 @@
             qty: '수량, 출고수량, 입고수량, 판매수량',
             stock: '재고, 기초재고, 기초수량, 현재고', 
             vendor: '거래처명, 거래처, 매입처, 판매처, 구매처, 구매처명, 유통사코드',
-            group: '지역그룹, 그룹, 코스', 
+            group: '지역그룹, 그룹, 코스', // ✨ 요청에 따라 간소화
             memo: '적요, 메모, 비고', 
             instruction: '지시사항, 전하실말씀, 상점메모, 배송메모', 
             warehouse: '창고, 위치, 적재위치',
@@ -214,9 +215,6 @@
                                 코드: codeStr || 'NO_CODE', 
                                 품명: baseName || '이름없음',
                                 규격: safeStr(getValByKeywords(rowObj, keywords.spec), ''),
-                                cat1: safeStr(getValByKeywords(rowObj, keywords.cat1), ''),
-                                cat2: safeStr(getValByKeywords(rowObj, keywords.cat2), ''),
-                                cat3: safeStr(getValByKeywords(rowObj, keywords.cat3), ''),
                                 수량: parseNumber(getValByKeywords(rowObj, keywords.qty)), 
                                 재고: parseNumber(getValByKeywords(rowObj, keywords.stock)), 
                                 거래처: safeStr(getValByKeywords(rowObj, keywords.vendor), ''), 
@@ -261,69 +259,6 @@
                 </div>
             );
         };
-
-        // ✨ 상태 표시 칩
-        const StatusChip = ({ status }) => {
-            const config = {
-                '주문': 'bg-blue-100 text-blue-700 border-blue-200',
-                '입금': 'bg-indigo-100 text-indigo-700 border-indigo-200',
-                '준비': 'bg-yellow-100 text-yellow-800 border-yellow-200',
-                '배송': 'bg-purple-100 text-purple-700 border-purple-200',
-                '완료': 'bg-emerald-100 text-emerald-700 border-emerald-200',
-                '부분취소': 'bg-orange-100 text-orange-700 border-orange-200',
-                '전체취소': 'bg-rose-100 text-rose-700 border-rose-200 line-through',
-                '삭제': 'bg-slate-200 text-slate-500 border-slate-300 line-through',
-                '적용': 'bg-slate-100 text-slate-600 border-slate-200',
-                '견적': 'bg-amber-100 text-amber-700 border-amber-200'
-            };
-            const cls = config[status] || config['주문'];
-            return <span className={`px-2 py-0.5 rounded text-[11px] font-bold border shadow-sm ${cls}`}>{status}</span>;
-        };
-
-        // ✨ 정렬 가능한 헤더 (R3)
-        const SortableHeader = ({ label, sortKey, currentSort, onSort, width, align = 'left', children }) => {
-            const isActive = currentSort.key === sortKey;
-            return (
-                <th className={`p-2 border-r border-slate-200 bg-slate-50 align-bottom ${width ? width : ''} text-${align}`}>
-                    <div className={`flex items-center justify-${align === 'right' ? 'end' : (align === 'center' ? 'center' : 'start')} cursor-pointer sortable ${isActive ? 'sort-active' : ''} ${children ? 'mb-1.5' : 'mb-1'} px-1`} onClick={() => onSort(sortKey)}>
-                        <span className="font-extrabold">{label}</span>
-                        <span className="sort-icon">
-                            {isActive ? (currentSort.direction === 'asc' ? '▲' : '▼') : '↕'}
-                        </span>
-                    </div>
-                    {children}
-                </th>
-            );
-        };
-
-        // ✨ 헤더 일체형 클린 검색창 (R3)
-        const SearchHeader = ({ value, onChange }) => (
-            <th className="p-0 border-r border-slate-200 border-b w-auto min-w-[250px] align-middle bg-slate-50 relative group">
-                <input 
-                    id="mainSearch" 
-                    type="text" 
-                    placeholder="품명/규격 검색 (F3)" 
-                    value={value} 
-                    onChange={e => onChange(e.target.value)} 
-                    className="w-full h-full absolute inset-0 pl-3 pr-8 bg-transparent border-none text-[12px] font-extrabold text-slate-700 placeholder-slate-400 outline-none focus:bg-white focus:ring-inset focus:ring-2 focus:ring-blue-500 transition-colors"
-                    onClick={e => e.stopPropagation()} 
-                />
-                <i className="fas fa-search absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none z-10 group-focus-within:text-blue-500"></i>
-            </th>
-        );
-
-        // ✨ 2단 텍스트 위계 셀 (R4)
-        const ProductInfoCell = ({ name, spec, code }) => (
-            <td className="px-4 py-2 border-r border-slate-100 align-middle">
-                <div className="flex flex-col gap-1 w-full max-w-[400px]">
-                    <div className="flex items-center w-full truncate">
-                        <span className="font-bold text-slate-900 text-[13px] truncate max-w-[250px]" title={name}>{name}</span>
-                        {spec && <span className="ml-1.5 text-[10px] font-semibold text-slate-500 border border-slate-200 px-1 rounded bg-slate-50 shrink-0 truncate max-w-[120px]" title={spec}>{spec}</span>}
-                    </div>
-                    <span className="font-mono text-[10px] text-slate-400 leading-none truncate block tracking-tight">{code}</span>
-                </div>
-            </td>
-        );
 
         const FilterDropdown = ({ title, options, selectedOptions, onChange, onClose }) => {
             const [search, setSearch] = useState('');
@@ -458,7 +393,7 @@
                 
                 const newOrder = {
                     id: `ORD_MANUAL_${Date.now()}_${Math.floor(Math.random()*1000)}`,
-                    그룹: '수기추가', 거래처: vendor || '미지정',
+                    그룹: masterData.vendors[vendor]?.group || '수기추가', 거래처: vendor || '미지정',
                     창고: '수기', 담당자: '수기', 코드: product.code, 품명: product.name, 규격: product.spec,
                     주문수량: numQty, 판매수량: 0, 단가: Number(price) || 0, 상태: '주문', 적요: '수기추가', 지시사항: '', 일자: '', 순번: ''
                 };
@@ -476,80 +411,63 @@
                     }};
                 });
                 showToast(`✅ [${product.name}] ${numQty}개 추가 완료`);
-            }, [showToast, splitOptions]);
+            }, [masterData, showToast, splitOptions]);
 
-            // ✨ 리팩토링된 마스터 데이터 전용 파서 로직 (단일 배열 구조)
-            const processMasterOrEstimateFile = useCallback(async (file, isEstimateOnly = false) => {
+            const processEstimateFile = useCallback(async (file) => {
                 setIsProcessing(true);
                 try {
-                    const parsed = await parseExcelData(file, mappings, true); // true for master mapping
+                    const parsed = await parseExcelData(file, mappings);
                     let updateCount = 0;
                     
                     setMasterData(prevMaster => {
-                        const newMasterList = [...prevMaster];
-                        const map = new Map(newMasterList.map(item => [item.code, item]));
-                        
+                        const updatedProducts = { ...prevMaster.products };
                         parsed.forEach(sale => {
                             const code = String(sale.코드 || 'NO_CODE');
                             if (code !== 'NO_CODE') {
-                                const existing = map.get(code) || {};
-                                
-                                if (isEstimateOnly && existing.code) {
-                                    let changed = false;
-                                    if (sale.inPrice && sale.inPrice !== existing.inPrice) { existing.inPrice = sale.inPrice; changed = true; }
-                                    if (sale.outPrice && sale.outPrice !== existing.outPrice) { existing.outPrice = sale.outPrice; changed = true; }
-                                    if (changed) { map.set(code, existing); updateCount++; }
-                                } else if (!isEstimateOnly) {
-                                    // Full Master Update
-                                    map.set(code, {
-                                        ...existing,
-                                        code: code,
-                                        name: sale.품명 || existing.name,
-                                        spec: sale.규격 || existing.spec,
-                                        cat1: sale.cat1 || existing.cat1 || '',
-                                        cat2: sale.cat2 || existing.cat2 || '',
-                                        cat3: sale.cat3 || existing.cat3 || '',
-                                        vendor: sale.거래처 || existing.vendor || '',
-                                        inPrice: sale.inPrice || existing.inPrice || 0,
-                                        outPrice: sale.outPrice || existing.outPrice || 0,
-                                    });
+                                if (!updatedProducts[code]) {
+                                    updatedProducts[code] = { code, name: sale.품명, spec: sale.규격, inPrice: sale.inPrice, outPrice: sale.outPrice };
                                     updateCount++;
+                                } else {
+                                    let changed = false;
+                                    if (sale.inPrice) { updatedProducts[code].inPrice = sale.inPrice; changed = true; }
+                                    if (sale.outPrice) { updatedProducts[code].outPrice = sale.outPrice; changed = true; }
+                                    if (changed) updateCount++;
                                 }
                             }
                         });
                         
-                        const finalArray = Array.from(map.values());
-                        localStorage.setItem('merchMaster_v524', JSON.stringify(finalArray));
-                        return finalArray;
+                        const newMaster = { vendors: prevMaster.vendors, products: updatedProducts };
+                        localStorage.setItem('merchMaster_v517', JSON.stringify(newMaster));
+                        return newMaster;
                     });
                     
-                    if (isEstimateOnly) {
-                        setOrderData(prev => {
-                            const newEst = [];
-                            parsed.forEach(sale => {
-                                const code = String(sale.코드 || 'NO_CODE');
-                                if (code === 'NO_CODE') return;
-                                newEst.push({
-                                    id: `ORD_EST_${Date.now()}_${Math.floor(Math.random()*10000)}`, 
-                                    그룹: safeStr(sale.그룹, '미지정'), 거래처: safeStr(sale.거래처, '미지정'), 일자: safeStr(sale.일자, ''), 순번: safeStr(sale.순번, ''),
-                                    창고: safeStr(sale.창고, '미지정'), 담당자: safeStr(sale.담당자, '미지정'), 
-                                    코드: code, 품명: sale.품명, 규격: sale.규격 || '',
-                                    주문수량: 0, 판매수량: 0, 단가: sale.outPrice || 0, 적요: '단가 마스터 업데이트', 지시사항: '', 상태: '견적'
-                                });
+                    setOrderData(prev => {
+                        const newEst = [];
+                        parsed.forEach(sale => {
+                            const code = String(sale.코드 || 'NO_CODE');
+                            if (code === 'NO_CODE') return;
+                            let vendor = safeStr(sale.거래처, ''); let group = safeStr(sale.그룹, '');
+                            if (masterData.vendors && masterData.vendors[vendor]) { if (!group) group = masterData.vendors[vendor].group; }
+                            
+                            newEst.push({
+                                id: `ORD_EST_${Date.now()}_${Math.floor(Math.random()*10000)}`, 
+                                그룹: group || '미지정', 거래처: vendor || '미지정', 일자: safeStr(sale.일자, ''), 순번: safeStr(sale.순번, ''),
+                                창고: safeStr(sale.창고, '미지정'), 담당자: safeStr(sale.담당자, '미지정'), 
+                                코드: code, 품명: sale.품명, 규격: sale.규격 || '',
+                                주문수량: 0, 판매수량: 0, 단가: sale.outPrice || 0, 적요: '단가 마스터 업데이트', 지시사항: '', 상태: '견적'
                             });
-                            return [...prev, ...newEst];
                         });
-                        setTimeout(() => showToast(`✅ 견적서 반영 완료: ${updateCount}개 품목의 단가(시세)가 업데이트되었습니다.`), 100);
-                    } else {
-                        setTimeout(() => setAlertMsg(`✅ 기초 마스터 데이터 ${updateCount}건이 연동/업데이트 되었습니다.`), 100);
-                    }
+                        return [...prev, ...newEst];
+                    });
+
+                    setTimeout(() => showToast(`✅ 견적서 반영 완료: ${updateCount}개 품목의 단가(시세)가 업데이트되었습니다.`), 100);
                 } catch(err) {
                     console.error(err);
-                    setAlertMsg('마스터 데이터 파싱 중 오류가 발생했습니다.');
+                    setAlertMsg('견적서 파싱 중 오류가 발생했습니다.');
                 } finally {
                     setIsProcessing(false);
                 }
-            }, [mappings, showToast, setAlertMsg, setIsProcessing, setMasterData]);
+            }, [mappings, showToast, setAlertMsg, setIsProcessing, setMasterData, masterData.vendors]);
 
             const executeAnalysis = useCallback((payload) => {
                 setIsProcessing(true); setConfirmModal({ isOpen: false, warnings: [], payload: null });
@@ -595,6 +513,8 @@
                             let vendor = safeStr(sale.거래처, ''); let group = safeStr(sale.그룹, '');
                             let warehouse = safeStr(sale.창고, ''); let manager = safeStr(sale.담당자, '');
 
+                            if (masterData.vendors && masterData.vendors[vendor]) { if (!group) group = masterData.vendors[vendor].group; }
+
                             newOrderData.push({
                                 id: `ORD_${orderIdCounter++}`, 그룹: group || '미지정', 거래처: vendor || '미지정', 일자: safeStr(sale.일자, ''), 순번: safeStr(sale.순번, ''),
                                 창고: warehouse || '미지정', 담당자: manager || '미지정', 코드: code, 품명: sale.품명, 규격: sale.규격 || '',
@@ -615,7 +535,7 @@
                 } catch(err) {
                     setAlertMsg('데이터 분석 중 오류가 발생했습니다. 엑셀 형식을 확인해주세요.');
                 } finally { setIsProcessing(false); }
-            }, [showToast, setAlertMsg, setConfirmModal, setIsProcessing, splitOptions]); 
+            }, [masterData, showToast, setAlertMsg, setConfirmModal, setIsProcessing, splitOptions]); 
 
             const runAnalysis = useCallback(async (filesObj) => {
                 setIsProcessing(true); setConfirmModal({ isOpen: false, warnings: [], payload: null });
@@ -637,7 +557,7 @@
             }, [mappings, executeAnalysis, setAlertMsg, setConfirmModal, setIsProcessing]);
 
             return {
-                stockData, orderData, updateOrder, updateOrderBulkStatus, updateStock, addManualOrder, processMasterOrEstimateFile,
+                stockData, orderData, updateOrder, updateOrderBulkStatus, updateStock, addManualOrder, processEstimateFile,
                 resetEngine, executeAnalysis, runAnalysis
             };
         };
@@ -676,7 +596,7 @@
             const [c2, setC2] = useState('');
             const [c3, setC3] = useState('');
 
-            const products = masterData;
+            const products = useMemo(() => Object.values(masterData.products || {}), [masterData.products]);
             
             const cat1List = useMemo(() => [...new Set(products.map(p => p.cat1).filter(Boolean))].sort(), [products]);
             const cat2List = useMemo(() => [...new Set(products.filter(p => p.cat1 === c1).map(p => p.cat2).filter(Boolean))].sort(), [products, c1]);
@@ -761,8 +681,7 @@
             const [confirmModal, setConfirmModal] = useState({ isOpen: false, warnings: [], payload: null });
             
             const [showSettings, setShowSettings] = useState(false);
-            const [showMasterModal, setShowMasterModal] = useState(false);
-            const [activeSettingsTab, setActiveSettingsTab] = useState('mapping');
+            const [activeSettingsTab, setActiveSettingsTab] = useState('master');
             const [showGuide, setShowGuide] = useState(false);
             
             const [splitOptions, setSplitOptions] = useState(() => {
@@ -775,7 +694,7 @@
 
             const [searchInputVal, setSearchInputVal] = useState('');
             const [cardHeight, setCardHeight] = useState(0);
-            const [activeTab, setActiveTab] = useState('manage'); 
+            const [activeTab, setActiveTab] = useState('vendor'); 
             const [selectedRows, setSelectedRows] = useState(new Set()); 
             
             const cardContainerRef = useRef(null);
@@ -787,9 +706,9 @@
             const [filterManager, setFilterManager] = useState('');
             const [activeDropdown, setActiveDropdown] = useState(null);
 
-            // ✨ 버전 업데이트: v524 (배열 기반 마스터 데이터)
+            // ✨ 버전 업데이트: v524
             const [mappings, setMappings] = useState(() => { const saved = localStorage.getItem('merchMappings_v524'); return saved ? { ...defaultMappings, ...JSON.parse(saved) } : defaultMappings; });
-            const [masterData, setMasterData] = useState(() => { const saved = localStorage.getItem('merchMaster_v524'); return saved ? JSON.parse(saved) : []; });
+            const [masterData, setMasterData] = useState(() => { const saved = localStorage.getItem('merchMaster_v517'); return saved ? JSON.parse(saved) : { vendors: {}, products: {} }; });
 
             const showToast = useCallback((text, type = 'success') => {
                 setToastMsg({ text, type });
@@ -797,16 +716,51 @@
             }, []);
 
             const { 
-                stockData, orderData, updateOrder, updateOrderBulkStatus, updateStock, addManualOrder, processMasterOrEstimateFile,
+                stockData, orderData, updateOrder, updateOrderBulkStatus, updateStock, addManualOrder, processEstimateFile,
                 resetEngine, executeAnalysis, runAnalysis
             } = useMerchOpsEngine({ mappings, masterData, setMasterData, setAlertMsg, showToast, setConfirmModal, setIsProcessing, splitOptions });
 
-            // Master Lookup Map for speedy inner renders
-            const masterMap = useMemo(() => {
-                const map = {};
-                masterData.forEach(p => { map[p.code] = p; });
-                return map;
-            }, [masterData]);
+            const handleMasterUpload = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                setIsProcessing(true);
+                try {
+                    const parsed = await parseExcelData(file, mappings);
+                    const newMaster = { vendors: { ...masterData.vendors }, products: { ...masterData.products } };
+                    let count = 0;
+                    parsed.forEach(row => {
+                        const r = row._raw;
+                        const code = row.코드;
+                        if (code && code !== 'NO_CODE') {
+                            const getVal = (kwList) => {
+                                const keys = Object.keys(r); const cleanKeys = keys.map(k => k.replace(/\s/g, '').toLowerCase());
+                                for (let kw of kwList) {
+                                    if (!kw) continue;
+                                    const matchingKeys = keys.filter((k, i) => cleanKeys[i].includes(kw));
+                                    for (let mk of matchingKeys) { if (r[mk] !== undefined && String(r[mk]).trim() !== '') return r[mk]; }
+                                }
+                                return null;
+                            };
+
+                            newMaster.products[code] = {
+                                code, name: row.품명, spec: row.규격 || '',
+                                cat1: safeStr(getVal(mappings.cat1.split(',').map(s=>s.trim().toLowerCase().replace(/\s/g,'')))),
+                                cat2: safeStr(getVal(mappings.cat2.split(',').map(s=>s.trim().toLowerCase().replace(/\s/g,'')))),
+                                cat3: safeStr(getVal(mappings.cat3.split(',').map(s=>s.trim().toLowerCase().replace(/\s/g,'')))),
+                                vendor: safeStr(getVal(mappings.vendor.split(',').map(s=>s.trim().toLowerCase().replace(/\s/g,'')))),
+                                inPrice: parseNumber(getVal(mappings.inPrice.split(',').map(s=>s.trim().toLowerCase().replace(/\s/g,'')))),
+                                outPrice: parseNumber(getVal(mappings.outPrice.split(',').map(s=>s.trim().toLowerCase().replace(/\s/g,''))))
+                            };
+                            count++;
+                        }
+                        if (row.거래처 && row.그룹) { newMaster.vendors[row.거래처] = { group: row.그룹 }; }
+                    });
+                    setMasterData(newMaster);
+                    localStorage.setItem('merchMaster_v517', JSON.stringify(newMaster));
+                    setAlertMsg(`✅ 마스터 데이터 ${count}건이 저장되었습니다.`);
+                } catch(err) { setAlertMsg('마스터 데이터 파싱 오류가 발생했습니다.'); console.error(err); }
+                finally { setIsProcessing(false); e.target.value = ''; setShowSettings(false); }
+            };
 
             const summaryData = useMemo(() => {
                 const map = {};
@@ -820,7 +774,7 @@
                 };
 
                 if (!splitOptions.price && !splitOptions.vendor && !splitOptions.date) {
-                    masterData.forEach(p => { 
+                    Object.values(masterData.products || {}).forEach(p => { 
                         map[p.code] = { 
                             key: p.code, 코드: p.code, 품명: p.name, 규격: p.spec, 
                             기초재고: 0, 입고수량: 0, 총주문: 0, 총판매: 0,
@@ -871,9 +825,9 @@
                     }
                 });
                 return Object.values(map);
-            }, [stockData, orderData, masterData, splitOptions]);
+            }, [stockData, orderData, masterData.products, splitOptions]);
 
-            const hasData = orderData.length > 0 || Object.keys(stockData).length > 0 || masterData.length > 0;
+            const hasData = orderData.length > 0 || Object.keys(stockData).length > 0 || Object.keys(masterData.products || {}).length > 0;
 
             const terminalMessage = useMemo(() => {
                 if (isProcessing) return "processing data_blocks..."; 
@@ -919,7 +873,7 @@
                 });
 
                 if (estimateFiles.length > 0) {
-                    for (const file of estimateFiles) { await processMasterOrEstimateFile(file, true); count.estimate++; }
+                    for (const file of estimateFiles) { await processEstimateFile(file); count.estimate++; }
                 }
 
                 if (dailyFiles.length > 0) {
@@ -939,12 +893,10 @@
                 if(fileArray.length > 1) {
                     showToast(`✅ ${fileArray.length}개 파일 묶음 자동 분류 완료 (기초:${count.prev} 입고:${count.in} 주문:${count.out} 판매:${count.done})`);
                 }
-            }, [showToast, processMasterOrEstimateFile]);
+            }, [showToast, processEstimateFile]);
 
             const handleGlobalDrop = useCallback((e) => {
                 e.preventDefault(); setIsGlobalDragging(false);
-                // 🛑 드롭 가드: 모달창 류가 열려있으면 메인 드롭 무시
-                if (document.getElementById('master-upload-modal') || document.querySelector('.z-\\[100\\]') || document.querySelector('.z-\\[500\\]')) return;
                 const droppedFiles = Array.from(e.dataTransfer.files);
                 if (droppedFiles.length > 0) autoAssignFiles(droppedFiles); window.focus();
             }, [autoAssignFiles]);
@@ -953,53 +905,31 @@
                 setFiles({ prev: [], in: [], estimate: [], out: [], done: [] }); resetEngine();
                 setSearchInputVal(''); setFilterGroup([]); setFilterVendor([]); 
                 setFilterWarehouse(''); setFilterManager(''); setSelectedRows(new Set());
-                setIsManualAddOpen(false); setActiveTab('manage');
+                setIsManualAddOpen(false); setActiveTab('vendor');
             }, [resetEngine]);
-
-            // ✨ 데이터 비우기 (마스터)
-            const handleResetMasterData = () => {
-                setConfirmModal({
-                    isOpen: true,
-                    payload: null,
-                    warnings: ["정말 모든 마스터 데이터를 삭제하시겠습니까?", "초기화된 데이터는 복구할 수 없습니다."],
-                    onConfirm: () => {
-                        setMasterData([]);
-                        localStorage.removeItem('merchMaster_v524');
-                        setConfirmModal({ isOpen: false, warnings: [], payload: null });
-                        showToast("✅ 마스터 데이터가 모두 초기화되었습니다.", "success");
-                    }
-                });
-            };
 
             const handleSort = (key) => { setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc' })); };
             const toggleRowSelect = (id) => { const newSet = new Set(selectedRows); if (newSet.has(id)) newSet.delete(id); else newSet.add(id); setSelectedRows(newSet); };
             const toggleAllSelect = (rows) => { 
                 if (selectedRows.size === rows.length && rows.length > 0) setSelectedRows(new Set()); 
-                else setSelectedRows(new Set(rows.map(r => r.id || r.key || r.code || r.코드))); 
+                else setSelectedRows(new Set(rows.map(r => r.id || r.key || r.코드))); 
             };
 
-            // 🌟 1. 상품 관리 (마스터) 탭 데이터 정렬 로직
             const tableRowsManage = useMemo(() => {
-                let list = [...masterData];
+                let list = Object.values(masterData.products || {});
                 if (searchInputVal) {
                     const q = searchInputVal.toLowerCase();
                     list = list.filter(p => (p.name||'').toLowerCase().includes(q) || (p.code||'').toLowerCase().includes(q) || (p.spec||'').toLowerCase().includes(q));
                 }
                 list.sort((a, b) => {
-                    const gA = String(a.code || '').substring(0, 6);
-                    const gB = String(b.code || '').substring(0, 6);
-                    if (gA !== gB) return gA.localeCompare(gB);
-                    
-                    let valA = String(a[sortConfig.key] || ''); let valB = String(b[sortConfig.key] || '');
-                    if (!isNaN(valA) && !isNaN(valB) && sortConfig.key !== 'code') { return sortConfig.direction === 'asc' ? Number(valA) - Number(valB) : Number(valB) - Number(valA); }
-                    if (valA === valB) return (a.code||'').localeCompare(b.code||'');
-                    if (sortConfig.direction === 'asc') return valA.localeCompare(valB);
-                    else return valB.localeCompare(valA);
+                    const catA = (a.code || '').substring(0, 6);
+                    const catB = (b.code || '').substring(0, 6);
+                    if (catA !== catB) return catA.localeCompare(catB);
+                    return (a.code || '').localeCompare(b.code || '');
                 });
                 return list;
-            }, [masterData, searchInputVal, sortConfig]);
+            }, [masterData.products, searchInputVal]);
 
-            // 🌟 2. 거래처별 리스트 정렬 
             const tableRowsList = useMemo(() => {
                 let processedOrders = orderData.filter(o => o.상태 !== '견적');
 
@@ -1028,7 +958,6 @@
                 return processedOrders;
             }, [orderData, searchInputVal, filterGroup, filterVendor, filterWarehouse, filterManager, sortConfig]);
 
-            // 🌟 3. 기본 품목 (견적) 정렬 로직 (마스터와 동일하게 앞 6자리로 그룹화 유도)
             const tableRowsEstimate = useMemo(() => {
                 let list = orderData.filter(o => o.상태 === '견적');
                 if (searchInputVal) {
@@ -1037,9 +966,9 @@
                 }
                 
                 list.sort((a, b) => {
-                    const gA = String(a.코드 || '').substring(0, 6);
-                    const gB = String(b.코드 || '').substring(0, 6);
-                    if (gA !== gB) return gA.localeCompare(gB);
+                    const vendorA = a.거래처 || '미지정';
+                    const vendorB = b.거래처 || '미지정';
+                    if (vendorA !== vendorB) return vendorA.localeCompare(vendorB);
                     
                     let valA = String(a[sortConfig.key] || ''); let valB = String(b[sortConfig.key] || '');
                     if (!isNaN(valA) && !isNaN(valB) && sortConfig.key !== '코드') { return sortConfig.direction === 'asc' ? Number(valA) - Number(valB) : Number(valB) - Number(valA); }
@@ -1050,7 +979,6 @@
                 return list;
             }, [orderData, searchInputVal, sortConfig]);
 
-            // 🌟 4. 품목별 (집계) 정렬 로직 
             const tableRowsSummary = useMemo(() => {
                 let processed = [...summaryData];
                 if (searchInputVal) { 
@@ -1073,6 +1001,59 @@
             const warehouseOptions = useMemo(() => [...new Set(orderData.map(o => o.창고).filter(Boolean))].sort(), [orderData]);
             const managerOptions = useMemo(() => [...new Set(orderData.map(o => o.담당자).filter(Boolean))].sort(), [orderData]);
 
+            // 공통 Table Header 렌더링 (품목별/거래처별 동일)
+            const renderUnifiedTableHeader = (dataList) => (
+                <thead className="bg-slate-100 text-slate-700 font-extrabold text-[12px] sticky top-0 z-30 shadow-[0_1px_2px_rgba(0,0,0,0.05)] tracking-tight">
+                    <tr>
+                        <th className="px-2 py-2 border-r border-slate-200 border-b w-[65px] text-center sticky left-0 z-40 bg-slate-100 align-middle">
+                            <div className="flex flex-col items-center justify-center gap-1.5">
+                                <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={selectedRows.size === dataList.length && dataList.length > 0} onChange={() => toggleAllSelect(dataList)} />
+                                <span className="text-[10px] text-slate-500 font-bold tracking-tighter leading-none">일자-No.</span>
+                            </div>
+                        </th>
+                        
+                        <th className="px-3 py-2 border-r border-slate-200 border-b w-[80px] text-center align-middle">카테고리</th>
+
+                        <th className="px-4 py-2 border-r border-slate-200 border-b w-auto min-w-[200px] align-middle">
+                            <div className="relative w-full max-w-sm">
+                                <input type="text" id="searchInput" placeholder="코드/품명/규격 검색 (F3)" value={searchInputVal} onChange={e => setSearchInputVal(e.target.value)} className="w-full pl-3 pr-8 py-1.5 border border-slate-300 rounded text-[12px] font-bold text-slate-700 bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-inner transition-colors" onClick={e => e.stopPropagation()} />
+                                <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center pointer-events-none text-slate-400">
+                                    <i className="fas fa-search"></i>
+                                </div>
+                            </div>
+                        </th>
+
+                        <th className="px-4 py-2 border-r border-slate-200 border-b text-right w-[80px] text-blue-700 align-middle">단가</th>
+                        <th className="px-2 py-2 border-r border-slate-200 border-b text-center w-[60px] text-indigo-700 bg-indigo-50/50 align-middle">수량</th>
+                        <th className="px-2 py-2 border-r border-slate-200 border-b text-center w-[60px] text-slate-700 align-middle">재고</th>
+                        <th className="px-2 py-2 border-r border-slate-200 border-b text-center w-[60px] text-blue-700 align-middle">입고</th>
+                        <th className="px-2 py-2 border-r border-slate-200 border-b text-center w-[60px] text-emerald-700 bg-emerald-50/50 align-middle">출고</th>
+                        <th className="px-4 py-2 border-r border-slate-200 border-b w-[100px] align-middle">적요</th>
+                        <th className="px-4 py-2 border-r border-slate-200 border-b w-[100px] align-middle text-amber-700">지시사항</th>
+                        
+                        <th className="p-0 border-r border-slate-200 border-b w-[100px] align-middle">
+                            <div className="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-slate-200" onClick={() => handleSort('거래처')}>
+                                <span className="flex items-center gap-1">거래처</span>
+                                <div className="relative text-right" onClick={(e) => { e.stopPropagation(); setActiveDropdown(activeDropdown==='vendor'?null:'vendor'); }}>
+                                    <i className={`fas fa-filter ${filterVendor.length>0?'text-blue-500':'text-slate-400'} hover:text-blue-600 p-1`}></i>
+                                    {activeDropdown === 'vendor' && <FilterDropdown options={vendorOptions} selectedOptions={filterVendor} onChange={setFilterVendor} onClose={()=>setActiveDropdown(null)} />}
+                                </div>
+                            </div>
+                        </th>
+                        <th className="p-0 border-r border-slate-200 border-b w-[80px] align-middle">
+                            <div className="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-slate-200" onClick={() => handleSort('그룹')}>
+                                <span className="flex items-center gap-1">그룹</span>
+                                <div className="relative text-right" onClick={(e) => { e.stopPropagation(); setActiveDropdown(activeDropdown==='group'?null:'group'); }}>
+                                    <i className={`fas fa-filter ${filterGroup.length>0?'text-blue-500':'text-slate-400'} hover:text-blue-600 p-1`}></i>
+                                    {activeDropdown === 'group' && <FilterDropdown options={groupOptions} selectedOptions={filterGroup} onChange={setFilterGroup} onClose={()=>setActiveDropdown(null)} />}
+                                </div>
+                            </div>
+                        </th>
+                        <th className="px-3 py-2 border-b w-[80px] text-center align-middle">담당</th>
+                    </tr>
+                </thead>
+            );
+
             const exportExcel = useCallback(() => {
                 let exportData = [];
                 let sheetName = '';
@@ -1088,16 +1069,16 @@
                 else if (activeTab === 'estimate') {
                     if (tableRowsEstimate.length === 0) { setAlertMsg("다운로드할 데이터가 없습니다."); return; }
                     exportData = tableRowsEstimate.map(r => ({
-                        '일자': r.일자, '순번': r.순번, '카테고리': masterMap[r.코드]?.cat3 || '', '품목코드': r.코드, '품명(규격)': `${r.품명} ${r.규격}`.trim(), '견적단가': r.단가, '거래처': r.거래처, '그룹': r.그룹, '상태': r.상태, '적요': r.적요
+                        '일자': r.일자, '순번': r.순번, '카테고리': masterData.products[r.코드]?.cat3 || '', '품목코드': r.코드, '품명(규격)': `${r.품명} ${r.규격}`.trim(), '견적단가': r.단가, '거래처': r.거래처, '그룹': r.그룹, '상태': r.상태, '적요': r.적요
                     }));
                     sheetName = '기본품목_견적목록'; fileName = `기본품목_견적목록.xlsx`;
                 }
                 else if (activeTab === 'vendor') {
                     if (tableRowsList.length === 0) { setAlertMsg("다운로드할 데이터가 없습니다."); return; }
                     exportData = tableRowsList.map(r => {
-                        const outPrice = masterMap[r.코드]?.outPrice || r.단가 || 0;
+                        const outPrice = masterData.products[r.코드]?.outPrice || r.단가 || 0;
                         const stock = stockData[generateStockKey(r.코드, r.거래처, outPrice, r.일자, splitOptions)] || { 기초재고: 0, 입고수량: 0 };
-                        return { '일자': r.일자, '순번': r.순번, '카테고리': masterMap[r.코드]?.cat3 || '', '품목코드': r.코드, '품명(규격)': `${r.품명} ${r.규격}`.trim(), '판매단가': outPrice, '수량': r.주문수량 || 0, '재고': stock.기초재고 || 0, '입고': stock.입고수량 || 0, '출고': r.판매수량 || 0, '적요': r.적요, '지시사항': r.지시사항, '거래처': r.거래처, '그룹': r.그룹, '담당': r.담당자 };
+                        return { '일자': r.일자, '순번': r.순번, '카테고리': masterData.products[r.코드]?.cat3 || '', '품목코드': r.코드, '품명(규격)': `${r.품명} ${r.규격}`.trim(), '판매단가': outPrice, '수량': r.주문수량 || 0, '재고': stock.기초재고 || 0, '입고': stock.입고수량 || 0, '출고': r.판매수량 || 0, '적요': r.적요, '지시사항': r.지시사항, '거래처': r.거래처, '그룹': r.그룹, '담당': r.담당자 };
                     });
                     sheetName = '전표_상세현황'; fileName = `수발주_거래처별상세.xlsx`;
                 } 
@@ -1105,7 +1086,7 @@
                     if (tableRowsSummary.length === 0) { setAlertMsg("다운로드할 데이터가 없습니다."); return; }
                     exportData = tableRowsSummary.map(r => {
                         const stock = stockData[r.key] || { 기초재고: 0, 입고수량: 0 };
-                        return { '일자-No': formatDateNumber(r.일자, r.순번), '카테고리': masterMap[r.코드]?.cat3 || '', '품목코드': r.코드, '품명(규격)': `${r.품명} ${r.규격}`.trim(), '단가': r.outPrice || r.inPrice, '수량': r.총주문 || 0, '재고': stock.기초재고 || 0, '입고': stock.입고수량 || 0, '출고': r.총판매 || 0, '적요': r.적요, '지시사항': r.지시사항, '거래처': r.거래처, '그룹': r.그룹, '담당': r.담당 };
+                        return { '일자-No': formatDateNumber(r.일자, r.순번), '카테고리': masterData.products[r.코드]?.cat3 || '', '품목코드': r.코드, '품명(규격)': `${r.품명} ${r.규격}`.trim(), '단가': r.outPrice || r.inPrice, '수량': r.총주문 || 0, '재고': stock.기초재고 || 0, '입고': stock.입고수량 || 0, '출고': r.총판매 || 0, '적요': r.적요, '지시사항': r.지시사항, '거래처': r.거래처, '그룹': r.그룹, '담당': r.담당 };
                     });
                     sheetName = '품목_집계현황'; fileName = `수발주_품목별집계.xlsx`;
                 }
@@ -1120,10 +1101,35 @@
                     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
                     showToast("✅ 엑셀 다운로드가 완료되었습니다.");
                 } catch (err) { setAlertMsg("엑셀 파일 생성 중 오류가 발생했습니다."); }
-            }, [activeTab, tableRowsManage, tableRowsEstimate, tableRowsList, tableRowsSummary, masterMap, stockData, splitOptions, showToast]);
+            }, [activeTab, tableRowsManage, tableRowsEstimate, tableRowsList, tableRowsSummary, masterData, stockData, splitOptions, showToast]);
 
             const latestHandlers = useRef({ exportExcel, runAnalysis, files });
             useEffect(() => { latestHandlers.current = { exportExcel, runAnalysis, files }; }, [exportExcel, runAnalysis, files]);
+
+            useEffect(() => {
+                const handleGlobalKeys = (e) => {
+                    const alertBtn = document.getElementById('alert-confirm-btn');
+                    if (e.key === 'Enter' && alertBtn) { e.preventDefault(); alertBtn.click(); return; }
+                    if (document.querySelector('.modal-bounce')) return;
+                    if (e.key === 'Enter') {
+                        const activeEl = document.activeElement; const tag = activeEl ? activeEl.tagName.toLowerCase() : ''; const type = activeEl ? activeEl.type : '';
+                        const isTyping = tag === 'textarea' || (tag === 'input' && (type === 'text' || type === 'number' || type === 'search'));
+                        if (!isTyping && tag !== 'button') {
+                            const currentFiles = latestHandlers.current.files;
+                            if (currentFiles.in.length > 0 || currentFiles.out.length > 0 || currentFiles.prev.length > 0 || currentFiles.done.length > 0) {
+                                e.preventDefault(); latestHandlers.current.runAnalysis(currentFiles);
+                            }
+                        }
+                    }
+                    if (e.key === 'F3') { 
+                        e.preventDefault(); 
+                        const searchInput = document.getElementById('searchInput'); 
+                        if (searchInput) { searchInput.focus(); searchInput.select(); } 
+                    }
+                    if (e.key === 'F9') { e.preventDefault(); latestHandlers.current.exportExcel(); }
+                };
+                window.addEventListener('keydown', handleGlobalKeys); return () => window.removeEventListener('keydown', handleGlobalKeys);
+            }, []);
 
             return (
                 <div className="h-screen flex flex-col w-full relative bg-[#cbd5e1] items-center" onDragOver={(e) => { e.preventDefault(); setIsGlobalDragging(true); }} onDragLeave={(e) => { e.preventDefault(); setIsGlobalDragging(false); }} onDrop={handleGlobalDrop}>
@@ -1139,17 +1145,17 @@
                         </div>
                     )}
 
-                    <div className="w-full max-w-[1400px] h-full flex flex-col bg-slate-50 relative shadow-2xl border-x border-slate-300 overflow-hidden">
+                    <div className="w-full max-w-[1360px] h-full flex flex-col bg-slate-50 relative shadow-2xl border-x border-slate-300 overflow-hidden">
                         
                         {/* 헤더 */}
                         <header className="shrink-0 bg-white border-b border-slate-200 w-full z-[60] relative shadow-sm">
                             <div className="w-full px-4 md:px-6 h-16 flex justify-between items-center">
                                 {/* 좌측 영역 (로고) */}
                                 <div className="flex items-center w-auto">
-                                    <div className="flex items-center cursor-pointer hover:opacity-80 transition-opacity" onClick={() => document.getElementById('main-scroll-container')?.scrollTo({top:0, behavior:'smooth'})} title="추후 로고 이미지로 교체될 영역">
+                                    <div className="flex items-center cursor-pointer hover:opacity-80 transition-opacity" onClick={() => document.getElementById('main-scroll-container')?.scrollTo({top:0, behavior:'smooth'})}>
                                         <span className="text-2xl md:text-3xl font-black text-blue-600 tracking-tighter mr-3">ONEAPP</span>
                                         <div className="flex flex-col border-l-2 border-slate-200 pl-3">
-                                            <span className="text-lg md:text-xl font-black text-slate-800 leading-none tracking-tight">MerchOps</span>
+                                            <span className="text-lg md:text-xl font-black text-slate-500 leading-none tracking-tight">MerchOps</span>
                                             <span className="text-[9px] font-extrabold text-slate-400 mt-1 tracking-widest uppercase">Merchandising Operations</span>
                                         </div>
                                     </div>
@@ -1159,8 +1165,8 @@
                                 <div className="flex justify-end items-center gap-6">
                                     <nav className="flex gap-4 text-[14px] font-bold text-slate-600 items-center">
                                         <button onClick={(e) => { e.preventDefault(); setShowGuide(true); }} className="text-slate-400 hover:text-slate-600 transition flex items-center whitespace-nowrap text-[13px] font-medium"><i className="far fa-question-circle mr-1.5"></i>가이드</button>
-                                        <button onClick={(e) => { e.preventDefault(); setShowMasterModal(true); }} className="text-slate-600 hover:text-emerald-600 transition flex items-center whitespace-nowrap bg-slate-100 hover:bg-emerald-50 px-4 py-2 rounded-full text-[13px] font-bold border border-slate-200 shadow-sm">
-                                            <i className="fas fa-database mr-1.5 text-emerald-500"></i>마스터 설정
+                                        <button onClick={(e) => { e.preventDefault(); setShowSettings(true); setActiveSettingsTab('master'); }} className="text-slate-600 hover:text-indigo-600 transition flex items-center whitespace-nowrap bg-slate-100 hover:bg-indigo-50 px-4 py-2 rounded-full text-[13px] font-bold border border-slate-200 shadow-sm">
+                                            <i className="fas fa-cogs mr-1.5 text-indigo-500"></i>온보딩 (마스터/매핑)
                                         </button>
                                     </nav>
                                 </div>
@@ -1226,148 +1232,135 @@
                                     </div>
                                 </div>
 
-                                {/* ✨ 마스터 업로드 & 설정 모달 (R5) */}
-                                {showMasterModal && (
-                                    <div id="master-upload-modal" className="absolute inset-0 z-[100] flex items-center justify-center p-4 backdrop-blur-sm bg-slate-900/40 animate-[fadeIn_0.2s_ease-out]">
-                                        <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl relative w-full max-w-2xl flex flex-col overflow-hidden modal-bounce">
-                                            
-                                            <div className="flex justify-between items-center p-5 border-b border-slate-100 bg-slate-50 shrink-0">
-                                                <h3 className="text-[15px] font-black text-slate-800 flex items-center">
-                                                    <i className="fas fa-database text-emerald-500 mr-2 text-lg"></i>마스터 설정 및 데이터 업로드
-                                                </h3>
-                                                <div className="flex gap-2">
-                                                    <button onClick={() => { setShowMasterModal(false); setShowSettings(true); }} className="text-xs font-bold text-slate-500 hover:text-blue-600 bg-white border border-slate-200 px-3 py-1.5 rounded shadow-sm transition-colors">
-                                                        <i className="fas fa-cog mr-1.5"></i>매핑 옵션
-                                                    </button>
-                                                    <button onClick={() => setShowMasterModal(false)} className="text-slate-400 hover:text-rose-500 p-1 transition-colors"><i className="fas fa-times text-lg"></i></button>
-                                                </div>
-                                            </div>
-                                            
-                                            <div className="p-6 flex-1 bg-white">
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                                                    {/* 기초상품 업로드 (Master) */}
-                                                    <div className="relative border-2 rounded-xl transition-all cursor-pointer flex flex-col items-center justify-center p-6 text-center shadow-sm group border-slate-200 bg-white hover:border-emerald-400 hover:shadow-md" onClick={() => document.getElementById('masterUploadFile').click()}>
-                                                        <input id="masterUploadFile" type="file" accept=".xlsx, .xls, .csv" onChange={e => processMasterOrEstimateFile(e.target.files[0], false)} className="hidden" />
-                                                        <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3 transition-colors bg-slate-100 text-slate-500 group-hover:bg-emerald-50 group-hover:text-emerald-600">
-                                                            <i className="fas fa-box-open text-xl"></i>
-                                                        </div>
-                                                        <div className="font-black text-[15px] text-slate-800 tracking-tight">기초상품 업로드</div>
-                                                        <div className="text-[11px] font-bold text-slate-400 mt-1.5 leading-relaxed">상품정보 / 품목정보<br/>전체 카테고리 연동</div>
-                                                    </div>
-
-                                                    {/* 판매상품 업로드 (Estimate) */}
-                                                    <div className="relative border-2 rounded-xl transition-all cursor-pointer flex flex-col items-center justify-center p-6 text-center shadow-sm group border-slate-200 bg-white hover:border-amber-400 hover:shadow-md" onClick={() => document.getElementById('estimateUploadFile').click()}>
-                                                        <input id="estimateUploadFile" type="file" accept=".xlsx, .xls, .csv" onChange={e => processMasterOrEstimateFile(e.target.files[0], true)} className="hidden" />
-                                                        <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3 transition-colors bg-slate-100 text-slate-500 group-hover:bg-amber-50 group-hover:text-amber-600">
-                                                            <i className="fas fa-file-invoice-dollar text-xl"></i>
-                                                        </div>
-                                                        <div className="font-black text-[15px] text-slate-800 tracking-tight">판매상품 업로드</div>
-                                                        <div className="text-[11px] font-bold text-slate-400 mt-1.5 leading-relaxed">기본상품 / 견적서<br/>단가표 최신화</div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            
-                                            <div className="bg-slate-50 p-4 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0">
-                                                <div className="text-[13px] font-bold text-slate-600 flex items-center bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">
-                                                    <i className="fas fa-link text-emerald-500 mr-2"></i>
-                                                    저장된 기준 상품: <span className="text-slate-800 font-black text-[15px] ml-1.5 mr-0.5">{masterData.length}</span>개
-                                                </div>
-                                                <div className="flex gap-2 w-full sm:w-auto">
-                                                    <button onClick={handleResetMasterData} className="flex-1 sm:flex-none px-4 py-2 bg-rose-50 border border-rose-200 text-rose-600 rounded-lg text-sm font-bold hover:bg-rose-100 hover:text-rose-700 transition shadow-sm flex items-center justify-center">
-                                                        <i className="fas fa-trash-alt mr-1.5"></i>데이터 전체 초기화
-                                                    </button>
-                                                    <button onClick={() => setShowMasterModal(false)} className="flex-1 sm:flex-none px-6 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold hover:bg-slate-900 shadow-md transition">
-                                                        닫기
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* ✨ 매핑 설정 모달 */}
+                                {/* ✨ 설정 모달 (마스터 업로드/매핑/기준설정) */}
                                 {showSettings && (
-                                    <div className="absolute inset-0 z-[100] flex justify-center pt-10 animate-[fadeIn_0.2s_ease-out] backdrop-blur-sm bg-slate-900/30 p-4">
-                                        <div className="bg-white border border-slate-300 p-0 rounded-xl shadow-2xl relative overflow-hidden w-full max-w-4xl mx-4 flex flex-col ring-1 ring-black/5 h-fit max-h-full">
+                                    <div className="absolute top-[80px] left-0 right-0 z-50 flex justify-center animate-[fadeIn_0.2s_ease-out]">
+                                        <div className="bg-white border border-slate-300 p-0 rounded-xl shadow-2xl relative overflow-hidden w-full max-w-4xl mx-4 flex flex-col ring-1 ring-black/5">
                                             
-                                            <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50 shrink-0">
-                                                <h3 className="text-[15px] font-black text-slate-800 flex items-center">
-                                                    <i className="fas fa-cog text-blue-500 mr-2"></i>데이터 매핑 키워드 설정
-                                                </h3>
-                                                <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-rose-500 p-1 transition-colors"><i className="fas fa-times text-lg"></i></button>
-                                            </div>
-
-                                            <div className="p-6 bg-white flex-1 overflow-y-auto custom-scrollbar">
-                                                <p className="text-xs font-bold text-slate-500 mb-4 bg-slate-50 p-2 rounded border border-slate-100">
-                                                    <i className="fas fa-info-circle mr-1 text-blue-400"></i>
-                                                    업로드하는 엑셀의 헤더 이름과 일치하도록 키워드를 쉼표(,)로 구분해 입력하세요. 
-                                                </p>
-                                                
-                                                <h4 className="text-sm font-black text-slate-800 mb-3 border-l-4 border-emerald-500 pl-2"><i className="fas fa-database text-emerald-500 mr-2"></i>마스터 전용 매핑</h4>
-                                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 bg-emerald-50/30 p-4 rounded-lg border border-emerald-100 mb-6">
-                                                    {Object.entries({ 
-                                                        cat1: '1차 분류 (대분류)', cat2: '2차 분류 (중분류)', cat3: '3차 분류 (소분류)', defaultVendor: '기본 매입처', buyPrice: '매입단가 (구매가)', sellPrice: '판매단가 (출고가)'
-                                                    }).map(([key, label]) => (
-                                                        <div key={key} className="flex flex-col">
-                                                            <label className="text-[11px] font-bold mb-1 text-emerald-800">{label}</label>
-                                                            <input type="text" value={mappings[key] || ''} onChange={(e) => setMappings({...mappings, [key]: e.target.value})} className="border rounded px-2.5 py-1.5 text-xs font-medium focus:outline-none focus:ring-1 border-slate-300 focus:border-emerald-400 bg-white shadow-sm" />
-                                                        </div>
-                                                    ))}
-                                                </div>
-
-                                                <h4 className="text-sm font-black text-slate-800 mb-3 border-l-4 border-blue-500 pl-2"><i className="fas fa-exchange-alt text-blue-500 mr-2"></i>공통 및 수발주 전표 매핑</h4>
-                                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 bg-blue-50/30 p-4 rounded-lg border border-blue-100">
-                                                    {Object.entries({ 
-                                                        code: '품목코드 (필수)', name: '품명 (필수)', spec: '규격', stock: '재고', qty: '주문/판매 수량', 
-                                                        vendor: '거래처/주문자', group: '그룹/지역', memo: '적요/메모', instruction: '지시사항', warehouse: '창고', manager: '담당자', date: '일자', slipNo: '순번(넘버)'
-                                                    }).map(([key, label]) => (
-                                                        <div key={key} className="flex flex-col">
-                                                            <label className="text-[11px] font-bold mb-1 text-blue-800">{label}</label>
-                                                            <input type="text" value={mappings[key] || ''} onChange={(e) => setMappings({...mappings, [key]: e.target.value})} className="border rounded px-2.5 py-1.5 text-xs font-medium focus:outline-none focus:ring-1 border-slate-300 focus:border-blue-400 bg-white shadow-sm" />
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                            
-                                            {/* ✨ 버튼 하단 고정 영역 */}
-                                            <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-between items-center shrink-0">
-                                                <button onClick={() => {
-                                                    setMappings({
-                                                        code: '2코드, 품목코드', name: '품목명, 품명', spec: '규격명, 규격', qty: '수량', stock: '재고', vendor: '구매처명, 거래처', group: '그룹', memo: '적요', instruction: '지시사항', warehouse: '창고', manager: '담당자',
-                                                        cat1: '품목그룹1명', cat2: '품목그룹2명', cat3: '품목그룹3명', buyPrice: '구매가, 매입단가', sellPrice: 'A판매, 단가', defaultVendor: '구매처명', date: '일자', slipNo: '순번'
-                                                    });
-                                                    showToast('원앱 템플릿 세팅이 폼에 불러와졌습니다. 우측 저장하기를 눌러주세요.');
-                                                }} className="text-xs text-blue-600 bg-white border border-blue-200 px-3 py-1.5 rounded font-bold hover:bg-blue-50 transition shadow-sm flex items-center">
-                                                    <i className="fas fa-magic mr-1.5"></i>원앱 템플릿(견적서) 덮어쓰기
-                                                </button>
-                                                
-                                                <div className="flex gap-2">
-                                                    <button onClick={() => setMappings(defaultMappings)} className="text-xs text-slate-500 hover:text-rose-500 font-bold px-3 py-1.5 transition-colors">기본값 복원</button>
-                                                    <button onClick={saveMappings} className="bg-slate-800 text-white px-5 py-1.5 rounded text-xs font-bold hover:bg-slate-900 transition-colors shadow-sm">
-                                                        <i className="fas fa-save mr-1.5"></i>저장하기
+                                            <div className="flex justify-center p-3 border-b border-slate-200 bg-slate-100/50 shrink-0">
+                                                <div className="inline-flex bg-slate-200/80 p-1 rounded-full shadow-inner">
+                                                    <button onClick={() => setActiveSettingsTab('master')} className={`px-6 py-1.5 rounded-full font-bold text-[13px] transition-all duration-300 flex items-center ${activeSettingsTab === 'master' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                                                        <i className="fas fa-database mr-2"></i>1. 마스터 업로드
+                                                    </button>
+                                                    <button onClick={() => setActiveSettingsTab('mapping')} className={`px-6 py-1.5 rounded-full font-bold text-[13px] transition-all duration-300 flex items-center ${activeSettingsTab === 'mapping' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                                                        <i className="fas fa-cog mr-2"></i>2. 매핑 및 기준설정
                                                     </button>
                                                 </div>
                                             </div>
 
-                                        </div>
-                                    </div>
-                                )}
+                                            <div className="p-6 bg-white flex-1 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                                                {activeSettingsTab === 'mapping' && (
+                                                    <div>
+                                                        <p className="text-xs text-slate-500 mb-4">업로드하는 엑셀의 헤더 이름과 일치하도록 키워드를 쉼표(,)로 구분해 입력하세요.</p>
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                                                            {Object.entries({ 
+                                                                code: '품목코드', name: '품명', spec: '규격', stock: '재고', qty: '주문/판매 수량', 
+                                                                vendor: '거래처/주문자', group: '그룹/지역', memo: '적요/메모', instruction: '지시사항', warehouse: '창고', manager: '담당자', date: '일자', slipNo: '순번(넘버)'
+                                                            }).map(([key, label]) => (
+                                                                <div key={key} className="flex flex-col">
+                                                                    <label className="text-xs font-bold mb-1 text-slate-700">{label}</label>
+                                                                    <input type="text" value={mappings[key] || ''} onChange={(e) => setMappings({...mappings, [key]: e.target.value})} className="border rounded-md px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 border-slate-300 focus:ring-blue-400 bg-white shadow-sm" />
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                        
+                                                        <div className="mt-6 border-t border-slate-200 pt-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                                                            <div className="flex-1">
+                                                                <h3 className="text-[14px] font-black text-slate-800 mb-1 flex items-center">
+                                                                    <i className="fas fa-layer-group text-indigo-500 mr-2"></i>품목 관리 기준 설정
+                                                                </h3>
+                                                                <p className="text-[11px] text-slate-500 leading-relaxed">
+                                                                    ※ 시스템은 기본적으로 <span className="font-bold text-blue-600">'품목코드'</span> 기준으로 구동됩니다.<br/>
+                                                                    같은 '품목코드' 상품을 아래 설정을 통해 세분화하여 분리/합산 관리할 수 있습니다.
+                                                                </p>
+                                                            </div>
+                                                            
+                                                            <div className="flex flex-wrap gap-2.5 shrink-0 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                                                                <label className="flex items-center cursor-pointer group px-2 py-1.5 hover:bg-indigo-50 rounded transition-colors">
+                                                                    <input type="checkbox" className="hidden filter-checkbox" checked={splitOptions.price} onChange={(e) => setSplitOptions({...splitOptions, price: e.target.checked})} />
+                                                                    <div className="w-4 h-4 border-2 border-slate-300 rounded flex items-center justify-center mr-2 transition-colors group-hover:border-indigo-400 bg-white">
+                                                                        <svg className="w-3 h-3 text-white hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+                                                                    </div>
+                                                                    <span className="text-[12px] font-bold text-slate-700 group-hover:text-indigo-800">단가별 분리</span>
+                                                                </label>
+                                                                
+                                                                <label className="flex items-center cursor-pointer group px-2 py-1.5 hover:bg-indigo-50 rounded transition-colors">
+                                                                    <input type="checkbox" className="hidden filter-checkbox" checked={splitOptions.vendor} onChange={(e) => setSplitOptions({...splitOptions, vendor: e.target.checked})} />
+                                                                    <div className="w-4 h-4 border-2 border-slate-300 rounded flex items-center justify-center mr-2 transition-colors group-hover:border-indigo-400 bg-white">
+                                                                        <svg className="w-3 h-3 text-white hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+                                                                    </div>
+                                                                    <span className="text-[12px] font-bold text-slate-700 group-hover:text-indigo-800">매입처별 분리</span>
+                                                                </label>
 
-                                {/* 확인 모달 */}
-                                {confirmModal.isOpen && (
-                                    <div className="fixed inset-0 z-[600] bg-slate-900/60 flex items-center justify-center p-4 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
-                                        <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm modal-bounce text-center">
-                                            <i className="fas fa-exclamation-triangle text-rose-500 text-4xl mb-4"></i>
-                                            <div className="text-slate-800 font-bold mb-6 space-y-1.5">
-                                                {confirmModal.warnings.map((msg, idx) => (
-                                                    <p key={idx} className={idx===0 ? 'text-sm' : 'text-xs text-slate-500'}>{msg}</p>
-                                                ))}
+                                                                <label className="flex items-center cursor-pointer group px-2 py-1.5 hover:bg-indigo-50 rounded transition-colors">
+                                                                    <input type="checkbox" className="hidden filter-checkbox" checked={splitOptions.date} onChange={(e) => setSplitOptions({...splitOptions, date: e.target.checked})} />
+                                                                    <div className="w-4 h-4 border-2 border-slate-300 rounded flex items-center justify-center mr-2 transition-colors group-hover:border-indigo-400 bg-white">
+                                                                        <svg className="w-3 h-3 text-white hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+                                                                    </div>
+                                                                    <span className="text-[12px] font-bold text-slate-700 group-hover:text-indigo-800">일자별 분리</span>
+                                                                </label>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {activeSettingsTab === 'master' && (
+                                                    <div className="flex flex-col gap-4">
+                                                        <div className="bg-emerald-50 border border-emerald-200 p-5 rounded-lg flex flex-col md:flex-row items-center gap-4">
+                                                            <div className="flex-1">
+                                                                <div className="font-bold text-emerald-900 mb-1">1. 전체 마스터 파일 업로드 (카테고리 연동)</div>
+                                                                <div className="text-xs text-emerald-700 leading-relaxed">품목코드, 품명, 카테고리(1,2,3차), 규격, 구매처, 단가가 포함된 전체 기준 정보를 덮어씁니다.</div>
+                                                            </div>
+                                                            <div className="relative shrink-0">
+                                                                <input type="file" id="master-upload" accept=".xlsx, .xls, .csv" onChange={handleMasterUpload} className="hidden" />
+                                                                <label htmlFor="master-upload" className="cursor-pointer bg-emerald-600 text-white px-6 py-2.5 rounded-md font-bold text-sm shadow-sm hover:bg-emerald-700 flex items-center transition-transform hover:scale-105">
+                                                                    <i className="fas fa-upload mr-2"></i> 파일 선택
+                                                                </label>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="bg-amber-50 border border-amber-200 p-5 rounded-lg flex flex-col md:flex-row items-center gap-4">
+                                                            <div className="flex-1">
+                                                                <div className="font-bold text-amber-900 mb-1">2. 견적서 (단가 시세) 업데이트</div>
+                                                                <div className="text-xs text-amber-700 leading-relaxed">기존 상품 목록과 카테고리는 그대로 유지하면서, 매입가/판매가 등 단가 정보만 최신 시세로 업데이트합니다.</div>
+                                                            </div>
+                                                            <div className="relative shrink-0">
+                                                                <input type="file" id="estimate-upload" accept=".xlsx, .xls, .csv" onChange={(e) => {
+                                                                    if(e.target.files[0]) processEstimateFile(e.target.files[0]);
+                                                                    e.target.value = '';
+                                                                }} className="hidden" />
+                                                                <label htmlFor="estimate-upload" className="cursor-pointer bg-amber-600 text-white px-6 py-2.5 rounded-md font-bold text-sm shadow-sm hover:bg-amber-700 flex items-center transition-transform hover:scale-105">
+                                                                    <i className="fas fa-file-invoice-dollar mr-2"></i> 견적서 업로드
+                                                                </label>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="flex justify-between items-center text-sm font-bold text-slate-700 px-2 mt-2">
+                                                            <span>저장된 상품(카테고리 연동): <span className="text-blue-600">{Object.keys(masterData.products || {}).length}</span>개</span>
+                                                            <button onClick={() => { setMasterData({vendors:{}, products:{}}); localStorage.removeItem('merchMaster_v517'); setAlertMsg('삭제 완료'); }} className="text-rose-500 hover:text-rose-700 underline text-xs">데이터 초기화</button>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
-                                            <div className="flex gap-2">
-                                                <button onClick={() => setConfirmModal({ isOpen: false, warnings: [], payload: null })} className="px-4 py-2.5 bg-slate-100 text-slate-600 rounded-lg text-sm font-bold hover:bg-slate-200 transition shadow-sm w-full">취소</button>
-                                                <button onClick={confirmModal.onConfirm} className="px-4 py-2.5 bg-rose-600 text-white rounded-lg text-sm font-bold hover:bg-rose-700 transition shadow-md w-full">확인 및 실행</button>
+                                            
+                                            {/* ✨ 버튼들 하단 고정 영역 정렬 */}
+                                            <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-between items-center rounded-b-xl shrink-0">
+                                                <div>
+                                                    {activeSettingsTab === 'mapping' && (
+                                                        <button onClick={() => {setMappings(defaultMappings); setSplitOptions({price: false, vendor: false, date: false});}} className="text-sm text-slate-500 hover:text-rose-500 font-bold px-4 transition-colors">
+                                                            <i className="fas fa-undo mr-1.5"></i>기본값 복원
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <div className="flex gap-2.5">
+                                                    <button onClick={() => setShowSettings(false)} className="bg-slate-200 text-slate-700 px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-slate-300 transition-colors shadow-sm">닫기</button>
+                                                    {activeSettingsTab === 'mapping' && (
+                                                        <button onClick={saveMappings} className="bg-blue-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors shadow-md">
+                                                            <i className="fas fa-save mr-1.5"></i>저장하기
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </div>
+
                                         </div>
                                     </div>
                                 )}
@@ -1395,8 +1388,17 @@
                                                     <h3 className="text-[13px] font-black text-slate-800 mb-3 flex items-center"><i className="fas fa-keyboard text-slate-500 mr-2"></i>단축키</h3>
                                                     <ul className="text-xs text-slate-600 space-y-2 font-medium">
                                                         <li className="flex items-center justify-between"><span>수발주 산출</span> <kbd className="bg-slate-50 border border-slate-200 shadow-sm px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-600 font-bold">Enter</kbd></li>
-                                                        <li className="flex items-center justify-between"><span>검색창 포커스</span> <kbd className="bg-slate-50 border border-slate-200 shadow-sm px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-600 font-bold">F3</kbd></li>
+                                                        <li className="flex items-center justify-between"><span>코드/품명/규격 검색</span> <kbd className="bg-slate-50 border border-slate-200 shadow-sm px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-600 font-bold">F3</kbd></li>
                                                         <li className="flex items-center justify-between"><span>엑셀 내보내기</span> <kbd className="bg-slate-50 border border-slate-200 shadow-sm px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-600 font-bold">F9</kbd></li>
+                                                    </ul>
+                                                </div>
+
+                                                <div className="border-t border-slate-100 pt-5">
+                                                    <h3 className="text-[12px] font-black text-slate-700 mb-2 flex items-center"><i className="fas fa-rocket text-indigo-400 mr-2"></i>업데이트 예정</h3>
+                                                    <ul className="text-[11px] text-slate-500 space-y-1.5 font-medium leading-tight ml-1">
+                                                        <li className="flex items-start"><i className="fas fa-check text-slate-300 mr-1.5 mt-0.5"></i>클라우드 데이터 동기화</li>
+                                                        <li className="flex items-start"><i className="fas fa-check text-slate-300 mr-1.5 mt-0.5"></i>대시보드 통계 차트 제공</li>
+                                                        <li className="flex items-start"><i className="fas fa-check text-slate-300 mr-1.5 mt-0.5"></i>거래처별 자동 발주서 생성</li>
                                                     </ul>
                                                 </div>
                                             </div>
@@ -1422,425 +1424,447 @@
                                 )}
 
                                 {/* 메인 뷰 컨테이너 */}
-                                <div className="flex-1 flex flex-col w-full relative overflow-hidden">
-                                    <div id="main-scroll-container" className="flex-1 overflow-auto w-full relative custom-scrollbar">
-                                        <div className="w-full min-w-[1100px] flex flex-col min-h-full relative">
-                                            
-                                            <div ref={cardContainerRef} className="sticky top-0 z-30 bg-white w-full border-b border-slate-300 shadow-[0_2px_4px_rgba(0,0,0,0.02)] shrink-0">
-                                                {/* 수기 상품 추가 패널 */}
-                                                <div className="absolute top-full left-0 w-full z-40">
-                                                    <ManualEntryPanel isOpen={isManualAddOpen} onClose={() => setIsManualAddOpen(false)} masterData={masterData} onAddOrder={addManualOrder} />
-                                                </div>
-
-                                                {(activeTab === 'vendor' || activeTab === 'estimate') && selectedRows.size > 0 && (
-                                                    <div className="bg-indigo-50 border-b border-indigo-200 px-4 py-2 flex items-center justify-between animate-[fadeIn_0.2s_ease-out]">
-                                                        <div className="text-indigo-800 font-bold text-sm">
-                                                            <i className="fas fa-check-square mr-2"></i>{selectedRows.size}개 항목 선택됨
-                                                        </div>
-                                                        <div className="flex items-center gap-1.5">
-                                                            <span className="text-xs font-bold text-indigo-400 mr-1">상태 변경:</span>
-                                                            {STATUS_OPTIONS.map(s => (
-                                                                <button key={s} onClick={() => { updateOrderBulkStatus(selectedRows, s); setSelectedRows(new Set()); showToast(`✅ 선택된 항목이 [${s}](으)로 변경되었습니다.`); }} 
-                                                                    className={`px-3 py-1.5 rounded text-[11px] font-bold shadow-sm transition-colors border 
-                                                                    ${s === '완료' ? 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700' : 
-                                                                    (s === '전체취소' || s === '삭제' ? 'bg-rose-100 text-rose-700 border-rose-200 hover:bg-rose-200' : 
-                                                                    s === '견적' ? 'bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200' :
-                                                                    'bg-white text-slate-700 border-slate-300 hover:bg-slate-50')}`}>
-                                                                    {s}
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                {/* ✨ 마스터 탭 일괄 제어 체크박스 툴바 */}
-                                                {activeTab === 'manage' && selectedRows.size > 0 && (
-                                                    <div className="bg-rose-50 border-b border-rose-200 px-4 py-2 flex items-center justify-between animate-[fadeIn_0.2s_ease-out]">
-                                                        <div className="text-rose-800 font-bold text-sm">
-                                                            <i className="fas fa-check-square mr-2"></i>{selectedRows.size}개 마스터 품목 선택됨
-                                                        </div>
-                                                        <div className="flex items-center gap-1.5">
-                                                            <button onClick={() => {
-                                                                setConfirmModal({
-                                                                    isOpen: true, warnings: [`선택한 ${selectedRows.size}개 마스터 상품을 삭제하시겠습니까?`],
-                                                                    onConfirm: () => {
-                                                                        const newMaster = masterData.filter(m => !selectedRows.has(m.code));
-                                                                        setMasterData(newMaster);
-                                                                        localStorage.setItem('merchMaster_v524', JSON.stringify(newMaster));
-                                                                        setSelectedRows(new Set());
-                                                                        setConfirmModal({ isOpen: false, warnings: [], payload: null });
-                                                                        showToast("✅ 선택한 상품이 마스터에서 삭제되었습니다.");
-                                                                    }
-                                                                });
-                                                            }} className="text-sm bg-white text-rose-600 font-bold px-3 py-1.5 rounded hover:bg-rose-100 transition shadow-sm border border-rose-200 flex items-center">
-                                                                <i className="fas fa-trash-alt mr-1.5"></i>선택 삭제
-                                                            </button>
-                                                            <button onClick={() => setSelectedRows(new Set())} className="ml-2 text-rose-300 hover:text-rose-600 transition"><i className="fas fa-times"></i></button>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                
-                                                {/* 1줄 통합 메인 컨트롤 바 */}
-                                                <div className="flex flex-row items-center justify-between p-3 gap-4 bg-slate-50 border-b border-slate-200 shrink-0 w-full overflow-x-auto hide-scrollbar">
-                                                    
-                                                    {/* 좌측: 모드 탭 & 필터 */}
-                                                    <div className="flex items-center gap-3 shrink-0">
-                                                        <div className="flex bg-slate-200/70 rounded-lg p-1 border border-slate-300 shadow-inner">
-                                                            <button onClick={() => { setActiveTab('product'); setSelectedRows(new Set()); }} className={`px-4 py-1.5 rounded-md text-[12px] font-bold transition-all flex items-center ${activeTab === 'product' ? 'bg-white text-emerald-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}>
-                                                                <i className="fas fa-chart-pie mr-1.5"></i>품목별(집계)
-                                                            </button>
-                                                            <button onClick={() => { setActiveTab('vendor'); setSelectedRows(new Set()); }} className={`px-4 py-1.5 rounded-md text-[12px] font-bold transition-all flex items-center ${activeTab === 'vendor' ? 'bg-white text-blue-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}>
-                                                                <i className="fas fa-store mr-1.5"></i>거래처별(상세)
-                                                            </button>
-                                                        </div>
-
-                                                        {(activeTab === 'vendor' || activeTab === 'estimate') && (
-                                                            <div className="flex items-center gap-2">
-                                                                <select value={filterWarehouse} onChange={e => setFilterWarehouse(e.target.value)} className="py-1.5 px-3 border border-slate-300 rounded text-xs font-bold text-slate-700 bg-white outline-none hover:border-blue-400 focus:border-blue-500 shadow-sm cursor-pointer min-w-[100px]">
-                                                                    <option value="">창고 (전체)</option>
-                                                                    {warehouseOptions.map(opt => <option key={opt} value={opt}>{opt || '(비어있음)'}</option>)}
-                                                                </select>
-                                                                <select value={filterManager} onChange={e => setFilterManager(e.target.value)} className="py-1.5 px-3 border border-slate-300 rounded text-xs font-bold text-slate-700 bg-white outline-none hover:border-blue-400 focus:border-blue-500 shadow-sm cursor-pointer min-w-[100px]">
-                                                                    <option value="">담당 (전체)</option>
-                                                                    {managerOptions.map(opt => <option key={opt} value={opt}>{opt || '(비어있음)'}</option>)}
-                                                                </select>
-                                                            </div>
-                                                        )}
-                                                    </div>
-
-                                                    {/* ✨ 우측: 액션 & 셋팅 (마스터 탭 분리 이동) */}
-                                                    <div className="flex items-center gap-3 shrink-0">
-                                                        <button onClick={() => setIsManualAddOpen(!isManualAddOpen)} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm flex items-center border ${isManualAddOpen ? 'bg-blue-50 text-blue-700 border-blue-300' : 'bg-slate-800 text-white border-slate-900 hover:bg-slate-700'}`}>
-                                                            <i className={`fas fa-${isManualAddOpen ? 'times text-rose-400' : 'plus text-blue-300'} mr-1.5`}></i>상품 수기추가
-                                                        </button>
-
-                                                        <div className="w-px h-5 bg-slate-300 mx-1"></div>
-
-                                                        <div className="flex bg-slate-200/70 rounded-lg p-1 border border-slate-300 shadow-inner">
-                                                            <button onClick={() => { setActiveTab('estimate'); setSelectedRows(new Set()); }} className={`px-4 py-1.5 rounded-md text-[12px] font-bold transition-all flex items-center ${activeTab === 'estimate' ? 'bg-white text-amber-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}>
-                                                                <i className="fas fa-file-invoice-dollar mr-1.5"></i>기본 품목(견적)
-                                                            </button>
-                                                            <button onClick={() => { setActiveTab('manage'); setSelectedRows(new Set()); }} className={`px-4 py-1.5 rounded-md text-[12px] font-bold transition-all flex items-center ${activeTab === 'manage' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}>
-                                                                <i className="fas fa-layer-group mr-1.5"></i>상품 관리(마스터)
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                </div>
+                                <div className="flex-1 flex flex-col overflow-hidden relative">
+                                    {isProcessing && (
+                                        <div className="absolute inset-0 z-[100] bg-slate-900/20 backdrop-blur-sm flex items-center justify-center">
+                                            <div className="bg-slate-800 text-white px-6 py-4 rounded-xl shadow-xl flex items-center font-bold text-lg animate-pulse border border-slate-700">
+                                                <i className="fas fa-spinner fa-spin mr-3 text-2xl text-emerald-400"></i> 데이터를 처리하고 있습니다...
                                             </div>
+                                        </div>
+                                    )}
 
-                                            {/* 메인 데이터 테이블 뷰 영역 */}
-                                            <div className="flex-1 bg-white relative z-0">
+                                    <div className="flex-1 flex flex-col w-full relative overflow-hidden">
+                                        <div id="main-scroll-container" className="flex-1 overflow-auto w-full relative custom-scrollbar">
+                                            <div className="w-full min-w-[1100px] flex flex-col min-h-full relative">
                                                 
-                                                {/* ✨ 1. 상품 관리(Master) 탭 */}
-                                                {activeTab === 'manage' && (
-                                                    <table className="w-full text-left border-collapse text-[13px] whitespace-nowrap">
-                                                        <thead className="bg-slate-100 text-slate-700 font-extrabold text-[12px] sticky top-0 z-30 shadow-[0_1px_2px_rgba(0,0,0,0.05)] tracking-tight align-bottom">
-                                                            <tr>
-                                                                <th className="px-2 py-2 border-r border-slate-200 border-b w-[50px] text-center sticky left-0 z-40 bg-slate-100 align-middle">
-                                                                    <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={selectedRows.size === tableRowsManage.length && tableRowsManage.length > 0} onChange={() => toggleAllSelect(tableRowsManage)} />
-                                                                </th>
-                                                                
-                                                                {/* ✨ 헤더 검색창 통합 */}
-                                                                <SearchHeader value={searchInputVal} onChange={setSearchInputVal} />
+                                                <div ref={cardContainerRef} className="sticky top-0 z-30 bg-white w-full border-b border-slate-300 shadow-[0_2px_4px_rgba(0,0,0,0.02)] shrink-0">
+                                                    {/* 수기 상품 추가 패널 */}
+                                                    <div className="absolute top-full left-0 w-full z-40">
+                                                        <ManualEntryPanel isOpen={isManualAddOpen} onClose={() => setIsManualAddOpen(false)} masterData={masterData} onAddOrder={addManualOrder} />
+                                                    </div>
 
-                                                                <SortableHeader label="매입단가 (구매가)" sortKey="buyPrice" currentSort={sortConfig} onSort={handleSort} width="w-[120px]" align="right" />
-                                                                <SortableHeader label="판매단가 (출고가)" sortKey="sellPrice" currentSort={sortConfig} onSort={handleSort} width="w-[120px]" align="right" />
-                                                                <SortableHeader label="이익률 (마진)" sortKey="margin" currentSort={sortConfig} onSort={handleSort} width="w-[100px]" align="right" />
-                                                                <SortableHeader label="기본 구매처" sortKey="vendor" currentSort={sortConfig} onSort={handleSort} width="w-[180px]" />
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="divide-y divide-slate-100">
-                                                            {tableRowsManage.length === 0 ? (
-                                                                <tr>
-                                                                    <td colSpan="6" className="p-16 text-center text-slate-400 font-bold bg-slate-50">
-                                                                        <i className="fas fa-database mb-3 text-4xl opacity-50 block"></i>
-                                                                        등록된 마스터 상품이 없습니다. 상단의 [마스터 설정]을 통해 엑셀을 올려주세요.
-                                                                    </td>
-                                                                </tr>
-                                                            ) : (
-                                                                (() => {
-                                                                    let lastGroupCode = null;
-                                                                    const rows = [];
-                                                                    
-                                                                    tableRowsManage.forEach((row) => {
-                                                                        const currentGroupCode = row.code ? String(row.code).substring(0, 6) : '000000';
-                                                                        const isNewGroup = lastGroupCode !== currentGroupCode;
-                                                                        
-                                                                        // ✨ 그룹 헤더 로직
-                                                                        if (isNewGroup) {
-                                                                            rows.push(
-                                                                                <tr key={`group-${currentGroupCode}`} className="bg-slate-200/80 border-y border-slate-300">
-                                                                                    <td colSpan="6" className="px-4 py-2 text-[13px] font-black text-slate-800 tracking-tight">
-                                                                                        <i className="fas fa-folder-open text-indigo-500 mr-2"></i>
-                                                                                        {row.cat1 || '미분류'} <span className="text-slate-400 font-normal mx-1.5">&gt;</span> {row.cat2 || '미분류'} <span className="text-slate-400 font-normal mx-1.5">&gt;</span> {row.cat3 || '미분류'}
-                                                                                        <span className="ml-3 px-2 py-0.5 bg-white border border-slate-300 rounded text-[11px] font-mono text-slate-600 shadow-sm align-middle">
-                                                                                            {currentGroupCode}
-                                                                                        </span>
-                                                                                    </td>
-                                                                                </tr>
-                                                                            );
-                                                                            lastGroupCode = currentGroupCode;
-                                                                        }
-                                                                        
-                                                                        const isSelected = selectedRows.has(row.code);
-                                                                        const margin = row.sellPrice ? Math.round(((row.sellPrice - row.buyPrice) / row.sellPrice) * 100) : 0;
-                                                                        const isWarningMargin = margin <= 0 && row.sellPrice > 0;
+                                                    {(activeTab === 'vendor' || activeTab === 'estimate') && selectedRows.size > 0 && (
+                                                        <div className="bg-indigo-50 border-b border-indigo-200 px-4 py-2 flex items-center justify-between animate-[fadeIn_0.2s_ease-out]">
+                                                            <div className="text-indigo-800 font-bold text-sm">
+                                                                <i className="fas fa-check-square mr-2"></i>{selectedRows.size}개 항목 선택됨
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className="text-xs font-bold text-indigo-400 mr-1">상태 변경:</span>
+                                                                {STATUS_OPTIONS.map(s => (
+                                                                    <button key={s} onClick={() => { updateOrderBulkStatus(selectedRows, s); setSelectedRows(new Set()); showToast(`✅ 선택된 항목이 [${s}](으)로 변경되었습니다.`); }} 
+                                                                        className={`px-3 py-1.5 rounded text-[11px] font-bold shadow-sm transition-colors border 
+                                                                        ${s === '완료' ? 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700' : 
+                                                                        (s === '전체취소' || s === '삭제' ? 'bg-rose-100 text-rose-700 border-rose-200 hover:bg-rose-200' : 
+                                                                        s === '견적' ? 'bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200' :
+                                                                        'bg-white text-slate-700 border-slate-300 hover:bg-slate-50')}`}>
+                                                                        {s}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {/* 1줄 통합 메인 컨트롤 바 */}
+                                                    <div className="flex flex-row items-center justify-between p-3 gap-4 bg-slate-50 border-b border-slate-200 shrink-0 w-full overflow-x-auto hide-scrollbar">
+                                                        
+                                                        {/* 좌측: 모드 탭 & 필터 */}
+                                                        <div className="flex items-center gap-3 shrink-0">
+                                                            <div className="flex bg-slate-200/70 rounded-lg p-1 border border-slate-300 shadow-inner">
+                                                                <button onClick={() => { setActiveTab('product'); setSelectedRows(new Set()); }} className={`px-5 py-1.5 rounded-md text-[12px] font-bold transition-all flex items-center ${activeTab === 'product' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}>
+                                                                    <i className="fas fa-layer-group mr-2"></i>품목별
+                                                                </button>
+                                                                <button onClick={() => { setActiveTab('vendor'); setSelectedRows(new Set()); }} className={`px-5 py-1.5 rounded-md text-[12px] font-bold transition-all flex items-center ${activeTab === 'vendor' ? 'bg-white text-blue-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}>
+                                                                    <i className="fas fa-list-ul mr-2"></i>거래처별
+                                                                </button>
+                                                            </div>
 
-                                                                        rows.push(
-                                                                            <tr key={row.code} onClick={() => toggleRowSelect(row.code)} className={`transition-colors cursor-pointer text-slate-800 ${isSelected ? 'bg-indigo-50/50' : 'hover:bg-slate-50'}`}>
-                                                                                <td className="px-2 py-2 border-r border-slate-100 text-center sticky left-0 z-20 bg-inherit" onClick={e=>e.stopPropagation()}>
-                                                                                    <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={isSelected} onChange={() => toggleRowSelect(row.code)} />
-                                                                                </td>
-                                                                                
-                                                                                {/* ✨ 2단 텍스트 위계 셀 적용 */}
-                                                                                <ProductInfoCell name={row.name} spec={row.spec} code={row.code} />
-                                                                                
-                                                                                <td className="px-4 py-2 border-r border-slate-100 text-right font-semibold">{row.inPrice ? row.inPrice.toLocaleString() : '-'}</td>
-                                                                                <td className="px-4 py-2 border-r border-slate-100 text-right font-black text-emerald-600 bg-emerald-50/20">{row.sellPrice ? row.sellPrice.toLocaleString() : '-'}</td>
-                                                                                <td className={`px-4 py-2 border-r border-slate-100 text-right font-black ${isWarningMargin ? 'text-rose-600 bg-rose-50/50' : 'text-blue-600'}`}>{margin}%</td>
-                                                                                <td className="px-4 py-2 truncate max-w-[180px] text-slate-600">{row.vendor || '-'}</td>
-                                                                            </tr>
-                                                                        );
-                                                                    });
-                                                                    return rows;
-                                                                })()
+                                                            {(activeTab === 'vendor' || activeTab === 'estimate') && (
+                                                                <div className="flex items-center gap-2">
+                                                                    <select value={filterWarehouse} onChange={e => setFilterWarehouse(e.target.value)} className="py-1.5 px-3 border border-slate-300 rounded text-xs font-bold text-slate-700 bg-white outline-none hover:border-blue-400 focus:border-blue-500 shadow-sm cursor-pointer min-w-[100px]">
+                                                                        <option value="">창고 (전체)</option>
+                                                                        {warehouseOptions.map(opt => <option key={opt} value={opt}>{opt || '(비어있음)'}</option>)}
+                                                                    </select>
+                                                                    <select value={filterManager} onChange={e => setFilterManager(e.target.value)} className="py-1.5 px-3 border border-slate-300 rounded text-xs font-bold text-slate-700 bg-white outline-none hover:border-blue-400 focus:border-blue-500 shadow-sm cursor-pointer min-w-[100px]">
+                                                                        <option value="">담당 (전체)</option>
+                                                                        {managerOptions.map(opt => <option key={opt} value={opt}>{opt || '(비어있음)'}</option>)}
+                                                                    </select>
+                                                                </div>
                                                             )}
-                                                        </tbody>
-                                                    </table>
-                                                )}
+                                                        </div>
 
-                                                {/* ✨ 2. 기본 품목(Estimate) 탭 */}
-                                                {activeTab === 'estimate' && (
-                                                    <table className="w-full text-left border-collapse text-[13px] whitespace-nowrap">
-                                                        <thead className="bg-slate-100 text-slate-700 font-extrabold text-[12px] sticky top-0 z-30 shadow-[0_1px_2px_rgba(0,0,0,0.05)] tracking-tight align-bottom">
-                                                            <tr>
-                                                                <th className="px-2 py-2 border-r border-slate-200 border-b w-[50px] text-center sticky left-0 z-40 bg-slate-100 align-middle">
-                                                                    <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={selectedRows.size === tableRowsEstimate.length && tableRowsEstimate.length > 0} onChange={() => toggleAllSelect(tableRowsEstimate)} />
-                                                                </th>
-                                                                
-                                                                <SearchHeader value={searchInputVal} onChange={setSearchInputVal} />
+                                                        {/* 우측: 액션 & 셋팅 */}
+                                                        <div className="flex items-center gap-3 shrink-0">
+                                                            <button onClick={() => setIsManualAddOpen(!isManualAddOpen)} className={`px-5 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm flex items-center border ${isManualAddOpen ? 'bg-blue-50 text-blue-700 border-blue-300' : 'bg-slate-800 text-white border-slate-900 hover:bg-slate-700'}`}>
+                                                                <i className={`fas fa-${isManualAddOpen ? 'times text-rose-400' : 'plus text-blue-300'} mr-2`}></i>상품 추가
+                                                            </button>
 
-                                                                <SortableHeader label="기본 구매처" sortKey="vendor" currentSort={sortConfig} onSort={handleSort} width="w-[180px]" />
-                                                                <SortableHeader label="견적단가 (판매가)" sortKey="단가" currentSort={sortConfig} onSort={handleSort} width="w-[140px]" align="right" />
-                                                                <SortableHeader label="적요 (메모)" sortKey="적요" currentSort={sortConfig} onSort={handleSort} width="w-auto" />
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="divide-y divide-slate-100">
-                                                            {tableRowsEstimate.length === 0 ? (
+                                                            <div className="w-px h-5 bg-slate-300 mx-1"></div>
+
+                                                            <div className="flex bg-slate-200/70 rounded-lg p-1 border border-slate-300 shadow-inner">
+                                                                <button onClick={() => { setActiveTab('estimate'); setSelectedRows(new Set()); }} className={`px-5 py-1.5 rounded-md text-[12px] font-bold transition-all flex items-center ${activeTab === 'estimate' ? 'bg-white text-amber-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}>
+                                                                    <i className="fas fa-file-invoice-dollar mr-2"></i>기본 품목
+                                                                </button>
+                                                                <button onClick={() => { setActiveTab('manage'); setSelectedRows(new Set()); }} className={`px-5 py-1.5 rounded-md text-[12px] font-bold transition-all flex items-center ${activeTab === 'manage' ? 'bg-white text-emerald-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}>
+                                                                    <i className="fas fa-box-open mr-2"></i>상품 관리
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* 메인 데이터 테이블 뷰 영역 */}
+                                                <div className="flex-1 overflow-auto bg-white relative z-0 p-4">
+                                                    
+                                                    {/* 1. 상품 관리 탭 */}
+                                                    {activeTab === 'manage' && (
+                                                        <table className="w-full text-left border-collapse text-[13px] whitespace-nowrap border border-slate-200">
+                                                            <thead className="bg-slate-100 text-slate-700 font-extrabold text-[12px] sticky top-0 z-30 shadow-[0_1px_2px_rgba(0,0,0,0.05)] tracking-tight">
                                                                 <tr>
-                                                                    <td colSpan="5" className="p-16 text-center text-slate-400 font-bold bg-slate-50">
-                                                                        <i className="fas fa-file-invoice-dollar mb-3 text-4xl opacity-50 block"></i>
-                                                                        등록된 견적서/기본품목 내역이 없습니다.
-                                                                    </td>
-                                                                </tr>
-                                                            ) : (
-                                                                (() => {
-                                                                    let lastGroupCode = null;
-                                                                    const rows = [];
-                                                                    
-                                                                    tableRowsEstimate.forEach((row) => {
-                                                                        const currentGroupCode = row.코드 ? String(row.코드).substring(0, 6) : '000000';
-                                                                        const isNewGroup = lastGroupCode !== currentGroupCode;
-                                                                        const mData = masterMap[row.코드] || {};
-                                                                        
-                                                                        if (isNewGroup) {
-                                                                            rows.push(
-                                                                                <tr key={`group-${currentGroupCode}`} className="bg-amber-50/60 border-y border-amber-200">
-                                                                                    <td colSpan="5" className="px-4 py-2 text-[13px] font-black text-amber-800 tracking-tight">
-                                                                                        <i className="fas fa-folder-open text-amber-600 mr-2"></i>
-                                                                                        {mData.cat1 || '미분류'} <span className="text-amber-300 font-normal mx-1.5">&gt;</span> {mData.cat2 || '미분류'} <span className="text-amber-300 font-normal mx-1.5">&gt;</span> {mData.cat3 || '미분류'}
-                                                                                        <span className="ml-3 px-2 py-0.5 bg-white border border-amber-300 rounded text-[11px] font-mono text-amber-600 shadow-sm align-middle">
-                                                                                            {currentGroupCode}
-                                                                                        </span>
-                                                                                    </td>
-                                                                                </tr>
-                                                                            );
-                                                                            lastGroupCode = currentGroupCode;
-                                                                        }
-                                                                        
-                                                                        const isSelected = selectedRows.has(row.id);
-                                                                        
-                                                                        rows.push(
-                                                                            <tr key={row.id} onClick={() => toggleRowSelect(row.id)} className={`transition-colors cursor-pointer text-slate-800 ${isSelected ? 'bg-amber-100/50' : 'hover:bg-slate-50'}`}>
-                                                                                <td className="px-2 py-2 border-r border-slate-100 text-center sticky left-0 z-20 bg-inherit" onClick={e=>e.stopPropagation()}>
-                                                                                    <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={isSelected} onChange={() => toggleRowSelect(row.id)} />
-                                                                                </td>
-                                                                                
-                                                                                <ProductInfoCell name={row.품명} spec={row.규격} code={row.코드} />
-                                                                                
-                                                                                <td className="px-4 py-2 border-r border-slate-100 text-slate-700 font-medium">{row.거래처 || mData.vendor || '-'}</td>
-                                                                                <td className="px-4 py-2 border-r border-slate-100 text-right font-black text-amber-700 bg-amber-50/30">{row.단가 ? row.단가.toLocaleString() : '-'}</td>
-                                                                                <td className="px-4 py-1.5" onClick={e=>e.stopPropagation()}>
-                                                                                    <input type="text" value={row.적요} onChange={e => updateOrder(row.id, '적요', e.target.value)} className="w-full bg-transparent border-b border-transparent focus:border-blue-500 outline-none text-[12px] py-1 text-slate-600 focus:bg-white transition-colors" placeholder="메모 입력" />
-                                                                                </td>
-                                                                            </tr>
-                                                                        );
-                                                                    });
-                                                                    return rows;
-                                                                })()
-                                                            )}
-                                                        </tbody>
-                                                    </table>
-                                                )}
-
-                                                {/* ✨ 3. 품목별 (집계) 탭 */}
-                                                {activeTab === 'product' && (
-                                                    <table className="w-full text-left border-collapse text-[13px] whitespace-nowrap border-t border-slate-200">
-                                                        <thead className="bg-slate-100 text-slate-700 font-extrabold text-[12px] sticky top-0 z-30 shadow-[0_1px_2px_rgba(0,0,0,0.05)] tracking-tight align-bottom">
-                                                            <tr>
-                                                                <th className="px-2 py-2 border-r border-slate-200 border-b w-[50px] text-center sticky left-0 z-40 bg-slate-100 align-middle">
-                                                                    {/* 집계 탭은 체크박스 없음 (선택 기능 불필요) */}
-                                                                </th>
-                                                                
-                                                                <SearchHeader value={searchInputVal} onChange={setSearchInputVal} />
-
-                                                                <SortableHeader label="매입단가" sortKey="buyPrice" currentSort={sortConfig} onSort={handleSort} width="w-[100px]" align="right" />
-                                                                <SortableHeader label="가용재고(총)" sortKey="available" currentSort={sortConfig} onSort={handleSort} width="w-[100px]" align="right" />
-                                                                <SortableHeader label="총주문(매출)" sortKey="totalSales" currentSort={sortConfig} onSort={handleSort} width="w-[100px]" align="right" />
-                                                                <SortableHeader label="발주필요(Shortage)" sortKey="shortage" currentSort={sortConfig} onSort={handleSort} width="w-[120px]" align="right" />
-                                                                <th className="px-4 py-2 border-b border-slate-200 text-left min-w-[150px] align-middle text-slate-600">특이사항 합산</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="divide-y divide-slate-100">
-                                                            {tableRowsSummary.length === 0 ? (
-                                                                <tr>
-                                                                    <td colSpan="7" className="p-16 text-center text-slate-400 font-bold bg-slate-50">
-                                                                        <i className="fas fa-chart-pie mb-3 text-4xl opacity-50 block"></i>
-                                                                        집계할 품목이 없습니다. 상단의 박스에 전표를 올리거나 마스터를 추가해주세요.
-                                                                    </td>
-                                                                </tr>
-                                                            ) : (
-                                                                tableRowsSummary.map((row) => {
-                                                                    const stock = stockData[row.key] || { 기초재고: 0, 입고수량: 0 };
-                                                                    const totalDemand = row.총주문 + row.총판매;
-                                                                    const totalStock = stock.기초재고 + stock.입고수량;
-                                                                    const autoShortage = totalDemand > totalStock ? totalDemand - totalStock : 0;
-                                                                    const displayShortage = stock.수기발주 !== undefined ? stock.수기발주 : autoShortage;
-
-                                                                    const isShortage = displayShortage > 0;
-                                                                    const bgClass = isShortage ? "bg-rose-50/20 hover:bg-rose-50" : "hover:bg-slate-50";
-
-                                                                    return (
-                                                                        <tr key={row.key} className={`${bgClass} transition-colors text-slate-800`}>
-                                                                            <td className="px-2 py-1.5 border-r border-slate-100 text-center sticky left-0 z-20 bg-inherit"></td>
-                                                                            
-                                                                            <ProductInfoCell name={row.품명} spec={row.규격} code={row.코드} />
-
-                                                                            <td className="px-4 py-2 border-r border-slate-100 text-right text-emerald-700 font-semibold">{row.inPrice ? row.inPrice.toLocaleString() : '-'}</td>
-                                                                            
-                                                                            <td className="px-2 py-2 border-r border-slate-100 text-right bg-slate-50">
-                                                                                <div className="font-black text-slate-700 text-[14px]">{totalStock}</div>
-                                                                                <div className="text-[9px] text-slate-400 mt-0.5">재고 {stock.기초재고} + 입고 {stock.입고수량}</div>
-                                                                            </td>
-                                                                            <td className="px-4 py-2 border-r border-slate-100 text-right font-black text-blue-600 text-[14px]">{totalDemand}</td>
-                                                                            <td className="px-4 py-2 border-r border-slate-100 text-right bg-rose-50/30">
-                                                                                {isShortage ? (
-                                                                                    <div className="flex items-center justify-end font-black text-rose-600 text-[15px] animate-pulse"><i className="fas fa-arrow-up text-[10px] mr-1.5"></i>{displayShortage}</div>
-                                                                                ) : (
-                                                                                    <span className="text-slate-300 font-bold">-</span>
-                                                                                )}
-                                                                            </td>
-                                                                            
-                                                                            <td className="px-4 py-2 text-slate-600 text-xs">
-                                                                                {row.적요 ? <span className="bg-slate-100 px-2 py-1 rounded shadow-sm inline-block max-w-[250px] truncate" title={row.적요}>{row.적요}</span> : '-'}
-                                                                            </td>
-                                                                        </tr>
-                                                                    );
-                                                                })
-                                                            )}
-                                                        </tbody>
-                                                    </table>
-                                                )}
-
-                                                {/* ✨ 4. 거래처별 (상세) 탭 */}
-                                                {activeTab === 'vendor' && (
-                                                    <table className="w-full text-left border-collapse text-[13px] whitespace-nowrap border-t border-slate-200">
-                                                        <thead className="bg-slate-100 text-slate-700 font-extrabold text-[12px] sticky top-0 z-30 shadow-[0_1px_2px_rgba(0,0,0,0.05)] tracking-tight align-bottom">
-                                                            <tr>
-                                                                <th className="px-2 py-2 border-r border-slate-200 border-b w-[65px] text-center sticky left-0 z-40 bg-slate-100 align-middle">
-                                                                    <div className="flex flex-col items-center justify-center gap-1.5">
-                                                                        <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={selectedRows.size === tableRowsList.length && tableRowsList.length > 0} onChange={() => toggleAllSelect(tableRowsList)} />
-                                                                        <span className="text-[9px] text-slate-400 font-bold tracking-tighter leading-none">일자-No.</span>
-                                                                    </div>
-                                                                </th>
-                                                                
-                                                                <SearchHeader value={searchInputVal} onChange={setSearchInputVal} />
-
-                                                                <SortableHeader label="수량" sortKey="주문수량" currentSort={sortConfig} onSort={handleSort} width="w-[80px]" align="right" />
-                                                                <SortableHeader label="판매단가" sortKey="단가" currentSort={sortConfig} onSort={handleSort} width="w-[100px]" align="right" />
-                                                                
-                                                                <th className="px-4 py-2 border-r border-slate-200 border-b text-left w-auto align-middle text-slate-600">적요 / 메세지</th>
-                                                                
-                                                                <th className="p-0 border-r border-slate-200 border-b w-[120px] align-middle">
-                                                                    <div className="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-slate-200" onClick={() => handleSort('거래처')}>
-                                                                        <span className="flex items-center gap-1">거래처</span>
-                                                                        <div className="relative text-right" onClick={(e) => { e.stopPropagation(); setActiveDropdown(activeDropdown==='vendor'?null:'vendor'); }}>
-                                                                            <i className={`fas fa-filter ${filterVendor.length>0?'text-blue-500':'text-slate-400'} hover:text-blue-600 p-1`}></i>
-                                                                            {activeDropdown === 'vendor' && <FilterDropdown options={vendorOptions} selectedOptions={filterVendor} onChange={setFilterVendor} onClose={()=>setActiveDropdown(null)} />}
+                                                                    <th className="px-4 py-2 border-r border-slate-200 border-b w-auto align-middle">
+                                                                        <div className="relative w-full max-w-lg">
+                                                                            <input type="text" id="searchInput" placeholder="코드/품명/규격 검색 (F3)" value={searchInputVal} onChange={e => setSearchInputVal(e.target.value)} className="w-full pl-3 pr-8 py-1.5 border border-slate-300 rounded text-[12px] font-bold text-slate-700 bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-inner transition-colors" onClick={e => e.stopPropagation()} />
+                                                                            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center pointer-events-none text-slate-400">
+                                                                                <i className="fas fa-search"></i>
+                                                                            </div>
                                                                         </div>
-                                                                    </div>
-                                                                </th>
-                                                                <th className="p-0 border-r border-slate-200 border-b w-[100px] align-middle">
-                                                                    <div className="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-slate-200" onClick={() => handleSort('담당자')}>
-                                                                        <span className="flex items-center gap-1">담당자</span>
-                                                                    </div>
-                                                                </th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="divide-y divide-slate-100">
-                                                            {tableRowsList.length === 0 ? (
-                                                                <tr>
-                                                                    <td colSpan="8" className="p-16 text-center text-slate-400 font-bold bg-slate-50">
-                                                                        <i className="fas fa-store mb-3 text-4xl opacity-50 block"></i>
-                                                                        조회할 전표 데이터가 없습니다. 상단 패널에 엑셀(주문/판매)을 올려주세요.
-                                                                    </td>
-                                                                </tr>
-                                                            ) : (
-                                                                tableRowsList.map((row) => {
-                                                                    const isSelected = selectedRows.has(row.id);
-                                                                    const isCanceled = row.상태 === '전체취소' || row.상태 === '삭제';
-                                                                    const bgClass = isSelected ? "bg-blue-50/40 hover:bg-blue-50" : (isCanceled ? "bg-slate-100 opacity-60 line-through" : "hover:bg-slate-50");
+                                                                    </th>
                                                                     
-                                                                    const outPrice = masterMap[row.코드]?.outPrice || row.단가 || 0;
+                                                                    <th className="px-4 py-2 border-r border-slate-200 border-b w-[140px] text-right align-middle">매입단가 (구매가)</th>
+                                                                    <th className="px-4 py-2 border-r border-slate-200 border-b w-[140px] text-right text-blue-700 bg-blue-50/50 align-middle">판매단가 (출고가)</th>
+                                                                    <th className="px-4 py-2 border-b border-slate-200 w-[180px] align-middle">기본 구매처</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-slate-200">
+                                                                {tableRowsManage.length === 0 ? (
+                                                                    <tr>
+                                                                        <td colSpan="4" className="p-12 text-center text-slate-400 font-bold bg-slate-50">
+                                                                            <i className="fas fa-database mb-3 text-4xl opacity-50 block"></i>
+                                                                            데이터가 없습니다. 우측 상단의 [마스터 설정] 버튼을 눌러 엑셀을 올려주세요.
+                                                                        </td>
+                                                                    </tr>
+                                                                ) : (
+                                                                    (() => {
+                                                                        let lastCat12 = null;
+                                                                        const rows = [];
+                                                                        
+                                                                        tableRowsManage.forEach((row) => {
+                                                                            const currentCat12 = `${row.cat1 || '미분류'}-${row.cat2 || ''}`;
+                                                                            
+                                                                            // 1차/2차 카테고리 대그룹 구분행(Group Header)
+                                                                            if (lastCat12 !== currentCat12) {
+                                                                                rows.push(
+                                                                                    <tr key={`group-${currentCat12}`} className="bg-slate-200/60 border-y border-slate-300">
+                                                                                        <td colSpan="4" className="px-4 py-2 font-extrabold text-slate-700 text-[13px] tracking-tight">
+                                                                                            <i className="fas fa-folder-open text-blue-500 mr-2"></i>
+                                                                                            {row.cat1 || '미분류'} 
+                                                                                            {row.cat2 && <><span className="text-slate-400 font-normal mx-1.5">&gt;</span> {row.cat2}</>} 
+                                                                                        </td>
+                                                                                    </tr>
+                                                                                );
+                                                                                lastCat12 = currentCat12;
+                                                                            }
+                                                                            
+                                                                            rows.push(
+                                                                                <tr key={row.code} className="hover:bg-blue-50/30 transition-colors text-slate-800">
+                                                                                    <td className="px-4 py-2 border-r border-slate-100 min-w-[250px] truncate max-w-[500px]">
+                                                                                        <div className="flex flex-col gap-0.5">
+                                                                                            <span className="font-mono font-medium tracking-tight text-[9px] text-slate-400 leading-none mb-0.5 block">{row.code}</span>
+                                                                                            <div className="flex items-center">
+                                                                                                <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold mr-1.5 border border-indigo-100 shadow-sm align-middle">{row.cat3 || '미분류'}</span>
+                                                                                                <span className="font-bold text-slate-900 text-[13px]">{row.name}</span>
+                                                                                                {row.spec && <span className="ml-1.5 text-[10px] font-semibold text-slate-500 border border-slate-200 px-1 rounded bg-slate-50">{row.spec}</span>}
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    </td>
+                                                                                    <td className="px-4 py-2 border-r border-slate-100 text-right font-semibold">{row.inPrice ? row.inPrice.toLocaleString() : '-'}</td>
+                                                                                    <td className="px-4 py-2 border-r border-slate-100 text-right font-bold text-blue-700 bg-blue-50/10">{row.outPrice ? row.outPrice.toLocaleString() : '-'}</td>
+                                                                                    <td className="px-4 py-2 truncate max-w-[180px] text-slate-600">{row.vendor}</td>
+                                                                                </tr>
+                                                                            );
+                                                                        });
+                                                                        return rows;
+                                                                    })()
+                                                                )}
+                                                            </tbody>
+                                                        </table>
+                                                    )}
 
-                                                                    return (
-                                                                        <tr key={row.id} className={`${bgClass} transition-colors text-slate-800 cursor-pointer`} onClick={() => toggleRowSelect(row.id)}>
-                                                                            <td className="px-2 py-1.5 border-r border-slate-100 text-center sticky left-0 z-20 bg-inherit" onClick={e=>e.stopPropagation()}>
-                                                                                <div className="flex flex-col items-center justify-center gap-1.5">
-                                                                                    <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={isSelected} onChange={() => toggleRowSelect(row.id)} />
-                                                                                    <span className="text-[9px] text-slate-400 font-mono tracking-tighter leading-none" title={formatDateNumber(row.일자, row.순번)}>
-                                                                                        {formatDateNumber(row.일자, row.순번).substring(0, 8)}
+                                                    {/* ✨ 2. 품목별 (집계) 탭 */}
+                                                    {activeTab === 'product' && (
+                                                        <table className="w-full text-left border-collapse text-[13px] whitespace-nowrap border border-slate-200">
+                                                            {renderUnifiedTableHeader(tableRowsSummary)}
+                                                            <tbody className="divide-y divide-slate-200">
+                                                                {tableRowsSummary.length === 0 ? (
+                                                                    <tr>
+                                                                        <td colSpan="13" className="p-12 text-center text-slate-400 font-bold bg-slate-50">
+                                                                            <i className="fas fa-boxes mb-3 text-4xl opacity-50 block"></i>
+                                                                            집계할 품목이 없습니다. 상단의 박스에 전표를 올리거나 마스터를 추가해주세요.
+                                                                        </td>
+                                                                    </tr>
+                                                                ) : (
+                                                                    tableRowsSummary.map((row) => {
+                                                                        const stock = stockData[row.key] || { 기초재고: 0, 입고수량: 0 };
+                                                                        const totalDemand = row.총주문 + row.총판매;
+                                                                        const totalStock = stock.기초재고 + stock.입고수량;
+                                                                        const autoShortage = totalDemand > totalStock ? totalDemand - totalStock : 0;
+                                                                        const isShortage = stock.수기발주 !== undefined ? stock.수기발주 > 0 : autoShortage > 0;
+                                                                        const displayShortage = stock.수기발주 !== undefined ? stock.수기발주 : autoShortage;
+
+                                                                        const bgClass = isShortage ? "bg-rose-50/20 hover:bg-rose-50" : "hover:bg-slate-50";
+
+                                                                        return (
+                                                                            <tr key={row.key} className={`${bgClass} transition-colors text-slate-800`}>
+                                                                                <td className="px-2 py-1.5 border-r border-slate-100 text-center sticky left-0 z-20 bg-inherit" onClick={() => toggleRowSelect(row.key)}>
+                                                                                    <div className="flex flex-col items-center justify-center gap-1.5">
+                                                                                        <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={isSelected} onChange={() => {}} />
+                                                                                        <span className="text-[9px] text-slate-400 font-mono tracking-tighter leading-none" title={formatDateNumber(row.일자, row.순번)}>
+                                                                                            {formatDateNumber(row.일자, row.순번).substring(0, 8)}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                </td>
+                                                                                
+                                                                                <td className="px-3 py-2 border-r border-slate-100 text-center align-middle">
+                                                                                    <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold border border-indigo-100 shadow-sm whitespace-nowrap">
+                                                                                        {masterData.products[row.코드]?.cat3 || '미분류'}
                                                                                     </span>
-                                                                                </div>
-                                                                            </td>
-                                                                            
-                                                                            <ProductInfoCell name={row.품명} spec={row.규격} code={row.코드} />
-                                                                            
-                                                                            <td className="px-4 py-2 border-r border-slate-100 text-right font-black text-indigo-600 bg-indigo-50/20">{row.주문수량 || row.판매수량}</td>
-                                                                            <td className="px-4 py-2 border-r border-slate-100 text-right font-bold text-blue-700">{outPrice > 0 ? outPrice.toLocaleString() : '-'}</td>
-                                                                            
-                                                                            <td className="px-4 py-1.5 border-r border-slate-100 align-middle max-w-[250px]" onClick={e=>e.stopPropagation()}>
-                                                                                <div className="flex flex-col gap-1 w-full">
-                                                                                    <input type="text" value={row.적요} onChange={e => updateOrder(row.id, '적요', e.target.value)} className="w-full bg-transparent border-b border-transparent focus:border-blue-400 outline-none text-[12px] py-0.5 text-slate-600 focus:bg-white truncate" placeholder="메모" />
-                                                                                    <input type="text" value={row.지시사항} onChange={e => updateOrder(row.id, '지시사항', e.target.value)} className="w-full bg-transparent border-b border-transparent focus:border-amber-400 outline-none text-[11px] py-0.5 text-amber-700 font-medium focus:bg-white truncate" placeholder="지시사항" />
-                                                                                </div>
-                                                                            </td>
+                                                                                </td>
 
-                                                                            <td className="px-4 py-2 border-r border-slate-100 font-bold text-slate-700 truncate max-w-[120px]" title={row.거래처}>
-                                                                                <div className="flex flex-col">
-                                                                                    <span>{row.거래처}</span>
-                                                                                    <span className="text-[9px] text-slate-400 mt-0.5">{row.그룹}</span>
-                                                                                </div>
-                                                                            </td>
-                                                                            <td className="px-3 py-2 text-center text-slate-600 font-medium truncate max-w-[100px]" title={row.담당자}>{row.담당자}</td>
-                                                                        </tr>
-                                                                    );
-                                                                })
-                                                            )}
-                                                        </tbody>
-                                                    </table>
-                                                )}
+                                                                                <td className="px-4 py-2 border-r border-slate-100 min-w-[200px] max-w-[350px] truncate">
+                                                                                    <div className="flex flex-col gap-0.5">
+                                                                                        <span className="font-mono text-[9px] text-slate-400 leading-none mb-0.5 block">{row.코드}</span>
+                                                                                        <div className="flex items-center truncate">
+                                                                                            <span className="font-bold text-slate-900 text-[13px] truncate">{row.품명}</span>
+                                                                                            {row.규격 && <span className="ml-1.5 text-[10px] font-semibold text-slate-500 border border-slate-200 px-1 rounded bg-slate-50 shrink-0">{row.규격}</span>}
+                                                                                        </div>
+                                                                                        
+                                                                                        {/* ✨ 품목 분리 모드일 경우 하단에 분리된 정보 태그 표시 */}
+                                                                                        {(splitOptions.date || splitOptions.vendor || splitOptions.price) && (row.거래처 || row.일자 || row.outPrice > 0) && (
+                                                                                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                                                                                {splitOptions.date && row.일자 && <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-[9px] font-bold border border-slate-200"><i className="far fa-calendar-alt mr-1"></i>{formatDateNumber(row.일자, '')}</span>}
+                                                                                                {splitOptions.vendor && row.거래처 && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-600 rounded text-[9px] font-bold border border-amber-200"><i className="fas fa-store mr-1"></i>{row.거래처}</span>}
+                                                                                                {splitOptions.price && row.outPrice > 0 && <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[9px] font-bold border border-blue-200"><i className="fas fa-won-sign mr-1"></i>{row.outPrice.toLocaleString()}</span>}
+                                                                                            </div>
+                                                                                        )}
+                                                                                    </div>
+                                                                                </td>
+                                                                                
+                                                                                <td className="px-4 py-2 border-r border-slate-100 text-right text-blue-700 font-semibold">{row.outPrice || row.inPrice ? (row.outPrice || row.inPrice).toLocaleString() : '-'}</td>
+                                                                                
+                                                                                <td className="px-2 py-1.5 border-r border-slate-100 text-center font-bold text-slate-600 bg-slate-50/50">{row.총주문 || '-'}</td>
 
+                                                                                <td className="px-2 py-1.5 border-r border-slate-100 align-middle">
+                                                                                    <input type="number" className="qty-input text-slate-700" value={stock.기초재고 || ''} onChange={e => updateStock(row.key, '기초재고', e.target.value)} onFocus={e=>e.target.select()} placeholder="0" />
+                                                                                </td>
+                                                                                <td className="px-2 py-1.5 border-r border-slate-100 align-middle">
+                                                                                    <input type="number" className="qty-input text-blue-700" value={stock.입고수량 || ''} onChange={e => updateStock(row.key, '입고수량', e.target.value)} onFocus={e=>e.target.select()} placeholder="0" />
+                                                                                </td>
+                                                                                
+                                                                                <td className="px-2 py-1.5 border-r border-slate-100 text-center font-bold text-emerald-700 bg-emerald-50/50">{row.총판매 || '-'}</td>
+                                                                                
+                                                                                <td className="px-4 py-2 border-r border-slate-100 text-slate-600 truncate max-w-[100px]" title={row.적요}>{row.적요}</td>
+                                                                                <td className="px-4 py-2 border-r border-slate-100 text-amber-700 font-medium truncate max-w-[100px]" title={row.지시사항}>{row.지시사항}</td>
+                                                                                <td className="px-4 py-2 border-r border-slate-100 font-bold text-slate-700 truncate max-w-[100px]" title={row.거래처}>{row.거래처}</td>
+                                                                                <td className="px-4 py-2 border-r border-slate-100 text-slate-600 truncate max-w-[80px]" title={row.그룹}>{row.그룹}</td>
+                                                                                <td className="px-3 py-2 text-center text-slate-600 font-medium truncate max-w-[80px]" title={row.담당}>{row.담당}</td>
+                                                                            </tr>
+                                                                        );
+                                                                    })
+                                                                )}
+                                                            </tbody>
+                                                        </table>
+                                                    )}
+
+                                                    {/* ✨ 3. 거래처별 (상세) 탭 */}
+                                                    {activeTab === 'vendor' && (
+                                                        <table className="w-full text-left border-collapse text-[13px] whitespace-nowrap border border-slate-200">
+                                                            {renderUnifiedTableHeader(tableRowsList)}
+                                                            <tbody className="divide-y divide-slate-200">
+                                                                {tableRowsList.length === 0 ? (
+                                                                    <tr>
+                                                                        <td colSpan="13" className="p-12 text-center text-slate-400 font-bold bg-slate-50">
+                                                                            <i className="fas fa-list-ul mb-3 text-4xl opacity-50 block"></i>
+                                                                            조회할 전표 데이터가 없습니다. 상단 패널에 엑셀/CSV 파일을 올려주세요.
+                                                                        </td>
+                                                                    </tr>
+                                                                ) : (
+                                                                    tableRowsList.map((row, idx) => {
+                                                                        const isSelected = selectedRows.has(row.id);
+                                                                        const isCanceled = row.상태 === '전체취소' || row.상태 === '삭제';
+                                                                        const bgClass = isSelected ? "bg-blue-50/40 hover:bg-blue-50" : (isCanceled ? "bg-slate-100 opacity-60 line-through" : "hover:bg-slate-50");
+                                                                        
+                                                                        const outPrice = masterData.products[row.코드]?.outPrice || row.단가 || 0;
+                                                                        // 거래처별 탭에서도 재고/입고 연동을 위해 키 생성
+                                                                        const stockKey = generateStockKey(row.코드, row.거래처, outPrice, row.일자, splitOptions);
+                                                                        const stock = stockData[stockKey] || { 기초재고: 0, 입고수량: 0 };
+
+                                                                        return (
+                                                                            <tr key={row.id} className={`${bgClass} transition-colors text-slate-800`}>
+                                                                                <td className="px-2 py-1.5 border-r border-slate-100 text-center sticky left-0 z-20 bg-inherit" onClick={() => toggleRowSelect(row.id)}>
+                                                                                    <div className="flex flex-col items-center justify-center gap-1.5">
+                                                                                        <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={isSelected} onChange={() => {}} />
+                                                                                        <span className="text-[9px] text-slate-400 font-mono tracking-tighter leading-none" title={formatDateNumber(row.일자, row.순번)}>
+                                                                                            {formatDateNumber(row.일자, row.순번).substring(0, 8)}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                </td>
+                                                                                
+                                                                                <td className="px-3 py-2 border-r border-slate-100 text-center align-middle">
+                                                                                    <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold border border-indigo-100 shadow-sm whitespace-nowrap">
+                                                                                        {masterData.products[row.코드]?.cat3 || '미분류'}
+                                                                                    </span>
+                                                                                </td>
+
+                                                                                <td className="px-4 py-2 border-r border-slate-100 min-w-[200px] max-w-[350px] truncate">
+                                                                                    <div className="flex flex-col gap-0.5">
+                                                                                        <span className="font-mono text-[9px] text-slate-400 leading-none mb-0.5 block">{row.코드}</span>
+                                                                                        <div className="flex items-center truncate">
+                                                                                            <span className="font-bold text-slate-900 text-[13px] truncate">{row.품명}</span>
+                                                                                            {row.규격 && <span className="ml-1.5 text-[10px] font-semibold text-slate-500 border border-slate-200 px-1 rounded bg-slate-50 shrink-0">{row.규격}</span>}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                </td>
+                                                                                
+                                                                                <td className="px-4 py-2 border-r border-slate-100 text-right text-blue-700 font-semibold">{outPrice > 0 ? outPrice.toLocaleString() : '-'}</td>
+
+                                                                                <td className="px-2 py-1.5 border-r border-slate-100 align-middle bg-indigo-50/20">
+                                                                                    <input type="number" className={`qty-input ${isCanceled ? 'text-slate-400' : 'text-indigo-700'}`} value={row.주문수량 || ''} onChange={e => updateOrder(row.id, '주문수량', e.target.value)} onFocus={e=>e.target.select()} placeholder="0" disabled={isCanceled}/>
+                                                                                </td>
+                                                                                <td className="px-2 py-1.5 border-r border-slate-100 align-middle">
+                                                                                    <input type="number" className="qty-input text-slate-700" value={stock.기초재고 || ''} onChange={e => updateStock(stockKey, '기초재고', e.target.value)} onFocus={e=>e.target.select()} placeholder="0" disabled={isCanceled} />
+                                                                                </td>
+                                                                                <td className="px-2 py-1.5 border-r border-slate-100 align-middle">
+                                                                                    <input type="number" className="qty-input text-blue-700" value={stock.입고수량 || ''} onChange={e => updateStock(stockKey, '입고수량', e.target.value)} onFocus={e=>e.target.select()} placeholder="0" disabled={isCanceled} />
+                                                                                </td>
+                                                                                <td className="px-2 py-1.5 border-r border-slate-100 align-middle bg-emerald-50/20">
+                                                                                    <input type="number" className={`qty-input ${isCanceled ? 'text-slate-400' : 'text-emerald-700'}`} value={row.판매수량 || ''} onChange={e => updateOrder(row.id, '판매수량', e.target.value)} onFocus={e=>e.target.select()} placeholder="0" disabled={isCanceled}/>
+                                                                                </td>
+                                                                                
+                                                                                <td className="px-2 py-1.5 border-r border-slate-100 align-middle max-w-[100px]">
+                                                                                    <input type="text" value={row.적요} onChange={e => updateOrder(row.id, '적요', e.target.value)} className="w-full bg-transparent border-b border-transparent focus:border-blue-500 outline-none text-[12px] py-1 text-slate-600 focus:bg-white truncate" placeholder="메모" />
+                                                                                </td>
+                                                                                <td className="px-2 py-1.5 border-r border-slate-100 align-middle max-w-[100px]">
+                                                                                    <input type="text" value={row.지시사항} onChange={e => updateOrder(row.id, '지시사항', e.target.value)} className="w-full bg-transparent border-b border-transparent focus:border-amber-500 outline-none text-[12px] py-1 text-amber-700 font-medium focus:bg-white truncate" placeholder="지시사항" />
+                                                                                </td>
+
+                                                                                <td className="px-4 py-2 border-r border-slate-100 font-bold text-slate-700 truncate max-w-[100px]" title={row.거래처}>{row.거래처}</td>
+                                                                                <td className="px-4 py-2 border-r border-slate-100 text-slate-600 truncate max-w-[80px]" title={row.그룹}>{row.그룹}</td>
+                                                                                <td className="px-3 py-2 text-center text-slate-600 font-medium truncate max-w-[80px]" title={row.담당자}>{row.담당자}</td>
+                                                                            </tr>
+                                                                        );
+                                                                    })
+                                                                )}
+                                                            </tbody>
+                                                        </table>
+                                                    )}
+
+                                                    {/* 4. 기본 품목(견적) 탭 */}
+                                                    {activeTab === 'estimate' && (
+                                                        <table className="w-full text-left border-collapse text-[13px] whitespace-nowrap border border-slate-200">
+                                                            <thead className="bg-slate-100 text-slate-700 font-extrabold text-[12px] sticky top-0 z-30 shadow-[0_1px_2px_rgba(0,0,0,0.05)] tracking-tight">
+                                                                <tr>
+                                                                    <th className="px-2 py-2 border-r border-slate-200 border-b w-[65px] text-center sticky left-0 z-40 bg-slate-100 align-middle">
+                                                                        <div className="flex flex-col items-center justify-center gap-1.5">
+                                                                            <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={selectedRows.size === tableRowsEstimate.length && tableRowsEstimate.length > 0} onChange={() => toggleAllSelect(tableRowsEstimate)} />
+                                                                            <span className="text-[10px] text-slate-500 font-bold tracking-tighter leading-none">일자-No.</span>
+                                                                        </div>
+                                                                    </th>
+
+                                                                    <th className="px-4 py-2 border-r border-slate-200 border-b w-auto align-middle">
+                                                                        <div className="relative w-full max-w-sm">
+                                                                            <input type="text" id="searchInput" placeholder="코드/품명/규격 검색 (F3)" value={searchInputVal} onChange={e => setSearchInputVal(e.target.value)} className="w-full pl-3 pr-8 py-1.5 border border-slate-300 rounded text-[12px] font-bold text-slate-700 bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-inner transition-colors" onClick={e => e.stopPropagation()} />
+                                                                            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center pointer-events-none text-slate-400">
+                                                                                <i className="fas fa-search"></i>
+                                                                            </div>
+                                                                        </div>
+                                                                    </th>
+
+                                                                    <th className="px-4 py-2 border-r border-slate-200 border-b text-right w-[140px] text-amber-700 bg-amber-50/50 align-middle">견적단가(판매가)</th>
+                                                                    <th className="p-0 border-r border-slate-200 border-b w-[120px] align-middle">
+                                                                        <div className="flex items-center justify-between px-4 py-2 cursor-pointer hover:bg-slate-200" onClick={() => handleSort('그룹')}>
+                                                                            <span className="flex items-center gap-1">그룹</span>
+                                                                        </div>
+                                                                    </th>
+                                                                    <th className="px-3 py-2 border-r border-slate-200 border-b w-[100px] text-center align-middle">상태</th>
+                                                                    <th className="px-4 py-2 border-b w-[180px] cursor-pointer hover:bg-slate-200 align-middle" onClick={() => handleSort('적요')}>
+                                                                        적요 {sortConfig.key==='적요' && <i className={`fas fa-sort-${sortConfig.direction==='asc'?'down':'up'}`}></i>}
+                                                                    </th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-slate-200">
+                                                                {tableRowsEstimate.length === 0 ? (
+                                                                    <tr>
+                                                                        <td colSpan="6" className="p-12 text-center text-slate-400 font-bold bg-slate-50">
+                                                                            <i className="fas fa-file-invoice-dollar mb-3 text-4xl opacity-50 block"></i>
+                                                                            등록된 견적서(기본품목) 내역이 없습니다.
+                                                                        </td>
+                                                                    </tr>
+                                                                ) : (
+                                                                    (() => {
+                                                                        let lastVendor = null;
+                                                                        const rows = [];
+                                                                        
+                                                                        tableRowsEstimate.forEach((row) => {
+                                                                            // 거래처가 바뀔 때마다 그룹 헤더 삽입
+                                                                            if (lastVendor !== row.거래처) {
+                                                                                rows.push(
+                                                                                    <tr key={`vendor-group-${row.거래처}`} className="bg-amber-50/60 border-y border-amber-200">
+                                                                                        <td colSpan="6" className="px-4 py-2 font-extrabold text-amber-800 text-[13px] tracking-tight">
+                                                                                            <i className="fas fa-building mr-2"></i>
+                                                                                            {row.거래처 || '거래처 미지정'}
+                                                                                            <span className="ml-3 px-1.5 py-0.5 bg-white border border-amber-300 rounded text-[10px] text-amber-600 font-mono align-middle shadow-sm">
+                                                                                                {tableRowsEstimate.filter(r => r.거래처 === row.거래처).length}개 품목
+                                                                                            </span>
+                                                                                        </td>
+                                                                                    </tr>
+                                                                                );
+                                                                                lastVendor = row.거래처;
+                                                                            }
+                                                                            
+                                                                            const isSelected = selectedRows.has(row.id);
+                                                                            const isCanceled = row.상태 === '전체취소' || row.상태 === '삭제';
+                                                                            const bgClass = isSelected ? "bg-blue-50/40 hover:bg-blue-50" : (isCanceled ? "bg-slate-100 opacity-60 line-through" : "hover:bg-slate-50");
+
+                                                                            rows.push(
+                                                                                <tr key={row.id} className={`${bgClass} transition-colors text-slate-800`}>
+                                                                                    <td className="px-2 py-1.5 border-r border-slate-100 text-center sticky left-0 z-20 bg-inherit" onClick={() => toggleRowSelect(row.id)}>
+                                                                                        <div className="flex flex-col items-center justify-center gap-1.5">
+                                                                                            <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={isSelected} onChange={() => {}} />
+                                                                                            <span className="text-[9px] text-slate-400 font-mono tracking-tighter leading-none" title={formatDateNumber(row.일자, row.순번)}>
+                                                                                                {formatDateNumber(row.일자, row.순번).substring(0, 8)}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                    </td>
+                                                                                    <td className="px-4 py-2 border-r border-slate-100 min-w-[250px] truncate max-w-[400px]">
+                                                                                        <div className="flex flex-col gap-0.5">
+                                                                                            <span className="font-mono text-[9px] text-slate-400 leading-none mb-0.5 block">{row.코드}</span>
+                                                                                            <div className="flex items-center">
+                                                                                                <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold mr-1.5 border border-indigo-100 shadow-sm align-middle">{masterData.products[row.코드]?.cat3 || '미분류'}</span>
+                                                                                                <span className="font-bold text-slate-900 text-[13px]">{row.품명}</span>
+                                                                                                {row.규격 && <span className="ml-1.5 text-[10px] font-semibold text-slate-500 border border-slate-200 px-1 rounded bg-slate-50">{row.규격}</span>}
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    </td>
+                                                                                    <td className="px-4 py-2 border-r border-slate-100 text-right text-amber-700 font-semibold bg-amber-50/10">
+                                                                                        {row.단가 > 0 ? row.단가.toLocaleString() : '-'}
+                                                                                    </td>
+                                                                                    <td className="px-4 py-2 border-r border-slate-100 text-slate-600 truncate max-w-[120px]">{row.그룹}</td>
+                                                                                    <td className="px-3 py-2 border-r border-slate-100 text-center">
+                                                                                        <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${row.상태 === '견적' ? 'bg-amber-100 text-amber-700' : (isCanceled ? 'bg-slate-200 text-slate-500' : 'bg-slate-100 text-slate-700')}`}>{row.상태}</span>
+                                                                                    </td>
+                                                                                    <td className="px-4 py-1.5 align-middle">
+                                                                                        <input type="text" value={row.적요} onChange={e => updateOrder(row.id, '적요', e.target.value)} className="w-full bg-transparent border-b border-transparent focus:border-blue-500 outline-none text-[12px] py-1 text-slate-600 focus:bg-white" placeholder="메모 입력" />
+                                                                                    </td>
+                                                                                </tr>
+                                                                            );
+                                                                        });
+                                                                        return rows;
+                                                                    })()
+                                                                )}
+                                                            </tbody>
+                                                        </table>
+                                                    )}
+
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
