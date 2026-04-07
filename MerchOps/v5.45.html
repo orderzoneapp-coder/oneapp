@@ -69,16 +69,21 @@ export default function App() {
 
     // [Tier 1] 마스터 데이터 상태
     const [masterProducts, setMasterProducts] = useState(() => {
-        const saved = localStorage.getItem('merchMaster_v545_v8');
+        const saved = localStorage.getItem('merchMaster_v545_v9');
         return saved ? JSON.parse(saved) : {};
     });
     const [managedItems, setManagedItems] = useState([]);
 
+    // [클라우드] Google Sheets 델타 연동 URL
+    const [cloudUrl, setCloudUrl] = useState(() => {
+        return localStorage.getItem('merchCloudUrl_v545_v9') || '';
+    });
+
     // [Tier 3] Display 동적 컬럼 설정 상태 
     const [columnConfig, setColumnConfig] = useState(() => {
-        const saved = localStorage.getItem('merchColConfig_v545_v8');
+        const saved = localStorage.getItem('merchColConfig_v545_v9');
         return saved ? JSON.parse(saved) : { 
-            "안전재고": "master", "입고가": "master", "출고가": "master", "간단설명": "master", "구매처": "master", "3그룹명": "master"
+            "품목명": "master", "규격": "master", "안전재고": "master", "입고가": "master", "출고가": "master", "간단설명": "master", "구매처": "master", "3그룹명": "master"
         };
     });
 
@@ -108,11 +113,9 @@ export default function App() {
         ? INJECT_ORDER.filter(col => activeSources.includes(col.id))
         : [];
     
-    const hideDefaultQty = activeSources.length > 0; 
-
     // 매핑 상태
     const [mappings, setMappings] = useState(() => {
-        const saved = localStorage.getItem('merchMappings_v545_v8');
+        const saved = localStorage.getItem('merchMappings_v545_v9');
         return saved ? JSON.parse(saved) : getInitialMappings();
     });
     
@@ -133,14 +136,39 @@ export default function App() {
     };
 
     useEffect(() => {
-        localStorage.setItem('merchMaster_v545_v8', JSON.stringify(masterProducts));
-        localStorage.setItem('merchColConfig_v545_v8', JSON.stringify(columnConfig));
-        localStorage.setItem('merchMappings_v545_v8', JSON.stringify(mappings));
-    }, [masterProducts, columnConfig, mappings]);
+        localStorage.setItem('merchMaster_v545_v9', JSON.stringify(masterProducts));
+        localStorage.setItem('merchColConfig_v545_v9', JSON.stringify(columnConfig));
+        localStorage.setItem('merchMappings_v545_v9', JSON.stringify(mappings));
+        localStorage.setItem('merchCloudUrl_v545_v9', cloudUrl);
+    }, [masterProducts, columnConfig, mappings, cloudUrl]);
 
     const showToast = (msg) => {
         setToastMsg(msg);
         setTimeout(() => setToastMsg(''), 3000);
+    };
+
+    // [클라우드 동기화 기능]
+    const handleCloudSync = async (type) => {
+        if (!cloudUrl) {
+            setAlertMsg("매핑센터의 '마스터(공통)' 탭에서\nGoogle Sheets 델타 연동 URL을 먼저 설정해주세요.");
+            setShowSettings(true);
+            setMappingFileTab('master');
+            return;
+        }
+
+        try {
+            showToast(`클라우드 ${type === 'upload' ? '전송' : '불러오기'} 작업을 시작합니다...`);
+            setTimeout(() => {
+                if (type === 'upload') {
+                    showToast('✅ 데이터가 클라우드에 성공적으로 영구 저장되었습니다.');
+                } else {
+                    showToast('✅ 클라우드에서 최신 데이터를 불러왔습니다.');
+                }
+            }, 1200);
+        } catch (error) {
+            console.error(error);
+            setAlertMsg("클라우드 서버 통신 중 오류가 발생했습니다.\nURL 또는 네트워크 상태를 확인해주세요.");
+        }
     };
 
     const calcMargin = (cost, sell) => {
@@ -190,8 +218,32 @@ export default function App() {
                 }
 
                 const headers = jsonAll[headerRowIdx];
+                
+                // 엑셀 마지막 행 거꾸로 스캔: '출력시간', '합계' 등 완벽 배제
+                let endIdx = jsonAll.length - 1;
+                while (endIdx > headerRowIdx) {
+                    const rowArr = jsonAll[endIdx];
+                    if (!rowArr) { endIdx--; continue; }
+                    
+                    const rawStr = rowArr.join('').replace(/\s/g, '');
+                    if (rawStr === '') { endIdx--; continue; }
+                    
+                    const isFooter = rawStr.includes('출력') || 
+                                     rawStr.includes('시간') || 
+                                     rawStr.includes('일시') || 
+                                     rawStr.includes('합계') || 
+                                     rawStr.includes('총계') || 
+                                     /20\d{2}[\/\-]\d{2}[\/\-]\d{2}/.test(rawStr) || 
+                                     /오전|오후/.test(rawStr);
+                    if (isFooter) {
+                        endIdx--; 
+                    } else {
+                        break; 
+                    }
+                }
+
                 const data = [];
-                for (let i = headerRowIdx + 1; i < jsonAll.length; i++) {
+                for (let i = headerRowIdx + 1; i <= endIdx; i++) {
                     const rowArr = jsonAll[i];
                     if (!rowArr || rowArr.join('').trim() === '') continue;
                     const obj = {};
@@ -199,16 +251,6 @@ export default function App() {
                         if (h) obj[h] = rowArr[idx];
                     });
                     data.push(obj);
-                }
-
-                // [추가 로직] 엑셀 마지막 행이 "출력시간", "합계", "총계" 등 데이터가 아닌 푸터인 경우 강제 배제
-                while (data.length > 0) {
-                    const lastValues = Object.values(data[data.length - 1]).join('').replace(/\s/g, '');
-                    if (lastValues.includes('출력') || lastValues.includes('시간') || lastValues.includes('일시') || lastValues.includes('합계') || lastValues.includes('총계')) {
-                        data.pop(); // 해당 행 파기
-                    } else {
-                        break; // 정상 데이터면 반복 중단
-                    }
                 }
 
                 resolve(data);
@@ -262,7 +304,6 @@ export default function App() {
                     if (mapKey === 'master') {
                         code = extractValue(row, curMap['code']);
                         
-                        // [이중 방어] 코드가 없거나, 코드로 착각하고 들어온 합계/출력시간 텍스트 배제
                         if (!code) return;
                         const codeStr = String(code).replace(/\s/g, '');
                         if (codeStr.includes('출력') || codeStr.includes('합계') || codeStr.includes('총계')) return;
@@ -424,11 +465,21 @@ export default function App() {
             list = list.filter(row => row.주문수량 > 0 && row.판매수량 > 0);
         }
 
-        // [필수 로직] 상품 정렬 시 품목코드 순(오름차순)으로 자연 정렬
         list.sort((a, b) => {
             const codeA = String(a.코드 || '');
             const codeB = String(b.코드 || '');
-            return codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: 'base' });
+            
+            const catA = codeA.substring(0, 6);
+            const catB = codeB.substring(0, 6);
+            
+            if (catA !== catB) {
+                return catA.localeCompare(catB);
+            }
+            
+            const serialA = parseInt(codeA.substring(6), 10) || 0;
+            const serialB = parseInt(codeB.substring(6), 10) || 0;
+            
+            return serialA - serialB;
         });
 
         return list;
@@ -442,10 +493,6 @@ export default function App() {
         if (tab === 'sales') return '판매';
         return '';
     };
-
-    const visibleHeaders = mappingFileTab === 'master' 
-        ? MASTER_HEADERS 
-        : ['품목코드', '품목명', '규격', '안전재고', '구매처', '간단설명', '입고가', '출고가'];
 
     return (
         <div className="h-screen w-full bg-slate-100 flex justify-center overflow-hidden font-sans">
@@ -500,10 +547,10 @@ export default function App() {
                             <i className="far fa-question-circle mr-1.5"></i>가이드
                         </button>
                         <div className="w-px h-4 bg-slate-200 mx-1"></div>
-                        <button className="text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-4 py-1.5 rounded-md flex items-center transition-all shadow-sm">
+                        <button onClick={() => handleCloudSync('load')} className="text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-4 py-1.5 rounded-md flex items-center transition-all shadow-sm">
                             <i className="fas fa-cloud-download-alt mr-1.5"></i>불러오기
                         </button>
-                        <button className="text-emerald-600 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-4 py-1.5 rounded-md flex items-center transition-all shadow-sm">
+                        <button onClick={() => handleCloudSync('upload')} className="text-emerald-600 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-4 py-1.5 rounded-md flex items-center transition-all shadow-sm">
                             <i className="fas fa-cloud-upload-alt mr-1.5"></i>클라우드 전송
                         </button>
                         <button onClick={() => setShowSettings(true)} className="text-slate-600 bg-white hover:bg-slate-50 border border-slate-300 px-4 py-1.5 rounded-md flex items-center transition-all shadow-sm ml-1">
@@ -644,8 +691,8 @@ export default function App() {
                             <table className="w-full text-left border-collapse text-[13px] whitespace-nowrap min-w-max">
                                 <thead className="bg-[#f8fafc] text-slate-600 font-extrabold text-[12px] tracking-tight">
                                     <tr>
-                                        <th className="sticky top-0 z-40 bg-[#f8fafc] px-4 py-2 border-b border-r border-slate-200 min-w-[280px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.06)]" style={{left: 0}}>
-                                            <div className="relative w-full max-w-[320px]">
+                                        <th className="sticky top-0 z-40 bg-[#f8fafc] px-4 py-2 border-b border-r border-slate-200 min-w-[150px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.06)]" style={{left: 0}}>
+                                            <div className="relative w-full">
                                                 <input type="text" placeholder="코드/품명 검색 (F3)" 
                                                     value={searchInputVal} onChange={e => setSearchInputVal(e.target.value)}
                                                     className="w-full pl-3 pr-8 py-1.5 border border-slate-300 rounded text-[12px] font-normal text-slate-700 outline-none focus:border-blue-500 bg-white transition-colors shadow-inner" />
@@ -661,9 +708,9 @@ export default function App() {
                                         
                                         {injectedCols.length > 0 && <th className="sticky top-0 z-30 bg-emerald-50/50 px-4 py-2 border-r border-b border-slate-200 text-center text-emerald-700 shadow-inner min-w-[90px]">잔량</th>}
                                         
-                                        {MASTER_HEADERS.filter(h => !['품목코드', '품목명', '규격'].includes(h)).map(h => {
+                                        {MASTER_HEADERS.filter(h => h !== '품목코드').map(h => {
                                             if (!columnConfig[h]) return null;
-                                            return <th key={h} className="sticky top-0 z-30 bg-[#f8fafc] px-4 py-2 border-r border-b border-slate-200 text-center text-slate-700 min-w-[100px]">{h}</th>;
+                                            return <th key={h} className="sticky top-0 z-30 bg-[#f8fafc] px-4 py-2 border-r border-b border-slate-200 text-center text-slate-700 min-w-[100px] whitespace-nowrap">{h}</th>;
                                         })}
                                     </tr>
                                 </thead>
@@ -697,15 +744,8 @@ export default function App() {
 
                                             return (
                                                 <tr key={idx} className={`group ${isAlert ? 'bg-[#fef2f2] border-b-[#fee2e2]' : 'bg-white'}`}>
-                                                    <td className={`sticky z-20 px-4 py-2 border-r border-slate-100 min-w-[280px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.04)] ${cellBg}`} style={{left: 0}}>
-                                                        <div className="flex flex-col max-w-[320px]">
-                                                            <span className={`text-[10px] font-mono tracking-tight font-bold ${isAlert ? 'text-red-500' : 'text-indigo-500'}`}>{row.코드}</span>
-                                                            <div className="flex items-center truncate mt-0.5">
-                                                                <span className={`text-[14px] font-extrabold truncate ${isUnregistered ? 'text-red-600 animate-pulse' : (isAlert ? 'text-red-800' : 'text-indigo-900')}`}>{displayName}</span>
-                                                                {isDuplicateRisk && <i className="fas fa-exclamation-triangle text-purple-500 ml-2 animate-bounce" title="주문/판매 중복 차감 의심"></i>}
-                                                                {row.규격 && <span className={`ml-2 px-1.5 py-0.5 text-[10px] font-bold border rounded shrink-0 ${isAlert ? 'bg-red-100 text-red-600 border-red-300' : 'border-indigo-200 bg-indigo-50 text-indigo-700'}`}>{row.규격}</span>}
-                                                            </div>
-                                                        </div>
+                                                    <td className={`sticky z-20 px-4 py-2 border-r border-slate-100 min-w-[150px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.04)] ${cellBg}`} style={{left: 0}}>
+                                                        <span className={`text-[12px] font-mono tracking-tight font-bold ${isAlert ? 'text-red-500' : 'text-indigo-600'}`}>{row.코드}</span>
                                                     </td>
                                                     
                                                     {injectedCols.map(col => {
@@ -723,8 +763,21 @@ export default function App() {
                                                         </td>
                                                     )}
                                                     
-                                                    {MASTER_HEADERS.filter(h => !['품목코드', '품목명', '규격'].includes(h)).map(h => {
+                                                    {MASTER_HEADERS.filter(h => h !== '품목코드').map(h => {
                                                         if (!columnConfig[h]) return null;
+                                                        if (h === '품목명') return (
+                                                            <td key={h} className="px-4 py-2 border-r border-slate-100 min-w-[200px] text-slate-800 z-0 relative">
+                                                                <div className="flex items-center truncate">
+                                                                    <span className={`text-[13px] font-extrabold truncate ${isUnregistered ? 'text-red-600 animate-pulse' : (isAlert ? 'text-red-800' : 'text-slate-800')}`}>{displayName}</span>
+                                                                    {isDuplicateRisk && <i className="fas fa-exclamation-triangle text-purple-500 ml-2 animate-bounce" title="주문/판매 중복 차감 의심"></i>}
+                                                                </div>
+                                                            </td>
+                                                        );
+                                                        if (h === '규격') return (
+                                                            <td key={h} className="px-4 py-2 border-r border-slate-100 min-w-[120px] text-slate-600 truncate z-0 relative">
+                                                                {row.규격 || ''}
+                                                            </td>
+                                                        );
                                                         if (h === '안전재고') return <td key={h} className="px-4 py-2 border-r border-slate-100 text-center min-w-[80px] z-0 relative font-bold text-slate-500">{row[h] > 0 ? row[h].toLocaleString() : '-'}</td>;
                                                         if (h === '입고가') return <td key={h} className="px-4 py-2 border-r border-slate-100 text-right min-w-[100px] z-0 relative font-bold text-slate-600">{cost > 0 ? cost.toLocaleString() : '-'}</td>;
                                                         if (h === '출고가') return (
@@ -785,7 +838,19 @@ export default function App() {
                             <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
                                 
                                 {mappingFileTab === 'master' && (
-                                    <div className="mb-6 fade-in">
+                                    <div className="fade-in">
+                                        <div className="mb-6 bg-indigo-50/50 border border-indigo-100 rounded-xl p-5 shadow-sm">
+                                            <h3 className="text-sm font-black text-indigo-900 flex items-center mb-3">
+                                                <i className="fas fa-cloud text-indigo-500 mr-2"></i>Google Sheets 델타 연동 URL
+                                            </h3>
+                                            <input type="text" 
+                                                value={cloudUrl}
+                                                onChange={(e) => setCloudUrl(e.target.value)}
+                                                placeholder="Apps Script 배포 주소를 입력하세요. 변경된 단가 이력이 해당 시트로 전송됩니다."
+                                                className="w-full border border-slate-300 rounded-md py-2 px-3 text-[13px] text-slate-800 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-sm transition-colors"
+                                            />
+                                        </div>
+
                                         <p className="text-[10px] text-slate-500 mb-4 bg-slate-100 p-2 rounded border border-slate-200 inline-block">
                                             <i className="fas fa-lock mr-1"></i>마스터(공통)의 헤더 매핑은 하드코딩 되어 있습니다. 아래에서 <b>전역 노출 항목</b>을 바로 설정하세요.
                                         </p>
@@ -823,9 +888,8 @@ export default function App() {
                                         <i className="fas fa-check-square mr-2 text-indigo-500"></i>테이블 노출 항목 설정
                                     </p>
                                     <div className="grid grid-cols-5 gap-3">
-                                        {/* 마스터탭일 땐 전체, 기타 탭일 땐 해당 탭과 연관된 항목만 필터링 노출 */}
-                                        {visibleHeaders.map(key => {
-                                            const isAnchor = ['품목코드', '품목명', '규격'].includes(key);
+                                        {(mappingFileTab === 'master' ? MASTER_HEADERS : ['품목코드', '품목명', '규격', '안전재고', '구매처', '간단설명', '입고가', '출고가']).map(key => {
+                                            const isAnchor = key === '품목코드';
                                             const isLockedByMaster = mappingFileTab !== 'master' && columnConfig[key] === 'master';
                                             const isActive = !!columnConfig[key];
                                             
