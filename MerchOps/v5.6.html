@@ -60,7 +60,8 @@
 
         const NUMERIC_HEADERS = [
             "안전재고", "입고가", "출고가", "도매가", "전송가", "창고가", "외주비", "노무비", 
-            "경비", "비과세", "기본", "연동", "싯가", "준비기간", "마감시간"
+            "경비", "비과세", "기본", "연동", "싯가", "준비기간", "마감시간",
+            "도매2 (전송)", "1구매", "1출고", "2구매", "2출고"
         ];
 
         const DOC_TYPES = {
@@ -81,7 +82,6 @@
         });
 
         const getInitialVisibleUploadCols = () => ({
-            // 섹션 B 백지화 원칙 적용: 엑셀 파일 실물 항목 기준 초기값
             estimate: ['거래처명', '지시사항', '입고', '출고', '입고2 (전송)', '도매1 (전송)', '도매2 (전송)', '상품정보', '1종코드', '1구매', '1출고', '2종코드', '2구매', '2출고'],
             prev: ['안전재고', '구매처', '간단설명'],
             in: ['입고가', '구매처', '간단설명'],
@@ -106,18 +106,9 @@
             const base = {};
             ['master', 'estimate', 'prev', 'in', 'out', 'sales'].forEach(tab => base[tab] = {});
             base.estimate = {
-                // 커스텀 항목 -> 마스터 덮어쓰기 맵핑
-                '거래처명': '구매처',
-                '입고': '입고가',
-                '출고': '출고가',
-                '입고2 (전송)': '전송가',
-                '도매1 (전송)': '도매가',
-                '도매2 (전송)': '도매가', 
-                '1종코드': '1종코드',
-                '1구매': '1종연산',
-                '2종코드': '2종코드',
-                '2구매': '2종연산',
-                // 지시사항, 상품정보 등은 연결 안함 ('')
+                '거래처명': '구매처', '입고': '입고가', '출고': '출고가', '입고2 (전송)': '전송가',
+                '도매1 (전송)': '도매가', '도매2 (전송)': '도매가', '1종코드': '1종코드', '1구매': '1종연산',
+                '2종코드': '2종코드', '2구매': '2종연산'
             };
             ['prev', 'in', 'out', 'sales'].forEach(tab => {
                 base[tab] = { '안전재고': '안전재고', '입고가': '입고가', '출고가': '출고가', '구매처': '구매처', '간단설명': '간단설명' }
@@ -145,41 +136,61 @@
             finalData: { '입고': 18000, '출고': 25000 }
         };
 
+        const parseAllTabId = (id) => {
+            if (id.startsWith('M_')) {
+                return { type: 'M', field: id.substring(2) };
+            } else if (id.startsWith('F_')) {
+                const firstUnderscore = id.indexOf('_', 2);
+                const mapKey = id.substring(2, firstUnderscore);
+                const field = id.substring(firstUnderscore + 1);
+                return { type: 'F', mapKey, field };
+            }
+            return null;
+        };
+
         const App = () => {
-            // 상태 저장소 (버전 v562로 마이그레이션)
+            // 상태 저장소 (버전 v564)
             const [masterProducts, setMasterProducts] = useState(() => {
-                const saved = localStorage.getItem('merchMaster_v562');
+                const saved = localStorage.getItem('merchMaster_v564');
                 return saved ? JSON.parse(saved) : {};
             });
             
             const [managedItems, setManagedItems] = useState([]);
             const [selectedRows, setSelectedRows] = useState(new Set());
-            const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v562') || '');
-
-            const [docOrder, setDocOrder] = useState(() => {
-                const saved = localStorage.getItem('merchDocOrder_v562');
-                return saved ? JSON.parse(saved) : ['estimate', 'prev', 'in', 'out', 'sales'];
-            });
+            const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v564') || '');
 
             const [visibleMasterCols, setVisibleMasterCols] = useState(() => {
-                const saved = localStorage.getItem('merchVisMaster_v562');
+                const saved = localStorage.getItem('merchVisMaster_v564');
                 return saved ? JSON.parse(saved) : getInitialVisibleMasterCols();
             });
 
             const [visibleUploadCols, setVisibleUploadCols] = useState(() => {
-                const saved = localStorage.getItem('merchVisUpload_v562');
+                const saved = localStorage.getItem('merchVisUpload_v564');
                 return saved ? JSON.parse(saved) : getInitialVisibleUploadCols();
             });
 
             const [mappings, setMappings] = useState(() => {
-                const saved = localStorage.getItem('merchMappings_v562');
+                const saved = localStorage.getItem('merchMappings_v564');
                 return saved ? JSON.parse(saved) : getInitialMappings();
             });
 
             const [masterLinks, setMasterLinks] = useState(() => {
-                const saved = localStorage.getItem('merchMasterLinks_v562');
+                const saved = localStorage.getItem('merchMasterLinks_v564');
                 return saved ? JSON.parse(saved) : getInitialMasterLinks();
             });
+
+            // 전체 탭 조립 엔진 (테이블 활성항목 vs 창고 대기항목 분리)
+            const [allTabConfig, setAllTabConfig] = useState(() => {
+                const saved = localStorage.getItem('merchAllTabConfig_v564');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    if (parsed.activeIds) return parsed;
+                }
+                return { activeIds: [], warehouseIds: [] };
+            });
+
+            // 헤더 드래그 앤 드롭 상태
+            const [draggedHeaderIdx, setDraggedHeaderIdx] = useState(null);
 
             const [sideTab, setSideTab] = useState('manage'); 
             const [searchInputVal, setSearchInputVal] = useState('');
@@ -194,21 +205,55 @@
             const [activeSources, setActiveSources] = useState([]);
             const sourceKeyMap = { '견적': 'estimate', '재고': 'prev', '입고': 'in', '주문': 'out', '판매': 'sales' };
             const activeProfileKey = activeSources.length > 0 ? sourceKeyMap[activeSources[0]] : 'estimate';
-            
-            // 커스텀 열 목록 추출
-            const customColsToRender = sideTab !== 'manage' 
-                ? (visibleUploadCols[activeProfileKey] || []).filter(h => !MASTER_HEADERS.includes(h) && !['품목코드', '품목명', '규격'].includes(h))
-                : [];
+
+            // FR-1, FR-3: 가용 풀 동기화 및 테이블/창고 분류 로직
+            useEffect(() => {
+                setAllTabConfig(prev => {
+                    const currentPool = new Set();
+                    const mSet = new Set();
+                    
+                    ['estimate', 'prev', 'in', 'out', 'sales'].forEach(tab => {
+                        (visibleMasterCols[tab] || []).forEach(h => mSet.add(h));
+                    });
+                    mSet.forEach(h => currentPool.add(`M_${h}`));
+                    
+                    ['estimate', 'prev', 'in', 'out', 'sales'].forEach(tab => {
+                        (visibleUploadCols[tab] || []).forEach(h => {
+                            if (!['품목코드', '품목명', '규격'].includes(h)) {
+                                currentPool.add(`F_${tab}_${h}`);
+                            }
+                        });
+                    });
+
+                    // 1. 기존에 있던 항목들 필터링 (가용 풀에 남아있는 것만 유지)
+                    let newActive = (prev.activeIds || []).filter(id => currentPool.has(id));
+                    let newWarehouse = (prev.warehouseIds || []).filter(id => currentPool.has(id));
+
+                    // 2. 가용 풀에 새로 추가된 항목 감지 -> 기본적으로 테이블(Active) 맨 끝에 추가
+                    const knownItems = new Set([...newActive, ...newWarehouse]);
+                    currentPool.forEach(id => {
+                        if (!knownItems.has(id)) {
+                            newActive.push(id); 
+                        }
+                    });
+
+                    if (JSON.stringify(newActive) !== JSON.stringify(prev.activeIds) || 
+                        JSON.stringify(newWarehouse) !== JSON.stringify(prev.warehouseIds)) {
+                        return { activeIds: newActive, warehouseIds: newWarehouse };
+                    }
+                    return prev;
+                });
+            }, [visibleMasterCols, visibleUploadCols]);
 
             useEffect(() => {
-                localStorage.setItem('merchMaster_v562', JSON.stringify(masterProducts));
-                localStorage.setItem('merchDocOrder_v562', JSON.stringify(docOrder));
-                localStorage.setItem('merchVisMaster_v562', JSON.stringify(visibleMasterCols));
-                localStorage.setItem('merchVisUpload_v562', JSON.stringify(visibleUploadCols));
-                localStorage.setItem('merchMappings_v562', JSON.stringify(mappings));
-                localStorage.setItem('merchMasterLinks_v562', JSON.stringify(masterLinks));
-                localStorage.setItem('merchCloudUrl_v562', cloudUrl);
-            }, [masterProducts, docOrder, visibleMasterCols, visibleUploadCols, mappings, masterLinks, cloudUrl]);
+                localStorage.setItem('merchMaster_v564', JSON.stringify(masterProducts));
+                localStorage.setItem('merchVisMaster_v564', JSON.stringify(visibleMasterCols));
+                localStorage.setItem('merchVisUpload_v564', JSON.stringify(visibleUploadCols));
+                localStorage.setItem('merchMappings_v564', JSON.stringify(mappings));
+                localStorage.setItem('merchMasterLinks_v564', JSON.stringify(masterLinks));
+                localStorage.setItem('merchAllTabConfig_v564', JSON.stringify(allTabConfig));
+                localStorage.setItem('merchCloudUrl_v564', cloudUrl);
+            }, [masterProducts, visibleMasterCols, visibleUploadCols, mappings, masterLinks, allTabConfig, cloudUrl]);
 
             const showToast = (msg) => {
                 setToastMsg(msg);
@@ -244,14 +289,44 @@
                 }));
             };
 
-            const moveDocOrder = (idx, direction) => {
-                const newOrder = [...docOrder];
-                if (direction === 'up' && idx > 0) {
-                    [newOrder[idx - 1], newOrder[idx]] = [newOrder[idx], newOrder[idx - 1]];
-                } else if (direction === 'down' && idx < newOrder.length - 1) {
-                    [newOrder[idx + 1], newOrder[idx]] = [newOrder[idx], newOrder[idx + 1]];
-                }
-                setDocOrder(newOrder);
+            // --- 테이블 다이렉트 조작 엔진 (Drag & Drop) ---
+            const onHeaderDragStart = (e, index) => {
+                setDraggedHeaderIdx(index);
+                e.dataTransfer.effectAllowed = "move";
+            };
+
+            const onHeaderDragEnter = (e, index) => {
+                e.preventDefault();
+                if (draggedHeaderIdx === null || draggedHeaderIdx === index) return;
+                
+                setAllTabConfig(prev => {
+                    const newActive = [...prev.activeIds];
+                    const draggedItem = newActive[draggedHeaderIdx];
+                    newActive.splice(draggedHeaderIdx, 1);
+                    newActive.splice(index, 0, draggedItem);
+                    return { ...prev, activeIds: newActive };
+                });
+                setDraggedHeaderIdx(index);
+            };
+
+            const onHeaderDragEnd = () => {
+                setDraggedHeaderIdx(null);
+            };
+
+            // 테이블에서 즉시 빼기 (창고로 이동)
+            const removeHeaderFromTable = (id) => {
+                setAllTabConfig(prev => ({
+                    activeIds: prev.activeIds.filter(x => x !== id),
+                    warehouseIds: [...prev.warehouseIds, id]
+                }));
+            };
+
+            // 창고에서 테이블로 즉시 넣기 (맨 끝으로)
+            const addHeaderToTable = (id) => {
+                setAllTabConfig(prev => ({
+                    activeIds: [...prev.activeIds, id],
+                    warehouseIds: prev.warehouseIds.filter(x => x !== id)
+                }));
             };
 
             const handleResetMappings = () => {
@@ -260,7 +335,7 @@
                     setMasterLinks(getInitialMasterLinks());
                     setVisibleMasterCols(getInitialVisibleMasterCols());
                     setVisibleUploadCols(getInitialVisibleUploadCols());
-                    setDocOrder(['estimate', 'prev', 'in', 'out', 'sales']);
+                    setAllTabConfig({ activeIds: [], warehouseIds: [] });
                     showToast("✅ 매핑 키워드 및 노출 프로필이 기본값으로 복원되었습니다.");
                 }
             };
@@ -284,7 +359,7 @@
                                 uploadCols: visibleUploadCols,
                                 mappings: mappings,
                                 masterLinks: masterLinks,
-                                docOrder: docOrder
+                                allTabConfig: allTabConfig
                             },
                             data: masterProducts
                         };
@@ -301,7 +376,7 @@
                             if(result.config.uploadCols) setVisibleUploadCols(result.config.uploadCols);
                             if(result.config.mappings) setMappings(result.config.mappings);
                             if(result.config.masterLinks) setMasterLinks(result.config.masterLinks);
-                            if(result.config.docOrder) setDocOrder(result.config.docOrder);
+                            if(result.config.allTabConfig) setAllTabConfig(result.config.allTabConfig);
                         }
                         if(result.data) {
                             setMasterProducts(result.data);
@@ -333,7 +408,6 @@
                     if (item.finalData) {
                         Object.keys(item.finalData).forEach(field => {
                             const val = item.finalData[field];
-                            // 마스터 링크가 있거나, 필드 이름 자체가 마스터 속성인 경우 저장
                             const linkedMasterField = masterLinks[activeProfileKey]?.[field] || (MASTER_HEADERS.includes(field) ? field : null);
 
                             if (linkedMasterField && val !== undefined && val !== '') {
@@ -489,7 +563,6 @@
 
                         const data = await parseExcelRobust(file);
 
-                        // --- Auto-Popup 일치율 체크 ---
                         if (mapKey !== 'master' && data.length > 0) {
                             const headers = Object.keys(data[0]);
                             const curMap = mappings[mapKey] || {};
@@ -547,19 +620,8 @@
                                     newManaged.push(mItem);
                                 }
 
-                                const qtyStr = extractValue(row, curMap['수량']);
-                                const qty = parseNum(qtyStr);
-                                if (qty) {
-                                    if (mapKey === 'estimate') mItem.견적수량 = (mItem.견적수량 || 0) + qty;
-                                    if (mapKey === 'prev') mItem.재고 = (mItem.재고 || 0) + qty;
-                                    if (mapKey === 'in') mItem.입고수량 = (mItem.입고수량 || 0) + qty;
-                                    if (mapKey === 'out') mItem.주문수량 = (mItem.주문수량 || 0) + qty;
-                                    if (mapKey === 'sales') mItem.판매수량 = (mItem.판매수량 || 0) + qty;
-                                }
-
                                 if (!mItem.sources[mapKey]) mItem.sources[mapKey] = {};
                                 
-                                // 오직 매핑센터 섹션 B에 정의된 항목들만 추출
                                 const targetCols = visibleUploadCols[mapKey] || [];
                                 
                                 targetCols.forEach(h => {
@@ -611,9 +673,15 @@
                     list = list.filter(i => {
                         const mItem = masterProducts[i.코드] || {};
                         let foundName = false;
-                        if (sideTab !== 'manage' && activeSources.length > 0) {
-                            const srcKey = sourceKeyMap[activeSources[0]];
-                            foundName = (i.sources?.[srcKey]?.['품목명'] || '').toLowerCase().includes(q);
+                        if (sideTab !== 'manage') {
+                            if (activeSources.length > 0) {
+                                const srcKey = sourceKeyMap[activeSources[0]];
+                                foundName = (i.sources?.[srcKey]?.['품목명'] || '').toLowerCase().includes(q);
+                            } else {
+                                for(let key of ['estimate', 'prev', 'in', 'out', 'sales']) {
+                                    if(i.sources?.[key]?.['품목명']) { foundName = i.sources[key]['품목명'].toLowerCase().includes(q); break; }
+                                }
+                            }
                         }
                         const name = foundName || mItem['품목명'] || mItem['품명'] || '';
                         return name.toLowerCase().includes(q) || (i.코드||'').toLowerCase().includes(q);
@@ -635,17 +703,15 @@
                 return sortedList;
             }, [masterProducts, managedItems, sideTab, searchInputVal, activeSources]);
 
-            // 단일 문서 렌더링 헬퍼 (마스터 대조군 + 파일 실물군 완전 분리 렌더링)
+            // 단일 문서 렌더링 헬퍼 
             const renderDocColumns = (row, idx, mapKey, isPreview = false) => {
                 const targetRow = isPreview ? previewDummyRow : row;
                 const cells = [];
                 
-                // 1. [M] 마스터 대조 지정 컬럼 (Section A)
                 (visibleMasterCols[mapKey] || []).forEach(h => {
                     cells.push(renderMasterReferenceCell(targetRow, h, `${mapKey}-mr-${h}`));
                 });
 
-                // 2. [F] 개별 파일 항목 컬럼 (Section B)
                 (visibleUploadCols[mapKey] || []).forEach(h => {
                     cells.push(renderUploadEditableCell(targetRow, idx, h, mapKey, `${mapKey}-ue-${h}`));
                 });
@@ -675,7 +741,6 @@
             };
 
             const renderUploadEditableCell = (row, idx, field, activeProfile, keyPrefix) => {
-                // 마스터 덮어쓰기 설정값 참조
                 const linkedMasterField = masterLinks[activeProfile]?.[field];
                 const isNumeric = NUMERIC_HEADERS.includes(linkedMasterField) || NUMERIC_HEADERS.includes(field);
                 const cellWidthClass = getCellWidthClass(linkedMasterField || field);
@@ -685,7 +750,6 @@
                 const finalVal = row.finalData?.[field];
                 const displayFinal = finalVal !== undefined ? finalVal : (uploadVal !== undefined ? uploadVal : '');
 
-                // 마스터 대조 렌더링 및 차이값 하이라이트 (연결된 마스터 항목 기준)
                 const mVal = linkedMasterField ? (masterProducts[row.코드]?.[linkedMasterField]) : undefined;
                 const isDiff = linkedMasterField && mVal !== undefined && uploadVal !== undefined && String(mVal) !== String(uploadVal) && isNumeric;
 
@@ -705,11 +769,10 @@
                 );
             };
 
-            // 통합(전체) 뷰 헤더 렌더링 헬퍼 (마스터/파일 분리 반영)
+            // 개별 문서 뷰 헤더 렌더링
             const renderDocHeaders = (mapKey) => {
                 const headers = [];
                 
-                // 1. [M] 마스터 대조 지정 헤더
                 (visibleMasterCols[mapKey] || []).forEach(h => {
                     headers.push(
                         <th key={`${mapKey}-preview-mr-${h}`} className={`sticky top-0 z-30 bg-blue-50/50 px-2 py-3 border-r border-b border-blue-100 text-center text-blue-700 font-black ${getCellWidthClass(h)} truncate shadow-inner`}>
@@ -719,7 +782,6 @@
                     );
                 });
 
-                // 2. [F] 개별 파일 항목 헤더
                 (visibleUploadCols[mapKey] || []).forEach(h => {
                     const kw = mappings[mapKey]?.[h] ? mappings[mapKey][h].split(',')[0] : '';
                     const link = masterLinks[mapKey]?.[h];
@@ -735,6 +797,86 @@
                     );
                 });
                 return headers;
+            };
+
+            // 전체 탭 독립 헤더 렌더링 (다이렉트 조작 엔진 연동)
+            const renderAllTabHeaders = (isEditable = false) => {
+                return (allTabConfig.activeIds || []).map((id, index) => {
+                    const parsed = parseAllTabId(id);
+                    if (!parsed) return null;
+
+                    const isDragging = draggedHeaderIdx === index;
+                    // 편집 모드일 때만 grab 커서, 드래그 효과, 호버 효과 제공
+                    const interactiveClasses = isEditable 
+                        ? `cursor-grab active:cursor-grabbing hover:brightness-95 group transition-all` 
+                        : ``;
+                    const dragClass = isDragging ? 'opacity-0 scale-95' : 'opacity-100 scale-100';
+
+                    if (parsed.type === 'M') {
+                        return (
+                            <th key={`all-th-${id}`} 
+                                draggable={isEditable}
+                                onDragStart={(e) => isEditable && onHeaderDragStart(e, index)}
+                                onDragEnter={(e) => isEditable && onHeaderDragEnter(e, index)}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDragEnd={onHeaderDragEnd}
+                                className={`sticky top-0 z-30 px-2 py-3 border-r border-b text-center font-bold ${getCellWidthClass(parsed.field)} truncate bg-blue-50/50 border-blue-100 text-blue-700 shadow-inner relative ${interactiveClasses} ${dragClass}`}
+                            >
+                                {isEditable && (
+                                    <button onClick={(e) => { e.stopPropagation(); removeHeaderFromTable(id); }} className="absolute top-1 right-1 w-4 h-4 rounded-full bg-blue-100 hover:bg-rose-100 text-blue-500 hover:text-rose-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <i className="fas fa-times text-[9px]"></i>
+                                    </button>
+                                )}
+                                <div className="text-[9px] text-blue-400 mb-0.5 leading-none font-bold pointer-events-none">
+                                    [통합] {isEditable && <i className="fas fa-grip-lines ml-0.5 opacity-50"></i>}
+                                </div>
+                                <div className="pointer-events-none"><span className="text-[10px] mr-1 opacity-70">[M]</span>{parsed.field}</div>
+                            </th>
+                        );
+                    } else {
+                        const kw = mappings[parsed.mapKey]?.[parsed.field] ? mappings[parsed.mapKey][parsed.field].split(',')[0] : '';
+                        const link = masterLinks[parsed.mapKey]?.[parsed.field];
+                        return (
+                            <th key={`all-th-${id}`} 
+                                draggable={isEditable}
+                                onDragStart={(e) => isEditable && onHeaderDragStart(e, index)}
+                                onDragEnter={(e) => isEditable && onHeaderDragEnter(e, index)}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDragEnd={onHeaderDragEnd}
+                                className={`sticky top-0 z-30 px-2 py-2 border-r border-b text-center font-bold ${getCellWidthClass(link || parsed.field)} truncate bg-white border-slate-200 text-slate-800 relative ${interactiveClasses} ${dragClass}`}
+                            >
+                                {isEditable && (
+                                    <button onClick={(e) => { e.stopPropagation(); removeHeaderFromTable(id); }} className="absolute top-1 right-1 w-4 h-4 rounded-full bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <i className="fas fa-times text-[9px]"></i>
+                                    </button>
+                                )}
+                                <div className="text-[9px] text-indigo-400 mb-0.5 leading-none font-bold pointer-events-none">
+                                    [{DOC_TYPES[parsed.mapKey]}] {isEditable && <i className="fas fa-grip-lines ml-0.5 opacity-50"></i>}
+                                </div>
+                                <div className="flex flex-col items-center pointer-events-none">
+                                    <span>{parsed.field}</span>
+                                    {kw && <span className="text-[9px] font-normal text-indigo-500 mt-0.5 w-full truncate px-1"><i className="fas fa-link mr-1"></i>{kw}</span>}
+                                    {link && <span className="text-[9px] font-bold text-rose-500 mt-0.5 w-full truncate px-1 opacity-80" title={`마스터 [${link}]에 덮어쓰기 됨`}>➔ {link}</span>}
+                                </div>
+                            </th>
+                        );
+                    }
+                });
+            };
+
+            // 전체 탭 독립 바디 렌더링
+            const renderAllTabColumns = (row, idx, isPreview = false) => {
+                const targetRow = isPreview ? previewDummyRow : row;
+                return (allTabConfig.activeIds || []).map(id => {
+                    const parsed = parseAllTabId(id);
+                    if (!parsed) return null;
+
+                    if (parsed.type === 'M') {
+                        return renderMasterReferenceCell(targetRow, parsed.field, `all-td-${id}`);
+                    } else {
+                        return renderUploadEditableCell(targetRow, idx, parsed.field, parsed.mapKey, `all-td-${id}`);
+                    }
+                });
             };
 
             return (
@@ -825,24 +967,33 @@
                                         </button>
                                     </div>
                                     
-                                    <div className="p-4 flex items-center overflow-x-auto hide-scrollbar bg-[#0f172a]">
-                                        <span className="text-[11px] font-bold text-slate-400 mr-4 flex items-center shrink-0">
-                                            <i className="fas fa-filter mr-1.5 opacity-70"></i>데이터 소스 업로드:
-                                        </span>
-                                        
-                                        <div className="flex gap-2 shrink-0 items-center">
-                                            <FileBox title="1. 견적" icon="fa-file-invoice-dollar" expectedType="estimate" onUpload={handleFileUpload} />
-                                            <i className="fas fa-plus text-slate-600 text-[10px] mx-0.5"></i>
-                                            <FileBox title="2. 입고" icon="fa-truck-loading" expectedType="in" onUpload={handleFileUpload} />
-                                            <i className="fas fa-plus text-slate-600 text-[10px] mx-0.5"></i>
-                                            <FileBox title="3. 주문" icon="fa-clipboard-list" expectedType="out" onUpload={handleFileUpload} />
-                                            <i className="fas fa-plus text-slate-600 text-[10px] mx-0.5"></i>
-                                            <FileBox title="4. 판매" icon="fa-chart-line" expectedType="sales" onUpload={handleFileUpload} />
-                                        </div>
+                                    <div className="p-4 flex items-center overflow-x-auto hide-scrollbar bg-[#0f172a] transition-all duration-300">
+                                        {sideTab === 'estimate' ? (
+                                            <>
+                                                <span className="text-[11px] font-bold text-slate-400 mr-4 flex items-center shrink-0">
+                                                    <i className="fas fa-filter mr-1.5 opacity-70"></i>데이터 소스 업로드:
+                                                </span>
+                                                
+                                                <div className="flex gap-2 shrink-0 items-center fade-in">
+                                                    <FileBox title="1. 견적" icon="fa-file-invoice-dollar" expectedType="estimate" onUpload={handleFileUpload} />
+                                                    <i className="fas fa-plus text-slate-600 text-[10px] mx-0.5"></i>
+                                                    <FileBox title="2. 입고" icon="fa-truck-loading" expectedType="in" onUpload={handleFileUpload} />
+                                                    <i className="fas fa-plus text-slate-600 text-[10px] mx-0.5"></i>
+                                                    <FileBox title="3. 주문" icon="fa-clipboard-list" expectedType="out" onUpload={handleFileUpload} />
+                                                    <i className="fas fa-plus text-slate-600 text-[10px] mx-0.5"></i>
+                                                    <FileBox title="4. 판매" icon="fa-chart-line" expectedType="sales" onUpload={handleFileUpload} />
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <div className="flex items-center text-slate-400 text-[12px] font-bold fade-in">
+                                                <i className="fas fa-database mr-2 text-indigo-400"></i> 
+                                                [전체상품 모드] 마스터 기준 데이터만 조회 중입니다. 현장 파일 연동은 '관리상품' 탭을 이용하세요.
+                                            </div>
+                                        )}
                                         
                                         <div className="ml-auto flex gap-2 pl-6 shrink-0 border-l border-slate-700/50">
                                             <label className="cursor-pointer px-5 py-2 bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700 rounded-lg text-[12px] font-bold transition flex items-center shadow-md">
-                                                <i className="fas fa-database mr-2 text-indigo-400"></i>마스터 엑셀 업로드
+                                                <i className="fas fa-upload mr-2 text-indigo-400"></i>마스터 엑셀 업로드
                                                 <input type="file" className="hidden" onChange={(e) => handleFileUpload(e, 'master')} multiple />
                                             </label>
                                         </div>
@@ -864,7 +1015,7 @@
                                     {sideTab === 'estimate' && (
                                         <div className="flex items-center gap-1 pl-4 border-l border-slate-300 fade-in h-full">
                                             <button onClick={() => setActiveSources([])} className={`px-4 h-full rounded-md text-[12px] font-bold transition-all ${activeSources.length === 0 ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>
-                                                전체 (합집합)
+                                                전체 (통합 뷰)
                                             </button>
                                             {Object.keys(sourceKeyMap).map(src => {
                                                 const isActive = activeSources.includes(src);
@@ -926,7 +1077,7 @@
                                                 {/* 관리상품 탭 (Operation) */}
                                                 {sideTab === 'estimate' && (
                                                     activeSources.length === 0 ? (
-                                                        docOrder.map(mapKey => renderDocHeaders(mapKey))
+                                                        renderAllTabHeaders(false) // 메인 화면에서는 드래그 불가
                                                     ) : (
                                                         renderDocHeaders(activeProfileKey)
                                                     )
@@ -954,7 +1105,7 @@
                                                         if (activeSources.length > 0) {
                                                             uploadName = row.sources?.[activeProfileKey]?.['품목명'];
                                                         } else {
-                                                            for(let key of docOrder) {
+                                                            for(let key of ['estimate', 'prev', 'in', 'out', 'sales']) {
                                                                 if(row.sources?.[key]?.['품목명']) { uploadName = row.sources[key]['품목명']; break; }
                                                             }
                                                         }
@@ -968,7 +1119,7 @@
                                                         if (activeSources.length > 0) {
                                                             uploadSpec = row.sources?.[activeProfileKey]?.['규격'];
                                                         } else {
-                                                            for(let key of docOrder) {
+                                                            for(let key of ['estimate', 'prev', 'in', 'out', 'sales']) {
                                                                 if(row.sources?.[key]?.['규격']) { uploadSpec = row.sources[key]['규격']; break; }
                                                             }
                                                         }
@@ -1013,7 +1164,7 @@
 
                                                             {sideTab === 'estimate' && (
                                                                 activeSources.length === 0 ? (
-                                                                    docOrder.map(mapKey => renderDocColumns(row, idx, mapKey, false))
+                                                                    renderAllTabColumns(row, idx, false)
                                                                 ) : (
                                                                     renderDocColumns(row, idx, activeProfileKey, false)
                                                                 )
@@ -1053,23 +1204,23 @@
                                 <div className="flex flex-1 overflow-hidden relative">
                                     
                                     {/* --- [좌측 영역] 설정 컨트롤 패널 --- */}
-                                    <div className="w-[42%] min-w-[500px] max-w-[650px] flex flex-col bg-slate-50 border-r border-slate-200 shadow-[4px_0_15px_-3px_rgba(0,0,0,0.05)] z-10">
+                                    <div className="w-[30%] min-w-[380px] max-w-[450px] flex flex-col bg-slate-50 border-r border-slate-200 shadow-[4px_0_15px_-3px_rgba(0,0,0,0.05)] z-10">
                                         
                                         {/* 1-Depth Tabs */}
                                         <div className="flex p-4 pb-2 shrink-0">
                                             <div className="flex w-full bg-slate-200/50 rounded-xl p-1 border border-slate-200 shadow-inner">
                                                 <button onClick={() => {setMappingMainTab('master'); setMappingFileTab('master');}} 
                                                     className={`flex-1 py-2.5 text-[14px] font-black rounded-lg transition-all flex items-center justify-center gap-2 ${mappingMainTab === 'master' ? 'bg-white text-indigo-700 shadow shadow-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}>
-                                                    <i className="fas fa-database"></i> 1. 전체상품 (Master Setup)
+                                                    <i className="fas fa-database"></i> 1. 전체상품
                                                 </button>
                                                 <button onClick={() => {setMappingMainTab('operation'); setMappingFileTab('all');}} 
                                                     className={`flex-1 py-2.5 text-[14px] font-black rounded-lg transition-all flex items-center justify-center gap-2 ${mappingMainTab === 'operation' ? 'bg-white text-indigo-700 shadow shadow-slate-200/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}>
-                                                    <i className="fas fa-layer-group"></i> 2. 관리상품 (Operation Setup)
+                                                    <i className="fas fa-layer-group"></i> 2. 관리상품
                                                 </button>
                                             </div>
                                         </div>
 
-                                        <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
+                                        <div className="flex-1 overflow-y-auto p-5 custom-scrollbar flex flex-col">
                                             {/* Master Tab Content */}
                                             {mappingMainTab === 'master' && (
                                                 <div className="fade-in space-y-6">
@@ -1117,7 +1268,7 @@
 
                                             {/* Operation Tab Content */}
                                             {mappingMainTab === 'operation' && (
-                                                <div className="fade-in space-y-5 flex flex-col h-full">
+                                                <div className="fade-in space-y-5 flex flex-col h-full flex-1">
                                                     
                                                     {/* Sub-Tabs */}
                                                     <div className="flex gap-1.5 overflow-x-auto pb-1 hide-scrollbar shrink-0">
@@ -1138,39 +1289,53 @@
                                                         ))}
                                                     </div>
 
-                                                    {/* ALL(통합 뷰) 선택 시 */}
+                                                    {/* ALL(통합 뷰) 선택 시: 창고 (Warehouse) UI */}
                                                     {mappingFileTab === 'all' ? (
-                                                        <div className="fade-in bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex-1 flex flex-col">
-                                                            <div className="flex flex-col gap-1 mb-4 border-b border-slate-100 pb-3">
+                                                        <div className="fade-in bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex-1 flex flex-col overflow-hidden">
+                                                            <div className="flex flex-col gap-1 mb-4 border-b border-slate-100 pb-3 shrink-0">
                                                                 <h3 className="text-[14px] font-black text-slate-800 flex items-center">
-                                                                    <i className="fas fa-sort-amount-down text-indigo-500 mr-2"></i>문서 노출 순서 설정
+                                                                    <i className="fas fa-box-open text-indigo-500 mr-2"></i>대기 항목 창고 (Warehouse)
                                                                 </h3>
-                                                                <span className="text-[11px] text-slate-500 pl-6">메인 테이블 [전체] 버튼 클릭 시, 가로로 결합되어 노출될 문서들의 순서를 지정합니다.</span>
+                                                                <span className="text-[11px] text-slate-500 pl-6 leading-relaxed">
+                                                                    현재 테이블에 <b>노출되지 않은 항목들</b>입니다.<br/>
+                                                                    클릭하면 우측 테이블의 맨 끝에 추가됩니다.<br/>
+                                                                    <span className="text-indigo-600 font-bold">※ 순서 편집은 우측 테이블 헤더를 직접 드래그하세요.</span>
+                                                                </span>
                                                             </div>
-                                                            <div className="flex-1 space-y-2">
-                                                                {docOrder.map((docKey, idx) => (
-                                                                    <div key={`order-${docKey}`} className="flex justify-between items-center bg-slate-50 border border-slate-200 rounded-lg p-3 hover:bg-slate-100 transition-colors">
-                                                                        <div className="flex items-center gap-3">
-                                                                            <span className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 font-bold text-[11px]">
-                                                                                {idx + 1}
-                                                                            </span>
-                                                                            <span className="font-bold text-slate-700 text-[13px]">{DOC_TYPES[docKey]}</span>
-                                                                        </div>
-                                                                        <div className="flex gap-1">
-                                                                            <button onClick={() => moveDocOrder(idx, 'up')} disabled={idx === 0} className="w-8 h-8 flex items-center justify-center rounded bg-white border border-slate-200 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30 transition-colors shadow-sm">
-                                                                                <i className="fas fa-chevron-up"></i>
-                                                                            </button>
-                                                                            <button onClick={() => moveDocOrder(idx, 'down')} disabled={idx === docOrder.length - 1} className="w-8 h-8 flex items-center justify-center rounded bg-white border border-slate-200 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30 transition-colors shadow-sm">
-                                                                                <i className="fas fa-chevron-down"></i>
-                                                                            </button>
-                                                                        </div>
-                                                                    </div>
-                                                                ))}
+                                                            <div className="flex-1 overflow-y-auto custom-scrollbar p-1">
+                                                                {allTabConfig.warehouseIds && allTabConfig.warehouseIds.length === 0 && (
+                                                                    <div className="text-center text-slate-400 text-[12px] mt-10">대기 중인 항목이 없습니다.</div>
+                                                                )}
+                                                                <div className="flex flex-wrap gap-2">
+                                                                    {(allTabConfig.warehouseIds || []).map(id => {
+                                                                        const parsed = parseAllTabId(id);
+                                                                        if (!parsed) return null;
+                                                                        const isMaster = parsed.type === 'M';
+                                                                        return (
+                                                                            <div 
+                                                                                key={`warehouse-${id}`}
+                                                                                onClick={() => addHeaderToTable(id)}
+                                                                                className={`config-chip border cursor-pointer hover:-translate-y-0.5 shadow-sm transition-all
+                                                                                    ${isMaster ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100' : 'bg-white border-slate-300 text-slate-700 hover:border-indigo-400'}`}
+                                                                            >
+                                                                                <div className="flex items-center gap-1.5">
+                                                                                    <i className="fas fa-plus-circle opacity-50 text-[10px]"></i>
+                                                                                    {isMaster ? (
+                                                                                        <span className="text-[9px] bg-blue-200 text-blue-800 px-1 rounded font-bold">[M]</span>
+                                                                                    ) : (
+                                                                                        <span className="text-[9px] bg-slate-100 text-slate-600 px-1 rounded font-bold">[{DOC_TYPES[parsed.mapKey]}]</span>
+                                                                                    )}
+                                                                                    <span className="font-bold">{parsed.field}</span>
+                                                                                </div>
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     ) : (
-                                                        // 특정 문서 탭 선택 시
-                                                        <div className="fade-in space-y-5">
+                                                        // 특정 문서 탭 선택 시 (개별 탭)
+                                                        <div className="fade-in space-y-5 overflow-y-auto pr-1">
                                                             {/* Section A */}
                                                             <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
                                                                 <div className="flex flex-col gap-1 mb-4 border-b border-slate-100 pb-3">
@@ -1337,7 +1502,7 @@
                                                                 })
                                                             ) : (
                                                                 mappingFileTab === 'all' 
-                                                                    ? docOrder.map(mapKey => renderDocHeaders(mapKey))
+                                                                    ? renderAllTabHeaders(true) // 드래그 조작 활성화
                                                                     : renderDocHeaders(mappingFileTab)
                                                             )}
                                                         </tr>
@@ -1364,7 +1529,7 @@
                                                                 })
                                                             ) : (
                                                                 mappingFileTab === 'all'
-                                                                    ? docOrder.map(mapKey => renderDocColumns(previewDummyRow, 0, mapKey, true))
+                                                                    ? renderAllTabColumns(previewDummyRow, 0, true)
                                                                     : renderDocColumns(previewDummyRow, 0, mappingFileTab, true)
                                                             )}
                                                         </tr>
