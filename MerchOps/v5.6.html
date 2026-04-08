@@ -65,11 +65,11 @@
         ];
 
         const DOC_TYPES = {
-            'estimate': '견적서',
-            'prev': '재고장',
-            'in': '입고장',
-            'out': '주문서',
-            'sales': '판매현황'
+            'estimate': '견적',
+            'prev': '재고',
+            'in': '입고',
+            'out': '주문',
+            'sales': '판매'
         };
 
         const getInitialVisibleMasterCols = () => ({
@@ -1015,7 +1015,7 @@
                                     {sideTab === 'estimate' && (
                                         <div className="flex items-center gap-1 pl-4 border-l border-slate-300 fade-in h-full">
                                             <button onClick={() => setActiveSources([])} className={`px-4 h-full rounded-md text-[12px] font-bold transition-all ${activeSources.length === 0 ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>
-                                                전체 (통합 뷰)
+                                                전체
                                             </button>
                                             {Object.keys(sourceKeyMap).map(src => {
                                                 const isActive = activeSources.includes(src);
@@ -1273,12 +1273,12 @@
                                                     {/* Sub-Tabs */}
                                                     <div className="flex gap-1.5 overflow-x-auto pb-1 hide-scrollbar shrink-0">
                                                         {[
-                                                            { id: 'all', label: '전체 (통합 뷰)' },
-                                                            { id: 'estimate', label: '견적서' },
-                                                            { id: 'prev', label: '재고장' },
-                                                            { id: 'in', label: '입고장' },
-                                                            { id: 'out', label: '주문서' },
-                                                            { id: 'sales', label: '판매현황' }
+                                                            { id: 'all', label: '전체' },
+                                                            { id: 'estimate', label: '견적' },
+                                                            { id: 'prev', label: '재고' },
+                                                            { id: 'in', label: '입고' },
+                                                            { id: 'out', label: '주문' },
+                                                            { id: 'sales', label: '판매' }
                                                         ].map(tab => (
                                                             <button key={tab.id} onClick={() => setMappingFileTab(tab.id)}
                                                                 className={`px-4 py-1.5 rounded-md text-[12px] font-bold border transition-colors whitespace-nowrap shrink-0
