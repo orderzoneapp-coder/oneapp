@@ -40,7 +40,7 @@
 
         const getInitialVisibleMasterCols = () => ({ master: ['입고가', '출고가', '구매처', '간단설명'], all: ['출고가', '입고가', '안전재고'], estimate: ['입고가', '출고가'], prev: ['안전재고'], in: ['입고가'], out: ['출고가'], sales: ['출고가'] });
         const getInitialVisibleUploadCols = () => ({ 
-            estimate: ['구매처', '입고가', 'B단가', 'A판매', 'B판매', '지시사항'], // UI 노출용 (수기 입력 항목)
+            estimate: ['구매처', '입고가', 'B단가', 'A판매', 'B판매', '지시사항'], 
             prev: ['재고수량', '비고'], in: ['입고수량', '입고가', '비고'], out: ['주문수량', '출고가', '비고'], sales: ['판매수량', '출고가', '비고'] 
         });
         
@@ -174,13 +174,20 @@
         // ==========================================
         // 🧩 모듈화된 UI 컴포넌트들
         // ==========================================
-        const Clock = () => {
+        const SystemConsole = ({ itemCount }) => {
             const [time, setTime] = useState(new Date());
             useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
+            
+            const timeStr = `${time.getFullYear()}.${String(time.getMonth()+1).padStart(2,'0')}.${String(time.getDate()).padStart(2,'0')} ${String(time.getHours()).padStart(2,'0')}:${String(time.getMinutes()).padStart(2,'0')}`;
+            
             return (
-                <div className="text-[12px] text-slate-400 font-mono tracking-wide flex items-center mt-0.5">
-                    <i className="far fa-clock mr-1.5 text-emerald-400 opacity-80"></i>
-                    {`${time.getFullYear()}.${String(time.getMonth()+1).padStart(2,'0')}.${String(time.getDate()).padStart(2,'0')} ${String(time.getHours()).padStart(2,'0')}:${String(time.getMinutes()).padStart(2,'0')}`}
+                <div className="bg-black rounded-md border border-slate-700 px-4 py-1.5 flex flex-1 items-center overflow-hidden shadow-inner">
+                    <div className="flex items-center truncate">
+                        <span className="text-[12px] font-mono text-[#10b981]">
+                            {itemCount === 0 ? `> ${timeStr}` : `> 상태: ${itemCount}개의 항목이 로드되었습니다.`}
+                        </span>
+                        <span className="w-1.5 h-3.5 bg-[#10b981] ml-1.5 animate-[pulse_1s_infinite]"></span>
+                    </div>
                 </div>
             );
         };
@@ -188,13 +195,13 @@
         const FileBox = ({ title, icon, expectedType, onUpload }) => {
             const fileRef = useRef(null);
             return (
-                <div className="relative border border-slate-700 bg-slate-800 hover:bg-slate-700 rounded-lg transition-all cursor-pointer flex items-center h-10 w-32 shrink-0 px-3 shadow-md group" onClick={() => fileRef.current?.click()}>
+                <div className="relative border border-slate-600 bg-slate-700 hover:bg-slate-600 rounded-lg transition-all cursor-pointer flex items-center h-10 flex-1 min-w-[100px] shrink-0 px-3 shadow-md group" onClick={() => fileRef.current?.click()}>
                     <input type="file" ref={fileRef} className="hidden" multiple onChange={(e) => onUpload(e, expectedType)} accept=".xlsx, .xls, .csv" />
                     <div className="flex flex-col justify-center flex-1 pr-2 z-10 overflow-hidden">
-                        <span className="text-[10px] font-black text-slate-400 mb-0.5 whitespace-nowrap">{title}</span>
-                        <span className="text-[9px] font-bold text-slate-300 truncate group-hover:text-white transition-colors">업로드</span>
+                        <span className="text-[10px] font-black text-slate-300 mb-0.5 whitespace-nowrap">{title}</span>
+                        <span className="text-[9px] font-bold text-slate-400 truncate group-hover:text-emerald-400 transition-colors">업로드</span>
                     </div>
-                    <i className={`fas ${icon} absolute right-2 text-lg text-slate-500 opacity-30 group-hover:opacity-60 transition-opacity`}></i>
+                    <i className={`fas ${icon} absolute right-3 text-lg text-slate-400 opacity-40 group-hover:opacity-100 group-hover:text-emerald-400/80 transition-all`}></i>
                 </div>
             );
         };
@@ -432,7 +439,7 @@
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 text-slate-700 bg-white">
                                             <tr className="hover:bg-slate-50 transition-colors">
-                                                <td className="sticky z-20 px-4 py-3 border-r bg-white w-[260px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.04)]" style={{left:0}}><div className="flex flex-col"><span className="text-[10px] font-mono text-indigo-500">{previewDummyRow.코드}</span><div className="flex items-center gap-1.5"><span className="text-[13px] font-extrabold text-slate-800">{previewDummyRow.품목명}</span><span className="text-slate-300 text-[10px]">|</span><span className="text-[11px] text-slate-500">{previewDummyRow.규격}</span></div></div></td>
+                                                <td className="sticky z-20 px-4 py-3 border-r bg-white w-[260px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.04)]" style={{left:0}}><div className="flex flex-col"><span className="text-[10px] font-mono text-indigo-500">DUMMY01</span><div className="flex items-center gap-1.5"><span className="text-[13px] font-extrabold text-slate-800">예시 상품</span><span className="text-slate-300 text-[10px]">|</span><span className="text-[11px] text-slate-500">100g</span></div></div></td>
                                                 {mappingMainTab === 'master' ? MASTER_HEADERS.filter(h=>!['품목코드','품목명','규격'].includes(h)).map(h => visibleMasterCols['master']?.includes(h) ? <td key={`pmm-${h}`} className={`px-2 py-1.5 border-r truncate text-center ${getCellWidthClass(h)}`}>-</td> : null) : (
                                                     mappingFileTab === 'all' ? (allTabConfig.activeIds||[]).map(id => { const p = parseAllTabId(id); if(!p) return null; return <td key={`r-${id}`} className={`px-2 py-1.5 border-r border-slate-200 bg-white truncate ${getCellWidthClass(p.type==='M'?p.field:p.field)}`}>-</td>; }) : (
                                                         <>{(visibleMasterCols[mappingFileTab]||[]).map(h=><td key={`pmr2-${h}`} className="px-2 py-1.5 border-r truncate text-center">-</td>)}{(visibleUploadCols[mappingFileTab]||[]).filter(h=>!['품목코드','품목명','규격'].includes(h)).map(h=><td key={`pue2-${h}`} className="px-2 py-1.5 border-r border-slate-200 bg-white">-</td>)}</>
@@ -457,7 +464,6 @@
             const [managedItems, setManagedItems] = useState([]);
             const [selectedRows, setSelectedRows] = useState(new Set());
             const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v710') || '');
-            const [docOrder, setDocOrder] = useState(() => { const s = localStorage.getItem('merchDocOrder_v710'); return s ? JSON.parse(s) : ['estimate', 'prev', 'in', 'out', 'sales']; });
             
             const [visibleMasterCols, setVisibleMasterCols] = useState(() => { const s = localStorage.getItem('merchVisMaster_v710'); return s ? JSON.parse(s) : getInitialVisibleMasterCols(); });
             const [visibleUploadCols, setVisibleUploadCols] = useState(() => { const s = localStorage.getItem('merchVisUpload_v710'); return s ? JSON.parse(s) : getInitialVisibleUploadCols(); });
@@ -483,7 +489,6 @@
             const sourceKeyMap = { '견적': 'estimate', '재고': 'prev', '입고': 'in', '주문': 'out', '판매': 'sales' };
             const activeProfileKey = activeSources.length > 0 ? sourceKeyMap[activeSources[0]] : 'estimate';
 
-            // [기능 추가] F7 출력 단축키 전역 이벤트 감지
             useEffect(() => {
                 const handleGlobalF7 = (e) => {
                     if (e.key === 'F7') {
@@ -496,7 +501,6 @@
             }, [sideTab]);
 
             useEffect(() => localStorage.setItem('merchMaster_v710', JSON.stringify(masterProducts)), [masterProducts]);
-            useEffect(() => localStorage.setItem('merchDocOrder_v710', JSON.stringify(docOrder)), [docOrder]);
             useEffect(() => localStorage.setItem('merchVisMaster_v710', JSON.stringify(visibleMasterCols)), [visibleMasterCols]);
             useEffect(() => localStorage.setItem('merchVisUpload_v710', JSON.stringify(visibleUploadCols)), [visibleUploadCols]);
             useEffect(() => localStorage.setItem('merchMappings_v710', JSON.stringify(mappings)), [mappings]);
@@ -676,7 +680,6 @@
                     if (item.finalData) {
                         Object.keys(item.finalData).forEach(field => {
                             const linked = masterLinks[activeProfileKey]?.[field] || (MASTER_HEADERS.includes(field) ? field : null);
-                            // 오류 문자열 필터링 후 저장
                             if (linked && item.finalData[field] !== undefined && item.finalData[field] !== '' && item.finalData[field] !== '오류') {
                                 newMaster[item.코드][linked] = NUMERIC_HEADERS.includes(linked) ? Number(item.finalData[field]) : item.finalData[field];
                             }
@@ -723,7 +726,6 @@
             const currentExportKey = activeSources.length === 0 ? 'all' : activeProfileKey;
             const currentExportTitle = activeSources.length === 0 ? '전체 (통합)' : DOC_TYPES[currentExportKey];
 
-            // 💡 [V7.1 엔진] 오류 처리 공통 포맷터
             const formatPrice = (val) => {
                 if (val === "오류") return "오류";
                 const num = Number(String(val).replace(/,/g, '')) || 0;
@@ -750,28 +752,18 @@
 
                             const createRowArr = (code, inPrice, outPrice, bPrice='', aSale='', bSale='', finalPrice='', instruction='') => {
                                 if (!code) return null;
-                                
                                 const outIn = formatPrice(inPrice);
                                 const outOut = formatPrice(outPrice);
                                 const outFinal = formatPrice(finalPrice) || outIn;
 
                                 return [
-                                    code, // 1열
-                                    outIn, // 2열
-                                    '0', // 3열
-                                    outOut, // 4열
-                                    '0', // 5열
-                                    bPrice !== '' && bPrice !== undefined ? bPrice : '', // 6열
-                                    'n', // 7열
-                                    aSale !== '' && aSale !== undefined ? aSale : '', // 8열
-                                    'n', // 9열
-                                    bSale !== '' && bSale !== undefined ? bSale : '', // 10열
-                                    'n', // 11열
-                                    outFinal, // 12열
-                                    'n', // 13열
-                                    instruction !== '' && instruction !== undefined ? instruction : '', // 14열
-                                    'n', // 15열
-                                    hasValidPrice(inPrice, outPrice) ? '1' : '' // 16열
+                                    code, outIn, '0', outOut, '0', 
+                                    bPrice !== '' && bPrice !== undefined ? bPrice : '', 'n', 
+                                    aSale !== '' && aSale !== undefined ? aSale : '', 'n', 
+                                    bSale !== '' && bSale !== undefined ? bSale : '', 'n', 
+                                    outFinal, 'n', 
+                                    instruction !== '' && instruction !== undefined ? instruction : '', 'n', 
+                                    hasValidPrice(inPrice, outPrice) ? '1' : '' 
                                 ];
                             };
 
@@ -780,7 +772,6 @@
                                 const final = row.finalData || {}; 
                                 const source = row.sources?.[currentExportKey] || {};
                                 
-                                // UI에서 수기 입력한 본상품 정보 추출
                                 const pIn_raw = final['입고가'] !== undefined ? final['입고가'] : (source['입고가'] || mItem['입고가'] || '');
                                 const pIn = Number(String(pIn_raw).replace(/,/g, '')) || 0;
                                 
@@ -789,7 +780,6 @@
                                 const bSale = final['B판매'] !== undefined ? final['B판매'] : (source['B판매'] || '');
                                 const instruction = final['지시사항'] !== undefined ? final['지시사항'] : (source['지시사항'] || '');
 
-                                // 💡 [V7.1] 본상품 출고가 역산 적용 (오직 Export 순간에만)
                                 let calcOut = 0;
                                 if (pIn > 0) {
                                     const outsrc = Number(mItem['외주비'] || source['외주비']) || 0;
@@ -798,17 +788,14 @@
                                     calcOut = Math.round(((pIn + outsrc + exp + labor) / 0.9) / 100) * 100;
                                 }
                                 
-                                // 수기가 있으면 수기가 우선이나, "자동 단가 산출은 업로드용으로 출력" 지시에 따라 연산값 우선 배정
                                 const pOut = calcOut > 0 ? calcOut : (final['출고가'] !== undefined ? final['출고가'] : (source['출고가'] || mItem['출고가'] || ''));
 
                                 const pRow = createRowArr(row.코드, pIn, pOut, bPrice, aSale, bSale, pIn, instruction);
                                 if (pRow) exportData.push(pRow);
 
-                                // 💡 [V7.1] 1종 상품 역산 (Export 순간에만)
                                 const code1 = mItem['1종코드'] || source['1종코드'];
                                 if (code1) {
-                                    let in1 = '';
-                                    let out1 = '';
+                                    let in1 = ''; let out1 = '';
                                     const div1 = Number(mItem['1종연산'] || source['1종연산']) || 0;
                                     if (pIn > 0 && div1 > 0) {
                                         in1 = Math.round(((pIn / div1) * 1.15) / 100) * 100;
@@ -822,11 +809,9 @@
                                     if (row1) exportData.push(row1);
                                 }
 
-                                // 💡 [V7.1] 2종 상품 역산 (Export 순간에만)
                                 const code2 = mItem['2종코드'] || source['2종코드'];
                                 if (code2) {
-                                    let in2 = '';
-                                    let out2 = '';
+                                    let in2 = ''; let out2 = '';
                                     const div2 = Number(mItem['2종연산'] || source['2종연산']) || 0;
                                     if (pIn > 0 && div2 > 0) {
                                         in2 = Math.round(((pIn / div2) * 1.15) / 100) * 100;
@@ -911,16 +896,6 @@
                 else { const next = new Set(); displayRows.forEach((_, idx) => next.add(idx)); setSelectedRows(next); }
             };
 
-            const renderMasterManageCell = (row, field, keyPrefix) => {
-                const val = row[field]; const isNumeric = NUMERIC_HEADERS.includes(field);
-                return <td key={keyPrefix} className={`px-2 py-1.5 border-r border-slate-200 text-slate-700 truncate ${getCellWidthClass(field)} ${isNumeric ? 'text-right font-bold' : ''}`}>{val !== undefined && val !== '' ? (isNumeric ? Number(val).toLocaleString() : val) : '-'}</td>;
-            };
-
-            const renderMasterReferenceCell = (row, field, keyPrefix) => {
-                const masterItem = masterProducts[row.코드] || row; const val = masterItem[field]; const isNumeric = NUMERIC_HEADERS.includes(field);
-                return <td key={keyPrefix} className={`px-2 py-1.5 border-r border-slate-200 bg-slate-100/60 text-slate-500 truncate ${getCellWidthClass(field)} ${isNumeric ? 'text-right font-medium' : ''}`}>{val !== undefined && val !== '' ? (isNumeric ? Number(val).toLocaleString() : val) : '-'}</td>;
-            };
-
             const renderUploadEditableCell = (row, idx, field, activeProfile, keyPrefix) => {
                 const linkedMasterField = masterLinks[activeProfile]?.[field];
                 const isNumeric = NUMERIC_HEADERS.includes(linkedMasterField) || NUMERIC_HEADERS.includes(field);
@@ -963,10 +938,7 @@
 
                 const handleChange = (e) => {
                     const n = [...managedItems];
-                    const newVal = e.target.value;
-                    
-                    // 💡 [V7.1 업데이트] UI 화면에 수기 입력한 값만 단순 저장 (실시간 자동 연산 덮어쓰기 기능 제거)
-                    n[idx].finalData[field] = newVal;
+                    n[idx].finalData[field] = e.target.value;
                     setManagedItems(n);
                 };
 
@@ -1004,49 +976,45 @@
                     {toastMsg && <div className="fixed bottom-6 right-6 z-[1000] bg-slate-800 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in text-sm font-bold border border-slate-700"><i className="fas fa-check-circle text-emerald-400"></i>{toastMsg}</div>}
 
                     <div className="w-full max-w-[1280px] h-full flex flex-col bg-slate-50 shadow-2xl overflow-hidden mx-auto">
-                        <header className="shrink-0 h-[60px] bg-white border-b border-slate-200 px-6 flex justify-between items-center z-50">
-                            <div className="flex items-center group">
-                                <span className="text-2xl font-black text-indigo-600 mr-3">ONEAPP</span>
-                                <div className="flex flex-col border-l-2 pl-3">
-                                    <span className="text-lg font-black text-slate-700 leading-none">MerchOps</span>
-                                    <span className="text-[9px] font-extrabold text-slate-400 tracking-widest">V7.1 Export Engine</span>
-                                </div>
-                            </div>
-                            <nav className="flex gap-2.5 text-[13px] font-bold">
-                                <button onClick={() => handleCloudSync('load')} className="text-blue-600 bg-blue-50 border border-blue-200 px-4 py-1.5 rounded-md flex items-center shadow-sm"><i className="fas fa-cloud-download-alt mr-1.5"></i>불러오기</button>
-                                <button onClick={() => handleCloudSync('upload')} className="text-emerald-600 bg-emerald-50 border border-emerald-200 px-4 py-1.5 rounded-md flex items-center shadow-sm"><i className="fas fa-cloud-upload-alt mr-1.5"></i>클라우드 전송</button>
-                                <button onClick={() => { setShowSettings(true); setMappingMainTab('master'); }} className="text-slate-600 bg-white border border-slate-300 px-4 py-1.5 rounded-md flex items-center shadow-sm ml-1"><i className="fas fa-cogs mr-1.5 text-indigo-500"></i>매핑센터</button>
-                            </nav>
-                        </header>
-
                         <div className="shrink-0 flex flex-col bg-white border-b border-slate-200 z-40">
-                            <div className="p-5 pb-0">
+                            <div className="p-5 pb-0 pt-6">
                                 <div className="bg-[#0f172a] rounded-xl shadow-lg border border-slate-800 flex flex-col overflow-hidden">
-                                    <div className="px-5 py-3.5 flex justify-between items-center border-b border-slate-800/80 bg-[#0b1120]">
-                                        <div className="flex items-center gap-4">
-                                            <span className="text-[15px] font-black text-white"><i className="fas fa-terminal text-indigo-400 mr-2"></i>System.IO</span>
-                                            <div className="bg-black rounded border border-slate-700 px-3 py-1.5 flex items-center min-w-[320px]">
-                                                <span className="text-[12px] font-mono text-[#10b981]">{`> status: ${Object.keys(masterProducts).length} items loaded.`}</span><span className="w-1.5 h-3.5 bg-[#10b981] ml-1 animate-[pulse_1s_infinite]"></span>
+                                    <div className="px-5 py-3 flex justify-between items-center border-b border-slate-800/80 bg-[#0b1120] gap-5">
+                                        <div className="flex items-center group shrink-0">
+                                            <span className="text-xl font-black text-indigo-400 mr-3">ONEAPP</span>
+                                            <div className="flex flex-col border-l-2 border-slate-700 pl-3">
+                                                <span className="text-[14px] font-black text-slate-200 leading-none mb-0.5">MerchOps</span>
+                                                <span className="text-[9px] font-extrabold text-slate-500 tracking-widest">V7.1 Export Engine</span>
                                             </div>
-                                            <Clock />
                                         </div>
-                                        <button onClick={() => { setMasterProducts({}); setManagedItems([]); showToast('초기화 완료'); }} className="px-4 py-1.5 bg-slate-800 text-slate-300 rounded text-[11px] font-bold border border-slate-700"><i className="fas fa-redo-alt mr-1.5"></i>초기화</button>
+                                        
+                                        <SystemConsole itemCount={Object.keys(masterProducts).length} />
+
+                                        <nav className="flex gap-2 text-[12px] font-bold shrink-0">
+                                            <label className="cursor-pointer text-slate-400 bg-[#0f172a] border border-slate-700 px-4 py-1.5 rounded flex items-center shadow-sm hover:bg-[#1e293b] hover:text-white hover:border-slate-500 transition-colors">
+                                                <i className="fas fa-file-excel mr-1.5 opacity-70"></i>상품 등록
+                                                <input type="file" className="hidden" onChange={(e) => handleFileUpload(e, 'master')} multiple />
+                                            </label>
+                                            <button onClick={() => handleCloudSync('load')} className="text-slate-400 bg-[#0f172a] border border-slate-700 px-4 py-1.5 rounded flex items-center shadow-sm hover:bg-[#1e293b] hover:text-emerald-400 hover:border-emerald-500/50 transition-colors"><i className="fas fa-cloud-download-alt mr-1.5 opacity-70"></i>불러오기</button>
+                                            <button onClick={() => handleCloudSync('upload')} className="text-slate-400 bg-[#0f172a] border border-slate-700 px-4 py-1.5 rounded flex items-center shadow-sm hover:bg-[#1e293b] hover:text-emerald-400 hover:border-emerald-500/50 transition-colors"><i className="fas fa-cloud-upload-alt mr-1.5 opacity-70"></i>전송하기</button>
+                                            <button onClick={() => { setShowSettings(true); setMappingMainTab('master'); }} className="text-slate-400 bg-[#0f172a] border border-slate-700 px-3 py-1.5 rounded flex items-center justify-center shadow-sm ml-1 hover:bg-[#1e293b] hover:text-indigo-400 hover:border-indigo-500/50 transition-colors w-[110px] whitespace-nowrap shrink-0"><i className="fas fa-cogs mr-1.5 opacity-70"></i>매핑센터</button>
+                                        </nav>
                                     </div>
-                                    <div className="p-4 flex items-center overflow-x-auto hide-scrollbar bg-[#0f172a] transition-all">
-                                        {sideTab === 'estimate' ? (
-                                            <>
-                                                <span className="text-[11px] font-bold text-slate-400 mr-4"><i className="fas fa-filter mr-1.5"></i>업로드:</span>
-                                                <div className="flex gap-2 items-center fade-in">
-                                                    <FileBox title="1. 견적" icon="fa-file-invoice-dollar" expectedType="estimate" onUpload={handleFileUpload} /><i className="fas fa-plus text-slate-600 text-[10px]"></i>
-                                                    <FileBox title="2. 재고" icon="fa-boxes" expectedType="prev" onUpload={handleFileUpload} /><i className="fas fa-plus text-slate-600 text-[10px]"></i>
-                                                    <FileBox title="3. 입고" icon="fa-truck-loading" expectedType="in" onUpload={handleFileUpload} /><i className="fas fa-plus text-slate-600 text-[10px]"></i>
-                                                    <FileBox title="4. 주문" icon="fa-clipboard-list" expectedType="out" onUpload={handleFileUpload} /><i className="fas fa-plus text-slate-600 text-[10px]"></i>
-                                                    <FileBox title="5. 판매" icon="fa-chart-line" expectedType="sales" onUpload={handleFileUpload} />
-                                                </div>
-                                            </>
-                                        ) : (<div className="text-slate-400 text-[12px] font-bold"><i className="fas fa-database mr-2 text-indigo-400"></i>마스터 기준 데이터만 조회 중입니다.</div>)}
-                                        <div className="ml-auto pl-6 border-l border-slate-700/50">
-                                            <label className="cursor-pointer px-5 py-2 bg-slate-800 text-slate-300 border border-slate-700 rounded-lg text-[12px] font-bold shadow-md"><i className="fas fa-upload mr-2 text-indigo-400"></i>마스터 업로드<input type="file" className="hidden" onChange={(e) => handleFileUpload(e, 'master')} multiple /></label>
+                                    <div className="px-5 py-3.5 flex items-center overflow-x-auto hide-scrollbar bg-[#1e293b] border-t border-slate-700 transition-all">
+                                        <span className="text-[11px] font-bold text-slate-400 mr-4 shrink-0"><i className="fas fa-filter mr-1.5"></i>업로드:</span>
+                                        <div className="flex gap-3 items-center fade-in flex-1 pr-6">
+                                            <FileBox title="1. 견적" icon="fa-file-invoice-dollar" expectedType="estimate" onUpload={handleFileUpload} />
+                                            <i className="fas fa-chevron-right text-slate-500 text-[10px] shrink-0"></i>
+                                            <FileBox title="2. 재고" icon="fa-boxes" expectedType="prev" onUpload={handleFileUpload} />
+                                            <i className="fas fa-chevron-right text-slate-500 text-[10px] shrink-0"></i>
+                                            <FileBox title="3. 입고" icon="fa-truck-loading" expectedType="in" onUpload={handleFileUpload} />
+                                            <i className="fas fa-chevron-right text-slate-500 text-[10px] shrink-0"></i>
+                                            <FileBox title="4. 주문" icon="fa-clipboard-list" expectedType="out" onUpload={handleFileUpload} />
+                                            <i className="fas fa-chevron-right text-slate-500 text-[10px] shrink-0"></i>
+                                            <FileBox title="5. 판매" icon="fa-chart-line" expectedType="sales" onUpload={handleFileUpload} />
+                                        </div>
+                                        <div className="shrink-0 w-[110px] flex justify-center ml-1">
+                                            <button onClick={() => { setMasterProducts({}); setManagedItems([]); showToast('초기화 완료'); }} className="text-slate-300 hover:text-white text-[12px] font-bold underline underline-offset-4 decoration-slate-500 hover:decoration-white transition-colors whitespace-nowrap"><i className="fas fa-eraser mr-1.5"></i>초기화</button>
                                         </div>
                                     </div>
                                 </div>
@@ -1073,7 +1041,6 @@
                                             <button onClick={() => setShowExportModal(true)} className="h-full px-4 rounded-lg text-[13px] font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 shadow-sm transition-colors"><i className="fas fa-file-export mr-2"></i>출력 (F7)</button>
                                         </>
                                     )}
-                                    {/* 검색바 호출 */}
                                     <SearchBar onSearch={setDebouncedSearch} />
                                 </div>
                             </div>
