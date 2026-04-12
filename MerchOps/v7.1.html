@@ -488,6 +488,9 @@
             
             const sourceKeyMap = { '견적': 'estimate', '재고': 'prev', '입고': 'in', '주문': 'out', '판매': 'sales' };
             const activeProfileKey = activeSources.length > 0 ? sourceKeyMap[activeSources[0]] : 'estimate';
+            
+            // 데이터 존재 여부 판단 (초기 상태 확인용)
+            const isMasterEmpty = Object.keys(masterProducts).length === 0;
 
             useEffect(() => {
                 const handleGlobalF7 = (e) => {
@@ -991,30 +994,34 @@
                                         <SystemConsole itemCount={Object.keys(masterProducts).length} />
 
                                         <nav className="flex gap-2 text-[12px] font-bold shrink-0">
-                                            <label className="cursor-pointer text-slate-400 bg-[#0f172a] border border-slate-700 px-4 py-1.5 rounded flex items-center shadow-sm hover:bg-[#1e293b] hover:text-white hover:border-slate-500 transition-colors">
-                                                <i className="fas fa-file-excel mr-1.5 opacity-70"></i>상품 등록
+                                            <label className={`cursor-pointer px-4 py-1.5 rounded flex items-center shadow-sm transition-all duration-300 border ${isMasterEmpty ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10 shadow-[0_0_6px_rgba(16,185,129,0.15)]' : 'text-slate-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500'}`}>
+                                                <i className={`fas fa-file-excel mr-1.5 ${isMasterEmpty ? '' : 'opacity-70'}`}></i>상품 등록
                                                 <input type="file" className="hidden" onChange={(e) => handleFileUpload(e, 'master')} multiple />
                                             </label>
-                                            <button onClick={() => handleCloudSync('load')} className="text-slate-400 bg-[#0f172a] border border-slate-700 px-4 py-1.5 rounded flex items-center shadow-sm hover:bg-[#1e293b] hover:text-emerald-400 hover:border-emerald-500/50 transition-colors"><i className="fas fa-cloud-download-alt mr-1.5 opacity-70"></i>불러오기</button>
-                                            <button onClick={() => handleCloudSync('upload')} className="text-slate-400 bg-[#0f172a] border border-slate-700 px-4 py-1.5 rounded flex items-center shadow-sm hover:bg-[#1e293b] hover:text-emerald-400 hover:border-emerald-500/50 transition-colors"><i className="fas fa-cloud-upload-alt mr-1.5 opacity-70"></i>전송하기</button>
-                                            <button onClick={() => { setShowSettings(true); setMappingMainTab('master'); }} className="text-slate-400 bg-[#0f172a] border border-slate-700 px-3 py-1.5 rounded flex items-center justify-center shadow-sm ml-1 hover:bg-[#1e293b] hover:text-indigo-400 hover:border-indigo-500/50 transition-colors w-[110px] whitespace-nowrap shrink-0"><i className="fas fa-cogs mr-1.5 opacity-70"></i>매핑센터</button>
+                                            <button onClick={() => handleCloudSync('load')} className={`px-4 py-1.5 rounded flex items-center shadow-sm transition-all duration-300 border ${isMasterEmpty ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10 shadow-[0_0_6px_rgba(16,185,129,0.15)]' : 'text-slate-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-400 hover:border-emerald-500/50'}`}>
+                                                <i className={`fas fa-cloud-download-alt mr-1.5 ${isMasterEmpty ? '' : 'opacity-70'}`}></i>불러오기
+                                            </button>
+                                            <button onClick={() => handleCloudSync('upload')} className="text-slate-400 bg-[#0f172a] border border-slate-700 px-4 py-1.5 rounded flex items-center shadow-sm hover:bg-[#1e293b] hover:text-emerald-400 hover:border-emerald-500/50 transition-colors">
+                                                <i className="fas fa-cloud-upload-alt mr-1.5 opacity-70"></i>전송하기
+                                            </button>
+                                            <button onClick={() => { setShowSettings(true); setMappingMainTab('master'); }} className="text-slate-400 bg-[#0f172a] border border-slate-700 px-3 py-1.5 rounded flex items-center justify-center shadow-sm ml-1 hover:bg-[#1e293b] hover:text-indigo-400 hover:border-indigo-500/50 transition-colors w-[110px] whitespace-nowrap shrink-0">
+                                                <i className="fas fa-cogs mr-1.5 opacity-70"></i>매핑센터
+                                            </button>
                                         </nav>
                                     </div>
                                     <div className="px-5 py-3.5 flex items-center overflow-x-auto hide-scrollbar bg-[#1e293b] border-t border-slate-700 transition-all">
                                         <span className="text-[11px] font-bold text-slate-400 mr-4 shrink-0"><i className="fas fa-filter mr-1.5"></i>업로드:</span>
                                         <div className="flex gap-3 items-center fade-in flex-1 pr-6">
-                                            <FileBox title="1. 견적" icon="fa-file-invoice-dollar" expectedType="estimate" onUpload={handleFileUpload} />
+                                            <FileBox title="1. 재고" icon="fa-boxes" expectedType="prev" onUpload={handleFileUpload} />
                                             <i className="fas fa-chevron-right text-slate-500 text-[10px] shrink-0"></i>
-                                            <FileBox title="2. 재고" icon="fa-boxes" expectedType="prev" onUpload={handleFileUpload} />
+                                            <FileBox title="2. 입고" icon="fa-truck-loading" expectedType="in" onUpload={handleFileUpload} />
                                             <i className="fas fa-chevron-right text-slate-500 text-[10px] shrink-0"></i>
-                                            <FileBox title="3. 입고" icon="fa-truck-loading" expectedType="in" onUpload={handleFileUpload} />
+                                            <FileBox title="3. 주문" icon="fa-clipboard-list" expectedType="out" onUpload={handleFileUpload} />
                                             <i className="fas fa-chevron-right text-slate-500 text-[10px] shrink-0"></i>
-                                            <FileBox title="4. 주문" icon="fa-clipboard-list" expectedType="out" onUpload={handleFileUpload} />
-                                            <i className="fas fa-chevron-right text-slate-500 text-[10px] shrink-0"></i>
-                                            <FileBox title="5. 판매" icon="fa-chart-line" expectedType="sales" onUpload={handleFileUpload} />
+                                            <FileBox title="4. 판매" icon="fa-chart-line" expectedType="sales" onUpload={handleFileUpload} />
                                         </div>
                                         <div className="shrink-0 w-[110px] flex justify-center ml-1">
-                                            <button onClick={() => { setMasterProducts({}); setManagedItems([]); showToast('초기화 완료'); }} className="text-slate-300 hover:text-white text-[12px] font-bold underline underline-offset-4 decoration-slate-500 hover:decoration-white transition-colors whitespace-nowrap"><i className="fas fa-eraser mr-1.5"></i>초기화</button>
+                                            <button onClick={() => { setManagedItems([]); setSelectedRows(new Set()); showToast('작업 내역이 초기화되었습니다.'); }} className="text-slate-300 hover:text-white text-[12px] font-bold underline underline-offset-4 decoration-slate-500 hover:decoration-white transition-colors whitespace-nowrap"><i className="fas fa-eraser mr-1.5"></i>초기화</button>
                                         </div>
                                     </div>
                                 </div>
@@ -1035,6 +1042,17 @@
                                     )}
                                 </div>
                                 <div className="flex items-center gap-3 h-10">
+                                    {sideTab === 'manage' && (
+                                        <div className="flex gap-2 mr-2 fade-in">
+                                            <label className="cursor-pointer h-full px-4 py-2 rounded-lg text-[13px] font-bold bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 shadow-sm transition-colors flex items-center">
+                                                <i className="fas fa-file-invoice-dollar mr-2 text-indigo-500"></i>견적 업로드
+                                                <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e, 'estimate')} accept=".xlsx, .xls, .csv" />
+                                            </label>
+                                            <button onClick={() => showToast('스마트 텍스트 파서 기능 준비중입니다.')} className="h-full px-4 py-2 rounded-lg text-[13px] font-bold bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 shadow-sm transition-colors flex items-center">
+                                                ⚡ 텍스트
+                                            </button>
+                                        </div>
+                                    )}
                                     {sideTab === 'estimate' && (
                                         <>
                                             <button onClick={handleCommitToMaster} className={`h-full px-6 rounded-lg text-[13px] font-black shadow-sm ${selectedRows.size > 0 ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 border opacity-70'}`}><i className="fas fa-check mr-2"></i>완료</button>
@@ -1050,31 +1068,31 @@
                             <div className="bg-white border border-slate-200 rounded-xl shadow-sm h-full flex flex-col">
                                 <div className="flex-1 overflow-auto custom-scrollbar">
                                     <table className="w-full text-left border-collapse text-[13px] whitespace-nowrap min-w-max relative z-0">
-                                        <thead className="bg-[#f8fafc] text-slate-600 font-extrabold text-[12px]">
+                                        <thead className="text-[12px] font-extrabold">
                                             <tr>
-                                                <th className="sticky top-0 z-40 bg-[#f8fafc] px-3 py-2 border-b border-r border-slate-200 w-[240px] min-w-[240px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.06)]" style={{left: 0}}>
+                                                <th className="sticky top-0 z-40 bg-[#f5f4f0] px-3 py-2 border-b border-r border-[#e8e4db] w-[240px] min-w-[240px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.06)] text-[#5c554d]" style={{left: 0}}>
                                                     <div className="flex items-center gap-2 pl-1">
                                                         {sideTab === 'estimate' && <input type="checkbox" className="rounded w-3.5 h-3.5" checked={selectedRows.size === displayRows.length && displayRows.length > 0} onChange={toggleAllRows} />}
                                                         <span>상품정보 (코드/품명/규격)</span>
                                                     </div>
                                                 </th>
                                                 {sideTab === 'manage' && MASTER_HEADERS.filter(h => !['품목코드', '품목명', '규격'].includes(h)).map(h => (
-                                                    (visibleMasterCols['master'] || []).includes(h) ? <th key={`m-${h}`} className={`sticky top-0 z-30 bg-[#eff6ff] px-2 py-2 border-r border-b border-blue-100 text-center text-blue-800 ${getCellWidthClass(h)}`}>{h}</th> : null
+                                                    (visibleMasterCols['master'] || []).includes(h) ? <th key={`m-${h}`} className={`sticky top-0 z-30 bg-[#f5f4f0] px-2 py-2 border-r border-b border-[#e8e4db] text-center text-[#5c554d] ${getCellWidthClass(h)}`}>{h}</th> : null
                                                 ))}
                                                 {sideTab === 'estimate' && (
                                                     activeSources.length === 0 ? (allTabConfig.activeIds || []).map((id, index) => {
                                                         const p = parseAllTabId(id); if (!p) return null;
                                                         return (
                                                             <th key={`h-${id}`} draggable onDragStart={(e) => onDragStart(e, index)} onDragEnter={(e) => onDragEnter(e, index)} onDragOver={e=>e.preventDefault()} onDragEnd={onDragEnd} 
-                                                                className={`sticky top-0 z-30 px-2 py-2 border-r border-b text-center cursor-grab hover:brightness-95 group transition-all relative ${draggingIdx===index?'opacity-0 scale-95':'opacity-100'} ${p.type==='M'?'bg-[#eff6ff] text-blue-800 border-blue-100':'bg-white text-slate-800 border-slate-200'} ${getCellWidthClass(p.type==='M'?p.field:(masterLinks[p.mapKey]?.[p.field]||p.field))}`}>
+                                                                className={`sticky top-0 z-30 px-2 py-2 border-r border-b text-center cursor-grab hover:brightness-95 group transition-all relative ${draggingIdx===index?'opacity-0 scale-95':'opacity-100'} ${p.type==='M'?'bg-[#f5f4f0] text-[#5c554d] border-[#e8e4db] shadow-sm':'bg-white text-slate-800 border-slate-200'} ${getCellWidthClass(p.type==='M'?p.field:(masterLinks[p.mapKey]?.[p.field]||p.field))}`}>
                                                                 <button onClick={(e)=>{e.stopPropagation(); removeHeaderFromTable(id);}} className="absolute top-1 right-1 w-4 h-4 rounded-full bg-slate-200 hover:bg-rose-100 text-rose-500 opacity-0 group-hover:opacity-100"><i className="fas fa-times text-[9px]"></i></button>
-                                                                <div className={`text-[9px] mb-0.5 leading-none ${p.type==='M'?'text-blue-500':'text-indigo-400'}`}>[{p.type==='M'?'통합':DOC_TYPES[p.mapKey]}] <i className="fas fa-grip-lines ml-0.5 opacity-50"></i></div>
-                                                                <div>{p.type==='M'&&<span className="opacity-70 mr-1">[M]</span>}{p.field}</div>
+                                                                <div className={`text-[9px] mb-0.5 leading-none ${p.type==='M'?'text-[#8a8476] font-bold':'text-indigo-400'}`}>[{p.type==='M'?'마스터':DOC_TYPES[p.mapKey]}] <i className="fas fa-grip-lines ml-0.5 opacity-50"></i></div>
+                                                                <div>{p.type==='M'&&<span className="opacity-70 mr-1 text-[#a39d8f]">[M]</span>}{p.field}</div>
                                                             </th>
                                                         );
                                                     }) : (
                                                         <>
-                                                            {(visibleMasterCols[activeProfileKey] || []).map(h => <th key={`p-mr-${h}`} className={`sticky top-0 z-30 bg-[#eff6ff] px-2 py-3 border-r border-b border-blue-100 text-center text-blue-700 font-bold ${getCellWidthClass(h)}`}><div className="text-[9px] text-blue-500 mb-0.5">[{DOC_TYPES[activeProfileKey]}]</div>[M] {h}</th>)}
+                                                            {(visibleMasterCols[activeProfileKey] || []).map(h => <th key={`p-mr-${h}`} className={`sticky top-0 z-30 bg-[#f5f4f0] px-2 py-3 border-r border-b border-[#e8e4db] text-center text-[#5c554d] font-bold ${getCellWidthClass(h)}`}><div className="text-[9px] text-[#8a8476] mb-0.5">[{DOC_TYPES[activeProfileKey]}]</div><span className="text-[#a39d8f] mr-1">[M]</span>{h}</th>)}
                                                             {(visibleUploadCols[activeProfileKey] || []).map(h => <th key={`p-ue-${h}`} className={`sticky top-0 z-30 bg-white px-2 py-2 border-r border-b border-slate-200 text-center font-bold ${getCellWidthClass(masterLinks[activeProfileKey]?.[h] || h)}`}><div className="text-[9px] text-indigo-400 mb-0.5">[{DOC_TYPES[activeProfileKey]}]</div>{h}</th>)}
                                                         </>
                                                     )
@@ -1083,7 +1101,11 @@
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 text-slate-700">
                                             {displayRows.length === 0 ? <tr><td colSpan="50" className="p-16 text-center text-slate-400 bg-white"><i className="fas fa-folder-open text-4xl mb-4 block"></i>데이터가 없습니다.</td></tr> : displayRows.map((row, idx) => {
-                                                const isSel = selectedRows.has(idx); const bg = isSel ? 'bg-indigo-50/50' : 'bg-white hover:bg-slate-50';
+                                                const isSel = selectedRows.has(idx); 
+                                                const baseBg = sideTab === 'manage' ? 'bg-[#faf9f5]' : 'bg-white';
+                                                const hoverBg = sideTab === 'manage' ? 'hover:bg-[#f0ece1]' : 'hover:bg-slate-50';
+                                                const bg = isSel ? 'bg-indigo-50/50' : `${baseBg} ${hoverBg}`;
+                                                
                                                 const mItem = masterProducts[row.코드] || {}; 
                                                 
                                                 let uploadName = ''; let uploadSpec = '';
@@ -1106,8 +1128,8 @@
                                                 const dSpec = sideTab === 'manage' ? (mItem.규격||'') : (uploadSpec || mItem.규격 || '');
 
                                                 return (
-                                                    <tr key={idx} className={bg}>
-                                                        <td className={`sticky z-20 px-3 py-2 border-r border-slate-200 w-[240px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.04)] ${bg}`} style={{left: 0}}>
+                                                    <tr key={idx} className={`group ${bg}`}>
+                                                        <td className={`sticky z-20 px-3 py-2 border-r border-[#edebe3] w-[240px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.04)] transition-colors ${isSel ? 'bg-indigo-50/50' : 'bg-[#faf9f5] group-hover:bg-[#f0ece1]'}`} style={{left: 0}}>
                                                             <div className="flex gap-3 items-center">
                                                                 {sideTab === 'estimate' && <input type="checkbox" className="w-3.5 h-3.5 text-indigo-600 shrink-0" checked={isSel} onChange={() => { const n = new Set(selectedRows); n.has(idx)?n.delete(idx):n.add(idx); setSelectedRows(n); }} />}
                                                                 <div className="flex flex-col truncate w-full">
@@ -1119,15 +1141,15 @@
                                                                 </div>
                                                             </div>
                                                         </td>
-                                                        {sideTab === 'manage' && MASTER_HEADERS.filter(h => !['품목코드', '품목명', '규격'].includes(h)).map(h => (visibleMasterCols['master']||[]).includes(h) ? <td key={`r-m-${h}`} className="px-2 py-1.5 border-r truncate text-center">{mItem[h]||'-'}</td> : null)}
+                                                        {sideTab === 'manage' && MASTER_HEADERS.filter(h => !['품목코드', '품목명', '규격'].includes(h)).map(h => (visibleMasterCols['master']||[]).includes(h) ? <td key={`r-m-${h}`} className="px-2 py-1.5 border-r border-[#edebe3] truncate text-center text-[#6b675e]">{mItem[h]||'-'}</td> : null)}
                                                         {sideTab === 'estimate' && (
                                                             activeSources.length === 0 ? (allTabConfig.activeIds || []).map(id => {
                                                                 const p = parseAllTabId(id); if (!p) return null;
-                                                                if (p.type === 'M') return <td key={`r-all-m-${id}`} className="px-2 border-r bg-slate-100/60 text-center text-slate-500 truncate">{mItem[p.field]||'-'}</td>;
+                                                                if (p.type === 'M') return <td key={`r-all-m-${id}`} className="px-2 border-r border-[#edebe3] bg-[#faf9f5] group-hover:bg-[#f0ece1] transition-colors text-center text-[#6b675e] truncate">{mItem[p.field]||'-'}</td>;
                                                                 return renderUploadEditableCell(row, idx, p.field, p.mapKey, `r-all-f-${id}`);
                                                             }) : (
                                                                 <>
-                                                                    {(visibleMasterCols[activeProfileKey]||[]).map(h => <td key={`r-p-m-${h}`} className="px-2 border-r bg-slate-100/60 text-center text-slate-500 truncate">{mItem[h]||'-'}</td>)}
+                                                                    {(visibleMasterCols[activeProfileKey]||[]).map(h => <td key={`r-p-m-${h}`} className="px-2 border-r border-[#edebe3] bg-[#faf9f5] group-hover:bg-[#f0ece1] transition-colors text-center text-[#6b675e] truncate">{mItem[h]||'-'}</td>)}
                                                                     {(visibleUploadCols[activeProfileKey]||[]).map(h => renderUploadEditableCell(row, idx, h, activeProfileKey, `r-p-f-${h}`))}
                                                                 </>
                                                             )
