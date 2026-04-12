@@ -1,0 +1,331 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, setDoc, getDocs } from 'firebase/firestore';
+import { 
+  ArrowRight, ArrowDown, Send, FileText, Settings2, 
+  Trash2, Download, Copy, Check, RefreshCw, Layers, Cloud, CloudOff, History, ExternalLink, Table
+} from 'lucide-react';
+
+// Firebase configuration (environment provided)
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'smart-parser-pro';
+
+// 하드코딩된 구글 시트 웹 앱 URL
+const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbyL6ZfxRvEr7DVSKsCovB1VpaGDcpl4r4P0O514kOsmXY7yMVxsQcUPYVMPckhfYe3d/exec";
+
+const DEFAULT_INPUT = `전체 상품 (188개)
+04월 13일 18:00 마감
+
+플레인냉동식빵(삼립)EA / 744g/박스입수5개
+
+2,900 원
+04월 13일 18:00 마감
+
+한입떡볶이(송학)EA / 1kg/박스입수10개
+
+3,200 원
+04월 13일 18:00 마감
+
+우동건더기스프(농심)EA / 500g/박스입수12개
+
+9,600 원`;
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [inputText, setInputText] = useState(DEFAULT_INPUT);
+  const [parsedData, setParsedData] = useState([]);
+  const [isParsing, setIsParsing] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [cloudHistory, setCloudHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  // Auth 초기화
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (error) {
+        console.error("Auth error:", error);
+      }
+    };
+    initAuth();
+
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Firestore 히스토리 구독
+  useEffect(() => {
+    if (!user) return;
+    const q = collection(db, 'artifacts', appId, 'public', 'data', 'parsed_history');
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const history = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      history.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      setCloudHistory(history);
+    }, (error) => {
+      console.error("Firestore fetch error:", error);
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  const showToast = useCallback((msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(''), 3000);
+  }, []);
+
+  // 파싱 로직
+  const handleParse = () => {
+    if (!inputText.trim()) return showToast('입력된 텍스트가 없습니다.');
+    setIsParsing(true);
+    
+    setTimeout(() => {
+      const lines = inputText.split('\n').map(l => l.trim()).filter(l => l);
+      const result = [];
+      let buffer = [];
+      let idCounter = 1;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.includes('전체 상품') || line.includes('마감') || line.includes('마켓보로') || line === 'starLine' || line === 'clock') continue;
+
+        if (line.endsWith('원')) {
+          const price = line.replace(/[^0-9]/g, '');
+          const productStr = buffer.join(' ');
+          
+          let nameUnitPart = '', restPart = '';
+          const splitIndex = productStr.indexOf(' / ');
+          if (splitIndex !== -1) {
+            nameUnitPart = productStr.substring(0, splitIndex).trim();
+            restPart = productStr.substring(splitIndex + 3).trim();
+          } else {
+            const fallbackParts = productStr.split('/');
+            nameUnitPart = fallbackParts[0]?.trim() || '';
+            restPart = fallbackParts.slice(1).join('/').trim();
+          }
+
+          let unit = 'EA', name = nameUnitPart;
+          const unitMatch = name.match(/(벌크BOX|봉BOX|BOX|박스|포포|포|TEA|EA|kg|g|ml|L|p|PK|팩|개)$/i);
+          if (unitMatch) {
+            unit = unitMatch[0];
+            name = name.slice(0, -unitMatch[0].length).trim();
+          }
+
+          let spec = restPart, description = '';
+          if (restPart.includes('/')) {
+            const parts = restPart.split('/');
+            spec = parts[0].trim();
+            description = parts.slice(1).join(' / ').trim();
+          }
+
+          const qtyMatch = spec.match(/입수\s*(\d+)/) || spec.match(/(\d+)\s*개입/);
+          const packageQty = qtyMatch ? qtyMatch[1] : '1'; 
+
+          result.push({ id: idCounter++, name, spec, unit, packageQty, description, price });
+          buffer = []; 
+        } else {
+          buffer.push(line);
+        }
+      }
+      setParsedData(result);
+      setIsParsing(false);
+      showToast(`${result.length}건 분석 완료!`);
+    }, 500);
+  };
+
+  // Firestore 저장
+  const saveToCloud = async () => {
+    if (!user || parsedData.length === 0) return;
+    setIsSaving(true);
+    try {
+      const batchRef = collection(db, 'artifacts', appId, 'public', 'data', 'parsed_history');
+      await addDoc(batchRef, {
+        data: parsedData,
+        timestamp: Date.now(),
+        userId: user.uid,
+        count: parsedData.length,
+        summary: parsedData[0].name + (parsedData.length > 1 ? ` 외 ${parsedData.length - 1}건` : '')
+      });
+      showToast('클라우드 백업 완료');
+    } catch (error) {
+      showToast('저장 중 오류 발생');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // 구글 시트 전송 (하드코딩된 URL 사용)
+  const syncToGoogleSheets = async () => {
+    if (parsedData.length === 0) return;
+    setIsSyncing(true);
+
+    const payload = {
+      source: "SmartParserPro",
+      timestamp: new Date().toISOString(),
+      products: parsedData.map(d => ({
+        merch_name: d.name,
+        merch_spec: d.spec,
+        pkg_qty: parseInt(d.packageQty),
+        unit_type: d.unit,
+        in_price: parseInt(d.price)
+      }))
+    };
+
+    try {
+      await fetch(GOOGLE_SHEET_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      showToast('구글 시트 전송 성공!');
+    } catch (error) {
+      showToast('전송 오류 발생');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 font-sans flex flex-col items-center">
+      <div className="max-w-6xl w-full space-y-6">
+        
+        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="bg-emerald-600 p-3 rounded-2xl text-white shadow-lg shadow-emerald-100">
+              <Table size={28} />
+            </div>
+            <div>
+              <h1 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+                MerchOps Connector <span className="text-[10px] bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded uppercase">Verified</span>
+              </h1>
+              <p className="text-slate-500 font-medium text-sm">분석 즉시 구글 시트로 자동 기록됩니다.</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+             <button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-2 text-xs font-bold text-slate-600 bg-white border border-slate-200 px-4 py-2.5 rounded-xl hover:bg-slate-50 transition-all shadow-sm">
+               <History size={16} /> 히스토리
+             </button>
+             <button onClick={() => { setInputText(''); setParsedData([]); }} className="p-2 text-slate-400 hover:text-red-500"><RefreshCw size={18} /></button>
+          </div>
+        </header>
+
+        {showHistory && (
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm animate-in fade-in duration-300">
+            <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-4"><History size={18}/> 최근 분석 이력</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {cloudHistory.map(h => (
+                <div key={h.id} className="bg-slate-50 p-4 rounded-2xl border border-slate-100 hover:border-emerald-300 transition-all cursor-pointer group" onClick={() => { setParsedData(h.data); setShowHistory(false); showToast('데이터를 복원했습니다.'); }}>
+                  <div className="text-[10px] font-bold text-emerald-600 mb-1">{new Date(h.timestamp).toLocaleString()}</div>
+                  <div className="text-sm font-bold text-slate-700 truncate">{h.summary}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-4 flex flex-col bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden h-[400px] lg:h-[700px]">
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h2 className="font-bold text-slate-700 text-sm uppercase tracking-wider">Raw Input</h2>
+            </div>
+            <textarea
+              className="flex-1 p-5 outline-none text-sm text-slate-600 leading-relaxed bg-slate-50/10"
+              placeholder="데이터를 붙여넣으세요..."
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+            />
+            <div className="p-4">
+              <button onClick={handleParse} disabled={isParsing} className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-2xl shadow-xl shadow-emerald-100 transition-all flex justify-center items-center gap-2">
+                {isParsing ? <RefreshCw className="animate-spin" /> : <ArrowRight size={20} />} 데이터 분석하기
+              </button>
+            </div>
+          </div>
+
+          <div className="lg:col-span-8 flex flex-col bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden h-[600px] lg:h-[700px]">
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+              <h2 className="font-bold text-slate-700 text-xs uppercase tracking-wider">Preview & Sync</h2>
+              {parsedData.length > 0 && (
+                <div className="flex gap-2">
+                  <button onClick={saveToCloud} disabled={isSaving} className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-3 py-1 rounded-lg">클라우드 백업</button>
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-auto p-4 bg-slate-50/20">
+              {parsedData.length === 0 ? (
+                <div className="h-full flex flex-center flex-col items-center justify-center text-slate-300 opacity-50">
+                   <Table size={48} className="mb-2" />
+                   <p className="text-sm font-medium">분석된 데이터가 없습니다.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {parsedData.map((item, idx) => (
+                    <div key={item.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:border-emerald-400 transition-all">
+                      <div className="grid grid-cols-12 gap-3 items-center">
+                        <div className="col-span-1 text-[10px] font-black text-slate-200">{idx + 1}</div>
+                        <div className="col-span-5">
+                          <input className="w-full font-bold text-slate-800 bg-transparent outline-none focus:text-emerald-600" value={item.name} onChange={(e) => setParsedData(prev => prev.map(p => p.id === item.id ? {...p, name: e.target.value} : p))} />
+                          <input className="w-full text-[11px] text-slate-400 bg-transparent outline-none" value={item.spec} onChange={(e) => setParsedData(prev => prev.map(p => p.id === item.id ? {...p, spec: e.target.value} : p))} />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-[8px] font-black text-emerald-500 block uppercase">Box Qty</label>
+                          <input className="w-full font-black text-slate-700 bg-emerald-50 rounded-lg px-2 py-0.5 outline-none text-center" value={item.packageQty} onChange={(e) => setParsedData(prev => prev.map(p => p.id === item.id ? {...p, packageQty: e.target.value} : p))} />
+                        </div>
+                        <div className="col-span-3 text-right">
+                          <label className="text-[8px] font-black text-slate-300 block uppercase">In-Price</label>
+                          <div className="flex items-center justify-end gap-1 font-black text-slate-900">
+                             {Number(item.price).toLocaleString()} ₩
+                          </div>
+                        </div>
+                        <div className="col-span-1 text-right">
+                          <button onClick={() => setParsedData(prev => prev.filter(p => p.id !== item.id))} className="text-slate-200 hover:text-red-400"><Trash2 size={16} /></button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 bg-white border-t border-slate-100">
+               <button 
+                 onClick={syncToGoogleSheets}
+                 disabled={parsedData.length === 0 || isSyncing}
+                 className="w-full py-4 bg-slate-900 text-white font-black rounded-2xl hover:bg-black transition-all flex justify-center items-center gap-3 shadow-lg active:scale-95"
+               >
+                 {isSyncing ? <RefreshCw className="animate-spin" size={18}/> : <ExternalLink size={18} />}
+                 {isSyncing ? '동기화 중...' : '구글 시트로 즉시 전송'}
+               </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-center py-4">
+           <div className="flex items-center gap-2 text-[10px] font-black text-slate-300 uppercase tracking-widest">
+              <Cloud size={10} /> Active Cloud Endpoint: Google Apps Script
+           </div>
+        </div>
+
+        <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-4 rounded-2xl shadow-2xl z-50 transition-all duration-300 flex items-center gap-3 ${toastMessage ? 'translate-y-0 opacity-100' : 'translate-y-20 opacity-0 pointer-events-none'}`}>
+          <div className="bg-emerald-500 p-1.5 rounded-full text-white">
+            <Check size={14} strokeWidth={4} />
+          </div>
+          <span className="text-sm font-black">{toastMessage}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
