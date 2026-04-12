@@ -957,18 +957,20 @@
                 const isDiff = linkedMasterField && mVal !== undefined && val !== '' && String(mVal) !== String(val) && isNumeric;
 
                 const displayVal = val === "오류" ? "오류" : val;
-                const inputType = val === "오류" || !isNumeric ? "text" : "number";
+                
+                // 🚀 핵심 수정: type은 무조건 text로 유지하여 OS의 한영 전환 개입을 원천 차단
+                const inputType = "text"; 
 
                 const handleKeyDown = (e) => {
                     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(e.key)) {
                         const currentRowInputs = Array.from(document.querySelectorAll(`input.cell-input[data-row="${idx}"]`));
                         const currentIndex = currentRowInputs.indexOf(e.target);
                         if (e.key === 'ArrowLeft') {
-                            let move = true; if (e.target.type !== 'number') move = e.target.selectionStart === 0;
+                            let move = true; if (e.target.dataset.numeric !== 'true') move = e.target.selectionStart === 0;
                             if (move) { e.preventDefault(); if (currentIndex > 0) { currentRowInputs[currentIndex - 1].focus(); currentRowInputs[currentIndex - 1].select(); } }
                         }
                         if (e.key === 'ArrowRight') {
-                            let move = true; if (e.target.type !== 'number') move = e.target.selectionEnd === e.target.value.length;
+                            let move = true; if (e.target.dataset.numeric !== 'true') move = e.target.selectionEnd === e.target.value.length;
                             if (move) { e.preventDefault(); if (currentIndex < currentRowInputs.length - 1) { currentRowInputs[currentIndex + 1].focus(); currentRowInputs[currentIndex + 1].select(); } }
                         }
                         if (e.key === 'ArrowUp') {
@@ -993,17 +995,29 @@
                     const n = [...managedItems];
                     const targetIdx = n.findIndex(m => m.코드 === row.코드);
                     if (targetIdx > -1) {
-                        n[targetIdx].finalData[field] = e.target.value;
+                        let newValue = e.target.value;
+                        if (isNumeric && newValue !== "오류" && newValue !== "") {
+                            newValue = newValue.replace(/[^0-9.-]/g, '');
+                        }
+                        n[targetIdx].finalData[field] = newValue;
                         setManagedItems(n);
                     }
                 };
 
                 return (
                     <td key={keyPrefix} className={`px-1 py-1 border-r border-slate-200 ${getCellWidthClass(linkedMasterField || field)} ${isDiff ? 'bg-amber-50/30' : 'bg-white'}`}>
-                        <input type={inputType} className={`cell-input w-full bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-1 rounded px-1.5 py-1 text-[12px] outline-none ${isNumeric ? 'text-right font-bold' : 'truncate'} ${isDiff || displayVal === '오류' ? 'text-indigo-700' : ''}`}
-                            value={displayVal} placeholder={mVal || ''} data-row={idx} data-numeric={isNumeric}
+                        {/* 🚀 윈도우 OS의 강제 한영 전환을 막기 위해 inputMode="numeric" 속성 완전히 제거 */}
+                        <input 
+                            type={inputType} 
+                            className={`cell-input w-full bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-1 rounded px-1.5 py-1 text-[12px] outline-none ${isNumeric ? 'text-right font-bold' : 'truncate'} ${isDiff || displayVal === '오류' ? 'text-indigo-700' : ''}`}
+                            value={displayVal} 
+                            placeholder={mVal || ''} 
+                            data-row={idx} 
+                            data-numeric={isNumeric}
                             onChange={handleChange} 
-                            onKeyDown={handleKeyDown} onFocus={(e) => e.target.select()} onClick={(e) => e.target.select()} onWheel={(e) => e.target.blur()}
+                            onKeyDown={handleKeyDown} 
+                            onFocus={(e) => e.target.select()} 
+                            onClick={(e) => e.target.select()}
                         />
                     </td>
                 );
