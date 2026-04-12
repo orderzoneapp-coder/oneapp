@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="ko" translate="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="google" content="notranslate">
+    <title>ONEAPP MerchOps - V7.2 Export Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo, useEffect, useRef, useCallback } = React;
+
+        // ==========================================
+        // 🧩 시스템 공통 환경 변수 및 헬퍼 함수
+        // ==========================================
+        const MASTER_HEADERS = [
+            "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", 
+            "품목코드", "품목명", "규격", "안전재고", "간단설명", "입고가", "출고가", "도매가", "전송가", "창고가", 
+            "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", 
+            "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록", "정렬순서"
+        ];
+
+        const NUMERIC_HEADERS = [
+            "안전재고", "입고가", "출고가", "도매가", "전송가", "창고가", "외주비", "노무비", 
+            "경비", "비과세", "기본", "연동", "싯가", "준비기간", "마감시간",
+            "도매2 (전송)", "1구매", "1출고", "2구매", "2출고",
+            "재고수량", "입고수량", "주문수량", "판매수량", "행사가", "입고", "출고",
+            "B단가", "A판매", "B판매", "1입고", "2입고", "1종연산", "2종연산", "정렬순서", "적요2"
+        ];
+
+        const DOC_TYPES = { 'estimate': '견적', 'prev': '재고', 'in': '입고', 'out': '주문', 'sales': '판매' };
+
+        const getInitialVisibleMasterCols = () => ({ master: ['입고가', '출고가', '구매처', '간단설명'], all: ['출고가', '입고가', '안전재고'], estimate: ['입고가', '출고가'], prev: ['안전재고'], in: ['입고가'], out: ['출고가'], sales: ['출고가'] });
+        const getInitialVisibleUploadCols = () => ({ 
+            estimate: ['구매처', '입고가', 'B단가', 'A판매', 'B판매', '지시사항', '정렬순서'], 
+            prev: ['재고수량', '비고'], in: ['입고수량', '입고가', '비고'], out: ['주문수량', '출고가', '비고'], sales: ['판매수량', '출고가', '비고'] 
+        });
+        
+        const getInitialMappings = () => {
+            const base = {}; ['master', 'estimate', 'prev', 'in', 'out', 'sales'].forEach(tab => base[tab] = {});
+            base.master = { '품목코드': '품목코드', '품목명': '품목명, 상품명, 품명', '규격': '규격' };
+            base.estimate = { 
+                '품목코드': '품목코드', '품목명': '품목명, 품명', '규격': '규격명, 규격', 
+                '구매처': '거래처명, 구매처', '입고가': '입고가, 입고', '출고가': '출고가, 출고',
+                'B단가': 'B단가', 'A판매': 'A판매', 'B판매': 'B판매', 
+                '지시사항': '지시사항', '상품정보': '상품정보',
+                '외주비': '외주비', '경비': '경비', '노무비': '노무비',
+                '1종연산': '1종연산', '2종연산': '2종연산',
+                '1종코드': '1종코드', '1입고': '1입고, 1구매', '1출고': '1출고',
+                '2종코드': '2종코드', '2입고': '2입고, 2구매', '2출고': '2출고',
+                '정렬순서': '적요2, 정렬순서'
+            };
+            base.prev = { '품목코드': '품목코드', '품목명': '품목명', '규격': '규격', '재고수량': '재고수량, 수량, 현재고', '비고': '비고' };
+            base.in = { '품목코드': '품목코드', '품목명': '품목명', '규격': '규격', '입고수량': '입고수량, 수량', '입고가': '입고가, 단가', '비고': '비고' };
+            base.out = { '품목코드': '품목코드', '품목명': '품목명', '규격': '규격', '주문수량': '주문수량, 수량', '출고가': '출고가, 단가', '비고': '비고' };
+            base.sales = { '품목코드': '품목코드', '품목명': '품목명', '규격': '규격', '판매수량': '판매수량, 수량', '출고가': '출고가, 단가', '비고': '비고' };
+            return base;
+        };
+        
+        const getInitialMasterLinks = () => {
+            const base = {}; ['master', 'estimate', 'prev', 'in', 'out', 'sales'].forEach(tab => base[tab] = {});
+            base.estimate = { 
+                '구매처': '구매처', '입고가': '입고가', '출고가': '출고가', 
+                'B단가': '', 'A판매': '출고가', 'B판매': '도매가', 
+                '지시사항': '', '상품정보': '', 
+                '외주비': '외주비', '경비': '경비', '노무비': '노무비',
+                '1종연산': '1종연산', '2종연산': '2종연산',
+                '1종코드': '1종코드', '1입고': '1구매', '1출고': '1출고',
+                '2종코드': '2종코드', '2입고': '2구매', '2출고': '2출고',
+                '정렬순서': '정렬순서'
+            };
+            base.prev = { '재고수량': '', '비고': '' }; base.in = { '입고수량': '', '입고가': '입고가', '비고': '' };
+            base.out = { '주문수량': '', '출고가': '출고가', '비고': '' }; base.sales = { '판매수량': '', '출고가': '출고가', '비고': '' };
+            return base;
+        };
+
+        const EXPORT_OPTIONS = {
+            all: [
+                { id: 'all_erp', type: 'excel', title: '통합 마스터 업데이트 엑셀', desc: '전체 상품 최신 기준 데이터 (ERP 갱신용)', icon: 'fa-database', theme: { border: 'hover:border-indigo-400', bg: 'hover:bg-indigo-50', text: 'text-indigo-500' } },
+                { id: 'all_catalog', type: 'print', title: '전체 상품 카탈로그 (PDF)', desc: '분류별(1코드/2코드) 전체 상품 리스트', icon: 'fa-file-pdf', theme: { border: 'hover:border-rose-400', bg: 'hover:bg-rose-50', text: 'text-rose-500' } }
+            ],
+            estimate: [
+                { id: 'est_erp', type: 'excel', title: '1. ERP 품목정보 업데이트용 엑셀', desc: '자동 연산되어 출력되는 ERP 전용 16열 양식', icon: 'fa-file-excel', theme: { border: 'hover:border-blue-400', bg: 'hover:bg-blue-50', text: 'text-blue-500' } },
+                { id: 'est_shop', type: 'excel', title: '2. 쇼핑몰/자동계산 업로드용', desc: '단가, 연산식, 할인율 동적 데이터 파일', icon: 'fa-shopping-cart', theme: { border: 'hover:border-emerald-400', bg: 'hover:bg-emerald-50', text: 'text-emerald-500' } },
+                { id: 'est_notice', type: 'copy', title: '3. 도매몰 단가 공지용 (카톡복사)', desc: '클릭 시 텍스트가 자동 복사됩니다.', icon: 'fa-copy', theme: { border: 'hover:border-amber-400', bg: 'hover:bg-amber-50', text: 'text-amber-500' } },
+                { id: 'est_print', type: 'print', title: '4. 오프라인 영업용 인쇄물', desc: '견적가 기준 프린트 최적화 레이아웃 (PDF)', icon: 'fa-print', theme: { border: 'hover:border-rose-400', bg: 'hover:bg-rose-50', text: 'text-rose-500' } }
+            ],
+            in: [
+                { id: 'in_erp', type: 'excel', title: 'ERP 매입전표 업로드용 엑셀', desc: '입고수량 및 매입단가 등록 양식', icon: 'fa-file-excel', theme: { border: 'hover:border-indigo-400', bg: 'hover:bg-indigo-50', text: 'text-indigo-500' } },
+                { id: 'in_check', type: 'print', title: '창고 입고 검수 지시서', desc: '실물 입고 확인을 위한 리스트 (PDF)', icon: 'fa-clipboard-check', theme: { border: 'hover:border-emerald-400', bg: 'hover:bg-emerald-50', text: 'text-emerald-500' } }
+            ],
+            out: [
+                { id: 'out_erp', type: 'excel', title: 'ERP 주문수집 엑셀', desc: '출고(주문) 수량을 ERP 일괄 등록하는 엑셀', icon: 'fa-database', theme: { border: 'hover:border-indigo-400', bg: 'hover:bg-indigo-50', text: 'text-indigo-500' } },
+                { id: 'out_picking', type: 'print', title: '물류창고 피킹/패킹 리스트', desc: '위치 및 카테고리별 출고 지시서', icon: 'fa-boxes', theme: { border: 'hover:border-amber-400', bg: 'hover:bg-amber-50', text: 'text-amber-500' } },
+                { id: 'out_delivery', type: 'excel', title: '택배사 송장 출력용 엑셀', desc: '택배사 업로드 표준 양식', icon: 'fa-truck', theme: { border: 'hover:border-emerald-400', bg: 'hover:bg-emerald-50', text: 'text-emerald-500' } }
+            ],
+            prev: [
+                { id: 'prev_check', type: 'print', title: '실사 재고 조사표', desc: '전산(안전재고)과 실물 대조용 인쇄물', icon: 'fa-clipboard-list', theme: { border: 'hover:border-amber-400', bg: 'hover:bg-amber-50', text: 'text-amber-500' } },
+                { id: 'prev_order', type: 'excel', title: '부족 재고 발주 권고서', desc: '안전재고 미달 품목 자동 추출 엑셀', icon: 'fa-exclamation-triangle', theme: { border: 'hover:border-rose-400', bg: 'hover:bg-rose-50', text: 'text-rose-500' } }
+            ],
+            sales: [
+                { id: 'sales_erp', type: 'excel', title: 'ERP 매출전표 업로드용', desc: '판매 수량 및 단가 시스템 등록 양식', icon: 'fa-file-excel', theme: { border: 'hover:border-indigo-400', bg: 'hover:bg-indigo-50', text: 'text-indigo-500' } },
+                { id: 'sales_report', type: 'print', title: '판매 분석 리포트', desc: '매출액 및 이익 요약 보고서 (PDF)', icon: 'fa-chart-pie', theme: { border: 'hover:border-emerald-400', bg: 'hover:bg-emerald-50', text: 'text-emerald-500' } }
+            ]
+        };
+
+        const getCellWidthClass = (h) => {
+            if (NUMERIC_HEADERS.includes(h)) return 'w-[80px] min-w-[80px] max-w-[80px]';
+            if (h === '구매처' || h === '거래처명') return 'w-[100px] min-w-[100px] max-w-[100px]';
+            if (h === '간단설명' || h === '지시사항' || h === '상품정보' || h === '적요') return 'w-[140px] min-w-[140px] max-w-[140px]';
+            return 'w-[110px] min-w-[110px] max-w-[110px]';
+        };
+
+        const parseAllTabId = (id) => {
+            if (id.startsWith('M_')) return { type: 'M', field: id.substring(2) };
+            if (id.startsWith('F_')) { const firstUnderscore = id.indexOf('_', 2); return { type: 'F', mapKey: id.substring(2, firstUnderscore), field: id.substring(firstUnderscore + 1) }; }
+            return null;
+        };
+
+        const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
+
+        const extractValue = (row, mappingStr) => {
+            if (!mappingStr) return '';
+            const keywords = mappingStr.split(',').map(s => s.trim().toLowerCase().replace(/\s/g, ''));
+            const rowKeys = Object.keys(row);
+            for (let kw of keywords) {
+                if (!kw) continue;
+                const foundKey = rowKeys.find(k => String(k).toLowerCase().replace(/\s/g, '').includes(kw));
+                if (foundKey && row[foundKey] !== undefined && row[foundKey] !== '') return row[foundKey];
+            }
+            return '';
+        };
+
+        const parseExcelRobust = (file) => {
+            return new Promise((resolve, reject) => {
+                if (!window.XLSX) return reject(new Error("엑셀 파서가 로드되지 않았습니다."));
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const wb = window.XLSX.read(e.target.result, { type: 'binary' });
+                    const ws = wb.Sheets[wb.SheetNames[0]];
+                    const jsonAll = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+                    let headerRowIdx = 0;
+                    for (let i = 0; i < Math.min(10, jsonAll.length); i++) {
+                        const rowStr = jsonAll[i].join('').replace(/\s/g, '');
+                        if (rowStr.includes('코드') || rowStr.includes('품명') || rowStr.includes('상품') || rowStr.includes('단가') || rowStr.includes('입고가') || rowStr.includes('구매처')) { headerRowIdx = i; break; }
+                    }
+                    const headers = jsonAll[headerRowIdx];
+                    let endIdx = jsonAll.length - 1;
+                    while (endIdx > headerRowIdx) {
+                        const rowArr = jsonAll[endIdx];
+                        if (!rowArr) { endIdx--; continue; }
+                        const filledCount = rowArr.filter(cell => cell !== undefined && cell !== null && String(cell).trim() !== '').length;
+                        const rawStr = rowArr.join('').replace(/\s/g, '');
+                        if (rawStr === '') { endIdx--; continue; }
+                        if ((rawStr.includes('출력') || rawStr.includes('시간') || rawStr.includes('합계') || rawStr.includes('총계') || /20\d{2}[\/\-]\d{2}/.test(rawStr)) && filledCount <= 4) endIdx--; else break; 
+                    }
+                    const data = [];
+                    for (let i = headerRowIdx + 1; i <= endIdx; i++) {
+                        if (!jsonAll[i] || jsonAll[i].join('').trim() === '') continue;
+                        const obj = {}; headers.forEach((h, idx) => { if (h) obj[h] = jsonAll[i][idx]; }); data.push(obj);
+                    }
+                    resolve(data);
+                };
+                reader.readAsBinaryString(file);
+            });
+        };
+
+        // ==========================================
+        // 🧩 모듈화된 UI 컴포넌트들
+        // ==========================================
+        const SystemConsole = ({ itemCount }) => {
+            const [time, setTime] = useState(new Date());
+            useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
+            
+            const timeStr = `${time.getFullYear()}.${String(time.getMonth()+1).padStart(2,'0')}.${String(time.getDate()).padStart(2,'0')} ${String(time.getHours()).padStart(2,'0')}:${String(time.getMinutes()).padStart(2,'0')}`;
+            
+            return (
+                <div className="bg-black rounded-md border border-slate-700 px-4 py-1.5 flex flex-1 items-center overflow-hidden shadow-inner">
+                    <div className="flex items-center truncate">
+                        <span className="text-[12px] font-mono text-[#10b981]">
+                            {itemCount === 0 ? `> ${timeStr}` : `> 상태: ${itemCount}개의 항목이 로드되었습니다.`}
+                        </span>
+                        <span className="w-1.5 h-3.5 bg-[#10b981] ml-1.5 animate-[pulse_1s_infinite]"></span>
+                    </div>
+                </div>
+            );
+        };
+
+        const FileBox = ({ title, icon, expectedType, onUpload }) => {
+            const fileRef = useRef(null);
+            return (
+                <div className="relative border border-slate-600 bg-slate-700 hover:bg-slate-600 rounded-lg transition-all cursor-pointer flex items-center h-10 flex-1 min-w-[100px] shrink-0 px-3 shadow-md group" onClick={() => fileRef.current?.click()}>
+                    <input type="file" ref={fileRef} className="hidden" multiple onChange={(e) => onUpload(e, expectedType)} accept=".xlsx, .xls, .csv" />
+                    <div className="flex flex-col justify-center flex-1 pr-2 z-10 overflow-hidden">
+                        <span className="text-[10px] font-black text-slate-300 mb-0.5 whitespace-nowrap">{title}</span>
+                        <span className="text-[9px] font-bold text-slate-400 truncate group-hover:text-emerald-400 transition-colors">업로드</span>
+                    </div>
+                    <i className={`fas ${icon} absolute right-3 text-lg text-slate-400 opacity-40 group-hover:opacity-100 group-hover:text-emerald-400/80 transition-all`}></i>
+                </div>
+            );
+        };
+
+        // ✨ React.memo를 적용하여 리렌더링 시 한글 풀림(영문 전환) 현상 방지
+        const SearchBar = React.memo(({ onSearch }) => {
+            const [val, setVal] = useState('');
+            const inputRef = useRef(null);
+
+            useEffect(() => {
+                const timer = setTimeout(() => onSearch(val), 250); 
+                return () => clearTimeout(timer);
+            }, [val, onSearch]);
+
+            useEffect(() => {
+                const handleGlobalKeyDown = (e) => {
+                    if (e.key === 'F3') {
+                        e.preventDefault(); 
+                        if (inputRef.current) {
+                            inputRef.current.focus();
+                            inputRef.current.select(); 
+                        }
+                    }
+                };
+                window.addEventListener('keydown', handleGlobalKeyDown);
+                return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+            }, []);
+
+            const handleKeyDown = (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onSearch(val); 
+                    setTimeout(() => {
+                        const firstInput = document.querySelector('input.cell-input[data-numeric="true"]') || document.querySelector('input.cell-input');
+                        if (firstInput) {
+                            firstInput.focus();
+                            firstInput.select();
+                        }
+                    }, 50);
+                }
+            };
+
+            return (
+                <div className="relative w-[240px] h-full shrink-0" onClick={() => inputRef.current?.focus()}>
+                    <input 
+                        ref={inputRef}
+                        type="text" 
+                        placeholder="검색 (단축키 F3, Enter시 이동)" 
+                        value={val} 
+                        onChange={e => setVal(e.target.value)} 
+                        onKeyDown={handleKeyDown}
+                        autoCapitalize="off"
+                        autoComplete="off"
+                        spellCheck="false"
+                        className="w-full h-full pl-3 pr-8 py-1.5 border border-slate-300 rounded-lg text-[12px] font-bold outline-none focus:border-indigo-500 focus:ring-2 transition-shadow" 
+                    />
+                    <i className="fas fa-search absolute right-3 top-3 text-slate-400 pointer-events-none"></i>
+                </div>
+            );
+        });
+
+        const ExportModal = ({ onClose, displayRows, currentExportKey, currentExportTitle, executeExport }) => {
+            useEffect(() => {
+                document.body.style.overflow = 'hidden';
+                return () => document.body.style.overflow = 'auto';
+            }, []);
+            return (
+                <div className="fixed inset-0 bg-slate-900/60 z-[200] flex justify-center items-center backdrop-blur-sm fade-in">
+                    <div className="bg-white w-[600px] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                        <div className="bg-[#0f172a] p-5 border-b border-slate-700 flex justify-between items-center">
+                            <h2 className="text-[16px] font-black text-white"><i className="fas fa-file-export mr-2 text-indigo-400"></i>출력 및 내보내기 센터</h2>
+                            <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white transition-colors"></i></button>
+                        </div>
+                        <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Current View :</span>
+                                <span className="text-[13px] font-black text-indigo-700 bg-indigo-100 px-2.5 py-0.5 rounded">[{currentExportTitle}] 데이터</span>
+                            </div>
+                            <span className="text-[12px] font-bold text-slate-500">총 <span className="text-slate-800">{displayRows.length}</span>건</span>
+                        </div>
+                        <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                            {EXPORT_OPTIONS[currentExportKey].map((option, idx) => (
+                                <div key={option.id} onClick={() => executeExport(option)} className={`border border-slate-200 rounded-xl p-4 cursor-pointer transition-all group ${option.theme.border} ${option.theme.bg}`}>
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="font-bold text-slate-800 text-[14px]">
+                                            <i className={`fas ${option.icon} ${option.theme.text} mr-2.5 w-5 text-center`}></i>
+                                            {idx + 1}. {option.title}
+                                        </h3>
+                                        <i className={`fas ${option.type === 'copy' ? 'fa-copy' : 'fa-download'} text-slate-300 group-hover:${option.theme.text} transition-colors`}></i>
+                                    </div>
+                                    <p className="text-[12px] text-slate-500 mt-1.5 ml-8">{option.desc}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const MappingCenterModal = ({
+            onClose, cloudUrl, setCloudUrl, mappingMainTab, setMappingMainTab, mappingFileTab, setMappingFileTab,
+            visibleMasterCols, toggleMasterCol, visibleUploadCols, setVisibleUploadCols, mappings, setMappings,
+            masterLinks, setMasterLinks, allTabConfig, setAllTabConfig, handleCloudSync, handleResetMappings, showToast
+        }) => {
+            const [customColInput, setCustomColInput] = useState('');
+
+            useEffect(() => {
+                document.body.style.overflow = 'hidden';
+                return () => document.body.style.overflow = 'auto';
+            }, []);
+
+            const addCustomUploadCol = () => {
+                if(!customColInput.trim()) return;
+                const val = customColInput.trim();
+                if ((visibleUploadCols[mappingFileTab] || []).includes(val)) return showToast('⚠️ 이미 추가된 항목입니다.');
+                setVisibleUploadCols(prev => ({ ...prev, [mappingFileTab]: [...(prev[mappingFileTab] || []), val] }));
+                setMappings(prev => ({ ...prev, [mappingFileTab]: { ...prev[mappingFileTab], [val]: val } }));
+                setMasterLinks(prev => ({ ...prev, [mappingFileTab]: { ...prev[mappingFileTab], [val]: '' } }));
+                setCustomColInput('');
+            };
+
+            return (
+                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
+                    <div className="bg-white w-[96vw] max-w-[1800px] h-[92vh] rounded-2xl shadow-2xl flex flex-col">
+                        <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
+                            <div className="flex items-center gap-4"><h2 className="font-black text-[17px]"><i className="fas fa-cogs text-indigo-400 mr-2.5"></i>Mapping Center</h2><span className="text-[11px] bg-slate-800 px-2.5 py-1 rounded-md text-slate-400">마스터 연동 및 조립기</span></div>
+                            <button onClick={onClose}><i className="fas fa-times text-xl text-slate-400 hover:text-white"></i></button>
+                        </div>
+                        <div className="flex flex-1 overflow-hidden">
+                            <div className="w-[30%] min-w-[380px] flex flex-col bg-slate-50 border-r shadow-sm">
+                                <div className="p-4 pb-2"><div className="flex w-full bg-slate-200/50 rounded-xl p-1"><button onClick={() => {setMappingMainTab('master'); setMappingFileTab('master');}} className={`flex-1 py-2.5 text-[14px] font-black rounded-lg ${mappingMainTab === 'master' ? 'bg-white text-indigo-700 shadow' : 'text-slate-500'}`}>1. 전체상품</button><button onClick={() => {setMappingMainTab('operation'); setMappingFileTab('all');}} className={`flex-1 py-2.5 text-[14px] font-black rounded-lg ${mappingMainTab === 'operation' ? 'bg-white text-indigo-700 shadow' : 'text-slate-500'}`}>2. 관리상품</button></div></div>
+                                <div className="flex-1 overflow-y-auto p-5 space-y-5 custom-scrollbar">
+                                    {mappingMainTab === 'master' && (
+                                        <>
+                                            <div className="bg-white p-4 rounded-xl border shadow-sm"><h3 className="text-[13px] font-black mb-3"><i className="fas fa-cloud text-indigo-500 mr-2"></i>Cloud URL</h3><input type="text" value={cloudUrl} onChange={e => setCloudUrl(e.target.value)} className="w-full border rounded px-3 py-2 text-[13px]" placeholder="Apps Script URL" /></div>
+                                            <div className="bg-white p-5 rounded-xl border shadow-sm"><h3 className="text-[14px] font-black mb-4 pb-2 border-b"><i className="fas fa-list text-indigo-500 mr-2"></i>마스터 노출 항목</h3>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {['품목코드', '품목명', '규격'].map(h => <div key={`f-${h}`} className="config-chip active opacity-70"><i className="fas fa-lock mr-1"></i>{h}</div>)}
+                                                    {MASTER_HEADERS.filter(h => !['품목코드', '품목명', '규격'].includes(h)).map(h => <div key={`m-${h}`} onClick={() => toggleMasterCol('master', h)} className={`config-chip ${visibleMasterCols['master']?.includes(h)?'active':''}`}>{h}</div>)}
+                                                </div>
+                                            </div>
+                                            <div className="bg-slate-100 p-5 rounded-xl border shadow-inner">
+                                                <div className="flex flex-col gap-1 mb-4 border-b border-slate-200 pb-3">
+                                                    <h3 className="text-[14px] font-black text-slate-800 flex items-center"><i className="fas fa-link text-indigo-500 mr-2"></i>마스터 데이터 매핑 (별칭 등록)</h3>
+                                                    <span className="text-[11px] text-slate-500 pl-6">마스터 엑셀 업로드 시 매칭될 엑셀의 열 이름(별칭)을 콤마(,)로 등록하세요.</span>
+                                                </div>
+                                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-3">
+                                                    {MASTER_HEADERS.map(h => (
+                                                        <div key={`master-map-${h}`} className="flex items-center gap-2">
+                                                            <div className="w-[85px] text-[12px] font-bold text-slate-700 truncate" title={h}>{h} {['품목코드', '품목명', '규격'].includes(h) && <i className="fas fa-lock text-[9px] opacity-50 ml-0.5"></i>}</div>
+                                                            <input type="text" value={mappings['master']?.[h] || ''} onChange={e => setMappings(p => ({...p, master: {...(p.master || {}), [h]: e.target.value}}))} placeholder={`${h} (기본값)`} className="flex-1 border border-slate-300 rounded px-2.5 py-1.5 text-[11px] outline-none focus:border-indigo-500 focus:ring-1 shadow-sm bg-white" />
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
+                                    {mappingMainTab === 'operation' && (
+                                        <>
+                                            <div className="flex gap-1.5 overflow-x-auto pb-1 shrink-0 hide-scrollbar">
+                                                {[{id:'all',l:'전체'},{id:'estimate',l:'견적'},{id:'prev',l:'재고'},{id:'in',l:'입고'},{id:'out',l:'주문'},{id:'sales',l:'판매'}].map(t => <button key={t.id} onClick={() => setMappingFileTab(t.id)} className={`px-4 py-1.5 rounded-md text-[12px] font-bold border ${mappingFileTab===t.id?'bg-indigo-600 text-white border-indigo-600':'bg-white text-slate-600'}`}>{t.id==='all'&&<i className="fas fa-layer-group mr-1"></i>}{t.l}</button>)}
+                                            </div>
+                                            {mappingFileTab === 'all' ? (
+                                                <div className="flex-1 flex flex-col gap-4">
+                                                    <div className="bg-white p-5 rounded-xl border shadow-sm">
+                                                        <h3 className="text-[14px] font-black pb-3 border-b mb-4"><span className="bg-blue-100 text-blue-700 text-[10px] px-1.5 rounded mr-2">[M]</span>마스터 대조 (가이드)</h3>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {['품목코드', '품목명', '규격'].map(h => <div key={`fm-${h}`} className="config-chip active opacity-70"><i className="fas fa-lock mr-1"></i>{h}</div>)}
+                                                            {MASTER_HEADERS.filter(h => !['품목코드', '품목명', '규격'].includes(h)).map(h => <div key={`m2-${h}`} onClick={() => toggleMasterCol('all', h)} className={`config-chip ${visibleMasterCols['all']?.includes(h)?'active':''}`}>{h}</div>)}
+                                                        </div>
+                                                    </div>
+                                                    <div className="bg-white p-5 rounded-xl border shadow-sm flex-1 flex flex-col">
+                                                        <h3 className="text-[14px] font-black pb-3 border-b mb-4"><span className="bg-indigo-100 text-indigo-700 text-[10px] px-1.5 rounded mr-2">[F]</span>대기 항목 창고</h3>
+                                                        <div className="flex flex-wrap gap-2 flex-1 items-start">
+                                                            {(allTabConfig.warehouseIds || []).map(id => {
+                                                                const p = parseAllTabId(id); if(!p || p.type === 'M') return null;
+                                                                return <div key={`wh-${id}`} onClick={() => setAllTabConfig(prev=>({activeIds:[...prev.activeIds, id], warehouseIds:prev.warehouseIds.filter(x=>x!==id)}))} className="config-chip border cursor-pointer bg-white text-slate-700 hover:border-indigo-400"><span className="font-bold">[{DOC_TYPES[p.mapKey]}] {p.field}</span></div>
+                                                            })}
+                                                            {(allTabConfig.warehouseIds || []).filter(id => id.startsWith('F_')).length === 0 && <div className="text-[12px] text-slate-400 w-full mt-2">대기 중인 파일 항목이 없습니다.</div>}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <div className="bg-white p-5 rounded-xl border shadow-sm"><h3 className="text-[14px] font-black pb-3 border-b mb-4"><span className="bg-blue-100 text-blue-700 text-[10px] px-1.5 rounded mr-2">[M]</span>마스터 대조 (가이드)</h3>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {['품목코드', '품목명', '규격'].map(h => <div key={`fm-${h}`} className="config-chip active opacity-70"><i className="fas fa-lock mr-1"></i>{h}</div>)}
+                                                            {MASTER_HEADERS.filter(h => !['품목코드', '품목명', '규격'].includes(h)).map(h => <div key={`m2-${h}`} onClick={() => toggleMasterCol(mappingFileTab, h)} className={`config-chip ${visibleMasterCols[mappingFileTab]?.includes(h)?'active':''}`}>{h}</div>)}
+                                                        </div>
+                                                    </div>
+                                                    <div className="bg-white p-5 rounded-xl border shadow-sm"><h3 className="text-[14px] font-black pb-3 border-b mb-4"><span className="bg-indigo-100 text-indigo-700 text-[10px] px-1.5 rounded mr-2">[F]</span>파일 실물 항목 추출</h3>
+                                                        <div className="flex flex-wrap gap-2.5 mb-4">
+                                                            {['품목코드', '품목명', '규격'].map(h => <div key={`fu-${h}`} className="config-chip active opacity-70"><i className="fas fa-lock mr-1"></i>{h}</div>)}
+                                                            {(visibleUploadCols[mappingFileTab]||[]).filter(h => !['품목코드', '품목명', '규격'].includes(h)).map(h => <div key={`u-${h}`} className="config-chip active border-indigo-300 bg-indigo-50 text-indigo-800"><span className="font-bold">{h}</span><button onClick={()=>setVisibleUploadCols(p=>({...p, [mappingFileTab]:p[mappingFileTab].filter(x=>x!==h)}))} className="ml-2 text-indigo-400 hover:text-rose-500"><i className="fas fa-times"></i></button></div>)}
+                                                        </div>
+                                                        <div className="flex items-center gap-2"><input type="text" value={customColInput} onChange={e=>setCustomColInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addCustomUploadCol()} placeholder="추출 항목명 입력" className="flex-1 border rounded px-3 py-1.5 text-[12px]" /><button onClick={addCustomUploadCol} className="bg-slate-800 text-white px-4 py-1.5 rounded text-[12px] font-bold">추가</button></div>
+                                                    </div>
+                                                    <div className="bg-slate-100 p-5 rounded-xl border shadow-inner"><h3 className="text-[13px] font-black mb-4"><i className="fas fa-link text-indigo-500 mr-2"></i>매핑 및 마스터 연결</h3>
+                                                        <div className="flex flex-col gap-3">
+                                                            {(visibleUploadCols[mappingFileTab]||[]).map(h => (
+                                                                <div key={`map-${h}`} className="flex items-center gap-2">
+                                                                    <div className="w-[100px] text-[12px] font-bold truncate">{h}</div>
+                                                                    <input type="text" value={mappings[mappingFileTab]?.[h]||''} onChange={e=>setMappings(p=>({...p, [mappingFileTab]:{...p[mappingFileTab], [h]:e.target.value}}))} placeholder="엑셀 키워드" className="flex-1 border rounded px-2 py-1 text-[11px]" />
+                                                                    {['품목코드', '품목명', '규격'].includes(h) ? <div className="flex-1 text-[11px] text-slate-400 bg-slate-200 px-3 py-1 rounded">기본 연결</div> : <select value={masterLinks[mappingFileTab]?.[h]||''} onChange={e=>setMasterLinks(p=>({...p, [mappingFileTab]:{...p[mappingFileTab], [h]:e.target.value}}))} className={`flex-1 border rounded px-2 py-1 text-[11px] ${masterLinks[mappingFileTab]?.[h]?'bg-indigo-50 text-indigo-700 font-bold':'bg-white'}`}><option value="">--단순 노출--</option>{MASTER_HEADERS.map(mh=><option key={mh} value={mh}>{mh}</option>)}</select>}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                                <div className="p-4 bg-slate-50 border-t shrink-0 flex justify-between z-10"><button onClick={handleResetMappings} className="text-[12px] font-bold text-slate-500"><i className="fas fa-undo mr-1"></i>초기화</button><div className="flex gap-2"><button onClick={onClose} className="px-5 py-2 bg-slate-200 rounded text-[12px] font-bold">닫기</button><button onClick={()=>{onClose();handleCloudSync('upload');}} className="px-6 py-2 bg-[#0f172a] text-white rounded text-[12px] font-bold">확정 및 동기화</button></div></div>
+                            </div>
+                            <div className="flex-1 bg-slate-200/50 p-6 overflow-hidden flex flex-col relative">
+                                <div className="bg-white border rounded-xl shadow-lg flex-1 overflow-auto custom-scrollbar">
+                                    <table className="w-full text-left text-[13px] whitespace-nowrap min-w-max">
+                                        <thead className="bg-[#f8fafc] text-slate-600 font-extrabold text-[12px]">
+                                            <tr>
+                                                <th className="sticky top-0 z-40 bg-[#f8fafc] px-4 py-3 border-b border-r w-[260px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.06)]" style={{left:0}}>상품정보</th>
+                                                {mappingMainTab === 'master' ? MASTER_HEADERS.filter(h=>!['품목코드','품목명','규격'].includes(h)).map(h => visibleMasterCols['master']?.includes(h) ? <th key={`pm-${h}`} className="sticky top-0 z-30 bg-[#eff6ff] px-3 py-3 border-r border-b text-center">{h}</th> : null) : (
+                                                    mappingFileTab === 'all' ? (allTabConfig.activeIds||[]).map((id, index) => {
+                                                        const p = parseAllTabId(id); if(!p) return null;
+                                                        return (
+                                                            <th key={`pth-${id}`} className={`sticky top-0 z-30 px-2 py-2 border-r border-b text-center pointer-events-none transition-all relative ${p.type==='M'?'bg-[#eff6ff] text-blue-800 border-blue-100':'bg-white text-slate-800 border-slate-200'} ${getCellWidthClass(p.type==='M'?p.field:(masterLinks[p.mapKey]?.[p.field]||p.field))}`}>
+                                                                <div className={`text-[9px] mb-0.5 leading-none ${p.type==='M'?'text-blue-500':'text-indigo-400'}`}>[{p.type==='M'?'통합':DOC_TYPES[p.mapKey]}]</div>
+                                                                <div>{p.type==='M'&&<span className="opacity-70 mr-1">[M]</span>}{p.field}</div>
+                                                            </th>
+                                                        );
+                                                    }) : (
+                                                        <>
+                                                            {(visibleMasterCols[mappingFileTab]||[]).map(h=><th key={`pm2-${h}`} className={`sticky top-0 z-30 bg-[#eff6ff] px-2 py-3 border-r border-b border-blue-100 text-center text-blue-800 ${getCellWidthClass(h)}`}><div className="text-[9px] mb-0.5">[{DOC_TYPES[mappingFileTab]}]</div>[M] {h}</th>)}
+                                                            {(visibleUploadCols[mappingFileTab]||[]).filter(h=>!['품목코드','품목명','규격'].includes(h)).map(h=><th key={`pu2-${h}`} className={`sticky top-0 z-30 bg-white px-2 py-2 border-r border-b border-slate-200 text-center ${getCellWidthClass(masterLinks[mappingFileTab]?.[h]||h)}`}><div className="text-[9px] text-indigo-400 mb-0.5">[{DOC_TYPES[mappingFileTab]}]</div>{h}{masterLinks[mappingFileTab]?.[h]&&<div className="text-[9px] text-rose-500 truncate">➔ {masterLinks[mappingFileTab][h]}</div>}</th>)}
+                                                        </>
+                                                    )
+                                                )}
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 text-slate-700 bg-white">
+                                            <tr className="hover:bg-slate-50 transition-colors">
+                                                <td className="sticky z-20 px-4 py-3 border-r bg-white w-[260px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.04)]" style={{left:0}}><div className="flex flex-col"><span className="text-[10px] font-mono text-indigo-500">DUMMY01</span><div className="flex items-center gap-1.5"><span className="text-[13px] font-extrabold text-slate-800">예시 상품</span><span className="text-slate-300 text-[10px]">|</span><span className="text-[11px] text-slate-500">100g</span></div></div></td>
+                                                {mappingMainTab === 'master' ? MASTER_HEADERS.filter(h=>!['품목코드','품목명','규격'].includes(h)).map(h => visibleMasterCols['master']?.includes(h) ? <td key={`pmm-${h}`} className={`px-2 py-1.5 border-r truncate text-center ${getCellWidthClass(h)}`}>-</td> : null) : (
+                                                    mappingFileTab === 'all' ? (allTabConfig.activeIds||[]).map(id => { const p = parseAllTabId(id); if(!p) return null; return <td key={`r-${id}`} className={`px-2 py-1.5 border-r border-slate-200 bg-white truncate ${getCellWidthClass(p.type==='M'?p.field:p.field)}`}>-</td>; }) : (
+                                                        <>{(visibleMasterCols[mappingFileTab]||[]).map(h=><td key={`pmr2-${h}`} className="px-2 py-1.5 border-r truncate text-center">-</td>)}{(visibleUploadCols[mappingFileTab]||[]).filter(h=>!['품목코드','품목명','규격'].includes(h)).map(h=><td key={`pue2-${h}`} className="px-2 py-1.5 border-r border-slate-200 bg-white">-</td>)}</>
+                                                    )
+                                                )}
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // ==========================================
+        // ⚙️ 메인 Application (V7.1 기준)
+        // ==========================================
+        const App = () => {
+            const [masterProducts, setMasterProducts] = useState(() => { const s = localStorage.getItem('merchMaster_v710'); return s ? JSON.parse(s) : {}; });
+            const [managedItems, setManagedItems] = useState([]);
+            const [selectedRows, setSelectedRows] = useState(new Set());
+            const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v710') || '');
+            
+            const [visibleMasterCols, setVisibleMasterCols] = useState(() => { const s = localStorage.getItem('merchVisMaster_v710'); return s ? JSON.parse(s) : getInitialVisibleMasterCols(); });
+            const [visibleUploadCols, setVisibleUploadCols] = useState(() => { const s = localStorage.getItem('merchVisUpload_v710'); return s ? JSON.parse(s) : getInitialVisibleUploadCols(); });
+            const [mappings, setMappings] = useState(() => { const s = localStorage.getItem('merchMappings_v710'); return s ? JSON.parse(s) : getInitialMappings(); });
+            const [masterLinks, setMasterLinks] = useState(() => { const s = localStorage.getItem('merchMasterLinks_v710'); return s ? JSON.parse(s) : getInitialMasterLinks(); });
+            const [allTabConfig, setAllTabConfig] = useState(() => { const s = localStorage.getItem('merchAllTabConfig_v710'); return s && JSON.parse(s).activeIds ? JSON.parse(s) : { activeIds: [], warehouseIds: [] }; });
+
+            const dragItemRef = useRef(null);
+            const dragOverItemRef = useRef(null);
+            const [draggingIdx, setDraggingIdx] = useState(null); 
+
+            const [sideTab, setSideTab] = useState('manage'); 
+            const [debouncedSearch, setDebouncedSearch] = useState(''); 
+            
+            const [showSettings, setShowSettings] = useState(false);
+            const [showExportModal, setShowExportModal] = useState(false); 
+            const [alertMsg, setAlertMsg] = useState('');
+            const [toastMsg, setToastMsg] = useState('');
+            const [mappingMainTab, setMappingMainTab] = useState('master');
+            const [mappingFileTab, setMappingFileTab] = useState('all');
+            const [activeSources, setActiveSources] = useState([]);
+            
+            const sourceKeyMap = { '견적': 'estimate', '재고': 'prev', '입고': 'in', '주문': 'out', '판매': 'sales' };
+            const activeProfileKey = activeSources.length > 0 ? sourceKeyMap[activeSources[0]] : 'estimate';
+            
+            // 데이터 존재 여부 판단 (초기 상태 확인용)
+            const isMasterEmpty = Object.keys(masterProducts).length === 0;
+
+            useEffect(() => {
+                const handleGlobalF7 = (e) => {
+                    if (e.key === 'F7') {
+                        e.preventDefault(); 
+                        if (sideTab === 'estimate') setShowExportModal(true);
+                    }
+                };
+                window.addEventListener('keydown', handleGlobalF7);
+                return () => window.removeEventListener('keydown', handleGlobalF7);
+            }, [sideTab]);
+
+            useEffect(() => localStorage.setItem('merchMaster_v710', JSON.stringify(masterProducts)), [masterProducts]);
+            useEffect(() => localStorage.setItem('merchVisMaster_v710', JSON.stringify(visibleMasterCols)), [visibleMasterCols]);
+            useEffect(() => localStorage.setItem('merchVisUpload_v710', JSON.stringify(visibleUploadCols)), [visibleUploadCols]);
+            useEffect(() => localStorage.setItem('merchMappings_v710', JSON.stringify(mappings)), [mappings]);
+            useEffect(() => localStorage.setItem('merchMasterLinks_v710', JSON.stringify(masterLinks)), [masterLinks]);
+            useEffect(() => localStorage.setItem('merchAllTabConfig_v710', JSON.stringify(allTabConfig)), [allTabConfig]);
+            useEffect(() => localStorage.setItem('merchCloudUrl_v710', cloudUrl), [cloudUrl]);
+
+            useEffect(() => {
+                setAllTabConfig(prev => {
+                    const currentPool = new Set();
+                    const mSet = new Set(visibleMasterCols['all'] || []);
+                    mSet.forEach(h => currentPool.add(`M_${h}`));
+                    ['estimate', 'prev', 'in', 'out', 'sales'].forEach(tab => {
+                        (visibleUploadCols[tab] || []).forEach(h => { if (!['품목코드', '품목명', '규격'].includes(h)) currentPool.add(`F_${tab}_${h}`); });
+                    });
+
+                    let newActive = (prev.activeIds || []).filter(id => currentPool.has(id));
+                    let newWarehouse = (prev.warehouseIds || []).filter(id => currentPool.has(id) && id.startsWith('F_'));
+                    const knownItems = new Set([...newActive, ...newWarehouse]);
+                    currentPool.forEach(id => { if (!knownItems.has(id)) newActive.push(id); });
+
+                    if (JSON.stringify(newActive) !== JSON.stringify(prev.activeIds) || JSON.stringify(newWarehouse) !== JSON.stringify(prev.warehouseIds)) {
+                        return { activeIds: newActive, warehouseIds: newWarehouse };
+                    }
+                    return prev;
+                });
+            }, [visibleMasterCols, visibleUploadCols]);
+
+            const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
+
+            const toggleMasterCol = useCallback((tabId, header) => {
+                setVisibleMasterCols(prev => {
+                    const list = prev[tabId] || [];
+                    return { ...prev, [tabId]: list.includes(header) ? list.filter(h => h !== header) : [...list, header] };
+                });
+            }, []);
+
+            const onDragStart = (e, index) => {
+                dragItemRef.current = index;
+                setDraggingIdx(index);
+                e.dataTransfer.effectAllowed = "move";
+            };
+
+            const onDragEnter = (e, index) => {
+                e.preventDefault();
+                dragOverItemRef.current = index;
+                if (dragItemRef.current !== null && dragOverItemRef.current !== null && dragItemRef.current !== dragOverItemRef.current) {
+                    setAllTabConfig(prev => {
+                        const n = [...prev.activeIds];
+                        const draggedItem = n[dragItemRef.current];
+                        n.splice(dragItemRef.current, 1);
+                        n.splice(dragOverItemRef.current, 0, draggedItem);
+                        return { ...prev, activeIds: n };
+                    });
+                    dragItemRef.current = dragOverItemRef.current; 
+                    setDraggingIdx(dragOverItemRef.current);
+                }
+            };
+
+            const onDragEnd = () => {
+                dragItemRef.current = null;
+                dragOverItemRef.current = null;
+                setDraggingIdx(null);
+            };
+
+            const handleFileUpload = async (e, expectedType) => {
+                const files = Array.from(e.target.files);
+                if (files.length === 0) return;
+                if (!window.XLSX) return setAlertMsg("엑셀 파서 라이브러리 로드 대기중입니다.");
+
+                try {
+                    let newMaster = { ...masterProducts }; let newManaged = [...managedItems]; let totalCount = 0;
+                    for (const file of files) {
+                        let mapKey = expectedType;
+                        if (!mapKey) {
+                            const foundNameKey = Object.keys(sourceKeyMap).find(k => file.name.includes(k));
+                            if (foundNameKey) mapKey = sourceKeyMap[foundNameKey];
+                            else if (file.name.includes('마스터') || file.name.includes('상품정보') || file.name.includes('품목') || file.name.includes('상품') || file.name.includes('단가')) mapKey = 'master';
+                        }
+                        if (!mapKey) { setAlertMsg(`[${file.name}] 인식 불가. 파일명에 키워드를 포함해주세요.`); continue; }
+
+                        const data = await parseExcelRobust(file);
+                        if (mapKey !== 'master' && data.length > 0) {
+                            const headers = Object.keys(data[0]); const curMap = mappings[mapKey] || {};
+                            const keywordsToMatch = Object.keys(curMap).filter(k => !['품목코드', '품목명', '규격'].includes(k)).map(k => curMap[k].split(',')[0].trim().replace(/\s/g, '')).filter(kw => kw);
+                            if (keywordsToMatch.length > 0) {
+                                const matchCount = keywordsToMatch.filter(kw => headers.some(h => String(h).replace(/\s/g, '').includes(kw))).length;
+                                if ((matchCount / keywordsToMatch.length) * 100 < 30) {
+                                    setAlertMsg(`🚨 신규 양식 감지됨 ([${file.name}] 일치율 30% 미만). 매핑을 확인하세요.`);
+                                    setShowSettings(true); setMappingMainTab('operation'); setMappingFileTab(mapKey); e.target.value = ''; return; 
+                                }
+                            }
+                        }
+
+                        data.forEach(row => {
+                            const code = extractValue(row, (mappings[mapKey] || {})['품목코드'] || '품목코드');
+                            if (!code || String(code).replace(/\s/g, '').includes('출력')) return;
+                            
+                            if (mapKey === 'master') {
+                                if (!newMaster[code]) newMaster[code] = { 코드: code };
+                                const curMasterMap = mappings['master'] || {};
+                                MASTER_HEADERS.forEach(h => {
+                                    const mappingStr = curMasterMap[h] || h;
+                                    let val = extractValue(row, mappingStr);
+                                    if (val !== undefined && val !== '') newMaster[code][h] = NUMERIC_HEADERS.includes(h) ? parseNum(val) : val;
+                                });
+                            } else {
+                                let mItem = newManaged.find(m => m.코드 === code);
+                                if (!mItem) { mItem = { 코드: code, sources: {}, finalData: {} }; newManaged.push(mItem); }
+                                if (!mItem.sources[mapKey]) mItem.sources[mapKey] = {};
+                                
+                                mItem.sources[mapKey]['품목명'] = extractValue(row, (mappings[mapKey] || {})['품목명'] || '품목명');
+                                mItem.sources[mapKey]['규격'] = extractValue(row, (mappings[mapKey] || {})['규격'] || '규격');
+                                mItem.sources[mapKey]['구매처'] = extractValue(row, (mappings[mapKey] || {})['구매처'] || '구매처');
+                                
+                                Object.keys(mappings[mapKey] || {}).forEach(h => {
+                                    const mappingStr = (mappings[mapKey] || {})[h];
+                                    if (mappingStr && !['품목코드', '품목명', '규격', '구매처'].includes(h)) {
+                                        const val = extractValue(row, mappingStr);
+                                        if (val !== '') {
+                                            const isNumeric = NUMERIC_HEADERS.includes(masterLinks[mapKey]?.[h]) || NUMERIC_HEADERS.includes(h);
+                                            mItem.sources[mapKey][h] = isNumeric ? parseNum(val) : val;
+                                            if (mItem.finalData[h] === undefined) mItem.finalData[h] = isNumeric ? parseNum(val) : val;
+                                        }
+                                    }
+                                });
+                            }
+                            totalCount++;
+                        });
+                        if (mapKey !== 'master') { setSideTab('estimate'); setActiveSources([Object.keys(sourceKeyMap).find(key => sourceKeyMap[key] === mapKey) || '견적']); }
+                    }
+                    setMasterProducts(newMaster); setManagedItems(newManaged);
+                    if(totalCount > 0) showToast(`✅ 데이터 병합 완료 (${totalCount}건)`);
+                } catch(error) { setAlertMsg("❌ 파싱 오류 발생. 매핑 설정을 확인하세요."); }
+                finally { e.target.value = ''; }
+            };
+
+            const handleResetMappings = () => {
+                if(window.confirm("모든 설정이 초기화됩니다. 계속하시겠습니까?")) {
+                    setMappings(getInitialMappings()); setMasterLinks(getInitialMasterLinks());
+                    setVisibleMasterCols(getInitialVisibleMasterCols()); setVisibleUploadCols(getInitialVisibleUploadCols());
+                    setAllTabConfig({ activeIds: [], warehouseIds: [] }); showToast("✅ 설정이 초기화되었습니다.");
+                }
+            };
+
+            const handleCloudSync = async (type) => {
+                if (!cloudUrl) return setAlertMsg("매핑센터에서 Google Sheets 연동 URL을 설정해주세요.");
+                showToast(`클라우드 ${type === 'upload' ? '전송' : '불러오기'} 시작...`);
+                try {
+                    if (type === 'upload') {
+                        const payload = { type: "save", config: { masterCols: visibleMasterCols, uploadCols: visibleUploadCols, mappings, masterLinks, allTabConfig }, data: masterProducts };
+                        const res = await fetch(cloudUrl, { method: 'POST', body: JSON.stringify(payload) });
+                        if (!res.ok) throw new Error("Network Error"); showToast('✅ 클라우드 저장 성공');
+                    } else {
+                        const res = await fetch(cloudUrl, { method: 'GET' });
+                        if (!res.ok) throw new Error("Network Error");
+                        const result = await res.json();
+                        if (result.config) {
+                            if(result.config.masterCols) setVisibleMasterCols(result.config.masterCols);
+                            if(result.config.uploadCols) setVisibleUploadCols(result.config.uploadCols);
+                            if(result.config.mappings) setMappings(result.config.mappings);
+                            if(result.config.masterLinks) setMasterLinks(result.config.masterLinks);
+                            if(result.config.allTabConfig) setAllTabConfig(result.config.allTabConfig);
+                        }
+                        if (result.data) setMasterProducts(result.data); showToast('✅ 클라우드 불러오기 성공');
+                    }
+                } catch (error) { setAlertMsg("통신 오류 발생. URL을 확인하세요."); }
+            };
+
+            const handleCommitToMaster = () => {
+                if (selectedRows.size === 0) return showToast('⚠️ 반영할 항목을 선택해주세요.');
+                let newMaster = { ...masterProducts }, commitCount = 0;
+                selectedRows.forEach(code => {
+                    const item = managedItems.find(m => m.코드 === code);
+                    if (!item) return;
+                    if (!newMaster[item.코드]) newMaster[item.코드] = { 코드: item.코드 };
+                    if (item.finalData) {
+                        Object.keys(item.finalData).forEach(field => {
+                            const linked = masterLinks[activeProfileKey]?.[field] || (MASTER_HEADERS.includes(field) ? field : null);
+                            if (linked && item.finalData[field] !== undefined && item.finalData[field] !== '' && item.finalData[field] !== '오류') {
+                                newMaster[item.코드][linked] = NUMERIC_HEADERS.includes(linked) ? Number(item.finalData[field]) : item.finalData[field];
+                            }
+                        });
+                    }
+                    commitCount++;
+                });
+                setMasterProducts(newMaster); setSelectedRows(new Set()); showToast(`✅ ${commitCount}건 업데이트 완료.`);
+            };
+
+            const displayRows = useMemo(() => {
+                let list = sideTab === 'manage' ? Object.values(masterProducts) : managedItems;
+                let isVendorSearch = false; // 검색어가 거래처명과 일치하는지 여부 확인
+
+                if (debouncedSearch) {
+                    const q = debouncedSearch.toLowerCase();
+                    list = list.filter(i => {
+                        const mItem = masterProducts[i.코드] || {};
+                        const codeStr = String(i.코드 || '').toLowerCase();
+                        
+                        let matched = false;
+                        if (codeStr.includes(q)) matched = true;
+
+                        if (sideTab === 'manage') {
+                            const mName = String(mItem['품목명'] || mItem['품명'] || '').toLowerCase();
+                            const mVendor = String(mItem['구매처'] || '').toLowerCase();
+                            if (mVendor.includes(q)) { isVendorSearch = true; matched = true; }
+                            if (mName.includes(q)) matched = true;
+                        } else {
+                            const sourcesToCheck = activeSources.length > 0 ? [sourceKeyMap[activeSources[0]]] : ['estimate', 'prev', 'in', 'out', 'sales'];
+                            for (let key of sourcesToCheck) {
+                                const src = i.sources?.[key] || {};
+                                const sName = String(src['품목명'] || mItem['품목명'] || '').toLowerCase();
+                                const sVendor1 = String(src['구매처'] || '').toLowerCase();
+                                const sVendor2 = String(src['거래처명'] || '').toLowerCase();
+                                
+                                if (sVendor1.includes(q) || sVendor2.includes(q)) {
+                                    isVendorSearch = true; // 거래처명 검색으로 간주
+                                    matched = true;
+                                }
+                                if (sName.includes(q)) matched = true;
+                            }
+                        }
+                        return matched;
+                    });
+                }
+
+                return list.sort((a, b) => {
+                    // 전체상품 보기가 아니고, 거래처명으로 검색되었을 경우 정렬순서(적요2) 우선 적용
+                    if (sideTab !== 'manage' && debouncedSearch && isVendorSearch) {
+                        const getSortVal = (item) => {
+                            const mItem = masterProducts[item.코드] || {};
+                            const srcKey = activeSources.length > 0 ? sourceKeyMap[activeSources[0]] : 'estimate';
+                            let v = item.finalData?.['정렬순서'];
+                            if (v === undefined || v === '') v = item.sources?.[srcKey]?.['정렬순서'];
+                            if (v === undefined || v === '') v = mItem['정렬순서'];
+                            return (v !== undefined && v !== '') ? Number(v) : 999999;
+                        };
+                        
+                        const sortA = getSortVal(a);
+                        const sortB = getSortVal(b);
+                        
+                        if (sortA !== sortB) return sortA - sortB;
+                    }
+
+                    // 기본 정렬: 품목코드 순 (전체상품이거나 거래처명 검색이 아닐 때)
+                    const cA = String(a.코드 || ''), cB = String(b.코드 || '');
+                    if (cA.substring(0, 6) !== cB.substring(0, 6)) return cA.substring(0, 6).localeCompare(cB.substring(0, 6));
+                    return (parseInt(cA.substring(6), 10) || 0) - (parseInt(cB.substring(6), 10) || 0);
+                });
+            }, [masterProducts, managedItems, sideTab, debouncedSearch, activeSources]);
+
+            const currentExportKey = activeSources.length === 0 ? 'all' : activeProfileKey;
+            const currentExportTitle = activeSources.length === 0 ? '전체 (통합)' : DOC_TYPES[currentExportKey];
+
+            const formatPrice = (val) => {
+                if (val === "오류") return "오류";
+                const num = Number(String(val).replace(/,/g, '')) || 0;
+                return num > 0 ? num : '';
+            };
+
+            const hasValidPrice = (inVal, outVal) => {
+                return inVal === "오류" || outVal === "오류" || (Number(String(inVal).replace(/,/g, '')) > 0) || (Number(String(outVal).replace(/,/g, '')) > 0);
+            };
+
+            const executeExport = (option) => {
+                if (displayRows.length === 0) return setAlertMsg("내보낼 데이터가 없습니다.");
+                setShowExportModal(false);
+
+                if (option.type === 'excel') {
+                    showToast(`⏳ [${option.title}] 생성을 준비 중입니다...`);
+                    setTimeout(() => {
+                        if (option.id === 'est_erp') {
+                            let exportData = [];
+                            exportData.push([
+                                '품목코드', '입고가', '0', '출고가', '0', 'B단가', 'n', 
+                                'A판매', 'n', 'B판매', 'n', '입고가', 'n', '지시사항', 'n', '1'
+                            ]);
+
+                            const createRowArr = (code, inPrice, outPrice, bPrice='', aSale='', bSale='', finalPrice='', instruction='') => {
+                                if (!code) return null;
+                                const outIn = formatPrice(inPrice);
+                                const outOut = formatPrice(outPrice);
+                                const outFinal = formatPrice(finalPrice) || outIn;
+
+                                return [
+                                    code, outIn, '0', outOut, '0', 
+                                    bPrice !== '' && bPrice !== undefined ? bPrice : '', 'n', 
+                                    aSale !== '' && aSale !== undefined ? aSale : '', 'n', 
+                                    bSale !== '' && bSale !== undefined ? bSale : '', 'n', 
+                                    outFinal, 'n', 
+                                    instruction !== '' && instruction !== undefined ? instruction : '', 'n', 
+                                    hasValidPrice(inPrice, outPrice) ? '1' : '' 
+                                ];
+                            };
+
+                            displayRows.forEach(row => {
+                                const mItem = masterProducts[row.코드] || {}; 
+                                const final = row.finalData || {}; 
+                                const source = row.sources?.[currentExportKey] || {};
+                                
+                                const pIn_raw = final['입고가'] !== undefined ? final['입고가'] : (source['입고가'] || mItem['입고가'] || '');
+                                const pIn = Number(String(pIn_raw).replace(/,/g, '')) || 0;
+                                
+                                const bPrice = final['B단가'] !== undefined ? final['B단가'] : (source['B단가'] || '');
+                                const aSale = final['A판매'] !== undefined ? final['A판매'] : (source['A판매'] || '');
+                                const bSale = final['B판매'] !== undefined ? final['B판매'] : (source['B판매'] || '');
+                                const instruction = final['지시사항'] !== undefined ? final['지시사항'] : (source['지시사항'] || '');
+
+                                let calcOut = 0;
+                                if (pIn > 0) {
+                                    const outsrc = Number(mItem['외주비'] || source['외주비']) || 0;
+                                    const exp = Number(mItem['경비'] || source['경비']) || 0;
+                                    const labor = Number(mItem['노무비'] || source['노무비']) || 0;
+                                    calcOut = Math.round(((pIn + outsrc + exp + labor) / 0.9) / 100) * 100;
+                                }
+                                
+                                const pOut = calcOut > 0 ? calcOut : (final['출고가'] !== undefined ? final['출고가'] : (source['출고가'] || mItem['출고가'] || ''));
+
+                                const pRow = createRowArr(row.코드, pIn, pOut, bPrice, aSale, bSale, pIn, instruction);
+                                if (pRow) exportData.push(pRow);
+
+                                const code1 = mItem['1종코드'] || source['1종코드'];
+                                if (code1) {
+                                    let in1 = ''; let out1 = '';
+                                    const div1 = Number(mItem['1종연산'] || source['1종연산']) || 0;
+                                    if (pIn > 0 && div1 > 0) {
+                                        in1 = Math.round(((pIn / div1) * 1.15) / 100) * 100;
+                                        out1 = Math.round((in1 / 0.85) / 100) * 100;
+                                    } else {
+                                        in1 = final['1입고'] || final['1구매'] || source['1입고'] || source['1구매'] || '';
+                                        out1 = final['1출고'] || source['1출고'] || '';
+                                        if (!in1 && !out1) in1 = "오류";
+                                    }
+                                    const row1 = createRowArr(code1, in1, out1, '', '', '', in1, '');
+                                    if (row1) exportData.push(row1);
+                                }
+
+                                const code2 = mItem['2종코드'] || source['2종코드'];
+                                if (code2) {
+                                    let in2 = ''; let out2 = '';
+                                    const div2 = Number(mItem['2종연산'] || source['2종연산']) || 0;
+                                    if (pIn > 0 && div2 > 0) {
+                                        in2 = Math.round(((pIn / div2) * 1.15) / 100) * 100;
+                                        out2 = Math.round((in2 / 0.85) / 100) * 100;
+                                    } else {
+                                        in2 = final['2입고'] || final['2구매'] || source['2입고'] || source['2구매'] || '';
+                                        out2 = final['2출고'] || source['2출고'] || '';
+                                        if (!in2 && !out2) in2 = "오류";
+                                    }
+                                    const row2 = createRowArr(code2, in2, out2, '', '', '', in2, '');
+                                    if (row2) exportData.push(row2);
+                                }
+                            });
+
+                            const ws = window.XLSX.utils.aoa_to_sheet(exportData); 
+                            const wb = window.XLSX.utils.book_new();
+                            window.XLSX.utils.book_append_sheet(wb, ws, "Sheet1"); 
+                            window.XLSX.writeFile(wb, `${option.title}_${new Date().toISOString().slice(0,10)}.xlsx`);
+
+                        } else {
+                            let exportData = [];
+                            displayRows.forEach(row => {
+                                const mItem = masterProducts[row.코드] || {}; const final = row.finalData || {}; const source = row.sources?.[currentExportKey] || {};
+                                const dName = source['품목명'] || mItem['품목명'] || ''; const dSpec = source['규격'] || mItem['규격'] || '';
+                                let rowData = {};
+                                if (option.id === 'all_erp') {
+                                    rowData = { '1코드': mItem['1코드'] || '', '2코드': mItem['2코드'] || '', '품목코드': row.코드, '품목명': dName, '규격': dSpec, '입고가(매입)': final['입고가'] || final['입고'] || mItem['입고가'] || 0, '출고가(매출)': final['A판매'] || final['출고'] || mItem['출고가'] || 0, '거래처명': source['구매처'] || source['거래처명'] || mItem['구매처'] || '' };
+                                } else if (option.id === 'est_shop') {
+                                    rowData = { '상품코드': row.코드, '상품명': dName, '옵션': dSpec, '정상가': final['A판매'] || final['출고'] || mItem['출고가'] || 0, '판매가(행사가)': final['A판매'] || final['출고'] || mItem['출고가'] || 0, '재고상태': '판매중' };
+                                } else { rowData = { '품목코드': row.코드, '품목명': dName, '규격': dSpec }; }
+                                exportData.push(rowData);
+                            });
+                            
+                            const ws = window.XLSX.utils.json_to_sheet(exportData); 
+                            const wb = window.XLSX.utils.book_new();
+                            window.XLSX.utils.book_append_sheet(wb, ws, "Sheet1"); 
+                            window.XLSX.writeFile(wb, `${option.title}_${new Date().toISOString().slice(0,10)}.xlsx`);
+                        }
+                        
+                        showToast(`✅ [${option.title}] 엑셀 다운로드가 완료되었습니다.`);
+                    }, 500);
+                } 
+                else if (option.type === 'copy') {
+                    let copyText = `[도매 단가 공지 - ${new Date().toLocaleDateString()}]\n`; let currentVendor = '';
+                    const sortedForCopy = [...displayRows].sort((a,b) => {
+                        const vendorA = (a.sources?.[currentExportKey]?.['구매처'] || a.sources?.[currentExportKey]?.['거래처명'] || masterProducts[a.코드]?.구매처 || '기타');
+                        const vendorB = (b.sources?.[currentExportKey]?.['구매처'] || b.sources?.[currentExportKey]?.['거래처명'] || masterProducts[b.코드]?.구매처 || '기타');
+                        
+                        if (vendorA !== vendorB) return vendorA.localeCompare(vendorB);
+                        
+                        // 구매처가 같을 경우 정렬순서(적요2) 기준으로 오름차순 정렬
+                        const sortA = Number(a.finalData?.['정렬순서'] || a.sources?.[currentExportKey]?.['정렬순서'] || masterProducts[a.코드]?.['정렬순서'] || 9999);
+                        const sortB = Number(b.finalData?.['정렬순서'] || b.sources?.[currentExportKey]?.['정렬순서'] || masterProducts[b.코드]?.['정렬순서'] || 9999);
+                        
+                        return sortA - sortB;
+                    });
+                    sortedForCopy.forEach(row => {
+                        const mItem = masterProducts[row.코드] || {}; const source = row.sources?.[currentExportKey] || {};
+                        const dName = source['품목명'] || mItem['품목명'] || ''; const dSpec = source['규격'] || mItem['규격'] || '';
+                        const price = row.finalData?.['A판매'] || row.finalData?.['출고'] || mItem['출고가'] || 0;
+                        const vendor = source['구매처'] || source['거래처명'] || mItem['구매처'] || '기타 거래처';
+                        if (currentVendor !== vendor) { copyText += `\n🏢 [${vendor}]\n`; currentVendor = vendor; }
+                        copyText += `- ${dName} ${dSpec ? `(${dSpec})` : ''} : ${Number(price).toLocaleString()}원\n`;
+                    });
+                    const textarea = document.createElement('textarea'); textarea.value = copyText; document.body.appendChild(textarea); textarea.select();
+                    try { document.execCommand('copy'); showToast('✅ 단가 공지 내용이 클립보드에 복사되었습니다. 카톡에 바로 붙여넣기(Ctrl+V) 하세요.'); } 
+                    catch (err) { setAlertMsg('클립보드 복사에 실패했습니다. 브라우저 설정을 확인해주세요.'); } 
+                    finally { document.body.removeChild(textarea); }
+                }
+                else if (option.type === 'print') {
+                    showToast(`⏳ [${option.title}] 생성을 준비 중입니다...`);
+                    const printWindow = window.open('', '_blank');
+                    let html = `<html><head><title>${option.title}</title><style>body { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; padding: 30px; color: #333; } .header { text-align: center; margin-bottom: 30px; } h1 { margin: 0 0 10px 0; font-size: 24px; color: #111; } p { margin: 0; font-size: 14px; color: #666; } table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; } th, td { border: 1px solid #ddd; padding: 10px 8px; text-align: left; } th { background-color: #f8fafc; color: #475569; font-weight: bold; text-align: center; } td.num { text-align: right; font-weight: bold; } .cat-header { background-color: #e2e8f0; font-weight: bold; font-size: 14px; padding: 12px 8px; }</style></head><body><div class="header"><h1>${option.title}</h1><p>출력일시: ${new Date().toLocaleString()}</p></div><table><thead><tr>`;
+                    html += `<th>분류</th><th>상품코드</th><th>상품명</th><th>규격</th><th>단가(원)</th></tr></thead><tbody>`;
+                    let currentCat = '';
+                    displayRows.forEach(row => {
+                        const mItem = masterProducts[row.코드] || {}; const dName = row.sources?.[currentExportKey]?.['품목명'] || mItem['품목명'] || ''; const dSpec = row.sources?.[currentExportKey]?.['규격'] || mItem['규격'] || '';
+                        const price = row.finalData?.['A판매'] || row.finalData?.['출고'] || mItem['출고가'] || 0;
+                        const cat = mItem['1그룹명'] ? `${mItem['1그룹명']} > ${mItem['2그룹명']||''}` : '기타 분류';
+                        if (currentCat !== cat && option.id !== 'prev_check') { html += `<tr><td colspan="5" class="cat-header">${cat}</td></tr>`; currentCat = cat; }
+                        html += `<tr><td>${cat}</td><td>${row.코드}</td><td>${dName}</td><td>${dSpec}</td><td class="num">${Number(price).toLocaleString()}</td></tr>`;
+                    });
+                    html += `</tbody></table></body></html>`; printWindow.document.write(html); printWindow.document.close(); printWindow.focus(); setTimeout(() => { printWindow.print(); }, 500); 
+                }
+            };
+
+            const toggleAllRows = () => {
+                const allSelected = displayRows.length > 0 && displayRows.every(row => selectedRows.has(row.코드));
+                if (allSelected) {
+                    const next = new Set(selectedRows);
+                    displayRows.forEach(row => next.delete(row.코드));
+                    setSelectedRows(next);
+                } else { 
+                    const next = new Set(selectedRows); 
+                    displayRows.forEach(row => next.add(row.코드)); 
+                    setSelectedRows(next); 
+                }
+            };
+
+            const renderUploadEditableCell = (row, idx, field, activeProfile, keyPrefix) => {
+                const linkedMasterField = masterLinks[activeProfile]?.[field];
+                const isNumeric = NUMERIC_HEADERS.includes(linkedMasterField) || NUMERIC_HEADERS.includes(field);
+                const val = row.finalData?.[field] !== undefined ? row.finalData[field] : (row.sources?.[activeProfile]?.[field] || '');
+                const mVal = linkedMasterField ? masterProducts[row.코드]?.[linkedMasterField] : undefined;
+                const isDiff = linkedMasterField && mVal !== undefined && val !== '' && String(mVal) !== String(val) && isNumeric;
+
+                const displayVal = val === "오류" ? "오류" : val;
+                const inputType = val === "오류" || !isNumeric ? "text" : "number";
+
+                const handleKeyDown = (e) => {
+                    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(e.key)) {
+                        const currentRowInputs = Array.from(document.querySelectorAll(`input.cell-input[data-row="${idx}"]`));
+                        const currentIndex = currentRowInputs.indexOf(e.target);
+                        if (e.key === 'ArrowLeft') {
+                            let move = true; if (e.target.type !== 'number') move = e.target.selectionStart === 0;
+                            if (move) { e.preventDefault(); if (currentIndex > 0) { currentRowInputs[currentIndex - 1].focus(); currentRowInputs[currentIndex - 1].select(); } }
+                        }
+                        if (e.key === 'ArrowRight') {
+                            let move = true; if (e.target.type !== 'number') move = e.target.selectionEnd === e.target.value.length;
+                            if (move) { e.preventDefault(); if (currentIndex < currentRowInputs.length - 1) { currentRowInputs[currentIndex + 1].focus(); currentRowInputs[currentIndex + 1].select(); } }
+                        }
+                        if (e.key === 'ArrowUp') {
+                            e.preventDefault(); const prevRowInputs = Array.from(document.querySelectorAll(`input.cell-input[data-row="${idx - 1}"]`));
+                            if (prevRowInputs[currentIndex]) { prevRowInputs[currentIndex].focus(); prevRowInputs[currentIndex].select(); }
+                        }
+                        if (e.key === 'ArrowDown') {
+                            e.preventDefault(); const nextRowInputs = Array.from(document.querySelectorAll(`input.cell-input[data-row="${idx + 1}"]`));
+                            if (nextRowInputs[currentIndex]) { nextRowInputs[currentIndex].focus(); nextRowInputs[currentIndex].select(); }
+                        }
+                        if (e.key === 'Enter') {
+                            e.preventDefault(); const nextRowInputs = Array.from(document.querySelectorAll(`input.cell-input[data-row="${idx + 1}"]`));
+                            if (nextRowInputs.length > 0) {
+                                const firstNum = nextRowInputs.find(el => el.dataset.numeric === 'true');
+                                if (firstNum) { firstNum.focus(); firstNum.select(); } else { nextRowInputs[0].focus(); nextRowInputs[0].select(); }
+                            }
+                        }
+                    }
+                };
+
+                const handleChange = (e) => {
+                    const n = [...managedItems];
+                    const targetIdx = n.findIndex(m => m.코드 === row.코드);
+                    if (targetIdx > -1) {
+                        n[targetIdx].finalData[field] = e.target.value;
+                        setManagedItems(n);
+                    }
+                };
+
+                return (
+                    <td key={keyPrefix} className={`px-1 py-1 border-r border-slate-200 ${getCellWidthClass(linkedMasterField || field)} ${isDiff ? 'bg-amber-50/30' : 'bg-white'}`}>
+                        <input type={inputType} className={`cell-input w-full bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-1 rounded px-1.5 py-1 text-[12px] outline-none ${isNumeric ? 'text-right font-bold' : 'truncate'} ${isDiff || displayVal === '오류' ? 'text-indigo-700' : ''}`}
+                            value={displayVal} placeholder={mVal || ''} data-row={idx} data-numeric={isNumeric}
+                            onChange={handleChange} 
+                            onKeyDown={handleKeyDown} onFocus={(e) => e.target.select()} onClick={(e) => e.target.select()} onWheel={(e) => e.target.blur()}
+                        />
+                    </td>
+                );
+            };
+
+            const removeHeaderFromTable = (id) => {
+                const p = parseAllTabId(id);
+                if (p && p.type === 'M') setVisibleMasterCols(prev => ({...prev, all: (prev.all || []).filter(h => h !== p.field)}));
+                else setAllTabConfig(prev => ({activeIds: prev.activeIds.filter(x => x !== id), warehouseIds: [...prev.warehouseIds, id]}));
+            };
+
+            return (
+                <div className="h-screen w-full bg-slate-100 flex justify-center overflow-hidden font-sans">
+                    <style>{`
+                        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+                        body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f1f5f9; overflow: hidden; }
+                        ::-webkit-scrollbar { width: 8px; height: 8px; } ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+                        .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; }
+                        .fade-in { animation: fadeIn 0.3s ease-out; } @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+                        .config-chip { cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 6px 14px; background: #fff; border: 1px solid #e2e8f0; border-radius: 9999px; font-size: 12px; }
+                        .config-chip.active { background: #e0e7ff; border-color: #818cf8; color: #4338ca; font-weight: 600; }
+                        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+                    `}</style>
+                    
+                    {alertMsg && <div className="fixed top-6 z-[999] bg-slate-800 text-white px-6 py-4 rounded-xl shadow-2xl flex items-start gap-3 fade-in text-sm font-bold border border-slate-700"><i className="fas fa-exclamation-circle text-rose-400 text-lg mt-0.5"></i><span className="whitespace-pre-line leading-relaxed">{alertMsg}</span><button onClick={() => setAlertMsg('')} className="ml-4"><i className="fas fa-times text-slate-400 hover:text-white"></i></button></div>}
+                    {toastMsg && <div className="fixed bottom-6 right-6 z-[1000] bg-slate-800 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in text-sm font-bold border border-slate-700"><i className="fas fa-check-circle text-emerald-400"></i>{toastMsg}</div>}
+
+                    <div className="w-full max-w-[1280px] h-full flex flex-col bg-slate-50 shadow-2xl overflow-hidden mx-auto">
+                        <div className="shrink-0 flex flex-col bg-white border-b border-slate-200 z-40">
+                            <div className="p-5 pb-0 pt-6">
+                                <div className="bg-[#0f172a] rounded-xl shadow-lg border border-slate-800 flex flex-col overflow-hidden">
+                                    <div className="px-5 py-3 flex justify-between items-center border-b border-slate-800/80 bg-[#0b1120] gap-5">
+                                        <div className="flex items-center group shrink-0">
+                                            <span className="text-xl font-black text-indigo-400 mr-3">ONEAPP</span>
+                                            <div className="flex flex-col border-l-2 border-slate-700 pl-3">
+                                                <span className="text-[14px] font-black text-slate-200 leading-none mb-0.5">MerchOps</span>
+                                                <span className="text-[9px] font-extrabold text-slate-500 tracking-widest">V7.2 Export Engine</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <SystemConsole itemCount={Object.keys(masterProducts).length} />
+
+                                        <nav className="flex gap-2 text-[12px] font-bold shrink-0">
+                                            <label className={`cursor-pointer px-4 py-1.5 rounded flex items-center shadow-sm transition-all duration-300 border ${isMasterEmpty ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10 shadow-[0_0_6px_rgba(16,185,129,0.15)]' : 'text-slate-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500'}`}>
+                                                <i className={`fas fa-file-excel mr-1.5 ${isMasterEmpty ? '' : 'opacity-70'}`}></i>상품 등록
+                                                <input type="file" className="hidden" onChange={(e) => handleFileUpload(e, 'master')} multiple />
+                                            </label>
+                                            <button onClick={() => handleCloudSync('load')} className={`px-4 py-1.5 rounded flex items-center shadow-sm transition-all duration-300 border ${isMasterEmpty ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10 shadow-[0_0_6px_rgba(16,185,129,0.15)]' : 'text-slate-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-400 hover:border-emerald-500/50'}`}>
+                                                <i className={`fas fa-cloud-download-alt mr-1.5 ${isMasterEmpty ? '' : 'opacity-70'}`}></i>불러오기
+                                            </button>
+                                            <button onClick={() => handleCloudSync('upload')} className="text-slate-400 bg-[#0f172a] border border-slate-700 px-4 py-1.5 rounded flex items-center shadow-sm hover:bg-[#1e293b] hover:text-emerald-400 hover:border-emerald-500/50 transition-colors">
+                                                <i className="fas fa-cloud-upload-alt mr-1.5 opacity-70"></i>전송하기
+                                            </button>
+                                            <button onClick={() => { setShowSettings(true); setMappingMainTab('master'); }} className="text-slate-400 bg-[#0f172a] border border-slate-700 px-3 py-1.5 rounded flex items-center justify-center shadow-sm ml-1 hover:bg-[#1e293b] hover:text-indigo-400 hover:border-indigo-500/50 transition-colors w-[110px] whitespace-nowrap shrink-0">
+                                                <i className="fas fa-cogs mr-1.5 opacity-70"></i>매핑센터
+                                            </button>
+                                        </nav>
+                                    </div>
+                                    <div className="px-5 py-3.5 flex items-center overflow-x-auto hide-scrollbar bg-[#1e293b] border-t border-slate-700 transition-all">
+                                        <span className="text-[11px] font-bold text-slate-400 mr-4 shrink-0"><i className="fas fa-filter mr-1.5"></i>업로드:</span>
+                                        <div className="flex gap-3 items-center fade-in flex-1 pr-6">
+                                            <FileBox title="1. 재고" icon="fa-boxes" expectedType="prev" onUpload={handleFileUpload} />
+                                            <i className="fas fa-chevron-right text-slate-500 text-[10px] shrink-0"></i>
+                                            <FileBox title="2. 입고" icon="fa-truck-loading" expectedType="in" onUpload={handleFileUpload} />
+                                            <i className="fas fa-chevron-right text-slate-500 text-[10px] shrink-0"></i>
+                                            <FileBox title="3. 주문" icon="fa-clipboard-list" expectedType="out" onUpload={handleFileUpload} />
+                                            <i className="fas fa-chevron-right text-slate-500 text-[10px] shrink-0"></i>
+                                            <FileBox title="4. 판매" icon="fa-chart-line" expectedType="sales" onUpload={handleFileUpload} />
+                                        </div>
+                                        <div className="shrink-0 w-[110px] flex justify-center ml-1">
+                                            <button onClick={() => { setManagedItems([]); setSelectedRows(new Set()); showToast('작업 내역이 초기화되었습니다.'); }} className="text-slate-300 hover:text-white text-[12px] font-bold underline underline-offset-4 decoration-slate-500 hover:decoration-white transition-colors whitespace-nowrap"><i className="fas fa-eraser mr-1.5"></i>초기화</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="px-5 pt-4 pb-3 flex justify-between items-center h-[72px]">
+                                <div className="flex gap-4 items-center h-10">
+                                    <div className="flex bg-slate-100 rounded-lg p-1 border border-slate-200 h-full shadow-sm">
+                                        <button onClick={() => { setSideTab('manage'); setActiveSources([]); }} className={`px-5 rounded-md text-[13px] font-bold ${sideTab === 'manage' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`}>전체상품</button>
+                                        <button onClick={() => setSideTab('estimate')} className={`px-5 rounded-md text-[13px] font-bold ${sideTab === 'estimate' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500'}`}>관리상품</button>
+                                    </div>
+                                    {sideTab === 'estimate' && (
+                                        <div className="flex items-center gap-1 pl-4 border-l border-slate-300 h-full fade-in">
+                                            <button onClick={() => setActiveSources([])} className={`px-4 h-full rounded-md text-[12px] font-bold mx-0.5 ${activeSources.length === 0 ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>전체 (통합)</button>
+                                            {Object.keys(sourceKeyMap).map(src => (
+                                                <button key={src} onClick={() => setActiveSources([src])} className={`px-4 h-full rounded-md text-[12px] font-bold mx-0.5 ${activeSources.includes(src) ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}>{src}</button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="flex items-center gap-3 h-10">
+                                    {sideTab === 'manage' && (
+                                        <div className="flex gap-2 mr-2 fade-in">
+                                            <label className="cursor-pointer h-full px-4 py-2 rounded-lg text-[13px] font-bold bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 shadow-sm transition-colors flex items-center">
+                                                <i className="fas fa-file-invoice-dollar mr-2 text-indigo-500"></i>견적 업로드
+                                                <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e, 'estimate')} accept=".xlsx, .xls, .csv" />
+                                            </label>
+                                            <button onClick={() => showToast('스마트 텍스트 파서 기능 준비중입니다.')} className="h-full px-4 py-2 rounded-lg text-[13px] font-bold bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 shadow-sm transition-colors flex items-center">
+                                                ⚡ 텍스트
+                                            </button>
+                                        </div>
+                                    )}
+                                    {sideTab === 'estimate' && (
+                                        <>
+                                            <button onClick={handleCommitToMaster} className={`h-full px-6 rounded-lg text-[13px] font-black shadow-sm ${selectedRows.size > 0 ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 border opacity-70'}`}><i className="fas fa-check mr-2"></i>완료</button>
+                                            <button onClick={() => setShowExportModal(true)} className="h-full px-4 rounded-lg text-[13px] font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 shadow-sm transition-colors"><i className="fas fa-file-export mr-2"></i>출력 (F7)</button>
+                                        </>
+                                    )}
+                                    <SearchBar onSearch={setDebouncedSearch} />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-auto p-5 pt-0">
+                            <div className="bg-white border border-slate-200 rounded-xl shadow-sm h-full flex flex-col">
+                                <div className="flex-1 overflow-auto custom-scrollbar">
+                                    <table className="w-full text-left border-collapse text-[13px] whitespace-nowrap min-w-max relative z-0">
+                                        <thead className="text-[12px] font-extrabold">
+                                            <tr>
+                                                <th className="sticky top-0 z-40 bg-[#f5f4f0] px-3 py-2 border-b border-r border-[#e8e4db] w-[240px] min-w-[240px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.06)] text-[#5c554d]" style={{left: 0}}>
+                                                    <div className="flex items-center gap-2 pl-1">
+                                                        {sideTab === 'estimate' && <input type="checkbox" className="rounded w-3.5 h-3.5" checked={displayRows.length > 0 && displayRows.every(row => selectedRows.has(row.코드))} onChange={toggleAllRows} />}
+                                                        <span>상품정보 (코드/품명/규격)</span>
+                                                    </div>
+                                                </th>
+                                                {sideTab === 'manage' && MASTER_HEADERS.filter(h => !['품목코드', '품목명', '규격'].includes(h)).map(h => (
+                                                    (visibleMasterCols['master'] || []).includes(h) ? <th key={`m-${h}`} className={`sticky top-0 z-30 bg-[#f5f4f0] px-2 py-2 border-r border-b border-[#e8e4db] text-center text-[#5c554d] ${getCellWidthClass(h)}`}>{h}</th> : null
+                                                ))}
+                                                {sideTab === 'estimate' && (
+                                                    activeSources.length === 0 ? (allTabConfig.activeIds || []).map((id, index) => {
+                                                        const p = parseAllTabId(id); if (!p) return null;
+                                                        return (
+                                                            <th key={`h-${id}`} draggable onDragStart={(e) => onDragStart(e, index)} onDragEnter={(e) => onDragEnter(e, index)} onDragOver={e=>e.preventDefault()} onDragEnd={onDragEnd} 
+                                                                className={`sticky top-0 z-30 px-2 py-2 border-r border-b text-center cursor-grab hover:brightness-95 group transition-all relative ${draggingIdx===index?'opacity-0 scale-95':'opacity-100'} ${p.type==='M'?'bg-[#f5f4f0] text-[#5c554d] border-[#e8e4db] shadow-sm':'bg-white text-slate-800 border-slate-200'} ${getCellWidthClass(p.type==='M'?p.field:(masterLinks[p.mapKey]?.[p.field]||p.field))}`}>
+                                                                <button onClick={(e)=>{e.stopPropagation(); removeHeaderFromTable(id);}} className="absolute top-1 right-1 w-4 h-4 rounded-full bg-slate-200 hover:bg-rose-100 text-rose-500 opacity-0 group-hover:opacity-100"><i className="fas fa-times text-[9px]"></i></button>
+                                                                <div className={`text-[9px] mb-0.5 leading-none ${p.type==='M'?'text-[#8a8476] font-bold':'text-indigo-400'}`}>[{p.type==='M'?'마스터':DOC_TYPES[p.mapKey]}] <i className="fas fa-grip-lines ml-0.5 opacity-50"></i></div>
+                                                                <div>{p.type==='M'&&<span className="opacity-70 mr-1 text-[#a39d8f]">[M]</span>}{p.field}</div>
+                                                            </th>
+                                                        );
+                                                    }) : (
+                                                        <>
+                                                            {(visibleMasterCols[activeProfileKey] || []).map(h => <th key={`p-mr-${h}`} className={`sticky top-0 z-30 bg-[#f5f4f0] px-2 py-3 border-r border-b border-[#e8e4db] text-center text-[#5c554d] font-bold ${getCellWidthClass(h)}`}><div className="text-[9px] text-[#8a8476] mb-0.5">[{DOC_TYPES[activeProfileKey]}]</div><span className="text-[#a39d8f] mr-1">[M]</span>{h}</th>)}
+                                                            {(visibleUploadCols[activeProfileKey] || []).map(h => <th key={`p-ue-${h}`} className={`sticky top-0 z-30 bg-white px-2 py-2 border-r border-b border-slate-200 text-center font-bold ${getCellWidthClass(masterLinks[activeProfileKey]?.[h] || h)}`}><div className="text-[9px] text-indigo-400 mb-0.5">[{DOC_TYPES[activeProfileKey]}]</div>{h}</th>)}
+                                                        </>
+                                                    )
+                                                )}
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 text-slate-700">
+                                            {displayRows.length === 0 ? <tr><td colSpan="50" className="p-16 text-center text-slate-400 bg-white"><i className="fas fa-folder-open text-4xl mb-4 block"></i>데이터가 없습니다.</td></tr> : displayRows.map((row, idx) => {
+                                                const isSel = selectedRows.has(row.코드); 
+                                                const baseBg = sideTab === 'manage' ? 'bg-[#faf9f5]' : 'bg-white';
+                                                const hoverBg = sideTab === 'manage' ? 'hover:bg-[#f0ece1]' : 'hover:bg-slate-50';
+                                                const bg = isSel ? 'bg-indigo-50/50' : `${baseBg} ${hoverBg}`;
+                                                
+                                                const mItem = masterProducts[row.코드] || {}; 
+                                                
+                                                let uploadName = ''; let uploadSpec = '';
+                                                if (sideTab !== 'manage') {
+                                                    if (activeSources.length > 0) { 
+                                                        uploadName = row.sources?.[activeProfileKey]?.['품목명'] || ''; 
+                                                        uploadSpec = row.sources?.[activeProfileKey]?.['규격'] || ''; 
+                                                    } 
+                                                    else { 
+                                                        for(let key of ['estimate', 'prev', 'in', 'out', 'sales']) { 
+                                                            if(row.sources?.[key]?.['품목명']) { 
+                                                                uploadName = row.sources[key]['품목명']; 
+                                                                uploadSpec = row.sources[key]['규격'] || ''; 
+                                                                break; 
+                                                            } 
+                                                        } 
+                                                    }
+                                                }
+                                                const dName = sideTab === 'manage' ? (mItem.품목명||'') : (uploadName || mItem.품목명 || '[미등록]');
+                                                const dSpec = sideTab === 'manage' ? (mItem.규격||'') : (uploadSpec || mItem.규격 || '');
+
+                                                return (
+                                                    <tr key={idx} className={`group ${bg}`}>
+                                                        <td className={`sticky z-20 px-3 py-2 border-r border-[#edebe3] w-[240px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.04)] transition-colors ${isSel ? 'bg-indigo-50/50' : 'bg-[#faf9f5] group-hover:bg-[#f0ece1]'}`} style={{left: 0}}>
+                                                            <div className="flex gap-3 items-center">
+                                                                {sideTab === 'estimate' && <input type="checkbox" className="w-3.5 h-3.5 text-indigo-600 shrink-0" checked={isSel} onChange={() => { const n = new Set(selectedRows); n.has(row.코드)?n.delete(row.코드):n.add(row.코드); setSelectedRows(n); }} />}
+                                                                <div className="flex flex-col truncate w-full">
+                                                                    <span className="text-[9.5px] font-mono text-indigo-400 mb-0.5">{row.코드}</span>
+                                                                    <div className="flex items-center gap-1.5 w-full truncate">
+                                                                        <span className={`text-[13px] font-extrabold truncate ${!mItem.품목명 && !uploadName ? 'text-rose-500' : 'text-slate-800'}`}>{dName}</span>
+                                                                        {dSpec && <><span className="text-slate-300 text-[10px] shrink-0">|</span><span className="text-[11px] text-slate-500 truncate shrink-0">{dSpec}</span></>}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                        {sideTab === 'manage' && MASTER_HEADERS.filter(h => !['품목코드', '품목명', '규격'].includes(h)).map(h => (visibleMasterCols['master']||[]).includes(h) ? <td key={`r-m-${h}`} className="px-2 py-1.5 border-r border-[#edebe3] truncate text-center text-[#6b675e]">{mItem[h]||'-'}</td> : null)}
+                                                        {sideTab === 'estimate' && (
+                                                            activeSources.length === 0 ? (allTabConfig.activeIds || []).map(id => {
+                                                                const p = parseAllTabId(id); if (!p) return null;
+                                                                if (p.type === 'M') return <td key={`r-all-m-${id}`} className="px-2 border-r border-[#edebe3] bg-[#faf9f5] group-hover:bg-[#f0ece1] transition-colors text-center text-[#6b675e] truncate">{mItem[p.field]||'-'}</td>;
+                                                                return renderUploadEditableCell(row, idx, p.field, p.mapKey, `r-all-f-${id}`);
+                                                            }) : (
+                                                                <>
+                                                                    {(visibleMasterCols[activeProfileKey]||[]).map(h => <td key={`r-p-m-${h}`} className="px-2 border-r border-[#edebe3] bg-[#faf9f5] group-hover:bg-[#f0ece1] transition-colors text-center text-[#6b675e] truncate">{mItem[h]||'-'}</td>)}
+                                                                    {(visibleUploadCols[activeProfileKey]||[]).map(h => renderUploadEditableCell(row, idx, h, activeProfileKey, `r-p-f-${h}`))}
+                                                                </>
+                                                            )
+                                                        )}
+                                                    </tr>
+                                                );
+                                            })}
+                                            <tr><td colSpan="50" className="h-[200px] bg-slate-50/50 border-t border-slate-200"></td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {/* Export Modal 컴포넌트 호출 */}
+                    {showExportModal && (
+                        <ExportModal 
+                            onClose={() => setShowExportModal(false)}
+                            displayRows={displayRows}
+                            currentExportKey={currentExportKey}
+                            currentExportTitle={currentExportTitle}
+                            executeExport={executeExport}
+                        />
+                    )}
+
+                    {/* Mapping Center Modal 컴포넌트 호출 */}
+                    {showSettings && (
+                        <MappingCenterModal 
+                            onClose={() => setShowSettings(false)}
+                            cloudUrl={cloudUrl} setCloudUrl={setCloudUrl}
+                            mappingMainTab={mappingMainTab} setMappingMainTab={setMappingMainTab}
+                            mappingFileTab={mappingFileTab} setMappingFileTab={setMappingFileTab}
+                            visibleMasterCols={visibleMasterCols} toggleMasterCol={toggleMasterCol}
+                            visibleUploadCols={visibleUploadCols} setVisibleUploadCols={setVisibleUploadCols}
+                            mappings={mappings} setMappings={setMappings}
+                            masterLinks={masterLinks} setMasterLinks={setMasterLinks}
+                            allTabConfig={allTabConfig} setAllTabConfig={setAllTabConfig}
+                            handleCloudSync={handleCloudSync} handleResetMappings={handleResetMappings} showToast={showToast}
+                        />
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
