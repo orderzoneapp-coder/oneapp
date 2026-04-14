@@ -1363,50 +1363,56 @@
                     {alertMsg && <div className="fixed top-6 z-[999] bg-slate-800 text-white px-6 py-4 rounded-xl shadow-2xl flex items-start gap-3 fade-in text-sm font-bold border border-slate-700"><i className="fas fa-exclamation-circle text-rose-400 text-lg mt-0.5"></i><span className="whitespace-pre-line leading-relaxed">{alertMsg}</span><button onClick={() => setAlertMsg('')} className="ml-4"><i className="fas fa-times text-slate-400 hover:text-white"></i></button></div>}
                     {toastMsg && <div className="fixed bottom-6 right-6 z-[1000] bg-slate-800 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in text-sm font-bold border border-slate-700"><i className="fas fa-check-circle text-emerald-400"></i>{toastMsg}</div>}
 
-                    <div className="w-full max-w-[1500px] h-full flex flex-col bg-slate-50 shadow-2xl overflow-hidden mx-auto">
-                        <div className="shrink-0 flex flex-col bg-[#0f172a] border-b border-slate-800 z-40 shadow-md">
-                            {/* 1단 헤더 영역 (다크 테마) */}
-                            <div className="px-5 py-3 flex justify-between items-center border-b border-slate-800/80 bg-[#0b1120] gap-5">
-                                <div className="flex items-center group shrink-0">
-                                    <span className="text-xl font-black text-indigo-400 mr-3">ONEAPP</span>
-                                    <div className="flex flex-col border-l-2 border-slate-700 pl-3">
-                                        <span className="text-[14px] font-black text-slate-200 leading-none mb-0.5">MerchOps</span>
-                                        <span className="text-[9px] font-extrabold text-slate-500 tracking-widest">V8.4.3 PRO DARK-TIER</span>
-                                    </div>
+                    {/* 1단 헤더 영역 (다크 테마, Full Width) */}
+                    <div className="bg-[#0f172a] border-b border-slate-800 shrink-0 w-full z-50">
+                        <div className="w-full max-w-[1500px] mx-auto px-5 py-3 flex justify-between items-center gap-4">
+                            <div className="flex items-center group shrink-0">
+                                <span className="text-xl font-black text-indigo-400 mr-3">ONEAPP</span>
+                                <div className="flex flex-col border-l-2 border-slate-700 pl-3">
+                                    <span className="text-[14px] font-black text-slate-200 leading-none mb-0.5">MerchOps</span>
+                                    <span className="text-[9px] font-extrabold text-slate-500 tracking-widest">V8.4.2 PRO DARK-TIER</span>
                                 </div>
-                                
-                                <SystemConsole itemCount={Object.keys(masterProducts).length} isProcessing={isProcessing} processMsg={processMsg} viewMode={viewMode} parserState={parserState} estimateCount={Object.keys(managedItems).length} parserCount={parserBuffer.length} />
-
-                                <nav className="flex gap-2 text-[12px] font-bold shrink-0">
-                                    <label className={`cursor-pointer px-4 py-1.5 rounded flex items-center shadow-sm transition-all duration-300 border ${viewMode === 'default' && isMasterEmpty ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10 shadow-[0_0_6px_rgba(16,185,129,0.15)]' : 'text-slate-400 bg-slate-800 border-slate-700 hover:text-white hover:border-slate-500'}`}>
-                                        <i className={`fas fa-database mr-1.5 ${isMasterEmpty ? '' : 'opacity-70'}`}></i>{isProcessing ? '처리중...' : '1. 마스터 DB (엑셀)'}
-                                        <input type="file" className="hidden" onChange={(e) => {setViewMode('default'); handleFileUpload(e, 'master');}} multiple disabled={isProcessing} />
-                                    </label>
-                                    <button onClick={() => setShowSettings(true)} className={`text-slate-400 bg-slate-800 border border-slate-700 px-3 py-1.5 rounded flex items-center justify-center shadow-sm ml-1 hover:text-white hover:border-slate-500 transition-colors w-[110px] whitespace-nowrap shrink-0 ${isProcessing ? 'opacity-40 pointer-events-none' : ''}`}>
-                                        <i className="fas fa-cogs mr-1.5 opacity-70"></i>환경설정
-                                    </button>
-                                </nav>
                             </div>
                             
-                            {/* 2단 툴바 영역 (다크 테마) */}
-                            <MainToolbar state={appState} actions={appActions} />
+                            <SystemConsole itemCount={Object.keys(masterProducts).length} isProcessing={isProcessing} processMsg={processMsg} viewMode={viewMode} parserState={parserState} estimateCount={Object.keys(managedItems).length} parserCount={parserBuffer.length} />
 
-                            {/* 타겟 검색 매핑 중 알림 바 */}
-                            {viewMode === 'parser' && parserState.targetId && (
-                                <div className="px-5 pb-2.5 fade-in">
-                                    <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 px-4 py-2 rounded-lg flex items-center justify-between shadow-sm">
-                                        <div className="flex items-center gap-3">
-                                            <span className="flex items-center justify-center w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 text-xs shadow-sm"><i className="fas fa-search"></i></span>
-                                            <span className="text-[13px] font-bold">현재 <span className="text-amber-400 font-black px-1">'{parserBuffer.find(r=>r._id===parserState.targetId)?.['품목명']}'</span> 매핑을 위해 전체상품을 다중 검색 중입니다. (검색어: '{parserState.searchKey}')</span>
-                                        </div>
-                                        <button onClick={() => { setParserState({targetId:null, searchKey:''}); setGlobalSearch(''); }} className="text-xs font-bold bg-slate-800/80 border border-amber-500/30 text-amber-400 px-3 py-1.5 rounded hover:bg-amber-500/20 transition-colors">검색 취소</button>
-                                    </div>
-                                </div>
-                            )}
+                            <nav className="flex gap-2 text-[12px] font-bold shrink-0">
+                                <label className={`cursor-pointer px-4 py-1.5 rounded flex items-center shadow-sm transition-all duration-300 border ${viewMode === 'default' && isMasterEmpty ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10 shadow-[0_0_6px_rgba(16,185,129,0.15)]' : 'text-slate-400 bg-[#1e293b] border-slate-700 hover:text-white hover:border-slate-500'}`}>
+                                    <i className={`fas fa-database mr-1.5 ${isMasterEmpty ? '' : 'opacity-70'}`}></i>{isProcessing ? '처리중...' : '1. 마스터 DB (엑셀)'}
+                                    <input type="file" className="hidden" onChange={(e) => {setViewMode('default'); handleFileUpload(e, 'master');}} multiple disabled={isProcessing} />
+                                </label>
+                                <button onClick={() => setShowSettings(true)} className={`text-slate-400 bg-[#1e293b] border border-slate-700 px-3 py-1.5 rounded flex items-center justify-center shadow-sm ml-1 hover:text-white hover:border-slate-500 transition-colors w-[110px] whitespace-nowrap shrink-0 ${isProcessing ? 'opacity-40 pointer-events-none' : ''}`}>
+                                    <i className="fas fa-cogs mr-1.5 opacity-70"></i>환경설정
+                                </button>
+                            </nav>
                         </div>
+                    </div>
+                    
+                    {/* 2단 툴바 영역 (다크 테마, Full Width) */}
+                    <div className="bg-[#0f172a] border-b border-slate-800 shrink-0 w-full shadow-md z-40">
+                        <div className="w-full max-w-[1500px] mx-auto px-1">
+                            <MainToolbar state={appState} actions={appActions} />
+                        </div>
+                    </div>
 
-                        {/* 메인 컨텐츠 영역 */}
-                        <div className="flex-1 overflow-auto p-5 bg-slate-100">
+                    {/* 타겟 검색 매핑 중 알림 바 */}
+                    {viewMode === 'parser' && parserState.targetId && (
+                        <div className="bg-[#0f172a] border-b border-slate-800 fade-in w-full shrink-0 z-30">
+                            <div className="w-full max-w-[1500px] mx-auto px-5 py-2">
+                                <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 px-4 py-2 rounded-lg flex items-center justify-between shadow-sm">
+                                    <div className="flex items-center gap-3">
+                                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 text-xs shadow-sm"><i className="fas fa-search"></i></span>
+                                        <span className="text-[13px] font-bold">현재 <span className="text-amber-400 font-black px-1">'{parserBuffer.find(r=>r._id===parserState.targetId)?.['품목명']}'</span> 매핑을 위해 전체상품을 다중 검색 중입니다. (검색어: '{parserState.searchKey}')</span>
+                                    </div>
+                                    <button onClick={() => { setParserState({targetId:null, searchKey:''}); setGlobalSearch(''); }} className="text-xs font-bold bg-slate-800/80 border border-amber-500/30 text-amber-400 px-3 py-1.5 rounded hover:bg-amber-500/20 transition-colors">검색 취소</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 메인 컨텐츠 영역 */}
+                    <div className="flex-1 overflow-auto p-5">
+                        <div className="w-full max-w-[1500px] mx-auto h-full flex flex-col relative">
                             {viewMode === 'default' || (viewMode === 'parser' && parserFilter === 'matched') ? (
                                 <ExcelDataGrid state={appState} actions={appActions} />
                             ) : (
