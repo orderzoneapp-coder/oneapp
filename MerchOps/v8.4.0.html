@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - V8.4.1 Gray-Tier</title>
+    <title>ONEAPP MerchOps - V8.4.2 Contained Layout</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -355,21 +355,11 @@
 
         const SearchBar = ({ value, onChange, placeholder }) => {
             const inputRef = useRef(null);
-
-            useEffect(() => {
-                const handleGlobalKeyDown = (e) => {
-                    if (e.key === 'F3' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f')) {
-                        e.preventDefault(); if (inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
-                    }
-                };
-                window.addEventListener('keydown', handleGlobalKeyDown); return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-            }, []);
-
             return (
                 <div className="relative w-[180px] lg:w-[240px] h-9 shrink-0" onClick={() => {inputRef.current?.focus(); inputRef.current?.select();}}>
                     <input id="main-search-input" ref={inputRef} type="text" placeholder={placeholder || "검색 (F3)"} value={value} onChange={e => onChange(e.target.value)} autoComplete="off" spellCheck="false"
-                        className="w-full h-full pl-3 pr-8 py-1 bg-slate-800/50 border border-slate-700 rounded-lg text-[12px] font-bold text-slate-200 outline-none focus:border-indigo-500 focus:bg-slate-800 transition-all placeholder-slate-500 shadow-inner" />
-                    <i className="fas fa-search absolute right-3 top-2.5 text-slate-500 pointer-events-none text-[13px]"></i>
+                        className="w-full h-full pl-3 pr-8 py-1 border border-slate-300 rounded-lg text-[12px] font-bold outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-300 transition-shadow text-slate-700" />
+                    <i className="fas fa-search absolute right-3 top-2.5 text-slate-400 pointer-events-none text-[13px]"></i>
                 </div>
             );
         };
@@ -572,20 +562,20 @@
             const { setViewMode, setParserFilter, handleCommitEstimate, handleParserApply, handleExportCurrentView, setShowBriefingModal, setShowExportModal, handleGlobalSearchChange, handleReset, handleFileUpload, setShowSmartParserModal } = actions;
 
             return (
-                <div className="px-5 py-2.5 flex items-center justify-between gap-3 overflow-x-auto custom-scrollbar w-full">
+                <div className="px-5 pt-4 pb-3 flex items-center justify-between gap-3 overflow-x-auto custom-scrollbar w-full">
                     {/* 1. 좌측: 뷰어 모드 전환 (알약 토글) */}
-                    <div className="flex bg-slate-800/50 p-1 rounded-lg shrink-0 border border-slate-700/50 shadow-inner">
-                        <div className={`cursor-pointer px-4 py-1.5 rounded-md text-[12px] font-black transition-all flex items-center justify-center ${viewMode === 'default' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`} onClick={() => setViewMode('default')}>
+                    <div className="flex bg-[#e2e8f0] p-1 rounded-lg shrink-0 border border-slate-300 shadow-inner">
+                        <div className={`cursor-pointer px-4 py-1.5 rounded-md text-[13px] font-bold transition-all flex items-center justify-center ${viewMode === 'default' ? 'bg-white text-slate-800 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`} onClick={() => setViewMode('default')}>
                             <span>엑셀 뷰</span>
-                            <label className="ml-1.5 cursor-pointer text-slate-500 hover:text-indigo-400 transition-colors" title="새 엑셀 업로드" onClick={(e) => e.stopPropagation()}>
+                            <label className="ml-1.5 cursor-pointer text-slate-400 hover:text-indigo-600 transition-colors" title="새 엑셀 업로드" onClick={(e) => e.stopPropagation()}>
                                 <i className="fas fa-upload"></i>
                                 <input type="file" className="hidden" multiple onChange={(e) => { setViewMode('default'); handleFileUpload(e, 'estimate'); }} accept=".xlsx, .xls, .csv" disabled={state.isProcessing} />
                             </label>
                         </div>
                         
-                        <div className={`cursor-pointer px-4 py-1.5 rounded-md text-[12px] font-black transition-all flex items-center justify-center ${viewMode === 'parser' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`} onClick={() => setViewMode('parser')}>
+                        <div className={`cursor-pointer px-4 py-1.5 rounded-md text-[13px] font-bold transition-all flex items-center justify-center ${viewMode === 'parser' ? 'bg-white text-slate-800 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`} onClick={() => setViewMode('parser')}>
                             <span>파서 뷰</span>
-                            <button className="ml-1.5 cursor-pointer text-slate-500 hover:text-indigo-400 transition-colors" title="텍스트 파서 창 열기" onClick={(e) => { e.stopPropagation(); setShowSmartParserModal(true); }}>
+                            <button className="ml-1.5 cursor-pointer text-slate-400 hover:text-indigo-600 transition-colors" title="텍스트 파서 창 열기" onClick={(e) => { e.stopPropagation(); setShowSmartParserModal(true); }}>
                                 <i className="fas fa-plus-circle"></i>
                             </button>
                         </div>
@@ -593,10 +583,10 @@
 
                     {/* 2. 중앙: 파서 전용 필터 탭 */}
                     {viewMode === 'parser' && (
-                        <div className="flex bg-slate-800/50 p-1 rounded-lg shrink-0 border border-slate-700/50 ml-2 fade-in">
-                            <button onClick={()=>setParserFilter('matched')} className={`px-3 py-1.5 rounded-md text-[12px] font-bold transition-colors ${parserFilter==='matched' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-sm' : 'text-slate-400 hover:text-slate-200 border border-transparent'}`}>🟢 일치 ({parserBuffer.filter(r=>r._matchCode).length})</button>
-                            <button onClick={()=>setParserFilter('similar')} className={`px-3 py-1.5 rounded-md text-[12px] font-bold transition-colors ${parserFilter==='similar' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30 shadow-sm' : 'text-slate-400 hover:text-slate-200 border border-transparent'}`}>🟡 유사 ({parserBuffer.filter(r=>!r._matchCode && r._matchStatus.includes('유사')).length})</button>
-                            <button onClick={()=>setParserFilter('unmatched')} className={`px-3 py-1.5 rounded-md text-[12px] font-bold transition-colors ${parserFilter==='unmatched' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 shadow-sm' : 'text-slate-400 hover:text-slate-200 border border-transparent'}`}>🔴 불일치 ({parserBuffer.filter(r=>!r._matchCode && r._matchStatus.includes('불일치')).length})</button>
+                        <div className="flex gap-2 ml-2 fade-in shrink-0">
+                            <button onClick={()=>setParserFilter('matched')} className={`px-3 py-1.5 rounded-lg text-[12px] font-bold transition-colors border shadow-sm ${parserFilter==='matched' ? 'bg-emerald-500 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>🟢 일치 ({parserBuffer.filter(r=>r._matchCode).length})</button>
+                            <button onClick={()=>setParserFilter('similar')} className={`px-3 py-1.5 rounded-lg text-[12px] font-bold transition-colors border shadow-sm ${parserFilter==='similar' ? 'bg-amber-500 text-white border-amber-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>🟡 유사 ({parserBuffer.filter(r=>!r._matchCode && r._matchStatus.includes('유사')).length})</button>
+                            <button onClick={()=>setParserFilter('unmatched')} className={`px-3 py-1.5 rounded-lg text-[12px] font-bold transition-colors border shadow-sm ${parserFilter==='unmatched' ? 'bg-rose-500 text-white border-rose-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>🔴 불일치 ({parserBuffer.filter(r=>!r._matchCode && r._matchStatus.includes('불일치')).length})</button>
                         </div>
                     )}
                     
@@ -606,37 +596,37 @@
                     <div className="flex items-center gap-2 shrink-0">
                         {/* 마스터 반영 버튼 */}
                         {viewMode === 'default' && isEstimateUploaded && (
-                            <button onClick={handleCommitEstimate} className={`h-9 px-4 rounded-lg text-[12px] font-black shadow-sm transition-colors flex items-center border ${selectedRows.size > 0 ? 'bg-indigo-600 text-white border-indigo-500 hover:bg-indigo-500' : 'bg-slate-800 text-slate-400 border-slate-700'}`} title="선택 항목 마스터 반영">
+                            <button onClick={handleCommitEstimate} className={`h-9 px-4 rounded-lg text-[12px] font-bold shadow-sm border transition-colors flex items-center ${selectedRows.size > 0 ? 'bg-slate-700 text-white border-slate-800 hover:bg-slate-800' : 'bg-white text-slate-400 border-slate-300'}`} title="선택 항목 마스터 반영">
                                 <i className="fas fa-save mr-1.5"></i>반영
                             </button>
                         )}
                         {viewMode === 'parser' && parserFilter === 'matched' && (
-                            <button onClick={handleParserApply} className={`h-9 px-4 rounded-lg text-[12px] font-black shadow-sm border border-indigo-500 bg-indigo-600 text-white hover:bg-indigo-500 transition-colors flex items-center`} title="선택 항목 마스터 반영 (학습)">
+                            <button onClick={handleParserApply} className={`h-9 px-4 rounded-lg text-[12px] font-bold shadow-sm bg-slate-700 text-white border border-slate-800 hover:bg-slate-800 transition-colors flex items-center`} title="선택 항목 마스터 반영 (학습)">
                                 <i className="fas fa-check-double mr-1.5"></i>반영
                             </button>
                         )}
 
                         {/* 다운로드 (F8) */}
-                        <button id="btn-export-view" onClick={handleExportCurrentView} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 shadow-sm transition-colors flex items-center" title="현재 화면 엑셀 다운로드 (F8)">
+                        <button id="btn-export-view" onClick={handleExportCurrentView} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-white text-emerald-600 border border-slate-300 hover:bg-emerald-50 shadow-sm transition-colors flex items-center" title="현재 화면 엑셀 다운로드 (F8)">
                             <i className="fas fa-download mr-1.5"></i>엑셀(F8)
                         </button>
 
                         {/* 보고서 (F7) */}
                         {viewMode === 'parser' && parserFilter === 'matched' ? (
-                            <button onClick={() => setShowBriefingModal(true)} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 shadow-sm transition-colors flex items-center" title="단가 변동 브리핑 (F7)">
-                                <i className="fas fa-chart-line mr-1.5"></i>보고서(F7)
+                            <button onClick={() => setShowBriefingModal(true)} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-white text-amber-600 border border-slate-300 hover:bg-amber-50 shadow-sm transition-colors flex items-center" title="단가 변동 브리핑 (F7)">
+                                <i className="fas fa-chart-bar mr-1.5"></i>보고서(F7)
                             </button>
                         ) : (
-                            <button onClick={() => setShowExportModal(true)} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 shadow-sm transition-colors flex items-center" title="ERP/쇼핑몰 양식 출력 (F7)">
+                            <button onClick={() => setShowExportModal(true)} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-white text-amber-600 border border-slate-300 hover:bg-amber-50 shadow-sm transition-colors flex items-center" title="ERP/쇼핑몰 양식 출력 (F7)">
                                 <i className="fas fa-file-export mr-1.5"></i>보고서(F7)
                             </button>
                         )}
 
-                        <div className="w-px h-6 bg-slate-700 mx-1"></div>
+                        <div className="w-px h-6 bg-slate-300 mx-1"></div>
 
                         <div className="flex items-center gap-2 ml-1">
                             <SearchBar value={globalSearch} onChange={handleGlobalSearchChange} placeholder={viewMode === 'parser' && parserState.targetId ? "매핑 검색" : "검색 (F3)"} />
-                            <button onClick={handleReset} className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-400 bg-slate-800 border border-slate-700 hover:bg-slate-700 hover:border-slate-600 transition-colors shadow-sm shrink-0" title="작업 데이터 전체 초기화 (새로고침)">
+                            <button onClick={handleReset} className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-800 bg-white border border-slate-300 hover:bg-slate-100 transition-colors shadow-sm shrink-0" title="작업 데이터 전체 초기화 (새로고침)">
                                 <i className="fas fa-redo-alt text-[13px]"></i>
                             </button>
                         </div>
@@ -852,7 +842,7 @@
         };
 
         // ==========================================
-        // ⚙️ 메인 Application (V8.4.1 Gray-Tier)
+        // ⚙️ 메인 Application (V8.4.2 Contained Layout)
         // ==========================================
         const App = () => {
             // ==========================================
@@ -1348,7 +1338,7 @@
             // 💡 리팩토링된 모듈화 UI 렌더링
             // ==========================================
             return (
-                <div className="h-screen w-full flex flex-col bg-slate-100 overflow-hidden font-sans">
+                <div className="h-screen w-full bg-slate-100 flex justify-center overflow-hidden font-sans">
                     <style>{`
                         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
                         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f1f5f9; overflow: hidden; }
@@ -1363,56 +1353,58 @@
                     {alertMsg && <div className="fixed top-6 z-[999] bg-slate-800 text-white px-6 py-4 rounded-xl shadow-2xl flex items-start gap-3 fade-in text-sm font-bold border border-slate-700"><i className="fas fa-exclamation-circle text-rose-400 text-lg mt-0.5"></i><span className="whitespace-pre-line leading-relaxed">{alertMsg}</span><button onClick={() => setAlertMsg('')} className="ml-4"><i className="fas fa-times text-slate-400 hover:text-white"></i></button></div>}
                     {toastMsg && <div className="fixed bottom-6 right-6 z-[1000] bg-slate-800 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in text-sm font-bold border border-slate-700"><i className="fas fa-check-circle text-emerald-400"></i>{toastMsg}</div>}
 
-                    {/* 1단 헤더 영역 (다크 테마, Full Width) */}
-                    <div className="bg-[#0f172a] border-b border-slate-800 shrink-0 w-full z-50">
-                        <div className="w-full max-w-[1500px] mx-auto px-5 py-3 flex justify-between items-center gap-4">
-                            <div className="flex items-center group shrink-0">
-                                <span className="text-xl font-black text-indigo-400 mr-3">ONEAPP</span>
-                                <div className="flex flex-col border-l-2 border-slate-700 pl-3">
-                                    <span className="text-[14px] font-black text-slate-200 leading-none mb-0.5">MerchOps</span>
-                                    <span className="text-[9px] font-extrabold text-slate-500 tracking-widest">V8.4.2 PRO DARK-TIER</span>
+                    {/* 메인 랩퍼: 다시 중앙 정렬된 박스 형태로 복구 */}
+                    <div className="w-full max-w-[1500px] h-full flex flex-col bg-slate-50 shadow-2xl overflow-hidden mx-auto">
+                        
+                        {/* 1. 상단 컨테이너 (헤더 + 툴바) */}
+                        <div className="shrink-0 flex flex-col bg-white border-b border-slate-200 z-40">
+                            
+                            {/* 1.1 다크 헤더 (다시 라운드 박스로 복구) */}
+                            <div className="p-5 pb-0 pt-6">
+                                <div className="bg-[#0f172a] rounded-xl shadow-lg border border-slate-800 flex flex-col overflow-hidden">
+                                    <div className="px-5 py-3 flex justify-between items-center border-b border-slate-800/80 bg-[#0b1120] gap-5">
+                                        <div className="flex items-center group shrink-0">
+                                            <span className="text-xl font-black text-indigo-400 mr-3">ONEAPP</span>
+                                            <div className="flex flex-col border-l-2 border-slate-700 pl-3">
+                                                <span className="text-[14px] font-black text-slate-200 leading-none mb-0.5">MerchOps</span>
+                                                <span className="text-[9px] font-extrabold text-slate-500 tracking-widest">V8.4.2 CONTAINED VIEW</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <SystemConsole itemCount={Object.keys(masterProducts).length} isProcessing={isProcessing} processMsg={processMsg} viewMode={viewMode} parserState={parserState} estimateCount={Object.keys(managedItems).length} parserCount={parserBuffer.length} />
+
+                                        <nav className="flex gap-2 text-[12px] font-bold shrink-0">
+                                            <label className={`cursor-pointer px-4 py-1.5 rounded flex items-center shadow-sm transition-all duration-300 border ${viewMode === 'default' && isMasterEmpty ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10 shadow-[0_0_6px_rgba(16,185,129,0.15)]' : 'text-slate-400 bg-[#1e293b] border-slate-700 hover:text-white hover:border-slate-500'}`}>
+                                                <i className={`fas fa-database mr-1.5 ${isMasterEmpty ? '' : 'opacity-70'}`}></i>{isProcessing ? '처리중...' : '1. 마스터 DB (엑셀)'}
+                                                <input type="file" className="hidden" onChange={(e) => {setViewMode('default'); handleFileUpload(e, 'master');}} multiple disabled={isProcessing} />
+                                            </label>
+                                            <button onClick={() => setShowSettings(true)} className={`text-slate-400 bg-[#1e293b] border border-slate-700 px-3 py-1.5 rounded flex items-center justify-center shadow-sm ml-1 hover:text-white hover:border-slate-500 transition-colors w-[110px] whitespace-nowrap shrink-0 ${isProcessing ? 'opacity-40 pointer-events-none' : ''}`}>
+                                                <i className="fas fa-cogs mr-1.5 opacity-70"></i>환경설정
+                                            </button>
+                                        </nav>
+                                    </div>
                                 </div>
                             </div>
                             
-                            <SystemConsole itemCount={Object.keys(masterProducts).length} isProcessing={isProcessing} processMsg={processMsg} viewMode={viewMode} parserState={parserState} estimateCount={Object.keys(managedItems).length} parserCount={parserBuffer.length} />
-
-                            <nav className="flex gap-2 text-[12px] font-bold shrink-0">
-                                <label className={`cursor-pointer px-4 py-1.5 rounded flex items-center shadow-sm transition-all duration-300 border ${viewMode === 'default' && isMasterEmpty ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10 shadow-[0_0_6px_rgba(16,185,129,0.15)]' : 'text-slate-400 bg-[#1e293b] border-slate-700 hover:text-white hover:border-slate-500'}`}>
-                                    <i className={`fas fa-database mr-1.5 ${isMasterEmpty ? '' : 'opacity-70'}`}></i>{isProcessing ? '처리중...' : '1. 마스터 DB (엑셀)'}
-                                    <input type="file" className="hidden" onChange={(e) => {setViewMode('default'); handleFileUpload(e, 'master');}} multiple disabled={isProcessing} />
-                                </label>
-                                <button onClick={() => setShowSettings(true)} className={`text-slate-400 bg-[#1e293b] border border-slate-700 px-3 py-1.5 rounded flex items-center justify-center shadow-sm ml-1 hover:text-white hover:border-slate-500 transition-colors w-[110px] whitespace-nowrap shrink-0 ${isProcessing ? 'opacity-40 pointer-events-none' : ''}`}>
-                                    <i className="fas fa-cogs mr-1.5 opacity-70"></i>환경설정
-                                </button>
-                            </nav>
-                        </div>
-                    </div>
-                    
-                    {/* 2단 툴바 영역 (다크 테마, Full Width) */}
-                    <div className="bg-[#0f172a] border-b border-slate-800 shrink-0 w-full shadow-md z-40">
-                        <div className="w-full max-w-[1500px] mx-auto px-1">
+                            {/* 1.2 메인 툴바 */}
                             <MainToolbar state={appState} actions={appActions} />
-                        </div>
-                    </div>
-
-                    {/* 타겟 검색 매핑 중 알림 바 */}
-                    {viewMode === 'parser' && parserState.targetId && (
-                        <div className="bg-[#0f172a] border-b border-slate-800 fade-in w-full shrink-0 z-30">
-                            <div className="w-full max-w-[1500px] mx-auto px-5 py-2">
-                                <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 px-4 py-2 rounded-lg flex items-center justify-between shadow-sm">
-                                    <div className="flex items-center gap-3">
-                                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 text-xs shadow-sm"><i className="fas fa-search"></i></span>
-                                        <span className="text-[13px] font-bold">현재 <span className="text-amber-400 font-black px-1">'{parserBuffer.find(r=>r._id===parserState.targetId)?.['품목명']}'</span> 매핑을 위해 전체상품을 다중 검색 중입니다. (검색어: '{parserState.searchKey}')</span>
+                            
+                            {/* 타겟 검색 매핑 중 알림 바 */}
+                            {viewMode === 'parser' && parserState.targetId && (
+                                <div className="px-5 pb-3 fade-in">
+                                    <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2.5 rounded-lg flex items-center justify-between shadow-sm">
+                                        <div className="flex items-center gap-3">
+                                            <span className="flex items-center justify-center w-6 h-6 rounded-full bg-amber-200 text-amber-700 text-xs"><i className="fas fa-search"></i></span>
+                                            <span className="text-[13px] font-bold">현재 <span className="text-amber-600 font-black px-1">'{parserBuffer.find(r=>r._id===parserState.targetId)?.['품목명']}'</span> 매핑을 위해 전체상품을 다중 검색 중입니다. (검색어: '{parserState.searchKey}')</span>
+                                        </div>
+                                        <button onClick={() => { setParserState({targetId:null, searchKey:''}); setGlobalSearch(''); }} className="text-xs font-bold bg-white border border-amber-300 text-amber-700 px-3 py-1.5 rounded hover:bg-amber-100 transition-colors">검색 취소</button>
                                     </div>
-                                    <button onClick={() => { setParserState({targetId:null, searchKey:''}); setGlobalSearch(''); }} className="text-xs font-bold bg-slate-800/80 border border-amber-500/30 text-amber-400 px-3 py-1.5 rounded hover:bg-amber-500/20 transition-colors">검색 취소</button>
                                 </div>
-                            </div>
+                            )}
                         </div>
-                    )}
 
-                    {/* 메인 컨텐츠 영역 */}
-                    <div className="flex-1 overflow-auto p-5">
-                        <div className="w-full max-w-[1500px] mx-auto h-full flex flex-col relative">
+                        {/* 2. 메인 컨텐츠 영역 */}
+                        <div className="flex-1 overflow-auto p-5 pt-0 bg-slate-100">
                             {viewMode === 'default' || (viewMode === 'parser' && parserFilter === 'matched') ? (
                                 <ExcelDataGrid state={appState} actions={appActions} />
                             ) : (
