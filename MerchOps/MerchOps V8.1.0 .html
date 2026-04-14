@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - V8.1.0 UX Optimized</title>
+    <title>ONEAPP MerchOps - V8.3.0 View Exporter</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -38,31 +38,30 @@
             "정렬순서"
         ];
 
-        const DEFAULT_MARKETBOM_PROFILE = {
-            config: { headerLines: 1, linesPerBlock: 6, delimiters: "/", targetFields: ['품목코드', '품목명', '단위', '규격', '간단설명', '입고가'] },
-            chunkMappings: { 0: "DISCARD", 1: "DISCARD", 2: "DISCARD", 3: "품목명", 4: "단위", 5: "규격", 6: "간단설명", 7: "입고가" },
-            sampleText: "전체 상품 (188개)\nclock\n04월 14일 18:00 마감\nstarLine\n플레인냉동식빵(삼립)\nEA / 744g/박스입수5개\n2,900 원\nclock\n04월 14일 18:00 마감\nstarLine\n한입떡볶이(송학)\nEA / 1kg/박스입수10개\n3,200 원"
-        };
-
         const getInitialVisibleMasterCols = () => ({ estimate: ['입고가', '출고가'] });
-        const getInitialVisibleUploadCols = () => ({ estimate: ['구매처', '입고가', 'B단가', 'A판매', 'B판매', '지시사항', '정렬순서'] });
+        const getInitialVisibleUploadCols = () => ({ 
+            estimate: ['구매처', '입고가', 'B단가', 'A판매', 'B판매', '지시사항', '정렬순서'],
+            parser: ['품목명', '규격', '입고가', '단위', '간단설명']
+        });
         const getInitialMappings = () => {
-            const base = { master: {}, estimate: {} };
+            const base = { master: {}, estimate: {}, parser: {} };
             base.master = { '품목코드': '품목코드', '품목명': '품목명, 상품명, 품명', '규격': '규격' };
             base.estimate = { 
                 '품목코드': '품목코드, 상품코드', '품목명': '품목명, 상품명, 품명', '규격': '규격명, 규격', '구매처': '거래처명, 구매처', '입고가': '입고가, 입고', 
-                'B단가': 'B단가', 'A판매': 'A판매, A판매가', 'B판매': 'B판매, B판매가, B 도매가', '지시사항': '지시사항', '정렬순서': '정렬순서, 순서',
-                '외주비': '외주비', '경비': '경비', '노무비': '노무비', '재료비': '재료비', '1종연산': '1종연산', '2종연산': '2종연산',
-                '1종코드': '1종코드', '1입고': '1입고, 1구매', '1출고': '1출고', '2종코드': '2종코드', '2입고': '2입고, 2구매', '2출고': '2출고'
+                'B단가': 'B단가', 'A판매': 'A판매, A판매가', 'B판매': 'B판매, B판매가, B 도매가', '지시사항': '지시사항', '정렬순서': '정렬순서, 순서'
+            };
+            base.parser = {
+                '품목명': '품목명', '규격': '규격', '입고가': '입고가', '단위': '단위', '간단설명': '간단설명'
             };
             return base;
         };
         const getInitialMasterLinks = () => {
-            const base = { master: {}, estimate: {} };
+            const base = { master: {}, estimate: {}, parser: {} };
             base.estimate = { 
-                '구매처': '구매처', '입고가': '입고가', 'B단가': '', 'A판매': '출고가', 'B판매': '도매가', '지시사항': '', '정렬순서': '',
-                '외주비': '외주비', '경비': '경비', '노무비': '노무비', '재료비': '재료비', '1종연산': '1종연산', '2종연산': '2종연산',
-                '1종코드': '1종코드', '1입고': '1구매', '1출고': '1출고', '2종코드': '2종코드', '2입고': '2구매', '2출고': '2출고'
+                '구매처': '구매처', '입고가': '입고가', 'B단가': '', 'A판매': '출고가', 'B판매': '도매가', '지시사항': '', '정렬순서': ''
+            };
+            base.parser = {
+                '품목명': '', '규격': '', '입고가': '입고가', '단위': '단위', '간단설명': '간단설명'
             };
             return base;
         };
@@ -77,6 +76,7 @@
         const getCellWidthClass = (h) => {
             if (NUMERIC_HEADERS.includes(h)) return 'min-w-[85px] w-[9%]';
             if (h === '구매처' || h === '거래처명' || h === '일자') return 'min-w-[95px] w-[10%]';
+            if (h === '품목명' || h === '상품명') return 'min-w-[160px] w-[20%]';
             if (h === '간단설명' || h === '지시사항' || h === '상품정보' || h === '적요2') return 'min-w-[130px] w-[14%]';
             return 'min-w-[90px] w-[10%]';
         };
@@ -120,7 +120,6 @@
             };
 
             lines.forEach(line => {
-                // 노이즈 필터링
                 if (/^전체\s*상품/.test(line) ||
                     /^clock$/i.test(line) ||
                     /^starLine$/i.test(line) ||
@@ -132,7 +131,6 @@
                     return;
                 }
 
-                // 가격 추출
                 const priceMatch = line.match(/(?:^|\s|\/|\|)(\d{1,3}(?:,\d{3})*|\d+)\s*원$/);
                 let extractedPrice = null;
 
@@ -151,7 +149,6 @@
                     return;
                 }
 
-                // 품명 / 규격 / 단위 분해
                 if (!currentItem.품목명) {
                     if (line.includes(' / ')) {
                         const splitBySpaceSlashSpace = line.split(' / ');
@@ -680,19 +677,24 @@
             masterLinks, setMasterLinks, handleResetMappings, showToast
         }) => {
             const [activeTab, setActiveTab] = useState('display'); 
-            const [customColInput, setCustomColInput] = useState('');
-            const mappingFileTab = 'estimate';
+            const [customEstColInput, setCustomEstColInput] = useState('');
+            const [customParColInput, setCustomParColInput] = useState('');
 
             useEffect(() => { document.body.style.overflow = 'hidden'; return () => document.body.style.overflow = 'auto'; }, []);
 
-            const addCustomUploadCol = () => {
-                if(!customColInput.trim()) return;
-                const val = customColInput.trim();
-                if ((visibleUploadCols[mappingFileTab] || []).includes(val)) return showToast('⚠️ 이미 추가된 항목입니다.');
-                setVisibleUploadCols(prev => ({ ...prev, [mappingFileTab]: [...(prev[mappingFileTab] || []), val] }));
-                setMappings(prev => ({ ...prev, [mappingFileTab]: { ...prev[mappingFileTab], [val]: val } }));
-                setMasterLinks(prev => ({ ...prev, [mappingFileTab]: { ...prev[mappingFileTab], [val]: '' } }));
-                setCustomColInput('');
+            const addCustomUploadCol = (type) => {
+                const inputVal = type === 'estimate' ? customEstColInput : customParColInput;
+                const setInputVal = type === 'estimate' ? setCustomEstColInput : setCustomParColInput;
+                
+                if(!inputVal.trim()) return;
+                const val = inputVal.trim();
+                
+                if ((visibleUploadCols[type] || []).includes(val)) return showToast('⚠️ 이미 추가된 항목입니다.');
+                
+                setVisibleUploadCols(prev => ({ ...prev, [type]: [...(prev[type] || []), val] }));
+                setMappings(prev => ({ ...prev, [type]: { ...prev[type], [val]: val } }));
+                setMasterLinks(prev => ({ ...prev, [type]: { ...prev[type], [val]: '' } }));
+                setInputVal('');
             };
 
             const selectableMasterHeaders = useMemo(() => {
@@ -712,10 +714,10 @@
                         <div className="flex flex-1 overflow-hidden bg-slate-50">
                             <div className="w-[240px] bg-white border-r border-slate-200 flex flex-col py-4 shrink-0 shadow-sm">
                                 <button onClick={() => setActiveTab('display')} className={`px-5 py-3.5 text-left text-[14px] font-bold border-l-4 transition-all ${activeTab === 'display' ? 'border-indigo-500 text-indigo-700 bg-indigo-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}>
-                                    <i className="fas fa-desktop w-6 text-center mr-1"></i> 환경 및 클라우드 설정
+                                    <i className="fas fa-desktop w-6 text-center mr-1"></i> 환경 및 화면 설정
                                 </button>
                                 <button onClick={() => setActiveTab('estimateMap')} className={`px-5 py-3.5 text-left text-[14px] font-bold border-l-4 transition-all ${activeTab === 'estimateMap' ? 'border-amber-500 text-amber-700 bg-amber-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}>
-                                    <i className="fas fa-file-invoice-dollar w-6 text-center mr-1"></i> 엑셀 업로드 매핑
+                                    <i className="fas fa-link w-6 text-center mr-1"></i> 마스터 필드 연결 (매핑)
                                 </button>
                             </div>
 
@@ -735,8 +737,8 @@
                                         </div>
 
                                         <div className="bg-white p-5 rounded-xl border shadow-sm">
-                                            <h3 className="text-[14px] font-black mb-4 pb-2 border-b flex justify-between items-center">
-                                                <span><span className="bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0.5 rounded mr-2">[M]</span>마스터 대조 노출 항목</span>
+                                            <h3 className="text-[14px] font-black mb-4 pb-2 border-b flex items-center">
+                                                <span className="bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0.5 rounded mr-2">[공통]</span> 마스터 항목 노출 설정
                                             </h3>
                                             <div className="flex flex-wrap gap-2">
                                                 {MASTER_HEADERS.filter(h => !['품목코드', '품목명', '규격'].includes(h)).map(h => 
@@ -746,33 +748,60 @@
                                         </div>
 
                                         <div className="bg-white p-5 rounded-xl border shadow-sm">
-                                            <h3 className="text-[14px] font-black mb-4 pb-2 border-b flex justify-between items-center">
-                                                <span><span className="bg-slate-100 text-slate-700 text-[10px] px-1.5 py-0.5 rounded mr-2">[테이블설정]</span>화면 노출 및 작업 항목</span>
+                                            <h3 className="text-[14px] font-black mb-4 pb-2 border-b flex items-center">
+                                                <span className="bg-slate-100 text-slate-700 text-[10px] px-1.5 py-0.5 rounded mr-2">[엑셀]</span> 견적서 항목 노출 설정
                                             </h3>
                                             <div className="flex flex-wrap gap-2.5 mb-5">
                                                 <div className="config-chip active opacity-70 cursor-not-allowed font-bold bg-slate-100 border-slate-300 text-slate-700">
                                                     <i className="fas fa-lock mr-1"></i>상품정보 (코드/품명/규격)
                                                 </div>
-                                                {(visibleUploadCols[mappingFileTab]||[]).filter(h => !['품목코드', '품목명', '규격'].includes(h)).map(h => 
-                                                    <div key={`u-${h}`} className="config-chip active border-slate-300 bg-white text-slate-800 hover:bg-rose-50 hover:border-rose-300 hover:text-rose-600 transition-colors group shadow-sm">
+                                                {(visibleUploadCols['estimate']||[]).filter(h => !['품목코드', '품목명', '규격'].includes(h)).map(h => 
+                                                    <div key={`u-e-${h}`} className="config-chip active border-slate-300 bg-white text-slate-800 hover:bg-rose-50 hover:border-rose-300 hover:text-rose-600 transition-colors group shadow-sm">
                                                         <span className="font-bold">{h}</span>
-                                                        <button onClick={()=>setVisibleUploadCols(p=>({...p, [mappingFileTab]:p[mappingFileTab].filter(x=>x!==h)}))} className="ml-2 text-slate-400 group-hover:text-rose-500"><i className="fas fa-times"></i></button>
+                                                        <button onClick={()=>setVisibleUploadCols(p=>({...p, estimate:p.estimate.filter(x=>x!==h)}))} className="ml-2 text-slate-400 group-hover:text-rose-500"><i className="fas fa-times"></i></button>
                                                     </div>
                                                 )}
                                             </div>
                                             <div className="flex items-center gap-2 max-w-sm">
-                                                <input type="text" value={customColInput} onChange={e=>setCustomColInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addCustomUploadCol()} placeholder="추가할 항목명 입력 (예: 구매처, B단가)" className="flex-1 border border-slate-300 rounded px-3 py-2 text-[12px] outline-none focus:border-slate-500" />
-                                                <button onClick={addCustomUploadCol} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded text-[12px] font-bold transition-colors shadow-sm">추가</button>
+                                                <input type="text" value={customEstColInput} onChange={e=>setCustomEstColInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addCustomUploadCol('estimate')} placeholder="추가할 항목명 입력 (예: 구매처, B단가)" className="flex-1 border border-slate-300 rounded px-3 py-2 text-[12px] outline-none focus:border-slate-500" />
+                                                <button onClick={()=>addCustomUploadCol('estimate')} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded text-[12px] font-bold transition-colors shadow-sm">추가</button>
                                             </div>
                                         </div>
+
+                                        <div className="bg-white p-5 rounded-xl border shadow-sm border-emerald-100">
+                                            <h3 className="text-[14px] font-black mb-4 pb-2 border-b border-emerald-100 flex items-center text-emerald-900">
+                                                <span className="bg-emerald-100 text-emerald-700 text-[10px] px-1.5 py-0.5 rounded mr-2">[텍스트]</span> 파서 항목 노출 설정
+                                            </h3>
+                                            <div className="flex flex-wrap gap-2.5 mb-5">
+                                                <div className="config-chip active opacity-70 cursor-not-allowed font-bold bg-emerald-50 border-emerald-200 text-emerald-700">
+                                                    <i className="fas fa-lock mr-1"></i>마스터 연결 정보
+                                                </div>
+                                                {(visibleUploadCols['parser']||[]).map(h => 
+                                                    <div key={`u-p-${h}`} className="config-chip active border-emerald-300 bg-white text-emerald-800 hover:bg-rose-50 hover:border-rose-300 hover:text-rose-600 transition-colors group shadow-sm">
+                                                        <span className="font-bold">{h}</span>
+                                                        <button onClick={()=>setVisibleUploadCols(p=>({...p, parser:p.parser.filter(x=>x!==h)}))} className="ml-2 text-emerald-400 group-hover:text-rose-500"><i className="fas fa-times"></i></button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center gap-2 max-w-sm">
+                                                <input type="text" value={customParColInput} onChange={e=>setCustomParColInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addCustomUploadCol('parser')} placeholder="추가할 항목명 입력 (예: 단위, 간단설명)" className="flex-1 border border-emerald-300 rounded px-3 py-2 text-[12px] outline-none focus:border-emerald-500" />
+                                                <button onClick={()=>addCustomUploadCol('parser')} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded text-[12px] font-bold transition-colors shadow-sm">추가</button>
+                                            </div>
+                                        </div>
+
                                     </div>
                                 )}
 
                                 {activeTab === 'estimateMap' && (
-                                    <div className="max-w-4xl space-y-4 fade-in">
+                                    <div className="max-w-4xl space-y-8 fade-in">
                                         <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                                            <div className="bg-slate-50 p-3 border-b border-slate-200">
+                                                <h3 className="text-[13px] font-black text-slate-800 flex items-center">
+                                                    <span className="bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.5 rounded mr-2">[엑셀]</span> 견적서 필드 연결
+                                                </h3>
+                                            </div>
                                             <table className="w-full text-left text-[12px]">
-                                                <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-black">
+                                                <thead className="bg-white border-b border-slate-200 text-slate-500 font-bold">
                                                     <tr>
                                                         <th className="p-3 w-[140px]">화면 노출 항목</th>
                                                         <th className="p-3">엑셀 식별 키워드 (콤마 구분)</th>
@@ -780,17 +809,17 @@
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-slate-100">
-                                                    {(visibleUploadCols[mappingFileTab]||[]).map(h => (
-                                                        <tr key={`map-${h}`} className="hover:bg-slate-50">
+                                                    {(visibleUploadCols['estimate']||[]).map(h => (
+                                                        <tr key={`map-e-${h}`} className="hover:bg-slate-50">
                                                             <td className="p-3 font-bold text-slate-800">{h}</td>
                                                             <td className="p-3">
-                                                                <input type="text" value={mappings[mappingFileTab]?.[h]||''} onChange={e=>setMappings(p=>({...p, [mappingFileTab]:{...p[mappingFileTab], [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-amber-500 focus:ring-1" />
+                                                                <input type="text" value={mappings['estimate']?.[h]||''} onChange={e=>setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-amber-500 focus:ring-1" />
                                                             </td>
                                                             <td className="p-3">
                                                                 {['품목코드', '품목명', '규격'].includes(h) ? (
                                                                     <div className="text-[11px] text-slate-400 bg-slate-100 px-3 py-1.5 rounded border border-slate-200 text-center">기본 고정 식별자</div>
                                                                 ) : (
-                                                                    <select value={masterLinks[mappingFileTab]?.[h]||''} onChange={e=>setMasterLinks(p=>({...p, [mappingFileTab]:{...p[mappingFileTab], [h]:e.target.value}}))} className={`w-full border border-slate-300 rounded px-2 py-1.5 outline-none focus:border-amber-500 ${masterLinks[mappingFileTab]?.[h]?'bg-amber-50 text-amber-700 font-bold':'bg-white'}`}>
+                                                                    <select value={masterLinks['estimate']?.[h]||''} onChange={e=>setMasterLinks(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} className={`w-full border border-slate-300 rounded px-2 py-1.5 outline-none focus:border-amber-500 ${masterLinks['estimate']?.[h]?'bg-amber-50 text-amber-700 font-bold':'bg-white'}`}>
                                                                         <option value="">-- 단순 노출 (업데이트안함) --</option>
                                                                         {selectableMasterHeaders.map(mh=><option key={mh} value={mh}>{mh}</option>)}
                                                                     </select>
@@ -801,6 +830,36 @@
                                                 </tbody>
                                             </table>
                                         </div>
+
+                                        <div className="bg-white rounded-xl border border-emerald-100 shadow-sm overflow-hidden">
+                                            <div className="bg-emerald-50 p-3 border-b border-emerald-100">
+                                                <h3 className="text-[13px] font-black text-emerald-900 flex items-center">
+                                                    <span className="bg-emerald-200 text-emerald-800 text-[10px] px-1.5 py-0.5 rounded mr-2">[텍스트]</span> 파서 필드 연결
+                                                </h3>
+                                            </div>
+                                            <table className="w-full text-left text-[12px]">
+                                                <thead className="bg-white border-b border-emerald-50 text-emerald-700 font-bold">
+                                                    <tr>
+                                                        <th className="p-3 w-[140px]">화면 노출 항목</th>
+                                                        <th className="p-3">마스터 필드 업데이트 연결</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-emerald-50">
+                                                    {(visibleUploadCols['parser']||[]).map(h => (
+                                                        <tr key={`map-p-${h}`} className="hover:bg-emerald-50/50">
+                                                            <td className="p-3 font-bold text-emerald-900">{h}</td>
+                                                            <td className="p-3">
+                                                                <select value={masterLinks['parser']?.[h]||''} onChange={e=>setMasterLinks(p=>({...p, parser:{...p.parser, [h]:e.target.value}}))} className={`w-full border border-emerald-200 rounded px-2 py-1.5 outline-none focus:border-emerald-500 ${masterLinks['parser']?.[h]?'bg-emerald-100 text-emerald-800 font-bold':'bg-white'}`}>
+                                                                    <option value="">-- 단순 노출 (업데이트안함) --</option>
+                                                                    {selectableMasterHeaders.map(mh=><option key={mh} value={mh}>{mh}</option>)}
+                                                                </select>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+
                                     </div>
                                 )}
                             </div>
@@ -818,7 +877,7 @@
         };
 
         // ==========================================
-        // ⚙️ 메인 Application (V8.1.0 UX Optimized)
+        // ⚙️ 메인 Application (V8.3.0 View Exporter)
         // ==========================================
         const App = () => {
             const [masterProducts, setMasterProducts] = useState(() => { 
@@ -835,9 +894,19 @@
             const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v740') || '');
             
             const [visibleMasterCols, setVisibleMasterCols] = useState(() => { const s = localStorage.getItem('merchVisMaster_v740'); return s ? JSON.parse(s) : getInitialVisibleMasterCols(); });
-            const [visibleUploadCols, setVisibleUploadCols] = useState(() => { const s = localStorage.getItem('merchVisUpload_v740'); return s ? JSON.parse(s) : getInitialVisibleUploadCols(); });
+            const [visibleUploadCols, setVisibleUploadCols] = useState(() => { 
+                const s = localStorage.getItem('merchVisUpload_v740'); 
+                const parsed = s ? JSON.parse(s) : getInitialVisibleUploadCols(); 
+                if (!parsed.parser) parsed.parser = ['품목명', '규격', '입고가', '단위', '간단설명'];
+                return parsed;
+            });
             const [mappings, setMappings] = useState(() => { const s = localStorage.getItem('merchMappings_v740'); return s ? JSON.parse(s) : getInitialMappings(); });
-            const [masterLinks, setMasterLinks] = useState(() => { const s = localStorage.getItem('merchMasterLinks_v740'); return s ? JSON.parse(s) : getInitialMasterLinks(); });
+            const [masterLinks, setMasterLinks] = useState(() => { 
+                const s = localStorage.getItem('merchMasterLinks_v740'); 
+                const parsed = s ? JSON.parse(s) : getInitialMasterLinks(); 
+                if (!parsed.parser) parsed.parser = { '입고가': '입고가', '단위': '단위', '간단설명': '간단설명' };
+                return parsed;
+            });
 
             const [parserDict, setParserDict] = useState(() => { try { return JSON.parse(localStorage.getItem('parserDict_v750')) || {}; } catch(e){ return {}; }});
 
@@ -852,7 +921,7 @@
             
             const [isProcessing, setIsProcessing] = useState(false);
             const [processMsg, setProcessMsg] = useState('');
-            const activeProfileKey = 'estimate'; 
+            const activeProfileKey = 'estimate';
 
             const isEstimateUploaded = Object.keys(managedItems).length > 0;
             const isMasterEmpty = Object.keys(masterProducts).length === 0;
@@ -898,7 +967,7 @@
                 setTimeout(() => {
                     const parsedData = parseTextSemantically(rawText);
 
-                    const results = []; 
+                    const results = [...parserBuffer]; 
                     parsedData.forEach(rowData => {
                         const extName = rowData['품목명'] || '';
                         const extSpec = rowData['규격'] || '';
@@ -911,12 +980,12 @@
                             rowData.코드 = matchResult.code;
                         }
                         
-                        rowData.sources = { [activeProfileKey]: { ...rowData } };
+                        rowData.sources = { ['parser']: { ...rowData } };
                         rowData.finalData = {};
                         
                         Object.keys(rowData).forEach(k => {
                             if (k.startsWith('_') || k === 'sources' || k === 'finalData' || k === '코드') return;
-                            const isNum = NUMERIC_HEADERS.includes(k) || NUMERIC_HEADERS.includes(masterLinks[activeProfileKey]?.[k]);
+                            const isNum = NUMERIC_HEADERS.includes(k) || NUMERIC_HEADERS.includes(masterLinks['parser']?.[k]);
                             rowData.finalData[k] = isNum ? parseNum(rowData[k]) : rowData[k];
                         });
 
@@ -961,7 +1030,7 @@
                         
                         if (row.finalData) {
                             Object.keys(row.finalData).forEach(field => {
-                                const linked = masterLinks[activeProfileKey]?.[field] || (MASTER_HEADERS.includes(field) ? field : null);
+                                const linked = masterLinks['parser']?.[field] || (MASTER_HEADERS.includes(field) ? field : null);
                                 if (linked && row.finalData[field] !== undefined && row.finalData[field] !== '' && row.finalData[field] !== '오류') {
                                     newMaster[code][linked] = NUMERIC_HEADERS.includes(linked) ? Number(row.finalData[field]) : row.finalData[field];
                                 }
@@ -1159,30 +1228,6 @@
                 showToast('초기화 되었습니다.');
             };
 
-            useEffect(() => {
-                const handleGlobalKeyDown = (e) => {
-                    if (e.key === 'F7') { e.preventDefault(); setShowExportModal(true); }
-                    if (e.key === 'F3' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f')) {
-                        e.preventDefault();
-                        if (document.activeElement) document.activeElement.blur();
-                        setTimeout(() => { const searchInput = document.getElementById('main-search-input'); if (searchInput) { searchInput.focus(); searchInput.select(); } }, 50);
-                    }
-                    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); document.getElementById('btn-commit-master')?.click(); }
-                    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
-                        if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') { e.preventDefault(); document.getElementById('cb-toggle-all')?.click(); }
-                    }
-                    if (e.key === 'Escape') { if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') document.activeElement.blur(); }
-                };
-                window.addEventListener('keydown', handleGlobalKeyDown); return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-            }, []);
-
-            const toggleMasterCol = useCallback((tabId, header) => {
-                setVisibleMasterCols(prev => {
-                    const list = prev[tabId] || [];
-                    return { ...prev, [tabId]: list.includes(header) ? list.filter(h => h !== header) : [...list, header] };
-                });
-            }, []);
-
             const getDisplayData = () => {
                 let baseList = [];
 
@@ -1221,6 +1266,90 @@
             const maxVisibleRows = 200;
             const displayRows = fullDisplayRows.slice(0, maxVisibleRows);
             const hiddenCount = fullDisplayRows.length - displayRows.length;
+            
+            const currentExportTitle = viewMode === 'parser' ? '파싱 데이터' : (isEstimateUploaded ? '엑셀 견적서' : '전체 마스터');
+
+            // 💡 [NEW] 현재 화면 그대로 엑셀 내보내기 (F8 기능)
+            const handleExportCurrentView = () => {
+                if (fullDisplayRows.length === 0) return showToast("⚠️ 내보낼 데이터가 없습니다.");
+                showToast("⏳ 현재 화면 엑셀 변환 중...");
+                
+                setTimeout(() => {
+                    const isParserMatched = viewMode === 'parser' && parserFilter === 'matched';
+                    const activeProfile = isParserMatched ? 'parser' : 'estimate';
+                    const uploadCols = visibleUploadCols[activeProfile] || [];
+                    const masterCols = visibleMasterCols['estimate'] || [];
+                    
+                    // 1. 헤더 구성
+                    const headers = ['상태/선택', '품목코드', '마스터_품목명', '마스터_규격'];
+                    masterCols.forEach(h => headers.push(`[M]${h}`));
+                    uploadCols.forEach(h => headers.push(`[작업]${h}`));
+                    if (isParserMatched) {
+                        headers.push('[수집]단위');
+                        headers.push('[수집]간단설명');
+                    }
+
+                    const aoa = [headers];
+
+                    // 2. 데이터 구성
+                    fullDisplayRows.forEach(row => {
+                        const rowCode = isParserMatched ? row._matchCode : row.코드;
+                        const mItem = masterProducts[rowCode] || {};
+                        const isSel = isParserMatched ? row._apply : selectedRows.has(row.코드);
+                        const status = isParserMatched ? (row._matchStatus ? row._matchStatus.substring(0, 2) : '') : (isSel ? '선택됨' : '');
+
+                        const rowData = [
+                            status,
+                            rowCode || '',
+                            mItem.품목명 || '',
+                            mItem.규격 || ''
+                        ];
+
+                        masterCols.forEach(h => {
+                            const val = mItem[h] !== undefined ? mItem[h] : '';
+                            rowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(val) : val);
+                        });
+
+                        uploadCols.forEach(h => {
+                            const val = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.[activeProfile]?.[h] || '');
+                            const isNum = NUMERIC_HEADERS.includes(h) || NUMERIC_HEADERS.includes(masterLinks[activeProfile]?.[h]);
+                            rowData.push(isNum ? parseNum(val) : val);
+                        });
+
+                        if (isParserMatched) {
+                            rowData.push(row['단위'] || '');
+                            rowData.push(row['간단설명'] || '');
+                        }
+
+                        aoa.push(rowData);
+                    });
+
+                    const wb = window.XLSX.utils.book_new();
+                    const ws = window.XLSX.utils.aoa_to_sheet(aoa);
+                    window.XLSX.utils.book_append_sheet(wb, ws, "현재화면_출력");
+                    window.XLSX.writeFile(wb, `화면출력_${new Date().toISOString().slice(0,10)}.xlsx`);
+                    showToast("✅ 화면 엑셀 다운로드가 완료되었습니다.");
+                }, 300);
+            };
+
+            // 💡 [UPDATE] F8 단축키 추가
+            useEffect(() => {
+                const handleGlobalKeyDown = (e) => {
+                    if (e.key === 'F7') { e.preventDefault(); setShowExportModal(true); }
+                    if (e.key === 'F8') { e.preventDefault(); document.getElementById('btn-export-view')?.click(); }
+                    if (e.key === 'F3' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f')) {
+                        e.preventDefault();
+                        if (document.activeElement) document.activeElement.blur();
+                        setTimeout(() => { const searchInput = document.getElementById('main-search-input'); if (searchInput) { searchInput.focus(); searchInput.select(); } }, 50);
+                    }
+                    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); document.getElementById('btn-commit-master')?.click(); }
+                    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+                        if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') { e.preventDefault(); document.getElementById('cb-toggle-all')?.click(); }
+                    }
+                    if (e.key === 'Escape') { if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') document.activeElement.blur(); }
+                };
+                window.addEventListener('keydown', handleGlobalKeyDown); return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+            }, []);
 
             const masterSearchResults = useMemo(() => {
                 if (viewMode !== 'parser' || parserFilter === 'matched' || !globalSearch.trim()) return [];
@@ -1256,7 +1385,7 @@
                             };
 
                             fullDisplayRows.forEach(row => {
-                                const mItem = masterProducts[row.코드] || {}; const final = row.finalData || {}; const source = row.sources?.[activeProfileKey] || {};
+                                const mItem = masterProducts[row.코드] || {}; const final = row.finalData || {}; const source = row.sources?.[viewMode==='parser'?'parser':'estimate'] || {};
                                 const pIn = getFirstValidNum([final, source, mItem], ['입고가', '입고']); const pOut = getFirstValidNum([final, source, mItem], ['출고가', '출고']);
                                 const dName = getFirstValidStr([source, mItem], ['품목명']); const dSpec = getFirstValidStr([source, mItem], ['규격']); const dBrand = getFirstValidStr([source, mItem], ['브랜드']);
                                 const dInfo = getFirstValidStr([source, mItem], ['상품정보', '기본설명', '간단설명']); const dSearch = getFirstValidStr([source, mItem], ['검색어등록', '상품태그']);
@@ -1300,12 +1429,12 @@
                 else if (option.type === 'copy') {
                     let copyText = `[단가 공지 - ${new Date().toLocaleDateString()}]\n`; let currentVendor = '';
                     const sortedForCopy = [...fullDisplayRows].sort((a,b) => {
-                        const vendorA = getFirstValidStr([a.sources?.[activeProfileKey], masterProducts[a.코드]], ['구매처', '거래처명']) || '기타';
-                        const vendorB = getFirstValidStr([b.sources?.[activeProfileKey], masterProducts[b.코드]], ['구매처', '거래처명']) || '기타';
+                        const vendorA = getFirstValidStr([a.sources?.[viewMode==='parser'?'parser':'estimate'], masterProducts[a.코드]], ['구매처', '거래처명']) || '기타';
+                        const vendorB = getFirstValidStr([b.sources?.[viewMode==='parser'?'parser':'estimate'], masterProducts[b.코드]], ['구매처', '거래처명']) || '기타';
                         return vendorA.localeCompare(vendorB);
                     });
                     sortedForCopy.forEach(row => {
-                        const mItem = masterProducts[row.코드] || {}; const source = row.sources?.[activeProfileKey] || {};
+                        const mItem = masterProducts[row.코드] || {}; const source = row.sources?.[viewMode==='parser'?'parser':'estimate'] || {};
                         const dName = getFirstValidStr([source, mItem], ['품목명']); const dSpec = getFirstValidStr([source, mItem], ['규격']);
                         const price = getFirstValidNum([row.finalData, mItem], ['A판매', 'A판매가', '출고가']);
                         const vendor = getFirstValidStr([source, mItem], ['구매처', '거래처명']) || '기타 거래처';
@@ -1328,6 +1457,8 @@
                 const isDiff = linkedMasterField && mVal !== undefined && val !== '' && String(mVal) !== String(val) && isNumeric;
 
                 const displayVal = val === "오류" ? "" : val;
+
+                const placeholderText = isParserRow ? '' : (mVal || '');
 
                 const handleChange = (e) => {
                     const v = e.target.value;
@@ -1369,7 +1500,7 @@
 
                 return (
                     <td key={keyPrefix} className={`px-1 py-1 border-r border-slate-200 ${getCellWidthClass(linkedMasterField || field)} ${isDiff ? 'bg-amber-50/30' : 'bg-white'}`}>
-                        <input type="text" autoComplete="off" spellCheck="false" className={`w-full bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-1 rounded px-1.5 py-1 text-[12px] outline-none ${isNumeric ? 'text-right font-bold' : 'truncate text-center'} ${isDiff ? 'text-indigo-700' : ''}`} value={displayVal} placeholder={mVal || ''} data-row={idx} data-numeric={isNumeric} onChange={handleChange} onClick={(e) => e.target.select()} />
+                        <input type="text" autoComplete="off" spellCheck="false" className={`w-full bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-1 rounded px-1.5 py-1 text-[12px] outline-none ${isNumeric ? 'text-right font-bold' : 'truncate text-center'} ${isDiff ? 'text-indigo-700' : ''}`} value={displayVal} placeholder={placeholderText} data-row={idx} data-numeric={isNumeric} onChange={handleChange} onClick={(e) => e.target.select()} />
                     </td>
                 );
             };
@@ -1399,7 +1530,7 @@
                                             <span className="text-xl font-black text-indigo-400 mr-3">ONEAPP</span>
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <span className="text-[14px] font-black text-slate-200 leading-none mb-0.5">MerchOps</span>
-                                                <span className="text-[9px] font-extrabold text-slate-500 tracking-widest">V8.1.0 UX OPTIMIZED</span>
+                                                <span className="text-[9px] font-extrabold text-slate-500 tracking-widest">V8.3.0 VIEW EXPORTER</span>
                                             </div>
                                         </div>
                                         
@@ -1418,7 +1549,7 @@
                                 </div>
                             </div>
                             
-                            {/* 💡 상단 툴바 영역 (논리적 3단 구조로 완벽 재정렬) */}
+                            {/* 💡 상단 툴바 영역 */}
                             <div className="px-5 pt-4 pb-3 flex justify-between items-center h-[72px]">
                                 
                                 {/* 1. 좌측: 뷰어 모드 전환 그룹 */}
@@ -1426,7 +1557,6 @@
                                     {viewMode === 'parser' ? (
                                         <button onClick={() => {
                                             setViewMode('default'); 
-                                            setParserBuffer([]); // 💡 추가: 파서 닫기 클릭 시 화면에서 데이터 비우기
                                             setParserState({targetId:null, searchKey:''});
                                             setGlobalSearch('');
                                         }} className="h-full px-4 rounded-lg text-slate-500 bg-white border border-slate-300 hover:bg-slate-50 hover:text-slate-700 transition-colors flex items-center font-bold text-[13px]" title="파서 종료 및 기본모드로 돌아가기">
@@ -1456,7 +1586,7 @@
                                         </>
                                     )}
 
-                                    {/* 2. 중앙: 파서 전용 필터 탭 (파서 모드일때만 노출) */}
+                                    {/* 2. 중앙: 파서 전용 필터 탭 */}
                                     {viewMode === 'parser' && (
                                         <div className="flex bg-slate-200 p-1 rounded-lg ml-4 fade-in">
                                             <button onClick={()=>setParserFilter('matched')} className={`px-4 py-1.5 rounded text-[12px] font-bold transition-colors ${parserFilter==='matched' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>🟢 일치/학습 ({parserBuffer.filter(r=>r._matchCode).length})</button>
@@ -1468,6 +1598,12 @@
 
                                 {/* 3. 우측: 액션 및 검색 그룹 */}
                                 <div className="flex items-center gap-3 h-10 shrink-0">
+                                    
+                                    {/* 💡 [NEW] 현재 화면 그대로 다운로드 버튼 (F8) */}
+                                    <button id="btn-export-view" onClick={handleExportCurrentView} className="h-full px-4 rounded-lg text-[13px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 shadow-sm transition-colors" title="현재 보이는 화면 그대로 엑셀 다운로드 (F8)">
+                                        <i className="fas fa-file-excel mr-1.5"></i>뷰 다운로드 (F8)
+                                    </button>
+
                                     {viewMode === 'default' && isEstimateUploaded && (
                                         <>
                                             <button onClick={handleCommitEstimate} className={`h-full px-5 rounded-lg text-[13px] font-black shadow-sm ${selectedRows.size > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-white text-slate-400 border border-slate-300'}`}>
@@ -1520,7 +1656,7 @@
                         </div>
 
                         <div className="flex-1 overflow-auto p-5 pt-0 bg-slate-100">
-                            {/* 💡 1. 엑셀 견적서 / 파서 일치 탭 렌더링 (100% 디자인 동기화) */}
+                            {/* 💡 1. 엑셀 견적서 / 파서 일치 탭 렌더링 (100% 디자인 동기화 및 동적 설정 적용) */}
                             {viewMode === 'default' || (viewMode === 'parser' && parserFilter === 'matched') ? (
                                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm h-full flex flex-col relative overflow-hidden">
                                     <div className="flex-1 overflow-auto custom-scrollbar relative">
@@ -1538,7 +1674,7 @@
                                                         </div>
                                                     </th>
                                                     
-                                                    {/* 동적 헤더: 마스터 대조 + 엑셀 업로드 항목 */}
+                                                    {/* 동적 헤더: 마스터 대조 + 엑셀/파서 설정 항목 */}
                                                     {viewMode === 'default' && !isEstimateUploaded ? (
                                                         <>
                                                             {MASTER_HEADERS.filter(h => !['품목코드', '품목명', '규격'].includes(h)).map(h => (
@@ -1554,16 +1690,21 @@
                                                                     <div className="text-[9px] mb-0.5">마스터 대조</div>[M] {h}
                                                                 </th>
                                                             ))}
-                                                            {visibleUploadCols['estimate'].map(h => (
-                                                                <th key={`pu-${h}`} className={`sticky top-0 z-30 bg-white px-2 py-3 border-r border-b border-slate-200 text-center text-slate-600 ${getCellWidthClass(h)}`}>
-                                                                    {h}
-                                                                </th>
-                                                            ))}
-                                                            {/* 💡 파서 모드일 경우: 수집된 부가정보를 버리지 않고 맨 끝에 노출시켜 줌 */}
-                                                            {viewMode === 'parser' && parserFilter === 'matched' && (
-                                                                <th className="sticky top-0 z-30 bg-emerald-50 px-3 py-2 border-b border-l border-emerald-200 text-emerald-800 text-center w-[12%]">
-                                                                    <div className="text-[10px] opacity-70 mb-0.5">[수집] 파싱 부가정보</div>단위 / 간단설명
-                                                                </th>
+                                                            
+                                                            {/* 💡 파서 모드일 경우 '파서 항목 노출 설정'을 렌더링 */}
+                                                            {viewMode === 'parser' && parserFilter === 'matched' ? (
+                                                                visibleUploadCols['parser']?.map(h => (
+                                                                    <th key={`pu-p-${h}`} className={`sticky top-0 z-30 bg-emerald-50 px-2 py-3 border-r border-b border-emerald-200 text-center text-emerald-800 ${getCellWidthClass(h)}`}>
+                                                                        <div className="text-[9px] mb-0.5 opacity-70">[수집] 파싱 데이터</div>{h}
+                                                                    </th>
+                                                                ))
+                                                            ) : (
+                                                                /* 💡 엑셀 모드일 경우 '견적서 항목 노출 설정'을 렌더링 */
+                                                                visibleUploadCols['estimate']?.map(h => (
+                                                                    <th key={`pu-e-${h}`} className={`sticky top-0 z-30 bg-white px-2 py-3 border-r border-b border-slate-200 text-center text-slate-600 ${getCellWidthClass(h)}`}>
+                                                                        {h}
+                                                                    </th>
+                                                                ))
                                                             )}
                                                         </>
                                                     )}
@@ -1630,13 +1771,12 @@
                                                                             {mItem[h] !== undefined && mItem[h] !== '' ? (NUMERIC_HEADERS.includes(h) ? Number(mItem[h]).toLocaleString() : mItem[h]) : '-'}
                                                                         </td>
                                                                     ))}
-                                                                    {visibleUploadCols['estimate'].map(h => renderUploadEditableCell(row, idx, h, activeProfileKey, `p-u-${h}`, isParserMatched))}
                                                                     
-                                                                    {/* 💡 파서 모드 부가정보 열 렌더링 */}
-                                                                    {isParserMatched && (
-                                                                        <td className="px-3 py-2 border-l border-[#edebe3] bg-emerald-50/10 text-[11px] text-slate-500 truncate w-[12%] text-center">
-                                                                            {row['단위']} {row['간단설명'] ? `| ${row['간단설명']}` : ''}
-                                                                        </td>
+                                                                    {/* 💡 파서 모드일 경우 '파서 항목 노출 설정' 기반으로 Editable Cell 렌더링 */}
+                                                                    {isParserMatched ? (
+                                                                        visibleUploadCols['parser']?.map(h => renderUploadEditableCell(row, idx, h, 'parser', `p-u-p-${h}`, true))
+                                                                    ) : (
+                                                                        visibleUploadCols['estimate']?.map(h => renderUploadEditableCell(row, idx, h, activeProfileKey, `p-u-e-${h}`, false))
                                                                     )}
                                                                 </>
                                                             )}
