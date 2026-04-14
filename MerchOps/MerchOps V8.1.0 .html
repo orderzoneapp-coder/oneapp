@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - V8.3.0 View Exporter</title>
+    <title>ONEAPP MerchOps - V8.3.1 Clean Toolbar</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -877,7 +877,7 @@
         };
 
         // ==========================================
-        // ⚙️ 메인 Application (V8.3.0 View Exporter)
+        // ⚙️ 메인 Application (V8.3.1 Clean Toolbar)
         // ==========================================
         const App = () => {
             const [masterProducts, setMasterProducts] = useState(() => { 
@@ -1332,10 +1332,14 @@
                 }, 300);
             };
 
-            // 💡 [UPDATE] F8 단축키 추가
+            // 💡 [UPDATE] F8 단축키 추가 및 단축키 관리
             useEffect(() => {
                 const handleGlobalKeyDown = (e) => {
-                    if (e.key === 'F7') { e.preventDefault(); setShowExportModal(true); }
+                    if (e.key === 'F7') { 
+                        e.preventDefault(); 
+                        if (viewMode === 'parser' && parserFilter === 'matched') setShowBriefingModal(true);
+                        else setShowExportModal(true); 
+                    }
                     if (e.key === 'F8') { e.preventDefault(); document.getElementById('btn-export-view')?.click(); }
                     if (e.key === 'F3' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f')) {
                         e.preventDefault();
@@ -1349,7 +1353,7 @@
                     if (e.key === 'Escape') { if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') document.activeElement.blur(); }
                 };
                 window.addEventListener('keydown', handleGlobalKeyDown); return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-            }, []);
+            }, [viewMode, parserFilter]); // 상태값 의존성 추가
 
             const masterSearchResults = useMemo(() => {
                 if (viewMode !== 'parser' || parserFilter === 'matched' || !globalSearch.trim()) return [];
@@ -1530,7 +1534,7 @@
                                             <span className="text-xl font-black text-indigo-400 mr-3">ONEAPP</span>
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <span className="text-[14px] font-black text-slate-200 leading-none mb-0.5">MerchOps</span>
-                                                <span className="text-[9px] font-extrabold text-slate-500 tracking-widest">V8.3.0 VIEW EXPORTER</span>
+                                                <span className="text-[9px] font-extrabold text-slate-500 tracking-widest">V8.3.1 CLEAN TOOLBAR</span>
                                             </div>
                                         </div>
                                         
@@ -1549,90 +1553,79 @@
                                 </div>
                             </div>
                             
-                            {/* 💡 상단 툴바 영역 */}
+                            {/* 💡 상단 툴바 영역 (3단 구조) */}
                             <div className="px-5 pt-4 pb-3 flex justify-between items-center h-[72px]">
                                 
-                                {/* 1. 좌측: 뷰어 모드 전환 그룹 */}
-                                <div className="flex gap-2 items-center h-10 shrink-0">
-                                    {viewMode === 'parser' ? (
-                                        <button onClick={() => {
-                                            setViewMode('default'); 
-                                            setParserState({targetId:null, searchKey:''});
-                                            setGlobalSearch('');
-                                        }} className="h-full px-4 rounded-lg text-slate-500 bg-white border border-slate-300 hover:bg-slate-50 hover:text-slate-700 transition-colors flex items-center font-bold text-[13px]" title="파서 종료 및 기본모드로 돌아가기">
-                                            <i className="fas fa-arrow-left mr-2"></i> 파서 종료
+                                {/* 1. 좌측: 뷰어 모드 전환 (알약 토글) */}
+                                <div className="flex bg-slate-200 p-1.5 rounded-xl h-10 shrink-0 shadow-inner">
+                                    <div className={`cursor-pointer px-5 rounded-lg text-[13px] font-black transition-all flex items-center justify-center ${viewMode === 'default' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`} onClick={() => setViewMode('default')}>
+                                        <span>엑셀 뷰</span>
+                                        <label className="ml-2 cursor-pointer text-slate-400 hover:text-indigo-600 transition-colors" title="새 엑셀 업로드" onClick={(e) => e.stopPropagation()}>
+                                            <i className="fas fa-upload"></i>
+                                            <input type="file" className="hidden" multiple onChange={(e) => { setViewMode('default'); handleFileUpload(e, 'estimate'); }} accept=".xlsx, .xls, .csv" disabled={isProcessing} />
+                                        </label>
+                                    </div>
+                                    
+                                    <div className={`cursor-pointer px-5 rounded-lg text-[13px] font-black transition-all flex items-center justify-center ${viewMode === 'parser' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`} onClick={() => setViewMode('parser')}>
+                                        <span>파서 뷰</span>
+                                        <button className="ml-2 cursor-pointer text-slate-400 hover:text-indigo-600 transition-colors" title="텍스트 파서 창 열기" onClick={(e) => { e.stopPropagation(); setShowSmartParserModal(true); }}>
+                                            <i className="fas fa-plus-circle"></i>
                                         </button>
-                                    ) : (
-                                        <>
-                                            <button onClick={() => {
-                                                setViewMode('default');
-                                                setManagedItems({});
-                                                setSelectedRows(new Set());
-                                                setGlobalSearch('');
-                                            }} className={`h-full px-5 rounded-lg text-[13px] font-bold transition-colors flex items-center ${!isEstimateUploaded ? 'bg-slate-800 text-white shadow-md' : 'bg-white text-slate-500 border border-slate-300 hover:bg-slate-50'}`}>
-                                                <i className="fas fa-layer-group mr-2"></i>전체상품 보기
-                                            </button>
-                                            
-                                            <div className="w-px h-6 bg-slate-300 mx-1"></div>
-                                            
-                                            <label className={`cursor-pointer h-full px-5 rounded-lg text-[13px] font-bold transition-colors flex items-center ${isEstimateUploaded ? 'bg-emerald-600 text-white shadow-md border-emerald-700' : 'bg-white text-slate-600 border border-slate-300 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300'}`}>
-                                                <i className="fas fa-file-excel mr-2"></i>엑셀 견적서
-                                                <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e, 'estimate')} accept=".xlsx, .xls, .csv" disabled={isProcessing} />
-                                            </label>
-                                            
-                                            <button onClick={() => setShowSmartParserModal(true)} className={`h-full px-5 rounded-lg text-[13px] font-bold transition-colors flex items-center bg-white text-slate-600 border border-slate-300 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-300`}>
-                                                <i className="fas fa-magic mr-2"></i>텍스트 파서
-                                            </button>
-                                        </>
-                                    )}
-
-                                    {/* 2. 중앙: 파서 전용 필터 탭 */}
-                                    {viewMode === 'parser' && (
-                                        <div className="flex bg-slate-200 p-1 rounded-lg ml-4 fade-in">
-                                            <button onClick={()=>setParserFilter('matched')} className={`px-4 py-1.5 rounded text-[12px] font-bold transition-colors ${parserFilter==='matched' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>🟢 일치/학습 ({parserBuffer.filter(r=>r._matchCode).length})</button>
-                                            <button onClick={()=>setParserFilter('similar')} className={`px-4 py-1.5 rounded text-[12px] font-bold transition-colors ${parserFilter==='similar' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>🟡 유사 ({parserBuffer.filter(r=>!r._matchCode && r._matchStatus.includes('유사')).length})</button>
-                                            <button onClick={()=>setParserFilter('unmatched')} className={`px-4 py-1.5 rounded text-[12px] font-bold transition-colors ${parserFilter==='unmatched' ? 'bg-white text-rose-500 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>🔴 불일치 ({parserBuffer.filter(r=>!r._matchCode && r._matchStatus.includes('불일치')).length})</button>
-                                        </div>
-                                    )}
+                                    </div>
                                 </div>
 
-                                {/* 3. 우측: 액션 및 검색 그룹 */}
-                                <div className="flex items-center gap-3 h-10 shrink-0">
-                                    
-                                    {/* 💡 [NEW] 현재 화면 그대로 다운로드 버튼 (F8) */}
-                                    <button id="btn-export-view" onClick={handleExportCurrentView} className="h-full px-4 rounded-lg text-[13px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 shadow-sm transition-colors" title="현재 보이는 화면 그대로 엑셀 다운로드 (F8)">
-                                        <i className="fas fa-file-excel mr-1.5"></i>뷰 다운로드 (F8)
-                                    </button>
+                                {/* 2. 중앙: 파서 전용 필터 탭 */}
+                                {viewMode === 'parser' && (
+                                    <div className="flex bg-slate-200 p-1.5 rounded-xl h-10 shrink-0 ml-4 shadow-inner fade-in">
+                                        <button onClick={()=>setParserFilter('matched')} className={`px-5 rounded-lg text-[12px] font-bold transition-colors ${parserFilter==='matched' ? 'bg-emerald-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>🟢 일치/학습 ({parserBuffer.filter(r=>r._matchCode).length})</button>
+                                        <button onClick={()=>setParserFilter('similar')} className={`px-5 rounded-lg text-[12px] font-bold transition-colors ${parserFilter==='similar' ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>🟡 유사 ({parserBuffer.filter(r=>!r._matchCode && r._matchStatus.includes('유사')).length})</button>
+                                        <button onClick={()=>setParserFilter('unmatched')} className={`px-5 rounded-lg text-[12px] font-bold transition-colors ${parserFilter==='unmatched' ? 'bg-rose-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>🔴 불일치 ({parserBuffer.filter(r=>!r._matchCode && r._matchStatus.includes('불일치')).length})</button>
+                                    </div>
+                                )}
+                                
+                                <div className="flex-1"></div>
 
+                                {/* 3. 우측: 액션 및 검색 그룹 */}
+                                <div className="flex items-center gap-2.5 h-10 shrink-0">
+                                    
+                                    {/* 마스터 반영 버튼 (선택된 모드에 따라 노출) */}
                                     {viewMode === 'default' && isEstimateUploaded && (
-                                        <>
-                                            <button onClick={handleCommitEstimate} className={`h-full px-5 rounded-lg text-[13px] font-black shadow-sm ${selectedRows.size > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-white text-slate-400 border border-slate-300'}`}>
-                                                <i className="fas fa-save mr-2"></i>선택 항목 마스터 반영
-                                            </button>
-                                            <button onClick={() => setShowExportModal(true)} className="h-full px-5 rounded-lg text-[13px] font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 shadow-sm transition-colors">
-                                                <i className="fas fa-file-export mr-2"></i>출력 (F7)
-                                            </button>
-                                        </>
+                                        <button onClick={handleCommitEstimate} className={`h-full px-4 rounded-lg text-[13px] font-black shadow-sm ${selectedRows.size > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-white text-slate-400 border border-slate-300'}`}>
+                                            <i className="fas fa-save mr-1.5"></i>반영
+                                        </button>
                                     )}
                                     {viewMode === 'parser' && parserFilter === 'matched' && (
-                                        <>
-                                            <button onClick={() => setShowBriefingModal(true)} className="h-full px-5 rounded-lg text-[13px] font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 shadow-sm transition-colors">
-                                                <i className="fas fa-chart-line mr-2"></i>단가 변동 브리핑 (엑셀)
-                                            </button>
-                                            <button onClick={handleParserApply} className={`h-full px-5 rounded-lg text-[13px] font-black shadow-sm bg-indigo-600 text-white hover:bg-indigo-700 transition-colors`}>
-                                                <i className="fas fa-check-double mr-2"></i>선택 항목 마스터 반영 (학습)
-                                            </button>
-                                        </>
+                                        <button onClick={handleParserApply} className={`h-full px-4 rounded-lg text-[13px] font-black shadow-sm bg-indigo-600 text-white hover:bg-indigo-700 transition-colors`}>
+                                            <i className="fas fa-check-double mr-1.5"></i>반영
+                                        </button>
+                                    )}
+
+                                    <div className="w-px h-5 bg-slate-300 mx-1"></div>
+
+                                    {/* 다운로드 (F8) */}
+                                    <button id="btn-export-view" onClick={handleExportCurrentView} className="h-full px-4 rounded-lg text-[13px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 shadow-sm transition-colors" title="현재 보이는 화면 그대로 엑셀 다운로드 (F8)">
+                                        <i className="fas fa-download mr-1.5"></i>다운로드 (F8)
+                                    </button>
+
+                                    {/* 보고서 (F7) */}
+                                    {viewMode === 'parser' && parserFilter === 'matched' ? (
+                                        <button onClick={() => setShowBriefingModal(true)} className="h-full px-4 rounded-lg text-[13px] font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 shadow-sm transition-colors">
+                                            <i className="fas fa-chart-bar mr-1.5"></i>보고서 (F7)
+                                        </button>
+                                    ) : (
+                                        <button onClick={() => setShowExportModal(true)} className="h-full px-4 rounded-lg text-[13px] font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 shadow-sm transition-colors">
+                                            <i className="fas fa-file-export mr-1.5"></i>보고서 (F7)
+                                        </button>
                                     )}
                                     
                                     <SearchBar 
                                         value={globalSearch} 
                                         onChange={handleGlobalSearchChange} 
-                                        placeholder={viewMode === 'parser' && parserState.targetId ? "매핑할 마스터 상품 다중 검색" : "다중 키워드 검색 (단축키 F3)"}
+                                        placeholder={viewMode === 'parser' && parserState.targetId ? "매핑 검색" : "다중 키워드 (F3)"}
                                     />
 
-                                    <button onClick={handleReset} className="text-slate-400 hover:text-rose-500 ml-2 flex items-center h-full transition-colors" title="현재 작업버퍼 비우기 및 초기화">
-                                        <i className="fas fa-trash-alt"></i>
+                                    <button onClick={handleReset} className="text-slate-400 hover:text-slate-800 bg-white border border-slate-300 hover:bg-slate-100 w-10 h-10 rounded-lg flex items-center justify-center transition-colors shadow-sm ml-1" title="현재 뷰 데이터 초기화">
+                                        <i className="fas fa-redo-alt"></i>
                                     </button>
                                 </div>
                             </div>
