@@ -420,7 +420,7 @@
             return (
                 <div className="px-6 pt-5 bg-slate-50 border-b border-gray-200 flex items-end justify-between shrink-0 relative z-10">
                     <div className="flex gap-1">
-                        <TabButton id="catalog" label="카테고리 소싱" icon="fa-sitemap" />
+                        <TabButton id="catalog" label="카테고리" icon="fa-sitemap" />
                         <TabButton id="default" label="엑셀 뷰 ↑" />
                         <TabButton id="parser" label="파서 뷰 ⊕" />
                         <TabButton id="smartform" label="스마트 폼" />
@@ -521,25 +521,35 @@
                 }
             }, [c2List, activeC1]);
 
-            // 2. 디스플레이 데이터
+            // 2. 디스플레이 데이터 (글로벌 검색 F3 연동 반영)
             const displayItems = useMemo(() => {
-                if (!activeC2) return [];
+                let baseList = data.masterCatalogProducts;
+                const kw = ui.globalSearch ? ui.globalSearch.toLowerCase().trim() : '';
                 
                 if (sourcingMode === 'PRODUCT') {
-                    return data.masterCatalogProducts.filter(p => p.c2Code === activeC2);
+                    if (kw) {
+                        return baseList.filter(p => (p.name && p.name.toLowerCase().includes(kw)) || (p.id && p.id.toLowerCase().includes(kw)));
+                    }
+                    return activeC2 ? baseList.filter(p => p.c2Code === activeC2) : [];
                 } else {
                     const map = new Map();
-                    data.masterCatalogProducts.filter(p => p.c2Code === activeC2).forEach(p => {
+                    // 검색어가 있으면 전체 카탈로그에서, 없으면 선택된 카테고리에서 필터링
+                    const targetList = kw ? baseList : (activeC2 ? baseList.filter(p => p.c2Code === activeC2) : []);
+                    targetList.forEach(p => {
                         if (p.c3Code && !map.has(p.c3Code)) {
                             map.set(p.c3Code, { c3Code: p.c3Code, c3Name: p.c3Name, ordersCode: p.ordersCode });
                         }
                     });
-                    return Array.from(map.values()).sort((a,b) => a.c3Code.localeCompare(b.c3Code));
+                    let items = Array.from(map.values()).sort((a,b) => a.c3Code.localeCompare(b.c3Code));
+                    if (kw) {
+                        items = items.filter(item => (item.c3Name && item.c3Name.toLowerCase().includes(kw)) || (item.ordersCode && item.ordersCode.includes(kw)));
+                    }
+                    return items;
                 }
-            }, [data.masterCatalogProducts, activeC2, sourcingMode]);
+            }, [data.masterCatalogProducts, activeC2, sourcingMode, ui.globalSearch]);
 
-            // 카테고리/모드 변경 시 선택 초기화
-            useEffect(() => { setCheckedItems(new Set()); }, [activeC1, activeC2, sourcingMode]);
+            // 카테고리/모드/검색어 변경 시 선택 초기화
+            useEffect(() => { setCheckedItems(new Set()); }, [activeC1, activeC2, sourcingMode, ui.globalSearch]);
 
             // 글로벌 MouseUp (드래그 종료)
             useEffect(() => {
@@ -695,6 +705,12 @@
 
                         {/* 3Depth Categories / Products (Center Area) */}
                         <div className="flex-1 flex flex-col bg-white border-r border-gray-200 z-0">
+                            {ui.globalSearch && (
+                                <div className="px-4 py-2 bg-indigo-50/80 border-b border-indigo-100 text-[11px] font-bold text-indigo-800 flex items-center justify-between shrink-0">
+                                    <span><i className="fas fa-search mr-1.5 text-indigo-500"></i>전체 카탈로그 검색 결과: "{ui.globalSearch}"</span>
+                                    <span>{displayItems.length}건 검색됨</span>
+                                </div>
+                            )}
                             {/* Table Header: 항목 너비 재조정 */}
                             <div className="flex items-center px-4 py-2 bg-slate-50 border-b border-gray-200 text-[11px] font-bold text-slate-500 shrink-0">
                                 <div className="w-12 flex justify-center shrink-0">
@@ -716,7 +732,7 @@
                                     </>
                                 ) : (
                                     <>
-                                        <div className="w-28 text-center">오더즈/ERP</div>
+                                        <div className="w-28 text-center">오더즈 코드</div>
                                         <div className="flex-1 px-4">3차 카테고리명</div>
                                         <div className="w-32 text-right pr-6"></div>
                                         <div className="w-24 text-center pr-4">
@@ -779,9 +795,8 @@
                                                     <div className="w-12 flex justify-center shrink-0">
                                                         <input type="checkbox" checked={isChecked} readOnly className="w-3.5 h-3.5 pointer-events-none accent-indigo-600" />
                                                     </div>
-                                                    <div className="w-28 shrink-0 text-center flex flex-col gap-0.5 pointer-events-none">
-                                                        <span className="text-[10px] font-mono text-slate-500">{c.ordersCode}</span>
-                                                        <span className="text-[10px] font-mono text-slate-400">{c.c3Code}</span>
+                                                    <div className="w-28 shrink-0 text-center flex flex-col justify-center pointer-events-none">
+                                                        <span className="text-[11px] font-mono font-bold text-slate-500">{c.ordersCode}</span>
                                                     </div>
                                                     <div className="flex-1 px-4 pointer-events-none">
                                                         <div className={`text-sm font-bold transition-colors ${isChecked ? 'text-indigo-800' : 'text-slate-800'}`}>{c.c3Name}</div>
@@ -803,21 +818,24 @@
                         {/* Right Pane: Cart - 너비 고정 w-[360px] */}
                         <div className="w-[360px] bg-white flex flex-col shrink-0 z-20 shadow-[-2px_0_10px_rgba(0,0,0,0.03)] border-l border-gray-200">
                             {/* Toggle Controls */}
-                            <div className="px-5 py-3 bg-slate-50 border-b border-slate-200 shrink-0">
-                                <div className="flex bg-slate-200/50 p-0.5 rounded-md border border-slate-200">
+                            <div className="px-5 py-3 bg-slate-50 border-b border-slate-200 shrink-0 flex items-center gap-2">
+                                <div className="flex flex-1 bg-slate-200/50 p-0.5 rounded-md border border-slate-200">
                                     <button
                                         onClick={() => setSourcingMode('PRODUCT')}
                                         className={`flex-1 py-1.5 text-[12px] font-bold rounded-sm transition-all ${sourcingMode === 'PRODUCT' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
                                     >
-                                        상품 복사
+                                        상품규격 복사
                                     </button>
                                     <button
                                         onClick={() => setSourcingMode('CATEGORY')}
                                         className={`flex-1 py-1.5 text-[12px] font-bold rounded-sm transition-all ${sourcingMode === 'CATEGORY' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
                                     >
-                                        신규 카테고리
+                                        카테고리 복사
                                     </button>
                                 </div>
+                                <button onClick={() => setCartItems([])} className="w-9 h-9 rounded bg-white border border-slate-300 text-slate-400 hover:text-rose-500 hover:border-rose-300 hover:bg-rose-50 transition-colors flex items-center justify-center shadow-sm" title="큐 초기화">
+                                    <i className="fas fa-trash-alt text-xs"></i>
+                                </button>
                             </div>
                             
                             <div className="px-5 py-3 border-b border-slate-100 bg-white shrink-0 flex justify-between items-center">
