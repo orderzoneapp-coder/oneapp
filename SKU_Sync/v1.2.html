@@ -29,7 +29,7 @@
         .row-hover:hover { background-color: #f8fafc; }
     </style>
 </head>
-<body class="bg-[#f1f5f9] overflow-hidden text-slate-800">
+<body class="bg-slate-200 overflow-hidden text-slate-800">
     <div id="root"></div>
 
     <script type="text/babel">
@@ -1644,8 +1644,8 @@
             }, [effectiveViewMode]);
 
             return (
-                <div className="h-screen w-full flex flex-col font-sans overflow-hidden bg-slate-100">
-                    {ui.toastMsg && <div className="fixed bottom-10 right-6 z-[1000] bg-slate-900 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3 text-sm font-bold fade-in"><i className="fas fa-check-circle text-emerald-400"></i>{ui.toastMsg}</div>}
+                <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-slate-100 relative shadow-2xl border-x border-slate-300">
+                    {ui.toastMsg && <div className="absolute bottom-10 right-6 z-[1000] bg-slate-900 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3 text-sm font-bold fade-in"><i className="fas fa-check-circle text-emerald-400"></i>{ui.toastMsg}</div>}
 
                     {/* Top GNB + System IO Console */}
                     <TopHeader itemCount={Object.keys(data.masterProducts).length} isProcessing={ui.isProcessing} processMsg={ui.processMsg} uiActions={appActions} />
