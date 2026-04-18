@@ -412,7 +412,25 @@
                         style={{ marginBottom: active ? '-1px' : '0' }}
                     >
                         {icon && <i className={`fas ${icon} ${active ? 'text-indigo-600' : 'text-slate-400'}`}></i>}
-                        {label} {id === 'parser' && <i className="fas fa-plus-circle text-[10px] text-slate-400 ml-1 hover:text-indigo-500" onClick={(e)=>{e.stopPropagation(); actions.setShowSmartParserModal(true);}}></i>}
+                        {label} 
+                        {id === 'default' && (
+                            <div 
+                                className="flex items-center justify-center w-5 h-5 ml-1 rounded-full bg-slate-200 hover:bg-indigo-100 text-slate-500 hover:text-indigo-600 transition-colors"
+                                onClick={(e) => { e.stopPropagation(); fileInputRef.current.click(); }}
+                                title="내 엑셀 파이프라인 등록"
+                            >
+                                <i className="fas fa-arrow-up text-[10px]"></i>
+                            </div>
+                        )}
+                        {id === 'parser' && (
+                            <div 
+                                className="flex items-center justify-center w-5 h-5 ml-1 rounded-full bg-slate-200 hover:bg-indigo-100 text-slate-500 hover:text-indigo-600 transition-colors"
+                                onClick={(e) => { e.stopPropagation(); actions.setShowSmartParserModal(true); }}
+                                title="스마트 파서 열기"
+                            >
+                                <i className="fas fa-plus text-[10px]"></i>
+                            </div>
+                        )}
                     </button>
                 );
             };
@@ -421,8 +439,8 @@
                 <div className="px-6 pt-5 bg-slate-50 border-b border-gray-200 flex items-end justify-between shrink-0 relative z-10">
                     <div className="flex gap-1">
                         <TabButton id="catalog" label="카테고리" icon="fa-sitemap" />
-                        <TabButton id="default" label="엑셀 뷰 ↑" />
-                        <TabButton id="parser" label="파서 뷰 ⊕" />
+                        <TabButton id="default" label="엑셀 뷰" />
+                        <TabButton id="parser" label="파서 뷰" />
                         <TabButton id="smartform" label="스마트 폼" />
                         <TabButton id="bom" label="BOM 조립" />
                     </div>
@@ -439,13 +457,9 @@
                             </button>
                         )}
 
-                        <button onClick={() => fileInputRef.current.click()} className="px-3 py-1.5 border border-emerald-500 text-emerald-600 rounded text-xs font-bold bg-white hover:bg-emerald-50 transition-colors shadow-sm flex items-center">
-                            <i className="fas fa-file-excel mr-1.5"></i> 내 엑셀 파이프라인 등록
-                        </button>
+                        {/* 숨겨진 엑셀 업로드 Input */}
                         <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls, .csv" multiple onChange={actions.handleFileUpload} />
                         
-                        <div className="w-px h-4 bg-gray-300 mx-1"></div>
-
                         <div className="relative w-64 h-[30px]">
                             <input 
                                 id="main-search-input"
