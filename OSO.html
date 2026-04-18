@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>스마트 통합 입력기 (주문/구매/판매)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', sans-serif; background-color: #f8fafc; }
+        .fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const SmartInputter = () => {
+            // 1. 상태 관리
+            const [mode, setMode] = useState('order'); // order, purchase, sales
+            const [docInfo, setDocInfo] = useState({ date: new Date().toISOString().slice(0,10), partner: '', memo: '' });
+            const [items, setItems] = useState([{ id: 1, name: '', spec: '', qty: 1, price: 0 }]);
+            const [showParser, setShowParser] = useState(false);
+            const [parseText, setParseText] = useState('');
+            const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+            // 모드별 설정
+            const modeConfig = {
+                order: { title: '주문서 입력', color: 'bg-blue-600', partnerLabel: '주문고객(배송지)', priceLabel: '판매단가' },
+                purchase: { title: '구매/발주 입력', color: 'bg-emerald-600', partnerLabel: '매입거래처', priceLabel: '매입단가' },
+                sales: { title: '판매/출고 입력', color: 'bg-orange-600', partnerLabel: '매출거래처', priceLabel: '출고단가' }
+            };
+            const currentMode = modeConfig[mode];
+
+            // 2. 항목 관리 로직
+            const handleAddItem = () => setItems([...items, { id: Date.now(), name: '', spec: '', qty: 1, price: 0 }]);
+            const handleRemoveItem = (id) => setItems(items.filter(i => i.id !== id));
+            const handleItemChange = (id, field, value) => {
+                setItems(items.map(item => item.id === id ? { ...item, [field]: value } : item));
+            };
+
+            const totalAmount = items.reduce((sum, item) => sum + (Number(item.qty) * Number(item.price)), 0);
+
+            // 3. 스마트 파서 로직 (텍스트/이미지)
+            const executeTextParse = () => {
+                if(!parseText.trim()) return;
+                setIsAnalyzing(true);
+                
+                // 가상의 파싱 로직 (실제로는 정규식이나 ChatGPT API 연동 추천)
+                setTimeout(() => {
+                    const lines = parseText.split('\n').filter(l => l.trim() !== '');
+                    const newItems = lines.map((line, idx) => {
+                        // 예시: "배추 10박스" -> 이름: 배추, 수량: 10, 규격: 박스
+                        const match = line.match(/([가-힣a-zA-Z]+)\s*(\d+)([가-힣]+)/);
+                        if(match) return { id: Date.now() + idx, name: match[1], spec: match[3], qty: Number(match[2]), price: 0 };
+                        return { id: Date.now() + idx, name: line.trim(), spec: 'EA', qty: 1, price: 0 };
+                    });
+                    
+                    setItems([...items.filter(i => i.name !== ''), ...newItems]);
+                    setParseText('');
+                    setShowParser(false);
+                    setIsAnalyzing(false);
+                }, 800);
+            };
+
+            const mockImageUpload = () => {
+                setIsAnalyzing(true);
+                setTimeout(() => {
+                    alert("OCR 파싱 완료! (MVP에서는 가상 데이터로 채워집니다.)");
+                    setItems([{ id: Date.now(), name: '삼겹살(수입)', spec: 'kg', qty: 50, price: 12000 }]);
+                    setShowParser(false);
+                    setIsAnalyzing(false);
+                }, 1500);
+            };
+
+            // 4. 엑셀 출력 (기존의 XLSX 로직 연동을 위한 함수)
+            const handleExport = () => {
+                const docData = { ...docInfo, type: mode, total: totalAmount, items };
+                console.log("엑셀용 추출 데이터:", docData);
+                alert(`${currentMode.title} 데이터가 엑셀로 출력됩니다. (콘솔 확인)`);
+                // 여기에 XLSX 조립 코드 연결
+            };
+
+            return (
+                <div className="max-w-6xl mx-auto p-6 fade-in">
+                    {/* 모드 탭 스위처 */}
+                    <div className="flex gap-2 mb-6">
+                        {Object.entries(modeConfig).map(([key, conf]) => (
+                            <button key={key} onClick={() => setMode(key)} 
+                                className={`px-6 py-3 rounded-t-lg font-bold text-sm transition-all ${mode === key ? `${conf.color} text-white shadow-md transform -translate-y-1` : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'}`}>
+                                {conf.title}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="bg-white rounded-b-xl rounded-tr-xl shadow-xl border border-slate-200 overflow-hidden">
+                        {/* 헤더 정보 입력 구역 */}
+                        <div className="bg-slate-50 p-6 border-b border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 mb-1.5">일자</label>
+                                <input type="date" value={docInfo.date} onChange={e => setDocInfo({...docInfo, date: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded outline-none focus:border-blue-500" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 mb-1.5">{currentMode.partnerLabel} <span className="text-red-500">*</span></label>
+                                <div className="relative">
+                                    <input type="text" placeholder="검색 또는 직접입력..." value={docInfo.partner} onChange={e => setDocInfo({...docInfo, partner: e.target.value})} className="w-full px-3 py-2 pl-9 border border-slate-300 rounded outline-none focus:border-blue-500" />
+                                    <i className="fas fa-search absolute left-3 top-3 text-slate-400"></i>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 mb-1.5">전하실 말씀 (메모)</label>
+                                <input type="text" placeholder="요청사항 입력..." value={docInfo.memo} onChange={e => setDocInfo({...docInfo, memo: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded outline-none focus:border-blue-500" />
+                            </div>
+                        </div>
+
+                        {/* 툴바 (스마트 파서) */}
+                        <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-white">
+                            <div className="text-sm font-bold text-slate-700">품목 리스트</div>
+                            <button onClick={() => setShowParser(!showParser)} className="px-4 py-2 bg-indigo-50 text-indigo-600 border border-indigo-200 rounded text-xs font-bold hover:bg-indigo-100 transition-colors">
+                                <i className="fas fa-magic mr-1.5"></i> 스마트 파서 열기 (카톡/이미지)
+                            </button>
+                        </div>
+
+                        {/* 스마트 파서 패널 (토글) */}
+                        {showParser && (
+                            <div className="p-6 bg-slate-800 text-white border-b border-slate-700 flex gap-6 fade-in">
+                                <div className="flex-1">
+                                    <label className="block text-xs font-bold text-indigo-300 mb-2">카톡/문자 텍스트 붙여넣기</label>
+                                    <textarea value={parseText} onChange={e => setParseText(e.target.value)} placeholder="'배추 10박스\n대파 5단' 처럼 줄바꿈하여 입력하세요." className="w-full h-24 bg-slate-900 border border-slate-600 rounded p-3 text-sm outline-none focus:border-indigo-400 resize-none"></textarea>
+                                    <button onClick={executeTextParse} disabled={isAnalyzing} className="mt-2 w-full py-2 bg-indigo-500 hover:bg-indigo-600 rounded text-sm font-bold">{isAnalyzing ? '분석 중...' : '텍스트로 일괄 생성'}</button>
+                                </div>
+                                <div className="w-px bg-slate-700"></div>
+                                <div className="flex-1 flex flex-col justify-center items-center border-2 border-dashed border-slate-600 rounded bg-slate-900 cursor-pointer hover:border-indigo-400 hover:bg-slate-800 transition-colors" onClick={mockImageUpload}>
+                                    <i className="fas fa-file-image text-3xl text-slate-500 mb-3"></i>
+                                    <span className="text-sm font-bold text-slate-300">발주서/영수증 이미지 업로드 (OCR)</span>
+                                    <span className="text-xs text-slate-500 mt-1">클릭하여 테스트</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 메인 그리드 */}
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm whitespace-nowrap">
+                                <thead className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                                    <tr>
+                                        <th className="px-4 py-3 font-bold w-12 text-center">No</th>
+                                        <th className="px-4 py-3 font-bold">품목명 (코드)</th>
+                                        <th className="px-4 py-3 font-bold w-24">규격</th>
+                                        <th className="px-4 py-3 font-bold w-24 text-right">수량</th>
+                                        <th className="px-4 py-3 font-bold w-32 text-right">{currentMode.priceLabel}</th>
+                                        <th className="px-4 py-3 font-bold w-32 text-right">합계액</th>
+                                        <th className="px-4 py-3 font-bold w-16 text-center">삭제</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {items.map((item, index) => (
+                                        <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                                            <td className="px-4 py-2 text-center text-slate-400 text-xs">{index + 1}</td>
+                                            <td className="px-4 py-2"><input type="text" placeholder="품목 검색..." value={item.name} onChange={e => handleItemChange(item.id, 'name', e.target.value)} className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none px-1 py-1" /></td>
+                                            <td className="px-4 py-2"><input type="text" placeholder="EA" value={item.spec} onChange={e => handleItemChange(item.id, 'spec', e.target.value)} className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none px-1 py-1" /></td>
+                                            <td className="px-4 py-2"><input type="number" value={item.qty} onChange={e => handleItemChange(item.id, 'qty', e.target.value)} className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none px-1 py-1 text-right" /></td>
+                                            <td className="px-4 py-2"><input type="number" value={item.price} onChange={e => handleItemChange(item.id, 'price', e.target.value)} className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 outline-none px-1 py-1 text-right" /></td>
+                                            <td className="px-4 py-2 text-right font-bold text-slate-700">{(item.qty * item.price).toLocaleString()}</td>
+                                            <td className="px-4 py-2 text-center"><button onClick={() => handleRemoveItem(item.id)} className="text-slate-300 hover:text-red-500"><i className="fas fa-trash-alt"></i></button></td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* 하단 집계 및 액션 */}
+                        <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-between items-center">
+                            <button onClick={handleAddItem} className="px-4 py-2 bg-white border border-slate-300 text-slate-600 rounded text-sm font-bold hover:bg-slate-100 shadow-sm">
+                                <i className="fas fa-plus mr-1"></i> 행 추가
+                            </button>
+                            <div className="flex items-center gap-6">
+                                <div className="text-sm">총 금액: <span className="text-xl font-black text-slate-800 ml-2">{totalAmount.toLocaleString()}</span> 원</div>
+                                <button onClick={handleExport} className={`px-8 py-3 ${currentMode.color} text-white rounded-lg text-sm font-bold shadow-lg hover:opacity-90 transform transition-transform hover:-translate-y-0.5`}>
+                                    <i className="fas fa-cloud-download-alt mr-2"></i> ERP 엑셀 양식 추출
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<SmartInputter />);
+    </script>
+</body>
+</html>
