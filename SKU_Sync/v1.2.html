@@ -383,15 +383,20 @@
                         </div>
                     </div>
 
-                    <div className="flex gap-2.5 items-center">
-                        <button onClick={() => uiActions.triggerMasterLoad()} className="w-9 h-9 rounded bg-[#1A2235] hover:bg-indigo-900 flex items-center justify-center border border-slate-800 transition-colors shadow" title="본사 마스터 DB 불러오기">
-                            <i className="fas fa-folder-open text-indigo-300 text-sm"></i>
-                        </button>
-                        <button onClick={() => uiActions.setShowExportModal(true)} className="w-9 h-9 rounded bg-[#1A2235] hover:bg-indigo-900 flex items-center justify-center border border-slate-800 transition-colors shadow" title="라우팅 출력 / 구글 시트 업로드 (F9)">
-                            <i className="fas fa-cloud-upload-alt text-indigo-300 text-sm"></i>
-                        </button>
-                        <button onClick={() => uiActions.setShowSettings(true)} className="w-9 h-9 rounded bg-[#1A2235] hover:bg-slate-700 flex items-center justify-center border border-slate-800 transition-colors shadow ml-1" title="환경설정 (매핑센터)">
-                            <i className="fas fa-cog text-slate-300 text-sm"></i>
+                    <div className="flex items-center">
+                        <div className="flex gap-2">
+                            <button onClick={() => uiActions.triggerMasterLoad()} className="w-10 h-10 rounded-lg bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#374151] transition-all shadow-sm group" title="클라우드(본사)에서 마스터 DB 동기화">
+                                <i className="fas fa-cloud-download-alt text-indigo-400 group-hover:text-indigo-300 text-[17px]"></i>
+                            </button>
+                            <button onClick={() => uiActions.setShowExportModal(true)} className="w-10 h-10 rounded-lg bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#374151] transition-all shadow-sm group" title="라우팅 출력 / 클라우드 업로드 (F9)">
+                                <i className="fas fa-cloud-upload-alt text-indigo-400 group-hover:text-indigo-300 text-[17px]"></i>
+                            </button>
+                        </div>
+                        
+                        <div className="w-px h-6 bg-[#374151] mx-3"></div>
+                        
+                        <button onClick={() => uiActions.setShowSettings(true)} className="w-10 h-10 rounded-lg bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#374151] transition-all shadow-sm group" title="환경설정 (매핑센터)">
+                            <i className="fas fa-cogs text-slate-400 group-hover:text-slate-300 text-[17px]"></i>
                         </button>
                     </div>
                 </div>
@@ -482,7 +487,7 @@
 
         const EmptyState = () => (
             <div className="flex flex-col items-center justify-center h-full w-full py-32 bg-white">
-                <i className="fas fa-folder-open text-[40px] mb-4 text-slate-300"></i>
+                <i className="fas fa-cloud-download-alt text-[40px] mb-4 text-slate-300"></i>
                 <p className="text-sm text-slate-400 font-medium">데이터가 없습니다.</p>
             </div>
         );
@@ -760,8 +765,9 @@
                             <div className="flex-1 overflow-y-auto custom-scrollbar relative">
                                 {data.masterCatalogProducts.length === 0 ? (
                                     <div className="flex flex-col items-center justify-center h-full text-slate-400">
-                                        <i className="fas fa-folder-open text-4xl mb-4 text-indigo-300 opacity-50"></i>
+                                        <i className="fas fa-cloud-download-alt text-4xl mb-4 text-indigo-300 opacity-50"></i>
                                         <p className="font-bold text-[15px] text-slate-600 mb-1">본사 마스터 DB가 비어있습니다.</p>
+                                        <p className="text-xs font-medium text-slate-400">우측 상단의 <i className="fas fa-cloud-download-alt mx-1 text-indigo-400"></i> 구름 아이콘을 눌러 데이터를 동기화해주세요.</p>
                                     </div>
                                 ) : displayItems.length === 0 ? (
                                     <div className="flex flex-col items-center justify-center h-full text-slate-400">
