@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - V8.7.8 Stable (Optimized)</title>
+    <title>ONEAPP MerchOps - V8.8.0 Stable</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -893,7 +893,7 @@
         
         const MappingCenterModal = ({ onClose, config, actions }) => {
             const { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules } = config;
-            const { handleCloudSync, showToast } = actions;
+            const { handleCloudSync, showToast, handleFileUpload } = actions;
             const [activeTab, setActiveTab] = useState('display');
             const [customEstColInput, setCustomEstColInput] = useState('');
             const [customParserColInput, setCustomParserColInput] = useState('');
@@ -937,12 +937,23 @@
                             <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
                                 {activeTab === 'display' && (
                                     <div className="max-w-4xl space-y-6 fade-in">
-                                        {/* (기존 렌더링 코드 유지) */}
                                         <div className="bg-indigo-50 p-5 rounded-xl border border-indigo-100 shadow-sm">
                                             <h3 className="text-[14px] font-black text-indigo-900 mb-4 pb-2 border-b border-indigo-200 flex justify-between items-center"><span><i className="fas fa-link text-indigo-500 mr-2"></i>클라우드 동기화 URL 셋팅</span></h3>
                                             <input type="text" value={cloudUrl} onChange={e=>setCloudUrl(e.target.value)} placeholder="Google Apps Script 웹앱 URL 입력..." className="w-full border border-indigo-200 rounded px-3 py-2 text-[12px] outline-none focus:border-indigo-500 bg-white shadow-sm" />
                                             <p className="text-[11px] text-indigo-500 mt-2 font-bold">※ URL 입력 후 메인 화면 우측 상단의 아이콘을 누르면 백업/불러오기가 실행됩니다.</p>
                                         </div>
+
+                                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                                            <div>
+                                                <h3 className="text-[14px] font-black text-slate-800 mb-1"><i className="fas fa-database text-slate-500 mr-2"></i>마스터 DB (엑셀/CSV) 수동 업로드</h3>
+                                                <p className="text-[11px] text-slate-500 font-bold">초기 세팅용 마스터 전체 데이터를 업로드합니다.</p>
+                                            </div>
+                                            <label className="cursor-pointer bg-slate-800 border border-slate-700 text-white hover:bg-slate-700 px-4 py-2 rounded-lg text-[12px] font-bold shadow-sm transition-colors">
+                                                <i className="fas fa-upload mr-1.5"></i>파일 선택
+                                                <input type="file" className="hidden" onChange={(e) => { onClose(); handleFileUpload(e, 'master'); }} multiple />
+                                            </label>
+                                        </div>
+
                                         <div className="bg-white p-5 rounded-xl border shadow-sm">
                                             <h3 className="text-[14px] font-black mb-4 pb-2 border-b flex items-center"><span className="bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0.5 rounded mr-2">[공통]</span> 마스터 항목 노출 설정</h3>
                                             <div className="flex flex-wrap gap-2 mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">
@@ -1859,16 +1870,16 @@
                                             <span className="text-xl font-black text-indigo-400 mr-3">ONEAPP</span>
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <span className="text-[14px] font-black text-slate-200 leading-none mb-0.5">MerchOps</span>
-                                                <span className="text-[9px] font-extrabold text-slate-500 tracking-widest">V8.7.8 STABLE</span>
+                                                <span className="text-[9px] font-extrabold text-slate-500 tracking-widest">V8.8.0 STABLE</span>
                                             </div>
                                         </div>
                                         
                                         <SystemConsole itemCount={Object.keys(data.masterProducts).length} isProcessing={ui.isProcessing} processMsg={ui.processMsg} viewMode={ui.viewMode} parserState={ui.parserState} estimateCount={Object.keys(data.managedItems).length} parserCount={data.parserBuffer.length} />
                                         
                                         <nav className="flex gap-2 text-[14px] shrink-0 items-center">
-                                            <label className={`cursor-pointer w-9 h-9 rounded flex items-center justify-center shadow-sm transition-all duration-300 border ${ui.viewMode === 'default' && isMasterEmpty ? 'text-emerald-400 border-emerald-500/50 bg-emerald-500/10 shadow-[0_0_8px_rgba(16,185,129,0.25)]' : 'text-slate-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500'}`} title="마스터 DB (엑셀/CSV) 업로드">
-                                                <i className={`fas fa-database ${isMasterEmpty ? '' : 'opacity-80'}`}></i><input type="file" className="hidden" onChange={(e) => {ui.setViewMode('default'); customActions.handleFileUpload(e, 'master');}} multiple disabled={ui.isProcessing} />
-                                            </label>
+                                            <a href="https://oneapp.orderz.co.kr/MerchOps/guide" target="_blank" rel="noopener noreferrer" className={`h-9 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-emerald-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-300 hover:border-emerald-500/50 font-bold text-[11px] tracking-wider uppercase ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="MerchOps 사용 가이드">
+                                                GUIDE
+                                            </a>
                                             <div className="w-px h-5 bg-slate-700 mx-1"></div>
                                             <button onClick={() => customActions.handleCloudSync('download')} className={`w-9 h-9 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-indigo-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-indigo-300 hover:border-indigo-500/50 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="클라우드 데이터 불러오기"><i className="fas fa-cloud-download-alt"></i></button>
                                             <button onClick={() => customActions.handleCloudSync('upload')} className={`w-9 h-9 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-indigo-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-indigo-300 hover:border-indigo-500/50 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="클라우드에 데이터 백업"><i className="fas fa-cloud-upload-alt"></i></button>
@@ -1898,7 +1909,7 @@
                     {ui.showSmartParserModal && <SmartParserInputModal onClose={() => ui.setShowSmartParserModal(false)} executeParser={customActions.executeParser} showToast={ui.showToast} />}
                     {ui.showBriefingModal && <BriefingModal onClose={() => ui.setShowBriefingModal(false)} fullDisplayRows={fullDisplayRows} masterProducts={data.masterProducts} effectiveViewMode={effectiveViewMode} parserFilter={ui.parserFilter} activeProfileKey={activeProfileKey} showToast={ui.showToast} marginRules={config.marginRules} />}
                     {ui.showExportModal && <ExportModal onClose={() => ui.setShowExportModal(false)} fullDisplayRows={fullDisplayRows} currentExportTitle={currentExportTitle} executeExport={customActions.executeExport} />}
-                    {ui.showSettings && <MappingCenterModal onClose={() => ui.setShowSettings(false)} config={config} actions={{handleCloudSync: customActions.handleCloudSync, showToast: ui.showToast}} />}
+                    {ui.showSettings && <MappingCenterModal onClose={() => ui.setShowSettings(false)} config={config} actions={{handleCloudSync: customActions.handleCloudSync, showToast: ui.showToast, handleFileUpload: (e, type) => { ui.setViewMode('default'); customActions.handleFileUpload(e, type); } }} />}
                     {ui.showHistoryModal && <HistoryModal onClose={() => ui.setShowHistoryModal(false)} historyLogs={data.historyLogs} setHistoryLogs={data.setHistoryLogs} />}
                 </div>
             );
