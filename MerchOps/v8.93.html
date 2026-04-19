@@ -852,30 +852,6 @@
         // ==========================================
         // 🧩 5. 순수 UI 컴포넌트들 (Components)
         // ==========================================
-        const SystemConsole = ({ itemCount, isProcessing, processMsg, viewMode, parserState, estimateCount, parserCount }) => {
-            const [time, setTime] = useState(new Date());
-            useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
-            const timeStr = `${time.getFullYear()}.${String(time.getMonth()+1).padStart(2,'0')}.${String(time.getDate()).padStart(2,'0')} ${String(time.getHours()).padStart(2,'0')}:${String(time.getMinutes()).padStart(2,'0')}`;
-            
-            let statusText = ''; let statusColor = 'text-emerald-400'; let bgColor = 'bg-emerald-400';
-            if (isProcessing) { statusText = `> ${processMsg}`; statusColor = 'text-amber-400'; bgColor = 'bg-amber-400'; } 
-            else if (viewMode === 'parser') { 
-                if (parserState.targetId) { statusText = `> 🎯 [타겟: ${parserState.searchKey}] 마스터 검색 중...`; statusColor = 'text-amber-300'; bgColor = 'bg-amber-300'; } 
-                else { statusText = `> [PARSER] 파서 모드: ${parserCount}건 로드 (${timeStr})`; statusColor = 'text-indigo-400'; bgColor = 'bg-indigo-400'; }
-            }
-            else if (estimateCount > 0) { statusText = `> DB: ${itemCount}건 / 엑셀 버퍼: ${estimateCount}건 로드 (${timeStr})`; statusColor = 'text-[#818cf8]'; bgColor = 'bg-[#818cf8]'; } 
-            else { statusText = `> DB: ${itemCount}건 로드됨 (${timeStr})`; }
-
-            return (
-                <div className="bg-black/40 rounded-md border border-slate-700/50 px-4 py-1.5 flex flex-1 max-w-2xl mx-4 items-center overflow-hidden shadow-inner">
-                    <div className="flex items-center truncate w-full">
-                        <span className={`text-[12px] font-mono ${statusColor} flex items-center`}>{isProcessing && <i className="fas fa-spinner fa-spin mr-2"></i>}{statusText}</span>
-                        <span className={`w-1.5 h-3.5 ${bgColor} ml-1.5 animate-[pulse_1s_infinite]`}></span>
-                    </div>
-                </div>
-            );
-        };
-
         const SearchBar = ({ value, onChange, placeholder }) => {
             const inputRef = useRef(null);
             return (
@@ -1919,16 +1895,10 @@
                                             </div>
                                         </div>
                                         
-                                        <SystemConsole itemCount={Object.keys(data.masterProducts).length} isProcessing={ui.isProcessing} processMsg={ui.processMsg} viewMode={ui.viewMode} parserState={ui.parserState} estimateCount={Object.keys(data.managedItems).length} parserCount={data.parserBuffer.length} />
-                                        
                                         <nav className="flex gap-2 text-[14px] shrink-0 items-center">
                                             <a href="https://oneapp.orderz.co.kr/MerchOps/guide" target="_blank" rel="noopener noreferrer" className={`h-9 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-emerald-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-300 hover:border-emerald-500/50 font-bold text-[11px] tracking-wider uppercase ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="MerchOps 사용 가이드">
                                                 GUIDE
                                             </a>
-                                            <div className="w-px h-5 bg-slate-700 mx-1"></div>
-                                            <label className={`cursor-pointer w-9 h-9 rounded flex items-center justify-center shadow-sm transition-all duration-300 border ${ui.viewMode === 'default' && isMasterEmpty ? 'text-emerald-400 border-emerald-500/50 bg-emerald-500/10 shadow-[0_0_8px_rgba(16,185,129,0.25)]' : 'text-slate-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500'}`} title="마스터 DB (엑셀/CSV) 업로드">
-                                                <i className={`fas fa-database ${isMasterEmpty ? '' : 'opacity-80'}`}></i><input type="file" className="hidden" onChange={(e) => {ui.setViewMode('default'); customActions.handleFileUpload(e, 'master');}} multiple disabled={ui.isProcessing} />
-                                            </label>
                                             <div className="w-px h-5 bg-slate-700 mx-1"></div>
                                             <button onClick={() => customActions.handleCloudSync('download')} className={`w-9 h-9 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-indigo-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-indigo-300 hover:border-indigo-500/50 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="클라우드 데이터 불러오기"><i className="fas fa-cloud-download-alt"></i></button>
                                             <button onClick={() => customActions.handleCloudSync('upload')} className={`w-9 h-9 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-indigo-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-indigo-300 hover:border-indigo-500/50 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="클라우드에 데이터 백업"><i className="fas fa-cloud-upload-alt"></i></button>
