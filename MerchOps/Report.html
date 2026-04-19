@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ko" translate="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>고객 안내용 시황 변동 리포트</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; -webkit-font-smoothing: antialiased; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo, useEffect } = React;
+
+        // --- 1. Mock Data (MerchOps에서 Relay 된 데이터라 가정 - 출고가 기준) ---
+        const MOCK_RELAY_DATA = [
+            { id: '1', category: '가공식품 / 조미료', name: '삼양)큐원하얀설탕', spec: '3kg', oldPrice: 5500, newPrice: 5800 },
+            { id: '2', category: '가공식품 / 조미료', name: '부침가루(큐원)', spec: '1kg', oldPrice: 2300, newPrice: 2500 },
+            { id: '3', category: '가공식품 / 조미료', name: '중력밀가루(백설)', spec: '3kg', oldPrice: 4800, newPrice: 5000 },
+            { id: '4', category: '가공식품 / 조미료', name: '감자전분(화미)', spec: '1kg', oldPrice: 3800, newPrice: 4000 },
+            { id: '5', category: '가공식품 / 조미료', name: '황설탕(큐원)', spec: '3kg', oldPrice: 6500, newPrice: 6800 },
+            { id: '6', category: '가공식품 / 조미료', name: '흑설탕(큐원/포)', spec: '15kg', oldPrice: 33000, newPrice: 37500 },
+            { id: '7', category: '간편식 / 시리얼', name: '첵스초코(켈로그)', spec: '1.1kg', oldPrice: 16500, newPrice: 15000 }, // 하락
+            { id: '8', category: '소모품 / 포장재', name: '베이킹컵(45)', spec: '1개', oldPrice: 3500, newPrice: 3900 },
+            { id: '9', category: '면류 / 기타', name: '쌀국수(1mm/몬)', spec: '250g', oldPrice: 1500, newPrice: 1600 },
+            { id: '10', category: '면류 / 기타', name: '월남쌈(몬/원형16cm)', spec: '300g', oldPrice: 2400, newPrice: 2800 },
+        ];
+
+        // --- 2. 초기 템플릿 텍스트 ---
+        const DEFAULT_GLOBAL_BRIEFING = "항상 저희 Orderz를 이용해 주셔서 진심으로 감사드립니다.\n\n최근 중동 지역의 지정학적 리스크로 인한 국제 유가 불안정과, 환율 급등으로 인해 수입 원자재 및 부자재의 매입 원가가 전반적으로 크게 상승하였습니다.\n\n최대한 자체적으로 인상분을 흡수하고자 노력하였으나, 안정적인 상품 공급을 위해 부득이하게 일부 품목의 출고가를 조정하게 되었습니다. 고객님들의 너른 양해 부탁드립니다.";
+        
+        const DEFAULT_CAT_BRIEFINGS = {
+            '가공식품 / 조미료': '주요 산지(브라질 등)의 기상 악화로 원당 수급이 차질을 빚으며 제조사(큐원, 백설 등)의 공급가가 일제히 인상되었습니다.',
+            '소모품 / 포장재': '국제 유가 상승에 따른 나프타 등 플라스틱/비닐 원자재 가격이 폭등하여 관련 용기 및 포장재 단가가 인상되었습니다.',
+            '면류 / 기타': '수입 물류비 증가 및 환율 영향으로 수입 면류 단가가 소폭 조정되었습니다.',
+            '간편식 / 시리얼': '제조사 프로모션 및 재고 안정화로 일부 품목 단가가 인하되었습니다.'
+        };
+
+        const App = () => {
+            // State
+            const [isEditorMode, setIsEditorMode] = useState(true); // true: MD 편집 모드, false: 고객 뷰어 모드
+            const [reportTitle, setReportTitle] = useState("[Orderz] 주간 시세 변동 안내 (4월 3주차)");
+            const [globalBriefing, setGlobalBriefing] = useState(DEFAULT_GLOBAL_BRIEFING);
+            const [categoryBriefings, setCategoryBriefings] = useState(DEFAULT_CAT_BRIEFINGS);
+            
+            // 데이터 가공 (변동률, 그룹화)
+            const processedData = useMemo(() => {
+                let upCount = 0;
+                let downCount = 0;
+                let sameCount = 0;
+
+                const enriched = MOCK_RELAY_DATA.map(item => {
+                    const diff = item.newPrice - item.oldPrice;
+                    const percent = item.oldPrice > 0 ? (diff / item.oldPrice) * 100 : 0;
+                    
+                    if (diff > 0) upCount++;
+                    else if (diff < 0) downCount++;
+                    else sameCount++;
+
+                    return { ...item, diff, percent };
+                });
+
+                // 카테고리별 그룹화
+                const grouped = enriched.reduce((acc, item) => {
+                    if (!acc[item.category]) acc[item.category] = [];
+                    acc[item.category].push(item);
+                    return acc;
+                }, {});
+
+                // 그룹 내 정렬 (변동률 절대값 기준 내림차순)
+                Object.keys(grouped).forEach(cat => {
+                    grouped[cat].sort((a, b) => Math.abs(b.percent) - Math.abs(a.percent));
+                });
+
+                return {
+                    grouped,
+                    stats: { total: enriched.length, up: upCount, down: downCount, same: sameCount }
+                };
+            }, []);
+
+            const { grouped, stats } = processedData;
+
+            // Handlers
+            const handleCatBriefingChange = (cat, value) => {
+                setCategoryBriefings(prev => ({ ...prev, [cat]: value }));
+            };
+
+            const toggleMode = () => {
+                setIsEditorMode(!isEditorMode);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+
+            return (
+                <div className="min-h-screen bg-slate-100 pb-20 flex justify-center">
+                    {/* 모바일 컨테이너 (고객이 보는 화면의 기준 사이즈) */}
+                    <div className="w-full max-w-lg bg-white shadow-2xl relative min-h-screen flex flex-col">
+                        
+                        {/* --- 상단 배너 / 타이틀 --- */}
+                        <header className="bg-slate-900 text-white px-5 py-6 rounded-b-3xl shadow-md relative z-10">
+                            <div className="flex justify-between items-center mb-4">
+                                <span className="text-xl font-black tracking-tight text-white"><i className="fas fa-layer-group text-indigo-400 mr-2"></i>Orderz</span>
+                                <span className="bg-indigo-500/30 text-indigo-200 text-[10px] font-bold px-2 py-1 rounded-full">Official Notice</span>
+                            </div>
+                            
+                            {isEditorMode ? (
+                                <div className="space-y-2 fade-in">
+                                    <label className="text-xs text-slate-400 font-bold block">리포트 제목 (고객 노출용)</label>
+                                    <input 
+                                        type="text" 
+                                        value={reportTitle} 
+                                        onChange={e => setReportTitle(e.target.value)}
+                                        className="w-full bg-slate-800 text-white border border-slate-600 rounded-lg px-3 py-2 text-lg font-bold outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+                                    />
+                                </div>
+                            ) : (
+                                <h1 className="text-xl font-black leading-tight fade-in">{reportTitle}</h1>
+                            )}
+                        </header>
+
+                        {/* --- 메인 콘텐츠 영역 --- */}
+                        <main className="flex-1 px-4 py-6 space-y-6">
+                            
+                            {/* 1. Global 요약 및 브리핑 */}
+                            <section className="bg-white rounded-2xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-slate-100 overflow-hidden fade-in">
+                                <div className="p-5 border-b border-slate-100 bg-slate-50/50">
+                                    <h2 className="text-sm font-black text-slate-800 flex items-center mb-3">
+                                        <i className="fas fa-chart-pie text-indigo-500 mr-2"></i>시세 변동 요약
+                                    </h2>
+                                    
+                                    {/* 게이지 바 */}
+                                    <div className="flex w-full h-2.5 rounded-full overflow-hidden bg-slate-200 mb-2">
+                                        <div style={{width: `${(stats.up / stats.total) * 100}%`}} className="bg-rose-500"></div>
+                                        <div style={{width: `${(stats.same / stats.total) * 100}%`}} className="bg-slate-300"></div>
+                                        <div style={{width: `${(stats.down / stats.total) * 100}%`}} className="bg-blue-500"></div>
+                                    </div>
+                                    <div className="flex justify-between text-[11px] font-bold">
+                                        <span className="text-rose-600">인상 {stats.up}건</span>
+                                        <span className="text-slate-500">전체 {stats.total}건 안내</span>
+                                        <span className="text-blue-600">인하 {stats.down}건</span>
+                                    </div>
+                                </div>
+
+                                <div className="p-5">
+                                    {isEditorMode ? (
+                                        <div className="space-y-2">
+                                            <label className="text-xs text-indigo-600 font-bold flex items-center">
+                                                <i className="fas fa-pen mr-1.5"></i>전체 시황 브리핑 작성 (고객 안내용)
+                                            </label>
+                                            <textarea 
+                                                value={globalBriefing}
+                                                onChange={e => setGlobalBriefing(e.target.value)}
+                                                className="w-full h-32 bg-yellow-50 text-slate-800 border border-yellow-300 rounded-xl p-3 text-[13px] leading-relaxed outline-none focus:ring-2 focus:ring-yellow-400 resize-none font-medium"
+                                                placeholder="이번 주 시장의 주요 이슈와 가격 변동 사유를 고객에게 설명해주세요."
+                                            />
+                                        </div>
+                                    ) : (
+                                        <div className="text-[13px] leading-relaxed text-slate-700 whitespace-pre-wrap font-medium">
+                                            {globalBriefing}
+                                        </div>
+                                    )}
+                                </div>
+                            </section>
+
+                            {/* 2. 카테고리별 품목 리스트 */}
+                            <div className="space-y-5">
+                                <h3 className="text-sm font-black text-slate-800 px-1 border-l-4 border-slate-800 pl-2">카테고리별 상세 변동 내역</h3>
+                                
+                                {Object.entries(grouped).map(([category, items], idx) => {
+                                    const catUp = items.filter(i => i.diff > 0).length;
+                                    const catDown = items.filter(i => i.diff < 0).length;
+                                    
+                                    return (
+                                        <section key={category} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden fade-in" style={{animationDelay: `${idx * 0.1}s`}}>
+                                            {/* 카테고리 헤더 */}
+                                            <div className="bg-slate-50 p-4 border-b border-slate-200">
+                                                <div className="flex justify-between items-center mb-3">
+                                                    <h4 className="text-[15px] font-black text-slate-800 flex items-center">
+                                                        {category}
+                                                    </h4>
+                                                    <div className="flex gap-1.5">
+                                                        {catUp > 0 && <span className="bg-rose-100 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded">↑ 인상 {catUp}</span>}
+                                                        {catDown > 0 && <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded">↓ 인하 {catDown}</span>}
+                                                    </div>
+                                                </div>
+
+                                                {/* 카테고리 브리핑 (시황 코멘트) */}
+                                                {isEditorMode ? (
+                                                    <textarea 
+                                                        value={categoryBriefings[category] || ''}
+                                                        onChange={e => handleCatBriefingChange(category, e.target.value)}
+                                                        className="w-full h-16 bg-yellow-50 text-slate-700 border border-yellow-300 rounded-lg p-2.5 text-xs outline-none focus:ring-1 focus:ring-yellow-400 resize-none font-medium"
+                                                        placeholder={`${category} 카테고리의 주요 변동 사유를 작성하세요.`}
+                                                    />
+                                                ) : (
+                                                    categoryBriefings[category] && (
+                                                        <div className="bg-slate-100 rounded-lg p-3 relative">
+                                                            <div className="absolute top-2.5 left-2.5 text-indigo-400 text-sm"><i className="fas fa-quote-left"></i></div>
+                                                            <p className="text-xs text-slate-600 pl-6 leading-relaxed font-bold break-keep">
+                                                                {categoryBriefings[category]}
+                                                            </p>
+                                                        </div>
+                                                    )
+                                                )}
+                                            </div>
+
+                                            {/* 품목 리스트 (카드형) */}
+                                            <div className="divide-y divide-slate-100">
+                                                {items.map(item => {
+                                                    const isUp = item.diff > 0;
+                                                    const isDown = item.diff < 0;
+                                                    const colorClass = isUp ? 'text-rose-500' : isDown ? 'text-blue-500' : 'text-slate-500';
+                                                    const bgClass = isUp ? 'bg-rose-50' : isDown ? 'bg-blue-50' : 'bg-slate-50';
+                                                    const icon = isUp ? 'fa-arrow-up' : isDown ? 'fa-arrow-down' : 'fa-minus';
+
+                                                    return (
+                                                        <div key={item.id} className="p-4 hover:bg-slate-50 transition-colors">
+                                                            <div className="flex justify-between items-start mb-2">
+                                                                <div className="flex flex-col pr-2">
+                                                                    <span className="text-[13px] font-extrabold text-slate-800">{item.name}</span>
+                                                                    <span className="text-[11px] text-slate-400 font-medium mt-0.5">{item.spec}</span>
+                                                                </div>
+                                                                {/* 변동률 뱃지 */}
+                                                                {item.percent !== 0 && (
+                                                                    <div className={`px-2 py-1 rounded-md flex items-center text-[11px] font-black shrink-0 ${bgClass} ${colorClass}`}>
+                                                                        <i className={`fas ${icon} text-[9px] mr-1`}></i>
+                                                                        {Math.abs(item.percent).toFixed(1)}%
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            
+                                                            <div className="flex justify-between items-end mt-3">
+                                                                <div className="flex items-center text-xs font-bold text-slate-400 gap-2">
+                                                                    <span className="line-through">{item.oldPrice.toLocaleString()}원</span>
+                                                                    <i className="fas fa-caret-right text-slate-300"></i>
+                                                                    <span className="text-slate-800 text-[14px]">{item.newPrice.toLocaleString()}원</span>
+                                                                </div>
+                                                                <div className={`text-xs font-black ${colorClass}`}>
+                                                                    {isUp ? '+' : ''}{item.diff.toLocaleString()}원
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </section>
+                                    );
+                                })}
+                            </div>
+
+                        </main>
+
+                        {/* --- Footer --- */}
+                        <footer className="bg-slate-100 p-6 text-center mt-auto border-t border-slate-200">
+                            <div className="text-indigo-300 text-2xl mb-2"><i className="fas fa-leaf"></i></div>
+                            <p className="text-xs text-slate-500 font-bold mb-1">항상 더 나은 서비스로 보답하겠습니다.</p>
+                            <p className="text-[10px] text-slate-400">문의사항: 1588-0000 | 카카오톡 @orderz</p>
+                            <p className="text-[10px] text-slate-300 mt-4">&copy; 2026 ONEAPP MerchOps. All rights reserved.</p>
+                        </footer>
+
+                    </div>
+
+                    {/* --- [Floating Controller] 에디터/뷰어 전환 토글 (데스크톱/화면 우측 고정) --- */}
+                    <div className="fixed bottom-6 right-6 flex flex-col gap-3 z-50">
+                        {isEditorMode && (
+                            <button 
+                                onClick={() => {
+                                    alert("클라우드에 시황 텍스트가 저장되고, 고객에게 전달할 링크가 클립보드에 복사되었습니다.\n(예: https://oneapp.orderz.co.kr/report/doc_9912)");
+                                }}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-xl rounded-full px-6 py-4 flex items-center justify-center font-black text-sm transition-transform hover:scale-105"
+                            >
+                                <i className="fas fa-link mr-2"></i>최종 링크 발행하기
+                            </button>
+                        )}
+                        <button 
+                            onClick={toggleMode}
+                            className={`shadow-xl rounded-full px-6 py-4 flex items-center justify-center font-black text-sm border-2 transition-transform hover:scale-105 ${isEditorMode ? 'bg-white text-slate-800 border-slate-200' : 'bg-emerald-500 text-white border-emerald-600'}`}
+                        >
+                            <i className={`fas ${isEditorMode ? 'fa-mobile-alt text-indigo-500' : 'fa-edit'} mr-2`}></i>
+                            {isEditorMode ? '고객 뷰어 모드로 보기' : '에디터 모드로 돌아가기'}
+                        </button>
+                    </div>
+
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
