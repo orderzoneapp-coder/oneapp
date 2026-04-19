@@ -1159,7 +1159,7 @@
                     const diff = pIn - mIn;
 
                     if (mIn > 0 && diff !== 0) { 
-                        const data = { code: rowCode, name: mItem.품목명, spec: mItem.규격, pIn, mIn, diff, mItem };
+                        const data = { code: rowCode, name: mItem.품목명, spec: mItem.규격, pIn, mIn, diff, mItem, finalData: row.finalData || {} };
                         if (diff > 0) increased.push(data); else decreased.push(data);
                     }
                 });
@@ -1928,7 +1928,7 @@
                     {ui.showSmartParserModal && <SmartParserInputModal onClose={() => ui.setShowSmartParserModal(false)} executeParser={customActions.executeParser} showToast={ui.showToast} />}
                     {ui.showBriefingModal && <BriefingModal onClose={() => ui.setShowBriefingModal(false)} fullDisplayRows={fullDisplayRows} masterProducts={data.masterProducts} effectiveViewMode={effectiveViewMode} parserFilter={ui.parserFilter} activeProfileKey={activeProfileKey} showToast={ui.showToast} marginRules={config.marginRules} />}
                     {ui.showExportModal && <ExportModal onClose={() => ui.setShowExportModal(false)} fullDisplayRows={fullDisplayRows} currentExportTitle={currentExportTitle} executeExport={customActions.executeExport} />}
-                    {ui.showSettings && <MappingCenterModal onClose={() => ui.setShowSettings(false)} config={config} actions={{handleCloudSync: customActions.handleCloudSync, showToast: ui.showToast}} />}
+                    {ui.showSettings && <MappingCenterModal onClose={() => ui.setShowSettings(false)} config={config} actions={{handleCloudSync: customActions.handleCloudSync, showToast: ui.showToast, handleFileUpload: customActions.handleFileUpload}} />}
                     {ui.showHistoryModal && <HistoryModal onClose={() => ui.setShowHistoryModal(false)} historyLogs={data.historyLogs} setHistoryLogs={data.setHistoryLogs} />}
                 </div>
             );
