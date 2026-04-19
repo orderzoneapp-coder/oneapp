@@ -1231,6 +1231,39 @@
                 }, 500);
             };
 
+            const handleRelayToReport = () => {
+                const itemsToExport = [...stats.increased, ...stats.decreased];
+                if (itemsToExport.length === 0) return showToast('리포트로 발행할 변동 품목이 없습니다.');
+                
+                const relayData = itemsToExport.map(item => {
+                    const mItem = item.mItem;
+                    const pIn = item.pIn; 
+                    
+                    const projected = calculatePricesEngine(pIn, mItem, {...mItem, ...item.finalData, '입고가': pIn}, marginRules, false);
+                    const oldOutPrice = parseNum(mItem['출고가']) || 0;
+                    const newOutPrice = projected['출고가'] || 0;
+                    
+                    return {
+                        id: item.code,
+                        category: mItem['1그룹명'] || '기타 / 미분류',
+                        name: mItem.품목명,
+                        spec: mItem.규격,
+                        oldPrice: oldOutPrice,
+                        newPrice: newOutPrice
+                    };
+                }).filter(item => item.oldPrice !== item.newPrice && item.newPrice > 0); 
+
+                if (relayData.length === 0) {
+                    return showToast('⚠️ 입고가는 변동되었으나, 고객 판매가(출고가)는 변동된 품목이 없습니다.');
+                }
+
+                showToast('🚀 웹 리포트 에디터로 데이터를 전송합니다...');
+                setTimeout(() => {
+                    console.log("Relay Data Payload:", relayData);
+                    alert(`[이어달리기 성공 릴레이]\n\n총 ${relayData.length}건의 출고가 변동 데이터가 웹 리포트 에디터로 전송되었습니다!\n(F12 개발자 도구 Console에서 전송된 JSON 페이로드를 확인할 수 있습니다.)\n\n* 실제 환경에서는 '시황 변동 리포트 에디터' 새 창이 열립니다.`);
+                }, 600);
+            };
+
             return (
                 <div className="fixed inset-0 bg-slate-900/80 z-[200] flex justify-center items-center backdrop-blur-sm fade-in">
                     <div className="bg-white w-[1100px] rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[85vh]">
@@ -1309,6 +1342,9 @@
                             <span className="text-[12px] font-bold text-slate-500">※ 변경된 단가만 엑셀로 추출하여 ERP/쇼핑몰에 업데이트 할 수 있습니다.</span>
                             <div className="flex gap-3">
                                 <button onClick={onClose} className="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-[13px] font-bold shadow-sm">닫기</button>
+                                <button onClick={handleRelayToReport} disabled={stats.increased.length === 0 && stats.decreased.length === 0} className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-[13px] font-black shadow-sm hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center">
+                                    <i className="fas fa-paper-plane mr-2"></i> 웹 리포트로 이어달리기
+                                </button>
                                 <button onClick={handleExportChanged} disabled={stats.increased.length === 0 && stats.decreased.length === 0} className="px-6 py-2.5 bg-emerald-600 text-white rounded-lg text-[13px] font-black shadow-sm hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center">
                                     <i className="fas fa-file-excel mr-2"></i> 변동 품목만 엑셀 다운로드
                                 </button>
