@@ -1145,13 +1145,13 @@
                                 <div className="h-full flex flex-col items-center justify-center text-slate-400 p-10 text-center"><i className="fas fa-search text-4xl mb-4 text-slate-300"></i><p className="text-[13px] font-bold text-slate-500 mb-1">검색 결과가 없습니다.</p><p className="text-[11px]">우측 상단 검색창에서 키워드를 부분적으로 지우거나 수정해보세요.</p></div>
                             ) : (
                                 <table className="w-full text-left text-[12px] whitespace-nowrap">
-                                    <thead className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm"><tr><th className="py-2.5 px-3 text-center w-16">연결</th><th className="py-2.5 px-3">상품정보 (코드/품명/규격)</th><th className="py-2.5 px-3 text-right w-24">[M] 입고가</th></tr></thead>
+                                    <thead className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm"><tr><th className="py-2.5 px-3">상품정보 (코드/품명/규격)</th><th className="py-2.5 px-3 text-right w-24">[M] 입고가</th><th className="py-2.5 px-3 text-center w-16">작업</th></tr></thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {masterSearchResults.map(m => (
                                             <tr key={m.코드} className="hover:bg-amber-50/50 group transition-colors">
-                                                <td className="py-2 px-3 text-center"><button onClick={() => handleConfirmMapping(m.코드)} className="px-3 py-1.5 rounded-lg text-[11px] font-bold shadow-sm bg-indigo-600 text-white hover:bg-indigo-700 transition-colors flex items-center justify-center w-full gap-1"><i className="fas fa-link"></i> 연결</button></td>
                                                 <td className="py-2 px-3"><div className="flex flex-col min-w-0 w-full overflow-hidden"><span className="text-[10px] font-mono text-slate-400">{m.코드}</span><div className="flex items-center gap-1.5 mt-0.5"><span className="text-[12px] font-extrabold text-slate-800 truncate">{m.품목명}</span>{m.규격 && <span className="text-[11px] text-slate-500 shrink-0">({m.규격})</span>}</div></div></td>
                                                 <td className="py-2 px-3 text-right font-bold text-slate-600">{m.입고가 ? Number(m.입고가).toLocaleString() : '-'}</td>
+                                                <td className="py-2 px-3 text-center"><button onClick={() => handleConfirmMapping(m.코드)} className="px-3 py-1.5 rounded-lg text-[11px] font-bold shadow-sm bg-indigo-600 text-white hover:bg-indigo-700 transition-colors flex items-center justify-center w-full gap-1"><i className="fas fa-link"></i> 연결</button></td>
                                             </tr>
                                         ))}
                                     </tbody>
