@@ -1,383 +1,333 @@
 <!DOCTYPE html>
-<html lang="ko" class="scroll-smooth">
+<html lang="ko" translate="no">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ONEAPP MerchOps 사용자 가이드</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>고객 안내용 시황 변동 리포트</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-        body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; color: #334155; }
-        .kbd-key {
-            display: inline-block;
-            padding: 0.2rem 0.5rem;
-            font-size: 0.85em;
-            font-weight: 700;
-            line-height: 1;
-            color: #475569;
-            background-color: #f1f5f9;
-            border: 1px solid #cbd5e1;
-            border-radius: 0.375rem;
-            box-shadow: 0 2px 0 #cbd5e1;
-            margin: 0 0.2rem;
-            font-family: monospace;
-        }
-        .step-circle {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 1.5rem;
-            height: 1.5rem;
-            border-radius: 9999px;
-            background-color: #e0e7ff;
-            color: #4338ca;
-            font-weight: 900;
-            font-size: 0.875rem;
-            margin-right: 0.5rem;
-        }
+        body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; -webkit-font-smoothing: antialiased; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
-<body class="antialiased">
+<body>
+    <div id="root"></div>
 
-    <!-- Header Section -->
-    <header class="bg-[#0f172a] text-white py-12 px-4 shadow-lg">
-        <div class="max-w-4xl mx-auto text-center">
-            <a href="https://oneapp.orderz.co.kr/MerchOps/v8.93" class="inline-flex items-center justify-center bg-[#111827]/50 hover:bg-[#1e293b]/80 transition-all duration-300 px-6 py-4 rounded-2xl border border-slate-700/50 hover:border-indigo-500/50 shadow-inner mb-6 group cursor-pointer">
-                <span class="text-3xl md:text-4xl font-black text-[#818cf8] tracking-tight group-hover:text-indigo-400 transition-colors">ONEAPP</span>
-                <div class="w-[2px] h-10 bg-slate-600 mx-5 rounded"></div>
-                <div class="flex flex-col text-left justify-center">
-                    <span class="text-2xl md:text-3xl font-bold text-white leading-none mb-1.5 group-hover:text-indigo-50 transition-colors">MerchOps</span>
-                    <span class="text-[10px] md:text-xs font-bold text-slate-400 tracking-widest uppercase leading-none">Merchandising Operations</span>
-                </div>
-            </a>
-            <h1 class="text-2xl md:text-3xl font-black mb-4">
-                <i class="fas fa-book-open text-indigo-400 mr-3"></i>사용자 가이드
-            </h1>
-            <p class="text-slate-300 text-sm md:text-base leading-relaxed max-w-2xl mx-auto">
-                <strong class="text-white">MerchOps(머치옵스)</strong>는 복잡한 마스터 상품 데이터(ERP)와 매일 변동되는 거래처의 견적서/시세(엑셀, 카톡 텍스트 등)를 쉽게 비교하고, 단가를 자동으로 계산하여 쇼핑몰 및 ERP 업데이트용 엑셀로 변환해 주는 강력한 <strong class="text-indigo-300">'단가 관리 자동화 솔루션'</strong>입니다.
-            </p>
-        </div>
-    </header>
+    <script type="text/babel">
+        const { useState, useMemo, useEffect } = React;
 
-    <!-- Main Content -->
-    <main class="max-w-4xl mx-auto py-10 px-4">
+        // --- 1. Mock Data (로컬 스토리지에 데이터가 없을 때만 보여줄 예시 데이터) ---
+        const MOCK_RELAY_DATA = [
+            { id: '1', category: '가공식품 / 조미료', name: '삼양)큐원하얀설탕 (테스트용)', spec: '3kg', oldPrice: 5500, newPrice: 5800 },
+            { id: '2', category: '면류 / 기타', name: '쌀국수(1mm/몬) (테스트용)', spec: '250g', oldPrice: 1500, newPrice: 1600 },
+        ];
+
+        // --- 2. 초기 템플릿 텍스트 ---
+        const DEFAULT_GLOBAL_BRIEFING = "항상 저희 Orderz를 이용해 주셔서 진심으로 감사드립니다.\n\n최근 중동 지역의 지정학적 리스크로 인한 국제 유가 불안정과, 환율 급등으로 인해 수입 원자재 및 부자재의 매입 원가가 전반적으로 크게 상승하였습니다.\n\n최대한 자체적으로 인상분을 흡수하고자 노력하였으나, 안정적인 상품 공급을 위해 부득이하게 일부 품목의 출고가를 조정하게 되었습니다. 고객님들의 너른 양해 부탁드립니다.";
         
-        <div class="bg-blue-50 border border-blue-200 text-blue-800 p-4 rounded-xl mb-8 flex items-start gap-3 shadow-sm">
-            <i class="fas fa-info-circle text-blue-500 text-xl mt-0.5"></i>
-            <p class="text-sm font-bold leading-relaxed">
-                이 가이드는 MerchOps를 처음 사용하는 분들을 위해 작성되었습니다. 천천히 순서대로 따라 해 보세요!
-            </p>
-        </div>
+        const DEFAULT_CAT_BRIEFINGS = {
+            '가공식품 / 조미료': '주요 산지(브라질 등)의 기상 악화로 원당 수급이 차질을 빚으며 제조사(큐원, 백설 등)의 공급가가 일제히 인상되었습니다.',
+            '소모품 / 포장재': '국제 유가 상승에 따른 나프타 등 플라스틱/비닐 원자재 가격이 폭등하여 관련 용기 및 포장재 단가가 인상되었습니다.',
+            '면류 / 기타': '수입 물류비 증가 및 환율 영향으로 수입 면류 단가가 소폭 조정되었습니다.',
+            '간편식 / 시리얼': '제조사 프로모션 및 재고 안정화로 일부 품목 단가가 인하되었습니다.'
+        };
 
-        <!-- Section 1 -->
-        <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 mb-8 relative overflow-hidden">
-            <div class="absolute top-0 left-0 w-2 h-full bg-indigo-500"></div>
-            <h2 class="text-2xl font-black text-slate-800 mb-6 flex items-center">
-                <span class="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-lg mr-3 text-lg">1</span>
-                시작하기: 기본 데이터 준비
-            </h2>
-            <p class="text-slate-600 mb-6">MerchOps를 사용하려면 먼저 우리의 기준이 되는 <strong>'마스터 DB(데이터베이스)'</strong>를 등록해야 합니다.</p>
-
-            <div class="space-y-6">
-                <div>
-                    <h3 class="text-lg font-bold text-slate-800 mb-3 flex items-center">
-                        <i class="fas fa-database text-indigo-500 mr-2"></i> 1-1. 마스터 DB (기존 상품 목록) 업로드
-                    </h3>
-                    <ul class="space-y-2 text-slate-600 ml-2">
-                        <li class="flex items-start"><span class="step-circle">1</span> 화면 우측 상단에 있는 <strong>원통 모양 아이콘(🗄️)</strong>을 클릭합니다.</li>
-                        <li class="flex items-start"><span class="step-circle">2</span> 기존에 사용 중인 ERP 상품 목록 엑셀 파일(또는 CSV)을 선택하여 업로드합니다.</li>
-                        <li class="flex items-start"><span class="step-circle">3</span> 업로드가 완료되면 화면 중앙(엑셀 뷰)에 상품 목록이 나타납니다.</li>
-                    </ul>
-                </div>
-
-                <div class="bg-slate-50 p-5 rounded-xl border border-slate-100">
-                    <h3 class="text-md font-bold text-slate-800 mb-2 flex items-center">
-                        <i class="fas fa-cloud text-sky-500 mr-2"></i> 1-2. 클라우드 백업 및 불러오기 (선택 사항)
-                    </h3>
-                    <p class="text-sm text-slate-600 mb-2">매번 엑셀을 올리기 번거롭다면 구글 시트와 연동할 수 있습니다.</p>
-                    <ul class="list-disc pl-5 text-sm text-slate-600 space-y-1">
-                        <li>우측 상단 <strong>구름 모양 아이콘 ☁️ (다운로드/업로드)</strong>을 통해 현재 데이터를 클라우드에 백업하거나 불러올 수 있습니다.</li>
-                        <li class="text-rose-500 font-bold">주의: 이 기능을 사용하려면 먼저 [환경설정 ⚙️]에서 클라우드 연동 URL을 입력해야 합니다.</li>
-                    </ul>
-                </div>
-            </div>
-        </section>
-
-        <!-- Section 2 -->
-        <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 mb-8 relative overflow-hidden">
-            <div class="absolute top-0 left-0 w-2 h-full bg-sky-500"></div>
-            <h2 class="text-2xl font-black text-slate-800 mb-6 flex items-center">
-                <span class="bg-sky-100 text-sky-700 px-3 py-1 rounded-lg mr-3 text-lg">2</span>
-                화면 구성 이해하기
-            </h2>
-            <p class="text-slate-600 mb-4">화면 상단의 <strong>'메인 툴바'</strong>를 보면 두 가지 작업 뷰(View)를 전환할 수 있습니다.</p>
+        const App = () => {
+            // State
+            const [isEditorMode, setIsEditorMode] = useState(true);
+            const [reportTitle, setReportTitle] = useState("[Orderz] 주간 시세 변동 안내 (4월 3주차)");
+            const [globalBriefing, setGlobalBriefing] = useState(DEFAULT_GLOBAL_BRIEFING);
+            const [categoryBriefings, setCategoryBriefings] = useState(DEFAULT_CAT_BRIEFINGS);
             
-            <div class="grid md:grid-cols-2 gap-4 mt-4">
-                <div class="border border-slate-200 rounded-xl p-5 hover:border-sky-300 transition-colors bg-white">
-                    <div class="text-3xl mb-3 text-emerald-500"><i class="fas fa-table"></i></div>
-                    <h3 class="text-lg font-black text-slate-800 mb-2">📊 엑셀 뷰 (기본 화면)</h3>
-                    <p class="text-sm text-slate-600">마스터 DB를 보거나, 거래처에서 받은 <strong>엑셀 견적서</strong>를 업로드하여 비교할 때 사용합니다.</p>
-                </div>
-                <div class="border border-slate-200 rounded-xl p-5 hover:border-sky-300 transition-colors bg-white">
-                    <div class="text-3xl mb-3 text-indigo-500"><i class="fas fa-file-alt"></i></div>
-                    <h3 class="text-lg font-black text-slate-800 mb-2">📝 파서 뷰</h3>
-                    <p class="text-sm text-slate-600">카톡 등에서 복사한 <strong>텍스트 시세표</strong>를 분석하여 기존 상품과 스마트하게 연결할 때 사용합니다.</p>
-                </div>
-            </div>
-        </section>
+            // 🚀 MerchOps에서 전달받은 실제 데이터를 담을 상태
+            const [relayData, setRelayData] = useState([]);
+            const [isLoading, setIsLoading] = useState(true);
 
-        <!-- Section 3 -->
-        <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 mb-8 relative overflow-hidden">
-            <div class="absolute top-0 left-0 w-2 h-full bg-emerald-500"></div>
-            <h2 class="text-2xl font-black text-slate-800 mb-4 flex items-center">
-                <span class="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-lg mr-3 text-lg">3</span>
-                핵심 기능 ①: 텍스트 시세표 자동 분석 (파서 뷰)
-            </h2>
-            <p class="text-slate-600 mb-8">카카오톡으로 오는 길고 복잡한 시세 텍스트를 하나하나 찾아서 단가를 수정하셨나요? <strong>스마트 텍스트 파서</strong>를 사용하면 몇 초 만에 끝납니다.</p>
+            // 🚀 컴포넌트 마운트 시 로컬 스토리지에서 이어달리기 데이터 읽어오기
+            useEffect(() => {
+                try {
+                    const storedStr = localStorage.getItem('merchops_relay_data');
+                    if (storedStr) {
+                        const parsedData = JSON.parse(storedStr);
+                        if (parsedData && parsedData.length > 0) {
+                            setRelayData(parsedData);
+                            setIsLoading(false);
+                            return; // 실제 데이터 로드 성공 시 예시 데이터 무시
+                        }
+                    }
+                    // 데이터가 없거나 파싱 실패 시 기본 예시 데이터 사용
+                    setRelayData(MOCK_RELAY_DATA);
+                } catch (error) {
+                    console.error("데이터 로드 중 오류 발생:", error);
+                    setRelayData(MOCK_RELAY_DATA);
+                } finally {
+                    setIsLoading(false);
+                }
+            }, []);
+            
+            // 데이터 가공 (변동률, 그룹화) - 상태인 relayData를 바라보도록 수정
+            const processedData = useMemo(() => {
+                if (relayData.length === 0) return { grouped: {}, stats: { total: 0, up: 0, down: 0, same: 0 } };
 
-            <div class="space-y-8">
-                <!-- Step 1 -->
-                <div class="ml-4 pl-6 border-l-2 border-slate-200 relative">
-                    <div class="absolute -left-3 top-0 w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-xs shadow-md">1</div>
-                    <h3 class="text-lg font-bold text-slate-800 mb-2">시세 텍스트 붙여넣기</h3>
-                    <ul class="list-disc pl-5 text-slate-600 space-y-1 text-sm">
-                        <li>상단 툴바에서 <strong>[파서 뷰]</strong> 옆의 <strong>[+] (플러스 아이콘)</strong>을 클릭합니다.</li>
-                        <li>팝업 창이 뜨면, 카톡 등에서 복사한 시세 텍스트를 빈 공간에 <strong>그대로 붙여넣기</strong> 합니다.</li>
-                        <li><strong>[텍스트 분석 및 작업공간 로드]</strong> 버튼을 누릅니다.</li>
-                    </ul>
-                </div>
+                let upCount = 0;
+                let downCount = 0;
+                let sameCount = 0;
 
-                <!-- Step 2 -->
-                <div class="ml-4 pl-6 border-l-2 border-slate-200 relative">
-                    <div class="absolute -left-3 top-0 w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-xs shadow-md">2</div>
-                    <h3 class="text-lg font-bold text-slate-800 mb-2">분석 결과 확인 및 매핑(짝짓기)</h3>
-                    <p class="text-sm text-slate-600 mb-3">시스템이 텍스트를 분석하여 품명, 규격, 단가를 추출하고 기존 마스터 DB와 비교합니다. 상단에 3가지 탭이 나타납니다.</p>
+                const enriched = relayData.map(item => {
+                    const diff = item.newPrice - item.oldPrice;
+                    const percent = item.oldPrice > 0 ? (diff / item.oldPrice) * 100 : 0;
                     
-                    <div class="flex flex-wrap gap-3 mb-4">
-                        <span class="bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm">
-                            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block mr-1"></span> 일치 탭
-                            <span class="block text-xs font-normal text-emerald-600 mt-0.5">확인만 하면 끝!</span>
-                        </span>
-                        <span class="bg-amber-50 border border-amber-200 text-amber-700 px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm">
-                            <span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block mr-1"></span> 유사 탭
-                            <span class="block text-xs font-normal text-amber-600 mt-0.5">사람의 한 번 확인 필요</span>
-                        </span>
-                        <span class="bg-rose-50 border border-rose-200 text-rose-700 px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm">
-                            <span class="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block mr-1"></span> 불일치 탭
-                            <span class="block text-xs font-normal text-rose-600 mt-0.5">새로운 상품이거나 이름이 다름</span>
-                        </span>
-                    </div>
+                    if (diff > 0) upCount++;
+                    else if (diff < 0) downCount++;
+                    else sameCount++;
 
-                    <div class="bg-slate-50 rounded-xl p-4 border border-slate-200 mt-4">
-                        <h4 class="font-bold text-slate-800 text-sm mb-2"><i class="fas fa-link text-indigo-400 mr-1"></i> 수동 연결(매핑) 방법 (유사/불일치 탭)</h4>
-                        <ol class="list-decimal pl-5 text-sm text-slate-600 space-y-1.5">
-                            <li>왼쪽 목록에서 연결이 안 된 <strong>타겟(상품)</strong>을 클릭합니다.</li>
-                            <li>오른쪽 검색창에서 시스템이 관련 있을 법한 마스터 상품들을 자동으로 검색해 보여줍니다.</li>
-                            <li>올바른 마스터 상품을 찾았다면 우측의 <strong class="text-indigo-600">[🔗 연결]</strong> 버튼을 누릅니다.</li>
-                            <li>연결된 상품은 자동으로 🟢 일치 탭으로 이동하며, <strong>시스템이 이 패턴을 기억(기계학습)</strong>하여 다음번에는 자동으로 연결해 줍니다.</li>
-                        </ol>
-                    </div>
-                </div>
+                    return { ...item, diff, percent };
+                });
 
-                <!-- Step 3 -->
-                <div class="ml-4 pl-6 relative">
-                    <div class="absolute -left-3 top-0 w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-xs shadow-md">3</div>
-                    <h3 class="text-lg font-bold text-slate-800 mb-2">마스터에 단가 반영하기</h3>
-                    <p class="text-sm text-slate-600">
-                        모든 항목을 🟢 일치 탭으로 보냈다면(또는 반영할 항목만 체크했다면), 상단 우측의 <button class="bg-slate-700 text-white px-2 py-0.5 rounded text-xs mx-1 pointer-events-none"><i class="fas fa-check-double mr-1"></i>반영</button> 버튼을 누릅니다. 마스터 DB의 입고가가 자동으로 업데이트됩니다.
-                    </p>
-                </div>
-            </div>
-        </section>
+                // 카테고리별 그룹화
+                const grouped = enriched.reduce((acc, item) => {
+                    if (!acc[item.category]) acc[item.category] = [];
+                    acc[item.category].push(item);
+                    return acc;
+                }, {});
 
-        <!-- Section 4 -->
-        <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 mb-8 relative overflow-hidden">
-            <div class="absolute top-0 left-0 w-2 h-full bg-amber-500"></div>
-            <h2 class="text-2xl font-black text-slate-800 mb-6 flex items-center">
-                <span class="bg-amber-100 text-amber-700 px-3 py-1 rounded-lg mr-3 text-lg">4</span>
-                핵심 기능 ②: 엑셀 견적서 비교 (엑셀 뷰)
-            </h2>
-            <p class="text-slate-600 mb-6">거래처에서 엑셀 파일로 견적서를 줬을 때 사용하는 방법입니다.</p>
+                // 그룹 내 정렬 (변동률 절대값 기준 내림차순)
+                Object.keys(grouped).forEach(cat => {
+                    grouped[cat].sort((a, b) => Math.abs(b.percent) - Math.abs(a.percent));
+                });
 
-            <div class="bg-slate-50 border border-slate-200 rounded-xl p-6">
-                <ol class="space-y-4">
-                    <li class="flex">
-                        <span class="step-circle shrink-0">1</span>
-                        <span class="text-slate-700 mt-0.5">상단 툴바 <strong>[엑셀 뷰]</strong> 버튼 바로 옆에 있는 숨겨진 업로드 버튼(업로드 아이콘 📤)을 클릭하여 거래처의 <strong>견적서 엑셀 파일</strong>을 업로드합니다.</span>
-                    </li>
-                    <li class="flex">
-                        <span class="step-circle shrink-0">2</span>
-                        <span class="text-slate-700 mt-0.5">마스터 DB의 기존 단가와 견적서의 새 단가가 화면에 비교되어 나타납니다.</span>
-                    </li>
-                    <li class="flex">
-                        <span class="step-circle shrink-0">3</span>
-                        <span class="text-slate-700 mt-0.5">단가가 변경된 항목은 <span class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-bold border border-amber-200 mx-1">노란색 배경</span>으로 눈에 띄게 표시됩니다.</span>
-                    </li>
-                    <li class="flex">
-                        <span class="step-circle shrink-0">4</span>
-                        <span class="text-slate-700 mt-0.5">변경 내역이 맞다면 상단의 <strong class="bg-slate-700 text-white px-2 py-0.5 rounded text-xs mx-1"><i class="fas fa-save mr-1"></i>반영</strong> 버튼을 눌러 마스터 DB를 업데이트합니다.</span>
-                    </li>
-                </ol>
-            </div>
-        </section>
+                return {
+                    grouped,
+                    stats: { total: enriched.length, up: upCount, down: downCount, same: sameCount }
+                };
+            }, [relayData]);
 
-        <!-- Section 5 -->
-        <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 mb-8 relative overflow-hidden">
-            <div class="absolute top-0 left-0 w-2 h-full bg-rose-500"></div>
-            <h2 class="text-2xl font-black text-slate-800 mb-6 flex items-center">
-                <span class="bg-rose-100 text-rose-700 px-3 py-1 rounded-lg mr-3 text-lg">5</span>
-                자동 단가 계산 (마진 룰 설정)
-            </h2>
-            <p class="text-slate-600 mb-6">MerchOps는 입고가가 바뀌면 출고가와 시중가 등을 <strong>미리 설정한 마진율에 따라 자동으로 계산</strong>해 줍니다.</p>
+            const { grouped, stats } = processedData;
 
-            <div class="border border-rose-100 rounded-xl overflow-hidden">
-                <div class="bg-rose-50 px-5 py-3 border-b border-rose-100 font-bold text-rose-800 flex items-center">
-                    <i class="fas fa-cogs mr-2"></i> 마진 룰 설정 방법
-                </div>
-                <div class="p-5 bg-white">
-                    <ul class="space-y-3 text-sm text-slate-600">
-                        <li class="flex items-start"><span class="text-rose-400 mr-2">▶</span> <span>우측 상단 <strong>톱니바퀴 아이콘 ⚙️ (환경설정)</strong>을 클릭합니다.</span></li>
-                        <li class="flex items-start"><span class="text-rose-400 mr-2">▶</span> <span>왼쪽 메뉴에서 <strong>'3. 단가 계산 및 마진 룰'</strong>을 선택합니다.</span></li>
-                        <li class="flex items-start"><span class="text-rose-400 mr-2">▶</span> 
-                            <div>
-                                <strong>'창고코드'</strong>와 <strong>'단위(박스, 개 등)'</strong>에 따라 마진율(%)과 연산 방식(나누기/곱하기)을 설정할 수 있습니다.
-                                <div class="bg-slate-100 p-3 rounded-lg border border-slate-200 mt-2 font-mono text-xs text-slate-700">
-                                    <span class="text-slate-400">/* 예시 */</span><br>
-                                    01창고의 Box 제품 = 10% 마진 (나누기 연산)<br>
-                                    01창고의 낱개(ea) 제품 = 15% 마진 적용
-                                </div>
+            // Handlers
+            const handleCatBriefingChange = (cat, value) => {
+                setCategoryBriefings(prev => ({ ...prev, [cat]: value }));
+            };
+
+            const toggleMode = () => {
+                setIsEditorMode(!isEditorMode);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+
+            if (isLoading) return <div className="h-screen flex items-center justify-center text-slate-500 font-bold">리포트 데이터를 불러오는 중입니다...</div>;
+
+            return (
+                <div className="min-h-screen bg-slate-100 pb-20 flex justify-center">
+                    {/* 모바일 컨테이너 (고객이 보는 화면의 기준 사이즈) */}
+                    <div className="w-full max-w-lg bg-white shadow-2xl relative min-h-screen flex flex-col">
+                        
+                        {/* --- 상단 배너 / 타이틀 --- */}
+                        <header className="bg-slate-900 text-white px-5 py-6 rounded-b-3xl shadow-md relative z-10">
+                            <div className="flex justify-between items-center mb-4">
+                                <span className="text-xl font-black tracking-tight text-white"><i className="fas fa-layer-group text-indigo-400 mr-2"></i>Orderz</span>
+                                <span className="bg-indigo-500/30 text-indigo-200 text-[10px] font-bold px-2 py-1 rounded-full">Official Notice</span>
                             </div>
-                        </li>
-                        <li class="flex items-start"><span class="text-rose-400 mr-2">▶</span> <span>조건에 맞게 룰을 설정해 두면, 단가를 반영할 때 이 공식에 맞춰 판매가가 자동으로 세팅됩니다.</span></li>
-                    </ul>
-                </div>
-            </div>
-        </section>
+                            
+                            {isEditorMode ? (
+                                <div className="space-y-2 fade-in">
+                                    <label className="text-xs text-slate-400 font-bold block">리포트 제목 (고객 노출용)</label>
+                                    <input 
+                                        type="text" 
+                                        value={reportTitle} 
+                                        onChange={e => setReportTitle(e.target.value)}
+                                        className="w-full bg-slate-800 text-white border border-slate-600 rounded-lg px-3 py-2 text-lg font-bold outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+                                    />
+                                </div>
+                            ) : (
+                                <h1 className="text-xl font-black leading-tight fade-in">{reportTitle}</h1>
+                            )}
+                        </header>
 
-        <!-- Section 6 -->
-        <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 mb-8 relative overflow-hidden">
-            <div class="absolute top-0 left-0 w-2 h-full bg-violet-500"></div>
-            <h2 class="text-2xl font-black text-slate-800 mb-6 flex items-center">
-                <span class="bg-violet-100 text-violet-700 px-3 py-1 rounded-lg mr-3 text-lg">6</span>
-                출력 및 마무리 (보고서 다운로드)
-            </h2>
-            <p class="text-slate-600 mb-6">단가 업데이트가 끝났다면, 실제 쇼핑몰이나 ERP에 올릴 엑셀 파일을 만들어야 합니다.</p>
+                        {/* --- 메인 콘텐츠 영역 --- */}
+                        <main className="flex-1 px-4 py-6 space-y-6">
+                            
+                            {/* 데이터 연동 알림 (에디터 모드에서만) */}
+                            {isEditorMode && relayData !== MOCK_RELAY_DATA && (
+                                <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl flex items-center gap-3 shadow-sm text-[12px] font-bold fade-in">
+                                    <i className="fas fa-link text-emerald-500 text-lg"></i>
+                                    <span>MerchOps에서 총 <span className="text-emerald-600 font-black">{relayData.length}</span>건의 실제 출고가 변동 데이터가 연동되었습니다.</span>
+                                </div>
+                            )}
 
-            <div class="grid md:grid-cols-2 gap-6">
-                <div>
-                    <h3 class="text-md font-bold text-slate-800 mb-3 flex items-center">
-                        <i class="fas fa-chart-pie text-violet-500 mr-2"></i> 단가 변동 브리핑 <kbd class="kbd-key ml-2 text-[10px]">F8</kbd>
-                    </h3>
-                    <ul class="list-disc pl-5 text-sm text-slate-600 space-y-2">
-                        <li>업데이트된 상품 중 <strong>'단가가 오른 상품'</strong>과 <strong>'내린 상품'</strong>을 한눈에 요약해서 보여줍니다.</li>
-                        <li>이 화면에서 <strong>[변동 품목만 엑셀 다운로드]</strong>를 눌러, 가격이 바뀐 상품만 골라서 다운로드할 수 있습니다.</li>
-                    </ul>
-                </div>
-                <div>
-                    <h3 class="text-md font-bold text-slate-800 mb-3 flex items-center">
-                        <i class="fas fa-file-excel text-emerald-500 mr-2"></i> 통합 보고서 다운로드 <kbd class="kbd-key ml-2 text-[10px]">F9</kbd>
-                    </h3>
-                    <ul class="list-disc pl-5 text-sm text-slate-600 space-y-2">
-                        <li>상단의 <strong>[보고서]</strong> 버튼을 누르면 팝업이 뜹니다.</li>
-                        <li>여기서 단가가 0원인 상품의 품절 처리 여부 등을 선택할 수 있습니다.</li>
-                        <li><strong>[1. 통합 엑셀 다운로드]</strong>를 클릭하면, 파일 하나에 <strong>'ERP 업데이트 양식' 시트</strong>와 <strong>'쇼핑몰 업로드 양식' 시트</strong>가 함께 생성되어 다운로드됩니다.</li>
-                    </ul>
-                </div>
-            </div>
-        </section>
+                            {/* 1. Global 요약 및 브리핑 */}
+                            <section className="bg-white rounded-2xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-slate-100 overflow-hidden fade-in">
+                                <div className="p-5 border-b border-slate-100 bg-slate-50/50">
+                                    <h2 className="text-sm font-black text-slate-800 flex items-center mb-3">
+                                        <i className="fas fa-chart-pie text-indigo-500 mr-2"></i>시세 변동 요약
+                                    </h2>
+                                    
+                                    {/* 게이지 바 */}
+                                    <div className="flex w-full h-2.5 rounded-full overflow-hidden bg-slate-200 mb-2">
+                                        <div style={{width: `${stats.total > 0 ? (stats.up / stats.total) * 100 : 0}%`}} className="bg-rose-500"></div>
+                                        <div style={{width: `${stats.total > 0 ? (stats.same / stats.total) * 100 : 0}%`}} className="bg-slate-300"></div>
+                                        <div style={{width: `${stats.total > 0 ? (stats.down / stats.total) * 100 : 0}%`}} className="bg-blue-500"></div>
+                                    </div>
+                                    <div className="flex justify-between text-[11px] font-bold">
+                                        <span className="text-rose-600">인상 {stats.up}건</span>
+                                        <span className="text-slate-500">전체 {stats.total}건 안내</span>
+                                        <span className="text-blue-600">인하 {stats.down}건</span>
+                                    </div>
+                                </div>
 
-        <!-- Section 7 -->
-        <section class="bg-slate-800 rounded-2xl shadow-lg p-6 md:p-8 mb-8 text-white relative overflow-hidden">
-            <h2 class="text-2xl font-black mb-6 flex items-center text-white">
-                <i class="fas fa-keyboard text-slate-400 mr-3"></i>
-                7. 유용한 단축키 모음 ⌨️
-            </h2>
-            <p class="text-slate-300 mb-6 text-sm">마우스 클릭을 줄이고 작업 속도를 크게 높여주는 단축키입니다.</p>
+                                <div className="p-5">
+                                    {isEditorMode ? (
+                                        <div className="space-y-2">
+                                            <label className="text-xs text-indigo-600 font-bold flex items-center">
+                                                <i className="fas fa-pen mr-1.5"></i>전체 시황 브리핑 작성 (고객 안내용)
+                                            </label>
+                                            <textarea 
+                                                value={globalBriefing}
+                                                onChange={e => setGlobalBriefing(e.target.value)}
+                                                className="w-full h-32 bg-yellow-50 text-slate-800 border border-yellow-300 rounded-xl p-3 text-[13px] leading-relaxed outline-none focus:ring-2 focus:ring-yellow-400 resize-none font-medium"
+                                                placeholder="이번 주 시장의 주요 이슈와 가격 변동 사유를 고객에게 설명해주세요."
+                                            />
+                                        </div>
+                                    ) : (
+                                        <div className="text-[13px] leading-relaxed text-slate-700 whitespace-pre-wrap font-medium">
+                                            {globalBriefing}
+                                        </div>
+                                    )}
+                                </div>
+                            </section>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-                <div class="bg-slate-700/50 p-4 rounded-xl border border-slate-600">
-                    <kbd class="kbd-key bg-slate-800 text-white border-slate-500 shadow-none mb-2 block w-max">F3</kbd>
-                    <span class="font-bold text-sm block mb-1 text-slate-200">빠른 검색</span>
-                    <span class="text-xs text-slate-400">어디서든 누르면 우측 상단 검색창으로 커서가 이동합니다.</span>
-                </div>
-                <div class="bg-slate-700/50 p-4 rounded-xl border border-slate-600">
-                    <kbd class="kbd-key bg-slate-800 text-white border-slate-500 shadow-none mb-2 block w-max">F7</kbd>
-                    <span class="font-bold text-sm block mb-1 text-slate-200">현재 화면 엑셀 다운로드</span>
-                    <span class="text-xs text-slate-400">지금 눈에 보이는 화면 그대로를 엑셀로 저장합니다.</span>
-                </div>
-                <div class="bg-slate-700/50 p-4 rounded-xl border border-slate-600">
-                    <kbd class="kbd-key bg-slate-800 text-white border-slate-500 shadow-none mb-2 block w-max">F8</kbd>
-                    <span class="font-bold text-sm block mb-1 text-slate-200">단가 변동 브리핑</span>
-                    <span class="text-xs text-slate-400">인상/인하 요약 창을 엽니다.</span>
-                </div>
-                <div class="bg-slate-700/50 p-4 rounded-xl border border-slate-600">
-                    <kbd class="kbd-key bg-slate-800 text-white border-slate-500 shadow-none mb-2 block w-max">F9</kbd>
-                    <span class="font-bold text-sm block mb-1 text-slate-200">보고서 출력 센터</span>
-                    <span class="text-xs text-slate-400">최종 엑셀 다운로드를 위한 창을 엽니다.</span>
-                </div>
-                <div class="bg-indigo-900/50 p-4 rounded-xl border border-indigo-500/50 sm:col-span-2 lg:col-span-2">
-                    <div class="flex items-center mb-2">
-                        <kbd class="kbd-key bg-slate-800 text-white border-slate-500 shadow-none">Ctrl</kbd> <span class="mx-1 text-slate-400">+</span> <kbd class="kbd-key bg-slate-800 text-white border-slate-500 shadow-none">S</kbd>
+                            {/* 2. 카테고리별 품목 리스트 */}
+                            <div className="space-y-5">
+                                <h3 className="text-sm font-black text-slate-800 px-1 border-l-4 border-slate-800 pl-2">카테고리별 상세 변동 내역</h3>
+                                
+                                {Object.entries(grouped).map(([category, items], idx) => {
+                                    const catUp = items.filter(i => i.diff > 0).length;
+                                    const catDown = items.filter(i => i.diff < 0).length;
+                                    
+                                    return (
+                                        <section key={category} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden fade-in" style={{animationDelay: `${idx * 0.1}s`}}>
+                                            {/* 카테고리 헤더 */}
+                                            <div className="bg-slate-50 p-4 border-b border-slate-200">
+                                                <div className="flex justify-between items-center mb-3">
+                                                    <h4 className="text-[15px] font-black text-slate-800 flex items-center">
+                                                        {category}
+                                                    </h4>
+                                                    <div className="flex gap-1.5">
+                                                        {catUp > 0 && <span className="bg-rose-100 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded">↑ 인상 {catUp}</span>}
+                                                        {catDown > 0 && <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded">↓ 인하 {catDown}</span>}
+                                                    </div>
+                                                </div>
+
+                                                {/* 카테고리 브리핑 (시황 코멘트) */}
+                                                {isEditorMode ? (
+                                                    <textarea 
+                                                        value={categoryBriefings[category] || ''}
+                                                        onChange={e => handleCatBriefingChange(category, e.target.value)}
+                                                        className="w-full h-16 bg-yellow-50 text-slate-700 border border-yellow-300 rounded-lg p-2.5 text-xs outline-none focus:ring-1 focus:ring-yellow-400 resize-none font-medium"
+                                                        placeholder={`${category} 카테고리의 주요 변동 사유를 작성하세요.`}
+                                                    />
+                                                ) : (
+                                                    categoryBriefings[category] && (
+                                                        <div className="bg-slate-100 rounded-lg p-3 relative">
+                                                            <div className="absolute top-2.5 left-2.5 text-indigo-400 text-sm"><i className="fas fa-quote-left"></i></div>
+                                                            <p className="text-xs text-slate-600 pl-6 leading-relaxed font-bold break-keep">
+                                                                {categoryBriefings[category]}
+                                                            </p>
+                                                        </div>
+                                                    )
+                                                )}
+                                            </div>
+
+                                            {/* 품목 리스트 (카드형) */}
+                                            <div className="divide-y divide-slate-100">
+                                                {items.map(item => {
+                                                    const isUp = item.diff > 0;
+                                                    const isDown = item.diff < 0;
+                                                    const colorClass = isUp ? 'text-rose-500' : isDown ? 'text-blue-500' : 'text-slate-500';
+                                                    const bgClass = isUp ? 'bg-rose-50' : isDown ? 'bg-blue-50' : 'bg-slate-50';
+                                                    const icon = isUp ? 'fa-arrow-up' : isDown ? 'fa-arrow-down' : 'fa-minus';
+
+                                                    return (
+                                                        <div key={item.id} className="p-4 hover:bg-slate-50 transition-colors">
+                                                            <div className="flex justify-between items-start mb-2">
+                                                                <div className="flex flex-col pr-2">
+                                                                    <span className="text-[13px] font-extrabold text-slate-800">{item.name}</span>
+                                                                    <span className="text-[11px] text-slate-400 font-medium mt-0.5">{item.spec}</span>
+                                                                </div>
+                                                                {/* 변동률 뱃지 */}
+                                                                {item.percent !== 0 && (
+                                                                    <div className={`px-2 py-1 rounded-md flex items-center text-[11px] font-black shrink-0 ${bgClass} ${colorClass}`}>
+                                                                        <i className={`fas ${icon} text-[9px] mr-1`}></i>
+                                                                        {Math.abs(item.percent).toFixed(1)}%
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            
+                                                            <div className="flex justify-between items-end mt-3">
+                                                                <div className="flex items-center text-xs font-bold text-slate-400 gap-2">
+                                                                    <span className="line-through">{item.oldPrice.toLocaleString()}원</span>
+                                                                    <i className="fas fa-caret-right text-slate-300"></i>
+                                                                    <span className="text-slate-800 text-[14px]">{item.newPrice.toLocaleString()}원</span>
+                                                                </div>
+                                                                <div className={`text-xs font-black ${colorClass}`}>
+                                                                    {isUp ? '+' : ''}{item.diff.toLocaleString()}원
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </section>
+                                    );
+                                })}
+                            </div>
+
+                        </main>
+
+                        {/* --- Footer --- */}
+                        <footer className="bg-slate-100 p-6 text-center mt-auto border-t border-slate-200">
+                            <div className="text-indigo-300 text-2xl mb-2"><i className="fas fa-leaf"></i></div>
+                            <p className="text-xs text-slate-500 font-bold mb-1">항상 더 나은 서비스로 보답하겠습니다.</p>
+                            <p className="text-[10px] text-slate-400">문의사항: 1588-0000 | 카카오톡 @orderz</p>
+                            <p className="text-[10px] text-slate-300 mt-4">&copy; 2026 ONEAPP MerchOps. All rights reserved.</p>
+                        </footer>
+
                     </div>
-                    <span class="font-bold text-sm block mb-1 text-indigo-300">반영 (저장)</span>
-                    <span class="text-xs text-indigo-200/70">선택된 항목을 마스터 DB에 바로 업데이트합니다. 마우스 이동 없이 빠르게 저장하세요.</span>
+
+                    {/* --- [Floating Controller] 에디터/뷰어 전환 토글 (데스크톱/화면 우측 고정) --- */}
+                    <div className="fixed bottom-6 right-6 flex flex-col gap-3 z-50">
+                        {isEditorMode && (
+                            <button 
+                                onClick={() => {
+                                    alert("클라우드에 시황 텍스트가 저장되고, 고객에게 전달할 링크가 클립보드에 복사되었습니다.\n(예: https://oneapp.orderz.co.kr/report/doc_9912)");
+                                }}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-xl rounded-full px-6 py-4 flex items-center justify-center font-black text-sm transition-transform hover:scale-105"
+                            >
+                                <i className="fas fa-link mr-2"></i>최종 링크 발행하기
+                            </button>
+                        )}
+                        <button 
+                            onClick={toggleMode}
+                            className={`shadow-xl rounded-full px-6 py-4 flex items-center justify-center font-black text-sm border-2 transition-transform hover:scale-105 ${isEditorMode ? 'bg-white text-slate-800 border-slate-200' : 'bg-emerald-500 text-white border-emerald-600'}`}
+                        >
+                            <i className={`fas ${isEditorMode ? 'fa-mobile-alt text-indigo-500' : 'fa-edit'} mr-2`}></i>
+                            {isEditorMode ? '고객 뷰어 모드로 보기' : '에디터 모드로 돌아가기'}
+                        </button>
+                    </div>
+
                 </div>
-            </div>
+            );
+        };
 
-            <!-- Tooltips / Pro tips -->
-            <div class="bg-gradient-to-r from-amber-500 to-amber-600 p-5 rounded-xl text-amber-50 shadow-inner">
-                <h3 class="font-black text-lg mb-3 text-white flex items-center"><i class="fas fa-lightbulb text-yellow-300 mr-2"></i> 초보자를 위한 꿀팁!</h3>
-                <ul class="space-y-3 text-sm">
-                    <li class="flex items-start">
-                        <i class="fas fa-check-circle mt-1 mr-2 text-amber-200"></i>
-                        <span>작업 중에 뭔가 꼬이거나 이상해졌다면, 상단 우측 검색창 옆에 있는 <strong>[새로고침(회전하는 화살표) 버튼]</strong>을 누르면 작업 중이던 임시 데이터가 초기화됩니다. (마스터 DB는 안전하게 보존되니 안심하세요!)</span>
-                    </li>
-                    <li class="flex items-start">
-                        <i class="fas fa-check-circle mt-1 mr-2 text-amber-200"></i>
-                        <span>마스터 항목 노출을 바꾸고 싶다면 언제든 <span class="bg-black/20 px-2 py-0.5 rounded">환경설정 ⚙️ > 1. 환경 및 화면 설정</span>에서 껐다 켤 수 있습니다.</span>
-                    </li>
-                </ul>
-            </div>
-        </section>
-
-    </main>
-
-    <!-- Footer -->
-    <footer class="bg-slate-900 text-slate-500 py-12 text-center text-sm border-t border-slate-800">
-        <div class="mb-8">
-            <a href="https://oneapp.orderz.co.kr/MerchOps/v8.93" class="inline-flex items-center justify-center px-8 py-4 bg-[#818cf8] hover:bg-indigo-500 text-slate-900 font-black rounded-xl shadow-lg hover:shadow-indigo-500/25 transition-all duration-300 hover:-translate-y-1">
-                <i class="fas fa-rocket mr-2"></i> MerchOps 작업 화면으로 돌아가기
-            </a>
-        </div>
-        <p>&copy; 2026 ONEAPP MerchOps. All rights reserved.</p>
-    </footer>
-
-    <!-- Scroll to Top Button -->
-    <button id="scrollTopBtn" class="fixed bottom-8 right-8 bg-indigo-600 text-white w-12 h-12 rounded-full shadow-xl flex items-center justify-center text-xl transition-all duration-300 opacity-0 translate-y-10 hover:bg-indigo-700 hover:scale-110 focus:outline-none z-50">
-        <i class="fas fa-arrow-up"></i>
-    </button>
-
-    <script>
-        // Scroll to Top Logic
-        const scrollTopBtn = document.getElementById('scrollTopBtn');
-        
-        window.addEventListener('scroll', () => {
-            if (window.scrollY > 300) {
-                scrollTopBtn.classList.remove('opacity-0', 'translate-y-10');
-                scrollTopBtn.classList.add('opacity-100', 'translate-y-0');
-            } else {
-                scrollTopBtn.classList.remove('opacity-100', 'translate-y-0');
-                scrollTopBtn.classList.add('opacity-0', 'translate-y-10');
-            }
-        });
-
-        scrollTopBtn.addEventListener('click', () => {
-            window.scrollTo({
-                top: 0,
-                behavior: 'smooth'
-            });
-        });
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
 </body>
 </html>
