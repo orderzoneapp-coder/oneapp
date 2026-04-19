@@ -24,18 +24,10 @@
     <script type="text/babel">
         const { useState, useMemo, useEffect } = React;
 
-        // --- 1. Mock Data (MerchOps에서 Relay 된 데이터라 가정 - 출고가 기준) ---
+        // --- 1. Mock Data (로컬 스토리지에 데이터가 없을 때만 보여줄 예시 데이터) ---
         const MOCK_RELAY_DATA = [
-            { id: '1', category: '가공식품 / 조미료', name: '삼양)큐원하얀설탕', spec: '3kg', oldPrice: 5500, newPrice: 5800 },
-            { id: '2', category: '가공식품 / 조미료', name: '부침가루(큐원)', spec: '1kg', oldPrice: 2300, newPrice: 2500 },
-            { id: '3', category: '가공식품 / 조미료', name: '중력밀가루(백설)', spec: '3kg', oldPrice: 4800, newPrice: 5000 },
-            { id: '4', category: '가공식품 / 조미료', name: '감자전분(화미)', spec: '1kg', oldPrice: 3800, newPrice: 4000 },
-            { id: '5', category: '가공식품 / 조미료', name: '황설탕(큐원)', spec: '3kg', oldPrice: 6500, newPrice: 6800 },
-            { id: '6', category: '가공식품 / 조미료', name: '흑설탕(큐원/포)', spec: '15kg', oldPrice: 33000, newPrice: 37500 },
-            { id: '7', category: '간편식 / 시리얼', name: '첵스초코(켈로그)', spec: '1.1kg', oldPrice: 16500, newPrice: 15000 }, // 하락
-            { id: '8', category: '소모품 / 포장재', name: '베이킹컵(45)', spec: '1개', oldPrice: 3500, newPrice: 3900 },
-            { id: '9', category: '면류 / 기타', name: '쌀국수(1mm/몬)', spec: '250g', oldPrice: 1500, newPrice: 1600 },
-            { id: '10', category: '면류 / 기타', name: '월남쌈(몬/원형16cm)', spec: '300g', oldPrice: 2400, newPrice: 2800 },
+            { id: '1', category: '가공식품 / 조미료', name: '삼양)큐원하얀설탕 (테스트용)', spec: '3kg', oldPrice: 5500, newPrice: 5800 },
+            { id: '2', category: '면류 / 기타', name: '쌀국수(1mm/몬) (테스트용)', spec: '250g', oldPrice: 1500, newPrice: 1600 },
         ];
 
         // --- 2. 초기 템플릿 텍스트 ---
@@ -50,18 +42,46 @@
 
         const App = () => {
             // State
-            const [isEditorMode, setIsEditorMode] = useState(true); // true: MD 편집 모드, false: 고객 뷰어 모드
+            const [isEditorMode, setIsEditorMode] = useState(true);
             const [reportTitle, setReportTitle] = useState("[Orderz] 주간 시세 변동 안내 (4월 3주차)");
             const [globalBriefing, setGlobalBriefing] = useState(DEFAULT_GLOBAL_BRIEFING);
             const [categoryBriefings, setCategoryBriefings] = useState(DEFAULT_CAT_BRIEFINGS);
             
-            // 데이터 가공 (변동률, 그룹화)
+            // 🚀 MerchOps에서 전달받은 실제 데이터를 담을 상태
+            const [relayData, setRelayData] = useState([]);
+            const [isLoading, setIsLoading] = useState(true);
+
+            // 🚀 컴포넌트 마운트 시 로컬 스토리지에서 이어달리기 데이터 읽어오기
+            useEffect(() => {
+                try {
+                    const storedStr = localStorage.getItem('merchops_relay_data');
+                    if (storedStr) {
+                        const parsedData = JSON.parse(storedStr);
+                        if (parsedData && parsedData.length > 0) {
+                            setRelayData(parsedData);
+                            setIsLoading(false);
+                            return; // 실제 데이터 로드 성공 시 예시 데이터 무시
+                        }
+                    }
+                    // 데이터가 없거나 파싱 실패 시 기본 예시 데이터 사용
+                    setRelayData(MOCK_RELAY_DATA);
+                } catch (error) {
+                    console.error("데이터 로드 중 오류 발생:", error);
+                    setRelayData(MOCK_RELAY_DATA);
+                } finally {
+                    setIsLoading(false);
+                }
+            }, []);
+            
+            // 데이터 가공 (변동률, 그룹화) - 상태인 relayData를 바라보도록 수정
             const processedData = useMemo(() => {
+                if (relayData.length === 0) return { grouped: {}, stats: { total: 0, up: 0, down: 0, same: 0 } };
+
                 let upCount = 0;
                 let downCount = 0;
                 let sameCount = 0;
 
-                const enriched = MOCK_RELAY_DATA.map(item => {
+                const enriched = relayData.map(item => {
                     const diff = item.newPrice - item.oldPrice;
                     const percent = item.oldPrice > 0 ? (diff / item.oldPrice) * 100 : 0;
                     
@@ -88,7 +108,7 @@
                     grouped,
                     stats: { total: enriched.length, up: upCount, down: downCount, same: sameCount }
                 };
-            }, []);
+            }, [relayData]);
 
             const { grouped, stats } = processedData;
 
@@ -101,6 +121,8 @@
                 setIsEditorMode(!isEditorMode);
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             };
+
+            if (isLoading) return <div className="h-screen flex items-center justify-center text-slate-500 font-bold">리포트 데이터를 불러오는 중입니다...</div>;
 
             return (
                 <div className="min-h-screen bg-slate-100 pb-20 flex justify-center">
@@ -132,6 +154,14 @@
                         {/* --- 메인 콘텐츠 영역 --- */}
                         <main className="flex-1 px-4 py-6 space-y-6">
                             
+                            {/* 데이터 연동 알림 (에디터 모드에서만) */}
+                            {isEditorMode && relayData !== MOCK_RELAY_DATA && (
+                                <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl flex items-center gap-3 shadow-sm text-[12px] font-bold fade-in">
+                                    <i className="fas fa-link text-emerald-500 text-lg"></i>
+                                    <span>MerchOps에서 총 <span className="text-emerald-600 font-black">{relayData.length}</span>건의 실제 출고가 변동 데이터가 연동되었습니다.</span>
+                                </div>
+                            )}
+
                             {/* 1. Global 요약 및 브리핑 */}
                             <section className="bg-white rounded-2xl shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-slate-100 overflow-hidden fade-in">
                                 <div className="p-5 border-b border-slate-100 bg-slate-50/50">
@@ -141,9 +171,9 @@
                                     
                                     {/* 게이지 바 */}
                                     <div className="flex w-full h-2.5 rounded-full overflow-hidden bg-slate-200 mb-2">
-                                        <div style={{width: `${(stats.up / stats.total) * 100}%`}} className="bg-rose-500"></div>
-                                        <div style={{width: `${(stats.same / stats.total) * 100}%`}} className="bg-slate-300"></div>
-                                        <div style={{width: `${(stats.down / stats.total) * 100}%`}} className="bg-blue-500"></div>
+                                        <div style={{width: `${stats.total > 0 ? (stats.up / stats.total) * 100 : 0}%`}} className="bg-rose-500"></div>
+                                        <div style={{width: `${stats.total > 0 ? (stats.same / stats.total) * 100 : 0}%`}} className="bg-slate-300"></div>
+                                        <div style={{width: `${stats.total > 0 ? (stats.down / stats.total) * 100 : 0}%`}} className="bg-blue-500"></div>
                                     </div>
                                     <div className="flex justify-between text-[11px] font-bold">
                                         <span className="text-rose-600">인상 {stats.up}건</span>
