@@ -1,0 +1,282 @@
+import React, { useState, useEffect } from 'react';
+import { Terminal, Calendar, UserPlus, Trash2, Search, Bell } from 'lucide-react';
+
+export default function App() {
+  // 상태 관리
+  const [friends, setFriends] = useState([]);
+  const [name, setName] = useState('');
+  const [birthdate, setBirthdate] = useState('');
+  const [group, setGroup] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // 로컬 스토리지에서 데이터 불러오기
+  useEffect(() => {
+    const savedData = localStorage.getItem('sys_birthday_data');
+    if (savedData) {
+      try {
+        setFriends(JSON.parse(savedData));
+      } catch (e) {
+        console.error("데이터 파싱 오류", e);
+      }
+    }
+  }, []);
+
+  // 데이터가 변경될 때마다 로컬 스토리지에 저장
+  useEffect(() => {
+    localStorage.setItem('sys_birthday_data', JSON.stringify(friends));
+  }, [friends]);
+
+  // D-Day 계산 함수
+  const calculateDDay = (birthDateString) => {
+    if (!birthDateString) return null;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const bDate = new Date(birthDateString);
+    let nextBday = new Date(today.getFullYear(), bDate.getMonth(), bDate.getDate());
+    
+    // 이미 올해 생일이 지났다면 내년으로 설정
+    if (today > nextBday) {
+      nextBday.setFullYear(today.getFullYear() + 1);
+    }
+    
+    const diffTime = nextBday - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    return diffDays;
+  };
+
+  // 나이 계산 함수
+  const calculateAge = (birthDateString) => {
+    if (!birthDateString) return 0;
+    const today = new Date();
+    const birthDate = new Date(birthDateString);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age;
+  };
+
+  // 친구 추가 함수
+  const handleAddFriend = (e) => {
+    e.preventDefault();
+    if (!name || !birthdate) return;
+
+    const newFriend = {
+      id: Date.now().toString(),
+      name,
+      birthdate,
+      group: group || '미지정',
+      createdAt: new Date().toISOString()
+    };
+
+    setFriends([...friends, newFriend]);
+    
+    // 입력폼 초기화
+    setName('');
+    setBirthdate('');
+    setGroup('');
+  };
+
+  // 친구 삭제 함수
+  const handleDelete = (id) => {
+    if(window.confirm('해당 데이터를 시스템에서 삭제하시겠습니까?')) {
+      setFriends(friends.filter(f => f.id !== id));
+    }
+  };
+
+  // 정렬 및 필터링된 데이터
+  const processedFriends = friends
+    .filter(f => f.name.includes(searchQuery) || f.group.includes(searchQuery))
+    .map(f => ({
+      ...f,
+      dDay: calculateDDay(f.birthdate),
+      age: calculateAge(f.birthdate)
+    }))
+    .sort((a, b) => a.dDay - b.dDay);
+
+  // 다가오는 생일 (D-30 이내)
+  const upcomingBirthdays = processedFriends.filter(f => f.dDay <= 30);
+
+  return (
+    <div className="min-h-screen bg-black text-green-500 font-mono p-4 md:p-8 selection:bg-green-500 selection:text-black">
+      <div className="max-w-5xl mx-auto space-y-6">
+        
+        {/* Header */}
+        <header className="border-b-2 border-green-500/50 pb-4 flex items-end justify-between">
+          <div>
+            <h1 className="text-2xl md:text-4xl font-bold tracking-tighter flex items-center gap-3">
+              <Terminal size={36} />
+              BIRTHDAY_SYS.exe
+            </h1>
+            <p className="text-green-600 mt-2 text-sm">v1.0.0 | STATUS: ONLINE | RECORDS: {friends.length}</p>
+          </div>
+          <div className="hidden md:block text-right text-xs text-green-700">
+            {new Date().toISOString().split('T')[0]} <br/>
+            SYSTEM_READY...
+          </div>
+        </header>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* Left Column: Input Form & Dashboard */}
+          <div className="space-y-6">
+            
+            {/* Input Form */}
+            <section className="border border-green-500/30 p-4 bg-gray-900/30 relative">
+              <div className="absolute top-0 left-2 -translate-y-1/2 bg-black px-2 text-sm font-bold text-green-400">
+                [ REGISTRATION ]
+              </div>
+              <form onSubmit={handleAddFriend} className="space-y-4 mt-2">
+                <div className="space-y-1">
+                  <label className="text-xs text-green-600 block">NAME</label>
+                  <input 
+                    type="text" 
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full bg-black border border-green-800 focus:border-green-400 text-green-400 p-2 outline-none transition-colors"
+                    placeholder="이름 입력_"
+                    required
+                  />
+                </div>
+                
+                <div className="space-y-1">
+                  <label className="text-xs text-green-600 block">DATE OF BIRTH</label>
+                  <input 
+                    type="date" 
+                    value={birthdate}
+                    onChange={(e) => setBirthdate(e.target.value)}
+                    className="w-full bg-black border border-green-800 focus:border-green-400 text-green-400 p-2 outline-none transition-colors"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs text-green-600 block">GROUP / TAG</label>
+                  <input 
+                    type="text" 
+                    value={group}
+                    onChange={(e) => setGroup(e.target.value)}
+                    className="w-full bg-black border border-green-800 focus:border-green-400 text-green-400 p-2 outline-none transition-colors"
+                    placeholder="ex) 고등학교, 회사_"
+                  />
+                </div>
+
+                <button 
+                  type="submit" 
+                  className="w-full border border-green-500 hover:bg-green-500 hover:text-black transition-colors p-2 flex justify-center items-center gap-2 font-bold mt-2"
+                >
+                  <UserPlus size={18} />
+                  EXECUTE_ADD
+                </button>
+              </form>
+            </section>
+
+            {/* Upcoming Dashboard */}
+            <section className="border border-green-500/30 p-4 bg-gray-900/30 relative">
+               <div className="absolute top-0 left-2 -translate-y-1/2 bg-black px-2 text-sm font-bold text-yellow-500 animate-pulse">
+                [ UPCOMING (D-30) ]
+              </div>
+              <div className="mt-2 space-y-3">
+                {upcomingBirthdays.length === 0 ? (
+                  <p className="text-green-700 text-sm italic">NO UPCOMING EVENTS DETECTED.</p>
+                ) : (
+                  upcomingBirthdays.map(friend => (
+                    <div key={`up-${friend.id}`} className="flex justify-between items-center border-l-2 border-yellow-500 pl-3 py-1">
+                      <div>
+                        <span className="font-bold text-yellow-400">{friend.name}</span>
+                        <span className="text-xs text-green-600 ml-2">({friend.age + 1}세 예정)</span>
+                      </div>
+                      <div className="font-bold text-red-400 flex items-center gap-1">
+                        <Bell size={14} className="animate-bounce" />
+                        {friend.dDay === 0 ? 'D-DAY!' : `D-${friend.dDay}`}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+
+          </div>
+
+          {/* Right Column: Data Grid */}
+          <div className="lg:col-span-2 space-y-4">
+            
+            {/* Search Bar */}
+            <div className="flex items-center gap-2 border border-green-800 bg-black p-2">
+              <Search size={18} className="text-green-600" />
+              <input 
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="검색어 입력 (이름 또는 그룹)..."
+                className="bg-transparent w-full outline-none text-green-400 placeholder:text-green-800"
+              />
+            </div>
+
+            {/* Data Table */}
+            <div className="border border-green-500/30 overflow-x-auto bg-gray-900/10">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-green-500/50 text-green-600 text-sm">
+                    <th className="p-3 font-normal">NAME</th>
+                    <th className="p-3 font-normal">BIRTHDATE</th>
+                    <th className="p-3 font-normal">AGE</th>
+                    <th className="p-3 font-normal">GROUP</th>
+                    <th className="p-3 font-normal text-right">D-DAY</th>
+                    <th className="p-3 font-normal text-center">CMD</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {processedFriends.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" className="p-8 text-center text-green-700 italic border-t border-green-800/30">
+                        NO_DATA_FOUND
+                      </td>
+                    </tr>
+                  ) : (
+                    processedFriends.map(friend => (
+                      <tr 
+                        key={friend.id} 
+                        className={`border-b border-green-800/30 hover:bg-green-900/20 transition-colors ${friend.dDay === 0 ? 'bg-yellow-900/20' : ''}`}
+                      >
+                        <td className="p-3 font-bold">{friend.name}</td>
+                        <td className="p-3 text-green-600 flex items-center gap-2">
+                          <Calendar size={14} />
+                          {friend.birthdate}
+                        </td>
+                        <td className="p-3">{friend.age}세</td>
+                        <td className="p-3 text-green-600">[{friend.group}]</td>
+                        <td className="p-3 text-right font-bold">
+                           {friend.dDay === 0 ? (
+                             <span className="text-yellow-400 bg-yellow-400/10 px-2 py-1 rounded">D-DAY</span>
+                           ) : (
+                             `D-${friend.dDay}`
+                           )}
+                        </td>
+                        <td className="p-3 text-center">
+                          <button 
+                            onClick={() => handleDelete(friend.id)}
+                            className="text-red-500 hover:text-red-300 hover:bg-red-900/30 p-1 rounded transition-colors"
+                            title="데이터 삭제"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+          </div>
+        </div>
+        
+      </div>
+    </div>
+  );
+}
