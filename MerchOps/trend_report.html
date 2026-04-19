@@ -50,6 +50,7 @@
             // 🚀 MerchOps에서 전달받은 실제 데이터를 담을 상태
             const [relayData, setRelayData] = useState([]);
             const [isLoading, setIsLoading] = useState(true);
+            const [toastMsg, setToastMsg] = useState("");
 
             // 🚀 컴포넌트 마운트 시 로컬 스토리지에서 이어달리기 데이터 읽어오기
             useEffect(() => {
@@ -122,10 +123,46 @@
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             };
 
+            const showToast = (msg) => {
+                setToastMsg(msg);
+                setTimeout(() => setToastMsg(""), 3500);
+            };
+
+            const handlePublish = () => {
+                // 1. 고유 문서 ID가 포함된 가상의 URL 생성
+                const mockDocId = Math.floor(Math.random() * 90000) + 10000;
+                const generatedUrl = `https://oneapp.orderz.co.kr/report/doc_${mockDocId}`;
+
+                // 2. 클립보드에 직접 복사 (iFrame 환경 우회를 위해 execCommand 사용)
+                const textArea = document.createElement("textarea");
+                textArea.value = generatedUrl;
+                textArea.style.position = "fixed";
+                textArea.style.opacity = "0";
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                try {
+                    const successful = document.execCommand('copy');
+                    if (successful) {
+                        showToast(`✅ 링크 복사 완료!\n\n고객에게 전달할 고유 링크가 클립보드에 복사되었습니다.\n( ${generatedUrl} )`);
+                    } else {
+                        showToast(`⚠️ 복사 실패. 아래 링크를 수동으로 복사해주세요.\n${generatedUrl}`);
+                    }
+                } catch (err) {
+                    showToast(`❌ 클립보드 접근 권한이 없습니다.`);
+                }
+                document.body.removeChild(textArea);
+            };
+
             if (isLoading) return <div className="h-screen flex items-center justify-center text-slate-500 font-bold">리포트 데이터를 불러오는 중입니다...</div>;
 
             return (
                 <div className="min-h-screen bg-slate-100 pb-20 flex justify-center">
+                    {toastMsg && (
+                        <div className="fixed top-10 z-[1000] bg-slate-800 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center justify-center gap-3 fade-in text-[13px] font-bold border border-slate-700 whitespace-pre-line text-center max-w-sm">
+                            {toastMsg}
+                        </div>
+                    )}
                     {/* 모바일 컨테이너 (고객이 보는 화면의 기준 사이즈) */}
                     <div className="w-full max-w-lg bg-white shadow-2xl relative min-h-screen flex flex-col">
                         
@@ -305,9 +342,7 @@
                     <div className="fixed bottom-6 right-6 flex flex-col gap-3 z-50">
                         {isEditorMode && (
                             <button 
-                                onClick={() => {
-                                    alert("클라우드에 시황 텍스트가 저장되고, 고객에게 전달할 링크가 클립보드에 복사되었습니다.\n(예: https://oneapp.orderz.co.kr/report/doc_9912)");
-                                }}
+                                onClick={handlePublish}
                                 className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-xl rounded-full px-6 py-4 flex items-center justify-center font-black text-sm transition-transform hover:scale-105"
                             >
                                 <i className="fas fa-link mr-2"></i>최종 링크 발행하기
