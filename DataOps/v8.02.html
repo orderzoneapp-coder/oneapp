@@ -857,7 +857,25 @@
                         if (!item._fromFile4) {
                             item._orig = { 기초: item.기초, 입고: item.입고, 출고: item.출고, 단가: item.단가 };
                             item.전산잔량 = item.기초 + item.입고 - item.출고;
-                            if (item.실사 === null) { item.실사 = item.전산잔량; item.로스 = 0; }
+                            
+                            // 🌟 핵심 수정: 실사값이 비어있을 때 (null)
+                            if (item.실사 === null) { 
+                                if (parsedEnd.length > 0) {
+                                    // 4번 실사 파일이 업로드 되었는데 파일에 해당 품목이 없다면,
+                                    // 조사를 안 한 것이 아니라 "창고 재고가 0"인 것으로 간주하여 강제로 0을 부여하고 오차(로스)를 발생시킴.
+                                    item.실사 = 0;
+                                    item.로스 = item.실사 - item.전산잔량;
+                                    if (item.로스 !== 0) {
+                                        if (!item.이슈.includes(`🚨수량변동(실사누락)`)) item.이슈.push(`🚨수량변동(실사누락)`);
+                                        item.수기확인완료 = false;
+                                    }
+                                } else {
+                                    // 4번 실사 파일이 아예 안 올라온 경우 (1, 2, 3번만 올림)
+                                    // 로스를 계산할 기준이 없으므로 기존대로 전산잔량을 덮어씌움
+                                    item.실사 = item.전산잔량; 
+                                    item.로스 = 0; 
+                                }
+                            }
                         }
                     });
 
