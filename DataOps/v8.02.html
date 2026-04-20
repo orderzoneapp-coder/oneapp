@@ -1149,9 +1149,73 @@
             const addedOut = item.대체출고 + (item.로스 < 0 ? Math.abs(item.로스) : 0);
             const totalIn = item.입고 + addedIn;
             const totalOut = item.출고 + addedOut;
-            const actualQty = item.실사 === null || item.실사 === undefined ? '' : Number(item.실사);
-            const isNegativeActual = typeof actualQty === 'number' && actualQty < 0;
             const isToday = item.일자 && targetDateStr && item.일자 === targetDateStr;
+
+            // 🌟 랙(Lag) 방지를 위한 입력 필드 로컬 상태 & 디바운싱(Debouncing) 처리
+            const [localPrice, setLocalPrice] = useState(item.단가 === 0 ? '' : Math.round(item.단가));
+            useEffect(() => setLocalPrice(item.단가 === 0 ? '' : Math.round(item.단가)), [item.단가]);
+            const priceTimeout = useRef(null);
+
+            const [localPrev, setLocalPrev] = useState(item.기초 === 0 ? '' : item.기초);
+            useEffect(() => setLocalPrev(item.기초 === 0 ? '' : item.기초), [item.기초]);
+            const prevTimeout = useRef(null);
+
+            const [localIn, setLocalIn] = useState(totalIn === 0 ? '' : totalIn);
+            useEffect(() => setLocalIn(totalIn === 0 ? '' : totalIn), [totalIn]);
+            const inTimeout = useRef(null);
+
+            const [localOut, setLocalOut] = useState(totalOut === 0 ? '' : totalOut);
+            useEffect(() => setLocalOut(totalOut === 0 ? '' : totalOut), [totalOut]);
+            const outTimeout = useRef(null);
+
+            const [localActual, setLocalActual] = useState(item.실사 === null || item.실사 === undefined ? '' : item.실사);
+            useEffect(() => setLocalActual(item.실사 === null || item.실사 === undefined ? '' : item.실사), [item.실사]);
+            const actualTimeout = useRef(null);
+
+            useEffect(() => {
+                return () => {
+                    if (priceTimeout.current) clearTimeout(priceTimeout.current);
+                    if (prevTimeout.current) clearTimeout(prevTimeout.current);
+                    if (inTimeout.current) clearTimeout(inTimeout.current);
+                    if (outTimeout.current) clearTimeout(outTimeout.current);
+                    if (actualTimeout.current) clearTimeout(actualTimeout.current);
+                };
+            }, []);
+
+            const handlePriceChange = (e) => {
+                const val = e.target.value; setLocalPrice(val);
+                if (priceTimeout.current) clearTimeout(priceTimeout.current);
+                priceTimeout.current = setTimeout(() => onBaseDataChange(item.batchKey, '단가', val), 250);
+            };
+
+            const handlePrevChange = (e) => {
+                const val = e.target.value; setLocalPrev(val);
+                if (prevTimeout.current) clearTimeout(prevTimeout.current);
+                prevTimeout.current = setTimeout(() => onBaseDataChange(item.batchKey, '기초', val), 250);
+            };
+
+            const handleInChange = (e) => {
+                const val = e.target.value; setLocalIn(val);
+                if (inTimeout.current) clearTimeout(inTimeout.current);
+                const numVal = (val === '' ? 0 : Number(val)) - addedIn;
+                inTimeout.current = setTimeout(() => onBaseDataChange(item.batchKey, '입고', numVal), 250);
+            };
+
+            const handleOutChange = (e) => {
+                const val = e.target.value; setLocalOut(val);
+                if (outTimeout.current) clearTimeout(outTimeout.current);
+                const numVal = (val === '' ? 0 : Number(val)) - addedOut;
+                outTimeout.current = setTimeout(() => onBaseDataChange(item.batchKey, '출고', numVal), 250);
+            };
+
+            const handleActualChange = (e) => {
+                const val = e.target.value; setLocalActual(val);
+                if (actualTimeout.current) clearTimeout(actualTimeout.current);
+                actualTimeout.current = setTimeout(() => onStockChange(item.batchKey, val), 250);
+            };
+
+            const actualQty = localActual === '' ? '' : Number(localActual);
+            const isNegativeActual = typeof actualQty === 'number' && actualQty < 0;
 
             const focusAndEnsureVisible = (id) => {
                 const el = document.getElementById(id);
@@ -1222,22 +1286,22 @@
                             </div>
                             <div className="flex items-center justify-end shrink-0 pl-3 border-l border-slate-200">
                                 <span className="text-slate-400 font-semibold text-[10px] mr-1">₩</span>
-                                <input id={`price-input-${idx}`} type="number" className={`${cellInputBase} w-[70px] font-bold ${item.단가 === 0 ? 'border-rose-300 bg-rose-50 text-rose-600' : 'text-slate-800'}`} value={item.단가 === 0 ? '' : Math.round(item.단가)} onChange={(e) => onBaseDataChange(item.batchKey, '단가', e.target.value)} onClick={(e) => e.stopPropagation()} onFocus={e => e.target.select()} onKeyDown={(e) => handleKd(e, 'price-input')} placeholder="0" />
+                                <input id={`price-input-${idx}`} type="number" className={`${cellInputBase} w-[70px] font-bold ${item.단가 === 0 ? 'border-rose-300 bg-rose-50 text-rose-600' : 'text-slate-800'}`} value={localPrice} onChange={handlePriceChange} onClick={(e) => e.stopPropagation()} onFocus={e => e.target.select()} onKeyDown={(e) => handleKd(e, 'price-input')} placeholder="0" />
                             </div>
                         </div>
                     </td>
                     <td className={`py-2 px-2 text-right ${isActiveMulti ? 'bg-slate-50/50' : ''} border-r border-slate-100 ${topBorderClass}`}>
-                        <input id={`base-prev-${idx}`} type="number" className={`${cellInputBase} font-semibold ${item.기초 < 0 ? 'text-rose-600 border-rose-200' : 'text-slate-700'}`} value={item.기초 === 0 ? '' : item.기초} onChange={e => onBaseDataChange(item.batchKey, '기초', e.target.value)} onFocus={e => e.target.select()} onKeyDown={(e) => handleKd(e, 'base-prev')} onWheel={e => e.target.blur()} placeholder="0" />
+                        <input id={`base-prev-${idx}`} type="number" className={`${cellInputBase} font-semibold ${item.기초 < 0 ? 'text-rose-600 border-rose-200' : 'text-slate-700'}`} value={localPrev} onChange={handlePrevChange} onFocus={e => e.target.select()} onKeyDown={(e) => handleKd(e, 'base-prev')} onWheel={e => e.target.blur()} placeholder="0" />
                     </td>
                     <td className={`py-2 px-2 text-right border-r border-slate-100 ${topBorderClass}`}>
-                        <input id={`base-in-${idx}`} type="number" className={`${cellInputBase} font-bold ${totalIn > 0 ? 'text-emerald-600' : 'text-slate-400'}`} value={totalIn === 0 ? '' : totalIn} onChange={e => onBaseDataChange(item.batchKey, '입고', (e.target.value === '' ? 0 : Number(e.target.value)) - addedIn)} onFocus={e => e.target.select()} onKeyDown={(e) => handleKd(e, 'base-in')} onWheel={e => e.target.blur()} placeholder="0" />
+                        <input id={`base-in-${idx}`} type="number" className={`${cellInputBase} font-bold ${totalIn > 0 ? 'text-emerald-600' : 'text-slate-400'}`} value={localIn} onChange={handleInChange} onFocus={e => e.target.select()} onKeyDown={(e) => handleKd(e, 'base-in')} onWheel={e => e.target.blur()} placeholder="0" />
                     </td>
                     <td className={`py-2 px-2 text-right border-r border-slate-100 ${topBorderClass}`}>
-                        <input id={`base-out-${idx}`} type="number" className={`${cellInputBase} font-bold ${totalOut > 0 ? 'text-rose-600' : 'text-slate-400'}`} value={totalOut === 0 ? '' : totalOut} onChange={e => onBaseDataChange(item.batchKey, '출고', (e.target.value === '' ? 0 : Number(e.target.value)) - addedOut)} onFocus={e => e.target.select()} onKeyDown={(e) => handleKd(e, 'base-out')} onWheel={e => e.target.blur()} placeholder="0" />
+                        <input id={`base-out-${idx}`} type="number" className={`${cellInputBase} font-bold ${totalOut > 0 ? 'text-rose-600' : 'text-slate-400'}`} value={localOut} onChange={handleOutChange} onFocus={e => e.target.select()} onKeyDown={(e) => handleKd(e, 'base-out')} onWheel={e => e.target.blur()} placeholder="0" />
                     </td>
                     <td className={`py-2 px-2 text-right border-r border-slate-100 ${isLinked ? 'bg-blue-50' : ''} relative ${topBorderClass}`}>
                         {isLinked && <div className="absolute -top-6 right-0 bg-slate-800 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-md whitespace-nowrap animate-bounce">조정 대상</div>}
-                        <input id={`actual-input-${idx}`} type="number" value={item.실사 === null || item.실사 === undefined ? '' : item.실사} onChange={(e) => onStockChange(item.batchKey, e.target.value)} onClick={() => onFocusInput(item.batchKey, idx)} onFocus={(e) => { e.target.select(); onFocusInput(item.batchKey, idx); }} onKeyDown={(e) => handleKd(e, 'actual-input')} onWheel={e => e.target.blur()} placeholder={item.전산잔량} className={`w-full text-right bg-white border ${isLinked ? 'border-blue-500 ring-1 ring-blue-500 text-blue-900' : 'border-slate-300 text-slate-800 hover:border-slate-400'} ${isNegativeActual ? 'bg-rose-50 border-rose-400 text-rose-700 font-bold' : 'font-semibold'} rounded text-[13px] px-1.5 py-1 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-sm transition-all cursor-pointer`} />
+                        <input id={`actual-input-${idx}`} type="number" value={localActual} onChange={handleActualChange} onClick={() => onFocusInput(item.batchKey, idx)} onFocus={(e) => { e.target.select(); onFocusInput(item.batchKey, idx); }} onKeyDown={(e) => handleKd(e, 'actual-input')} onWheel={e => e.target.blur()} placeholder={item.전산잔량} className={`w-full text-right bg-white border ${isLinked ? 'border-blue-500 ring-1 ring-blue-500 text-blue-900' : 'border-slate-300 text-slate-800 hover:border-slate-400'} ${isNegativeActual ? 'bg-rose-50 border-rose-400 text-rose-700 font-bold' : 'font-semibold'} rounded text-[13px] px-1.5 py-1 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-sm transition-all cursor-pointer`} />
                     </td>
                     <td className={`py-2 px-2 text-right border-r border-slate-100 ${topBorderClass}`}>
                         {item.로스 !== 0 && <div className="flex flex-col items-end justify-center mb-0.5"><span className={`text-[12px] font-bold ${item.로스 < 0 ? 'text-rose-600' : 'text-blue-600'}`}>{item.로스 > 0 ? '+' : ''}{formatMoney(item.로스)}</span></div>}
