@@ -893,6 +893,31 @@
         // ==========================================
         // 🧩 5. 순수 UI 컴포넌트들 (Components)
         // ==========================================
+        const SystemConsole = ({ itemCount, isProcessing, processMsg, viewMode, parserState, estimateCount, parserCount }) => {
+            const [time, setTime] = useState(new Date());
+            useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
+            const timeStr = `${time.getFullYear()}.${String(time.getMonth()+1).padStart(2,'0')}.${String(time.getDate()).padStart(2,'0')} ${String(time.getHours()).padStart(2,'0')}:${String(time.getMinutes()).padStart(2,'0')}`;
+            
+            let statusText = ''; let statusColor = 'text-emerald-400'; let bgColor = 'bg-emerald-400';
+            if (isProcessing) { statusText = `> ${processMsg}`; statusColor = 'text-amber-400'; bgColor = 'bg-amber-400'; } 
+            else if (itemCount === 0) { statusText = `> 시스템 대기중: 초기 세팅을 위해 마스터 DB를 업로드하거나 클라우드에서 불러오세요.`; statusColor = 'text-rose-400'; bgColor = 'bg-rose-400'; }
+            else if (viewMode === 'parser') { 
+                if (parserState.targetId) { statusText = `> 🎯 [타겟: ${parserState.searchKey}] 마스터 검색 중...`; statusColor = 'text-amber-300'; bgColor = 'bg-amber-300'; } 
+                else { statusText = `> [PARSER] 파서 모드 대기: ${parserCount}건 로드 (${timeStr})`; statusColor = 'text-indigo-400'; bgColor = 'bg-indigo-400'; }
+            }
+            else if (estimateCount > 0) { statusText = `> DB: ${itemCount}건 / 작업 버퍼: ${estimateCount}건 로드 (${timeStr})`; statusColor = 'text-[#818cf8]'; bgColor = 'bg-[#818cf8]'; } 
+            else { statusText = `> DB: ${itemCount}건 로드됨 (${timeStr})`; }
+
+            return (
+                <div className="bg-black/40 rounded-md border border-slate-700/50 px-4 py-1.5 flex flex-1 max-w-2xl mx-4 items-center overflow-hidden shadow-inner">
+                    <div className="flex items-center truncate w-full">
+                        <span className={`text-[12px] font-mono ${statusColor} flex items-center`}>{isProcessing && <i className="fas fa-spinner fa-spin mr-2"></i>}{statusText}</span>
+                        <span className={`w-1.5 h-3.5 ${bgColor} ml-1.5 animate-[pulse_1s_infinite]`}></span>
+                    </div>
+                </div>
+            );
+        };
+
         const SearchBar = ({ value, onChange, onKeyDown, placeholder }) => {
             const inputRef = useRef(null);
             return (
@@ -958,16 +983,6 @@
                                             <h3 className="text-[14px] font-black text-indigo-900 mb-4 pb-2 border-b border-indigo-200 flex justify-between items-center"><span><i className="fas fa-link text-indigo-500 mr-2"></i>클라우드 동기화 URL 셋팅</span></h3>
                                             <input type="text" value={cloudUrl} onChange={e=>setCloudUrl(e.target.value)} placeholder="Google Apps Script 웹앱 URL 입력..." className="w-full border border-indigo-200 rounded px-3 py-2 text-[12px] outline-none focus:border-indigo-500 bg-white shadow-sm" />
                                             <p className="text-[11px] text-indigo-500 mt-2 font-bold">※ URL 입력 후 메인 화면 우측 상단의 아이콘을 누르면 백업/불러오기가 실행됩니다.</p>
-                                        </div>
-                                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-                                            <div>
-                                                <h3 className="text-[14px] font-black text-slate-800 mb-1"><i className="fas fa-database text-slate-500 mr-2"></i>마스터 DB (엑셀/CSV) 수동 업로드</h3>
-                                                <p className="text-[11px] text-slate-500 font-bold">초기 세팅용 마스터 전체 데이터를 업로드합니다.</p>
-                                            </div>
-                                            <label className="cursor-pointer bg-slate-800 border border-slate-700 text-white hover:bg-slate-700 px-4 py-2 rounded-lg text-[12px] font-bold shadow-sm transition-colors">
-                                                <i className="fas fa-upload mr-1.5"></i>파일 선택
-                                                <input type="file" className="hidden" onChange={(e) => { onClose(); handleFileUpload(e, 'master'); }} multiple />
-                                            </label>
                                         </div>
                                         <div className="bg-white p-5 rounded-xl border shadow-sm">
                                             <h3 className="text-[14px] font-black mb-4 pb-2 border-b flex items-center"><span className="bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0.5 rounded mr-2">[공통]</span> 마스터 항목 노출 설정</h3>
@@ -1766,6 +1781,45 @@
             );
         };
 
+        // 초기 시작 가이드 대시보드 컴포넌트
+        const WelcomeGuide = ({ onUpload, onCloudSync }) => (
+            <div className="h-full w-full flex flex-col items-center justify-center bg-white rounded-xl border border-slate-200 shadow-sm p-10 fade-in relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500"></div>
+                <div className="w-24 h-24 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-500 text-5xl mb-6 shadow-inner relative">
+                    <i className="fas fa-box-open"></i>
+                    <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm"><i className="fas fa-check"></i></div>
+                </div>
+                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 작업 공간에 오신 것을 환영합니다!</h2>
+                <p className="text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold">
+                    현재 로컬 환경에 등록된 <span className="text-indigo-500">마스터 상품 데이터</span>가 없습니다.<br/>
+                    원활한 파싱 및 견적 작업을 위해 먼저 전체 상품 DB를 세팅해주세요.
+                </p>
+                
+                <div className="flex gap-6 w-full max-w-2xl z-10">
+                    <div className="flex-1 bg-slate-50 border border-slate-200 p-8 rounded-xl text-center hover:shadow-lg transition-all duration-300 group hover:-translate-y-1 hover:bg-emerald-50 hover:border-emerald-200 cursor-pointer relative overflow-hidden">
+                        <label className="absolute inset-0 w-full h-full cursor-pointer z-20">
+                            <input type="file" className="hidden" onChange={(e) => onUpload(e, 'master')} multiple accept=".xlsx, .xls, .csv" />
+                        </label>
+                        <div className="text-4xl text-emerald-500 mb-5 group-hover:scale-110 transition-transform duration-300"><i className="fas fa-file-excel"></i></div>
+                        <h3 className="text-[16px] font-black text-slate-800 mb-2 group-hover:text-emerald-800 transition-colors">1. 엑셀/CSV 직접 업로드</h3>
+                        <p className="text-[12px] text-slate-500 mb-6 group-hover:text-emerald-600 transition-colors">ERP에서 다운로드한 전체 상품 마스터 파일을 선택하여 업로드합니다.</p>
+                        <div className="bg-emerald-600 text-white px-5 py-2.5 rounded-lg text-[13px] font-bold group-hover:bg-emerald-500 transition-colors shadow-sm inline-block pointer-events-none">
+                            <i className="fas fa-upload mr-2"></i>마스터 파일 선택
+                        </div>
+                    </div>
+
+                    <div className="flex-1 bg-slate-50 border border-slate-200 p-8 rounded-xl text-center hover:shadow-lg transition-all duration-300 group hover:-translate-y-1 hover:bg-indigo-50 hover:border-indigo-200 cursor-pointer relative overflow-hidden" onClick={() => onCloudSync('download')}>
+                        <div className="text-4xl text-indigo-500 mb-5 group-hover:scale-110 transition-transform duration-300"><i className="fas fa-cloud-download-alt"></i></div>
+                        <h3 className="text-[16px] font-black text-slate-800 mb-2 group-hover:text-indigo-800 transition-colors">2. 클라우드에서 불러오기</h3>
+                        <p className="text-[12px] text-slate-500 mb-6 group-hover:text-indigo-600 transition-colors">구글 시트에 동기화된 최신 마스터 데이터를 간편하게 로드합니다.</p>
+                        <div className="bg-indigo-600 text-white px-5 py-2.5 rounded-lg text-[13px] font-bold group-hover:bg-indigo-500 transition-colors shadow-sm inline-block">
+                            <i className="fas fa-sync-alt mr-2"></i>클라우드 동기화
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+
         // ==========================================
         // ⚙️ 7. 메인 애플리케이션 (Main Entry)
         // ==========================================
@@ -1993,6 +2047,9 @@
                                             </div>
                                         </div>
                                         
+                                        {/* 💡 복구된 시스템 콘솔 */}
+                                        <SystemConsole itemCount={Object.keys(data.masterProducts).length} isProcessing={ui.isProcessing} processMsg={ui.processMsg} viewMode={ui.viewMode} parserState={ui.parserState} estimateCount={Object.keys(data.managedItems).length} parserCount={data.parserBuffer.length} />
+                                        
                                         <nav className="flex gap-2 text-[14px] shrink-0 items-center">
                                             <a href="https://oneapp.orderz.co.kr/MerchOps/guide" target="_blank" rel="noopener noreferrer" className={`h-9 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-emerald-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-300 hover:border-emerald-500/50 font-bold text-[11px] tracking-wider uppercase ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="MerchOps 사용 가이드">
                                                 GUIDE
@@ -2015,7 +2072,10 @@
                         </div>
 
                         <div className="flex-1 overflow-auto p-5 pt-0 bg-slate-100">
-                            {effectiveViewMode === 'default' || (effectiveViewMode === 'parser' && ui.parserFilter === 'matched') ? (
+                            {isMasterEmpty ? (
+                                /* 💡 초기 가이드 대시보드 노출 */
+                                <WelcomeGuide onUpload={(e) => { ui.setViewMode('default'); customActions.handleFileUpload(e, 'master'); }} onCloudSync={customActions.handleCloudSync} />
+                            ) : effectiveViewMode === 'default' || (effectiveViewMode === 'parser' && ui.parserFilter === 'matched') ? (
                                 <ExcelDataGrid state={appState} actions={appActions} />
                             ) : (
                                 <ParserSplitView state={appState} actions={appActions} />
