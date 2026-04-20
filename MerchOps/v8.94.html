@@ -1842,12 +1842,49 @@
                     else baseList = Object.values(data.masterProducts).map(m => data.managedItems[m.코드] || { 코드: m.코드, sources: {}, finalData: {} });
 
                     if (ui.globalSearch) {
-                        const searchedMasters = searchMasterProducts(data.masterProducts, ui.globalSearch);
-                        const searchedCodes = new Set(searchedMasters.map(m => m.코드));
-                        baseList = baseList.filter(i => searchedCodes.has(i.코드));
-                        const scoreMap = {};
-                        searchedMasters.forEach((m, idx) => { scoreMap[m.코드] = searchedMasters.length - idx; });
-                        baseList.sort((a, b) => (scoreMap[b.코드] || 0) - (scoreMap[a.코드] || 0));
+                        const cleanKeyword = ui.globalSearch.toLowerCase().replace(/[()[\]{},./]/g, ' ');
+                        const tokens = cleanKeyword.split(/\s+/).filter(t => t.length > 0);
+
+                        if (tokens.length > 0) {
+                            baseList = baseList.map(item => {
+                                const mItem = data.masterProducts[item.코드] || {};
+                                const sourceItem = item.sources?.[activeProfileKey] || {};
+                                const finalItem = item.finalData || {};
+
+                                // 💡 [핵심수정] 마스터 데이터가 아닌 실제 화면에 표시될 최종 데이터를 기준으로 검색
+                                const getVal = (key) => String(finalItem[key] !== undefined ? finalItem[key] : (sourceItem[key] !== undefined ? sourceItem[key] : (mItem[key] || ''))).toLowerCase();
+
+                                const cName = getVal('품목명');
+                                const cSpec = getVal('규격');
+                                const cBrand = getVal('브랜드');
+                                const cWh = getVal('창고');
+                                const cVendor = getVal('구매처') || getVal('거래처명') || getVal('거래처');
+                                const cCode = String(item.코드 || '').toLowerCase();
+
+                                const cFull = `${cCode} ${cName} ${cSpec} ${cBrand} ${cWh} ${cVendor}`;
+
+                                let score = 0, matchCount = 0;
+
+                                tokens.forEach(token => {
+                                    if (cName.includes(token)) { score += token.length * 10; matchCount++; }
+                                    else if (cSpec.includes(token)) { score += token.length * 5; matchCount++; }
+                                    else if (cVendor.includes(token)) { score += token.length * 4; matchCount++; }
+                                    else if (cBrand.includes(token)) { score += token.length * 3; matchCount++; }
+                                    else if (cWh.includes(token)) { score += token.length * 2; matchCount++; }
+                                    else if (cCode.includes(token)) { score += token.length * 8; matchCount++; }
+                                    else if (cFull.includes(token)) { score += token.length * 1; matchCount++; } // 예외 키워드
+                                });
+
+                                if (cFull.replace(/\s+/g, '').includes(cleanKeyword.replace(/\s+/g, ''))) {
+                                    score += 1000;
+                                    matchCount += tokens.length; // 띄어쓰기 무시 전체 일치 시 강제 통과
+                                }
+
+                                return { ...item, _searchScore: score, _matchCount: matchCount };
+                            }).filter(r => r._searchScore > 0); // 점수가 1점이라도 있으면 노출
+
+                            baseList.sort((a, b) => b._searchScore - a._searchScore || b._matchCount - a._matchCount);
+                        }
                     } else {
                         baseList.sort((a, b) => {
                             const cA = String(a.코드 || ''), cB = String(b.코드 || '');
@@ -1861,9 +1898,21 @@
                     } else {
                         baseList = data.parserBuffer.filter(r => !r._matchCode && (ui.parserFilter === 'similar' ? r._matchStatus.includes('유사') : r._matchStatus.includes('불일치')));
                     }
+
+                    // 파서 모드에서도 검색창 연동 (단, 매핑 중이 아닐 때)
+                    if (ui.globalSearch && !ui.parserState.targetId) {
+                        const cleanKeyword = ui.globalSearch.toLowerCase().replace(/[()[\]{},./]/g, ' ');
+                        const tokens = cleanKeyword.split(/\s+/).filter(t => t.length > 0);
+                        if (tokens.length > 0) {
+                            baseList = baseList.filter(r => {
+                                const searchStr = `${r['품목명']||''} ${r['규격']||''} ${r['구매처']||''} ${r._matchCode||''}`.toLowerCase();
+                                return tokens.some(t => searchStr.includes(t));
+                            });
+                        }
+                    }
                 }
                 return baseList;
-            }, [effectiveViewMode, isEstimateUploaded, data.managedItems, data.masterProducts, ui.globalSearch, data.parserBuffer, ui.parserFilter]);
+            }, [effectiveViewMode, isEstimateUploaded, data.managedItems, data.masterProducts, ui.globalSearch, data.parserBuffer, ui.parserFilter, activeProfileKey, ui.parserState.targetId]);
 
             // 마스터 검색 결과 (파서 뷰용)
             const masterSearchResults = useMemo(() => {
