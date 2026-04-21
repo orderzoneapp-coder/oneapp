@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Smart Parser [v9.0+]</title>
+    <title>ONEAPP MerchOps - Smart Parser [v9.2]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -286,19 +286,17 @@
         // 🧩 3. 훅 및 상태 관리
         // ==========================================
         const useParserApp = () => {
-            // 로컬 스토리지 데이터 공유
             const [masterProducts, setMasterProducts] = useState({});
             const [parserDict, setParserDict] = useState(() => { try { return JSON.parse(localStorage.getItem('parserDict_v870')) || {}; } catch(e){ return {}; }});
             const [marginRules, setMarginRules] = useState(() => { try { return JSON.parse(localStorage.getItem('merchMarginRules_v878')) || [{ id: 'default', whCode: '*', unit: '*', rate: 10, type: 'divide' }]; } catch(e) { return [{ id: 'default', whCode: '*', unit: '*', rate: 10, type: 'divide' }]; } });
 
-            // 💡 [NEW] 초기 구동 시 IndexedDB에서 마스터 데이터 로드
+            // 💡 [초기화 및 탭 동기화] IndexedDB 로드 및 트리거 감지
             useEffect(() => {
                 getIDB('merchMaster_v870').then(data => {
                     if (data) setMasterProducts(data);
                 }).catch(console.error);
             }, []);
 
-            // 💡 [탭 동기화] 메인 워크스페이스에서 마스터 데이터 및 룰 변경 시 실시간 반영
             useEffect(() => {
                 const handleStorageChange = (e) => {
                     if (e.key === 'merchMaster_sync_trigger') {
@@ -306,16 +304,26 @@
                             if (data) setMasterProducts(data);
                         }).catch(console.error);
                     }
-                    if (e.key === 'parserDict_v870') {
-                        try { const newData = JSON.parse(e.newValue); if (newData) setParserDict(newData); } catch(err) {}
-                    }
-                    if (e.key === 'merchMarginRules_v878') {
-                        try { const newData = JSON.parse(e.newValue); if (newData) setMarginRules(newData); } catch(err) {}
-                    }
                 };
                 window.addEventListener('storage', handleStorageChange);
                 return () => window.removeEventListener('storage', handleStorageChange);
             }, []);
+
+            // 💡 [저장] IndexedDB 에 저장 후 다른 탭에 알림 전송
+            const saveMaster = async (data) => {
+                setMasterProducts(data);
+                try {
+                    await setIDB('merchMaster_v870', data);
+                    localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+                } catch(e) {
+                    console.error("IndexedDB 저장 실패", e);
+                }
+            };
+
+            const saveDict = (data) => {
+                setParserDict(data);
+                localStorage.setItem('parserDict_v870', JSON.stringify(data));
+            };
 
             // 파서 상태
             const [parserBuffer, setParserBuffer] = useState([]);
@@ -328,30 +336,9 @@
             const [isProcessing, setIsProcessing] = useState(false);
             const [processMsg, setProcessMsg] = useState('');
             
-            // 검색 및 매핑 타겟 상태
             const [globalSearch, setGlobalSearch] = useState('');
             const [targetId, setTargetId] = useState(null); 
-
-            // 누락 탭 체크 상태 (독립 관리)
             const [selectedMissingCodes, setSelectedMissingCodes] = useState(new Set());
-
-            const saveMaster = async (data) => {
-                setMasterProducts(data);
-                try {
-                    await setIDB('merchMaster_v870', data);
-                    localStorage.setItem('merchMaster_sync_trigger', Date.now().toString()); // 다른 탭에 알림
-                } catch(e) {
-                    console.error("Storage Full", e);
-                    alert("⚠️ 브라우저 메모리 한계 초과\n데이터가 안전하게 저장되지 않았습니다. 새로고침 전에 반드시 메인 화면으로 돌아가 [☁️ 클라우드에 데이터 백업]을 진행하세요.");
-                }
-            };
-
-            const saveDict = (data) => {
-                setParserDict(data);
-                try {
-                    localStorage.setItem('parserDict_v870', JSON.stringify(data));
-                } catch(e) {}
-            };
 
             const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
 
@@ -373,7 +360,7 @@
                 masterProducts, saveMaster, parserDict, saveDict, marginRules,
                 parserBuffer, setParserBuffer, currentTag, setCurrentTag,
                 setActiveTab, setShowInputModal, showToast, setIsProcessing, setProcessMsg,
-                setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes 
+                setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes
             } = appState;
 
             // 1. 텍스트 파싱 실행
@@ -414,7 +401,6 @@
                     setTargetId(null); setGlobalSearch(''); 
                     setIsProcessing(false); setProcessMsg(''); 
                     
-                    // 누락 상태 초기화
                     setSelectedMissingCodes(new Set());
 
                     showToast(forceManual ? '✅ 수동 매핑 모드로 로드되었습니다.' : '✅ 텍스트 분석 및 매칭이 완료되었습니다.');
@@ -444,7 +430,7 @@
                             Object.assign(newMaster[code], recalculated);
                         }
 
-                        // [기획] 일치 항목도 반영 시 소싱폴더 보장 (검색어 필드와 완전 분리)
+                        // [기획] 소싱폴더 자동 추가
                         if (currentTag) {
                             newMaster[code]['소싱폴더'] = addTag(newMaster[code]['소싱폴더'], currentTag);
                         }
@@ -459,7 +445,6 @@
                     saveMaster(newMaster); 
                     saveDict(newDict); 
                     
-                    // 반영 완료된 항목은 버퍼에서 제거 
                     if(window.confirm(`${toApply.length}건 반영 완료. 현재 파서 목록을 초기화하시겠습니까?`)) {
                         setParserBuffer([]);
                         setCurrentTag('');
@@ -479,16 +464,14 @@
                 const normExtSpec = normalizeText(row['규격']);
                 const dictKey = `${normExtName}|${normExtSpec}`;
                 
-                // 딕셔너리 학습
                 const newDict = { ...parserDict, [dictKey]: masterCode };
                 saveDict(newDict);
                 
-                // 마스터 단가 및 폴더 업데이트 준비
                 let newMaster = { ...masterProducts };
                 if (!newMaster[masterCode]) newMaster[masterCode] = { 코드: masterCode };
                 else newMaster[masterCode] = { ...newMaster[masterCode] };
 
-                // [기획] 연결 시 자동으로 소싱폴더 추가 (검색어 필드와 완전 분리)
+                // [기획] 수동 연결 시 소싱폴더 추가
                 if (currentTag) {
                     newMaster[masterCode]['소싱폴더'] = addTag(newMaster[masterCode]['소싱폴더'], currentTag);
                 }
@@ -504,7 +487,6 @@
                 
                 saveMaster(newMaster);
 
-                // 버퍼 상태 업데이트 (일치 탭으로 이동시킴)
                 const nextBuffer = parserBuffer.map(r => {
                     if (r._id === targetId) {
                         return { ...r, _matchCode: masterCode, _matchStatus: '🟠 매핑완료', _apply: true, 코드: masterCode, finalData: recalculatedFinal };
@@ -549,8 +531,6 @@
         // ==========================================
         // 🧩 5. UI 컴포넌트
         // ==========================================
-        
-        // 입력 모달 컴포넌트
         const SmartParserInputModal = ({ onClose, executeParser, showToast }) => {
             const [rawText, setRawText] = useState("");
             const [tag, setTag] = useState("");
@@ -608,7 +588,6 @@
                 selectedMissingCodes, setSelectedMissingCodes
             } = appState;
 
-            // 파서 버퍼 필터링
             const matchedRows = parserBuffer.filter(r => r._matchCode);
             const similarRows = parserBuffer.filter(r => !r._matchCode && r._matchStatus.includes('유사'));
             const unmatchedRows = parserBuffer.filter(r => !r._matchCode && r._matchStatus.includes('불일치'));
@@ -620,7 +599,6 @@
                 const missing = [];
                 for (const code in masterProducts) {
                     const mItem = masterProducts[code];
-                    // ERP 검색어가 아닌 MerchOps 전용 '소싱폴더' 속성 검사
                     const tags = (mItem['소싱폴더'] || '').split(',').map(s => s.trim());
                     if (tags.includes(currentTag) && !matchedCodes.has(code)) {
                         missing.push(mItem);
@@ -629,13 +607,11 @@
                 return missing;
             }, [masterProducts, matchedRows, currentTag]);
 
-            // 마스터 검색 (수동 매핑용)
             const masterSearchResults = useMemo(() => {
                 if ((activeTab !== 'similar' && activeTab !== 'unmatched') || !globalSearch.trim()) return [];
                 return searchMasterProducts(masterProducts, globalSearch).slice(0, 50);
             }, [globalSearch, masterProducts, activeTab]);
 
-            // 현재 표시할 분할 뷰의 좌측 리스트
             const displayUnmatchedRows = activeTab === 'similar' ? similarRows : unmatchedRows;
 
             return (
@@ -651,7 +627,6 @@
                     {toastMsg && <div className="fixed bottom-6 right-6 z-[1000] bg-slate-800 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in text-sm font-bold border border-slate-700"><i className="fas fa-check-circle text-emerald-400"></i>{toastMsg}</div>}
 
                     <div className="w-full max-w-[1500px] h-full flex flex-col bg-slate-50 shadow-2xl overflow-hidden mx-auto">
-                        {/* 1. 글로벌 헤더 (메인과 동일 아이덴티티) */}
                         <div className="shrink-0 flex flex-col bg-white border-b border-slate-200 z-40">
                             <div className="p-5 pb-0 pt-6">
                                 <div className="bg-[#0f172a] rounded-xl shadow-lg border border-slate-800 flex flex-col overflow-hidden">
@@ -661,14 +636,13 @@
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <div className="flex items-center mb-0.5">
                                                     <span className="text-[14px] font-black text-slate-200 leading-none">Smart Parser</span>
-                                                    <span className="ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v9.0+</span>
+                                                    <span className="ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v9.2</span>
                                                 </div>
                                                 <span className="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">TEXT ANALYSIS & DELTA SYNC</span>
                                             </div>
                                         </div>
                                         
                                         <div className="flex flex-1 max-w-2xl mx-4">
-                                            {/* 프로세스 상태 */}
                                             {isProcessing ? (
                                                 <div className="bg-amber-400 text-amber-900 px-4 py-1.5 rounded-md font-mono text-[12px] font-bold flex items-center"><i className="fas fa-spinner fa-spin mr-2"></i>{processMsg}</div>
                                             ) : parserBuffer.length > 0 ? (
@@ -693,7 +667,7 @@
                                                     if (url.startsWith('blob:') || url.startsWith('about:') || url.startsWith('data:')) {
                                                         showToast('⚠️ 미리보기 환경에서는 우측 상단의 index.html 탭을 직접 클릭하여 이동해주세요.');
                                                     } else {
-                                                        window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v9.0';
+                                                        window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/mv01';
                                                     }
                                                 } catch (e) {
                                                     showToast('⚠️ 미리보기 환경에서는 우측 상단의 index.html 탭을 직접 클릭하여 이동해주세요.');
@@ -706,7 +680,6 @@
                                 </div>
                             </div>
                             
-                            {/* 2. 파서 전용 툴바 */}
                             <div className="px-8 pt-4 pb-3 flex items-center justify-between gap-3 overflow-x-auto custom-scrollbar w-full">
                                 <div className="flex gap-2 shrink-0 bg-slate-100 p-1 rounded-lg border border-slate-200">
                                     <button onClick={()=>setActiveTab('matched')} className={`px-4 py-2 rounded-md text-[13px] font-black transition-all ${activeTab==='matched' ? 'bg-white text-emerald-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>🟢 일치 ({matchedRows.length})</button>
@@ -730,16 +703,14 @@
                             </div>
                         </div>
 
-                        {/* 3. 메인 뷰 영역 */}
                         <div className="flex-1 overflow-auto p-5 pt-0 bg-slate-100">
-                            {parserBuffer.length === 0 ? (
+                            {!currentTag && parserBuffer.length === 0 ? (
                                 <div className="h-full flex flex-col items-center justify-center text-slate-400">
                                     <i className="fas fa-robot text-6xl text-slate-300 mb-4"></i>
                                     <h2 className="text-xl font-black text-slate-600 mb-2">Smart Parser 대기중</h2>
                                     <p className="text-[13px] font-bold">상단 [새 텍스트 파싱] 버튼을 눌러 작업을 시작하세요.</p>
                                 </div>
                             ) : activeTab === 'matched' ? (
-                                // 🟢 일치 탭 뷰 (테이블)
                                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm h-full flex flex-col overflow-hidden fade-in">
                                     <div className="flex-1 overflow-auto custom-scrollbar">
                                         <table className="w-full text-left text-[12px] whitespace-nowrap">
@@ -786,7 +757,6 @@
                                         <p className="text-[13px] font-bold text-center leading-relaxed">새 텍스트 파싱 시 기준 소싱폴더를 지정하지 않아<br/>누락 상품 대조 작업이 생략되었습니다.</p>
                                     </div>
                                 ) : (
-                                // ⚪ 누락 탭 뷰
                                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm h-full flex flex-col overflow-hidden fade-in relative">
                                     <div className="bg-slate-50 p-4 border-b border-slate-200 flex flex-col gap-2 shrink-0">
                                         <div className="flex items-center gap-2 text-slate-700 text-[13px] font-bold"><i className="fas fa-info-circle text-indigo-500"></i>마스터 DB에는 <span className="bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded">'{currentTag}'</span> 폴더에 등록되어 있지만, 이번 파싱 텍스트에는 없는 상품들입니다. (단종 의심)</div>
@@ -841,9 +811,7 @@
                                 </div>
                                 )
                             ) : (
-                                // 🟡 유사 / 🔴 불일치 탭 뷰 (Split View)
                                 <div className="flex h-full w-full gap-4 fade-in">
-                                    {/* 좌측: 마스터 검색 (매핑 타겟용) */}
                                     <div className="w-1/2 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col overflow-hidden relative">
                                         <div className="bg-[#f8fafc] px-4 py-3 border-b border-slate-200 flex items-center justify-between shrink-0">
                                             <div className="flex items-center gap-2"><i className="fas fa-search text-slate-400"></i><span className="text-[13px] font-black text-slate-700">마스터 수동 검색</span></div>
@@ -874,7 +842,6 @@
                                         </div>
                                     </div>
                                     
-                                    {/* 우측: 파싱 대기 목록 */}
                                     <div className="w-1/2 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col overflow-hidden">
                                         <div className="bg-[#f8fafc] px-4 py-3 border-b border-slate-200 flex items-center justify-between shrink-0">
                                             <div className="flex items-center gap-2"><i className="fas fa-list text-slate-400"></i><span className="text-[13px] font-black text-slate-700">파싱된 외부 데이터 (대기중)</span></div>
@@ -903,7 +870,7 @@
                             )}
                         </div>
                     </div>
-                    {showInputModal && <SmartParserInputModal onClose={() => setShowInputModal(false)} executeParser={actions.executeParser} showToast={showToast} />}
+                    {showInputModal && <SmartParserInputModal onClose={parserBuffer.length > 0 ? () => setShowInputModal(false) : null} executeParser={actions.executeParser} showToast={showToast} />}
                 </div>
             );
         };
