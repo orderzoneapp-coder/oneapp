@@ -19,6 +19,41 @@
         const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
         // ==========================================
+        // 🧩 [NEW] 무제한 로컬 스토리지 (IndexedDB) 래퍼
+        // ==========================================
+        const initIDB = () => {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open('MerchOpsDB', 1);
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains('store')) db.createObjectStore('store');
+                };
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        };
+
+        const setIDB = async (key, val) => {
+            const db = await initIDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('store', 'readwrite');
+                tx.objectStore('store').put(val, key);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        };
+
+        const getIDB = async (key) => {
+            const db = await initIDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('store', 'readonly');
+                const req = tx.objectStore('store').get(key);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(tx.error);
+            });
+        };
+
+        // ==========================================
         // 🧩 1. 상수 및 순수 유틸리티
         // ==========================================
         const MASTER_HEADERS = [
@@ -308,39 +343,48 @@
         };
 
         const useMerchData = () => {
-            const [masterProducts, setMasterProducts] = useState(() => { 
-                try { return JSON.parse(localStorage.getItem('merchMaster_v870')) || {}; } catch(e) { return {}; }
-            });
+            const [masterProducts, setMasterProducts] = useState({});
             const [managedItems, setManagedItems] = useState({});
-            
-            const [historyLogs, setHistoryLogs] = useState(() => { 
-                try { return JSON.parse(localStorage.getItem('merchHistory_v870')) || []; } catch(e) { return []; }
-            });
+            const [historyLogs, setHistoryLogs] = useState([]);
 
-            // 💡 [탭 동기화] 다른 탭(Smart Parser)에서 마스터 데이터가 변경되면 실시간 반영 (Review 개선안)
+            // 초기 구동 시 IndexedDB 및 LocalStorage에서 데이터 로드
+            useEffect(() => {
+                getIDB('merchMaster_v870').then(data => {
+                    if (data) setMasterProducts(data);
+                }).catch(console.error);
+
+                try { 
+                    const logs = JSON.parse(localStorage.getItem('merchHistory_v870'));
+                    if (logs) setHistoryLogs(logs);
+                } catch(e) {}
+            }, []);
+
+            // 💡 [탭 동기화] 다른 탭(Smart Parser)에서 마스터 데이터가 변경되면 실시간 반영
             useEffect(() => {
                 const handleStorageChange = (e) => {
-                    if (e.key === 'merchMaster_v870') {
-                        try {
-                            const newData = JSON.parse(e.newValue);
-                            if (newData) setMasterProducts(newData);
-                        } catch (err) { console.error("Master data sync error", err); }
+                    // localStorage 용량 한계를 피하기 위해 트리거 키만 사용
+                    if (e.key === 'merchMaster_sync_trigger') {
+                        getIDB('merchMaster_v870').then(data => {
+                            if (data) setMasterProducts(data);
+                        }).catch(console.error);
                     }
                 };
                 window.addEventListener('storage', handleStorageChange);
                 return () => window.removeEventListener('storage', handleStorageChange);
             }, []);
 
-            const saveMasterToLocal = useCallback((data) => { 
-                // 💡 1. 화면(State) 업데이트를 무조건 최우선으로 실행하여 테이블 렌더링 보장
+            const saveMasterToLocal = useCallback(async (data) => { 
+                // 1. 화면(State) 즉시 업데이트
                 setMasterProducts(data);
                 
-                // 💡 2. 로컬 스토리지 저장 시도 및 용량 초과 에러 방어
+                // 2. 용량 제한이 없는 IndexedDB에 안전하게 저장
                 try { 
-                    localStorage.setItem('merchMaster_v870', JSON.stringify(data)); 
+                    await setIDB('merchMaster_v870', data);
+                    // 3. 다른 탭(parser)에 데이터가 변경되었음을 알리기 위한 가벼운 트리거 발송
+                    localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
                 } catch(e) {
-                    console.warn("로컬스토리지 용량 초과", e);
-                    alert("⚠️ 엑셀 데이터 로드 완료! (하지만 브라우저 메모리 한계 초과)\n\n데이터량이 5MB를 초과하여 로컬에 영구 저장하지 못했습니다.\n화면에는 정상 표시되지만, 새로고침하면 날아갈 수 있으니 지금 즉시 우측 상단의 [☁️ 클라우드에 데이터 백업] 버튼을 눌러주세요.");
+                    console.error("IndexedDB 저장 실패", e);
+                    alert("로컬 데이터베이스 저장 중 오류가 발생했습니다.");
                 } 
             }, []);
 
@@ -412,7 +456,10 @@
                         if (!res.ok) throw new Error("Network Error");
                         const result = await res.json();
                         if (result.status === 'success' && result.data) { 
-                            if (result.data.master && Object.keys(result.data.master).length > 0) data.setMasterProducts(result.data.master);
+                            if (result.data.master && Object.keys(result.data.master).length > 0) {
+                                // 💡 클라우드 데이터를 대용량 IndexedDB에 안전하게 병합
+                                data.setMasterProducts(result.data.master);
+                            }
                             if (result.data.dict && Object.keys(result.data.dict).length > 0) localStorage.setItem('parserDict_v870', JSON.stringify(result.data.dict));
                             if (result.data.rules && result.data.rules.length > 0) config.setMarginRules(result.data.rules);
                             ui.showToast('✅ 클라우드 최신 데이터 불러오기(Pull) 성공');
