@@ -40,11 +40,12 @@
         
         const getInitialMappings = () => {
             const base = { master: {}, estimate: {} };
-            base.master = { '창고': '창고, 창고코드', '품목코드': '품목코드', '품목명': '품목명, 상품명, 품명', '규격': '규격', '출고가': '출고가, 출고' };
+            // 💡 수정: 품목코드, 품목명, 규격 등 엑셀 헤더 인식 키워드를 대폭 확장 (무음 누락 방지)
+            base.master = { '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격, 규격명, 사이즈, 단량', '출고가': '출고가, 출고, 판매가, 시중가', '입고가': '입고가, 입고, 매입가' };
             base.estimate = { 
-                '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드', '품목명': '품목명, 상품명, 품명', '규격': '규격명, 규격', '구매처': '거래처명, 구매처', 
-                '입고가': '입고가, 입고', '출고가': '출고가, 출고',
-                '입고B': 'B단가, 입고B', '도매A': 'A판매, A판매가, 도매A', '도매B': 'B판매, B판매가, 도매B', '간단설명': '지시사항, 간단설명'
+                '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격명, 규격, 사이즈, 단량', '구매처': '거래처명, 구매처, 거래처', 
+                '입고가': '입고가, 입고, 매입가', '출고가': '출고가, 출고, 판매가',
+                '입고B': 'B단가, 입고B', '도매A': 'A판매, A판매가, 도매A', '도매B': 'B판매, B판매가, 도매B', '간단설명': '지시사항, 간단설명, 비고'
             };
             return base;
         };
@@ -837,7 +838,7 @@
                                     if (url.startsWith('blob:') || url.startsWith('about:') || url.startsWith('data:')) {
                                         showToast('⚠️ 미리보기 환경에서는 좌측 또는 우측 탭에서 parser.html을 직접 클릭하여 이동해주세요.');
                                     } else {
-                                        window.location.href = 'parser.html';
+                                        window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/p9.0';
                                     }
                                 } catch (e) {
                                     showToast('⚠️ 미리보기 환경에서는 좌측 또는 우측 탭에서 parser.html을 직접 클릭하여 이동해주세요.');
@@ -869,7 +870,16 @@
 
                         <div className="flex items-center gap-2 ml-1">
                             <SearchBar value={globalSearch} onChange={setGlobalSearch} />
-                            <button onClick={handleReset} className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-800 bg-white border border-slate-300 hover:bg-slate-100 transition-colors shadow-sm shrink-0" title="작업 데이터 초기화"><i className="fas fa-redo-alt text-[13px]"></i></button>
+                            {/* 💡 수정: 견적 엑셀 업로드 시 마스터가 숨겨진다는 것을 직관적으로 알 수 있도록 명시적 버튼 추가 */}
+                            {isEstimateUploaded ? (
+                                <button onClick={handleReset} className="h-9 px-3 rounded-lg flex items-center justify-center font-bold text-white bg-indigo-500 hover:bg-indigo-600 transition-colors shadow-sm shrink-0" title="견적 작업 종료 및 마스터 전체 보기">
+                                    <i className="fas fa-list mr-1.5"></i>마스터 전체보기
+                                </button>
+                            ) : (
+                                <button onClick={handleReset} className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-800 bg-white border border-slate-300 hover:bg-slate-100 transition-colors shadow-sm shrink-0" title="작업 데이터 초기화">
+                                    <i className="fas fa-redo-alt text-[13px]"></i>
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -957,6 +967,8 @@
                                                 <input type="checkbox" className={`rounded w-4 h-4 border-slate-300 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500`} checked={selectedRows.size === fullDisplayRows.length && displayRows.length > 0} onChange={actions.toggleAllRows} />
                                             )}
                                             <span className="truncate">상품정보 (코드/품명/규격)</span>
+                                            {/* 💡 수정: 현재 견적서만 보고 있음을 알려주는 뱃지 추가 */}
+                                            {isEstimateUploaded && <span className="bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded text-[10px] font-black shrink-0">작업모드</span>}
                                         </div>
                                     </th>
 
@@ -979,7 +991,8 @@
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 text-slate-700">
-                                {displayRows.length === 0 ? <tr><td colSpan="50" className="p-16 text-center text-slate-400 bg-white"><i className="fas fa-folder-open text-4xl mb-4 block"></i>데이터가 없습니다.</td></tr> : displayRows.map((row, idx) => {
+                                {/* 💡 수정: 데이터 없을 때 메시지도 작업 모드 여부에 따라 다르게 출력 */}
+                                {displayRows.length === 0 ? <tr><td colSpan="50" className="p-16 text-center text-slate-400 bg-white"><i className="fas fa-folder-open text-4xl mb-4 block"></i>{isEstimateUploaded ? "작업 버퍼에 일치하는 항목이 없습니다." : "조건에 일치하는 상품이 없거나, 데이터가 비어있습니다."}</td></tr> : displayRows.map((row, idx) => {
                                     const isSel = selectedRows.has(row.코드); 
                                     const bg = isSel ? 'bg-indigo-50/50' : (isEstimateUploaded ? 'bg-white hover:bg-slate-50' : 'bg-[#faf9f5] hover:bg-[#f0ece1]');
                                     const mItem = masterProducts[row.코드] || {}; 
@@ -1031,7 +1044,7 @@
                     <div className="flex-1 bg-slate-50 border border-slate-200 p-8 rounded-xl text-center hover:shadow-lg transition-all duration-300 group hover:-translate-y-1 hover:bg-purple-50 hover:border-purple-200 cursor-pointer relative overflow-hidden" onClick={() => {
                         try {
                             if(window.location.href.startsWith('blob:')) { showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.'); }
-                            else { window.location.href = 'parser.html'; }
+                            else { window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/p9.0'; }
                         } catch(e) { showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.'); }
                     }}>
                         <div className="text-4xl text-purple-500 mb-5 group-hover:scale-110 transition-transform duration-300"><i className="fas fa-magic"></i></div>
