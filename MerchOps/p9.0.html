@@ -410,7 +410,18 @@
                     });
                     
                     setParserBuffer(results); 
-                    setActiveTab(forceManual ? 'unmatched' : 'matched'); 
+                    
+                    // 💡 [UX 개선] 일치하는 항목이 없으면 자동으로 데이터가 있는 '유사' 또는 '불일치' 탭으로 뷰 이동
+                    if (forceManual) {
+                        setActiveTab('unmatched');
+                    } else {
+                        const hasMatched = results.some(r => r._matchCode);
+                        const hasSimilar = results.some(r => !r._matchCode && r._matchStatus.includes('유사'));
+                        if (hasMatched) setActiveTab('matched');
+                        else if (hasSimilar) setActiveTab('similar');
+                        else setActiveTab('unmatched');
+                    }
+
                     setTargetId(null); setGlobalSearch(''); 
                     setIsProcessing(false); setProcessMsg(''); 
                     
@@ -444,9 +455,9 @@
                             Object.assign(newMaster[code], recalculated);
                         }
 
-                        // [기획] 일치 항목도 반영 시 소싱태그 보장
+                        // 💡 수정: 일치 항목 반영 시 전용 '소싱태그' 필드에 보장 저장
                         if (currentTag) {
-                            newMaster[code]['검색어등록'] = addTag(newMaster[code]['검색어등록'], currentTag);
+                            newMaster[code]['소싱태그'] = addTag(newMaster[code]['소싱태그'] || newMaster[code]['검색어등록'], currentTag);
                         }
 
                         if (row['품목명']) {
@@ -488,9 +499,9 @@
                 if (!newMaster[masterCode]) newMaster[masterCode] = { 코드: masterCode };
                 else newMaster[masterCode] = { ...newMaster[masterCode] };
 
-                // [기획] 연결 시 자동으로 소싱태그 추가
+                // 💡 수정: 연결 시 자동으로 전용 '소싱태그' 필드에 추가
                 if (currentTag) {
-                    newMaster[masterCode]['검색어등록'] = addTag(newMaster[masterCode]['검색어등록'], currentTag);
+                    newMaster[masterCode]['소싱태그'] = addTag(newMaster[masterCode]['소싱태그'] || newMaster[masterCode]['검색어등록'], currentTag);
                 }
                 
                 const pInNum = row.finalData['입고가'] ? parseNum(row.finalData['입고가']) : 0;
@@ -531,7 +542,8 @@
 
                     codesToProcess.forEach(code => {
                         if (newMaster[code]) {
-                            newMaster[code]['검색어등록'] = removeTag(newMaster[code]['검색어등록'], currentTag);
+                            // 💡 수정: 제외 시 '소싱태그' 필드에서 삭제
+                            newMaster[code]['소싱태그'] = removeTag(newMaster[code]['소싱태그'] || newMaster[code]['검색어등록'], currentTag);
                             count++;
                         }
                     });
@@ -620,7 +632,8 @@
                 const missing = [];
                 for (const code in masterProducts) {
                     const mItem = masterProducts[code];
-                    const tags = (mItem['검색어등록'] || '').split(',').map(s => s.trim());
+                    // 💡 수정: 전용 소싱태그 필드 우선 검사
+                    const tags = (mItem['소싱태그'] || mItem['검색어등록'] || '').split(',').map(s => s.trim());
                     if (tags.includes(currentTag) && !matchedCodes.has(code)) {
                         missing.push(mItem);
                     }
@@ -694,8 +707,13 @@
                                                     showToast('⚠️ 미리보기 환경에서는 우측 상단의 index.html 탭을 직접 클릭하여 이동해주세요.');
                                                 }
                                             }} className="h-9 px-4 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-slate-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500 font-bold text-[12px]">
-                                                <i className="fas fa-home mr-2 text-indigo-400"></i> 메인 워크스페이스로 복귀
+                                                <i className="fas fa-home mr-2 text-indigo-400"></i> 머치옵스로 복귀
                                             </button>
+
+                                            {/* 💡 추가: 사용자 가이드 이동 버튼 */}
+                                            <a href="https://oneapp.orderz.co.kr/MerchOps/guide" target="_blank" className="h-9 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-amber-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-amber-300 hover:border-amber-500/50 font-bold text-[12px]" title="사용자 가이드">
+                                                <i className="fas fa-book-open mr-1.5"></i> 가이드
+                                            </a>
                                         </nav>
                                     </div>
                                 </div>
@@ -749,7 +767,15 @@
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
-                                                {matchedRows.length === 0 ? <tr><td colSpan="6" className="p-10 text-center text-slate-400">데이터가 없습니다.</td></tr> : matchedRows.map(row => {
+                                                {matchedRows.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan="6" className="p-16 text-center text-slate-400">
+                                                            <i className="fas fa-check-circle text-4xl mb-3 text-slate-200 block"></i>
+                                                            <div className="font-bold text-[14px] mb-1 text-slate-500">자동 일치된 항목이 없습니다.</div>
+                                                            <div className="text-[12px] text-slate-400">상단의 <span className="text-amber-500 font-bold">🟡 유사</span> 또는 <span className="text-rose-500 font-bold">🔴 불일치</span> 탭을 클릭하여 수동으로 매핑해주세요.</div>
+                                                        </td>
+                                                    </tr>
+                                                ) : matchedRows.map(row => {
                                                     const mItem = masterProducts[row._matchCode] || {};
                                                     const mIn = parseNum(mItem['입고가']);
                                                     const pIn = parseNum(row.finalData['입고가']);
@@ -826,7 +852,8 @@
                                                             <td className="py-2 px-3 font-mono text-[11px] text-slate-500">{mItem.코드}</td>
                                                             <td className="py-2 px-3"><span className="font-bold text-slate-800">{mItem.품목명}</span> <span className="text-[11px] text-slate-400">({mItem.규격})</span></td>
                                                             <td className="py-2 px-3 text-right text-slate-500">{mItem.입고가 ? Number(mItem.입고가).toLocaleString() : '-'}</td>
-                                                            <td className="py-2 px-3 text-[11px] text-slate-400 max-w-[200px] truncate">{mItem.검색어등록}</td>
+                                                            {/* 💡 수정: 테이블 표시값도 소싱태그 우선 출력 */}
+                                                            <td className="py-2 px-3 text-[11px] text-slate-400 max-w-[200px] truncate">{mItem['소싱태그'] || mItem.검색어등록}</td>
                                                         </tr>
                                                     )
                                                 })}
