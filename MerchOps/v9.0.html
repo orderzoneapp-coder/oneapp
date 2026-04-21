@@ -75,8 +75,8 @@
         
         const getInitialMappings = () => {
             const base = { master: {}, estimate: {} };
-            // 💡 수정: 엑셀의 '상품태그'가 엮여들어오지 않도록 매핑 키워드에서 '태그' 단어 제거
-            base.master = { '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격, 규격명, 사이즈, 단량', '출고가': '출고가, 출고, 판매가, 시중가', '입고가': '입고가, 입고, 매입가', '소싱태그': '소싱태그, 소싱그룹' };
+            // 💡 수정: 매핑 목록에서 '소싱태그' 자체를 아예 삭제 (수동 매핑조차 불가능하게 원천 차단)
+            base.master = { '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격, 규격명, 사이즈, 단량', '출고가': '출고가, 출고, 판매가, 시중가', '입고가': '입고가, 입고, 매입가' };
             base.estimate = { 
                 '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격명, 규격, 사이즈, 단량', '구매처': '거래처명, 구매처, 거래처', 
                 '입고가': '입고가, 입고, 매입가', '출고가': '출고가, 출고, 판매가',
@@ -500,8 +500,14 @@
                             if (!code || String(code).replace(/\s/g, '').includes('출력')) return;
                             
                             if (mapKey === 'master') {
-                                if (!newMaster[code]) newMaster[code] = { 코드: code };
+                                // 💡 수정: 마스터 엑셀 업로드 시 기존에 파서가 달아둔 '소싱태그'는 보호(유지)
+                                if (!newMaster[code]) newMaster[code] = { 코드: code, 소싱태그: data.masterProducts[code]?.소싱태그 || '' };
+                                else newMaster[code].소싱태그 = data.masterProducts[code]?.소싱태그 || '';
+
                                 MASTER_HEADERS.forEach(h => {
+                                    // 💡 핵심: 엑셀 파일의 그 어떤 데이터도 '소싱태그'를 덮어쓰지 못하도록 무시 (Lock)
+                                    if (h === '소싱태그') return; 
+                                    
                                     const actualKey = headerCache[h] || h; const val = row[actualKey];
                                     if (val !== undefined && val !== '') newMaster[code][h] = NUMERIC_HEADERS.includes(h) ? parseNum(val) : val;
                                 });
@@ -842,15 +848,33 @@
                             </div>
                         </div>
                         <div className="bg-slate-100 p-4 border-t border-slate-200 flex justify-between items-center shrink-0">
-                            <button onClick={() => {
+                            <button onClick={async () => {
                                 if(window.confirm("전체 데이터를 초기화하시겠습니까?")) {
+                                    let keepDict = true;
                                     if(window.confirm("파서 학습 사전(AI 매칭 데이터)도 함께 삭제할까요?\n(취소 시 사전 데이터는 보존됩니다.)")) {
-                                        localStorage.clear();
-                                    } else {
-                                        const dict = localStorage.getItem('parserDict_v870');
-                                        localStorage.clear();
-                                        if(dict) localStorage.setItem('parserDict_v870', dict);
+                                        keepDict = false;
                                     }
+                                    
+                                    // 💡 1. LocalStorage 비우기 전 필수 데이터(학습사전, 클라우드 URL) 백업
+                                    const dict = localStorage.getItem('parserDict_v870');
+                                    const savedUrl = localStorage.getItem('merchCloudUrl_v870'); // URL 백업
+                                    
+                                    localStorage.clear(); // 전체 포맷
+                                    
+                                    // 💡 백업해둔 데이터 다시 복구
+                                    if(keepDict && dict) localStorage.setItem('parserDict_v870', dict);
+                                    if(savedUrl) localStorage.setItem('merchCloudUrl_v870', savedUrl); // URL 복구
+
+                                    // 2. 무제한 브라우저 저장소(IndexedDB) 완벽 포맷
+                                    try {
+                                        const db = await initIDB();
+                                        const tx = db.transaction('store', 'readwrite');
+                                        tx.objectStore('store').clear(); // 모든 데이터(마스터) 날림
+                                    } catch(e) {
+                                        console.error("IndexedDB 초기화 실패", e);
+                                    }
+
+                                    alert("브라우저 데이터가 완벽하게 초기화되었습니다. 새로고침됩니다.");
                                     window.location.reload();
                                 }
                             }} className="text-[13px] font-bold text-slate-500 hover:text-rose-500 transition-colors"><i className="fas fa-undo mr-1"></i>앱 전체 초기화</button>
@@ -1127,15 +1151,8 @@
                     const tagStr = m['소싱태그'] || ''; 
                     tagStr.split(',').forEach(t => {
                         const trimmed = t.trim();
-                        // 💡 만약을 위한 2차 철통 방어막 (숫자, 특수기호, 특정 단어 차단)
-                        const isJunk = 
-                            !trimmed || 
-                            trimmed.includes('#REF!') || 
-                            /^[0-9/#.!@$%^&*-]/.test(trimmed) || // 숫자나 특수문자로 시작하는 모든 것 차단
-                            trimmed.includes('가공식품') || // 엑셀 내부 코드값 차단
-                            trimmed === 'MSG';
-
-                        if (!isJunk) {
+                        // 이제 엑셀에서 오염될 일이 0% 이므로, 순수하게 파서에서 넣은 태그만 깔끔하게 가져옵니다.
+                        if (trimmed) {
                             tags.add(trimmed);
                         }
                     });
