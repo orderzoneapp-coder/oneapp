@@ -455,9 +455,9 @@
                             Object.assign(newMaster[code], recalculated);
                         }
 
-                        // 💡 수정: 일치 항목 반영 시 전용 '소싱태그' 필드에 보장 저장
+                        // 💡 수정: 오직 '소싱태그' 전용 필드에만 깔끔하게 추가
                         if (currentTag) {
-                            newMaster[code]['소싱태그'] = addTag(newMaster[code]['소싱태그'] || newMaster[code]['검색어등록'], currentTag);
+                            newMaster[code]['소싱태그'] = addTag(newMaster[code]['소싱태그'], currentTag);
                         }
 
                         if (row['품목명']) {
@@ -499,9 +499,9 @@
                 if (!newMaster[masterCode]) newMaster[masterCode] = { 코드: masterCode };
                 else newMaster[masterCode] = { ...newMaster[masterCode] };
 
-                // 💡 수정: 연결 시 자동으로 전용 '소싱태그' 필드에 추가
+                // 💡 수정: 오직 '소싱태그' 전용 필드에만 깔끔하게 추가
                 if (currentTag) {
-                    newMaster[masterCode]['소싱태그'] = addTag(newMaster[masterCode]['소싱태그'] || newMaster[masterCode]['검색어등록'], currentTag);
+                    newMaster[masterCode]['소싱태그'] = addTag(newMaster[masterCode]['소싱태그'], currentTag);
                 }
                 
                 const pInNum = row.finalData['입고가'] ? parseNum(row.finalData['입고가']) : 0;
@@ -542,8 +542,8 @@
 
                     codesToProcess.forEach(code => {
                         if (newMaster[code]) {
-                            // 💡 수정: 제외 시 '소싱태그' 필드에서 삭제
-                            newMaster[code]['소싱태그'] = removeTag(newMaster[code]['소싱태그'] || newMaster[code]['검색어등록'], currentTag);
+                            // 💡 수정: 오직 '소싱태그' 전용 필드에서만 삭제
+                            newMaster[code]['소싱태그'] = removeTag(newMaster[code]['소싱태그'], currentTag);
                             count++;
                         }
                     });
@@ -632,8 +632,8 @@
                 const missing = [];
                 for (const code in masterProducts) {
                     const mItem = masterProducts[code];
-                    // 💡 수정: 전용 소싱태그 필드 우선 검사
-                    const tags = (mItem['소싱태그'] || mItem['검색어등록'] || '').split(',').map(s => s.trim());
+                    // 💡 수정: 누락 검사 시에도 과거 검색어를 무시하고 순수 '소싱태그'만 검사
+                    const tags = (mItem['소싱태그'] || '').split(',').map(s => s.trim());
                     if (tags.includes(currentTag) && !matchedCodes.has(code)) {
                         missing.push(mItem);
                     }
@@ -852,8 +852,8 @@
                                                             <td className="py-2 px-3 font-mono text-[11px] text-slate-500">{mItem.코드}</td>
                                                             <td className="py-2 px-3"><span className="font-bold text-slate-800">{mItem.품목명}</span> <span className="text-[11px] text-slate-400">({mItem.규격})</span></td>
                                                             <td className="py-2 px-3 text-right text-slate-500">{mItem.입고가 ? Number(mItem.입고가).toLocaleString() : '-'}</td>
-                                                            {/* 💡 수정: 테이블 표시값도 소싱태그 우선 출력 */}
-                                                            <td className="py-2 px-3 text-[11px] text-slate-400 max-w-[200px] truncate">{mItem['소싱태그'] || mItem.검색어등록}</td>
+                                                            {/* 💡 수정: 현재 소싱태그 컬럼에도 순수 소싱태그만 출력 */}
+                                                            <td className="py-2 px-3 text-[11px] text-slate-400 max-w-[200px] truncate">{mItem['소싱태그'] || '-'}</td>
                                                         </tr>
                                                     )
                                                 })}
