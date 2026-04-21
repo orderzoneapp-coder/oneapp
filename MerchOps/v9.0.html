@@ -332,10 +332,16 @@
             }, []);
 
             const saveMasterToLocal = useCallback((data) => { 
+                // 💡 1. 화면(State) 업데이트를 무조건 최우선으로 실행하여 테이블 렌더링 보장
+                setMasterProducts(data);
+                
+                // 💡 2. 로컬 스토리지 저장 시도 및 용량 초과 에러 방어
                 try { 
                     localStorage.setItem('merchMaster_v870', JSON.stringify(data)); 
-                    setMasterProducts(data);
-                } catch(e) {} 
+                } catch(e) {
+                    console.warn("로컬스토리지 용량 초과", e);
+                    alert("⚠️ 엑셀 데이터 로드 완료! (하지만 브라우저 메모리 한계 초과)\n\n데이터량이 5MB를 초과하여 로컬에 영구 저장하지 못했습니다.\n화면에는 정상 표시되지만, 새로고침하면 날아갈 수 있으니 지금 즉시 우측 상단의 [☁️ 클라우드에 데이터 백업] 버튼을 눌러주세요.");
+                } 
             }, []);
 
             const addHistoryLogs = useCallback((newLogs) => {
