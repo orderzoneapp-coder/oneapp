@@ -19,6 +19,41 @@
         const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
         // ==========================================
+        // 🧩 [NEW] 무제한 로컬 스토리지 (IndexedDB) 래퍼
+        // ==========================================
+        const initIDB = () => {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open('MerchOpsDB', 1);
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains('store')) db.createObjectStore('store');
+                };
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        };
+
+        const setIDB = async (key, val) => {
+            const db = await initIDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('store', 'readwrite');
+                tx.objectStore('store').put(val, key);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        };
+
+        const getIDB = async (key) => {
+            const db = await initIDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('store', 'readonly');
+                const req = tx.objectStore('store').get(key);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(tx.error);
+            });
+        };
+
+        // ==========================================
         // 🧩 1. 상수 및 유틸리티
         // ==========================================
         const NUMERIC_HEADERS = [
@@ -252,15 +287,24 @@
         // ==========================================
         const useParserApp = () => {
             // 로컬 스토리지 데이터 공유
-            const [masterProducts, setMasterProducts] = useState(() => { try { return JSON.parse(localStorage.getItem('merchMaster_v870')) || {}; } catch(e) { return {}; } });
+            const [masterProducts, setMasterProducts] = useState({});
             const [parserDict, setParserDict] = useState(() => { try { return JSON.parse(localStorage.getItem('parserDict_v870')) || {}; } catch(e){ return {}; }});
             const [marginRules, setMarginRules] = useState(() => { try { return JSON.parse(localStorage.getItem('merchMarginRules_v878')) || [{ id: 'default', whCode: '*', unit: '*', rate: 10, type: 'divide' }]; } catch(e) { return [{ id: 'default', whCode: '*', unit: '*', rate: 10, type: 'divide' }]; } });
 
-            // 💡 [탭 동기화] 메인 워크스페이스에서 마스터 데이터 및 마진 룰 변경 시 실시간 반영
+            // 💡 [NEW] 초기 구동 시 IndexedDB에서 마스터 데이터 로드
+            useEffect(() => {
+                getIDB('merchMaster_v870').then(data => {
+                    if (data) setMasterProducts(data);
+                }).catch(console.error);
+            }, []);
+
+            // 💡 [탭 동기화] 메인 워크스페이스에서 마스터 데이터 및 룰 변경 시 실시간 반영
             useEffect(() => {
                 const handleStorageChange = (e) => {
-                    if (e.key === 'merchMaster_v870') {
-                        try { const newData = JSON.parse(e.newValue); if (newData) setMasterProducts(newData); } catch(err) {}
+                    if (e.key === 'merchMaster_sync_trigger') {
+                        getIDB('merchMaster_v870').then(data => {
+                            if (data) setMasterProducts(data);
+                        }).catch(console.error);
                     }
                     if (e.key === 'parserDict_v870') {
                         try { const newData = JSON.parse(e.newValue); if (newData) setParserDict(newData); } catch(err) {}
@@ -291,14 +335,22 @@
             // 누락 탭 체크 상태 (독립 관리)
             const [selectedMissingCodes, setSelectedMissingCodes] = useState(new Set());
 
-            const saveMaster = (data) => {
+            const saveMaster = async (data) => {
                 setMasterProducts(data);
-                localStorage.setItem('merchMaster_v870', JSON.stringify(data));
+                try {
+                    await setIDB('merchMaster_v870', data);
+                    localStorage.setItem('merchMaster_sync_trigger', Date.now().toString()); // 다른 탭에 알림
+                } catch(e) {
+                    console.error("Storage Full", e);
+                    alert("⚠️ 브라우저 메모리 한계 초과\n데이터가 안전하게 저장되지 않았습니다. 새로고침 전에 반드시 메인 화면으로 돌아가 [☁️ 클라우드에 데이터 백업]을 진행하세요.");
+                }
             };
 
             const saveDict = (data) => {
                 setParserDict(data);
-                localStorage.setItem('parserDict_v870', JSON.stringify(data));
+                try {
+                    localStorage.setItem('parserDict_v870', JSON.stringify(data));
+                } catch(e) {}
             };
 
             const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
