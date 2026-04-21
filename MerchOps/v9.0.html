@@ -1151,8 +1151,15 @@
                     const tagStr = m['소싱태그'] || ''; 
                     tagStr.split(',').forEach(t => {
                         const trimmed = t.trim();
-                        // 이제 엑셀에서 오염될 일이 0% 이므로, 순수하게 파서에서 넣은 태그만 깔끔하게 가져옵니다.
-                        if (trimmed) {
+                        // 💡 클라우드에 이미 저장되어 있던 과거 오염 데이터를 화면에서 지우기 위한 초강력 필터 복구
+                        const isJunk = 
+                            !trimmed || 
+                            trimmed.includes('#REF!') || 
+                            /^[0-9/#.!@$%^&*-]/.test(trimmed) || // 숫자(100%, 20kg 등)나 특수문자로 시작 차단
+                            trimmed.includes('가공식품') || // 과거 엑셀에서 잘못 들어간 내부 코드 차단
+                            trimmed === 'MSG' || trimmed === 'EA' || trimmed === 'BOX' || trimmed === '소분';
+
+                        if (!isJunk) {
                             tags.add(trimmed);
                         }
                     });
