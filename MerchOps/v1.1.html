@@ -816,11 +816,11 @@
             if (isProcessing) { statusText = `> ${processMsg}`; statusColor = 'text-amber-400'; bgColor = 'bg-amber-400'; } 
             else if (itemCount === 0) { statusText = `> 시스템 대기중: 마스터 DB를 업로드하거나 클라우드에서 불러오세요.`; statusColor = 'text-rose-400'; bgColor = 'bg-rose-400'; }
             else if (selectedCatalog || selectedCategory) { statusText = `> 뷰 필터 활성 [${selectedCatalog || selectedCategory}] (${timeStr})`; statusColor = 'text-indigo-300'; bgColor = 'bg-indigo-300'; }
-            else if (estimateCount > 0) { statusText = `> DB: ${itemCount}건 / 엑셀/견적서 작업중: ${estimateCount}건 (${timeStr})`; statusColor = 'text-[#818cf8]'; bgColor = 'bg-[#818cf8]'; } 
+            else if (estimateCount > 0) { statusText = `> DB: ${itemCount}건 / 작업중: ${estimateCount}건 (${timeStr})`; statusColor = 'text-[#818cf8]'; bgColor = 'bg-[#818cf8]'; } 
             else { statusText = `> DB: ${itemCount}건 로드됨 (${timeStr})`; }
 
             return (
-                <div className="bg-black/40 rounded-md border border-slate-700/50 px-4 py-1.5 flex flex-1 max-w-2xl mx-4 items-center overflow-hidden shadow-inner">
+                <div className="bg-black/40 rounded-md border border-slate-700/50 px-4 py-1.5 flex flex-1 max-w-md xl:max-w-xl mx-4 items-center overflow-hidden shadow-inner">
                     <div className="flex items-center truncate w-full">
                         <span className={`text-[12px] font-mono ${statusColor} flex items-center`}>{isProcessing && <i className="fas fa-spinner fa-spin mr-2"></i>}{statusText}</span>
                         <span className={`w-1.5 h-3.5 ${bgColor} ml-1.5 animate-[pulse_1s_infinite]`}></span>
@@ -1104,30 +1104,23 @@
 
                     {/* 그룹 3: 최종 액션 */}
                     <div className="flex items-center gap-2 shrink-0">
-                        <SearchBar value={globalSearch} onChange={setGlobalSearch} />
-                        
-                        <div className="w-px h-6 bg-slate-300 mx-1"></div>
-
                         {showActionButtons && (
                             <>
                                 <button onClick={handleCommitEstimate} className={`h-9 px-4 rounded-lg text-[12px] font-bold shadow-sm transition-colors flex items-center ${selectedRows.size > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-500'}`} title="선택 항목 마스터 반영">
                                     <i className="fas fa-check-double mr-1.5"></i> 마스터 반영
                                 </button>
-                                <button onClick={() => setShowBriefingModal(true)} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50 shadow-sm transition-colors flex items-center" title="단가 변동 요약 브리핑">
-                                    <i className="fas fa-chart-pie mr-1.5"></i> 요약 브리핑
-                                </button>
-                                <button onClick={() => setShowExportModal(true)} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 shadow-sm transition-colors flex items-center" title="ERP/쇼핑몰 양식 출력">
-                                    <i className="fas fa-file-export mr-1.5"></i> 최종 보고서
-                                </button>
+                                <div className="w-px h-6 bg-slate-300 mx-1"></div>
                             </>
                         )}
 
+                        <SearchBar value={globalSearch} onChange={setGlobalSearch} />
+                        
                         {isEstimateUploaded ? (
-                            <button onClick={handleReset} className="h-9 px-3 ml-2 rounded-lg flex items-center justify-center font-bold text-white bg-slate-400 hover:bg-slate-500 transition-colors shadow-sm shrink-0" title="모두 닫고 메인으로 돌아가기">
+                            <button onClick={handleReset} className="h-9 px-3 ml-1 rounded-lg flex items-center justify-center font-bold text-white bg-slate-400 hover:bg-slate-500 transition-colors shadow-sm shrink-0" title="모두 닫고 메인으로 돌아가기">
                                 <i className="fas fa-times mr-1.5"></i> 닫기
                             </button>
                         ) : (
-                            <button onClick={handleReset} className="w-9 h-9 ml-2 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-800 bg-white border border-slate-300 hover:bg-slate-100 transition-colors shadow-sm shrink-0" title="화면 초기화">
+                            <button onClick={handleReset} className="w-9 h-9 ml-1 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-800 bg-white border border-slate-300 hover:bg-slate-100 transition-colors shadow-sm shrink-0" title="화면 초기화">
                                 <i className="fas fa-redo-alt text-[13px]"></i>
                             </button>
                         )}
@@ -1390,6 +1383,7 @@
 
             const isEstimateUploaded = Object.keys(data.managedItems).length > 0;
             const isMasterEmpty = Object.keys(data.masterProducts).length === 0;
+            const showActionButtons = isEstimateUploaded || ui.selectedCatalog !== '' || ui.selectedCategory !== '';
 
             // 마스터에서 사용 가능한 고유 카탈로그 목록 추출
             const availableCatalogs = useMemo(() => {
@@ -1542,7 +1536,7 @@
                         <div className="shrink-0 flex flex-col bg-white border-b border-slate-200 z-40">
                             <div className="p-5 pb-0 pt-6">
                                 <div className="bg-[#0f172a] rounded-xl shadow-lg border border-slate-800 flex flex-col overflow-hidden">
-                                    <div className="px-5 py-3 flex justify-between items-center border-b border-slate-800/80 bg-[#0b1120] gap-5">
+                                    <div className="px-5 py-3 flex justify-between items-center border-b border-slate-800/80 bg-[#0b1120] gap-4">
                                         <div className="flex items-center group shrink-0">
                                             <span className="text-xl font-black text-indigo-400 mr-3">ONEAPP</span>
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
@@ -1556,18 +1550,31 @@
                                         
                                         <SystemConsole itemCount={Object.keys(data.masterProducts).length} isProcessing={ui.isProcessing} processMsg={ui.processMsg} estimateCount={Object.keys(data.managedItems).length} selectedCatalog={ui.selectedCatalog} selectedCategory={ui.selectedCategory} />
                                         
-                                        <nav className="flex gap-2 text-[14px] shrink-0 items-center">
-                                            <a href="https://oneapp.orderz.co.kr/MerchOps/guide" target="_blank" rel="noopener noreferrer" className={`h-9 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-emerald-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-300 hover:border-emerald-500/50 font-bold text-[11px] tracking-wider uppercase ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="MerchOps 사용 가이드">
+                                        <nav className="flex gap-1.5 text-[14px] shrink-0 items-center">
+                                            <a href="https://oneapp.orderz.co.kr/MerchOps/guide" target="_blank" rel="noopener noreferrer" className={`h-8 px-2.5 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-emerald-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-300 hover:border-emerald-500/50 font-bold text-[11px] tracking-wider uppercase ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="MerchOps 사용 가이드">
                                                 GUIDE
                                             </a>
-                                            <a href="https://oneapp.orderz.co.kr/MerchOps/trend_report" target="_blank" rel="noopener noreferrer" className={`h-9 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-blue-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-blue-300 hover:border-blue-500/50 font-bold text-[11px] tracking-wider uppercase ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="트렌드 리포트">
-                                                TREND REPORT
+                                            <a href="https://oneapp.orderz.co.kr/MerchOps/trend_report" target="_blank" rel="noopener noreferrer" className={`h-8 px-2.5 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-blue-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-blue-300 hover:border-blue-500/50 font-bold text-[11px] tracking-wider uppercase ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="트렌드 리포트">
+                                                REPORT
                                             </a>
-                                            <div className="w-px h-5 bg-slate-700 mx-1"></div>
-                                            <button onClick={() => customActions.handleCloudSync('download')} className={`w-9 h-9 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-indigo-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-indigo-300 hover:border-indigo-500/50 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="클라우드 데이터 불러오기"><i className="fas fa-cloud-download-alt"></i></button>
-                                            <button onClick={() => customActions.handleCloudSync('upload')} className={`w-9 h-9 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-indigo-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-indigo-300 hover:border-indigo-500/50 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="클라우드에 데이터 백업"><i className="fas fa-cloud-upload-alt"></i></button>
-                                            <div className="w-px h-5 bg-slate-700 mx-1"></div>
-                                            <button onClick={() => ui.setShowSettings(true)} className={`w-9 h-9 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-slate-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="환경설정"><i className="fas fa-cogs opacity-80"></i></button>
+                                            <div className="w-px h-4 bg-slate-700 mx-0.5"></div>
+                                            
+                                            {showActionButtons && (
+                                                <>
+                                                    <button onClick={() => ui.setShowBriefingModal(true)} className="h-8 px-2.5 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-indigo-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-indigo-200 hover:border-indigo-500/50 font-bold text-[11px]" title="단가 변동 요약 브리핑">
+                                                        <i className="fas fa-chart-pie mr-1.5 text-[12px]"></i> 브리핑
+                                                    </button>
+                                                    <button onClick={() => ui.setShowExportModal(true)} className="h-8 px-2.5 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-amber-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-amber-200 hover:border-amber-500/50 font-bold text-[11px]" title="ERP/쇼핑몰 양식 출력">
+                                                        <i className="fas fa-file-export mr-1.5 text-[12px]"></i> 보고서
+                                                    </button>
+                                                    <div className="w-px h-4 bg-slate-700 mx-0.5"></div>
+                                                </>
+                                            )}
+
+                                            <button onClick={() => customActions.handleCloudSync('download')} className={`w-8 h-8 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-slate-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="클라우드 데이터 불러오기"><i className="fas fa-cloud-download-alt text-[13px]"></i></button>
+                                            <button onClick={() => customActions.handleCloudSync('upload')} className={`w-8 h-8 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-slate-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="클라우드에 데이터 백업"><i className="fas fa-cloud-upload-alt text-[13px]"></i></button>
+                                            <div className="w-px h-4 bg-slate-700 mx-0.5"></div>
+                                            <button onClick={() => ui.setShowSettings(true)} className={`w-8 h-8 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-slate-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="환경설정"><i className="fas fa-cogs opacity-80 text-[13px]"></i></button>
                                         </nav>
                                     </div>
                                 </div>
