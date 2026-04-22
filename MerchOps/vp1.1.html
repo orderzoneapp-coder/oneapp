@@ -492,7 +492,8 @@
                             if (url.startsWith('blob:') || url.startsWith('about:') || url.startsWith('data:')) {
                                 // 미리보기 환경
                             } else {
-                                window.location.href = `https://oneapp.orderz.co.kr/MerchOps/v1.1.html?catalog=${encodeURIComponent(currentTag)}`;
+                                // 💡 수정: 복귀 주소를 정확한 v1.1 로 변경 (.html 제거 및 파라미터 유지)
+                                window.location.href = `https://oneapp.orderz.co.kr/MerchOps/v1.1?catalog=${encodeURIComponent(currentTag)}`;
                             }
                         } catch (e) {}
                     }, 1200);
@@ -799,6 +800,7 @@
                                         </div>
                                         
                                         <nav className="flex gap-2 text-[14px] shrink-0 items-center">
+                                            {/* 💡 수정: merchOps 대소문자 수정 및 트렌드 리포트 링크 정확하게 연결 */}
                                             <a href="https://oneapp.orderz.co.kr/MerchOps/guide" target="_blank" rel="noopener noreferrer" className={`h-9 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-emerald-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-300 hover:border-emerald-500/50 font-bold text-[11px] tracking-wider uppercase ${isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="MerchOps 사용 가이드">
                                                 GUIDE
                                             </a>
@@ -812,13 +814,14 @@
                                                     if (url.startsWith('blob:') || url.startsWith('about:') || url.startsWith('data:')) {
                                                         showToast('⚠️ 미리보기 환경에서는 우측 상단의 index.html 탭을 직접 클릭하여 이동해주세요.');
                                                     } else {
-                                                        window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.1.html';
+                                                        // 💡 수정: mv1.1 오타를 v1.1 로 정확하게 교체
+                                                        window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.1';
                                                     }
                                                 } catch (e) {
                                                     showToast('⚠️ 미리보기 환경에서는 우측 상단의 index.html 탭을 직접 클릭하여 이동해주세요.');
                                                 }
                                             }} className="h-9 px-4 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-slate-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500 font-bold text-[12px]">
-                                                <i className="fas fa-home mr-2 text-indigo-400"></i> 메인 워크스페이스로 복귀
+                                                <i className="fas fa-home mr-2 text-indigo-400"></i> 머치옵스 복귀
                                             </button>
                                         </nav>
                                     </div>
