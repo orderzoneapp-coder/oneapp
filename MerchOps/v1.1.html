@@ -58,7 +58,7 @@
         // ==========================================
         const MASTER_HEADERS = [
             "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", 
-            "품목코드", "품목명", "규격", "안전재고", "간단설명", "소싱폴더", "출고가", "입고가", "입고B", "도매A", 
+            "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "출고가", "입고가", "입고B", "도매A", 
             "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", 
             "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", 
             "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록"
@@ -70,7 +70,7 @@
             "1구매", "1출고", "2구매", "2출고", "1입고", "2입고"
         ];
 
-        const getInitialVisibleMasterCols = () => ({ estimate: ['소싱폴더', '입고가', '출고가', '입고B', '도매A'] });
+        const getInitialVisibleMasterCols = () => ({ estimate: ['카탈로그', '입고가', '출고가', '입고B', '도매A'] });
         const getInitialVisibleUploadCols = () => ({ estimate: ['창고', '구매처', '입고가', '출고가', '입고B', '도매A', '간단설명'] });
         
         const getInitialMappings = () => {
@@ -102,7 +102,7 @@
         const getCellWidthClass = (h) => {
             if (NUMERIC_HEADERS.includes(h)) return 'min-w-[90px] w-[90px] max-w-[90px]';
             if (h === '구매처' || h === '거래처명' || h === '일자') return 'min-w-[100px] w-[100px] max-w-[100px]';
-            if (h === '품목명' || h === '상품명' || h === '소싱폴더') return 'min-w-[200px] w-[200px] max-w-[200px]';
+            if (h === '품목명' || h === '상품명' || h === '카탈로그') return 'min-w-[200px] w-[200px] max-w-[200px]';
             if (h === '간단설명' || h === '지시사항' || h === '상품정보' || h === '적요2') return 'min-w-[150px] w-[150px] max-w-[150px]';
             if (h === '단위' || h === '창고') return 'min-w-[60px] w-[60px] max-w-[60px]';
             return 'min-w-[100px] w-[100px] max-w-[100px]';
@@ -125,13 +125,13 @@
         // ==========================================
         // 🧩 2. 핵심 비즈니스 로직 (단가 계산 및 파서)
         // ==========================================
-        const calculatePricesEngine = (baseInPrice, mItem, currentFinalData, marginRules, forceRecalc = false) => {
-            const outsrc = parseNum(currentFinalData['외주비'] ?? mItem['외주비']);
-            const labor = parseNum(currentFinalData['노무비'] ?? mItem['노무비']);
+        const calculatePricesEngine = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
+            const outsrc = parseNum(currentFinalData?.['외주비'] ?? mItem?.['외주비']);
+            const labor = parseNum(currentFinalData?.['노무비'] ?? mItem?.['노무비']);
             const totalCost = baseInPrice + outsrc + labor;
 
-            const whCode = String(currentFinalData['창고'] ?? mItem['창고'] ?? '').trim();
-            const unitStr = String(currentFinalData['단위'] ?? mItem['단위'] ?? '').trim().toLowerCase();
+            const whCode = String(currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '').trim();
+            const unitStr = String(currentFinalData?.['단위'] ?? mItem?.['단위'] ?? '').trim().toLowerCase();
             
             const matchWh = (ruleWh, targetWh) => {
                 if (ruleWh === '*') return true;
@@ -170,9 +170,9 @@
             let newFinalData = { ...currentFinalData, '입고가': baseInPrice };
             newFinalData['시중가'] = calcOutPrice;
 
-            const providedOutPrice = parseNum(currentFinalData['출고가']);
-            const mIn = parseNum(mItem['입고가']);
-            const mOut = parseNum(mItem['출고가']);
+            const providedOutPrice = parseNum(currentFinalData?.['출고가']);
+            const mIn = parseNum(mItem?.['입고가']);
+            const mOut = parseNum(mItem?.['출고가']);
 
             if (providedOutPrice > 0 && !forceRecalc) {
                 newFinalData['출고가'] = providedOutPrice;
@@ -182,8 +182,8 @@
                 newFinalData['출고가'] = calcOutPrice;
             }
 
-            const div1 = parseNum(currentFinalData['1종연산'] ?? mItem['1종연산']);
-            const extraCost = parseNum(currentFinalData['경비'] ?? mItem['경비']); 
+            const div1 = parseNum(currentFinalData?.['1종연산'] ?? mItem?.['1종연산']);
+            const extraCost = parseNum(currentFinalData?.['경비'] ?? mItem?.['경비']); 
             if (div1 > 0) {
                 newFinalData['1입고'] = Math.round(((baseInPrice + outsrc) / div1) / 100) * 100;
                 const calc1Out = Math.round((newFinalData['출고가'] / div1) + extraCost);
@@ -339,6 +339,7 @@
             const [managedItems, setManagedItems] = useState({});
             const [historyLogs, setHistoryLogs] = useState([]);
 
+            // 초기 구동 시 IndexedDB 및 LocalStorage에서 데이터 로드
             useEffect(() => {
                 getIDB('merchMaster_v870').then(data => {
                     if (data) setMasterProducts(data);
@@ -350,6 +351,7 @@
                 } catch(e) {}
             }, []);
 
+            // 💡 [탭 동기화] 다른 탭(Smart Parser)에서 마스터 데이터가 변경되면 실시간 반영
             useEffect(() => {
                 const handleStorageChange = (e) => {
                     if (e.key === 'merchMaster_sync_trigger') {
@@ -458,7 +460,7 @@
             };
 
             const cleanUpGarbageTags = useCallback(() => {
-                if(window.confirm("마스터 DB에 남아있는 불필요한 엑셀 검색어 찌꺼기를 모두 삭제하여 용량을 최적화하시겠습니까?\n(오직 스마트 파서에서 만든 '소싱폴더' 속성만 안전하게 남습니다.)")) {
+                if(window.confirm("마스터 DB에 남아있는 불필요한 엑셀 검색어 찌꺼기를 모두 삭제하여 용량을 최적화하시겠습니까?\n(오직 스마트 파서에서 만든 '카탈로그' 속성만 안전하게 남습니다.)")) {
                     let newMaster = { ...data.masterProducts };
                     let count = 0;
                     for (let code in newMaster) {
@@ -539,8 +541,14 @@
                     data.setMasterProducts(newMaster);
                     if (expectedType === 'estimate') { data.setManagedItems(newManaged); }
                     if(totalCount > 0) ui.showToast(`✅ 데이터 로드 완료 (${totalCount}건)`);
-                } catch(error) { ui.setAlertMsg("❌ 파싱 오류 발생. 엑셀 파일을 확인하세요."); } 
-                finally { if (targetInput) targetInput.value = ''; ui.setIsProcessing(false); ui.setProcessMsg(''); }
+                } catch(error) { 
+                    console.error(error);
+                    ui.setAlertMsg("❌ 파싱 오류 발생. 엑셀 파일을 확인하세요."); 
+                } finally { 
+                    if (targetInput) targetInput.value = ''; 
+                    ui.setIsProcessing(false); 
+                    ui.setProcessMsg(''); 
+                }
             }, [data.masterProducts, data.managedItems, config.mappings, config.masterLinks, config.marginRules]);
 
             const handleCommitEstimate = useCallback(() => {
@@ -579,7 +587,6 @@
 
                 if (localLogs.length > 0) {
                     data.addHistoryLogs(localLogs);
-                    // 클라우드 History 탭에 로그 Append 저장
                     if (config.cloudUrl) fetch(config.cloudUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ type: 'saveHistory', data: localLogs }) }).catch(()=>{});
                 }
 
@@ -590,53 +597,58 @@
                 if (fullDisplayRows.length === 0) { ui.setAlertMsg("내보낼 데이터가 없습니다."); return ui.setShowExportModal(false); }
                 ui.showToast(`⏳ [${option.title}] 엑셀 조립 중입니다...`);
                 setTimeout(() => {
-                    const wb = window.XLSX.utils.book_new(); let erpData = []; erpData.push(['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '최종(전송)', 'n', '행사', 'n', '1']); let shopData = []; shopData.push(['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', '도매B', '도매B', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']);
-                    const createRowArr = (code, inPrice, outPrice, bPrice='', aSale='', bSale='', finalPrice='', instruction='') => { if (!code) return null; const outIn = inPrice > 0 ? inPrice : ''; const outOut = outPrice > 0 ? outPrice : ''; const outFinal = finalPrice > 0 ? finalPrice : outIn; return [ code, outIn, '0', outOut, '0', bPrice||'', 'n', aSale||'', 'n', bSale||'', 'n', outFinal, 'n', instruction||'', 'n', (inPrice > 0 || outPrice > 0) ? '1' : '' ]; };
-                    
-                    fullDisplayRows.forEach(row => {
-                        const mItem = data.masterProducts[row.코드] || {}, final = row.finalData || {}, source = row.sources?.['estimate'] || {};
-                        const pIn = getFirstValidNum([final, source, mItem], ['입고가', '입고']);
-                        const pOut = getFirstValidNum([final, source, mItem], ['출고가', '출고']);
-                        const pMarketPrice = getFirstValidNum([final, mItem], ['시중가']);
-
-                        const dName = getFirstValidStr([source, mItem], ['품목명']), dSpec = getFirstValidStr([source, mItem], ['규격']), dBrand = getFirstValidStr([source, mItem], ['브랜드']), dInfo = getFirstValidStr([source, mItem], ['상품정보', '기본설명', '간단설명']), dSearch = getFirstValidStr([source, mItem], ['검색어등록', '상품태그']), pBPrice = getFirstValidNum([final, source], ['입고B', 'B단가']), pASale = getFirstValidNum([final, source], ['도매A', 'A판매', 'A판매가']), pBSale = getFirstValidNum([final, source], ['도매B', 'B판매', 'B 도매가']), pInstruction = getFirstValidStr([final, source], ['지시사항', '간단설명']);
-                        const pRowErp = createRowArr(row.코드, pIn, pOut, pBPrice, pASale, pBSale, pIn, pInstruction); if (pRowErp) erpData.push(pRowErp);
+                    try {
+                        const wb = window.XLSX.utils.book_new(); let erpData = []; erpData.push(['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '최종(전송)', 'n', '행사', 'n', '1']); let shopData = []; shopData.push(['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', '도매B', '도매B', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']);
+                        const createRowArr = (code, inPrice, outPrice, bPrice='', aSale='', bSale='', finalPrice='', instruction='') => { if (!code) return null; const outIn = inPrice > 0 ? inPrice : ''; const outOut = outPrice > 0 ? outPrice : ''; const outFinal = finalPrice > 0 ? finalPrice : outIn; return [ code, outIn, '0', outOut, '0', bPrice||'', 'n', aSale||'', 'n', bSale||'', 'n', outFinal, 'n', instruction||'', 'n', (inPrice > 0 || outPrice > 0) ? '1' : '' ]; };
                         
-                        const priceOutShop = pOut;
-                        const priceMarketShop = pMarketPrice > 0 ? pMarketPrice : priceOutShop;
-                        const priceA = getFirstValidNum([final, source, mItem], ['도매A', 'A판매가', 'A판매', '출고가']);
-                        
-                        const isZeroPrice = (pIn === 0 && pOut === 0), isForSale = isZeroPrice ? zeroAction.sale : (pIn > 0 || pOut > 0 ? '1' : '0'), stockQty = isZeroPrice ? zeroAction.stock : '999';
-                        shopData.push([row.코드, dName, dSpec, priceOutShop, priceA, priceMarketShop, 0, 0, 0, 0, 0, 0, dBrand, dInfo, isForSale, stockQty, '', '', '', '', '', dSearch]);
+                        fullDisplayRows.forEach(row => {
+                            const mItem = data.masterProducts[row.코드] || {}, final = row.finalData || {}, source = row.sources?.['estimate'] || {};
+                            const pIn = getFirstValidNum([final, source, mItem], ['입고가', '입고']);
+                            const pOut = getFirstValidNum([final, source, mItem], ['출고가', '출고']);
+                            const pMarketPrice = getFirstValidNum([final, mItem], ['시중가']);
 
-                        [1, 2].forEach(type => { 
-                            const cCodeRaw = getFirstValidStr([mItem, source], [`${type}종코드`]); 
-                            if (isValidSubItemCode(cCodeRaw)) { 
-                                const cCode = String(cCodeRaw).trim();
-                                const cIn = getFirstValidNum([final, source, mItem], [`${type}입고`, `${type}구매`]);
-                                const cOut = getFirstValidNum([final, source, mItem], [`${type}출고`]); 
-                                const cRowErp = createRowArr(cCode, cIn, cOut, '', '', '', cIn, ''); 
-                                if (cRowErp) erpData.push(cRowErp); 
+                            const dName = getFirstValidStr([source, mItem], ['품목명']), dSpec = getFirstValidStr([source, mItem], ['규격']), dBrand = getFirstValidStr([source, mItem], ['브랜드']), dInfo = getFirstValidStr([source, mItem], ['상품정보', '기본설명', '간단설명']), dSearch = getFirstValidStr([source, mItem], ['검색어등록', '상품태그']), pBPrice = getFirstValidNum([final, source], ['입고B', 'B단가']), pASale = getFirstValidNum([final, source], ['도매A', 'A판매', 'A판매가']), pBSale = getFirstValidNum([final, source], ['도매B', 'B판매', 'B 도매가']), pInstruction = getFirstValidStr([final, source], ['지시사항', '간단설명']);
+                            const pRowErp = createRowArr(row.코드, pIn, pOut, pBPrice, pASale, pBSale, pIn, pInstruction); if (pRowErp) erpData.push(pRowErp);
+                            
+                            const priceOutShop = pOut;
+                            const priceMarketShop = pMarketPrice > 0 ? pMarketPrice : priceOutShop;
+                            const priceA = getFirstValidNum([final, source, mItem], ['도매A', 'A판매가', 'A판매', '출고가']);
+                            
+                            const isZeroPrice = (pIn === 0 && pOut === 0), isForSale = isZeroPrice ? zeroAction.sale : (pIn > 0 || pOut > 0 ? '1' : '0'), stockQty = isZeroPrice ? zeroAction.stock : '999';
+                            shopData.push([row.코드, dName, dSpec, priceOutShop, priceA, priceMarketShop, 0, 0, 0, 0, 0, 0, dBrand, dInfo, isForSale, stockQty, '', '', '', '', '', dSearch]);
 
-                                const subMaster = data.masterProducts[cCode] || {};
-                                const cName = subMaster.품목명 || `${dName} (소분)`;
-                                const cSpec = subMaster.규격 || getFirstValidStr([mItem, source], [`${type}종규격`]) || '';
-                                const cBrand = subMaster.브랜드 || dBrand;
-                                const cInfo = subMaster.간단설명 || dInfo;
-                                const cSearch = subMaster.검색어등록 || dSearch;
-                                const cMarketPrice = subMaster.시중가 > 0 ? subMaster.시중가 : cOut;
-                                const cPriceA = subMaster.도매A > 0 ? subMaster.도매A : cOut;
-                                
-                                const cIsZeroPrice = (cIn === 0 && cOut === 0);
-                                const cIsForSale = cIsZeroPrice ? zeroAction.sale : (cIn > 0 || cOut > 0 ? '1' : '0');
-                                const cStockQty = cIsZeroPrice ? zeroAction.stock : '999';
+                            [1, 2].forEach(type => { 
+                                const cCodeRaw = getFirstValidStr([mItem, source], [`${type}종코드`]); 
+                                if (isValidSubItemCode(cCodeRaw)) { 
+                                    const cCode = String(cCodeRaw).trim();
+                                    const cIn = getFirstValidNum([final, source, mItem], [`${type}입고`, `${type}구매`]);
+                                    const cOut = getFirstValidNum([final, source, mItem], [`${type}출고`]); 
+                                    const cRowErp = createRowArr(cCode, cIn, cOut, '', '', '', cIn, ''); 
+                                    if (cRowErp) erpData.push(cRowErp); 
 
-                                shopData.push([cCode, cName, cSpec, cOut, cPriceA, cMarketPrice, 0, 0, 0, 0, 0, 0, cBrand, cInfo, cIsForSale, cStockQty, '', '', '', '', '', cSearch]);
-                            } 
+                                    const subMaster = data.masterProducts[cCode] || {};
+                                    const cName = subMaster.품목명 || `${dName} (소분)`;
+                                    const cSpec = subMaster.규격 || getFirstValidStr([mItem, source], [`${type}종규격`]) || '';
+                                    const cBrand = subMaster.브랜드 || dBrand;
+                                    const cInfo = subMaster.간단설명 || dInfo;
+                                    const cSearch = subMaster.검색어등록 || dSearch;
+                                    const cMarketPrice = subMaster.시중가 > 0 ? subMaster.시중가 : cOut;
+                                    const cPriceA = subMaster.도매A > 0 ? subMaster.도매A : cOut;
+                                    
+                                    const cIsZeroPrice = (cIn === 0 && cOut === 0);
+                                    const cIsForSale = cIsZeroPrice ? zeroAction.sale : (cIn > 0 || cOut > 0 ? '1' : '0');
+                                    const cStockQty = cIsZeroPrice ? zeroAction.stock : '999';
+
+                                    shopData.push([cCode, cName, cSpec, cOut, cPriceA, cMarketPrice, 0, 0, 0, 0, 0, 0, cBrand, cInfo, cIsForSale, cStockQty, '', '', '', '', '', cSearch]);
+                                } 
+                            });
                         });
-                    });
-                    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shopData), "쇼핑몰업로드"); window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), "ERP업데이트"); window.XLSX.writeFile(wb, `보고서출력_${new Date().toISOString().slice(0,10)}.xlsx`);
-                    ui.showToast(`✅ [${option.title}] 엑셀 다운로드가 완료되었습니다.`);
+                        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shopData), "쇼핑몰업로드"); window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), "ERP업데이트"); window.XLSX.writeFile(wb, `보고서출력_${new Date().toISOString().slice(0,10)}.xlsx`);
+                        ui.showToast(`✅ [${option.title}] 엑셀 다운로드가 완료되었습니다.`);
+                    } catch(e) {
+                        console.error(e);
+                        ui.showToast("❌ 엑셀 파일 생성 중 오류가 발생했습니다.");
+                    }
                 }, 500);
             }, [fullDisplayRows, data.masterProducts]);
 
@@ -645,25 +657,30 @@
                 ui.showToast("⏳ 현재 화면 엑셀 변환 중...");
                 
                 setTimeout(() => {
-                    const activeProfile = 'estimate';
-                    const uploadCols = config.visibleUploadCols[activeProfile] || [];
-                    const masterCols = config.visibleMasterCols['estimate'] || [];
-                    
-                    const headers = ['상태/선택', '품목코드', '마스터_품목명', '마스터_규격'];
-                    masterCols.forEach(h => headers.push(`[M]${h}`)); uploadCols.forEach(h => headers.push(`[작업]${h}`));
+                    try {
+                        const activeProfile = 'estimate';
+                        const uploadCols = config.visibleUploadCols[activeProfile] || [];
+                        const masterCols = config.visibleMasterCols['estimate'] || [];
+                        
+                        const headers = ['상태/선택', '품목코드', '마스터_품목명', '마스터_규격'];
+                        masterCols.forEach(h => headers.push(`[M]${h}`)); uploadCols.forEach(h => headers.push(`[작업]${h}`));
 
-                    const aoa = [headers];
-                    fullDisplayRows.forEach(row => {
-                        const rowCode = row.코드; const mItem = data.masterProducts[rowCode] || {};
-                        const isSel = ui.selectedRows.has(row.코드); const status = (isSel ? '선택됨' : '');
-                        const rowData = [status, rowCode || '', mItem.품목명 || '', mItem.규격 || ''];
+                        const aoa = [headers];
+                        fullDisplayRows.forEach(row => {
+                            const rowCode = row.코드; const mItem = data.masterProducts[rowCode] || {};
+                            const isSel = ui.selectedRows.has(row.코드); const status = (isSel ? '선택됨' : '');
+                            const rowData = [status, rowCode || '', mItem.품목명 || '', mItem.규격 || ''];
 
-                        masterCols.forEach(h => { const val = mItem[h] !== undefined ? mItem[h] : ''; rowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(val) : val); });
-                        uploadCols.forEach(h => { const val = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.[activeProfile]?.[h] || ''); const isNum = NUMERIC_HEADERS.includes(h) || NUMERIC_HEADERS.includes(config.masterLinks[activeProfile]?.[h]); rowData.push(isNum ? parseNum(val) : val); });
-                        aoa.push(rowData);
-                    });
+                            masterCols.forEach(h => { const val = mItem[h] !== undefined ? mItem[h] : ''; rowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(val) : val); });
+                            uploadCols.forEach(h => { const val = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.[activeProfile]?.[h] || ''); const isNum = NUMERIC_HEADERS.includes(h) || NUMERIC_HEADERS.includes(config.masterLinks[activeProfile]?.[h]); rowData.push(isNum ? parseNum(val) : val); });
+                            aoa.push(rowData);
+                        });
 
-                    const wb = window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(aoa), "현재화면_출력"); window.XLSX.writeFile(wb, `화면출력_${new Date().toISOString().slice(0,10)}.xlsx`); ui.showToast("✅ 화면 엑셀 다운로드가 완료되었습니다.");
+                        const wb = window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(aoa), "현재화면_출력"); window.XLSX.writeFile(wb, `화면출력_${new Date().toISOString().slice(0,10)}.xlsx`); ui.showToast("✅ 화면 엑셀 다운로드가 완료되었습니다.");
+                    } catch(e) {
+                        console.error(e);
+                        ui.showToast("❌ 화면 엑셀 다운로드 중 오류가 발생했습니다.");
+                    }
                 }, 300);
             }, [fullDisplayRows, config.visibleUploadCols, config.visibleMasterCols, config.masterLinks, data.masterProducts, ui.selectedRows]);
 
@@ -771,7 +788,7 @@
                                             <h3 className="text-[14px] font-black text-rose-900 mb-3 pb-2 border-b border-rose-200 flex justify-between items-center">
                                                 <span><i className="fas fa-broom text-rose-500 mr-2"></i>클라우드 DB 최적화 (검색어 찌꺼기 삭제)</span>
                                             </h3>
-                                            <p className="text-[12px] text-rose-700 font-bold mb-3">과거 엑셀 업로드 시 저장되었던 불필요한 '검색어등록' 필드의 찌꺼기 데이터들(110g, 가공식품 등)을 한 번에 삭제합니다. (오직 스마트 파서에서 등록한 '소싱폴더'만 남겨 용량을 확보합니다.)</p>
+                                            <p className="text-[12px] text-rose-700 font-bold mb-3">과거 엑셀 업로드 시 저장되었던 불필요한 '검색어등록' 필드의 찌꺼기 데이터들(110g, 가공식품 등)을 한 번에 삭제합니다. (오직 스마트 파서에서 등록한 '카탈로그'만 남겨 용량을 확보합니다.)</p>
                                             <button onClick={cleanUpGarbageTags} className="px-4 py-2 bg-white border border-rose-300 text-rose-600 hover:bg-rose-100 rounded-lg text-[12px] font-bold transition-all shadow-sm">
                                                 <i className="fas fa-trash-alt mr-1.5"></i> 기존 엑셀 검색어 일괄 삭제
                                             </button>
@@ -882,12 +899,12 @@
             return (
                 <div className="px-8 pt-4 pb-3 flex items-center justify-between gap-3 overflow-x-auto custom-scrollbar w-full">
                     <div className="flex items-center gap-3 shrink-0">
-                        {/* 📂 카탈로그(소싱폴더) 필터 드롭다운 */}
+                        {/* 📂 카탈로그 필터 드롭다운 (수량 표시 적용) */}
                         <div className="relative">
-                            <select value={selectedTag} onChange={(e) => setSelectedTag(e.target.value)} className="appearance-none bg-white border border-slate-300 text-slate-700 font-bold text-[12px] py-1.5 pl-9 pr-8 rounded-lg shadow-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 w-[180px] cursor-pointer">
+                            <select value={selectedTag} onChange={(e) => setSelectedTag(e.target.value)} className="appearance-none bg-white border border-slate-300 text-slate-700 font-bold text-[12px] py-1.5 pl-9 pr-8 rounded-lg shadow-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 w-[200px] cursor-pointer">
                                 <option value="">📂 전체 상품 보기</option>
                                 {availableTags.map(tag => (
-                                    <option key={tag} value={tag}>🏷️ {tag}</option>
+                                    <option key={tag.name} value={tag.name}>🏷️ {tag.name} ({tag.count}건)</option>
                                 ))}
                             </select>
                             <i className="fas fa-folder-open absolute left-3 top-2.5 text-slate-400 text-[12px] pointer-events-none"></i>
@@ -906,7 +923,7 @@
                                     if (url.startsWith('blob:') || url.startsWith('about:') || url.startsWith('data:')) {
                                         showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.');
                                     } else {
-                                        window.location.href = 'https://oneapp.orderz.co.kr/merchOps/vp1.1';
+                                        window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/vp1.1';
                                     }
                                 } catch (e) {
                                     showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.');
@@ -1109,7 +1126,7 @@
                     <div className="flex-1 bg-slate-50 border border-slate-200 p-8 rounded-xl text-center hover:shadow-lg transition-all duration-300 group hover:-translate-y-1 hover:bg-purple-50 hover:border-purple-200 cursor-pointer relative overflow-hidden" onClick={() => {
                         try {
                             if(window.location.href.startsWith('blob:')) { showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.'); }
-                            else { window.location.href = 'https://oneapp.orderz.co.kr/merchOps/vp1.1'; }
+                            else { window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/vp1.1'; }
                         } catch(e) { showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.'); }
                     }}>
                         <div className="text-4xl text-purple-500 mb-5 group-hover:scale-110 transition-transform duration-300"><i className="fas fa-magic"></i></div>
@@ -1210,17 +1227,20 @@
             const isEstimateUploaded = Object.keys(data.managedItems).length > 0;
             const isMasterEmpty = Object.keys(data.masterProducts).length === 0;
 
-            // 마스터에서 사용 가능한 고유 카탈로그(소싱폴더) 목록 추출
+            // 마스터에서 사용 가능한 고유 카탈로그 목록 추출
             const availableTags = useMemo(() => {
-                const tags = new Set();
+                const counts = {};
                 Object.values(data.masterProducts).forEach(m => {
-                    const tagStr = m['소싱폴더'] || '';
+                    const tagStr = m['카탈로그'] || '';
                     tagStr.split(',').forEach(t => {
                         const trimmed = t.trim();
-                        if (trimmed) tags.add(trimmed);
+                        if (trimmed) counts[trimmed] = (counts[trimmed] || 0) + 1;
                     });
                 });
-                return Array.from(tags).sort();
+                return Object.keys(counts).sort().map(tag => ({
+                    name: tag,
+                    count: counts[tag]
+                }));
             }, [data.masterProducts]);
 
             // 필터링된 행 계산 로직
@@ -1229,11 +1249,11 @@
                 if (isEstimateUploaded) baseList = Object.values(data.managedItems);
                 else baseList = Object.values(data.masterProducts).map(m => data.managedItems[m.코드] || { 코드: m.코드, sources: {}, finalData: {} });
 
-                // 카탈로그 필터 (오직 '소싱폴더' 속성만 검사)
+                // 카탈로그 필터 (오직 '카탈로그' 속성만 검사)
                 if (ui.selectedTag) {
                     baseList = baseList.filter(item => {
                         const mItem = data.masterProducts[item.코드] || {};
-                        const tagStr = mItem['소싱폴더'] || '';
+                        const tagStr = mItem['카탈로그'] || '';
                         return tagStr.split(',').map(t => t.trim()).includes(ui.selectedTag);
                     });
                 }
@@ -1348,10 +1368,10 @@
                                         <SystemConsole itemCount={Object.keys(data.masterProducts).length} isProcessing={ui.isProcessing} processMsg={ui.processMsg} estimateCount={Object.keys(data.managedItems).length} selectedTag={ui.selectedTag} />
                                         
                                         <nav className="flex gap-2 text-[14px] shrink-0 items-center">
-                                            <a href="https://oneapp.orderz.co.kr/merchOps/guide" target="_blank" rel="noopener noreferrer" className={`h-9 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-emerald-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-300 hover:border-emerald-500/50 font-bold text-[11px] tracking-wider uppercase ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="MerchOps 사용 가이드">
+                                            <a href="https://oneapp.orderz.co.kr/MerchOps/guide" target="_blank" rel="noopener noreferrer" className={`h-9 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-emerald-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-300 hover:border-emerald-500/50 font-bold text-[11px] tracking-wider uppercase ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="MerchOps 사용 가이드">
                                                 GUIDE
                                             </a>
-                                            <a href="https://oneapp.orderz.co.kr/merchOps/trend_report" target="_blank" rel="noopener noreferrer" className={`h-9 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-blue-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-blue-300 hover:border-blue-500/50 font-bold text-[11px] tracking-wider uppercase ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="트렌드 리포트">
+                                            <a href="https://oneapp.orderz.co.kr/MerchOps/trend_report" target="_blank" rel="noopener noreferrer" className={`h-9 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-blue-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-blue-300 hover:border-blue-500/50 font-bold text-[11px] tracking-wider uppercase ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="트렌드 리포트">
                                                 TREND REPORT
                                             </a>
                                             <div className="w-px h-5 bg-slate-700 mx-1"></div>
@@ -1375,7 +1395,6 @@
                         </div>
                     </div>
                     {ui.showSettings && <MappingCenterModal onClose={() => ui.setShowSettings(false)} config={config} actions={{handleCloudSync: customActions.handleCloudSync, cleanUpGarbageTags: customActions.cleanUpGarbageTags, showToast: ui.showToast}} />}
-                    {/* 💡 [복구] 모달 컴포넌트 렌더링 */}
                     {ui.showBriefingModal && <BriefingModal onClose={() => ui.setShowBriefingModal(false)} state={appState} data={data} />}
                     {ui.showExportModal && <ExportModal onClose={() => ui.setShowExportModal(false)} executeExport={customActions.executeExport} />}
                 </div>
