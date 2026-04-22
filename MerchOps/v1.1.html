@@ -58,7 +58,7 @@
         // ==========================================
         const MASTER_HEADERS = [
             "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", 
-            "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "카테고리", "출고가", "입고가", "입고B", "도매A", 
+            "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", 
             "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", 
             "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", 
             "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록"
@@ -70,15 +70,15 @@
             "1구매", "1출고", "2구매", "2출고", "1입고", "2입고"
         ];
 
-        const getInitialVisibleMasterCols = () => ({ estimate: ['카탈로그', '카테고리', '입고가', '출고가', '입고B', '도매A'] });
-        const getInitialVisibleUploadCols = () => ({ estimate: ['창고', '구매처', '카테고리', '입고가', '출고가', '입고B', '도매A', '간단설명'] });
+        const getInitialVisibleMasterCols = () => ({ estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] });
+        const getInitialVisibleUploadCols = () => ({ estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명'] });
         
         const getInitialMappings = () => {
             const base = { master: {}, estimate: {} };
             base.master = { '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격, 규격명, 사이즈, 단량', '출고가': '출고가, 출고, 판매가, 시중가', '입고가': '입고가, 입고, 매입가' };
             base.estimate = { 
                 '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격명, 규격, 사이즈, 단량', '구매처': '거래처명, 구매처, 거래처', 
-                '카테고리': '카테고리, 템플릿, 견적분류',
+                '견적서': '견적서, 카테고리, 템플릿, 견적분류',
                 '입고가': '입고가, 입고, 매입가', '출고가': '출고가, 출고, 판매가',
                 '입고B': 'B단가, 입고B', '도매A': 'A판매, A판매가, 도매A', '도매B': 'B판매, B판매가, 도매B', '간단설명': '지시사항, 간단설명, 비고'
             };
@@ -86,7 +86,7 @@
         };
         const getInitialMasterLinks = () => {
             const base = { master: {}, estimate: {} };
-            base.estimate = { '창고': '창고', '구매처': '구매처', '카테고리': '카테고리', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B', '간단설명': '간단설명' };
+            base.estimate = { '창고': '창고', '구매처': '구매처', '견적서': '견적서', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B', '간단설명': '간단설명' };
             return base;
         };
 
@@ -103,7 +103,7 @@
         const getCellWidthClass = (h) => {
             if (NUMERIC_HEADERS.includes(h)) return 'min-w-[90px] w-[90px] max-w-[90px]';
             if (h === '구매처' || h === '거래처명' || h === '일자') return 'min-w-[100px] w-[100px] max-w-[100px]';
-            if (h === '품목명' || h === '상품명' || h === '카탈로그' || h === '카테고리') return 'min-w-[200px] w-[200px] max-w-[200px]';
+            if (h === '품목명' || h === '상품명' || h === '카탈로그' || h === '견적서') return 'min-w-[200px] w-[200px] max-w-[200px]';
             if (h === '간단설명' || h === '지시사항' || h === '상품정보' || h === '적요2') return 'min-w-[150px] w-[150px] max-w-[150px]';
             if (h === '단위' || h === '창고') return 'min-w-[60px] w-[60px] max-w-[60px]';
             return 'min-w-[100px] w-[100px] max-w-[100px]';
@@ -277,6 +277,10 @@
                 const s = localStorage.getItem('merchVisMaster_v870'); 
                 const parsed = s ? JSON.parse(s) : null;
                 if (!parsed || !parsed.estimate) return getInitialVisibleMasterCols();
+                // 💡 [마이그레이션] 카테고리 -> 견적서
+                if (parsed.estimate.includes('카테고리')) {
+                    parsed.estimate = parsed.estimate.map(h => h === '카테고리' ? '견적서' : h);
+                }
                 return parsed;
             });
             
@@ -284,6 +288,10 @@
                 const s = localStorage.getItem('merchVisUpload_v870'); 
                 const parsed = s ? JSON.parse(s) : null;
                 if (!parsed || !parsed.estimate) return getInitialVisibleUploadCols();
+                // 💡 [마이그레이션] 카테고리 -> 견적서
+                if (parsed.estimate.includes('카테고리')) {
+                    parsed.estimate = parsed.estimate.map(h => h === '카테고리' ? '견적서' : h);
+                }
                 return parsed;
             });
             
@@ -293,6 +301,11 @@
                 if (!parsed || !parsed.master) parsed = getInitialMappings();
                 if (!parsed.estimate['창고']) parsed.estimate['창고'] = '창고, 창고코드';
                 if (!parsed.master['창고']) parsed.master['창고'] = '창고, 창고코드';
+                // 💡 [마이그레이션] 카테고리 -> 견적서
+                if (parsed.estimate['카테고리'] !== undefined) {
+                    parsed.estimate['견적서'] = parsed.estimate['카테고리'] + ', 견적서';
+                    delete parsed.estimate['카테고리'];
+                }
                 return parsed; 
             });
             
@@ -301,6 +314,11 @@
                 let parsed = s ? JSON.parse(s) : null;
                 if (!parsed || !parsed.estimate) parsed = getInitialMasterLinks();
                 if (parsed.estimate['창고'] === undefined) parsed.estimate['창고'] = '창고';
+                // 💡 [마이그레이션] 카테고리 -> 견적서
+                if (parsed.estimate['카테고리'] !== undefined) {
+                    parsed.estimate['견적서'] = '견적서';
+                    delete parsed.estimate['카테고리'];
+                }
                 return parsed;
             });
 
@@ -575,12 +593,12 @@
                 if (!categoryName) return;
 
                 ui.setIsProcessing(true);
-                ui.setProcessMsg('카테고리 로딩 중...');
+                ui.setProcessMsg('견적서 로딩 중...');
                 
                 setTimeout(() => {
                     let newManaged = {};
                     Object.values(data.masterProducts).forEach(mItem => {
-                        const catStr = mItem['카테고리'] || '';
+                        const catStr = mItem['견적서'] || mItem['카테고리'] || '';
                         const cats = catStr.split(',').map(c => c.trim());
                         if (cats.includes(categoryName)) {
                             newManaged[mItem.코드] = {
@@ -593,7 +611,7 @@
                     
                     data.setManagedItems(newManaged);
                     ui.setSelectedRows(new Set()); 
-                    ui.showToast(`✅ [${categoryName}] 카테고리 로드 완료! (${Object.keys(newManaged).length}건)`);
+                    ui.showToast(`✅ [${categoryName}] 견적서 로드 완료! (${Object.keys(newManaged).length}건)`);
                     ui.setIsProcessing(false);
                     ui.setProcessMsg('');
                 }, 100);
@@ -601,10 +619,10 @@
 
             const handleSaveAsCategory = useCallback((categoryName) => {
                 if (!categoryName || !categoryName.trim()) return;
-                if (fullDisplayRows.length === 0) return ui.showToast("⚠️ 카테고리로 저장할 상품이 없습니다.");
+                if (fullDisplayRows.length === 0) return ui.showToast("⚠️ 견적서로 저장할 상품이 없습니다.");
 
                 ui.setIsProcessing(true);
-                ui.setProcessMsg('카테고리 저장 중...');
+                ui.setProcessMsg('견적서 저장 중...');
 
                 setTimeout(() => {
                     let newMaster = { ...data.masterProducts };
@@ -616,19 +634,20 @@
                         if (!newMaster[code]) return;
                         
                         newMaster[code] = { ...newMaster[code] };
-                        const currentCategories = newMaster[code]['카테고리'] || '';
+                        const currentCategories = newMaster[code]['견적서'] || newMaster[code]['카테고리'] || '';
                         const tags = currentCategories.split(',').map(s => s.trim()).filter(Boolean);
                         
                         if (!tags.includes(safeName)) {
                             tags.push(safeName);
-                            newMaster[code]['카테고리'] = tags.join(', ');
+                            newMaster[code]['견적서'] = tags.join(', ');
+                            delete newMaster[code]['카테고리']; // Migration
                             count++;
                         }
                     });
 
                     data.setMasterProducts(newMaster);
                     ui.setShowCategoryModal(false);
-                    ui.showToast(`✅ ${count}개 상품이 [${safeName}] 카테고리에 추가/저장되었습니다.`);
+                    ui.showToast(`✅ ${count}개 상품이 [${safeName}] 견적서에 추가/저장되었습니다.`);
                     ui.setIsProcessing(false);
                     ui.setProcessMsg('');
                 }, 100);
@@ -797,7 +816,7 @@
             if (isProcessing) { statusText = `> ${processMsg}`; statusColor = 'text-amber-400'; bgColor = 'bg-amber-400'; } 
             else if (itemCount === 0) { statusText = `> 시스템 대기중: 마스터 DB를 업로드하거나 클라우드에서 불러오세요.`; statusColor = 'text-rose-400'; bgColor = 'bg-rose-400'; }
             else if (selectedCatalog || selectedCategory) { statusText = `> 뷰 필터 활성 [${selectedCatalog || selectedCategory}] (${timeStr})`; statusColor = 'text-indigo-300'; bgColor = 'bg-indigo-300'; }
-            else if (estimateCount > 0) { statusText = `> DB: ${itemCount}건 / 엑셀/카테고리 작업중: ${estimateCount}건 (${timeStr})`; statusColor = 'text-[#818cf8]'; bgColor = 'bg-[#818cf8]'; } 
+            else if (estimateCount > 0) { statusText = `> DB: ${itemCount}건 / 엑셀/견적서 작업중: ${estimateCount}건 (${timeStr})`; statusColor = 'text-[#818cf8]'; bgColor = 'bg-[#818cf8]'; } 
             else { statusText = `> DB: ${itemCount}건 로드됨 (${timeStr})`; }
 
             return (
@@ -827,18 +846,18 @@
                 <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
                     <div className="bg-white w-[400px] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
                         <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
-                            <h2 className="font-black text-[16px]"><i className="fas fa-save text-blue-400 mr-2"></i>현재 화면 카테고리로 저장</h2>
+                            <h2 className="font-black text-[16px]"><i className="fas fa-save text-blue-400 mr-2"></i>현재 화면 견적서로 저장</h2>
                             <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>
                         </div>
                         <div className="p-6 flex flex-col gap-4">
                             <div className="text-[13px] text-slate-600 font-bold mb-2">
-                                현재 화면에 띄워진 상품 목록을 언제든 엑셀 없이 불러올 수 있도록 카테고리로 묶어 저장합니다.
+                                현재 화면에 띄워진 상품 목록을 언제든 엑셀 없이 불러올 수 있도록 견적서로 묶어 저장합니다.
                             </div>
                             <input 
                                 type="text" 
                                 value={name} 
                                 onChange={e => setName(e.target.value)} 
-                                placeholder="저장할 카테고리 이름을 입력하세요 (예: 주말특가)" 
+                                placeholder="저장할 견적서 이름을 입력하세요 (예: A업체 주말견적)" 
                                 className="w-full border border-slate-300 rounded-lg px-4 py-3 text-[13px] font-bold outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200"
                                 autoFocus
                                 onKeyDown={(e) => e.key === 'Enter' && onSave(name)}
@@ -1053,7 +1072,7 @@
                         
                         <div className="relative">
                             <select value={selectedCategory} onChange={(e) => handleLoadCategory(e.target.value)} className="appearance-none bg-blue-50 border border-blue-200 text-blue-800 font-bold text-[12px] py-1.5 pl-9 pr-8 rounded-lg shadow-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 w-[180px] cursor-pointer">
-                                <option value="">📑 카테고리</option>
+                                <option value="">📑 견적서 필터</option>
                                 {availableCategories.map(cat => (
                                     <option key={cat.name} value={cat.name}>📑 {cat.name} ({cat.count}건)</option>
                                 ))}
@@ -1076,8 +1095,8 @@
 
                         <div className="w-px h-5 bg-slate-300 mx-1"></div>
 
-                        <button onClick={() => actions.setShowCategoryModal(true)} className="h-8 px-3 rounded-lg text-[11px] font-bold bg-white text-blue-600 shadow-sm hover:bg-blue-50 transition-colors flex items-center border border-blue-100" title="현재 화면의 상품들을 카테고리로 묶어 저장합니다.">
-                            <i className="fas fa-save mr-1.5"></i> 💾 화면 카테고리 저장
+                        <button onClick={() => actions.setShowCategoryModal(true)} className="h-8 px-3 rounded-lg text-[11px] font-bold bg-white text-blue-600 shadow-sm hover:bg-blue-50 transition-colors flex items-center border border-blue-100" title="현재 화면의 상품들을 견적서로 묶어 저장합니다.">
+                            <i className="fas fa-save mr-1.5"></i> 💾 화면 견적서 저장
                         </button>
                     </div>
 
@@ -1284,7 +1303,6 @@
             </div>
         );
 
-        // 💡 [복구] 누락되었던 브리핑 모달 컴포넌트
         const BriefingModal = ({ onClose, state, data }) => {
             const stats = useMemo(() => {
                 let up = 0, down = 0, same = 0, newItems = 0;
@@ -1339,7 +1357,6 @@
             );
         };
 
-        // 💡 [복구] 누락되었던 엑셀 출력 모달 컴포넌트
         const ExportModal = ({ onClose, executeExport }) => {
             return (
                 <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
@@ -1387,11 +1404,11 @@
                 return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
             }, [data.masterProducts]);
 
-            // 마스터에서 사용 가능한 고유 카테고리 목록 추출
+            // 마스터에서 사용 가능한 고유 견적서 목록 추출
             const availableCategories = useMemo(() => {
                 const counts = {};
                 Object.values(data.masterProducts).forEach(m => {
-                    const tagStr = m['카테고리'] || '';
+                    const tagStr = m['견적서'] || m['카테고리'] || '';
                     tagStr.split(',').forEach(t => {
                         const trimmed = t.trim();
                         if (trimmed) counts[trimmed] = (counts[trimmed] || 0) + 1;
@@ -1415,11 +1432,11 @@
                     });
                 }
 
-                // 카테고리 필터 (선택적)
+                // 견적서 필터 (선택적)
                 if (ui.selectedCategory && !isEstimateUploaded) {
                     baseList = baseList.filter(item => {
                         const mItem = data.masterProducts[item.코드] || {};
-                        const tagStr = mItem['카테고리'] || '';
+                        const tagStr = mItem['견적서'] || mItem['카테고리'] || '';
                         return tagStr.split(',').map(t => t.trim()).includes(ui.selectedCategory);
                     });
                 }
@@ -1434,14 +1451,20 @@
                             const sourceItem = item.sources?.['estimate'] || {};
                             const finalItem = item.finalData || {};
                             const getVal = (key) => String(finalItem[key] !== undefined ? finalItem[key] : (sourceItem[key] !== undefined ? sourceItem[key] : (mItem[key] || ''))).toLowerCase();
-                            const cName = getVal('품목명'); const cSpec = getVal('규격');
+                            
+                            const cName = getVal('품목명'); 
+                            const cSpec = getVal('규격');
+                            const cVendor = getVal('구매처'); 
+                            const cWh = getVal('창고');
                             const cCode = String(item.코드 || '').toLowerCase();
-                            const cFull = `${cCode} ${cName} ${cSpec}`;
+                            
                             let score = 0;
                             tokens.forEach(token => {
                                 if (cName.includes(token)) score += 10;
-                                else if (cSpec.includes(token)) score += 5;
                                 else if (cCode.includes(token)) score += 8;
+                                else if (cVendor.includes(token)) score += 6;
+                                else if (cSpec.includes(token)) score += 5;
+                                else if (cWh.includes(token)) score += 4;
                             });
                             return { ...item, _searchScore: score };
                         }).filter(r => r._searchScore > 0);
