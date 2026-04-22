@@ -416,7 +416,7 @@
         // ==========================================
         // 🧩 4. 비즈니스 액션 훅
         // ==========================================
-        const useMerchActions = (config, data, ui, fullDisplayRows, activeProfileKey) => {
+        const useMerchActions = (config, data, ui, fullDisplayRows) => {
 
             const handleCloudSync = async (type) => { 
                 if (!config.cloudUrl) return ui.setAlertMsg("클라우드 URL이 설정되지 않았습니다. 우측 상단 톱니바퀴에서 URL을 세팅해주세요.");
@@ -464,6 +464,7 @@
                 }
             };
 
+            // 💡 기존 엑셀 검색어 찌꺼기 삭제 기능
             const cleanUpGarbageTags = useCallback(() => {
                 if(window.confirm("마스터 DB에 남아있는 불필요한 엑셀 검색어 찌꺼기를 모두 삭제하여 용량을 최적화하시겠습니까?\n(오직 스마트 파서에서 만든 '소싱폴더' 속성만 안전하게 남습니다.)")) {
                     let newMaster = { ...data.masterProducts };
@@ -586,6 +587,7 @@
 
                 if (localLogs.length > 0) {
                     data.addHistoryLogs(localLogs);
+                    // 클라우드 History 탭에 로그 Append 저장
                     if (config.cloudUrl) fetch(config.cloudUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ type: 'saveHistory', data: localLogs }) }).catch(()=>{});
                 }
 
@@ -686,12 +688,12 @@
                 try {
                     const url = window.location.href;
                     if (url.startsWith('blob:') || url.startsWith('about:') || url.startsWith('data:')) {
-                        ui.showToast('⚠️ 미리보기 환경에서는 새 창 열기가 제한됩니다. 직접 Smart Parser 탭으로 이동해주세요.');
+                        ui.showToast('⚠️ 미리보기 환경에서는 우측 상단의 탭을 직접 클릭하여 이동해주세요.');
                     } else {
-                        window.open('https://oneapp.orderz.co.kr/MerchOps/sp02', '_blank');
+                        window.location.href = 'https://oneapp.orderz.co.kr/merchOps/mp1.1';
                     }
                 } catch (e) {
-                    ui.showToast('⚠️ 미리보기 환경에서는 우측 상단의 파일을 직접 클릭하여 이동해주세요.');
+                    ui.showToast('⚠️ 미리보기 환경에서는 우측 상단의 탭을 직접 클릭하여 이동해주세요.');
                 }
             };
 
@@ -786,7 +788,6 @@
                                             <p className="text-[11px] text-indigo-500 mt-2 font-bold">※ URL 입력 후 상단의 구름 아이콘을 누르면 데이터 백업 및 수신이 진행됩니다.</p>
                                         </div>
                                         
-                                        {/* 💡 [신규] DB 청소 기능 추가 */}
                                         <div className="bg-rose-50 p-5 rounded-xl border border-rose-200 shadow-sm">
                                             <h3 className="text-[14px] font-black text-rose-900 mb-3 pb-2 border-b border-rose-200 flex justify-between items-center">
                                                 <span><i className="fas fa-broom text-rose-500 mr-2"></i>클라우드 DB 최적화 (검색어 찌꺼기 삭제)</span>
@@ -920,18 +921,7 @@
                                 <i className="fas fa-file-excel mr-1.5"></i> 견적 엑셀 업로드
                                 <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e, 'estimate')} accept=".xlsx, .xls, .csv" disabled={state.isProcessing} />
                             </label>
-                            <button onClick={() => {
-                                try {
-                                    const url = window.location.href;
-                                    if (url.startsWith('blob:') || url.startsWith('about:') || url.startsWith('data:')) {
-                                        showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.');
-                                    } else {
-                                        window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/sp02';
-                                    }
-                                } catch (e) {
-                                    showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.');
-                                }
-                            }} className="cursor-pointer px-4 py-1.5 rounded-md text-[12px] font-bold transition-all flex items-center justify-center text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 ml-1">
+                            <button onClick={() => actions.openSmartParser()} className="cursor-pointer px-4 py-1.5 rounded-md text-[12px] font-bold transition-all flex items-center justify-center text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 ml-1">
                                 🚀 스마트 파서로 이동
                             </button>
                         </div>
@@ -974,8 +964,10 @@
         });
 
         const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, bg, mItem }) => {
-            const { isEstimateUploaded, visibleMasterCols, visibleUploadCols } = state;
+            const { isEstimateUploaded, visibleMasterCols, visibleUploadCols, activeProfileKey } = state;
             const { setSelectedRows, renderUploadEditableCell } = actions;
+            const rowCode = row.코드;
+            const selBg = 'bg-indigo-50/50';
             const requiredCoreFields = ['품목코드', '품목명', '규격'];
             
             const uploadName = row.sources?.['estimate']?.['품목명'] || '';
@@ -988,12 +980,12 @@
                     <td className={`sticky z-20 px-3 py-2 border-r border-[#edebe3] transition-colors min-w-[280px] w-[280px] max-w-[280px] ${isSel ? 'bg-indigo-50/50' : 'bg-[#faf9f5] group-hover:bg-[#f0ece1]'}`} style={{left: 0}}>
                         <div className="flex gap-2 items-center w-full min-w-0">
                             {isEstimateUploaded && (
-                                <input type="checkbox" className={`w-4 h-4 rounded border-slate-300 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500`} checked={isSel} onChange={() => {const n = new Set(state.selectedRows); n.has(row.코드)?n.delete(row.코드):n.add(row.코드); setSelectedRows(n);}} />
+                                <input type="checkbox" className={`w-4 h-4 rounded border-slate-300 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500`} checked={isSel} onChange={() => { const n = new Set(state.selectedRows); n.has(row.코드)?n.delete(row.코드):n.add(row.코드); setSelectedRows(n); }} />
                             )}
                             <div className="flex flex-col min-w-0 w-full overflow-hidden ml-1">
                                 <span className={`text-[10px] font-mono mb-0.5 truncate block w-full text-indigo-400`}>{row.코드}</span>
                                 <div className="flex items-center w-full min-w-0 overflow-hidden">
-                                    <span className={`text-[13px] font-extrabold truncate block shrink ${!mItem.품목명 ? 'text-rose-500' : 'text-slate-800'}`} title={dName}>{dName}</span>
+                                    <span className={`text-[13px] font-extrabold truncate block shrink ${!mItem.품목명 && !(row.sources?.[activeProfileKey]?.['품목명']) ? 'text-rose-500' : 'text-slate-800'}`} title={dName}>{dName}</span>
                                     {dSpec && <span className="text-[11px] text-slate-400 truncate block shrink-0 ml-1 max-w-[40%]" title={dSpec}>({dSpec})</span>}
                                 </div>
                             </div>
@@ -1029,7 +1021,7 @@
                                     </td>
                                 );
                             })}
-                            {visibleUploadCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map(h => renderUploadEditableCell(row, idx, h, `p-u-e-${h}`))}
+                            {visibleUploadCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map(h => renderUploadEditableCell(row, idx, h, activeProfileKey, `p-u-e-${h}`, false))}
                         </>
                     )}
                 </tr>
@@ -1272,7 +1264,7 @@
                                 <div className="bg-[#0f172a] rounded-xl shadow-lg border border-slate-800 flex flex-col overflow-hidden">
                                     <div className="px-5 py-3 flex justify-between items-center border-b border-slate-800/80 bg-[#0b1120] gap-5">
                                         <div className="flex items-center group shrink-0">
-                                            <span className="text-xl font-black text-indigo-400 mr-3">ONEAPP</span>
+                                            <span className="text-xl font-black text-emerald-400 mr-3">ONEAPP</span>
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <div className="flex items-center mb-0.5">
                                                     <span className="text-[14px] font-black text-slate-200 leading-none">MerchOps</span>
@@ -1308,6 +1300,7 @@
                             )}
                         </div>
                     </div>
+
                     {ui.showBriefingModal && <BriefingModal onClose={() => ui.setShowBriefingModal(false)} fullDisplayRows={fullDisplayRows} masterProducts={data.masterProducts} activeProfileKey={activeProfileKey} showToast={ui.showToast} marginRules={config.marginRules} />}
                     {ui.showExportModal && <ExportModal onClose={() => ui.setShowExportModal(false)} fullDisplayRows={fullDisplayRows} currentExportTitle={isEstimateUploaded ? '엑셀 견적서' : '전체 마스터'} executeExport={customActions.executeExport} />}
                     {ui.showSettings && <MappingCenterModal onClose={() => ui.setShowSettings(false)} config={config} actions={{handleCloudSync: customActions.handleCloudSync, cleanUpGarbageTags: customActions.cleanUpGarbageTags, showToast: ui.showToast}} />}
