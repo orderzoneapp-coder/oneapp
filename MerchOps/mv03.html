@@ -910,7 +910,7 @@
                                     if (url.startsWith('blob:') || url.startsWith('about:') || url.startsWith('data:')) {
                                         showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.');
                                     } else {
-                                        window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/sp01';
+                                        window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/sp03';
                                     }
                                 } catch (e) {
                                     showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.');
@@ -1108,6 +1108,17 @@
                         <div className="text-4xl text-indigo-500 mb-5 group-hover:scale-110 transition-transform duration-300"><i className="fas fa-cloud-download-alt"></i></div>
                         <h3 className="text-[16px] font-black text-slate-800 mb-2 group-hover:text-indigo-800 transition-colors">2. 클라우드에서 데이터 수신</h3>
                         <p className="text-[12px] text-slate-500 mb-6 group-hover:text-indigo-600 transition-colors">구글 시트에 백업된 마스터를 수동으로 가져옵니다.</p>
+                    </div>
+
+                    <div className="flex-1 bg-slate-50 border border-slate-200 p-8 rounded-xl text-center hover:shadow-lg transition-all duration-300 group hover:-translate-y-1 hover:bg-purple-50 hover:border-purple-200 cursor-pointer relative overflow-hidden" onClick={() => {
+                        try {
+                            if(window.location.href.startsWith('blob:')) { showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.'); }
+                            else { window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/sp03'; }
+                        } catch(e) { showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.'); }
+                    }}>
+                        <div className="text-4xl text-purple-500 mb-5 group-hover:scale-110 transition-transform duration-300"><i className="fas fa-magic"></i></div>
+                        <h3 className="text-[16px] font-black text-slate-800 mb-2 group-hover:text-purple-800 transition-colors">3. 스마트 파서로 이동</h3>
+                        <p className="text-[12px] text-slate-500 mb-6 group-hover:text-purple-600 transition-colors">텍스트 기반의 카탈로그 델타 동기화 전용 뷰로 이동합니다.</p>
                     </div>
                 </div>
             </div>
