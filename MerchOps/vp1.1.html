@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Smart Parser [v1.1]</title>
+    <title>ONEAPP MerchOps - Smart Parser [v1.2]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -334,6 +334,18 @@
 
             const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
 
+            useEffect(() => {
+                if (parserBuffer.length > 0) {
+                    localStorage.setItem('parser_session_v1', JSON.stringify({
+                        parserBuffer,
+                        currentTag,
+                        processedCodes: Array.from(processedCodes)
+                    }));
+                } else if (!isProcessing && parserBuffer.length === 0) {
+                    localStorage.removeItem('parser_session_v1');
+                }
+            }, [parserBuffer, currentTag, processedCodes, isProcessing]);
+
             return {
                 masterProducts, saveMaster, parserDict, saveDict, marginRules,
                 parserBuffer, setParserBuffer, currentTag, setCurrentTag,
@@ -409,6 +421,27 @@
                 }, 100);
             }, [masterProducts, parserDict, marginRules]);
 
+            const loadSession = useCallback(() => {
+                try {
+                    const sessionStr = localStorage.getItem('parser_session_v1');
+                    if (sessionStr) {
+                        const session = JSON.parse(sessionStr);
+                        if (session && session.parserBuffer && session.parserBuffer.length > 0) {
+                            setParserBuffer(session.parserBuffer);
+                            setCurrentTag(session.currentTag || '');
+                            setProcessedCodes(new Set(session.processedCodes || []));
+                            setShowInputModal(false);
+                            showToast('✅ 이전 작업을 성공적으로 불러왔습니다.');
+                            return true;
+                        }
+                    }
+                } catch(e) {
+                    console.error("세션 로드 실패", e);
+                }
+                return false;
+            }, [setParserBuffer, setCurrentTag, setProcessedCodes, setShowInputModal, showToast]);
+
+
             const handleApplyMatched = useCallback(async () => {
                 const toApply = parserBuffer.filter(r => r._apply && r._matchCode);
                 if (toApply.length === 0) return showToast("⚠️ 적용할 항목이 없습니다.");
@@ -451,7 +484,19 @@
                     setProcessedCodes(newlyProcessed);
                     setParserBuffer(prev => prev.filter(r => !r._apply || !r._matchCode));
 
-                    showToast(`✅ ${toApply.length}건 반영 완료! (카탈로그 '${currentTag || '미지정'}' 기록됨)`);
+                    showToast(`✅ ${toApply.length}건 반영 완료! 메인 화면으로 이동합니다...`);
+
+                    setTimeout(() => {
+                        try {
+                            const url = window.location.href;
+                            if (url.startsWith('blob:') || url.startsWith('about:') || url.startsWith('data:')) {
+                                // 미리보기 환경
+                            } else {
+                                window.location.href = `https://oneapp.orderz.co.kr/MerchOps/v1.1.html?catalog=${encodeURIComponent(currentTag)}`;
+                            }
+                        } catch (e) {}
+                    }, 1200);
+
                 } catch (error) {
                     console.error(error);
                     showToast("❌ 데이터베이스 저장 중 오류가 발생했습니다.");
@@ -562,19 +607,21 @@
                 }
             }, [masterProducts, currentTag, saveMaster, showToast]);
 
-            return { executeParser, handleApplyMatched, handleConfirmMapping, handleIgnoreParsedItem, handleRemoveMissingTags, handleRemoveTagDirect };
+            return { executeParser, loadSession, handleApplyMatched, handleConfirmMapping, handleIgnoreParsedItem, handleRemoveMissingTags, handleRemoveTagDirect };
         };
 
         // ==========================================
         // 🧩 5. UI 컴포넌트
         // ==========================================
-        const SmartParserInputModal = ({ onClose, executeParser, showToast, availableTags = [] }) => {
+        const SmartParserInputModal = ({ onClose, executeParser, loadSession, showToast, availableTags = [] }) => {
             const [rawText, setRawText] = useState("");
             const [catalogMode, setCatalogMode] = useState(availableTags.length > 0 ? 'select' : 'input');
             const [selectedCatalog, setSelectedCatalog] = useState(availableTags.length > 0 ? availableTags[0].name : '');
             const [newCatalogInput, setNewCatalogInput] = useState("");
             const [forceManual, setForceManual] = useState(false);
             
+            const hasSession = localStorage.getItem('parser_session_v1') !== null;
+
             const handleExecute = () => { 
                 if (!rawText.trim()) return showToast("⚠️ 시세 텍스트를 붙여넣어주세요."); 
                 const finalTag = catalogMode === 'select' ? selectedCatalog : newCatalogInput.trim();
@@ -586,8 +633,15 @@
                 <div className="fixed inset-0 bg-slate-900/80 z-[200] flex justify-center items-center backdrop-blur-sm fade-in">
                     <div className="bg-white w-[800px] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
                         <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
-                            <h2 className="font-black text-[16px]"><i className="fas fa-magic text-indigo-400 mr-2"></i>스마트 텍스트 파서 & 델타 동기화</h2>
-                            {onClose && <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>}
+                            <div className="flex items-center gap-3">
+                                <h2 className="font-black text-[16px]"><i className="fas fa-magic text-indigo-400 mr-2"></i>스마트 텍스트 파서 & 델타 동기화</h2>
+                                {hasSession && (
+                                    <button onClick={loadSession} className="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded text-[11px] font-bold shadow-sm transition-colors flex items-center animate-pulse">
+                                        <i className="fas fa-history mr-1.5"></i> 기존 작업 이어서 하기
+                                    </button>
+                                )}
+                            </div>
+                            <button onClick={onClose} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-slate-700 transition-colors"><i className="fas fa-times text-slate-400 hover:text-white"></i></button>
                         </div>
                         <div className="p-6 flex flex-col bg-slate-50 space-y-4">
                             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
@@ -636,8 +690,8 @@
                                 </div>
                             </div>
                             <div className="flex gap-3">
-                                {onClose && <button onClick={onClose} className="px-6 py-3.5 rounded-xl font-bold text-[14px] bg-slate-200 text-slate-700 hover:bg-slate-300 transition-colors">닫기</button>}
-                                <button onClick={handleExecute} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-xl font-black text-[15px] shadow-md transition-colors flex justify-center items-center"><i className="fas fa-cogs mr-2"></i>분석 시작 및 작업공간 로드</button>
+                                <button onClick={onClose} className="px-6 py-3.5 rounded-xl font-bold text-[14px] bg-slate-200 text-slate-700 hover:bg-slate-300 transition-colors">닫기</button>
+                                <button onClick={handleExecute} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-xl font-black text-[15px] shadow-md transition-colors flex justify-center items-center"><i className="fas fa-cogs mr-2"></i>분석 시작 (기존 세션 초기화)</button>
                             </div>
                         </div>
                     </div>
@@ -680,12 +734,13 @@
 
             const missingRows = useMemo(() => {
                 if (!currentTag) return [];
-                const matchedCodes = new Set(matchedRows.map(r => r._matchCode));
+                const matchedCodes = new Set(matchedRows.map(r => String(r._matchCode)));
+                const processedStr = new Set(Array.from(processedCodes).map(String));
                 const missing = [];
                 for (const code in masterProducts) {
                     const mItem = masterProducts[code];
                     const tags = (mItem['카탈로그'] || '').split(',').map(s => s.trim());
-                    if (tags.includes(currentTag) && !matchedCodes.has(code) && !processedCodes.has(code)) {
+                    if (tags.includes(currentTag) && !matchedCodes.has(String(code)) && !processedStr.has(String(code))) {
                         missing.push(mItem);
                     }
                 }
@@ -723,7 +778,7 @@
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <div className="flex items-center mb-0.5">
                                                     <span className="text-[14px] font-black text-slate-200 leading-none">Smart Parser</span>
-                                                    <span className="ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.1</span>
+                                                    <span className="ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.2</span>
                                                 </div>
                                                 <span className="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">TEXT ANALYSIS & DELTA SYNC</span>
                                             </div>
@@ -757,7 +812,7 @@
                                                     if (url.startsWith('blob:') || url.startsWith('about:') || url.startsWith('data:')) {
                                                         showToast('⚠️ 미리보기 환경에서는 우측 상단의 index.html 탭을 직접 클릭하여 이동해주세요.');
                                                     } else {
-                                                        window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.1';
+                                                        window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.1.html';
                                                     }
                                                 } catch (e) {
                                                     showToast('⚠️ 미리보기 환경에서는 우측 상단의 index.html 탭을 직접 클릭하여 이동해주세요.');
@@ -980,7 +1035,7 @@
                             )}
                         </div>
                     </div>
-                    {showInputModal && <SmartParserInputModal onClose={() => setShowInputModal(false)} executeParser={actions.executeParser} showToast={showToast} availableTags={availableTags} />}
+                    {showInputModal && <SmartParserInputModal onClose={() => setShowInputModal(false)} executeParser={actions.executeParser} loadSession={actions.loadSession} showToast={showToast} availableTags={availableTags} />}
                 </div>
             );
         };
