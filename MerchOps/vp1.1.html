@@ -827,32 +827,44 @@
                                                     showToast('⚠️ 미리보기 환경에서는 우측 상단의 index.html 탭을 직접 클릭하여 이동해주세요.');
                                                 }
                                             }} className="h-8 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-slate-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500 font-bold text-[11px]">
-                                                <i className="fas fa-home mr-2 text-indigo-400 text-[12px]"></i> 머치옵스 복귀
+                                                <i className="fas fa-home mr-1.5 text-indigo-400 text-[12px]"></i> 메인으로
                                             </button>
                                         </nav>
                                     </div>
                                 </div>
                             </div>
                             
-                            <div className="px-8 pt-4 pb-3 flex items-center justify-between gap-3 overflow-x-auto custom-scrollbar w-full">
-                                <div className="flex gap-2 shrink-0 bg-slate-100 p-1 rounded-lg border border-slate-200">
-                                    <button onClick={()=>setActiveTab('matched')} className={`px-4 py-2 rounded-md text-[13px] font-black transition-all ${activeTab==='matched' ? 'bg-white text-emerald-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>🟢 일치 ({matchedRows.length})</button>
-                                    <button onClick={()=>setActiveTab('similar')} className={`px-4 py-2 rounded-md text-[13px] font-black transition-all ${activeTab==='similar' ? 'bg-white text-amber-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>🟡 유사 ({similarRows.length})</button>
-                                    <button onClick={()=>setActiveTab('unmatched')} className={`px-4 py-2 rounded-md text-[13px] font-black transition-all ${activeTab==='unmatched' ? 'bg-white text-rose-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>🔴 불일치 ({unmatchedRows.length})</button>
-                                    <div className="w-px bg-slate-300 mx-1 my-1"></div>
-                                    <button onClick={()=>setActiveTab('missing')} className={`px-4 py-2 rounded-md text-[13px] font-black transition-all flex items-center gap-2 ${activeTab==='missing' ? 'bg-white text-slate-800 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>⚪ 누락 (단종) {currentTag && missingRows.length > 0 && <span className="bg-rose-100 text-rose-600 px-1.5 rounded text-[10px]">{missingRows.length}</span>}</button>
+                            <div className="px-6 pt-4 pb-3 flex items-center justify-between gap-4 overflow-x-auto custom-scrollbar w-full">
+                                
+                                {/* 💡 [NEW] 그룹 1: 탭 네비게이션 (그룹화 박스 디자인 적용) */}
+                                <div className="flex gap-1.5 shrink-0 bg-slate-100/80 p-1.5 rounded-xl border border-slate-200">
+                                    <button onClick={()=>setActiveTab('matched')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black transition-all ${activeTab==='matched' ? 'bg-white text-emerald-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>🟢 일치 ({matchedRows.length})</button>
+                                    <button onClick={()=>setActiveTab('similar')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black transition-all ${activeTab==='similar' ? 'bg-white text-amber-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>🟡 유사 ({similarRows.length})</button>
+                                    <button onClick={()=>setActiveTab('unmatched')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black transition-all ${activeTab==='unmatched' ? 'bg-white text-rose-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>🔴 불일치 ({unmatchedRows.length})</button>
+                                    <div className="w-px bg-slate-300 mx-0.5 my-1"></div>
+                                    <button onClick={()=>setActiveTab('missing')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black transition-all flex items-center gap-1.5 ${activeTab==='missing' ? 'bg-white text-slate-800 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>⚪ 누락 {currentTag && missingRows.length > 0 && <span className="bg-rose-100 text-rose-600 px-1.5 rounded text-[10px]">{missingRows.length}</span>}</button>
                                 </div>
 
                                 <div className="flex-1 min-w-[10px]"></div>
 
-                                <div className="flex items-center gap-3 shrink-0">
+                                {/* 💡 [NEW] 그룹 2: 최종 액션 (텍스트 단축 및 아이콘 통일) */}
+                                <div className="flex items-center gap-2 shrink-0">
                                     {activeTab === 'matched' && (
-                                        <button onClick={actions.handleApplyMatched} className="h-9 px-5 rounded-lg text-[13px] font-black shadow-sm bg-slate-800 text-white border border-slate-900 hover:bg-slate-700 transition-colors flex items-center"><i className="fas fa-check-double mr-2 text-emerald-400"></i>반영 및 학습</button>
+                                        <button onClick={actions.handleApplyMatched} className="h-9 px-4 rounded-lg text-[12px] font-bold shadow-sm bg-slate-800 text-white border border-slate-900 hover:bg-slate-700 transition-colors flex items-center">
+                                            <i className="fas fa-check-double mr-1.5 text-emerald-400 text-[13px]"></i> 반영
+                                        </button>
                                     )}
                                     {activeTab === 'missing' && (
-                                        <button onClick={actions.handleRemoveMissingTags} className={`h-9 px-4 rounded-lg text-[12px] font-bold shadow-sm transition-colors flex items-center ${selectedMissingCodes.size > 0 ? 'bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100' : 'bg-white text-slate-400 border border-slate-200'}`}><i className="fas fa-eraser mr-2"></i>선택 항목 카탈로그 제외</button>
+                                        <button onClick={actions.handleRemoveMissingTags} className={`h-9 px-4 rounded-lg text-[12px] font-bold shadow-sm transition-colors flex items-center ${selectedMissingCodes.size > 0 ? 'bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100' : 'bg-white text-slate-400 border border-slate-200'}`}>
+                                            <i className="fas fa-eraser mr-1.5 text-[13px]"></i> 카탈로그 제외
+                                        </button>
                                     )}
-                                    <button onClick={() => setShowInputModal(true)} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-white text-indigo-600 border border-slate-300 hover:bg-indigo-50 shadow-sm transition-colors flex items-center"><i className="fas fa-magic mr-1.5"></i>새 텍스트 파싱</button>
+                                    
+                                    {(activeTab === 'matched' || activeTab === 'missing') && <div className="w-px h-6 bg-slate-300 mx-1"></div>}
+                                    
+                                    <button onClick={() => setShowInputModal(true)} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 shadow-sm transition-colors flex items-center">
+                                        <i className="fas fa-magic mr-1.5 text-[13px]"></i> 새 파싱
+                                    </button>
                                 </div>
                             </div>
                         </div>
