@@ -339,7 +339,6 @@
             const [managedItems, setManagedItems] = useState({});
             const [historyLogs, setHistoryLogs] = useState([]);
 
-            // 초기 구동 시 IndexedDB 및 LocalStorage에서 데이터 로드
             useEffect(() => {
                 getIDB('merchMaster_v870').then(data => {
                     if (data) setMasterProducts(data);
@@ -351,7 +350,6 @@
                 } catch(e) {}
             }, []);
 
-            // 💡 [탭 동기화] 다른 탭(Smart Parser)에서 마스터 데이터가 변경되면 실시간 반영
             useEffect(() => {
                 const handleStorageChange = (e) => {
                     if (e.key === 'merchMaster_sync_trigger') {
@@ -908,7 +906,7 @@
                                     if (url.startsWith('blob:') || url.startsWith('about:') || url.startsWith('data:')) {
                                         showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.');
                                     } else {
-                                        window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/sp03';
+                                        window.location.href = 'https://oneapp.orderz.co.kr/merchOps/vp1.1';
                                     }
                                 } catch (e) {
                                     showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.');
@@ -1111,7 +1109,7 @@
                     <div className="flex-1 bg-slate-50 border border-slate-200 p-8 rounded-xl text-center hover:shadow-lg transition-all duration-300 group hover:-translate-y-1 hover:bg-purple-50 hover:border-purple-200 cursor-pointer relative overflow-hidden" onClick={() => {
                         try {
                             if(window.location.href.startsWith('blob:')) { showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.'); }
-                            else { window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/sp03'; }
+                            else { window.location.href = 'https://oneapp.orderz.co.kr/merchOps/vp1.1'; }
                         } catch(e) { showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.'); }
                     }}>
                         <div className="text-4xl text-purple-500 mb-5 group-hover:scale-110 transition-transform duration-300"><i className="fas fa-magic"></i></div>
