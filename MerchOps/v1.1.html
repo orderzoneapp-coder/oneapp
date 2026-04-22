@@ -1180,68 +1180,6 @@
 
                     {/* 최종 액션 (빼기, 반영, 검색) */}
                     <div className="flex items-center gap-2 shrink-0">
-                        <button onClick={() => {
-                            try {
-                                const url = window.location.href;
-                                if (url.startsWith('blob:') || url.startsWith('about:') || url.startsWith('data:')) {
-                                    showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.');
-                                } else {
-                                    window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/vp1.1.html';
-                                }
-                            } catch (e) {
-                                showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.');
-                            }
-                        }} className="h-9 px-4 rounded-lg text-[12px] font-black transition-all bg-indigo-600 text-white shadow-md hover:bg-indigo-700 flex items-center">
-                            <i className="fas fa-magic mr-1.5"></i> 스마트 파서
-                        </button>
-                        
-                        <div className="w-px h-6 bg-slate-300 mx-2"></div>
-
-                        <div className="relative">
-                            <select value={selectedCatalog} onChange={(e) => setSelectedCatalog(e.target.value)} className="appearance-none bg-white border border-slate-300 text-slate-700 font-bold text-[12px] py-1.5 pl-9 pr-8 rounded-lg shadow-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 w-[180px] cursor-pointer">
-                                <option value="">📂 카탈로그</option>
-                                {availableCatalogs.map(tag => (
-                                    <option key={tag.name} value={tag.name}>📂 {tag.name} ({tag.count}건)</option>
-                                ))}
-                            </select>
-                            <i className="fas fa-folder-open absolute left-3 top-2.5 text-slate-400 text-[12px] pointer-events-none"></i>
-                            <i className="fas fa-chevron-down absolute right-3 top-2.5 text-slate-400 text-[10px] pointer-events-none"></i>
-                        </div>
-                        
-                        <div className="relative">
-                            <select value={selectedCategory} onChange={(e) => handleLoadCategory(e.target.value)} className="appearance-none bg-blue-50 border border-blue-200 text-blue-800 font-bold text-[12px] py-1.5 pl-9 pr-8 rounded-lg shadow-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 w-[180px] cursor-pointer">
-                                <option value="">📑 견적서 필터</option>
-                                {availableCategories.map(cat => (
-                                    <option key={cat.name} value={cat.name}>📑 {cat.name} ({cat.count}건)</option>
-                                ))}
-                            </select>
-                            <i className="fas fa-file-invoice absolute left-3 top-2.5 text-blue-400 text-[12px] pointer-events-none"></i>
-                            <i className="fas fa-chevron-down absolute right-3 top-2.5 text-blue-400 text-[10px] pointer-events-none"></i>
-                        </div>
-                    </div>
-                    
-                    {/* 그룹 2: 데이터 입출력 (I/O) */}
-                    <div className="flex items-center gap-1.5 bg-slate-200/70 p-1.5 rounded-xl shrink-0 border border-slate-200">
-                        <label className="cursor-pointer h-8 px-3 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center bg-white text-emerald-700 shadow-sm hover:bg-emerald-50 border border-emerald-100" title="엑셀 견적서를 업로드합니다.">
-                            <i className="fas fa-file-excel mr-1.5 text-[13px]"></i> 불러오기
-                            <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e, 'estimate')} accept=".xlsx, .xls, .csv" disabled={state.isProcessing} />
-                        </label>
-                        
-                        <button id="btn-export-excel" onClick={handleExportCurrentView} className="h-8 px-3 rounded-lg text-[11px] font-bold bg-white text-slate-700 shadow-sm hover:bg-slate-50 transition-colors flex items-center border border-slate-200" title="현재 화면 그대로 엑셀로 다운로드합니다.">
-                            <i className="fas fa-download mr-1.5 text-slate-400 text-[12px]"></i> 다운로드
-                        </button>
-
-                        <div className="w-px h-5 bg-slate-300 mx-1"></div>
-
-                        <button onClick={() => actions.setShowCategoryModal(true)} className="h-8 px-3 rounded-lg text-[11px] font-bold bg-white text-blue-600 shadow-sm hover:bg-blue-50 transition-colors flex items-center border border-blue-100" title="현재 화면의 상품들을 견적서로 묶어 저장합니다.">
-                            <i className="fas fa-save mr-1.5 text-[12px]"></i> 견적서 저장
-                        </button>
-                    </div>
-
-                    <div className="flex-1 min-w-[10px]"></div>
-
-                    {/* 그룹 3: 최종 액션 */}
-                    <div className="flex items-center gap-2 shrink-0">
                         {showActionButtons && (
                             <>
                                 {/* 💡 [NEW] 견적서/엑셀 작업 모드일 때만 '빼기' 버튼 노출 */}
