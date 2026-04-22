@@ -1131,7 +1131,7 @@
                                 showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.');
                             }
                         }} className="h-9 px-4 rounded-lg text-[12px] font-black transition-all bg-indigo-600 text-white shadow-md hover:bg-indigo-700 flex items-center">
-                            <i className="fas fa-magic mr-1.5"></i> 🚀 스마트 파서
+                            <i className="fas fa-magic mr-1.5"></i> 스마트 파서
                         </button>
                         
                         <div className="w-px h-6 bg-slate-300 mx-2"></div>
@@ -1161,19 +1161,19 @@
                     
                     {/* 그룹 2: 데이터 입출력 (I/O) */}
                     <div className="flex items-center gap-1.5 bg-slate-200/70 p-1.5 rounded-xl shrink-0 border border-slate-200">
-                        <label className="cursor-pointer h-8 px-3 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center bg-white text-emerald-700 shadow-sm hover:bg-emerald-50 border border-emerald-100">
-                            <i className="fas fa-file-excel mr-1.5"></i> ⬆️ 엑셀 가져오기
+                        <label className="cursor-pointer h-8 px-3 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center bg-white text-emerald-700 shadow-sm hover:bg-emerald-50 border border-emerald-100" title="엑셀 견적서를 업로드합니다.">
+                            <i className="fas fa-file-excel mr-1.5"></i> 엑셀 로드
                             <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e, 'estimate')} accept=".xlsx, .xls, .csv" disabled={state.isProcessing} />
                         </label>
                         
                         <button id="btn-export-excel" onClick={handleExportCurrentView} className="h-8 px-3 rounded-lg text-[11px] font-bold bg-white text-slate-700 shadow-sm hover:bg-slate-50 transition-colors flex items-center border border-slate-200" title="현재 화면 그대로 엑셀로 내보냅니다.">
-                            <i className="fas fa-download mr-1.5 text-slate-400"></i> ⬇️ 화면 내보내기
+                            <i className="fas fa-download mr-1.5 text-slate-400"></i> 화면 출력
                         </button>
 
                         <div className="w-px h-5 bg-slate-300 mx-1"></div>
 
                         <button onClick={() => actions.setShowCategoryModal(true)} className="h-8 px-3 rounded-lg text-[11px] font-bold bg-white text-blue-600 shadow-sm hover:bg-blue-50 transition-colors flex items-center border border-blue-100" title="현재 화면의 상품들을 견적서로 묶어 저장합니다.">
-                            <i className="fas fa-save mr-1.5"></i> 💾 화면 견적서 저장
+                            <i className="fas fa-save mr-1.5"></i> 견적서 저장
                         </button>
                     </div>
 
@@ -1190,8 +1190,8 @@
                                     </button>
                                 )}
                                 
-                                <button onClick={handleCommitEstimate} className={`h-9 px-4 rounded-lg text-[12px] font-bold shadow-sm transition-colors flex items-center ${selectedRows.size > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-500'}`} title="선택 항목 마스터 반영">
-                                    <i className="fas fa-check-double mr-1.5"></i> 마스터 반영
+                                <button onClick={handleCommitEstimate} className={`h-9 px-4 rounded-lg text-[12px] font-bold shadow-sm transition-colors flex items-center ${selectedRows.size > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-500'}`} title="선택 항목을 마스터 DB에 반영합니다.">
+                                    <i className="fas fa-check-double mr-1.5"></i> 반영
                                 </button>
                                 <div className="w-px h-6 bg-slate-300 mx-1"></div>
                             </>
@@ -1498,28 +1498,33 @@
             // 필터링된 행 계산 로직
             const fullDisplayRows = useMemo(() => {
                 let baseList = [];
-                if (isEstimateUploaded) baseList = Object.values(data.managedItems);
-                else baseList = Object.values(data.masterProducts).map(m => data.managedItems[m.코드] || { 코드: m.코드, sources: {}, finalData: {} });
+                
+                // 💡 [버그 수정] 가상 엑셀/견적서 작업 모드일 때는 이중 필터링 방지
+                if (isEstimateUploaded) {
+                    baseList = Object.values(data.managedItems); // 합집합으로 가져온 데이터를 조건 없이 모두 출력
+                } else {
+                    baseList = Object.values(data.masterProducts).map(m => data.managedItems[m.코드] || { 코드: m.코드, sources: {}, finalData: {} });
 
-                // 카탈로그 필터
-                if (ui.selectedCatalog) {
-                    baseList = baseList.filter(item => {
-                        const mItem = data.masterProducts[item.코드] || {};
-                        const tagStr = mItem['카탈로그'] || '';
-                        return tagStr.split(',').map(t => t.trim()).includes(ui.selectedCatalog);
-                    });
+                    // 카탈로그 필터 (조회 모드일 때만 적용)
+                    if (ui.selectedCatalog) {
+                        baseList = baseList.filter(item => {
+                            const mItem = data.masterProducts[item.코드] || {};
+                            const tagStr = mItem['카탈로그'] || '';
+                            return tagStr.split(',').map(t => t.trim()).includes(ui.selectedCatalog);
+                        });
+                    }
+
+                    // 견적서 필터 (조회 모드일 때만 적용)
+                    if (ui.selectedCategory) {
+                        baseList = baseList.filter(item => {
+                            const mItem = data.masterProducts[item.코드] || {};
+                            const tagStr = mItem['견적서'] || mItem['카테고리'] || '';
+                            return tagStr.split(',').map(t => t.trim()).includes(ui.selectedCategory);
+                        });
+                    }
                 }
 
-                // 견적서 필터 (선택적)
-                if (ui.selectedCategory && !isEstimateUploaded) {
-                    baseList = baseList.filter(item => {
-                        const mItem = data.masterProducts[item.코드] || {};
-                        const tagStr = mItem['견적서'] || mItem['카테고리'] || '';
-                        return tagStr.split(',').map(t => t.trim()).includes(ui.selectedCategory);
-                    });
-                }
-
-                // 검색어 필터
+                // 검색어 필터 (공통)
                 if (ui.globalSearch) {
                     const cleanKeyword = ui.globalSearch.toLowerCase().replace(/[()[\]{},./]/g, ' ');
                     const tokens = cleanKeyword.split(/\s+/).filter(t => t.length > 0);
