@@ -21,7 +21,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState } = React;
 
         const GuideApp = () => {
             const [activeMenu, setActiveMenu] = useState('intro');
@@ -30,9 +30,10 @@
             const menus = [
                 { id: 'intro', icon: 'fa-flag', label: '1. 도입 목적 및 개요' },
                 { id: 'workflow', icon: 'fa-route', label: '2. 핵심 업무 흐름' },
-                { id: 'main', icon: 'fa-desktop', label: '3. 머치옵스' },
-                { id: 'parser', icon: 'fa-magic', label: '4. 스마트 파서' },
-                { id: 'tips', icon: 'fa-lightbulb', label: '5. 활용 팁 & FAQ' }
+                { id: 'buttons', icon: 'fa-toggle-on', label: '3. 각 버튼별 기능 완벽 가이드' },
+                { id: 'parser', icon: 'fa-magic', label: '4. 스마트 파서 사용법' },
+                { id: 'settings', icon: 'fa-cogs', label: '5. 환경설정 ⚙️ 완벽 가이드' },
+                { id: 'tips', icon: 'fa-lightbulb', label: '6. 활용 팁 & FAQ' }
             ];
 
             const scrollTo = (id) => {
@@ -47,11 +48,11 @@
                         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
                             <div className="flex items-center gap-3">
                                 <span className="text-xl font-black text-indigo-400">ONEAPP</span>
-                                <span className="text-sm font-bold border-l border-slate-600 pl-3">MerchOps 사용자 가이드 v9.0+</span>
+                                <span className="text-sm font-bold border-l border-slate-600 pl-3">MerchOps 사용자 가이드 v1.2</span>
                             </div>
                             <div className="flex items-center gap-3">
-                                <a href="https://oneapp.orderz.co.kr/MerchOps/v9.0" className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-md text-xs font-bold transition-colors border border-slate-600"><i className="fas fa-desktop mr-1.5 text-emerald-400"></i>머치옵스</a>
-                                <a href="https://oneapp.orderz.co.kr/MerchOps/p9.0" className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-md text-xs font-bold transition-colors border border-slate-600"><i className="fas fa-magic mr-1.5 text-indigo-400"></i>스마트 파서</a>
+                                <a href="https://oneapp.orderz.co.kr/MerchOps/v1.1" className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-md text-xs font-bold transition-colors border border-slate-600"><i className="fas fa-desktop mr-1.5 text-emerald-400"></i>머치옵스</a>
+                                <a href="https://oneapp.orderz.co.kr/MerchOps/vp1.1.html" className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-md text-xs font-bold transition-colors border border-slate-600"><i className="fas fa-magic mr-1.5 text-indigo-400"></i>스마트 파서</a>
                             </div>
                         </div>
                     </header>
@@ -80,180 +81,98 @@
                                 <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl p-8 text-white shadow-lg mb-6">
                                     <h1 className="text-3xl font-black mb-4">ONEAPP MerchOps 시스템 개요</h1>
                                     <p className="text-indigo-100 text-lg leading-relaxed">
-                                        MerchOps는 텍스트 형태의 외부 시세 데이터(카카오톡, 웹페이지 등)를 자체 마스터 DB 규격으로 자동 매핑하고,<br/>
-                                        사전 설정된 마진 룰에 따라 <strong>단가를 갱신 및 카탈로그 동기화(Delta)</strong>를 수행하는 사내 전용 상품 관리 시스템입니다.
+                                        MerchOps는 텍스트 형태의 외부 시세 데이터(카톡 등) 및 엑셀 견적서를 자체 마스터 DB 규격으로 자동 매핑하고,<br/>
+                                        사전 설정된 마진 룰에 따라 <strong>단가를 갱신 및 카탈로그 동기화(Delta)</strong>를 수행하는 강력한 사내 전용 상품 관리 시스템입니다.
                                     </p>
                                 </div>
                                 <div className="grid md:grid-cols-3 gap-6">
                                     <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                                         <i className="fas fa-bolt text-3xl text-amber-500 mb-4"></i>
                                         <h3 className="font-bold text-lg mb-2">실시간 탭 동기화</h3>
-                                        <p className="text-sm text-slate-600 leading-relaxed">데이터를 저장할 필요 없이, 파서에서 작업한 내용이 머치옵스에 0초 만에 실시간으로 반영됩니다.</p>
+                                        <p className="text-sm text-slate-600 leading-relaxed">데이터를 저장할 필요 없이, 스마트 파서에서 작업한 내용이 머치옵스에 즉각(0초) 반영됩니다.</p>
                                     </div>
                                     <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                                         <i className="fas fa-tags text-3xl text-emerald-500 mb-4"></i>
-                                        <h3 className="font-bold text-lg mb-2">카탈로그(태그) 기반 델타 관리</h3>
+                                        <h3 className="font-bold text-lg mb-2">카탈로그 & 델타 관리</h3>
                                         <p className="text-sm text-slate-600 leading-relaxed">단순 단가 변경뿐만 아니라, 특정 거래처의 신규 품목 추가 및 단종(누락) 품목까지 완벽하게 잡아냅니다.</p>
                                     </div>
                                     <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                                         <i className="fas fa-cloud text-3xl text-blue-500 mb-4"></i>
                                         <h3 className="font-bold text-lg mb-2">안전한 클라우드 백업</h3>
-                                        <p className="text-sm text-slate-600 leading-relaxed">무제한 로컬 메모리(IndexedDB)를 통해 브라우저가 터지지 않으며, 원할 때 버튼 한 번으로 클라우드에 안전하게 보존합니다.</p>
+                                        <p className="text-sm text-slate-600 leading-relaxed">무제한 로컬 메모리(IndexedDB)를 통해 브라우저가 멈추지 않으며, 원할 때 구글 시트에 영구 백업 가능합니다.</p>
                                     </div>
                                 </div>
                             </section>
 
-                            {/* 2. 핵심 업무 흐름 */}
-                            <section id="workflow" className="guide-section mb-16">
-                                <h2 className="text-2xl font-black border-b-2 border-slate-200 pb-2 mb-6"><i className="fas fa-route text-slate-400 mr-2"></i>핵심 업무 흐름 (Workflow)</h2>
-                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8">
-                                    <div className="flex flex-col md:flex-row items-center justify-between relative">
-                                        <div className="w-full md:w-1/3 text-center mb-8 md:mb-0 z-10 relative">
-                                            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center text-2xl text-slate-600 mx-auto mb-3 border-2 border-slate-300">1</div>
-                                            <h4 className="font-bold text-[15px] mb-2 text-slate-800">마스터 데이터 로드</h4>
-                                            <p className="text-xs text-slate-500">머치옵스에서<br/>[클라우드 불러오기] 클릭</p>
-                                        </div>
-                                        <div className="hidden md:block absolute top-8 left-[16%] w-[68%] border-t-2 border-dashed border-slate-300"></div>
-                                        <div className="w-full md:w-1/3 text-center mb-8 md:mb-0 z-10 relative">
-                                            <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center text-2xl text-indigo-600 mx-auto mb-3 border-2 border-indigo-300 shadow-md">2</div>
-                                            <h4 className="font-bold text-[15px] mb-2 text-indigo-800">스마트 파싱 & 매핑</h4>
-                                            <p className="text-xs text-slate-500">파서 화면으로 이동 후<br/>텍스트 붙여넣기 및 단가 반영</p>
-                                        </div>
-                                        <div className="w-full md:w-1/3 text-center z-10 relative">
-                                            <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center text-2xl text-emerald-600 mx-auto mb-3 border-2 border-emerald-300 shadow-md">3</div>
-                                            <h4 className="font-bold text-[15px] mb-2 text-emerald-800">결과 확인 및 백업</h4>
-                                            <p className="text-xs text-slate-500">머치옵스로 복귀하여<br/>보고서 출력 및 클라우드 백업</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </section>
+                            {/* 5. 환경설정 ⚙️ 완벽 가이드 */}
+                            <section id="settings" className="guide-section mb-16">
+                                <h2 className="text-2xl font-black border-b-2 border-slate-200 pb-2 mb-6"><i className="fas fa-cogs text-slate-500 mr-2"></i>환경설정 ⚙️ 완벽 가이드</h2>
+                                <p className="text-slate-600 mb-6">머치옵스 우측 상단의 톱니바퀴 버튼을 누르면 열리는 '환경설정 센터'의 핵심 기능들을 안내합니다.</p>
 
-                            {/* 3. 머치옵스 사용법 */}
-                            <section id="main" className="guide-section mb-16">
-                                <h2 className="text-2xl font-black border-b-2 border-slate-200 pb-2 mb-6"><i className="fas fa-desktop text-emerald-500 mr-2"></i>머치옵스 사용법</h2>
-                                <p className="text-slate-600 mb-6">머치옵스는 내 책상과 같습니다. 전체 데이터를 확인하고, 최종 결과물을 엑셀로 출력하는 곳입니다.</p>
-                                
                                 <div className="space-y-4">
-                                    <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex gap-4 items-start">
-                                        <div className="bg-slate-100 p-3 rounded-lg text-slate-500"><i className="fas fa-cloud-download-alt text-xl"></i></div>
-                                        <div>
-                                            <h4 className="font-bold text-slate-800 mb-1">클라우드 데이터 불러오기/저장</h4>
-                                            <p className="text-sm text-slate-600">우측 상단의 구름 아이콘을 클릭합니다. <strong>출근 직후에는 무조건 [↓불러오기]</strong>를 눌러 최신 DB를 가져오고, <strong>퇴근 전이나 중요 작업 후에는 [↑저장]</strong>을 눌러 데이터를 안전하게 보관하세요.</p>
-                                        </div>
-                                    </div>
-
-                                    <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex gap-4 items-start">
-                                        <div className="bg-indigo-50 p-3 rounded-lg text-indigo-500"><i className="fas fa-folder-open text-xl"></i></div>
-                                        <div>
-                                            <h4 className="font-bold text-slate-800 mb-1">카탈로그 (소싱태그) 필터</h4>
-                                            <p className="text-sm text-slate-600">상단 툴바 좌측의 드롭다운을 클릭하면 '농협_야채', 'A업체' 등 등록된 태그 목록이 나옵니다. 선택 시 해당 거래처/분류의 상품만 즉시 필터링되어 편리하게 작업할 수 있습니다.</p>
-                                        </div>
-                                    </div>
-
-                                    <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm flex gap-4 items-start">
-                                        <div className="bg-emerald-50 p-3 rounded-lg text-emerald-500"><i className="fas fa-file-export text-xl"></i></div>
-                                        <div>
-                                            <h4 className="font-bold text-slate-800 mb-1">보고서 출력 (엑셀 다운로드)</h4>
-                                            <p className="text-sm text-slate-600">[보고서] 버튼을 누르면 ERP 업로드 양식과 쇼핑몰 갱신 양식이 분리된 엑셀 파일을 다운로드할 수 있습니다.</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </section>
-
-                            {/* 4. 스마트 파서 */}
-                            <section id="parser" className="guide-section mb-16">
-                                <h2 className="text-2xl font-black border-b-2 border-slate-200 pb-2 mb-6"><i className="fas fa-magic text-indigo-500 mr-2"></i>스마트 파서 사용법 <span className="text-sm font-normal text-rose-500 ml-2">(핵심 업무 영역)</span></h2>
-                                <p className="text-slate-600 mb-6">스마트 파서는 외부에서 온 텍스트 형태의 시세표를 우리 시스템에 맞게 자동으로 번역하고 연결해 주는 똑똑한 계산기입니다.</p>
-
-                                <div className="bg-slate-800 rounded-xl p-6 mb-8 text-white shadow-lg">
-                                    <h3 className="font-bold text-amber-400 mb-4"><i className="fas fa-keyboard mr-2"></i>파서 시작하기 (텍스트 붙여넣기)</h3>
-                                    <ol className="list-decimal pl-5 space-y-2 text-sm text-slate-300">
-                                        <li>머치옵스 상단의 <strong>[스마트 파서로 이동]</strong> 버튼을 클릭합니다.</li>
-                                        <li><strong>기준 소싱태그:</strong> 분석할 텍스트의 출처 태그를 적습니다. (예: <span className="bg-slate-700 px-1 rounded">농협_야채</span>). 안 적으면 단순 단가만 갱신됩니다.</li>
-                                        <li><strong>텍스트 복사:</strong> 카톡이나 엑셀의 내용(품명과 가격)을 그대로 복사하여 넓은 검은색 창에 붙여넣습니다.</li>
-                                        <li><strong>[분석 시작]</strong> 버튼을 누릅니다.</li>
-                                    </ol>
-                                </div>
-
-                                <h3 className="font-bold text-lg mb-4 text-slate-800">4가지 상태 탭 완벽 이해하기</h3>
-                                <div className="grid md:grid-cols-2 gap-4">
-                                    {/* 일치 */}
-                                    <div className="bg-white border-l-4 border-emerald-500 rounded-r-xl p-5 shadow-sm">
-                                        <div className="flex items-center gap-2 mb-2"><span className="text-emerald-500"><i className="fas fa-circle"></i></span><h4 className="font-bold text-slate-800">🟢 일치 (Matched)</h4></div>
-                                        <p className="text-sm text-slate-600 mb-3">마스터 DB에 존재하고 AI가 완벽하게 알아본 항목들입니다.</p>
-                                        <div className="bg-emerald-50 p-3 rounded text-xs text-emerald-800 font-bold border border-emerald-100">
-                                            👉 <strong>할 일:</strong> 내역 확인 후 우측 상단의 <span className="bg-slate-800 text-white px-1.5 py-0.5 rounded">[반영 및 학습]</span> 버튼만 누르면 끝납니다.
-                                        </div>
-                                    </div>
-
-                                    {/* 유사 */}
-                                    <div className="bg-white border-l-4 border-amber-400 rounded-r-xl p-5 shadow-sm">
-                                        <div className="flex items-center gap-2 mb-2"><span className="text-amber-400"><i className="fas fa-circle"></i></span><h4 className="font-bold text-slate-800">🟡 유사 (Similar)</h4></div>
-                                        <p className="text-sm text-slate-600 mb-3">글자가 조금 다르거나 규격이 달라서 시스템이 확신하지 못한 항목입니다. (예: 햇사과 ↔ 사과(햇))</p>
-                                        <div className="bg-amber-50 p-3 rounded text-xs text-amber-800 font-bold border border-amber-100">
-                                            👉 <strong>할 일:</strong> 우측 대기 목록에서 항목 클릭 ➔ 좌측에서 진짜 마스터 상품 찾기 ➔ <span className="bg-indigo-600 text-white px-1.5 py-0.5 rounded">[연결]</span> 버튼 클릭!
-                                        </div>
-                                    </div>
-
-                                    {/* 불일치 */}
-                                    <div className="bg-white border-l-4 border-rose-500 rounded-r-xl p-5 shadow-sm">
-                                        <div className="flex items-center gap-2 mb-2"><span className="text-rose-500"><i className="fas fa-circle"></i></span><h4 className="font-bold text-slate-800">🔴 불일치 (Unmatched)</h4></div>
-                                        <p className="text-sm text-slate-600 mb-3">마스터에 아예 없는 신규 상품이거나, 이름이 너무 달라서 시스템이 찾지 포기한 항목입니다.</p>
+                                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-rose-500">
+                                        <h3 className="font-bold text-slate-800 text-lg mb-2 flex items-center"><i className="fas fa-broom text-rose-500 mr-2"></i>클라우드 DB 최적화 (검색어 찌꺼기 삭제)</h3>
+                                        <p className="text-sm text-slate-600 mb-3 leading-relaxed">
+                                            과거 엑셀 업로드 시 저장되었던 불필요한 '검색어등록' 필드의 찌꺼기 데이터들(예: 110g, 가공식품, #REF! 등)을 한 번에 삭제합니다. 불필요한 데이터를 제거하여 <strong>클라우드 DB 용량을 다이어트하고 시스템 속도를 최적화</strong>합니다.
+                                        </p>
                                         <div className="bg-rose-50 p-3 rounded text-xs text-rose-800 font-bold border border-rose-100">
-                                            👉 <strong>할 일:</strong> '유사' 탭과 동일하게 수동으로 검색하여 <span className="bg-indigo-600 text-white px-1.5 py-0.5 rounded">[연결]</span> 해주면 AI가 이를 학습합니다.
+                                            👉 <strong>사용 팁:</strong> [기존 엑셀 검색어 일괄 삭제] 버튼을 누른 후에는, 반드시 상단의 <span className="bg-slate-800 text-white px-1.5 py-0.5 rounded">☁️ 클라우드 백업(↑)</span>을 눌러야 찌꺼기 없는 깨끗한 상태가 클라우드에 영구 반영됩니다! (파서에서 만든 카탈로그와 견적서는 안전하게 보호됩니다.)
                                         </div>
                                     </div>
 
-                                    {/* 누락 */}
-                                    <div className="bg-white border-l-4 border-slate-400 rounded-r-xl p-5 shadow-sm">
-                                        <div className="flex items-center gap-2 mb-2"><span className="text-slate-400"><i className="fas fa-circle-notch"></i></span><h4 className="font-bold text-slate-800">⚪ 누락 / 단종 (Missing)</h4></div>
-                                        <p className="text-sm text-slate-600 mb-3">우리 마스터에는 이 태그(예: 농협)가 등록되어 있는데, 방금 붙여넣은 텍스트에는 없는(안 들어온) 항목입니다.</p>
-                                        <div className="bg-slate-100 p-3 rounded text-xs text-slate-700 font-bold border border-slate-200">
-                                            👉 <strong>할 일:</strong> 품절/단종이 맞다면 체크 후 <span className="bg-white border border-slate-300 px-1.5 py-0.5 rounded">[소싱태그 제외]</span> 클릭. 목록에서 조용히 숨겨집니다.
-                                        </div>
+                                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-indigo-500">
+                                        <h3 className="font-bold text-slate-800 text-lg mb-2 flex items-center"><i className="fas fa-calculator text-indigo-500 mr-2"></i>단가 계산 및 하이브리드 마진 룰</h3>
+                                        <p className="text-sm text-slate-600 leading-relaxed">
+                                            공급처의 입고가를 바탕으로 우리의 <strong>출고가(시중가)를 얼마로 세팅할지 자동으로 계산</strong>해 주는 공식입니다.<br/>
+                                            '창고코드'와 '단위(ea, box)'를 조합하여 조건별로 마진율(%)과 연산 방식(곱하기/나누기)을 다르게 지정할 수 있습니다.
+                                        </p>
+                                    </div>
+
+                                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-emerald-500">
+                                        <h3 className="font-bold text-slate-800 text-lg mb-2 flex items-center"><i className="fas fa-columns text-emerald-500 mr-2"></i>화면 노출 항목 및 엑셀 헤더 매핑</h3>
+                                        <p className="text-sm text-slate-600 leading-relaxed">
+                                            화면에 보여줄 데이터 기둥(열)을 켜고 끄거나 커스텀 항목을 새로 추가할 수 있습니다. 또한, 엑셀을 업로드할 때 <strong>어떤 엑셀 헤더명(예: 거래처명)을 우리 DB의 어떤 필드(예: 구매처)로 자동 연결할지 키워드를 콤마(,)로 구분하여 설정</strong>합니다.
+                                        </p>
+                                    </div>
+                                    
+                                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-slate-600">
+                                        <h3 className="font-bold text-slate-800 text-lg mb-2 flex items-center"><i className="fas fa-undo text-slate-500 mr-2"></i>앱 전체 초기화</h3>
+                                        <p className="text-sm text-slate-600 leading-relaxed">
+                                            로컬 브라우저에 꼬여있는 캐시나 데이터를 완벽하게 포맷(Format)하는 최후의 수단입니다. <strong>"파서 학습 사전(AI 매칭 데이터)"</strong>은 보존할지 묻는 알림창이 뜨므로, 소중한 학습 데이터는 날리지 않고 안전하게 초기화할 수 있습니다.
+                                        </p>
                                     </div>
                                 </div>
                             </section>
 
-                            {/* 5. 활용 팁 & FAQ */}
+                            {/* 6. 활용 팁 & FAQ */}
                             <section id="tips" className="guide-section">
                                 <h2 className="text-2xl font-black border-b-2 border-slate-200 pb-2 mb-6"><i className="fas fa-lightbulb text-amber-500 mr-2"></i>자주 묻는 질문 & 활용 팁</h2>
                                 
                                 <div className="space-y-4">
                                     <details className="bg-white border border-slate-200 rounded-xl group overflow-hidden cursor-pointer">
                                         <summary className="p-5 font-bold text-slate-800 outline-none flex justify-between items-center group-open:bg-slate-50">
-                                            Q. "브라우저 메모리 한계 초과" 경고창이 뜹니다. 어떻게 해야 하나요?
+                                            Q. 파싱 후 화면에 100% 일치하는 데이터가 없다고 나옵니다.
                                             <i className="fas fa-chevron-down text-slate-400 transition-transform group-open:rotate-180"></i>
                                         </summary>
                                         <div className="p-5 pt-0 text-sm text-slate-600 leading-relaxed border-t border-slate-100 mt-2">
-                                            A. 너무 걱정하지 않으셔도 됩니다! v9.0+ 부터는 무제한 용량의 `IndexedDB`를 보조 기억장치로 사용하므로 데이터가 바로 날아가지는 않습니다. 다만 안전을 위해 경고창을 본 즉시 머치옵스 우측 상단의 <strong>[☁️ 클라우드에 백업] 버튼을 눌러 구글 시트로 데이터를 전송</strong>해 주시면 완벽합니다.
+                                            A. 오류가 아닙니다! 처음에는 파서가 똑똑하지 않아 [🟡 매핑 대기] 또는 [🔴 신규 대기] 탭에 데이터가 쌓입니다. 해당 탭을 눌러 수동으로 검색 후 연결(학습)해 주면, 다음번부터는 자동으로 [✅ 자동 일치] 탭에 나타납니다.
                                         </div>
                                     </details>
 
                                     <details className="bg-white border border-slate-200 rounded-xl group overflow-hidden cursor-pointer">
                                         <summary className="p-5 font-bold text-slate-800 outline-none flex justify-between items-center group-open:bg-slate-50">
-                                            Q. 파싱 후 화면에 아무 데이터도 나오지 않습니다. 오류인가요?
+                                            Q. 단가 계산 및 마진 룰은 어디서 설정하나요?
                                             <i className="fas fa-chevron-down text-slate-400 transition-transform group-open:rotate-180"></i>
                                         </summary>
                                         <div className="p-5 pt-0 text-sm text-slate-600 leading-relaxed border-t border-slate-100 mt-2">
-                                            A. 오류가 아닙니다! 기본적으로 파서는 <strong>[🟢 일치]</strong> 탭을 먼저 보여줍니다. 만약 100% 일치하는 항목이 하나도 없다면 화면이 비어있게 됩니다. 상단의 <strong>[🔴 불일치]</strong> 탭을 눌러보시면 파싱된 데이터들이 수동 매핑을 기다리고 있을 것입니다. 한 번만 연결(학습)해주면 다음부터는 자동으로 일치 탭에 나타납니다.
-                                        </div>
-                                    </details>
-
-                                    <details className="bg-white border border-slate-200 rounded-xl group overflow-hidden cursor-pointer">
-                                        <summary className="p-5 font-bold text-slate-800 outline-none flex justify-between items-center group-open:bg-slate-50">
-                                            Q. 마진 룰(출고가 자동 계산)은 어디서 설정하나요?
-                                            <i className="fas fa-chevron-down text-slate-400 transition-transform group-open:rotate-180"></i>
-                                        </summary>
-                                        <div className="p-5 pt-0 text-sm text-slate-600 leading-relaxed border-t border-slate-100 mt-2">
-                                            A. 머치옵스 우측 상단의 <strong>[톱니바퀴 ⚙️] 아이콘</strong>을 클릭하세요. '환경설정 센터' 창이 열리면 좌측 메뉴에서 <strong>'3. 단가 계산 및 마진 룰'</strong>을 선택하여 창고별/단위별로 마진율을 정밀하게 세팅할 수 있습니다.
+                                            A. 머치옵스(메인 화면) 우측 상단의 <strong>[톱니바퀴 ⚙️] 아이콘</strong>을 클릭하세요. '환경설정 센터' 창이 열리면 좌측 메뉴에서 <strong>'3. 단가 계산 및 마진 룰'</strong>을 선택하여 창고별/단위별로 마진율을 정밀하게 세팅할 수 있습니다.
                                         </div>
                                     </details>
                                 </div>
                             </section>
 
                             <div className="mt-12 text-center text-slate-400 text-sm font-bold">
-                                © 2026 ONEAPP MerchOps. All rights reserved.
+                                © ONEAPP MerchOps. All rights reserved.
                             </div>
                         </main>
                     </div>
