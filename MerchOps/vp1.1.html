@@ -90,13 +90,13 @@
         // ==========================================
         // 🧩 2. 핵심 비즈니스 엔진
         // ==========================================
-        const calculatePricesEngine = (baseInPrice, mItem, currentFinalData, marginRules, forceRecalc = false) => {
-            const outsrc = parseNum(currentFinalData['외주비'] ?? mItem['외주비']);
-            const labor = parseNum(currentFinalData['노무비'] ?? mItem['노무비']);
+        const calculatePricesEngine = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
+            const outsrc = parseNum(currentFinalData?.['외주비'] ?? mItem?.['외주비']);
+            const labor = parseNum(currentFinalData?.['노무비'] ?? mItem?.['노무비']);
             const totalCost = baseInPrice + outsrc + labor;
 
-            const whCode = String(currentFinalData['창고'] ?? mItem['창고'] ?? '').trim();
-            const unitStr = String(currentFinalData['단위'] ?? mItem['단위'] ?? '').trim().toLowerCase();
+            const whCode = String(currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '').trim();
+            const unitStr = String(currentFinalData?.['단위'] ?? mItem?.['단위'] ?? '').trim().toLowerCase();
             
             const matchWh = (ruleWh, targetWh) => {
                 if (ruleWh === '*') return true;
@@ -132,16 +132,16 @@
             let newFinalData = { ...currentFinalData, '입고가': baseInPrice };
             newFinalData['시중가'] = calcOutPrice;
 
-            const providedOutPrice = parseNum(currentFinalData['출고가']);
-            const mIn = parseNum(mItem['입고가']);
-            const mOut = parseNum(mItem['출고가']);
+            const providedOutPrice = parseNum(currentFinalData?.['출고가']);
+            const mIn = parseNum(mItem?.['입고가']);
+            const mOut = parseNum(mItem?.['출고가']);
 
             if (providedOutPrice > 0 && !forceRecalc) newFinalData['출고가'] = providedOutPrice;
             else if (baseInPrice === mIn && mOut > 0 && !forceRecalc) newFinalData['출고가'] = mOut;
             else newFinalData['출고가'] = calcOutPrice;
 
-            const div1 = parseNum(currentFinalData['1종연산'] ?? mItem['1종연산']);
-            const extraCost = parseNum(currentFinalData['경비'] ?? mItem['경비']); 
+            const div1 = parseNum(currentFinalData?.['1종연산'] ?? mItem?.['1종연산']);
+            const extraCost = parseNum(currentFinalData?.['경비'] ?? mItem?.['경비']); 
             if (div1 > 0) {
                 newFinalData['1입고'] = Math.round(((baseInPrice + outsrc) / div1) / 100) * 100;
                 newFinalData['1출고'] = Math.round((Math.round((newFinalData['출고가'] / div1) + extraCost)) / 10) * 10; 
@@ -150,6 +150,7 @@
         };
 
         const parseTextSemantically = (rawText) => {
+            if (!rawText) return [];
             let lines = rawText.split('\n').map(l => l.trim()).filter(l => l !== '');
             const results = [];
             let currentItem = {};
@@ -356,46 +357,55 @@
             } = appState;
 
             const executeParser = useCallback((rawText, tag, forceManual = false) => {
-                setShowInputModal(false); setIsProcessing(true); setProcessMsg("AI 분석 및 스마트 매칭 중...");
+                setShowInputModal(false); 
+                setIsProcessing(true); 
+                setProcessMsg("AI 분석 및 스마트 매칭 중...");
                 setCurrentTag(tag);
                 setProcessedCodes(new Set());
 
                 setTimeout(() => {
-                    const parsedData = parseTextSemantically(rawText);
-                    const results = []; 
-                    
-                    parsedData.forEach(rowData => {
-                        const extName = rowData['품목명'] || '';
-                        const extSpec = rowData['규격'] || '';
+                    try {
+                        const parsedData = parseTextSemantically(rawText);
+                        const results = []; 
                         
-                        let matchResult;
-                        if (forceManual) matchResult = { code: '', status: '🔴 불일치' };
-                        else matchResult = runSmartMatch(extName, extSpec, masterProducts, parserDict);
+                        parsedData.forEach(rowData => {
+                            const extName = rowData['품목명'] || '';
+                            const extSpec = rowData['규격'] || '';
+                            
+                            let matchResult;
+                            if (forceManual) matchResult = { code: '', status: '🔴 불일치' };
+                            else matchResult = runSmartMatch(extName, extSpec, masterProducts, parserDict);
+                            
+                            rowData._matchCode = matchResult.code; 
+                            rowData._matchStatus = matchResult.status;
+                            if(matchResult.code) { rowData.코드 = matchResult.code; }
+                            
+                            rowData.finalData = {};
+                            const pInNum = rowData['입고가'] ? parseNum(rowData['입고가']) : 0;
+                            
+                            if (pInNum > 0 && matchResult.code) {
+                                const mItem = masterProducts[matchResult.code] || {};
+                                rowData.finalData = calculatePricesEngine(pInNum, mItem, {}, marginRules, true);
+                            } else {
+                                rowData.finalData['입고가'] = pInNum;
+                            }
+                            results.push(rowData);
+                        });
                         
-                        rowData._matchCode = matchResult.code; 
-                        rowData._matchStatus = matchResult.status;
-                        if(matchResult.code) { rowData.코드 = matchResult.code; }
-                        
-                        rowData.finalData = {};
-                        const pInNum = rowData['입고가'] ? parseNum(rowData['입고가']) : 0;
-                        
-                        if (pInNum > 0 && matchResult.code) {
-                            const mItem = masterProducts[matchResult.code] || {};
-                            rowData.finalData = calculatePricesEngine(pInNum, mItem, {}, marginRules, true);
-                        } else {
-                            rowData.finalData['입고가'] = pInNum;
-                        }
-                        results.push(rowData);
-                    });
-                    
-                    setParserBuffer(results); 
-                    setActiveTab(forceManual ? 'unmatched' : 'matched'); 
-                    setTargetId(null); setGlobalSearch(''); 
-                    setIsProcessing(false); setProcessMsg(''); 
-                    
-                    setSelectedMissingCodes(new Set());
+                        setParserBuffer(results); 
+                        setActiveTab(forceManual ? 'unmatched' : 'matched'); 
+                        setTargetId(null); 
+                        setGlobalSearch(''); 
+                        setSelectedMissingCodes(new Set());
 
-                    showToast(forceManual ? '✅ 수동 매핑 모드로 로드되었습니다.' : '✅ 텍스트 분석 및 매칭이 완료되었습니다.');
+                        showToast(forceManual ? '✅ 수동 매핑 모드로 로드되었습니다.' : '✅ 텍스트 분석 및 매칭이 완료되었습니다.');
+                    } catch (error) {
+                        console.error(error);
+                        showToast("❌ 텍스트 분석 중 예기치 않은 오류가 발생했습니다.");
+                    } finally {
+                        setIsProcessing(false); 
+                        setProcessMsg(''); 
+                    }
                 }, 100);
             }, [masterProducts, parserDict, marginRules]);
 
@@ -405,90 +415,101 @@
 
                 setIsProcessing(true); setProcessMsg("데이터베이스 저장 및 최적화 중...");
 
-                let newMaster = { ...masterProducts };
-                let newDict = { ...parserDict };
-                let newlyProcessed = new Set(processedCodes);
+                try {
+                    let newMaster = { ...masterProducts };
+                    let newDict = { ...parserDict };
+                    let newlyProcessed = new Set(processedCodes);
 
-                toApply.forEach(row => {
-                    const code = row._matchCode;
-                    newlyProcessed.add(code);
+                    toApply.forEach(row => {
+                        const code = row._matchCode;
+                        newlyProcessed.add(code);
 
-                    if (!newMaster[code]) newMaster[code] = { 코드: code };
-                    else newMaster[code] = { ...newMaster[code] };
+                        if (!newMaster[code]) newMaster[code] = { 코드: code };
+                        else newMaster[code] = { ...newMaster[code] };
+                        
+                        const pInNum = parseNum(row.finalData?.['입고가'] || row['입고가']);
+                        if (pInNum > 0) {
+                            newMaster[code]['입고가'] = pInNum;
+                            const recalculated = calculatePricesEngine(pInNum, newMaster[code], row.finalData || {}, marginRules, false);
+                            Object.assign(newMaster[code], recalculated);
+                        }
+
+                        if (currentTag) {
+                            newMaster[code]['카탈로그'] = addTag(newMaster[code]['카탈로그'], currentTag);
+                        }
+
+                        if (row['품목명']) {
+                            const normExtName = normalizeText(row['품목명']);
+                            const normExtSpec = normalizeText(row['규격']);
+                            newDict[`${normExtName}|${normExtSpec}`] = code;
+                        }
+                    });
+
+                    await saveMaster(newMaster); 
+                    saveDict(newDict); 
                     
-                    const pInNum = parseNum(row.finalData?.['입고가'] || row['입고가']);
-                    if (pInNum > 0) {
-                        newMaster[code]['입고가'] = pInNum;
-                        const recalculated = calculatePricesEngine(pInNum, newMaster[code], row.finalData, marginRules, false);
-                        Object.assign(newMaster[code], recalculated);
-                    }
+                    setProcessedCodes(newlyProcessed);
+                    setParserBuffer(prev => prev.filter(r => !r._apply || !r._matchCode));
 
-                    if (currentTag) {
-                        newMaster[code]['카탈로그'] = addTag(newMaster[code]['카탈로그'], currentTag);
-                    }
-
-                    if (row['품목명']) {
-                        const normExtName = normalizeText(row['품목명']);
-                        const normExtSpec = normalizeText(row['규격']);
-                        newDict[`${normExtName}|${normExtSpec}`] = code;
-                    }
-                });
-
-                await saveMaster(newMaster); 
-                saveDict(newDict); 
-                
-                setProcessedCodes(newlyProcessed);
-                setParserBuffer(prev => prev.filter(r => !r._apply || !r._matchCode));
-
-                setIsProcessing(false); setProcessMsg(''); 
-                showToast(`✅ ${toApply.length}건 반영 완료! (카탈로그 '${currentTag || '미지정'}' 기록됨)`);
-            }, [parserBuffer, masterProducts, parserDict, marginRules, currentTag, processedCodes]);
+                    showToast(`✅ ${toApply.length}건 반영 완료! (카탈로그 '${currentTag || '미지정'}' 기록됨)`);
+                } catch (error) {
+                    console.error(error);
+                    showToast("❌ 데이터베이스 저장 중 오류가 발생했습니다.");
+                } finally {
+                    setIsProcessing(false); setProcessMsg(''); 
+                }
+            }, [parserBuffer, masterProducts, parserDict, marginRules, currentTag, processedCodes, saveMaster, saveDict, setProcessedCodes, setParserBuffer, setIsProcessing, setProcessMsg, showToast]);
 
             const handleConfirmMapping = useCallback(async (masterCode) => { 
                 if (!targetId) return showToast("⚠️ 먼저 왼쪽에서 매핑할 타겟 상품을 선택하세요.");
                 const row = parserBuffer.find(r => r._id === targetId); if (!row) return;
 
-                const normExtName = normalizeText(row['품목명']);
-                const normExtSpec = normalizeText(row['규격']);
-                const dictKey = `${normExtName}|${normExtSpec}`;
-                
-                const newDict = { ...parserDict, [dictKey]: masterCode };
-                saveDict(newDict);
-                
-                let newMaster = { ...masterProducts };
-                if (!newMaster[masterCode]) newMaster[masterCode] = { 코드: masterCode };
-                else newMaster[masterCode] = { ...newMaster[masterCode] };
+                try {
+                    const normExtName = normalizeText(row['품목명']);
+                    const normExtSpec = normalizeText(row['규격']);
+                    const dictKey = `${normExtName}|${normExtSpec}`;
+                    
+                    const newDict = { ...parserDict, [dictKey]: masterCode };
+                    saveDict(newDict);
+                    
+                    let newMaster = { ...masterProducts };
+                    if (!newMaster[masterCode]) newMaster[masterCode] = { 코드: masterCode };
+                    else newMaster[masterCode] = { ...newMaster[masterCode] };
 
-                if (currentTag) {
-                    newMaster[masterCode]['카탈로그'] = addTag(newMaster[masterCode]['카탈로그'], currentTag);
-                }
-                
-                const pInNum = row.finalData['입고가'] ? parseNum(row.finalData['입고가']) : 0;
-                let recalculatedFinal = row.finalData;
-
-                if(pInNum > 0) {
-                    newMaster[masterCode]['입고가'] = pInNum;
-                    recalculatedFinal = calculatePricesEngine(pInNum, newMaster[masterCode], row.finalData, marginRules, false);
-                    Object.assign(newMaster[masterCode], recalculatedFinal);
-                }
-                
-                await saveMaster(newMaster);
-
-                const newProcessed = new Set(processedCodes);
-                newProcessed.add(masterCode);
-                setProcessedCodes(newProcessed);
-
-                const nextBuffer = parserBuffer.map(r => {
-                    if (r._id === targetId) {
-                        return { ...r, _matchCode: masterCode, _matchStatus: '🟠 매핑완료', _apply: true, 코드: masterCode, finalData: recalculatedFinal };
+                    if (currentTag) {
+                        newMaster[masterCode]['카탈로그'] = addTag(newMaster[masterCode]['카탈로그'], currentTag);
                     }
-                    return r;
-                });
+                    
+                    const pInNum = row.finalData?.['입고가'] ? parseNum(row.finalData['입고가']) : 0;
+                    let recalculatedFinal = row.finalData || {};
 
-                setParserBuffer(nextBuffer);
-                setTargetId(null); setGlobalSearch(''); 
-                showToast(`✅ 매핑 및 연결 완료! (카탈로그 '${currentTag}' 기록됨)`);
-            }, [targetId, parserBuffer, masterProducts, parserDict, marginRules, currentTag, processedCodes]);
+                    if(pInNum > 0) {
+                        newMaster[masterCode]['입고가'] = pInNum;
+                        recalculatedFinal = calculatePricesEngine(pInNum, newMaster[masterCode], recalculatedFinal, marginRules, false);
+                        Object.assign(newMaster[masterCode], recalculatedFinal);
+                    }
+                    
+                    await saveMaster(newMaster);
+
+                    const newProcessed = new Set(processedCodes);
+                    newProcessed.add(masterCode);
+                    setProcessedCodes(newProcessed);
+
+                    const nextBuffer = parserBuffer.map(r => {
+                        if (r._id === targetId) {
+                            return { ...r, _matchCode: masterCode, _matchStatus: '🟠 매핑완료', _apply: true, 코드: masterCode, finalData: recalculatedFinal };
+                        }
+                        return r;
+                    });
+
+                    setParserBuffer(nextBuffer);
+                    setTargetId(null); setGlobalSearch(''); 
+                    showToast(`✅ 매핑 및 연결 완료! (카탈로그 '${currentTag}' 기록됨)`);
+                } catch(error) {
+                    console.error(error);
+                    showToast("❌ 수동 매핑 처리 중 오류가 발생했습니다.");
+                }
+            }, [targetId, parserBuffer, masterProducts, parserDict, marginRules, currentTag, processedCodes, saveMaster, saveDict, setProcessedCodes, setParserBuffer, setTargetId, setGlobalSearch, showToast]);
 
             const handleIgnoreParsedItem = useCallback((id) => {
                 setParserBuffer(prev => prev.filter(r => r._id !== id));
@@ -502,31 +523,42 @@
 
                 setIsProcessing(true); setProcessMsg("카탈로그 제외 처리 중...");
                 
-                let newMaster = { ...masterProducts };
-                let count = 0;
+                try {
+                    let newMaster = { ...masterProducts };
+                    let count = 0;
 
-                codesToProcess.forEach(code => {
-                    if (newMaster[code]) {
-                        newMaster[code]['카탈로그'] = removeTag(newMaster[code]['카탈로그'], currentTag);
-                        count++;
-                    }
-                });
+                    codesToProcess.forEach(code => {
+                        if (newMaster[code]) {
+                            newMaster[code]['카탈로그'] = removeTag(newMaster[code]['카탈로그'], currentTag);
+                            count++;
+                        }
+                    });
 
-                await saveMaster(newMaster);
-                setSelectedMissingCodes(new Set()); 
-                setIsProcessing(false); setProcessMsg('');
-                showToast(`✅ ${count}개 상품을 '${currentTag}' 카탈로그에서 조용히 제외했습니다.`);
-            }, [selectedMissingCodes, masterProducts, currentTag]);
+                    await saveMaster(newMaster);
+                    setSelectedMissingCodes(new Set()); 
+                    showToast(`✅ ${count}개 상품을 '${currentTag}' 카탈로그에서 조용히 제외했습니다.`);
+                } catch (error) {
+                    console.error(error);
+                    showToast("❌ 제외 처리 중 오류가 발생했습니다.");
+                } finally {
+                    setIsProcessing(false); setProcessMsg('');
+                }
+            }, [selectedMissingCodes, masterProducts, currentTag, saveMaster, setSelectedMissingCodes, setIsProcessing, setProcessMsg, showToast]);
 
             const handleRemoveTagDirect = useCallback(async (code) => {
                 if (!currentTag) return;
                 if(!window.confirm(`이 상품을 [${currentTag}] 카탈로그에서 강제로 제외(단종)하시겠습니까?`)) return;
                 
-                let newMaster = { ...masterProducts };
-                if (newMaster[code]) {
-                    newMaster[code]['카탈로그'] = removeTag(newMaster[code]['카탈로그'], currentTag);
-                    await saveMaster(newMaster);
-                    showToast(`✅ 선택한 상품을 '${currentTag}' 카탈로그에서 제외했습니다.`);
+                try {
+                    let newMaster = { ...masterProducts };
+                    if (newMaster[code]) {
+                        newMaster[code]['카탈로그'] = removeTag(newMaster[code]['카탈로그'], currentTag);
+                        await saveMaster(newMaster);
+                        showToast(`✅ 선택한 상품을 '${currentTag}' 카탈로그에서 제외했습니다.`);
+                    }
+                } catch(error) {
+                    console.error(error);
+                    showToast("❌ 제외 처리 중 오류가 발생했습니다.");
                 }
             }, [masterProducts, currentTag, saveMaster, showToast]);
 
@@ -712,10 +744,10 @@
                                         </div>
                                         
                                         <nav className="flex gap-2 text-[14px] shrink-0 items-center">
-                                            <a href="https://oneapp.orderz.co.kr/merchOps/guide" target="_blank" rel="noopener noreferrer" className={`h-9 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-emerald-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-300 hover:border-emerald-500/50 font-bold text-[11px] tracking-wider uppercase ${isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="MerchOps 사용 가이드">
+                                            <a href="https://oneapp.orderz.co.kr/MerchOps/guide" target="_blank" rel="noopener noreferrer" className={`h-9 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-emerald-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-300 hover:border-emerald-500/50 font-bold text-[11px] tracking-wider uppercase ${isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="MerchOps 사용 가이드">
                                                 GUIDE
                                             </a>
-                                            <a href="https://oneapp.orderz.co.kr/merchOps/trend_report" target="_blank" rel="noopener noreferrer" className={`h-9 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-blue-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-blue-300 hover:border-blue-500/50 font-bold text-[11px] tracking-wider uppercase ${isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="트렌드 리포트">
+                                            <a href="https://oneapp.orderz.co.kr/MerchOps/trend_report" target="_blank" rel="noopener noreferrer" className={`h-9 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-blue-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-blue-300 hover:border-blue-500/50 font-bold text-[11px] tracking-wider uppercase ${isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="트렌드 리포트">
                                                 TREND REPORT
                                             </a>
                                             <div className="w-px h-5 bg-slate-700 mx-1"></div>
@@ -725,7 +757,7 @@
                                                     if (url.startsWith('blob:') || url.startsWith('about:') || url.startsWith('data:')) {
                                                         showToast('⚠️ 미리보기 환경에서는 우측 상단의 index.html 탭을 직접 클릭하여 이동해주세요.');
                                                     } else {
-                                                        window.location.href = 'https://oneapp.orderz.co.kr/merchOps/mv1.1';
+                                                        window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.1';
                                                     }
                                                 } catch (e) {
                                                     showToast('⚠️ 미리보기 환경에서는 우측 상단의 index.html 탭을 직접 클릭하여 이동해주세요.');
