@@ -90,7 +90,12 @@
         // ==========================================
         // 🧩 2. 핵심 비즈니스 엔진
         // ==========================================
+        // 💡 [수정] 메인 화면과 동일하게 NaN / Infinity 에러 방어 로직을 적용한 엔진
         const calculatePricesEngine = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
+            if (!baseInPrice || baseInPrice <= 0) {
+                return { ...currentFinalData, '입고가': 0, '시중가': 0, '출고가': 0, '1입고': 0, '1출고': 0 };
+            }
+
             const outsrc = parseNum(currentFinalData?.['외주비'] ?? mItem?.['외주비']);
             const labor = parseNum(currentFinalData?.['노무비'] ?? mItem?.['노무비']);
             const totalCost = baseInPrice + outsrc + labor;
@@ -125,9 +130,15 @@
             const appliedRule = bestRule || { rate: 10, type: 'divide' };
 
             let calcOutPrice = totalCost;
-            if (appliedRule.type === 'divide') calcOutPrice = totalCost / (1 - (appliedRule.rate / 100));
-            else calcOutPrice = totalCost * (1 + (appliedRule.rate / 100));
+            if (appliedRule.type === 'divide') {
+                const safeRate = Math.min(appliedRule.rate, 99.99);
+                calcOutPrice = totalCost / (1 - (safeRate / 100));
+            } else {
+                calcOutPrice = totalCost * (1 + (appliedRule.rate / 100));
+            }
             calcOutPrice = Math.round(calcOutPrice / 100) * 100;
+            
+            if (!isFinite(calcOutPrice) || isNaN(calcOutPrice)) calcOutPrice = 0;
 
             let newFinalData = { ...currentFinalData, '입고가': baseInPrice };
             newFinalData['시중가'] = calcOutPrice;
@@ -144,7 +155,9 @@
             const extraCost = parseNum(currentFinalData?.['경비'] ?? mItem?.['경비']); 
             if (div1 > 0) {
                 newFinalData['1입고'] = Math.round(((baseInPrice + outsrc) / div1) / 100) * 100;
-                newFinalData['1출고'] = Math.round((Math.round((newFinalData['출고가'] / div1) + extraCost)) / 10) * 10; 
+                let calc1Out = Math.round((newFinalData['출고가'] / div1) + extraCost);
+                if (!isFinite(calc1Out) || isNaN(calc1Out)) calc1Out = 0;
+                newFinalData['1출고'] = Math.round(calc1Out / 10) * 10; 
             }
             return newFinalData;
         };
@@ -328,8 +341,6 @@
             
             const [activeTab, setActiveTab] = useState('matched'); 
             const [showInputModal, setShowInputModal] = useState(true); 
-            
-            // 💡 [NEW] Two-Track 모달 상태 관리 추가
             const [showReviewModal, setShowReviewModal] = useState(false);
 
             const [toastMsg, setToastMsg] = useState('');
@@ -447,7 +458,7 @@
                         const pInNum = parseNum(row.finalData?.['입고가'] || row['입고가']);
                         if (pInNum > 0) {
                             const oldP = parseNum(oldItem['입고가']);
-                            // 히스토리 로깅 (변동이 있을 경우만)
+                            // 히스토리 로깅 (메인 화면 브리핑용 데이터)
                             if (oldP > 0 && oldP !== pInNum) {
                                 localLogs.push({
                                     id: generateUUID(), timestamp: nowStr, code: code, 
@@ -472,7 +483,6 @@
                         }
                     });
 
-                    // 히스토리 로그 로컬 스토리지에 병합 저장
                     if (localLogs.length > 0) {
                         let currentHistory = [];
                         try { currentHistory = JSON.parse(localStorage.getItem('merchHistory_v870')) || []; } catch(e){}
@@ -503,9 +513,7 @@
                 const row = parserBuffer.find(r => r._id === targetId); if (!row) return;
 
                 try {
-                    // DB 저장을 보류하고 큐(일치 탭)에 상태로만 남겨둠
                     let mItem = masterProducts[masterCode] || { 코드: masterCode };
-                    
                     const pInNum = row.finalData?.['입고가'] ? parseNum(row.finalData['입고가']) : parseNum(row['입고가']);
                     let recalculatedFinal = row.finalData || {};
 
@@ -522,7 +530,7 @@
 
                     setParserBuffer(nextBuffer);
                     setTargetId(null); setGlobalSearch(''); 
-                    setActiveTab('matched'); // 사용자에게 탭 이동을 시각적으로 알림
+                    setActiveTab('matched'); // 매핑 즉시 일치 탭으로 시각적 이동
                     
                     showToast(`✅ 수동 연결 대기 완료! (일치 탭으로 이동되었습니다)`);
                 } catch(error) {
@@ -531,11 +539,9 @@
                 }
             }, [targetId, parserBuffer, masterProducts, marginRules, setParserBuffer, setTargetId, setGlobalSearch, setActiveTab, showToast]);
 
-            // 💡 [NEW] 매핑 검토창에서 잘못 연결된 항목을 다시 불일치 상태로 되돌리는 기능
             const handleCancelMapping = useCallback((rowId) => {
                 setParserBuffer(prev => prev.map(r => {
                     if (r._id === rowId) {
-                        // _matchCode를 지우고 상태를 되돌려 유사/불일치 탭에 다시 나타나게 함
                         return { ...r, _matchCode: '', _matchStatus: '🔴 불일치(취소됨)', _apply: false };
                     }
                     return r;
@@ -651,6 +657,41 @@
         // ==========================================
         // 🧩 5. UI 컴포넌트
         // ==========================================
+
+        // 💡 [NEW] 타이핑 버벅임 방지를 위한 파서용 입력 셀 컴포넌트
+        const EditablePriceCell = React.memo(({ rowId, initialVal, onUpdate }) => {
+            const [localVal, setLocalVal] = useState(initialVal);
+            const [isFocused, setIsFocused] = useState(false);
+
+            useEffect(() => {
+                if (!isFocused) setLocalVal(initialVal);
+            }, [initialVal, isFocused]);
+
+            const commitChange = (v) => {
+                if (String(v) !== String(initialVal)) onUpdate(rowId, v);
+            };
+
+            const handleKeyDown = (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.target.blur();
+                }
+            };
+
+            return (
+                <input 
+                    type="text" 
+                    className="w-full bg-transparent text-right outline-none hover:bg-slate-50 focus:bg-white focus:ring-1 rounded px-1.5 py-1 text-[12px] font-bold text-indigo-700 transition-colors" 
+                    value={localVal === "오류" ? "" : localVal} 
+                    onChange={(e) => setLocalVal(e.target.value)} 
+                    onFocus={() => setIsFocused(true)}
+                    onBlur={(e) => { setIsFocused(false); commitChange(e.target.value); }}
+                    onKeyDown={handleKeyDown}
+                    onClick={(e) => e.target.select()} 
+                />
+            );
+        });
+
         const SmartParserInputModal = ({ onClose, executeParser, showToast, availableTags = [] }) => {
             const [rawText, setRawText] = useState("");
             const [catalogMode, setCatalogMode] = useState(availableTags.length > 0 ? 'select' : 'input');
@@ -724,7 +765,6 @@
             );
         };
 
-        // 💡 [NEW] 스마트 파서용 투트랙(글자/숫자) 프리뷰 모달
         const ParserReviewModal = ({ onClose, onConfirm, state, actions }) => {
             const [viewMode, setViewMode] = useState('mapping'); // 'mapping' | 'price'
             const [priceFilter, setPriceFilter] = useState('all'); // 'all', 'up', 'down', 'same'
@@ -736,7 +776,6 @@
                 return parserBuffer.filter(r => r._apply && r._matchCode);
             }, [parserBuffer]);
 
-            // 리뷰 모달에 타겟 데이터가 없으면 자동 닫기 (모두 취소했을 경우)
             useEffect(() => {
                 if (targetRows.length === 0) onClose();
             }, [targetRows.length, onClose]);
@@ -771,7 +810,6 @@
                 return { up, down, same, total: targetRows.length, list, priceList };
             }, [targetRows, masterProducts]);
 
-            // 필터 적용된 단가 리스트
             const filteredPriceList = useMemo(() => {
                 if (priceFilter === 'all') return analysis.priceList;
                 return analysis.priceList.filter(item => item.상태 === priceFilter);
@@ -785,7 +823,6 @@
                             <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>
                         </div>
                         
-                        {/* 탭 네비게이션 */}
                         <div className="flex bg-slate-100 border-b border-slate-200 shrink-0 p-2 gap-2">
                             <button onClick={() => setViewMode('mapping')} className={`flex-1 py-2.5 rounded-lg font-black text-[13px] transition-all flex justify-center items-center ${viewMode === 'mapping' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:bg-slate-200'}`}>
                                 <i className="fas fa-link mr-2"></i>1. 매핑 검증 (텍스트 비교)
@@ -797,7 +834,6 @@
 
                         <div className="p-5 flex flex-col flex-1 overflow-hidden bg-slate-50">
                             {viewMode === 'mapping' ? (
-                                /* Track 1. 매핑 검증 뷰 */
                                 <div className="flex-1 flex flex-col bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden fade-in">
                                     <div className="px-4 py-3 bg-indigo-50 border-b border-indigo-100 flex justify-between items-center shrink-0">
                                         <span className="text-[12px] font-bold text-indigo-800"><i className="fas fa-info-circle mr-1.5"></i>파싱된 텍스트와 연결된 마스터 상품이 올바른지 확인하세요. 잘못된 연결은 우측에서 '취소'를 누르세요.</span>
@@ -843,9 +879,7 @@
                                     </div>
                                 </div>
                             ) : (
-                                /* Track 2. 단가 브리핑 뷰 (필터 적용됨) */
                                 <div className="flex-1 flex flex-col fade-in">
-                                    {/* 💡 [수정] 요약 카드 (클릭 필터 기능 추가 및 디자인 반전) */}
                                     <div className="grid grid-cols-4 gap-3 mb-3 shrink-0">
                                         <div onClick={() => setPriceFilter('all')} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all hover:-translate-y-0.5 ${priceFilter === 'all' ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-slate-200 hover:bg-slate-100'}`}>
                                             <div className={`text-[11px] font-bold mb-1 ${priceFilter === 'all' ? 'text-slate-300' : 'text-slate-500'}`}><i className="fas fa-list mr-1"></i>전체</div>
@@ -936,7 +970,7 @@
                 showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, 
                 toastMsg, showToast, isProcessing, processMsg,
                 globalSearch, setGlobalSearch, targetId, setTargetId,
-                selectedMissingCodes, setSelectedMissingCodes, processedCodes
+                selectedMissingCodes, setSelectedMissingCodes, processedCodes, marginRules
             } = appState;
 
             const availableTags = useMemo(() => {
@@ -955,10 +989,11 @@
             }, [masterProducts]);
 
             const matchedRows = parserBuffer.filter(r => r._matchCode);
-            const similarRows = parserBuffer.filter(r => !r._matchCode && r._matchStatus.includes('유사'));
+            const similarRows = parserBuffer.filter(r => !r._matchCode && r._matchStatus.includes('유사') && !r._matchStatus.includes('중복'));
+            const duplicateRows = parserBuffer.filter(r => !r._matchCode && r._matchStatus.includes('중복품목'));
+            const combinedSimilarRows = [...duplicateRows, ...similarRows];
             const unmatchedRows = parserBuffer.filter(r => !r._matchCode && r._matchStatus.includes('불일치'));
 
-            // [핵심] 누락(단종) 로직 자동 재계산 엔진
             const missingRows = useMemo(() => {
                 if (!currentTag) return [];
                 const matchedCodes = new Set(matchedRows.map(r => String(r._matchCode)));
@@ -979,9 +1014,8 @@
                 return searchMasterProducts(masterProducts, globalSearch).slice(0, 50);
             }, [globalSearch, masterProducts, activeTab]);
 
-            const displayUnmatchedRows = activeTab === 'similar' ? similarRows : unmatchedRows;
-
-            const hasPendingMappings = similarRows.length > 0 || unmatchedRows.length > 0;
+            const displayUnmatchedRows = activeTab === 'similar' ? combinedSimilarRows : unmatchedRows;
+            const hasPendingMappings = combinedSimilarRows.length > 0 || unmatchedRows.length > 0;
 
             const safeGoToMain = async () => {
                 const toApply = appState.parserBuffer.filter(r => r._apply && r._matchCode);
@@ -995,6 +1029,19 @@
                     window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.2';
                 }
             };
+
+            // 💡 [NEW] 파서 전용 실시간 마진 재연산 업데이트 함수
+            const handleUpdateMatchedPrice = useCallback((rowId, newVal) => {
+                appState.setParserBuffer(prev => prev.map(r => {
+                    if (r._id === rowId) {
+                        const mItem = masterProducts[r._matchCode] || {};
+                        const pInRaw = newVal;
+                        const recalculatedFinal = calculatePricesEngine(parseNum(pInRaw), mItem, r.finalData || {}, marginRules, true);
+                        return { ...r, finalData: recalculatedFinal };
+                    }
+                    return r;
+                }));
+            }, [masterProducts, marginRules, appState]);
 
             return (
                 <div className="h-screen w-full bg-slate-100 flex justify-center overflow-hidden font-sans">
@@ -1058,7 +1105,7 @@
                                 
                                 <div className="flex gap-1.5 shrink-0 bg-slate-100/80 p-1.5 rounded-xl border border-slate-200">
                                     <button onClick={()=>setActiveTab('matched')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black transition-all ${activeTab==='matched' ? 'bg-white text-emerald-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>🟢 일치 ({matchedRows.length})</button>
-                                    <button onClick={()=>setActiveTab('similar')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black transition-all ${activeTab==='similar' ? 'bg-white text-amber-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>🟡 유사 ({similarRows.length})</button>
+                                    <button onClick={()=>setActiveTab('similar')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black transition-all ${activeTab==='similar' ? 'bg-white text-amber-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>🟡 유사 ({combinedSimilarRows.length})</button>
                                     <button onClick={()=>setActiveTab('unmatched')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black transition-all ${activeTab==='unmatched' ? 'bg-white text-rose-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>🔴 불일치 ({unmatchedRows.length})</button>
                                     <div className="w-px bg-slate-300 mx-0.5 my-1"></div>
                                     <button onClick={()=>setActiveTab('missing')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black transition-all flex items-center gap-1.5 ${activeTab==='missing' ? 'bg-white text-slate-800 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>⚪ 누락 {currentTag && missingRows.length > 0 && <span className="bg-rose-100 text-rose-600 px-1.5 rounded text-[10px]">{missingRows.length}</span>}</button>
@@ -1067,7 +1114,6 @@
                                 <div className="flex-1 min-w-[10px]"></div>
 
                                 <div className="flex items-center gap-2 shrink-0">
-                                    {/* 💡 [수정] 완료 버튼 클릭 시 모달창 오픈 */}
                                     {activeTab === 'matched' && (
                                         <button onClick={() => setShowReviewModal(true)} disabled={matchedRows.filter(r=>r._apply).length === 0} className={`h-9 px-5 rounded-lg text-[12px] font-black shadow-sm transition-colors flex items-center ${matchedRows.filter(r=>r._apply).length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`} title="매핑 작업을 완료하고 투트랙 프리뷰를 검토합니다.">
                                             <i className="fas fa-check-circle mr-1.5 text-[13px]"></i> 완료
@@ -1122,10 +1168,9 @@
                                                             <td className="py-2 px-3"><span className="font-bold text-slate-800">{mItem.품목명}</span> <span className="text-[11px] text-slate-400">({mItem.규격})</span></td>
                                                             <td className="py-2 px-3 text-emerald-800 bg-emerald-50/20 font-bold">{row['품목명']}</td>
                                                             <td className="py-2 px-3 text-right text-slate-500 font-bold">{mIn ? mIn.toLocaleString() : '-'}</td>
-                                                            <td className={`py-2 px-3 text-right font-black ${isDiff ? 'text-rose-500 bg-rose-50/30' : 'text-emerald-700 bg-emerald-50/20'}`}>
-                                                                <input type="text" className="w-full bg-transparent text-right outline-none" value={row.finalData['입고가']} onChange={(e) => {
-                                                                    appState.setParserBuffer(p => p.map(r => r._id === row._id ? {...r, finalData: {...r.finalData, '입고가': e.target.value}} : r))
-                                                                }} />
+                                                            <td className={`py-2 px-3 text-right font-black ${isDiff ? 'bg-rose-50/30' : 'bg-emerald-50/20'}`}>
+                                                                {/* 💡 [NEW] 타이핑 버벅임 방지용 EditablePriceCell 적용 */}
+                                                                <EditablePriceCell rowId={row._id} initialVal={row.finalData['입고가']} onUpdate={handleUpdateMatchedPrice} />
                                                             </td>
                                                         </tr>
                                                     )
@@ -1147,7 +1192,7 @@
                                         <div className="bg-amber-50 border-b border-amber-200 p-3.5 flex items-center gap-3 text-amber-800 text-[13px] font-bold shrink-0 shadow-inner">
                                             <i className="fas fa-exclamation-triangle text-amber-500 text-lg"></i>
                                             <div className="flex flex-col">
-                                                <span>주의! 아직 처리하지 않은 [유사] 또는 [불일치] 항목이 <span className="text-rose-600 font-black px-1">{similarRows.length + unmatchedRows.length}건</span> 남아있습니다.</span>
+                                                <span>주의! 아직 처리하지 않은 [유사] 또는 [불일치] 항목이 <span className="text-rose-600 font-black px-1">{combinedSimilarRows.length + unmatchedRows.length}건</span> 남아있습니다.</span>
                                                 <span className="text-[11px] font-normal opacity-80 mt-0.5">이 항목들이 단순히 오타로 인해 매칭 안된 것일 수 있으므로, 수동 연결을 먼저 끝마치신 후에 여기서 누락(단종) 처리를 진행해야 안전합니다.</span>
                                             </div>
                                         </div>
@@ -1258,7 +1303,13 @@
                                                         return (
                                                             <tr key={row._id} onClick={() => { setTargetId(row._id); setGlobalSearch(row['품목명'].replace(/[()[\]{},./]/g, ' ').replace(/\s+/g, ' ').trim()); }} className={`cursor-pointer transition-colors border-l-4 ${isTarget ? 'bg-indigo-50/50 border-indigo-500' : 'hover:bg-slate-50 border-transparent'}`}>
                                                                 <td className="py-2 px-3 text-center"><div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center mx-auto ${isTarget ? 'border-indigo-500 bg-white' : 'border-slate-300'}`}>{isTarget && <div className="w-2 h-2 rounded-full bg-indigo-500"></div>}</div></td>
-                                                                <td className="py-2 px-2 text-center"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold w-max block mx-auto ${activeTab === 'similar' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>{row._matchStatus.substring(0, 2)}</span></td>
+                                                                <td className="py-2 px-2 text-center">
+                                                                    {row._matchStatus.includes('중복품목') ? (
+                                                                        <span className="bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded text-[10px] font-black" title="ERP에 이름이 똑같은 상품이 여러 개 존재합니다. 수동으로 올바른 코드를 연결해 주세요.">선택필요</span>
+                                                                    ) : (
+                                                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold w-max block mx-auto ${activeTab === 'similar' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>{row._matchStatus.substring(0, 2)}</span>
+                                                                    )}
+                                                                </td>
                                                                 <td className="py-2 px-3"><div className="flex flex-col"><span className={`text-[12px] font-extrabold truncate ${isTarget ? 'text-indigo-900' : 'text-slate-800'}`}>{row['품목명']}</span><span className="text-[11px] text-slate-500 mt-0.5 truncate">{row['규격']} {row['단위'] ? `| ${row['단위']}` : ''}</span></div></td>
                                                                 <td className={`py-2 px-3 text-right font-bold ${isTarget ? 'text-indigo-600' : 'text-slate-600'}`}>{row['입고가'] || '-'}</td>
                                                                 <td className="py-2 px-2 text-center">
