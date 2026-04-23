@@ -542,7 +542,10 @@
                 await new Promise(resolve => setTimeout(resolve, 50)); 
 
                 try {
-                    let newMaster = { ...data.masterProducts }; let newManaged = { ...data.managedItems }; let totalCount = 0;
+                    let newMaster = { ...data.masterProducts }; 
+                    // 💡 [수정 핵심] 견적서 엑셀을 로드할 때, 화면에 떠 있던 기존 작업 내역(테스트 상품 찌꺼기 등)을 완전히 초기화(비움)하고 새 파일만 노출합니다.
+                    let newManaged = expectedType === 'estimate' ? {} : { ...data.managedItems }; 
+                    let totalCount = 0;
                     
                     for (const file of files) {
                         let mapKey = expectedType || 'master';
@@ -1313,15 +1316,35 @@
                                 )}
                             </div>
                         </div>
+
+                        {/* Modal Footer */}
                         <div className="bg-slate-100 p-4 border-t border-slate-200 flex justify-between items-center shrink-0">
-                            <button onClick={() => {
+                            <button onClick={async () => {
                                 if(window.confirm("전체 데이터를 초기화하시겠습니까?")) {
+                                    const clearIndexedDB = async () => {
+                                        try {
+                                            const db = await initIDB();
+                                            return new Promise(resolve => {
+                                                const tx = db.transaction('store', 'readwrite');
+                                                tx.objectStore('store').clear();
+                                                tx.oncomplete = resolve;
+                                                tx.onerror = resolve;
+                                            });
+                                        } catch(e) { console.error(e); }
+                                    };
+                                    
+                                    const cloudUrl = localStorage.getItem('merchCloudUrl_v870');
+                                    
                                     if(window.confirm("파서 학습 사전(AI 매칭 데이터)도 함께 삭제할까요?\n(취소 시 사전 데이터는 보존됩니다.)")) {
                                         localStorage.clear();
+                                        await clearIndexedDB();
+                                        if (cloudUrl) localStorage.setItem('merchCloudUrl_v870', cloudUrl);
                                     } else {
                                         const dict = localStorage.getItem('parserDict_v870');
                                         localStorage.clear();
+                                        await clearIndexedDB();
                                         if(dict) localStorage.setItem('parserDict_v870', dict);
+                                        if(cloudUrl) localStorage.setItem('merchCloudUrl_v870', cloudUrl);
                                     }
                                     window.location.reload();
                                 }
@@ -1528,7 +1551,6 @@
             );
         });
 
-        // 💡 [수정/4순위 해결] DOM 과부하를 막는 가상화(Windowing) 무한 스크롤 엔진 적용
         const ExcelDataGrid = ({ state, actions }) => {
             const { isEstimateUploaded, selectedRows, fullDisplayRows, visibleMasterCols, visibleUploadCols, masterProducts, config, data } = state;
             const { setSelectedRows } = actions;
@@ -1539,7 +1561,6 @@
                 setScrollTop(e.target.scrollTop);
             }, []);
 
-            // 💡 [수정/2순위 연계] 하위 컴포넌트의 렌더링을 유발하지 않도록 안정적인 콜백 함수로 분리
             const handleUpdateCell = useCallback((code, field, linkedMasterField, value) => {
                 data.setManagedItems(prev => {
                     let currentItem = prev[code] || { 코드: code, sources: { estimate: {} }, finalData: {} };
@@ -2046,7 +2067,6 @@
                                                 </>
                                             )}
 
-                                            {/* 💡 [수정] target="_blank" 속성을 제거하여 새 탭이 아닌 현재 화면에서 부드럽게 전환 */}
                                             <a href="https://oneapp.orderz.co.kr/MerchOps/guide" className={`h-8 px-2.5 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-emerald-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-300 hover:border-emerald-500/50 font-bold text-[11px] tracking-wider uppercase ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="MerchOps 사용 가이드">
                                                 GUIDE
                                             </a>
