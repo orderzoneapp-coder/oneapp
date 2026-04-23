@@ -950,7 +950,7 @@
         // 🧩 5. UI 컴포넌트들
         // ==========================================
         
-        // 💡 [수정] 좌우 화살표 이동 지원 및 포커스 시 즉시 입력(Select) 기능 보강
+        // 💡 [수정] 좌우 화살표 이동 지원 및 엔터 시 '입고가'로 점프 + 즉시 입력(Select) 기능 보강
         const EditableCell = React.memo(({ rowCode, initialVal, field, linkedMasterField, mVal, onUpdateCell }) => {
             const isNumeric = NUMERIC_HEADERS.includes(linkedMasterField) || NUMERIC_HEADERS.includes(field);
             const [localVal, setLocalVal] = useState(initialVal);
@@ -1001,10 +1001,20 @@
                     if (nextRowIdx !== rowIdx || nextColIdx !== colIdx) {
                         const nextTr = trs[nextRowIdx];
                         if (nextTr) {
-                            const nextTds = Array.from(nextTr.querySelectorAll('td:has(input[type="text"])'));
-                            const nextInput = nextTds[nextColIdx]?.querySelector('input');
+                            let nextInput;
+                            if (e.key === 'Enter') {
+                                // 💡 [핵심] 엔터키를 누르면 무조건 다음 줄의 '입고가' 필드를 찾아서 이동
+                                nextInput = nextTr.querySelector('input[data-field="입고가"]') || nextTr.querySelector('td:has(input[type="text"]) input');
+                            } else {
+                                // 상하좌우 방향키는 그대로 같은 열(Column)로 이동
+                                const nextTds = Array.from(nextTr.querySelectorAll('td:has(input[type="text"])'));
+                                nextInput = nextTds[nextColIdx]?.querySelector('input');
+                            }
+
                             if (nextInput) {
                                 nextInput.focus();
+                                // 💡 [핵심] 리액트 렌더링 사이클에서 씹히지 않게 확실히 전체 블록 지정(Select)
+                                setTimeout(() => nextInput.select(), 0);
                             }
                         }
                     }
@@ -1015,11 +1025,12 @@
                 <td className={`px-1 py-1 border-r border-slate-200 ${getCellWidthClass(linkedMasterField || field)} ${isDiff ? 'bg-amber-50/30' : 'bg-white'}`}>
                     <input 
                         type="text" 
+                        data-field={field} // 💡 입고가 셀을 콕 집어 찾기 위한 식별자 추가
                         className={`w-full bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-1 rounded px-1.5 py-1 text-[12px] outline-none ${isNumeric ? 'text-right font-bold' : 'truncate text-center'} ${isDiff ? 'text-indigo-700' : ''}`} 
                         value={localVal === "오류" ? "" : localVal} 
                         placeholder={mVal || ''} 
                         onChange={(e) => setLocalVal(e.target.value)} 
-                        onFocus={(e) => { setIsFocused(true); e.target.select(); }}
+                        onFocus={(e) => { setIsFocused(true); setTimeout(() => e.target.select(), 0); }} // 클릭 시에도 확실히 전체 선택
                         onBlur={(e) => { setIsFocused(false); commitChange(e.target.value); }}
                         onKeyDown={handleKeyDown}
                         onClick={(e) => e.target.select()} 
@@ -1452,13 +1463,14 @@
                                     checked={isSel} 
                                     onChange={() => onToggleSelection(row.코드)} 
                                     onKeyDown={(e) => {
-                                        // 💡 [NEW] 체크박스에서 Enter 키를 누르면, 해당 행의 첫 번째 입력 셀(입고가 등)로 즉시 이동
+                                        // 💡 [NEW] 체크박스 탭 이동 후 Enter 키를 누르면, 즉시 해당 줄의 '입고가' 입력 셀로 점프!
                                         if (e.key === 'Enter') {
                                             e.preventDefault();
                                             const tr = e.target.closest('tr');
-                                            const firstInput = tr.querySelector('td input[type="text"]');
-                                            if (firstInput) {
-                                                firstInput.focus();
+                                            const targetInput = tr.querySelector('input[data-field="입고가"]') || tr.querySelector('td input[type="text"]');
+                                            if (targetInput) {
+                                                targetInput.focus();
+                                                setTimeout(() => targetInput.select(), 0);
                                             }
                                         }
                                     }}
