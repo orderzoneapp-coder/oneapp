@@ -252,7 +252,15 @@
             useEffect(() => {
                 const loadData = async () => {
                     try {
-                        const mData = await getIDB('merchMaster_v870');
+                        let mData = null;
+                        const v16Data = localStorage.getItem('skuSyncMaster_v6'); 
+                        
+                        if (v16Data) {
+                            mData = JSON.parse(v16Data);
+                        } else {
+                            mData = await getIDB('merchMaster_v870');
+                        }
+                        
                         if (mData) setMasterProducts(mData);
                         
                         const hData = JSON.parse(localStorage.getItem('merchHistory_v870') || '[]');
@@ -260,8 +268,12 @@
 
                         const pData = JSON.parse(localStorage.getItem('merchCustomerReport_v1'));
                         if (pData) setPublishedReport(pData);
-                    } catch (error) { console.error(error); } 
-                    finally { setIsLoading(false); }
+                    } catch (error) { 
+                        console.error(error); 
+                    } 
+                    finally { 
+                        setIsLoading(false); 
+                    }
                 };
                 loadData();
             }, []);
@@ -298,25 +310,26 @@
                 return { marginRisks, volatilityList, changeStats: { total: Object.keys(priceChanges).length, up: upCount, down: downCount } };
             }, [masterProducts, historyLogs]);
 
-            // 💡 [NEW] 카테고리별 분석 데이터
-            const categoryAnalysis = useMemo(() => {
-                const map = new Map();
+            // 💡 [NEW] 1/2/3 Depth 카테고리 계층 구조 생성 엔진
+            const categoryHierarchy = useMemo(() => {
+                const hierarchy = {};
                 Object.values(masterProducts).forEach(item => {
-                    // 3그룹명 또는 카탈로그를 분류 기준으로 사용
-                    const catName = item['3그룹명'] || (item['카탈로그'] ? item['카탈로그'].split(',')[0].trim() : '미분류');
-                    
-                    if (!map.has(catName)) {
-                        map.set(catName, {
-                            name: catName,
+                    // 빈값이면 '미분류'로 묶어줍니다.
+                    const c1 = item['1그룹명'] || '미분류(1차)';
+                    const c2 = item['2그룹명'] || '미분류(2차)';
+                    const c3 = item['3그룹명'] || (item['카탈로그'] ? item['카탈로그'].split(',')[0].trim() : '미분류(3차)');
+
+                    if (!hierarchy[c1]) hierarchy[c1] = {};
+                    if (!hierarchy[c1][c2]) hierarchy[c1][c2] = {};
+                    if (!hierarchy[c1][c2][c3]) {
+                        hierarchy[c1][c2][c3] = {
+                            name: c3,
                             items: [],
-                            totalItems: 0,
-                            marginSum: 0,
-                            validMarginCount: 0,
-                            upCount: 0,
-                            downCount: 0
-                        });
+                            totalItems: 0, marginSum: 0, validMarginCount: 0, upCount: 0, downCount: 0
+                        };
                     }
-                    const c = map.get(catName);
+
+                    const c = hierarchy[c1][c2][c3];
                     c.items.push(item);
                     c.totalItems++;
 
@@ -328,7 +341,7 @@
                     }
                 });
 
-                // 히스토리 변동 합산
+                // 히스토리 변동 내역 합산
                 const priceChanges = historyLogs.reduce((acc, log) => {
                     if (!acc[log.code] || new Date(log.timestamp) > new Date(acc[log.code].timestamp)) acc[log.code] = log;
                     return acc;
@@ -337,30 +350,63 @@
                 Object.values(priceChanges).forEach(log => {
                     const mItem = masterProducts[log.code];
                     if (mItem) {
-                        const catName = mItem['3그룹명'] || (mItem['카탈로그'] ? mItem['카탈로그'].split(',')[0].trim() : '미분류');
-                        const c = map.get(catName);
-                        if (c) {
+                        const c1 = mItem['1그룹명'] || '미분류(1차)';
+                        const c2 = mItem['2그룹명'] || '미분류(2차)';
+                        const c3 = mItem['3그룹명'] || (mItem['카탈로그'] ? mItem['카탈로그'].split(',')[0].trim() : '미분류(3차)');
+                        
+                        if (hierarchy[c1] && hierarchy[c1][c2] && hierarchy[c1][c2][c3]) {
+                            const c = hierarchy[c1][c2][c3];
                             if (log.diff > 0) c.upCount++;
                             if (log.diff < 0) c.downCount++;
                         }
                     }
                 });
 
-                return Array.from(map.values())
-                    .map(c => ({
-                        ...c,
-                        avgMargin: c.validMarginCount > 0 ? (c.marginSum / c.validMarginCount) : 0
-                    }))
-                    .sort((a, b) => b.totalItems - a.totalItems);
+                // 평균 마진율 계산
+                Object.keys(hierarchy).forEach(c1 => {
+                    Object.keys(hierarchy[c1]).forEach(c2 => {
+                        Object.keys(hierarchy[c1][c2]).forEach(c3 => {
+                            const c = hierarchy[c1][c2][c3];
+                            c.avgMargin = c.validMarginCount > 0 ? (c.marginSum / c.validMarginCount) : 0;
+                        });
+                    });
+                });
+
+                return hierarchy;
             }, [masterProducts, historyLogs]);
 
-            const [activeCatFilter, setActiveCatFilter] = useState(null);
+            // 계층별 선택 상태 관리
+            const [activeC1, setActiveC1] = useState(null);
+            const [activeC2, setActiveC2] = useState(null);
+            const [activeC3, setActiveC3] = useState(null);
+
+            // 1차 카테고리 목록
+            const c1List = useMemo(() => Object.keys(categoryHierarchy).sort(), [categoryHierarchy]);
+            
+            useEffect(() => {
+                if (c1List.length > 0 && !c1List.includes(activeC1)) setActiveC1(c1List[0]);
+            }, [c1List, activeC1]);
+
+            // 2차 카테고리 목록
+            const c2List = useMemo(() => activeC1 && categoryHierarchy[activeC1] ? Object.keys(categoryHierarchy[activeC1]).sort() : [], [categoryHierarchy, activeC1]);
+            
+            useEffect(() => {
+                if (c2List.length > 0 && !c2List.includes(activeC2)) setActiveC2(c2List[0]);
+                else if (c2List.length === 0) setActiveC2(null);
+            }, [c2List, activeC1, activeC2]);
+
+            // 3차 카테고리 목록 (객체 배열)
+            const c3List = useMemo(() => {
+                if (activeC1 && activeC2 && categoryHierarchy[activeC1]?.[activeC2]) {
+                    return Object.values(categoryHierarchy[activeC1][activeC2]).sort((a,b) => b.totalItems - a.totalItems);
+                }
+                return [];
+            }, [categoryHierarchy, activeC1, activeC2]);
 
             useEffect(() => {
-                if (categoryAnalysis.length > 0 && !activeCatFilter) {
-                    setActiveCatFilter(categoryAnalysis[0].name);
-                }
-            }, [categoryAnalysis, activeCatFilter]);
+                if (c3List.length > 0 && !c3List.find(c => c.name === activeC3)) setActiveC3(c3List[0].name);
+                else if (c3List.length === 0) setActiveC3(null);
+            }, [c3List, activeC1, activeC2, activeC3]);
 
             // 에디터 핸들러
             const handleLoadRecentChanges = () => {
@@ -441,11 +487,11 @@
                         </div>
                     )}
 
-                    <div className="flex-1 flex flex-col overflow-hidden bg-slate-50 pt-6">
+                    <div className="flex-1 flex flex-col overflow-hidden bg-slate-50 border-t border-slate-200">
                         
                         {/* ================= TAB 1: 통합 대시보드 ================= */}
                         {activeTab === 'dashboard' && (
-                            <div className="h-full flex flex-col overflow-y-auto custom-scrollbar px-6 pb-6 fade-in space-y-6">
+                            <div className="h-full flex flex-col overflow-y-auto custom-scrollbar p-6 fade-in space-y-6">
                                 {/* 요약 카드 */}
                                 <div className="grid grid-cols-3 gap-5">
                                     <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col">
@@ -520,195 +566,233 @@
                             </div>
                         )}
 
-                        {/* ================= TAB 2: 카테고리별 분석 ================= */}
+                        {/* ================= TAB 2: 카테고리별 분석 (1,2,3 그룹 네비게이션) ================= */}
                         {activeTab === 'category' && (
-                            <div className="h-full flex gap-6 fade-in px-6 pb-6 bg-slate-50">
-                                {/* 좌측: 카테고리 리스트 */}
-                                <div className="w-[280px] bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col overflow-hidden shrink-0">
-                                    <div className="px-5 py-4 border-b border-gray-100 bg-slate-50 shrink-0">
-                                        <h3 className="text-sm font-bold text-slate-800">카테고리/분류 목록</h3>
-                                        <p className="text-[11px] text-slate-500 mt-1">총 {categoryAnalysis.length}개의 분류 감지됨</p>
-                                    </div>
-                                    <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
-                                        {categoryAnalysis.map(cat => (
+                            <div className="h-full flex flex-col bg-slate-50 fade-in">
+                                {/* 1Depth Categories (Top Row) */}
+                                <div className="flex items-end px-6 pt-3 border-b border-gray-200 bg-slate-100 shrink-0 h-[56px]">
+                                    <div className="flex overflow-x-auto custom-scrollbar h-full items-end w-full gap-1">
+                                        {c1List.length === 0 && <span className="text-sm text-slate-400 px-4 pb-2 font-bold">분류 데이터가 없습니다.</span>}
+                                        {c1List.map(c1 => (
                                             <button 
-                                                key={cat.name} 
-                                                onClick={() => setActiveCatFilter(cat.name)}
-                                                className={`w-full text-left px-4 py-3 rounded-lg text-[13px] font-bold transition-all mb-1
-                                                ${activeCatFilter === cat.name ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-sm' : 'border border-transparent text-slate-600 hover:bg-slate-50'}`}
+                                                key={c1} onClick={() => setActiveC1(c1)} 
+                                                className={`px-5 py-2.5 text-[13px] font-bold rounded-t-lg transition-colors border-b-[3px]
+                                                ${activeC1 === c1 ? 'border-indigo-600 text-indigo-700 bg-white shadow-[0_-2px_5px_rgba(0,0,0,0.02)]' : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'}`}
                                             >
-                                                <div className="flex justify-between items-center">
-                                                    <span className="truncate pr-2">{cat.name}</span>
-                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${activeCatFilter === cat.name ? 'bg-indigo-200 text-indigo-800' : 'bg-slate-100 text-slate-500'}`}>{cat.totalItems}건</span>
-                                                </div>
-                                                <div className="flex gap-2 mt-1.5 text-[10px] font-medium">
-                                                    <span className={cat.upCount > 0 ? 'text-rose-500' : 'text-slate-400'}>↑ {cat.upCount}</span>
-                                                    <span className={cat.downCount > 0 ? 'text-blue-500' : 'text-slate-400'}>↓ {cat.downCount}</span>
-                                                    <span className="text-slate-400 ml-auto">마진 {cat.avgMargin.toFixed(1)}%</span>
-                                                </div>
+                                                {c1}
                                             </button>
                                         ))}
                                     </div>
                                 </div>
 
-                                {/* 우측: 선택된 카테고리 상세 */}
-                                <div className="flex-1 bg-white border border-gray-200 rounded-xl shadow-sm flex flex-col overflow-hidden">
-                                    {activeCatFilter ? (() => {
-                                        const catData = categoryAnalysis.find(c => c.name === activeCatFilter);
-                                        return (
-                                            <>
-                                                <div className="bg-slate-50 px-6 py-5 border-b border-gray-200 flex items-center justify-between shrink-0">
-                                                    <div>
-                                                        <h2 className="text-lg font-black text-slate-900 flex items-center"><i className="fas fa-folder-open text-indigo-500 mr-2"></i>{catData.name}</h2>
-                                                        <p className="text-[12px] text-slate-500 mt-1">이 카테고리에 속한 전체 상품의 단가 및 마진율 현황입니다.</p>
-                                                    </div>
-                                                    <div className="flex gap-4">
-                                                        <div className="bg-white px-4 py-2 rounded-lg border border-gray-200 shadow-sm text-center">
-                                                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">평균 마진율</div>
-                                                            <div className={`text-sm font-black ${catData.avgMargin < 15 ? 'text-rose-500' : 'text-emerald-600'}`}>{catData.avgMargin.toFixed(1)}%</div>
-                                                        </div>
-                                                        <div className="bg-white px-4 py-2 rounded-lg border border-gray-200 shadow-sm text-center">
-                                                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">단가 인상</div>
-                                                            <div className="text-sm font-black text-rose-500">{catData.upCount}건</div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div className="flex-1 overflow-y-auto custom-scrollbar">
-                                                    <table className="w-full text-left text-sm whitespace-nowrap">
-                                                        <thead className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
-                                                            <tr>
-                                                                <th className="py-2.5 px-5 font-bold text-slate-500 text-xs w-[100px]">품목코드</th>
-                                                                <th className="py-2.5 px-4 font-bold text-slate-500 text-xs">품목명 (규격)</th>
-                                                                <th className="py-2.5 px-4 font-bold text-slate-500 text-xs text-right w-24">입고가</th>
-                                                                <th className="py-2.5 px-4 font-bold text-slate-500 text-xs text-right w-24 text-indigo-600">출고가</th>
-                                                                <th className="py-2.5 px-5 font-bold text-slate-500 text-xs text-right w-20">마진율</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="divide-y divide-gray-100 text-slate-700">
-                                                            {catData.items.map(item => {
-                                                                const inP = parseNum(item['입고가']); const outP = parseNum(item['출고가']);
-                                                                const margin = inP > 0 && outP > 0 ? ((outP - inP) / outP) * 100 : 0;
-                                                                return (
-                                                                    <tr key={item.코드} className="hover:bg-slate-50 transition-colors">
-                                                                        <td className="py-2.5 px-5 text-xs font-mono text-slate-400">{item.코드}</td>
-                                                                        <td className="py-2.5 px-4">
-                                                                            <div className="font-bold text-slate-800 text-[13px]">{item.품목명} <span className="font-normal text-slate-500 text-xs ml-1">({item.규격})</span></div>
-                                                                        </td>
-                                                                        <td className="py-2.5 px-4 text-right text-[13px] font-medium">{inP > 0 ? inP.toLocaleString() : '-'}</td>
-                                                                        <td className="py-2.5 px-4 text-right text-[13px] font-black text-indigo-600">{outP > 0 ? outP.toLocaleString() : '-'}</td>
-                                                                        <td className={`py-2.5 px-5 text-right text-xs font-black ${margin < 15 ? 'text-rose-500' : 'text-emerald-600'}`}>{margin.toFixed(1)}%</td>
-                                                                    </tr>
-                                                                );
-                                                            })}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </>
-                                        );
-                                    })() : (
-                                        <div className="h-full flex flex-col justify-center items-center text-slate-300">
-                                            <i className="fas fa-hand-point-left text-4xl mb-3"></i><p className="text-sm font-bold text-slate-400">좌측에서 카테고리를 선택하세요.</p>
+                                {/* Main Split Body */}
+                                <div className="flex-1 flex overflow-hidden">
+                                    {/* 2Depth Categories (Left Vertical Column) */}
+                                    <div className="w-[200px] bg-white border-r border-gray-200 overflow-y-auto py-2 shrink-0 custom-scrollbar shadow-[2px_0_10px_rgba(0,0,0,0.02)] z-20">
+                                        {c2List.map(c2 => (
+                                            <button 
+                                                key={c2} onClick={() => setActiveC2(c2)}
+                                                className={`w-full text-left px-5 py-3.5 text-[13px] font-bold transition-all border-l-4 
+                                                ${activeC2 === c2 ? 'bg-indigo-50/50 text-indigo-700 border-indigo-600' : 'border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
+                                            >
+                                                {c2}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {/* 3Depth Categories List (Middle Column) */}
+                                    <div className="w-[280px] bg-slate-50 border-r border-gray-200 flex flex-col overflow-hidden shrink-0 z-10 shadow-[2px_0_10px_rgba(0,0,0,0.02)]">
+                                        <div className="px-5 py-4 border-b border-gray-200 bg-white shrink-0">
+                                            <h3 className="text-[13px] font-black text-slate-800 flex items-center"><i className="fas fa-sitemap text-indigo-400 mr-2"></i>3차 분류(소분류) 목록</h3>
+                                            <p className="text-[11px] text-slate-500 mt-1">{c3List.length}개의 하위 카테고리 감지됨</p>
                                         </div>
-                                    )}
+                                        <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
+                                            {c3List.map(cat => (
+                                                <button 
+                                                    key={cat.name} 
+                                                    onClick={() => setActiveC3(cat.name)}
+                                                    className={`w-full text-left px-4 py-3 rounded-lg text-[13px] font-bold transition-all mb-1.5
+                                                    ${activeC3 === cat.name ? 'bg-white text-indigo-700 border border-indigo-200 shadow-sm ring-1 ring-indigo-100' : 'border border-transparent text-slate-600 hover:bg-white hover:border-slate-200 hover:shadow-sm'}`}
+                                                >
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="truncate pr-2">{cat.name}</span>
+                                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${activeC3 === cat.name ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-500'}`}>{cat.totalItems}건</span>
+                                                    </div>
+                                                    <div className="flex gap-2 mt-2 text-[10px] font-medium">
+                                                        <span className={cat.upCount > 0 ? 'text-rose-500' : 'text-slate-400'}>↑ {cat.upCount}</span>
+                                                        <span className={cat.downCount > 0 ? 'text-blue-500' : 'text-slate-400'}>↓ {cat.downCount}</span>
+                                                        <span className={`ml-auto font-bold ${cat.avgMargin < 15 ? 'text-rose-500' : 'text-slate-400'}`}>마진 {cat.avgMargin.toFixed(1)}%</span>
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Right Pane: Selected 3Depth Details */}
+                                    <div className="flex-1 bg-white flex flex-col overflow-hidden z-0">
+                                        {activeC3 && c3List.find(c => c.name === activeC3) ? (() => {
+                                            const catData = c3List.find(c => c.name === activeC3);
+                                            return (
+                                                <>
+                                                    <div className="bg-white px-6 py-5 border-b border-gray-200 flex items-center justify-between shrink-0">
+                                                        <div>
+                                                            <h2 className="text-lg font-black text-slate-900 flex items-center"><i className="fas fa-folder-open text-indigo-500 mr-2"></i>{catData.name}</h2>
+                                                            <div className="text-[11px] text-slate-500 mt-1.5 flex items-center gap-2">
+                                                                <span className="bg-slate-100 px-1.5 py-0.5 rounded">{activeC1}</span> <i className="fas fa-chevron-right text-[8px] text-slate-300"></i>
+                                                                <span className="bg-slate-100 px-1.5 py-0.5 rounded">{activeC2}</span> <i className="fas fa-chevron-right text-[8px] text-slate-300"></i>
+                                                                <span className="font-bold text-slate-700">{activeC3}</span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex gap-3">
+                                                            <div className="bg-slate-50 px-4 py-2 rounded-lg border border-gray-200 text-center shadow-sm">
+                                                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">평균 마진율</div>
+                                                                <div className={`text-sm font-black ${catData.avgMargin < 15 ? 'text-rose-500' : 'text-emerald-600'}`}>{catData.avgMargin.toFixed(1)}%</div>
+                                                            </div>
+                                                            <div className="bg-slate-50 px-4 py-2 rounded-lg border border-gray-200 text-center shadow-sm">
+                                                                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">단가 인상</div>
+                                                                <div className="text-sm font-black text-rose-500">{catData.upCount}건</div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50/30">
+                                                        <table className="w-full text-left text-sm whitespace-nowrap">
+                                                            <thead className="bg-slate-50 border-b border-gray-200 sticky top-0 z-10 shadow-sm">
+                                                                <tr>
+                                                                    <th className="py-3 px-5 font-bold text-slate-500 text-[11px] w-[100px]">품목코드</th>
+                                                                    <th className="py-3 px-4 font-bold text-slate-500 text-[11px]">품목명 (규격)</th>
+                                                                    <th className="py-3 px-4 font-bold text-slate-500 text-[11px] text-right w-24">입고가</th>
+                                                                    <th className="py-3 px-4 font-bold text-slate-500 text-[11px] text-right w-24 text-indigo-600">출고가</th>
+                                                                    <th className="py-3 px-5 font-bold text-slate-500 text-[11px] text-right w-20">마진율</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-gray-100 text-slate-700 bg-white">
+                                                                {catData.items.map(item => {
+                                                                    const inP = parseNum(item['입고가']); const outP = parseNum(item['출고가']);
+                                                                    const margin = inP > 0 && outP > 0 ? ((outP - inP) / outP) * 100 : 0;
+                                                                    return (
+                                                                        <tr key={item.코드} className="hover:bg-indigo-50/40 transition-colors">
+                                                                            <td className="py-2.5 px-5 text-xs font-mono text-slate-400">{item.코드}</td>
+                                                                            <td className="py-2.5 px-4">
+                                                                                <div className="font-bold text-slate-800 text-[13px]">{item.품목명} <span className="font-normal text-slate-500 text-xs ml-1">({item.규격})</span></div>
+                                                                            </td>
+                                                                            <td className="py-2.5 px-4 text-right text-[13px] font-medium">{inP > 0 ? inP.toLocaleString() : '-'}</td>
+                                                                            <td className="py-2.5 px-4 text-right text-[13px] font-black text-indigo-600">{outP > 0 ? outP.toLocaleString() : '-'}</td>
+                                                                            <td className={`py-2.5 px-5 text-right text-xs font-black ${margin < 15 ? 'text-rose-500' : 'text-emerald-600'}`}>{margin.toFixed(1)}%</td>
+                                                                        </tr>
+                                                                    );
+                                                                })}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </>
+                                            );
+                                        })() : (
+                                            <div className="h-full flex flex-col justify-center items-center text-slate-300 bg-slate-50/30">
+                                                <i className="fas fa-hand-point-left text-5xl mb-4 opacity-50 text-indigo-200"></i><p className="text-sm font-bold text-slate-400">좌측에서 3차 분류를 선택하시면<br/>해당하는 상품 목록과 통계를 표시합니다.</p>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         )}
 
                         {/* ================= TAB 3: 안내장 에디터 ================= */}
                         {activeTab === 'editor' && (
-                            <div className="max-w-[900px] mx-auto fade-in pb-10 px-6">
-                                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                                    <div className="p-6 border-b border-gray-100 flex justify-between items-end bg-slate-50">
-                                        <div>
-                                            <h2 className="text-lg font-black text-slate-800 mb-1"><i className="fas fa-pen-nib text-indigo-500 mr-2"></i>고객 안내장(레터) 에디터</h2>
-                                            <p className="text-xs text-slate-500 font-bold">작성 내용은 브라우저에 자동 임시저장됩니다. 작성을 마치고 '적용'을 눌러야 뷰어가 갱신됩니다.</p>
-                                        </div>
-                                        <button onClick={handleLoadRecentChanges} className="bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 px-4 py-2 rounded-md text-[12px] font-bold transition-all shadow-sm flex items-center">
-                                            <i className="fas fa-magic mr-1.5"></i> 변동 데이터 불러오기
-                                        </button>
-                                    </div>
-                                    
-                                    <div className="p-6 space-y-6">
-                                        {/* 1. 타이틀 & 인사말 */}
-                                        <div className="space-y-4">
+                            <div className="h-full overflow-y-auto custom-scrollbar p-6 fade-in">
+                                <div className="max-w-[900px] mx-auto pb-10">
+                                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                        <div className="p-6 border-b border-gray-100 flex justify-between items-end bg-slate-50">
                                             <div>
-                                                <label className="block text-[12px] font-black text-slate-700 mb-1.5">안내장 제목</label>
-                                                <input type="text" value={editorDraft.title} onChange={e => setEditorDraft(p => ({...p, title: e.target.value}))} className="w-full border border-gray-300 rounded-md px-3 py-2 text-[14px] font-bold outline-none focus:border-indigo-500 focus:ring-1 transition-shadow" placeholder="예: [Orderz] 4월 3주차 주요 품목 단가 안내" />
+                                                <h2 className="text-lg font-black text-slate-800 mb-1"><i className="fas fa-pen-nib text-indigo-500 mr-2"></i>고객 안내장(레터) 에디터</h2>
+                                                <p className="text-xs text-slate-500 font-bold">작성 내용은 브라우저에 자동 임시저장됩니다. 작성을 마치고 '적용'을 눌러야 뷰어가 갱신됩니다.</p>
                                             </div>
-                                            <div>
-                                                <label className="block text-[12px] font-black text-slate-700 mb-1.5">전체 인사말 (Global Briefing)</label>
-                                                <textarea value={editorDraft.greeting} onChange={e => setEditorDraft(p => ({...p, greeting: e.target.value}))} className="w-full h-28 border border-gray-300 rounded-md px-3 py-2 text-[13px] outline-none focus:border-indigo-500 focus:ring-1 resize-none leading-relaxed transition-shadow" placeholder="인사말 및 전반적인 시장 상황을 안내하세요." />
-                                            </div>
+                                            <button onClick={handleLoadRecentChanges} className="bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 px-4 py-2 rounded-md text-[12px] font-bold transition-all shadow-sm flex items-center">
+                                                <i className="fas fa-magic mr-1.5"></i> 변동 데이터 불러오기
+                                            </button>
                                         </div>
-
-                                        <div className="w-full h-px bg-gray-200 my-2"></div>
-
-                                        {/* 2. 카테고리별 브리핑 & 항목 */}
-                                        <div>
-                                            <div className="flex items-center justify-between mb-4">
-                                                <label className="text-[14px] font-black text-slate-800"><i className="fas fa-list text-indigo-400 mr-2"></i>카테고리(출처)별 세부 안내</label>
-                                                <span className="text-[11px] text-slate-400 font-bold">항목 우측의 휴지통을 눌러 고객에게 숨길 상품을 뺄 수 있습니다.</span>
-                                            </div>
-                                            
-                                            {Object.keys(editorDraft.categories).length === 0 ? (
-                                                <div className="text-center py-10 bg-slate-50 border border-dashed border-gray-300 rounded-xl">
-                                                    <p className="text-[13px] text-slate-400 font-bold mb-3">불러온 변동 데이터가 없습니다.</p>
-                                                    <button onClick={handleLoadRecentChanges} className="text-indigo-500 hover:text-indigo-600 font-black text-[12px] underline">우측 상단 '자동 불러오기' 클릭</button>
+                                        
+                                        <div className="p-6 space-y-6">
+                                            {/* 1. 타이틀 & 인사말 */}
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <label className="block text-[12px] font-black text-slate-700 mb-1.5">안내장 제목</label>
+                                                    <input type="text" value={editorDraft.title} onChange={e => setEditorDraft(p => ({...p, title: e.target.value}))} className="w-full border border-gray-300 rounded-md px-3 py-2 text-[14px] font-bold outline-none focus:border-indigo-500 focus:ring-1 transition-shadow" placeholder="예: [Orderz] 4월 3주차 주요 품목 단가 안내" />
                                                 </div>
-                                            ) : (
-                                                <div className="space-y-6">
-                                                    {Object.entries(editorDraft.categories).map(([catName, catData]) => (
-                                                        <div key={catName} className="bg-slate-50 border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                                                            <div className="p-4 bg-white border-b border-gray-200 flex justify-between items-center">
-                                                                <div className="font-black text-slate-800 text-[14px]"><i className="fas fa-folder-open text-indigo-400 mr-2"></i>{catName} <span className="text-indigo-500 text-[11px] ml-1">({catData.items.length}건)</span></div>
-                                                                <button onClick={() => { const n = {...editorDraft.categories}; delete n[catName]; setEditorDraft(p => ({...p, categories: n})); }} className="text-[11px] text-rose-400 hover:text-rose-600 font-bold px-2 py-1 rounded hover:bg-rose-50 transition-colors"><i className="fas fa-times mr-1"></i>카테고리 삭제</button>
-                                                            </div>
-                                                            <div className="p-4 space-y-3">
-                                                                <textarea value={catData.comment} onChange={e => { const n = {...editorDraft.categories}; n[catName].comment = e.target.value; setEditorDraft(p => ({...p, categories: n})); }} className="w-full h-16 border border-gray-300 rounded-md px-3 py-2 text-[12px] outline-none focus:border-indigo-400 focus:ring-1 resize-none bg-white transition-shadow" placeholder={`${catName} 카테고리에 대한 변동 사유나 코멘트를 적어주세요. (선택사항)`} />
-                                                                <div className="bg-white border border-gray-200 rounded-md divide-y divide-gray-100 max-h-[250px] overflow-y-auto custom-scrollbar">
-                                                                    {catData.items.map(item => (
-                                                                        <div key={item.id} className="flex justify-between items-center p-3 hover:bg-slate-50 transition-colors">
-                                                                            <div className="flex flex-col min-w-0">
-                                                                                <span className="text-[12px] font-bold text-slate-800 truncate">{item.name}</span>
-                                                                                <span className="text-[10px] text-slate-400 mt-0.5">{item.spec}</span>
+                                                <div>
+                                                    <label className="block text-[12px] font-black text-slate-700 mb-1.5">전체 인사말 (Global Briefing)</label>
+                                                    <textarea value={editorDraft.greeting} onChange={e => setEditorDraft(p => ({...p, greeting: e.target.value}))} className="w-full h-28 border border-gray-300 rounded-md px-3 py-2 text-[13px] outline-none focus:border-indigo-500 focus:ring-1 resize-none leading-relaxed transition-shadow" placeholder="인사말 및 전반적인 시장 상황을 안내하세요." />
+                                                </div>
+                                            </div>
+
+                                            <div className="w-full h-px bg-gray-200 my-2"></div>
+
+                                            {/* 2. 카테고리별 브리핑 & 항목 */}
+                                            <div>
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <label className="text-[14px] font-black text-slate-800"><i className="fas fa-list text-indigo-400 mr-2"></i>카테고리(출처)별 세부 안내</label>
+                                                    <span className="text-[11px] text-slate-400 font-bold">항목 우측의 휴지통을 눌러 고객에게 숨길 상품을 뺄 수 있습니다.</span>
+                                                </div>
+                                                
+                                                {Object.keys(editorDraft.categories).length === 0 ? (
+                                                    <div className="text-center py-10 bg-slate-50 border border-dashed border-gray-300 rounded-xl">
+                                                        <p className="text-[13px] text-slate-400 font-bold mb-3">불러온 변동 데이터가 없습니다.</p>
+                                                        <button onClick={handleLoadRecentChanges} className="text-indigo-500 hover:text-indigo-600 font-black text-[12px] underline">우측 상단 '자동 불러오기' 클릭</button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-6">
+                                                        {Object.entries(editorDraft.categories).map(([catName, catData]) => (
+                                                            <div key={catName} className="bg-slate-50 border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                                                                <div className="p-4 bg-white border-b border-gray-200 flex justify-between items-center">
+                                                                    <div className="font-black text-slate-800 text-[14px]"><i className="fas fa-folder-open text-indigo-400 mr-2"></i>{catName} <span className="text-indigo-500 text-[11px] ml-1">({catData.items.length}건)</span></div>
+                                                                    <button onClick={() => { const n = {...editorDraft.categories}; delete n[catName]; setEditorDraft(p => ({...p, categories: n})); }} className="text-[11px] text-rose-400 hover:text-rose-600 font-bold px-2 py-1 rounded hover:bg-rose-50 transition-colors"><i className="fas fa-times mr-1"></i>카테고리 삭제</button>
+                                                                </div>
+                                                                <div className="p-4 space-y-3">
+                                                                    <textarea value={catData.comment} onChange={e => { const n = {...editorDraft.categories}; n[catName].comment = e.target.value; setEditorDraft(p => ({...p, categories: n})); }} className="w-full h-16 border border-gray-300 rounded-md px-3 py-2 text-[12px] outline-none focus:border-indigo-400 focus:ring-1 resize-none bg-white transition-shadow" placeholder={`${catName} 카테고리에 대한 변동 사유나 코멘트를 적어주세요. (선택사항)`} />
+                                                                    <div className="bg-white border border-gray-200 rounded-md divide-y divide-gray-100 max-h-[250px] overflow-y-auto custom-scrollbar">
+                                                                        {catData.items.map(item => (
+                                                                            <div key={item.id} className="flex justify-between items-center p-3 hover:bg-slate-50 transition-colors">
+                                                                                <div className="flex flex-col min-w-0">
+                                                                                    <span className="text-[12px] font-bold text-slate-800 truncate">{item.name}</span>
+                                                                                    <span className="text-[10px] text-slate-400 mt-0.5">{item.spec}</span>
+                                                                                </div>
+                                                                                <div className="flex items-center gap-3 shrink-0">
+                                                                                    <span className="text-[11px] text-slate-400 font-mono line-through decoration-slate-300">{item.oldVal?.toLocaleString()}</span>
+                                                                                    <span className="text-[12px] font-black text-indigo-600 font-mono bg-indigo-50 px-1.5 py-0.5 rounded">{item.newVal?.toLocaleString()}</span>
+                                                                                    <button onClick={() => { const n = {...editorDraft.categories}; n[catName].items = n[catName].items.filter(i => i.id !== item.id); setEditorDraft(p => ({...p, categories: n})); }} className="text-slate-300 hover:text-rose-500 hover:bg-rose-50 w-6 h-6 flex items-center justify-center rounded transition-colors ml-1"><i className="fas fa-trash-alt"></i></button>
+                                                                                </div>
                                                                             </div>
-                                                                            <div className="flex items-center gap-3 shrink-0">
-                                                                                <span className="text-[11px] text-slate-400 font-mono line-through decoration-slate-300">{item.oldVal?.toLocaleString()}</span>
-                                                                                <span className="text-[12px] font-black text-indigo-600 font-mono bg-indigo-50 px-1.5 py-0.5 rounded">{item.newVal?.toLocaleString()}</span>
-                                                                                <button onClick={() => { const n = {...editorDraft.categories}; n[catName].items = n[catName].items.filter(i => i.id !== item.id); setEditorDraft(p => ({...p, categories: n})); }} className="text-slate-300 hover:text-rose-500 hover:bg-rose-50 w-6 h-6 flex items-center justify-center rounded transition-colors ml-1"><i className="fas fa-trash-alt"></i></button>
-                                                                            </div>
-                                                                        </div>
-                                                                    ))}
+                                                                        ))}
+                                                                    </div>
                                                                 </div>
                                                             </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
-                                    </div>
 
-                                    <div className="bg-slate-100 p-5 border-t border-gray-200 flex justify-between items-center shrink-0">
-                                        <button onClick={() => setIsPreviewOpen(true)} className="px-5 py-2.5 bg-white border border-gray-300 text-slate-700 hover:bg-slate-50 rounded-md text-[13px] font-bold transition-all shadow-sm"><i className="fas fa-mobile-alt mr-2 text-indigo-500"></i>모바일 미리보기</button>
-                                        <button onClick={handlePublish} className="px-8 py-2.5 bg-[#1A2235] text-white font-black rounded-md hover:bg-black shadow-md transition-all flex items-center hover:-translate-y-0.5">
-                                            <i className="fas fa-paper-plane mr-2 text-indigo-400"></i> 고객용 웹페이지 적용 (발행)
-                                        </button>
+                                        <div className="bg-slate-100 p-5 border-t border-gray-200 flex justify-between items-center shrink-0">
+                                            <button onClick={() => setIsPreviewOpen(true)} className="px-5 py-2.5 bg-white border border-gray-300 text-slate-700 hover:bg-slate-50 rounded-md text-[13px] font-bold transition-all shadow-sm"><i className="fas fa-mobile-alt mr-2 text-indigo-500"></i>모바일 미리보기</button>
+                                            <button onClick={handlePublish} className="px-8 py-2.5 bg-[#1A2235] text-white font-black rounded-md hover:bg-black shadow-md transition-all flex items-center hover:-translate-y-0.5">
+                                                <i className="fas fa-paper-plane mr-2 text-indigo-400"></i> 고객용 웹페이지 적용 (발행)
+                                            </button>
+                                        </div>
                                     </div>
+                                    
+                                    {/* 3. 공유/다운로드 액션 패널 (발행 데이터가 있을 때만 노출) */}
+                                    {publishedReport && (
+                                        <div className="mt-6 bg-indigo-50/50 border border-indigo-100 rounded-xl p-6 shadow-sm flex items-center justify-between">
+                                            <div>
+                                                <h3 className="text-[14px] font-black text-indigo-900 mb-1"><i className="fas fa-check-circle mr-1.5 text-emerald-500"></i>발행 완료! 이제 고객에게 공유하세요.</h3>
+                                                <p className="text-[11px] font-bold text-indigo-600/80">링크를 복사하여 카톡으로 보내거나, 한 장의 깔끔한 이미지로 저장할 수 있습니다.</p>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button onClick={handleCopyLink} className="px-4 py-2.5 bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-100 rounded-md text-[12px] font-bold transition-all shadow-sm flex items-center"><i className="fas fa-link mr-1.5"></i> URL 링크 복사</button>
+                                                <button onClick={handleDownloadImage} className="px-4 py-2.5 bg-indigo-600 text-white rounded-md text-[12px] font-bold hover:bg-indigo-700 transition-all shadow-sm flex items-center"><i className="fas fa-camera retro mr-1.5"></i> 카톡 전송용 이미지 다운로드</button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                                
-                                {/* 3. 공유/다운로드 액션 패널 (발행 데이터가 있을 때만 노출) */}
-                                {publishedReport && (
-                                    <div className="mt-6 bg-indigo-50/50 border border-indigo-100 rounded-xl p-6 shadow-sm flex items-center justify-between">
-                                        <div>
-                                            <h3 className="text-[14px] font-black text-indigo-900 mb-1"><i className="fas fa-check-circle mr-1.5 text-emerald-500"></i>발행 완료! 이제 고객에게 공유하세요.</h3>
-                                            <p className="text-[11px] font-bold text-indigo-600/80">링크를 복사하여 카톡으로 보내거나, 한 장의 깔끔한 이미지로 저장할 수 있습니다.</p>
-                                        </div>
-                                        <div className="flex gap-2">
-                                            <button onClick={handleCopyLink} className="px-4 py-2.5 bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-100 rounded-md text-[12px] font-bold transition-all shadow-sm flex items-center"><i className="fas fa-link mr-1.5"></i> URL 링크 복사</button>
-                                            <button onClick={handleDownloadImage} className="px-4 py-2.5 bg-indigo-600 text-white rounded-md text-[12px] font-bold hover:bg-indigo-700 transition-all shadow-sm flex items-center"><i className="fas fa-camera retro mr-1.5"></i> 카톡 전송용 이미지 다운로드</button>
-                                        </div>
-                                    </div>
-                                )}
                             </div>
                         )}
                     </div>
