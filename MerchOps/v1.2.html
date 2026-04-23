@@ -720,13 +720,16 @@
                 ui.showToast(`✅ ${count}개의 상품에서 [${tagName}] 태그를 삭제했습니다.`);
             }, [data, ui]);
 
-            const handleCommitEstimate = useCallback(() => {
-                if (ui.selectedRows.size === 0) return ui.showToast('⚠️ 반영할 항목을 선택해주세요.');
+            // 💡 [수정] 배열(specificCodes)로 대상을 받아 처리하도록 로직 개선. 안 넘기면 선택항목 또는 전체항목 처리.
+            const handleCommitEstimate = useCallback((specificCodes) => {
+                const targetCodes = Array.isArray(specificCodes) ? specificCodes : (ui.selectedRows.size > 0 ? Array.from(ui.selectedRows) : fullDisplayRows.map(r => r.코드));
+                
+                if (targetCodes.length === 0) return ui.showToast('⚠️ 반영할 항목이 없습니다.');
                 let newMaster = { ...data.masterProducts }, commitCount = 0;
                 let localLogs = [];
                 const nowStr = new Date().toLocaleString('ko-KR');
 
-                ui.selectedRows.forEach(code => {
+                targetCodes.forEach(code => {
                     const item = data.managedItems[code]; 
                     if (!item || !item.코드) return;
                     
@@ -760,7 +763,7 @@
                 }
 
                 data.setMasterProducts(newMaster); ui.setSelectedRows(new Set()); ui.showToast(`✅ ${commitCount}건 마스터 업데이트 완료.`);
-            }, [ui.selectedRows, data.masterProducts, data.managedItems, config.masterLinks, config.cloudUrl]);
+            }, [ui.selectedRows, data.masterProducts, data.managedItems, config.masterLinks, config.cloudUrl, fullDisplayRows]);
 
             const executeExport = useCallback((option, zeroAction = { sale: '0', stock: '999' }) => {
                 if (fullDisplayRows.length === 0) { ui.setAlertMsg("내보낼 데이터가 없습니다."); return ui.setShowExportModal(false); }
@@ -1322,8 +1325,8 @@
                                     </button>
                                 )}
                                 
-                                {/* 💡 [수정] '반영' 버튼을 '완료'로 변경하고, 누르면 ReviewModal 오픈 */}
-                                <button onClick={() => actions.setShowReviewModal(true)} disabled={selectedRows.size === 0} className={`h-9 px-5 rounded-lg text-[12px] font-black shadow-sm transition-colors flex items-center ${selectedRows.size > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`} title="작업을 완료하고 프리뷰를 검토합니다.">
+                                {/* 💡 [수정] 완료 버튼의 disabled 제약조건 해제. (이제 체크 없이 누르면 '전체' 대상으로 팝업 뜸) */}
+                                <button onClick={() => actions.setShowReviewModal(true)} disabled={state.fullDisplayRows.length === 0} className={`h-9 px-5 rounded-lg text-[12px] font-black shadow-sm transition-colors flex items-center ${state.fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`} title="체크박스 선택 없이 누르면 화면의 전체 항목을 대상으로 검토합니다.">
                                     <i className="fas fa-check-circle mr-1.5 text-[13px]"></i> 완료
                                 </button>
                                 
@@ -1545,7 +1548,11 @@
             const [filter, setFilter] = useState('all'); // 'all', 'up', 'down', 'new', 'same'
 
             const targetRows = useMemo(() => {
-                return state.fullDisplayRows.filter(row => state.selectedRows.has(row.코드));
+                // 💡 [수정] 체크된 항목이 있으면 그것만 잡고, 없으면 화면에 띄워진 '전체(fullDisplayRows)'를 자동으로 대상에 포함시킴
+                if (state.selectedRows.size > 0) {
+                    return state.fullDisplayRows.filter(row => state.selectedRows.has(row.코드));
+                }
+                return state.fullDisplayRows;
             }, [state.fullDisplayRows, state.selectedRows]);
 
             const analysis = useMemo(() => {
@@ -1668,7 +1675,8 @@
                             <div className="text-[11px] text-slate-500 font-bold"><i className="fas fa-info-circle mr-1"></i>수정할 내용이 있다면 닫기를 누르고 뒤쪽 테이블에서 숫자를 수정하세요.</div>
                             <div className="flex gap-2">
                                 <button onClick={onClose} className="px-5 py-2.5 bg-slate-100 border border-slate-200 text-slate-600 font-bold rounded-lg hover:bg-slate-200 transition-colors">닫기 (수정하러 가기)</button>
-                                <button onClick={() => { onConfirm(); onClose(); }} className="px-6 py-2.5 bg-indigo-600 text-white font-black rounded-lg hover:bg-indigo-700 shadow-sm transition-colors flex items-center">
+                                {/* 💡 [수정] onConfirm 호출 시 정확한 타겟 코드 배열을 넘겨주어 전체 반영 시에도 꼬이지 않도록 조치 */}
+                                <button onClick={() => { onConfirm(targetRows.map(r=>r.코드)); onClose(); }} className="px-6 py-2.5 bg-indigo-600 text-white font-black rounded-lg hover:bg-indigo-700 shadow-sm transition-colors flex items-center">
                                     <i className="fas fa-save mr-1.5 text-[14px]"></i> 저장 및 반영
                                 </button>
                             </div>
