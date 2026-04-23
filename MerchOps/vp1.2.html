@@ -727,6 +727,8 @@
         // 💡 [NEW] 스마트 파서용 투트랙(글자/숫자) 프리뷰 모달
         const ParserReviewModal = ({ onClose, onConfirm, state, actions }) => {
             const [viewMode, setViewMode] = useState('mapping'); // 'mapping' | 'price'
+            const [priceFilter, setPriceFilter] = useState('all'); // 'all', 'up', 'down', 'same'
+            
             const { parserBuffer, masterProducts } = state;
             const { handleCancelMapping } = actions;
 
@@ -768,6 +770,12 @@
                 const priceList = [...list].sort((a, b) => Math.abs(b.차액) - Math.abs(a.차액));
                 return { up, down, same, total: targetRows.length, list, priceList };
             }, [targetRows, masterProducts]);
+
+            // 필터 적용된 단가 리스트
+            const filteredPriceList = useMemo(() => {
+                if (priceFilter === 'all') return analysis.priceList;
+                return analysis.priceList.filter(item => item.상태 === priceFilter);
+            }, [analysis.priceList, priceFilter]);
 
             return (
                 <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
@@ -835,25 +843,31 @@
                                     </div>
                                 </div>
                             ) : (
-                                /* Track 2. 단가 브리핑 뷰 */
+                                /* Track 2. 단가 브리핑 뷰 (필터 적용됨) */
                                 <div className="flex-1 flex flex-col fade-in">
-                                    <div className="grid grid-cols-3 gap-3 mb-3 shrink-0">
-                                        <div className="bg-white border border-rose-200 p-3 rounded-xl flex flex-col items-center justify-center shadow-sm">
-                                            <div className="text-[11px] text-rose-500 font-bold mb-1"><i className="fas fa-arrow-up mr-1"></i>인상</div>
-                                            <div className="text-rose-700 font-black text-xl">{analysis.up}<span className="text-[11px] ml-1 font-bold">건</span></div>
+                                    {/* 💡 [수정] 요약 카드 (클릭 필터 기능 추가 및 디자인 반전) */}
+                                    <div className="grid grid-cols-4 gap-3 mb-3 shrink-0">
+                                        <div onClick={() => setPriceFilter('all')} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all hover:-translate-y-0.5 ${priceFilter === 'all' ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-slate-200 hover:bg-slate-100'}`}>
+                                            <div className={`text-[11px] font-bold mb-1 ${priceFilter === 'all' ? 'text-slate-300' : 'text-slate-500'}`}><i className="fas fa-list mr-1"></i>전체</div>
+                                            <div className={`font-black text-xl ${priceFilter === 'all' ? 'text-white' : 'text-slate-700'}`}>{analysis.total}<span className="text-[11px] ml-1 font-bold">건</span></div>
                                         </div>
-                                        <div className="bg-white border border-blue-200 p-3 rounded-xl flex flex-col items-center justify-center shadow-sm">
-                                            <div className="text-[11px] text-blue-500 font-bold mb-1"><i className="fas fa-arrow-down mr-1"></i>인하</div>
-                                            <div className="text-blue-700 font-black text-xl">{analysis.down}<span className="text-[11px] ml-1 font-bold">건</span></div>
+                                        <div onClick={() => setPriceFilter('up')} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all hover:-translate-y-0.5 ${priceFilter === 'up' ? 'bg-rose-500 border-rose-500 text-white' : 'bg-white border-rose-200 hover:bg-rose-50'}`}>
+                                            <div className={`text-[11px] font-bold mb-1 ${priceFilter === 'up' ? 'text-rose-100' : 'text-rose-500'}`}><i className="fas fa-arrow-up mr-1"></i>인상</div>
+                                            <div className={`font-black text-xl ${priceFilter === 'up' ? 'text-white' : 'text-rose-700'}`}>{analysis.up}<span className="text-[11px] ml-1 font-bold">건</span></div>
                                         </div>
-                                        <div className="bg-white border border-slate-200 p-3 rounded-xl flex flex-col items-center justify-center shadow-sm">
-                                            <div className="text-[11px] text-slate-500 font-bold mb-1"><i className="fas fa-equals mr-1"></i>동결/기타 (0원 포함)</div>
-                                            <div className="text-slate-700 font-black text-xl">{analysis.same}<span className="text-[11px] ml-1 font-bold">건</span></div>
+                                        <div onClick={() => setPriceFilter('down')} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all hover:-translate-y-0.5 ${priceFilter === 'down' ? 'bg-blue-500 border-blue-500 text-white' : 'bg-white border-blue-200 hover:bg-blue-50'}`}>
+                                            <div className={`text-[11px] font-bold mb-1 ${priceFilter === 'down' ? 'text-blue-100' : 'text-blue-500'}`}><i className="fas fa-arrow-down mr-1"></i>인하</div>
+                                            <div className={`font-black text-xl ${priceFilter === 'down' ? 'text-white' : 'text-blue-700'}`}>{analysis.down}<span className="text-[11px] ml-1 font-bold">건</span></div>
+                                        </div>
+                                        <div onClick={() => setPriceFilter('same')} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all hover:-translate-y-0.5 ${priceFilter === 'same' ? 'bg-slate-500 border-slate-500 text-white' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+                                            <div className={`text-[11px] font-bold mb-1 ${priceFilter === 'same' ? 'text-slate-200' : 'text-slate-500'}`}><i className="fas fa-equals mr-1"></i>동결/기타 (0원 포함)</div>
+                                            <div className={`font-black text-xl ${priceFilter === 'same' ? 'text-white' : 'text-slate-700'}`}>{analysis.same}<span className="text-[11px] ml-1 font-bold">건</span></div>
                                         </div>
                                     </div>
                                     <div className="flex-1 flex flex-col bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-                                        <div className="px-4 py-2 bg-slate-100 border-b border-slate-200 text-[11px] font-bold text-slate-500 flex items-center">
-                                            <i className="fas fa-exclamation-triangle text-amber-500 mr-1.5 text-[12px]"></i> 단가가 비정상적으로 튀는 항목이 있다면, 다른 상품에 잘못 매핑했을 확률이 높습니다!
+                                        <div className="px-4 py-2 bg-slate-100 border-b border-slate-200 text-[11px] font-bold text-slate-500 flex items-center justify-between">
+                                            <span><i className="fas fa-exclamation-triangle text-amber-500 mr-1.5 text-[12px]"></i> 단가가 비정상적으로 튀는 항목은 다른 상품에 잘못 매핑했을 확률이 높습니다!</span>
+                                            <span className="text-indigo-600">노출 항목: {filteredPriceList.length}건</span>
                                         </div>
                                         <div className="flex-1 overflow-auto custom-scrollbar">
                                             <table className="w-full text-left text-[12px] whitespace-nowrap">
@@ -868,7 +882,9 @@
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-slate-100">
-                                                    {analysis.priceList.map(item => (
+                                                    {filteredPriceList.length === 0 ? (
+                                                        <tr><td colSpan="6" className="p-8 text-center text-slate-400 font-bold">해당 조건의 항목이 없습니다.</td></tr>
+                                                    ) : filteredPriceList.map(item => (
                                                         <tr key={`price-${item._id}`} className="hover:bg-slate-50 transition-colors">
                                                             <td className="px-4 py-2 text-center">
                                                                 {item.상태 === 'up' && <span className="bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded text-[10px] font-black">인상</span>}
@@ -973,10 +989,10 @@
                     actions.showToast("⏳ 미반영된 일치 항목을 자동 저장 후 이동합니다...");
                     const success = await actions.handleApplyMatched();
                     if (success) {
-                        setTimeout(() => { window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.1'; }, 800);
+                        setTimeout(() => { window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.2'; }, 800);
                     }
                 } else {
-                    window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.1';
+                    window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.2';
                 }
             };
 
