@@ -1529,7 +1529,7 @@
                     <div className="flex-1 bg-slate-50 border border-slate-200 p-8 rounded-xl text-center hover:shadow-lg transition-all duration-300 group hover:-translate-y-1 hover:bg-purple-50 hover:border-purple-200 cursor-pointer relative overflow-hidden" onClick={() => {
                         try {
                             if(window.location.href.startsWith('blob:')) { showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.'); }
-                            else { window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/vp1.1.html'; }
+                            else { window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/vp1.2'; }
                         } catch(e) { showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.'); }
                     }}>
                         <div className="text-4xl text-purple-500 mb-5 group-hover:scale-110 transition-transform duration-300"><i className="fas fa-magic"></i></div>
@@ -1542,6 +1542,8 @@
 
         // 💡 [NEW] 수동 수정 내역을 상세히 보여주고 최종 승인하는 Review 모달
         const ReviewModal = ({ onClose, onConfirm, state, data }) => {
+            const [filter, setFilter] = useState('all'); // 'all', 'up', 'down', 'new', 'same'
+
             const targetRows = useMemo(() => {
                 return state.fullDisplayRows.filter(row => state.selectedRows.has(row.코드));
             }, [state.fullDisplayRows, state.selectedRows]);
@@ -1579,6 +1581,11 @@
                 return { up, down, same, newItems, total: targetRows.length, list };
             }, [targetRows, data.masterProducts]);
 
+            const filteredList = useMemo(() => {
+                if (filter === 'all') return analysis.list;
+                return analysis.list.filter(item => item.상태 === filter);
+            }, [analysis.list, filter]);
+
             return (
                 <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
                     <div className="bg-white w-[850px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
@@ -1588,30 +1595,34 @@
                         </div>
                         
                         <div className="p-6 flex flex-col flex-1 overflow-hidden bg-slate-50">
-                            {/* 요약 카드 */}
-                            <div className="grid grid-cols-4 gap-3 mb-4 shrink-0">
-                                <div className="bg-white border border-rose-200 p-3 rounded-xl flex flex-col items-center justify-center shadow-sm">
-                                    <div className="text-[11px] text-rose-500 font-bold mb-1"><i className="fas fa-arrow-up mr-1"></i>인상</div>
-                                    <div className="text-rose-700 font-black text-xl">{analysis.up}<span className="text-[11px] ml-1 font-bold">건</span></div>
+                            {/* 💡 [수정] 요약 카드 (클릭 시 필터링 기능 추가 및 디자인 반전 효과) */}
+                            <div className="grid grid-cols-5 gap-3 mb-4 shrink-0">
+                                <div onClick={() => setFilter('all')} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all hover:-translate-y-0.5 ${filter === 'all' ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-slate-200 hover:bg-slate-100'}`}>
+                                    <div className={`text-[11px] font-bold mb-1 ${filter === 'all' ? 'text-slate-300' : 'text-slate-500'}`}><i className="fas fa-list mr-1"></i>전체</div>
+                                    <div className={`font-black text-xl ${filter === 'all' ? 'text-white' : 'text-slate-700'}`}>{analysis.total}<span className="text-[11px] ml-1 font-bold">건</span></div>
                                 </div>
-                                <div className="bg-white border border-blue-200 p-3 rounded-xl flex flex-col items-center justify-center shadow-sm">
-                                    <div className="text-[11px] text-blue-500 font-bold mb-1"><i className="fas fa-arrow-down mr-1"></i>인하</div>
-                                    <div className="text-blue-700 font-black text-xl">{analysis.down}<span className="text-[11px] ml-1 font-bold">건</span></div>
+                                <div onClick={() => setFilter('up')} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all hover:-translate-y-0.5 ${filter === 'up' ? 'bg-rose-500 border-rose-500 text-white' : 'bg-white border-rose-200 hover:bg-rose-50'}`}>
+                                    <div className={`text-[11px] font-bold mb-1 ${filter === 'up' ? 'text-rose-100' : 'text-rose-500'}`}><i className="fas fa-arrow-up mr-1"></i>인상</div>
+                                    <div className={`font-black text-xl ${filter === 'up' ? 'text-white' : 'text-rose-700'}`}>{analysis.up}<span className="text-[11px] ml-1 font-bold">건</span></div>
                                 </div>
-                                <div className="bg-white border border-emerald-200 p-3 rounded-xl flex flex-col items-center justify-center shadow-sm">
-                                    <div className="text-[11px] text-emerald-500 font-bold mb-1"><i className="fas fa-star mr-1"></i>신규</div>
-                                    <div className="text-emerald-700 font-black text-xl">{analysis.newItems}<span className="text-[11px] ml-1 font-bold">건</span></div>
+                                <div onClick={() => setFilter('down')} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all hover:-translate-y-0.5 ${filter === 'down' ? 'bg-blue-500 border-blue-500 text-white' : 'bg-white border-blue-200 hover:bg-blue-50'}`}>
+                                    <div className={`text-[11px] font-bold mb-1 ${filter === 'down' ? 'text-blue-100' : 'text-blue-500'}`}><i className="fas fa-arrow-down mr-1"></i>인하</div>
+                                    <div className={`font-black text-xl ${filter === 'down' ? 'text-white' : 'text-blue-700'}`}>{analysis.down}<span className="text-[11px] ml-1 font-bold">건</span></div>
                                 </div>
-                                <div className="bg-white border border-slate-200 p-3 rounded-xl flex flex-col items-center justify-center shadow-sm">
-                                    <div className="text-[11px] text-slate-500 font-bold mb-1"><i className="fas fa-equals mr-1"></i>동결/기타</div>
-                                    <div className="text-slate-700 font-black text-xl">{analysis.same}<span className="text-[11px] ml-1 font-bold">건</span></div>
+                                <div onClick={() => setFilter('new')} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all hover:-translate-y-0.5 ${filter === 'new' ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-emerald-200 hover:bg-emerald-50'}`}>
+                                    <div className={`text-[11px] font-bold mb-1 ${filter === 'new' ? 'text-emerald-100' : 'text-emerald-500'}`}><i className="fas fa-star mr-1"></i>신규</div>
+                                    <div className={`font-black text-xl ${filter === 'new' ? 'text-white' : 'text-emerald-700'}`}>{analysis.newItems}<span className="text-[11px] ml-1 font-bold">건</span></div>
+                                </div>
+                                <div onClick={() => setFilter('same')} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all hover:-translate-y-0.5 ${filter === 'same' ? 'bg-slate-500 border-slate-500 text-white' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+                                    <div className={`text-[11px] font-bold mb-1 ${filter === 'same' ? 'text-slate-200' : 'text-slate-500'}`}><i className="fas fa-equals mr-1"></i>동결/기타</div>
+                                    <div className={`font-black text-xl ${filter === 'same' ? 'text-white' : 'text-slate-700'}`}>{analysis.same}<span className="text-[11px] ml-1 font-bold">건</span></div>
                                 </div>
                             </div>
 
                             {/* 리스트업 영역 */}
                             <div className="flex-1 overflow-hidden flex flex-col bg-white border border-slate-200 rounded-xl shadow-sm">
                                 <div className="px-4 py-2 bg-slate-100 border-b border-slate-200 text-[12px] font-bold text-slate-600 flex justify-between">
-                                    <span>선택된 반영 대상: {analysis.total}건 (단가 변동순 정렬)</span>
+                                    <span>노출된 항목: <span className="text-indigo-600 font-black">{filteredList.length}</span>건 (단가 변동순 정렬)</span>
                                 </div>
                                 <div className="flex-1 overflow-auto custom-scrollbar">
                                     <table className="w-full text-left text-[12px] whitespace-nowrap">
@@ -1626,7 +1637,9 @@
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
-                                            {analysis.list.map((item, i) => (
+                                            {filteredList.length === 0 ? (
+                                                <tr><td colSpan="6" className="p-8 text-center text-slate-400 font-bold">해당 조건의 항목이 없습니다.</td></tr>
+                                            ) : filteredList.map((item, i) => (
                                                 <tr key={i} className="hover:bg-slate-50 transition-colors">
                                                     <td className="px-4 py-2 text-center">
                                                         {item.상태 === 'up' && <span className="bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded text-[10px] font-black">인상</span>}
