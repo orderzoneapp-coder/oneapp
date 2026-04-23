@@ -100,9 +100,10 @@
 
         const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
 
+        // 💡 [수정] 구매처, 거래처명 열 너비를 100px에서 150px(1.5배)로 넓게 확장
         const getCellWidthClass = (h) => {
             if (NUMERIC_HEADERS.includes(h)) return 'min-w-[90px] w-[90px] max-w-[90px]';
-            if (h === '구매처' || h === '거래처명' || h === '일자') return 'min-w-[100px] w-[100px] max-w-[100px]';
+            if (h === '구매처' || h === '거래처명' || h === '일자') return 'min-w-[150px] w-[150px] max-w-[150px]';
             if (h === '품목명' || h === '상품명' || h === '카탈로그' || h === '견적서') return 'min-w-[200px] w-[200px] max-w-[200px]';
             if (h === '간단설명' || h === '지시사항' || h === '상품정보' || h === '적요2') return 'min-w-[150px] w-[150px] max-w-[150px]';
             if (h === '단위' || h === '창고') return 'min-w-[60px] w-[60px] max-w-[60px]';
@@ -949,7 +950,7 @@
         // 🧩 5. UI 컴포넌트들
         // ==========================================
         
-        // 💡 [수정/1순위 해결] 입력 중 데이터 증발 방지 로직 적용 및 최적화
+        // 💡 [수정] 좌우 화살표 이동 지원 및 포커스 시 즉시 입력(Select) 기능 보강
         const EditableCell = React.memo(({ rowCode, initialVal, field, linkedMasterField, mVal, onUpdateCell }) => {
             const isNumeric = NUMERIC_HEADERS.includes(linkedMasterField) || NUMERIC_HEADERS.includes(field);
             const [localVal, setLocalVal] = useState(initialVal);
@@ -968,28 +969,43 @@
             };
 
             const handleKeyDown = (e) => {
-                if (['ArrowUp', 'ArrowDown', 'Enter'].includes(e.key)) {
-                    e.preventDefault();
-                    e.target.blur(); // 이동 전 현재 셀 값 자동 저장
+                if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(e.key)) {
+                    // 좌우 방향키 이동 시, 사용자가 글자를 타이핑/수정 중일 때는 엑셀처럼 커서 이동을 우선 처리
+                    if (e.key === 'ArrowLeft' && e.target.selectionStart !== 0) return;
+                    if (e.key === 'ArrowRight' && e.target.selectionEnd !== e.target.value.length) return;
+
+                    if (['ArrowUp', 'ArrowDown', 'Enter'].includes(e.key)) {
+                        e.preventDefault(); // 폼 제출 및 화면 스크롤 방지
+                    }
+                    
+                    e.target.blur(); // 이동 전 현재 셀 값 자동 저장 (Commit)
                     
                     const td = e.target.closest('td');
                     const tr = td.closest('tr');
                     const tbody = tr.closest('tbody');
-                    const tds = Array.from(tr.children);
+                    
+                    // 현재 행의 모든 텍스트 입력 셀을 찾음
+                    const tds = Array.from(tr.querySelectorAll('td:has(input[type="text"])'));
                     const colIdx = tds.indexOf(td);
-                    const trs = Array.from(tbody.children);
+                    const trs = Array.from(tbody.querySelectorAll('tr.group'));
                     const rowIdx = trs.indexOf(tr);
 
                     let nextRowIdx = rowIdx;
+                    let nextColIdx = colIdx;
+
                     if (e.key === 'ArrowUp') nextRowIdx = Math.max(0, rowIdx - 1);
                     if (e.key === 'ArrowDown' || e.key === 'Enter') nextRowIdx = Math.min(trs.length - 1, rowIdx + 1);
+                    if (e.key === 'ArrowLeft') { e.preventDefault(); nextColIdx = Math.max(0, colIdx - 1); }
+                    if (e.key === 'ArrowRight') { e.preventDefault(); nextColIdx = Math.min(tds.length - 1, colIdx + 1); }
 
-                    if (nextRowIdx !== rowIdx) {
+                    if (nextRowIdx !== rowIdx || nextColIdx !== colIdx) {
                         const nextTr = trs[nextRowIdx];
-                        const nextInput = nextTr.children[colIdx]?.querySelector('input');
-                        if (nextInput) {
-                            nextInput.focus();
-                            nextInput.select();
+                        if (nextTr) {
+                            const nextTds = Array.from(nextTr.querySelectorAll('td:has(input[type="text"])'));
+                            const nextInput = nextTds[nextColIdx]?.querySelector('input');
+                            if (nextInput) {
+                                nextInput.focus();
+                            }
                         }
                     }
                 }
@@ -1003,7 +1019,7 @@
                         value={localVal === "오류" ? "" : localVal} 
                         placeholder={mVal || ''} 
                         onChange={(e) => setLocalVal(e.target.value)} 
-                        onFocus={() => setIsFocused(true)}
+                        onFocus={(e) => { setIsFocused(true); e.target.select(); }}
                         onBlur={(e) => { setIsFocused(false); commitChange(e.target.value); }}
                         onKeyDown={handleKeyDown}
                         onClick={(e) => e.target.select()} 
@@ -1058,7 +1074,8 @@
 
             return (
                 <div className="relative w-[180px] lg:w-[240px] h-9 shrink-0" onClick={() => {inputRef.current?.focus(); inputRef.current?.select();}}>
-                    <input type="text" ref={inputRef} placeholder={placeholder || "결과 내 검색 (단어 조합)"} value={localVal} onChange={handleChange} autoComplete="off" spellCheck="false"
+                    {/* 💡 [수정] 글로벌 단축키 포커싱을 위한 id 식별자 부여 및 placeholder 안내 문구 수정 */}
+                    <input id="main-search-input" type="text" ref={inputRef} placeholder={placeholder || "결과 내 검색 (단어 조합 / F3)"} value={localVal} onChange={handleChange} autoComplete="off" spellCheck="false"
                         className="w-full h-full pl-3 pr-8 py-1 border border-slate-300 rounded-lg text-[12px] font-bold outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 transition-shadow text-slate-700" />
                     <i className="fas fa-search absolute right-3 top-2.5 text-slate-400 pointer-events-none text-[13px]"></i>
                 </div>
@@ -1418,7 +1435,6 @@
             );
         });
 
-        // 💡 [수정/2순위 해결] 렌더링 폭탄 제거: 무거운 state 객체 대신 꼭 필요한 원시값/배열만 핀셋으로 전달
         const MemoizedTableRow = React.memo(({ row, idx, isSel, bg, mItem, isEstimateUploaded, visMasterCols, visUploadCols, masterLinksEst, onToggleSelection, onUpdateCell }) => {
             const uploadName = row.finalData?.['품목명'] !== undefined ? row.finalData['품목명'] : (row.sources?.['estimate']?.['품목명'] || '');
             const uploadSpec = row.finalData?.['규격'] !== undefined ? row.finalData['규격'] : (row.sources?.['estimate']?.['규격'] || '');
@@ -1430,7 +1446,23 @@
                     <td className={`sticky z-20 px-3 py-2 border-r border-[#edebe3] transition-colors min-w-[280px] w-[280px] max-w-[280px] ${isSel ? 'bg-indigo-50/50' : 'bg-[#faf9f5] group-hover:bg-[#f0ece1]'}`} style={{left: 0}}>
                         <div className="flex gap-2 items-center w-full min-w-0">
                             {isEstimateUploaded && (
-                                <input type="checkbox" className={`w-4 h-4 rounded border-slate-300 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500`} checked={isSel} onChange={() => onToggleSelection(row.코드)} />
+                                <input 
+                                    type="checkbox" 
+                                    className={`w-4 h-4 rounded border-slate-300 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500`} 
+                                    checked={isSel} 
+                                    onChange={() => onToggleSelection(row.코드)} 
+                                    onKeyDown={(e) => {
+                                        // 💡 [NEW] 체크박스에서 Enter 키를 누르면, 해당 행의 첫 번째 입력 셀(입고가 등)로 즉시 이동
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            const tr = e.target.closest('tr');
+                                            const firstInput = tr.querySelector('td input[type="text"]');
+                                            if (firstInput) {
+                                                firstInput.focus();
+                                            }
+                                        }
+                                    }}
+                                />
                             )}
                             <div className="flex flex-col min-w-0 w-full overflow-hidden ml-1">
                                 <span className={`text-[10px] font-mono mb-0.5 truncate block w-full text-indigo-400`}>{row.코드}</span>
@@ -1822,6 +1854,27 @@
             const isMasterEmpty = Object.keys(data.masterProducts).length === 0;
             const showActionButtons = isEstimateUploaded || ui.selectedCatalog !== '' || ui.selectedCategory !== '';
 
+            // 💡 [NEW] 글로벌 단축키 (F3 검색창 점프, F9 엑셀 출력)
+            useEffect(() => {
+                const handleGlobalKeyDown = (e) => {
+                    if (e.key === 'F9') { 
+                        e.preventDefault(); 
+                        ui.setShowExportModal(true); 
+                    }
+                    if (e.key === 'F3') { 
+                        e.preventDefault(); 
+                        const searchInput = document.getElementById('main-search-input');
+                        if (searchInput) {
+                            searchInput.focus();
+                            searchInput.select();
+                        }
+                    }
+                };
+                window.addEventListener('keydown', handleGlobalKeyDown); 
+                return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+            }, [ui]);
+
+            // 마스터에서 사용 가능한 고유 카탈로그 목록 추출
             const availableCatalogs = useMemo(() => {
                 const counts = {};
                 Object.values(data.masterProducts).forEach(m => {
@@ -1981,10 +2034,11 @@
                                                 </>
                                             )}
 
-                                            <a href="https://oneapp.orderz.co.kr/MerchOps/guide" target="_blank" rel="noopener noreferrer" className={`h-8 px-2.5 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-emerald-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-300 hover:border-emerald-500/50 font-bold text-[11px] tracking-wider uppercase ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="MerchOps 사용 가이드">
+                                            {/* 💡 [수정] target="_blank" 속성을 제거하여 새 탭이 아닌 현재 화면에서 부드럽게 전환 */}
+                                            <a href="https://oneapp.orderz.co.kr/MerchOps/guide" className={`h-8 px-2.5 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-emerald-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-300 hover:border-emerald-500/50 font-bold text-[11px] tracking-wider uppercase ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="MerchOps 사용 가이드">
                                                 GUIDE
                                             </a>
-                                            <a href="https://oneapp.orderz.co.kr/MerchOps/trend_report" target="_blank" rel="noopener noreferrer" className={`h-8 px-2.5 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-blue-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-blue-300 hover:border-blue-500/50 font-bold text-[11px] tracking-wider uppercase ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="트렌드 리포트">
+                                            <a href="https://oneapp.orderz.co.kr/MerchOps/trend_report" className={`h-8 px-2.5 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-blue-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-blue-300 hover:border-blue-500/50 font-bold text-[11px] tracking-wider uppercase ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="트렌드 리포트">
                                                 REPORT
                                             </a>
                                             <div className="w-px h-4 bg-slate-700 mx-0.5"></div>
