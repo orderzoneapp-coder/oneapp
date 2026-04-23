@@ -417,7 +417,10 @@
             
             const [showExportModal, setShowExportModal] = useState(false); 
             const [showSettings, setShowSettings] = useState(false);
-            const [showBriefingModal, setShowBriefingModal] = useState(false);
+            
+            // 💡 [수정] BriefingModal 대신 ReviewModal 상태로 변경
+            const [showReviewModal, setShowReviewModal] = useState(false);
+            
             const [showHistoryModal, setShowHistoryModal] = useState(false);
             const [showCategoryModal, setShowCategoryModal] = useState(false);
             
@@ -442,7 +445,9 @@
                 selectedRows, setSelectedRows, globalSearch, setGlobalSearch, 
                 selectedCatalog, setSelectedCatalog,
                 selectedCategory, setSelectedCategory, 
-                showExportModal, setShowExportModal, showSettings, setShowSettings, showBriefingModal, setShowBriefingModal, showHistoryModal, setShowHistoryModal, showCategoryModal, setShowCategoryModal,
+                showExportModal, setShowExportModal, showSettings, setShowSettings, 
+                showReviewModal, setShowReviewModal, 
+                showHistoryModal, setShowHistoryModal, showCategoryModal, setShowCategoryModal,
                 alertMsg, setAlertMsg, toastMsg, setToastMsg, isProcessing, setIsProcessing, processMsg, setProcessMsg, showToast
             };
         };
@@ -1305,22 +1310,10 @@
                     </div>
 
                     <div className="flex-1 min-w-[10px]"></div>
-
-                    {/* 최종 액션 (초기화, 빼기, 반영, 검색) */}
+                    {/* 💡 [수정] 최종 액션 배치: [빼기] -> [완료] -> | -> [초기화] -> [검색창] (우측 끝 고정) */}
                     <div className="flex items-center gap-2 shrink-0">
-                        {/* 💡 [수정] 초기화/닫기 버튼을 좌측으로 이동 */}
-                        {isEstimateUploaded ? (
-                            <button onClick={handleReset} className="h-9 px-3 rounded-lg flex items-center justify-center font-bold text-white bg-slate-400 hover:bg-slate-500 transition-colors shadow-sm shrink-0" title="모두 닫고 메인으로 돌아가기">
-                                <i className="fas fa-times mr-1.5"></i> 닫기
-                            </button>
-                        ) : (
-                            <button onClick={handleReset} className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-800 bg-white border border-slate-300 hover:bg-slate-100 transition-colors shadow-sm shrink-0" title="화면 초기화">
-                                <i className="fas fa-redo-alt text-[13px]"></i>
-                            </button>
-                        )}
                         
-                        {(isEstimateUploaded || showActionButtons) && <div className="w-px h-6 bg-slate-300 mx-1"></div>}
-
+                        {/* 1. 작업 버튼들을 좌측에 노출 */}
                         {showActionButtons && (
                             <>
                                 {isEstimateUploaded && (
@@ -1329,15 +1322,23 @@
                                     </button>
                                 )}
                                 
-                                <button onClick={handleCommitEstimate} className={`h-9 px-4 rounded-lg text-[12px] font-bold shadow-sm transition-colors flex items-center ${selectedRows.size > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-500'}`} title="선택 항목을 마스터 DB에 반영합니다.">
-                                    <i className="fas fa-check-double mr-1.5"></i> 반영
+                                {/* 💡 [수정] '반영' 버튼을 '완료'로 변경하고, 누르면 ReviewModal 오픈 */}
+                                <button onClick={() => actions.setShowReviewModal(true)} disabled={selectedRows.size === 0} className={`h-9 px-5 rounded-lg text-[12px] font-black shadow-sm transition-colors flex items-center ${selectedRows.size > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`} title="작업을 완료하고 프리뷰를 검토합니다.">
+                                    <i className="fas fa-check-circle mr-1.5 text-[13px]"></i> 완료
                                 </button>
+                                
                                 <div className="w-px h-6 bg-slate-300 mx-1"></div>
                             </>
                         )}
 
-                        {/* 💡 [수정] 검색창을 맨 우측으로 이동 */}
+                        {/* 2. 검색창 좌측에 초기화 버튼 항상 고정 (닫기로 변경되지 않음) */}
+                        <button onClick={handleReset} className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-800 bg-white border border-slate-300 hover:bg-slate-100 transition-colors shadow-sm shrink-0" title="화면 초기화">
+                            <i className="fas fa-redo-alt text-[13px]"></i>
+                        </button>
+                        
+                        {/* 3. 검색창을 그룹의 맨 우측 끝으로 고정 */}
                         <SearchBar value={globalSearch} onChange={setGlobalSearch} />
+                        
                     </div>
                 </div>
             );
@@ -1539,54 +1540,125 @@
             </div>
         );
 
-        const BriefingModal = ({ onClose, state, data }) => {
-            const stats = useMemo(() => {
+        // 💡 [NEW] 수동 수정 내역을 상세히 보여주고 최종 승인하는 Review 모달
+        const ReviewModal = ({ onClose, onConfirm, state, data }) => {
+            const targetRows = useMemo(() => {
+                return state.fullDisplayRows.filter(row => state.selectedRows.has(row.코드));
+            }, [state.fullDisplayRows, state.selectedRows]);
+
+            const analysis = useMemo(() => {
                 let up = 0, down = 0, same = 0, newItems = 0;
-                state.fullDisplayRows.forEach(row => {
+                const list = [];
+
+                targetRows.forEach(row => {
                     const mItem = data.masterProducts[row.코드];
-                    if (!mItem) { newItems++; return; }
-                    const oldP = parseNum(mItem['입고가']);
+                    const oldP = mItem ? parseNum(mItem['입고가']) : 0;
                     const newP = parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : row.sources?.['estimate']?.['입고가']);
                     
-                    if (oldP === 0 || newP === 0) same++;
-                    else if (newP > oldP) up++;
-                    else if (newP < oldP) down++;
-                    else same++;
+                    let status = 'same';
+                    if (!mItem) { status = 'new'; newItems++; }
+                    else if (oldP === 0 || newP === 0) { status = 'same'; same++; }
+                    else if (newP > oldP) { status = 'up'; up++; }
+                    else if (newP < oldP) { status = 'down'; down++; }
+                    else { status = 'same'; same++; }
+
+                    list.push({
+                        코드: row.코드,
+                        품명: row.finalData?.['품목명'] || row.sources?.['estimate']?.['품목명'] || mItem?.품목명 || '',
+                        규격: row.finalData?.['규격'] || row.sources?.['estimate']?.['규격'] || mItem?.규격 || '',
+                        기존단가: oldP,
+                        새단가: newP,
+                        차액: newP - oldP,
+                        상태: status
+                    });
                 });
-                return { up, down, same, newItems, total: state.fullDisplayRows.length };
-            }, [state.fullDisplayRows, data.masterProducts]);
+
+                // 변동폭이 큰 순서대로 정렬 (인상/인하 섞어서 절댓값 기준)
+                list.sort((a, b) => Math.abs(b.차액) - Math.abs(a.차액));
+
+                return { up, down, same, newItems, total: targetRows.length, list };
+            }, [targetRows, data.masterProducts]);
 
             return (
                 <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
-                    <div className="bg-white w-[500px] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                    <div className="bg-white w-[850px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
                         <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
-                            <h2 className="font-black text-[16px]"><i className="fas fa-chart-pie text-indigo-400 mr-2"></i>단가 변동 요약 브리핑</h2>
+                            <h2 className="font-black text-[16px]"><i className="fas fa-search-dollar text-indigo-400 mr-2"></i>작업 완료 및 저장 전 프리뷰</h2>
                             <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>
                         </div>
-                        <div className="p-6">
-                            <div className="grid grid-cols-2 gap-4 mb-6">
-                                <div className="bg-rose-50 border border-rose-200 p-4 rounded-xl text-center">
-                                    <i className="fas fa-arrow-up text-rose-500 text-2xl mb-2"></i>
-                                    <div className="text-rose-900 font-black text-2xl">{stats.up}<span className="text-[12px] font-bold ml-1">건</span></div>
-                                    <div className="text-[11px] text-rose-600 font-bold mt-1">인상 항목</div>
+                        
+                        <div className="p-6 flex flex-col flex-1 overflow-hidden bg-slate-50">
+                            {/* 요약 카드 */}
+                            <div className="grid grid-cols-4 gap-3 mb-4 shrink-0">
+                                <div className="bg-white border border-rose-200 p-3 rounded-xl flex flex-col items-center justify-center shadow-sm">
+                                    <div className="text-[11px] text-rose-500 font-bold mb-1"><i className="fas fa-arrow-up mr-1"></i>인상</div>
+                                    <div className="text-rose-700 font-black text-xl">{analysis.up}<span className="text-[11px] ml-1 font-bold">건</span></div>
                                 </div>
-                                <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl text-center">
-                                    <i className="fas fa-arrow-down text-blue-500 text-2xl mb-2"></i>
-                                    <div className="text-blue-900 font-black text-2xl">{stats.down}<span className="text-[12px] font-bold ml-1">건</span></div>
-                                    <div className="text-[11px] text-blue-600 font-bold mt-1">인하 항목</div>
+                                <div className="bg-white border border-blue-200 p-3 rounded-xl flex flex-col items-center justify-center shadow-sm">
+                                    <div className="text-[11px] text-blue-500 font-bold mb-1"><i className="fas fa-arrow-down mr-1"></i>인하</div>
+                                    <div className="text-blue-700 font-black text-xl">{analysis.down}<span className="text-[11px] ml-1 font-bold">건</span></div>
                                 </div>
-                                <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl text-center">
-                                    <i className="fas fa-star text-emerald-500 text-2xl mb-2"></i>
-                                    <div className="text-emerald-900 font-black text-2xl">{stats.newItems}<span className="text-[12px] font-bold ml-1">건</span></div>
-                                    <div className="text-[11px] text-emerald-600 font-bold mt-1">신규/미등록</div>
+                                <div className="bg-white border border-emerald-200 p-3 rounded-xl flex flex-col items-center justify-center shadow-sm">
+                                    <div className="text-[11px] text-emerald-500 font-bold mb-1"><i className="fas fa-star mr-1"></i>신규</div>
+                                    <div className="text-emerald-700 font-black text-xl">{analysis.newItems}<span className="text-[11px] ml-1 font-bold">건</span></div>
                                 </div>
-                                <div className="bg-slate-100 border border-slate-200 p-4 rounded-xl text-center">
-                                    <i className="fas fa-equals text-slate-500 text-2xl mb-2"></i>
-                                    <div className="text-slate-700 font-black text-2xl">{stats.same}<span className="text-[12px] font-bold ml-1">건</span></div>
-                                    <div className="text-[11px] text-slate-500 font-bold mt-1">동결/기타</div>
+                                <div className="bg-white border border-slate-200 p-3 rounded-xl flex flex-col items-center justify-center shadow-sm">
+                                    <div className="text-[11px] text-slate-500 font-bold mb-1"><i className="fas fa-equals mr-1"></i>동결/기타</div>
+                                    <div className="text-slate-700 font-black text-xl">{analysis.same}<span className="text-[11px] ml-1 font-bold">건</span></div>
                                 </div>
                             </div>
-                            <button onClick={onClose} className="w-full bg-slate-800 text-white font-bold py-3 rounded-xl hover:bg-slate-700 transition-colors">확인 및 닫기</button>
+
+                            {/* 리스트업 영역 */}
+                            <div className="flex-1 overflow-hidden flex flex-col bg-white border border-slate-200 rounded-xl shadow-sm">
+                                <div className="px-4 py-2 bg-slate-100 border-b border-slate-200 text-[12px] font-bold text-slate-600 flex justify-between">
+                                    <span>선택된 반영 대상: {analysis.total}건 (단가 변동순 정렬)</span>
+                                </div>
+                                <div className="flex-1 overflow-auto custom-scrollbar">
+                                    <table className="w-full text-left text-[12px] whitespace-nowrap">
+                                        <thead className="bg-white sticky top-0 border-b border-slate-200 shadow-sm z-10">
+                                            <tr className="text-slate-500">
+                                                <th className="px-4 py-2 w-16 text-center">상태</th>
+                                                <th className="px-4 py-2 w-24">품목코드</th>
+                                                <th className="px-4 py-2 w-full">품목명 (규격)</th>
+                                                <th className="px-4 py-2 text-right w-24">기존 입고가</th>
+                                                <th className="px-4 py-2 text-right w-24 text-indigo-600">새 입고가</th>
+                                                <th className="px-4 py-2 text-right w-24">차액</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {analysis.list.map((item, i) => (
+                                                <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                                    <td className="px-4 py-2 text-center">
+                                                        {item.상태 === 'up' && <span className="bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded text-[10px] font-black">인상</span>}
+                                                        {item.상태 === 'down' && <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[10px] font-black">인하</span>}
+                                                        {item.상태 === 'new' && <span className="bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded text-[10px] font-black">신규</span>}
+                                                        {item.상태 === 'same' && <span className="text-slate-400 text-[10px] font-black">-</span>}
+                                                    </td>
+                                                    <td className="px-4 py-2 font-mono text-slate-500 text-[11px]">{item.코드}</td>
+                                                    <td className="px-4 py-2 font-bold text-slate-800 truncate max-w-[200px]">{item.품명} <span className="text-slate-400 font-normal ml-1 text-[11px]">{item.규격 && `(${item.규격})`}</span></td>
+                                                    <td className="px-4 py-2 text-right text-slate-500">{item.기존단가 > 0 ? item.기존단가.toLocaleString() : '-'}</td>
+                                                    <td className="px-4 py-2 text-right font-black text-indigo-600">{item.새단가 > 0 ? item.새단가.toLocaleString() : '-'}</td>
+                                                    <td className="px-4 py-2 text-right font-bold">
+                                                        {item.차액 > 0 && <span className="text-rose-500">+{item.차액.toLocaleString()}</span>}
+                                                        {item.차액 < 0 && <span className="text-blue-500">{item.차액.toLocaleString()}</span>}
+                                                        {item.차액 === 0 && <span className="text-slate-300">-</span>}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white p-4 border-t border-slate-200 flex justify-between items-center shrink-0">
+                            <div className="text-[11px] text-slate-500 font-bold"><i className="fas fa-info-circle mr-1"></i>수정할 내용이 있다면 닫기를 누르고 뒤쪽 테이블에서 숫자를 수정하세요.</div>
+                            <div className="flex gap-2">
+                                <button onClick={onClose} className="px-5 py-2.5 bg-slate-100 border border-slate-200 text-slate-600 font-bold rounded-lg hover:bg-slate-200 transition-colors">닫기 (수정하러 가기)</button>
+                                <button onClick={() => { onConfirm(); onClose(); }} className="px-6 py-2.5 bg-indigo-600 text-white font-black rounded-lg hover:bg-indigo-700 shadow-sm transition-colors flex items-center">
+                                    <i className="fas fa-save mr-1.5 text-[14px]"></i> 저장 및 반영
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1727,7 +1799,7 @@
             };
             
             const appActions = {
-                setShowBriefingModal: ui.setShowBriefingModal, setShowExportModal: ui.setShowExportModal, setShowCategoryModal: ui.setShowCategoryModal,
+                setShowReviewModal: ui.setShowReviewModal, setShowExportModal: ui.setShowExportModal, setShowCategoryModal: ui.setShowCategoryModal,
                 setSelectedRows: ui.setSelectedRows, setGlobalSearch: ui.setGlobalSearch, setSelectedCatalog: ui.setSelectedCatalog, setShowHistoryModal: ui.setShowHistoryModal, showToast: ui.showToast,
                 ...customActions
             };
@@ -1776,12 +1848,9 @@
                                         <SystemConsole itemCount={Object.keys(data.masterProducts).length} isProcessing={ui.isProcessing} processMsg={ui.processMsg} estimateCount={Object.keys(data.managedItems).length} selectedCatalog={ui.selectedCatalog} selectedCategory={ui.selectedCategory} />
                                         
                                         <nav className="flex gap-1.5 text-[14px] shrink-0 items-center">
-                                            {/* 💡 [수정] 브리핑, 보고서 버튼을 좌측으로 이동 */}
+                                            {/* 💡 [수정] 상단 메뉴에서 브리핑(프리뷰) 버튼 제거 (하단 툴바의 완료 버튼으로 통합됨) */}
                                             {showActionButtons && (
                                                 <>
-                                                    <button onClick={() => ui.setShowBriefingModal(true)} className="h-8 px-2.5 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-indigo-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-indigo-200 hover:border-indigo-500/50 font-bold text-[11px]" title="단가 변동 요약 브리핑">
-                                                        <i className="fas fa-chart-pie mr-1.5 text-[12px]"></i> 브리핑
-                                                    </button>
                                                     <button onClick={() => ui.setShowExportModal(true)} className="h-8 px-2.5 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-amber-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-amber-200 hover:border-amber-500/50 font-bold text-[11px]" title="ERP/쇼핑몰 양식 출력">
                                                         <i className="fas fa-file-export mr-1.5 text-[12px]"></i> 보고서
                                                     </button>
@@ -1789,7 +1858,7 @@
                                                 </>
                                             )}
 
-                                            {/* 💡 [수정] 고정 메뉴(GUIDE, REPORT, 클라우드, 설정)는 우측에 위치 */}
+                                            {/* 고정 메뉴(GUIDE, REPORT, 클라우드, 설정)는 우측에 위치 */}
                                             <a href="https://oneapp.orderz.co.kr/MerchOps/guide" target="_blank" rel="noopener noreferrer" className={`h-8 px-2.5 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-emerald-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-300 hover:border-emerald-500/50 font-bold text-[11px] tracking-wider uppercase ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="MerchOps 사용 가이드">
                                                 GUIDE
                                             </a>
@@ -1819,7 +1888,10 @@
                     </div>
                     {ui.showCategoryModal && <CategorySaveModal onClose={() => ui.setShowCategoryModal(false)} onSave={customActions.handleSaveAsCategory} />}
                     {ui.showSettings && <MappingCenterModal onClose={() => ui.setShowSettings(false)} config={config} actions={{...customActions, showToast: ui.showToast}} availableCatalogs={availableCatalogs} availableCategories={availableCategories} />}
-                    {ui.showBriefingModal && <BriefingModal onClose={() => ui.setShowBriefingModal(false)} state={appState} data={data} />}
+                    
+                    {/* 💡 [NEW] ReviewModal 렌더링 (onConfirm 시 마스터 저장 로직 실행) */}
+                    {ui.showReviewModal && <ReviewModal onClose={() => ui.setShowReviewModal(false)} onConfirm={customActions.handleCommitEstimate} state={appState} data={data} />}
+                    
                     {ui.showExportModal && <ExportModal onClose={() => ui.setShowExportModal(false)} executeExport={customActions.executeExport} />}
                 </div>
             );
