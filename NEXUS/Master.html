@@ -48,7 +48,7 @@
             "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", 
             "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", 
             "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", 
-            "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록"
+            "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록", "상품태그"
         ];
 
         const NUMERIC_HEADERS = [
@@ -520,6 +520,12 @@
             const [masterProducts, setMasterProducts] = useState({});
             const config = useMerchConfig();
             const [toastMsg, setToastMsg] = useState("");
+
+            // 💡 환경설정 연동: 화면 노출 컬럼 동적 계산
+            const visMasterCols = useMemo(() => {
+                const cols = config.visibleMasterCols['estimate'] || [];
+                return cols.filter(h => !['품목코드', '품목명', '규격'].includes(h));
+            }, [config.visibleMasterCols]);
             
             const [isProcessing, setIsProcessing] = useState(false);
             const [processMsg, setProcessMsg] = useState('');
@@ -714,6 +720,7 @@
                     }
                     setMasterProducts(newMaster);
                     setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
+                    localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); // 타 화면 동기화 트리거 추가
                     showToast(`✅ ${count}건의 찌꺼기 데이터를 삭제했습니다. (반영 후 클라우드 백업을 눌러주세요)`);
                 }
             }, [masterProducts]);
@@ -740,6 +747,7 @@
                 
                 setMasterProducts(newMaster);
                 setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
+                localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); // 타 화면 동기화 트리거 추가
                 showToast(`✅ ${count}개의 상품에서 [${tagName}] 태그를 삭제했습니다.`);
             }, [masterProducts]);
 
@@ -910,7 +918,6 @@
                     )}
 
                     <main className="flex-1 flex flex-col overflow-hidden bg-slate-50 border-t border-slate-200">
-                        {/* 💡 개선된 Toolbar: 우측 정렬 완수 */}
                         <div className="px-6 py-3 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 z-10 shadow-sm">
                             
                             <div className="flex items-center gap-4">
@@ -1018,14 +1025,11 @@
                                                                 <input type="checkbox" className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" checked={selectedRows.size === displayRows.length && displayRows.length > 0} onChange={toggleAllRows} />
                                                             </th>
                                                             <th className="py-2.5 px-4 w-20">코드</th>
-                                                            <th className="py-2.5 px-3">카탈로그</th>
-                                                            <th className="py-2.5 px-3">1분류</th>
-                                                            <th className="py-2.5 px-3">2분류</th>
-                                                            <th className="py-2.5 px-3">3분류</th>
                                                             <th className="py-2.5 px-4 w-[250px]">품목명</th>
                                                             <th className="py-2.5 px-3">규격 / 단위</th>
-                                                            <th className="py-2.5 px-4 text-right text-indigo-700">입고가</th>
-                                                            <th className="py-2.5 px-4 text-right text-indigo-700">출고가</th>
+                                                            {visMasterCols.map(h => (
+                                                                <th key={h} className={`py-2.5 px-3 ${NUMERIC_HEADERS.includes(h) ? 'text-right text-indigo-700' : ''}`}>{h}</th>
+                                                            ))}
                                                         </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -1038,14 +1042,18 @@
                                                                         <input type="checkbox" className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer pointer-events-none" checked={isSelected} readOnly />
                                                                     </td>
                                                                     <td className="py-2 px-4 font-mono text-[11px] text-slate-400">{code}</td>
-                                                                    <td className="py-2 px-3 text-[10px] text-indigo-500 font-bold"><div className="truncate max-w-[100px]">{row['카탈로그'] || '-'}</div></td>
-                                                                    <td className="py-2 px-3">{row['1그룹명'] || '-'}</td>
-                                                                    <td className="py-2 px-3">{row['2그룹명'] || '-'}</td>
-                                                                    <td className="py-2 px-3">{row['3그룹명'] || '-'}</td>
                                                                     <td className="py-2 px-4"><span className="font-bold text-slate-800">{row['품목명']}</span></td>
                                                                     <td className="py-2 px-3 text-slate-500">{row['규격'] || '-'} <span className="ml-1 text-[10px] bg-slate-100 px-1 rounded text-slate-400">{row['단위'] || ''}</span></td>
-                                                                    <td className="py-2 px-4 text-right font-medium text-slate-600">{row['입고가'] ? Number(row['입고가']).toLocaleString() : '-'}</td>
-                                                                    <td className="py-2 px-4 text-right font-black text-indigo-600">{row['출고가'] ? Number(row['출고가']).toLocaleString() : '-'}</td>
+                                                                    {visMasterCols.map(h => {
+                                                                        const isNum = NUMERIC_HEADERS.includes(h);
+                                                                        const val = row[h];
+                                                                        const displayVal = val !== undefined && val !== '' ? (isNum ? Number(val).toLocaleString() : val) : '-';
+                                                                        return (
+                                                                            <td key={`${code}-${h}`} className={`py-2 px-3 ${isNum ? 'text-right font-medium text-slate-600' : 'text-slate-500'}`}>
+                                                                                {isNum && String(h).includes('출고') ? <span className="font-black text-indigo-600">{displayVal}</span> : (isNum ? displayVal : <div className="truncate max-w-[120px]">{displayVal}</div>)}
+                                                                            </td>
+                                                                        );
+                                                                    })}
                                                                 </tr>
                                                             );
                                                         })}
