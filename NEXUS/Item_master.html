@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="ko" translate="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="google" content="notranslate">
+    <title>ONEAPP NEXES - 마스터 DB (Master DB)</title>
+    <!-- 경량화: 엑셀, Fuse.js 등 무거운 라이브러리 제거 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', sans-serif; -webkit-user-select: none; user-select: none; background-color: #f1f5f9; margin: 0; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; } 
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .fade-in { animation: fadeIn 0.2s ease-out; } 
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+    </style>
+</head>
+<body class="overflow-hidden text-slate-800">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useCallback } = React;
+
+        // ---------------------------------------------------------
+        // 🧩 1. Shared Components (SafeIcon, TopHeader, Nav)
+        // ---------------------------------------------------------
+        const SafeIcon = ({ name, size = 18, className = "" }) => {
+            const [svg, setSvg] = useState("");
+            useEffect(() => {
+                if (window.lucide && window.lucide.icons) {
+                    const kebabName = name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
+                    const pNames = [kebabName, name, name==='cloud-download'?'download-cloud':name, name==='cloud-upload'?'upload-cloud':name, name==='sliders-horizontal'?'sliders':name];
+                    for (const p of pNames) {
+                        if (window.lucide.icons[p]) {
+                            setSvg(window.lucide.icons[p].toSvg({ width: size, height: size, class: className, 'stroke-width': 2.5 }));
+                            return;
+                        }
+                    }
+                }
+            }, [name, size, className]);
+
+            if (!svg) {
+                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'sliders-horizontal':'fa-sliders-h' };
+                return <i className={`fas ${faMap[name] || `fa-${name}`} ${className}`} style={{ fontSize: size }} />;
+            }
+            return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
+        };
+
+        const TopHeader = ({ itemCount, isProcessing, processMsg }) => {
+            return (
+                <header className="h-16 bg-[#0B1021] text-white flex items-center justify-between px-6 shrink-0 z-50 border-b border-slate-800/80 shadow-md">
+                    <div className="flex items-center">
+                        <div className="flex items-center cursor-pointer group" onClick={() => window.location.href = 'dashboard.html'}>
+                            <span className="font-black text-[22px] tracking-wider text-slate-100 mr-4">ONEAPP</span>
+                            <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
+                                <div className="flex items-center">
+                                    <span className="font-black text-[15px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
+                                    <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[8px] font-black tracking-wider shadow-sm leading-none">v2.0</span>
+                                </div>
+                                <span className="text-[9.5px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">SKU manager</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex-1 max-w-2xl mx-8 hidden xl:block">
+                        <div className="bg-[#050814] border border-[#1A2235] rounded-md flex items-center px-4 py-2 font-mono text-[12px] shadow-inner h-9">
+                            <span className="text-emerald-500 mr-2 opacity-80">{'>'}</span>
+                            <span className="text-emerald-400 font-bold uppercase">DB_LOADED: {itemCount}</span>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button className="w-10 h-10 rounded bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#374151] text-indigo-400"><SafeIcon name="cloud-download" size={20} /></button>
+                        <button className="w-10 h-10 rounded bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#374151] text-indigo-400"><SafeIcon name="cloud-upload" size={20} /></button>
+                        <button className="w-10 h-10 rounded bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#475569] text-slate-400 ml-2"><SafeIcon name="settings" size={20} /></button>
+                    </div>
+                </header>
+            );
+        };
+
+        const NavigationBar = ({ activeTab }) => {
+            const tabs = [
+                { id: 'dashboard', label: '대시보드', icon: "layout-dashboard", path: 'dashboard.html' },
+                { id: 'item-info', label: '마스터 DB', icon: "package-search", path: 'items.html' },
+                { id: 'item-manage', label: '상품관리', icon: "sliders-horizontal", path: 'item-manage.html' },
+                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'index.html' },
+                { id: 'outbound', label: '출고 관리', icon: "truck", path: '/outbound/' },
+                { id: 'inventory', label: '재고 관리', icon: "boxes", path: '/inventory/' },
+                { id: 'insight', label: '인사이트', icon: "bar-chart-3", path: '/insight/' }
+            ];
+            return (
+                <nav className="bg-[#0B1021] px-6 flex items-end gap-1.5 shrink-0 pt-3 border-b border-slate-200 overflow-x-auto custom-scrollbar relative z-10">
+                    {tabs.map(tab => {
+                        const isActive = activeTab === tab.id;
+                        return (
+                            <a key={tab.id} href={tab.path} 
+                               className={`flex items-center gap-2 px-5 py-2.5 text-[13px] font-bold rounded-t-lg transition-all whitespace-nowrap border-x border-t-[3px] 
+                               ${isActive ? 'bg-slate-50 text-indigo-700 border-t-indigo-600 border-x-slate-200 relative z-10 shadow-[0_-2px_5px_rgba(0,0,0,0.03)]' : 'bg-[#1A2235] text-slate-400 border-t-transparent border-x-transparent hover:bg-[#1e293b] hover:text-slate-200'}`}
+                               style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '11px' : '10px' }}>
+                                <SafeIcon name={tab.icon} size={15} className={isActive ? 'text-indigo-600' : 'text-slate-500'} />{tab.label}
+                            </a>
+                        );
+                    })}
+                </nav>
+            );
+        };
+
+        // ---------------------------------------------------------
+        // 🧩 2. Main View (Read-Only Master Catalog)
+        // ---------------------------------------------------------
+        const ItemInfoView = ({ masterProducts }) => {
+            const [searchKw, setSearchKw] = useState('');
+            const [selectedCategory, setSelectedCategory] = useState('ALL');
+            const [selectedItem, setSelectedItem] = useState(null);
+
+            // 데이터 구조화: 마스터 DB에서 카테고리 추출
+            const categories = useMemo(() => {
+                const cats = new Set();
+                Object.values(masterProducts).forEach(p => { if (p['3그룹명']) cats.add(p['3그룹명']); });
+                return ['ALL', ...Array.from(cats)].sort();
+            }, [masterProducts]);
+
+            // 필터링 및 검색
+            const displayItems = useMemo(() => {
+                let list = Object.values(masterProducts);
+                if (selectedCategory !== 'ALL') list = list.filter(p => p['3그룹명'] === selectedCategory);
+                if (searchKw.trim()) {
+                    const kw = searchKw.toLowerCase();
+                    list = list.filter(p => (p['품목명']||'').toLowerCase().includes(kw) || (p.코드||'').toLowerCase().includes(kw));
+                }
+                return list;
+            }, [masterProducts, selectedCategory, searchKw]);
+
+            const handleEditClick = (code) => {
+                window.location.href = `item-manage.html?tab=smartform&code=${code}`;
+            };
+
+            return (
+                <div className="flex-1 flex overflow-hidden bg-slate-50 relative z-0">
+                    {/* Left: Category Tree */}
+                    <div className="w-[240px] bg-white border-r border-slate-200 flex flex-col z-10 shadow-[2px_0_10px_rgba(0,0,0,0.02)] shrink-0">
+                        <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+                            <h2 className="text-sm font-black text-slate-800"><i className="fas fa-sitemap text-indigo-500 mr-2"></i>카탈로그 분류</h2>
+                        </div>
+                        <div className="flex-1 overflow-y-auto custom-scrollbar py-2">
+                            {categories.map(cat => (
+                                <button key={cat} onClick={() => { setSelectedCategory(cat); setSelectedItem(null); }}
+                                    className={`w-full text-left px-5 py-3 text-[13px] font-bold transition-all border-l-4 
+                                    ${selectedCategory === cat ? 'bg-indigo-50/50 text-indigo-700 border-indigo-600' : 'border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}>
+                                    {cat === 'ALL' ? '전체 품목보기' : cat}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Center: Item List */}
+                    <div className="flex-1 flex flex-col bg-white border-r border-slate-200 min-w-0">
+                        <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
+                            <div className="relative w-72">
+                                <i className="fas fa-search absolute left-3 top-2.5 text-slate-400"></i>
+                                <input type="text" value={searchKw} onChange={e=>setSearchKw(e.target.value)} placeholder="상품명 또는 코드 검색..." 
+                                       className="w-full pl-9 pr-4 py-2 bg-white border border-slate-300 rounded text-sm outline-none focus:border-indigo-500 transition-colors shadow-sm" />
+                            </div>
+                            <div className="text-xs font-bold text-slate-500">
+                                검색 결과: <span className="text-indigo-600">{displayItems.length}</span> 건
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 bg-slate-50/50">
+                            {displayItems.length === 0 ? (
+                                <div className="h-full flex flex-col justify-center items-center text-slate-400">
+                                    <i className="fas fa-box-open text-4xl mb-4 text-slate-300"></i>
+                                    <p className="text-sm font-bold">등록된 상품이 없거나 검색 결과가 없습니다.</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                    {displayItems.map(item => (
+                                        <div key={item.코드} onClick={() => setSelectedItem(item)} 
+                                             className={`bg-white border p-4 rounded-lg cursor-pointer transition-all hover:shadow-md
+                                             ${selectedItem?.코드 === item.코드 ? 'border-indigo-500 shadow-md ring-1 ring-indigo-500' : 'border-slate-200 hover:border-indigo-300'}`}>
+                                            <div className="text-[10px] font-mono text-slate-400 mb-1">{item.코드}</div>
+                                            <div className="font-bold text-slate-800 text-sm truncate">{item['품목명']}</div>
+                                            <div className="text-xs text-slate-500 mt-1">{item['규격']}</div>
+                                            <div className="mt-3 flex justify-between items-center pt-3 border-t border-slate-100">
+                                                <span className="text-[11px] bg-slate-100 px-2 py-1 rounded text-slate-600 font-bold">{item['3그룹명'] || '미분류'}</span>
+                                                <span className="text-sm font-black text-indigo-700">{Number(item['입고가']||0).toLocaleString()}원</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Right: Item Detail & Routing Action */}
+                    <div className="w-[340px] bg-white flex flex-col shrink-0 shadow-[-2px_0_10px_rgba(0,0,0,0.03)] z-10">
+                        <div className="p-4 border-b border-slate-200 bg-slate-50 shrink-0">
+                            <h2 className="text-sm font-black text-slate-800">상품 상세 정보</h2>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
+                            {!selectedItem ? (
+                                <div className="h-full flex flex-col justify-center items-center text-slate-400">
+                                    <i className="fas fa-hand-pointer text-3xl mb-3 text-slate-200"></i>
+                                    <p className="text-xs font-bold">목록에서 상품을 선택해주세요.</p>
+                                </div>
+                            ) : (
+                                <div className="fade-in space-y-6">
+                                    <div>
+                                        <div className="text-[11px] font-mono font-bold text-indigo-500 bg-indigo-50 inline-block px-2 py-1 rounded mb-2 border border-indigo-100">{selectedItem.코드}</div>
+                                        <h3 className="text-lg font-black text-slate-900 leading-tight">{selectedItem['품목명']}</h3>
+                                        <p className="text-sm font-medium text-slate-500 mt-1">{selectedItem['규격']}</p>
+                                    </div>
+                                    
+                                    <div className="bg-slate-50 rounded-lg p-4 border border-slate-100 space-y-3">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs font-bold text-slate-500">분류</span>
+                                            <span className="text-sm font-bold text-slate-800">{selectedItem['3그룹명'] || '-'}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs font-bold text-slate-500">매입 단가</span>
+                                            <span className="text-sm font-black text-rose-600">{Number(selectedItem['입고가']||0).toLocaleString()} 원</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs font-bold text-slate-500">판매 단가</span>
+                                            <span className="text-sm font-black text-indigo-700">{Number(selectedItem['출고가']||0).toLocaleString()} 원</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs font-bold text-slate-500">구매처</span>
+                                            <span className="text-sm font-bold text-slate-800">{selectedItem['구매처'] || '자체조달'}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-slate-50 rounded-lg p-4 border border-slate-100 space-y-3">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs font-bold text-slate-500">쇼핑몰(오더즈) 연동</span>
+                                            <span className="text-xs font-mono font-bold text-slate-600 bg-white px-2 py-1 rounded border border-slate-200">{selectedItem['오더즈'] || '미연동'}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs font-bold text-slate-500">ERP(3코드) 연동</span>
+                                            <span className="text-xs font-mono font-bold text-slate-600 bg-white px-2 py-1 rounded border border-slate-200">{selectedItem['3코드'] || '미연동'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        {/* Routing Button */}
+                        <div className="p-5 border-t border-slate-200 bg-white shrink-0 space-y-2">
+                            <button onClick={() => window.location.href='item-manage.html'} className="w-full py-2.5 rounded-lg text-sm font-bold border border-slate-300 text-slate-600 bg-white hover:bg-slate-50 transition-colors shadow-sm">
+                                <i className="fas fa-plus mr-1.5"></i> 신규 상품 등록 (스튜디오)
+                            </button>
+                            <button onClick={() => selectedItem && handleEditClick(selectedItem.코드)} disabled={!selectedItem} 
+                                    className={`w-full py-3.5 rounded-lg text-sm font-bold transition-all shadow-md ${selectedItem ? 'bg-[#1A2235] text-white hover:bg-black transform hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'}`}>
+                                <i className="fas fa-edit mr-1.5"></i> 선택한 상품 수정하기
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // ---------------------------------------------------------
+        // ⚙️ 3. Main App Container
+        // ---------------------------------------------------------
+        function App() {
+            const [masterProducts, setMasterProducts] = useState({});
+
+            useEffect(() => {
+                try {
+                    const s = localStorage.getItem('skuSyncMaster_v6');
+                    if (s) setMasterProducts(JSON.parse(s));
+                } catch(e) { console.error(e); }
+            }, []);
+
+            return (
+                <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-slate-50 shadow-2xl border-x border-slate-300">
+                    <TopHeader itemCount={Object.keys(masterProducts).length} isProcessing={false} processMsg="" />
+                    <NavigationBar activeTab="item-info" />
+                    <ItemInfoView masterProducts={masterProducts} />
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
