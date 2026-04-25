@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="ko" translate="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="google" content="notranslate">
+    <title>ONEAPP NEXES - 상품관리 (Data Studio)</title>
+    <!-- 데이터 가공용 무거운 라이브러리 포함 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', sans-serif; -webkit-user-select: none; user-select: none; background-color: #f1f5f9; margin: 0; }
+        input, textarea { user-select: auto; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; } 
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .fade-in { animation: fadeIn 0.2s ease-out; } 
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+    </style>
+</head>
+<body class="overflow-hidden text-slate-800">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+        // ---------------------------------------------------------
+        // 🧩 1. Shared Components (SafeIcon, TopHeader, Nav)
+        // ---------------------------------------------------------
+        const SafeIcon = ({ name, size = 18, className = "" }) => {
+            const [svg, setSvg] = useState("");
+            useEffect(() => {
+                if (window.lucide && window.lucide.icons) {
+                    const kebabName = name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
+                    const pNames = [kebabName, name, name==='cloud-download'?'download-cloud':name, name==='cloud-upload'?'upload-cloud':name, name==='sliders-horizontal'?'sliders':name];
+                    for (const p of pNames) {
+                        if (window.lucide.icons[p]) {
+                            setSvg(window.lucide.icons[p].toSvg({ width: size, height: size, class: className, 'stroke-width': 2.5 }));
+                            return;
+                        }
+                    }
+                }
+            }, [name, size, className]);
+
+            if (!svg) {
+                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'sliders-horizontal':'fa-sliders-h' };
+                return <i className={`fas ${faMap[name] || `fa-${name}`} ${className}`} style={{ fontSize: size }} />;
+            }
+            return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
+        };
+
+        const TopHeader = ({ itemCount, isProcessing, processMsg }) => {
+            return (
+                <header className="h-16 bg-[#0B1021] text-white flex items-center justify-between px-6 shrink-0 z-50 border-b border-slate-800/80 shadow-md">
+                    <div className="flex items-center">
+                        <div className="flex items-center cursor-pointer group" onClick={() => window.location.href = 'dashboard.html'}>
+                            <span className="font-black text-[22px] tracking-wider text-slate-100 mr-4">ONEAPP</span>
+                            <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
+                                <div className="flex items-center">
+                                    <span className="font-black text-[15px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
+                                    <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[8px] font-black tracking-wider shadow-sm leading-none">v2.0</span>
+                                </div>
+                                <span className="text-[9.5px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">SKU manager</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex-1 max-w-2xl mx-8 hidden xl:block">
+                        <div className="bg-[#050814] border border-[#1A2235] rounded-md flex items-center px-4 py-2 font-mono text-[12px] shadow-inner h-9">
+                            <span className="text-emerald-500 mr-2 opacity-80">{'>'}</span>
+                            <span className={isProcessing ? "text-amber-400 font-bold" : "text-emerald-400 font-bold uppercase"}>
+                                {isProcessing ? processMsg : `DATA_STUDIO | DB_LOADED: ${itemCount}`}
+                            </span>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button className="w-10 h-10 rounded bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#374151] text-indigo-400"><SafeIcon name="cloud-download" size={20} /></button>
+                        <button className="w-10 h-10 rounded bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#374151] text-indigo-400"><SafeIcon name="cloud-upload" size={20} /></button>
+                        <button className="w-10 h-10 rounded bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#475569] text-slate-400 ml-2"><SafeIcon name="settings" size={20} /></button>
+                    </div>
+                </header>
+            );
+        };
+
+        const NavigationBar = ({ activeTab }) => {
+            const tabs = [
+                { id: 'dashboard', label: '대시보드', icon: "layout-dashboard", path: 'dashboard.html' },
+                { id: 'item-info', label: '상품정보', icon: "package-search", path: 'items.html' },
+                { id: 'item-manage', label: '상품관리', icon: "sliders-horizontal", path: 'item-manage.html' },
+                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'index.html' },
+                { id: 'outbound', label: '출고 관리', icon: "truck", path: '/outbound/' },
+                { id: 'inventory', label: '재고 관리', icon: "boxes", path: '/inventory/' },
+                { id: 'insight', label: '인사이트', icon: "bar-chart-3", path: '/insight/' }
+            ];
+            return (
+                <nav className="bg-[#0B1021] px-6 flex items-end gap-1.5 shrink-0 pt-3 border-b border-slate-200 overflow-x-auto custom-scrollbar relative z-10">
+                    {tabs.map(tab => {
+                        const isActive = activeTab === tab.id;
+                        return (
+                            <a key={tab.id} href={tab.path} 
+                               className={`flex items-center gap-2 px-5 py-2.5 text-[13px] font-bold rounded-t-lg transition-all whitespace-nowrap border-x border-t-[3px] 
+                               ${isActive ? 'bg-slate-50 text-indigo-700 border-t-indigo-600 border-x-slate-200 relative z-10 shadow-[0_-2px_5px_rgba(0,0,0,0.03)]' : 'bg-[#1A2235] text-slate-400 border-t-transparent border-x-transparent hover:bg-[#1e293b] hover:text-slate-200'}`}
+                               style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '11px' : '10px' }}>
+                                <SafeIcon name={tab.icon} size={15} className={isActive ? 'text-indigo-600' : 'text-slate-500'} />{tab.label}
+                            </a>
+                        );
+                    })}
+                </nav>
+            );
+        };
+
+        // ---------------------------------------------------------
+        // 🚀 2. Engines & Logic (Simplified for brevity but functional)
+        // ---------------------------------------------------------
+        const ONEAPP_CATEGORIES = [
+            { c1Name: '채소.과일', c1Code: '10', c2Name: '무/배추', c2Code: '1010', c3Name: '배추', erp3Code: '11012', orders3Code: '101012' },
+            { c1Name: '채소.과일', c1Code: '10', c2Name: '무/배추', c2Code: '1010', c3Name: '무우', erp3Code: '11010', orders3Code: '101010' },
+            { c1Name: '수산.축산', c1Code: '20', c2Name: '돼지고기', c2Code: '2010', c3Name: '삼겹살', erp3Code: '21010', orders3Code: '201010' }
+        ];
+
+        const IngestEngine = {
+            parseNum: (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0),
+            generatePseudoSKU: (orders3Code) => `${orders3Code || '999999'}${String(Math.floor(100 + Math.random() * 900))}`
+        };
+
+        // ---------------------------------------------------------
+        // 🧩 3. Local Workspace Views
+        // ---------------------------------------------------------
+        const SmartFormView = ({ masterProducts, setMasterProducts, initialCode, showToast }) => {
+            const [keyword, setKeyword] = useState('');
+            const [selectedCat, setSelectedCat] = useState(null);
+            const [formData, setFormData] = useState({ name: '', spec: '', inPrice: '', outPrice: '', vendor: '' });
+            const [previewSku, setPreviewSku] = useState(initialCode || '');
+            const [isEditMode, setIsEditMode] = useState(false);
+
+            // 초기 로드 시 ?code 파라미터가 있으면 수정 모드로 전환
+            useEffect(() => {
+                if (initialCode && masterProducts[initialCode]) {
+                    const item = masterProducts[initialCode];
+                    setIsEditMode(true);
+                    setFormData({ name: item['품목명']||'', spec: item['규격']||'', inPrice: item['입고가']||'', outPrice: item['출고가']||'', vendor: item['구매처']||'' });
+                    // 카테고리 역산 매칭 (간단화)
+                    const cat = ONEAPP_CATEGORIES.find(c => c.c3Name === item['3그룹명']) || ONEAPP_CATEGORIES[0];
+                    setSelectedCat(cat);
+                }
+            }, [initialCode, masterProducts]);
+
+            const searchResults = useMemo(() => {
+                if (!keyword.trim() || !window.Fuse) return [];
+                const fuse = new window.Fuse(ONEAPP_CATEGORIES, { keys: ['c3Name', 'c2Name'], threshold: 0.3 });
+                return fuse.search(keyword).map(r => r.item).slice(0, 5);
+            }, [keyword]);
+
+            const handleSubmit = () => {
+                if (!selectedCat || !formData.name) return showToast('⚠️ 필수 정보를 모두 입력해주세요.');
+                const finalSKU = previewSku || IngestEngine.generatePseudoSKU(selectedCat.orders3Code);
+                
+                const newData = {
+                    코드: finalSKU,
+                    품목명: formData.name, 규격: formData.spec, 구매처: formData.vendor,
+                    입고가: IngestEngine.parseNum(formData.inPrice), 출고가: IngestEngine.parseNum(formData.outPrice),
+                    오더즈: selectedCat.orders3Code, '3코드': selectedCat.erp3Code, '3그룹명': selectedCat.c3Name 
+                };
+
+                const updatedMaster = { ...masterProducts, [finalSKU]: newData };
+                setMasterProducts(updatedMaster);
+                localStorage.setItem('skuSyncMaster_v6', JSON.stringify(updatedMaster));
+                
+                showToast(`✅ [${formData.name}] 상품 정보가 ${isEditMode ? '수정' : '발급'}되었습니다.`);
+                if (!isEditMode) {
+                    setFormData({ name: '', spec: '', inPrice: '', outPrice: '', vendor: '' });
+                    setSelectedCat(null); setPreviewSku('');
+                }
+            };
+
+            return (
+                <div className="h-full flex justify-center items-start pt-10 overflow-y-auto bg-slate-50 relative">
+                    <div className="bg-white rounded-xl shadow-lg border border-gray-200 w-[680px] overflow-hidden my-10 relative fade-in">
+                        <div className="px-6 py-5 border-b border-gray-100 bg-slate-50 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600"><i className={`fas ${isEditMode ? 'fa-edit' : 'fa-bolt'} text-lg`}></i></div>
+                                <div><h2 className="text-base font-bold text-slate-800">{isEditMode ? '상품 정보 수정' : '단건 신규 등록 (스마트 폼)'}</h2><p className="text-sm text-slate-500 mt-0.5">{isEditMode ? '마스터 DB의 데이터를 직접 수정합니다.' : '기초 정보 입력 시 시스템이 표준 SKU를 발급합니다.'}</p></div>
+                            </div>
+                            {isEditMode && <button onClick={()=>window.location.href='items.html'} className="text-sm font-bold text-slate-500 hover:text-slate-800 underline">돌아가기</button>}
+                        </div>
+                        <div className="p-8 space-y-6">
+                            <div className="relative z-20">
+                                <label className="text-sm font-bold text-slate-700 mb-2 flex items-center"><span className="bg-indigo-600 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs mr-2">1</span>카테고리 매핑</label>
+                                {!selectedCat ? (
+                                    <div className="relative mt-2">
+                                        <i className="fas fa-search absolute left-4 top-3.5 text-indigo-400"></i>
+                                        <input type="text" value={keyword} onChange={e=>setKeyword(e.target.value)} placeholder="예: 배추, 삼겹살..." className="w-full pl-11 pr-4 py-3 bg-white border-2 border-indigo-100 rounded-lg text-sm outline-none focus:border-indigo-500 transition-colors shadow-sm" />
+                                        {searchResults.length > 0 && (
+                                            <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden divide-y divide-gray-100">
+                                                {searchResults.map((cat, i) => (
+                                                    <div key={i} onClick={() => { setSelectedCat(cat); setPreviewSku(IngestEngine.generatePseudoSKU(cat.orders3Code)); setKeyword(''); }} className="px-5 py-3 hover:bg-indigo-50 cursor-pointer flex justify-between items-center transition-colors group">
+                                                        <div className="text-[15px] font-bold text-slate-800 group-hover:text-indigo-700">{cat.c3Name}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="flex justify-between items-center bg-indigo-50 border-2 border-indigo-200 px-5 py-4 rounded-lg mt-2">
+                                        <div><div className="text-[15px] font-bold text-indigo-900 mb-1">{selectedCat.c3Name}</div><div className="text-xs font-medium text-indigo-500 flex items-center gap-1">{selectedCat.c1Name} &gt; {selectedCat.c2Name}</div></div>
+                                        <div className="flex items-center gap-4">
+                                            <div className="text-right"><div className="text-[10px] text-indigo-400 font-bold mb-0.5 uppercase tracking-wider">SKU Code</div><div className="text-sm font-mono font-black text-indigo-700 bg-white px-2 py-1 rounded shadow-sm border border-indigo-100">{previewSku}</div></div>
+                                            {!isEditMode && <button onClick={()=>setSelectedCat(null)} className="w-8 h-8 rounded-full bg-white text-indigo-400 border border-indigo-100 shadow-sm"><i className="fas fa-sync-alt text-xs"></i></button>}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                            <div className={`space-y-5 transition-all duration-300 relative z-10 ${selectedCat ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+                                <label className="text-sm font-bold text-slate-700 mb-2 flex items-center"><span className="bg-indigo-600 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs mr-2">2</span>상세 정보 입력</label>
+                                <div className="bg-slate-50 p-5 rounded-lg border border-slate-100 space-y-4">
+                                    <div className="flex gap-4">
+                                        <div className="flex-1"><label className="text-xs font-bold text-slate-500 mb-1.5 block">품목명</label><input type="text" value={formData.name} onChange={e=>setFormData({...formData, name: e.target.value})} className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded text-sm outline-none focus:border-indigo-500" /></div>
+                                        <div className="w-1/3"><label className="text-xs font-bold text-slate-500 mb-1.5 block">규격</label><input type="text" value={formData.spec} onChange={e=>setFormData({...formData, spec: e.target.value})} className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded text-sm outline-none focus:border-indigo-500" /></div>
+                                    </div>
+                                    <div className="flex gap-4">
+                                        <div className="flex-1"><label className="text-xs font-bold text-slate-500 mb-1.5 block">매입 단가</label><input type="number" value={formData.inPrice} onChange={e=>setFormData({...formData, inPrice: e.target.value})} className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded text-sm outline-none focus:border-indigo-500 text-right font-mono" /></div>
+                                        <div className="flex-1"><label className="text-xs font-bold text-slate-500 mb-1.5 block">출고 단가</label><input type="number" value={formData.outPrice} onChange={e=>setFormData({...formData, outPrice: e.target.value})} className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded text-sm outline-none focus:border-indigo-500 text-right font-mono" /></div>
+                                    </div>
+                                    <div><label className="text-xs font-bold text-slate-500 mb-1.5 block">구매처/벤더</label><input type="text" value={formData.vendor} onChange={e=>setFormData({...formData, vendor: e.target.value})} className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded text-sm outline-none focus:border-indigo-500" /></div>
+                                </div>
+                                <button onClick={handleSubmit} disabled={!selectedCat} className="w-full py-3.5 rounded-lg font-bold text-sm bg-[#1A2235] text-white hover:bg-black shadow-md flex justify-center items-center">
+                                    <i className="fas fa-check-circle mr-2"></i> {isEditMode ? '수정 내용 마스터 DB 반영' : 'SKU 최종 발급 및 등록'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const PlaceholderView = ({ title, icon, message }) => (
+            <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50">
+                <i className={`fas ${icon} text-5xl mb-4 text-slate-300`}></i>
+                <h3 className="text-lg font-bold text-slate-600 mb-1">{title}</h3>
+                <p className="text-sm font-medium">{message}</p>
+            </div>
+        );
+
+        // ---------------------------------------------------------
+        // ⚙️ 4. Main App Container
+        // ---------------------------------------------------------
+        function App() {
+            const [masterProducts, setMasterProducts] = useState({});
+            const [localTab, setLocalTab] = useState('smartform'); // excel, parser, smartform, bom
+            const [targetCode, setTargetCode] = useState(null);
+            const [toastMsg, setToastMsg] = useState('');
+
+            const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
+
+            useEffect(() => {
+                try {
+                    const s = localStorage.getItem('skuSyncMaster_v6');
+                    if (s) setMasterProducts(JSON.parse(s));
+                } catch(e) { console.error(e); }
+
+                // URL Parameter 읽기 (?tab=smartform&code=XYZ)
+                const urlParams = new URLSearchParams(window.location.search);
+                const tab = urlParams.get('tab');
+                const code = urlParams.get('code');
+                if (tab) setLocalTab(tab);
+                if (code) setTargetCode(code);
+            }, []);
+
+            return (
+                <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-white shadow-2xl border-x border-slate-300">
+                    {toastMsg && <div className="absolute bottom-10 right-6 z-[1000] bg-slate-900 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3 text-sm font-bold fade-in"><i className="fas fa-check-circle text-emerald-400"></i>{toastMsg}</div>}
+                    
+                    <TopHeader itemCount={Object.keys(masterProducts).length} isProcessing={false} />
+                    <NavigationBar activeTab="item-manage" />
+                    
+                    {/* Local Action Toolbar */}
+                    <div className="px-6 pt-5 bg-slate-50 border-b border-gray-200 flex items-end justify-between shrink-0 relative z-10">
+                        <div className="flex gap-1">
+                            {[
+                                { id:'smartform', label:'단건 등록/수정', icon:'fa-bolt' },
+                                { id:'excel', label:'엑셀 파이프라인 (N:N)', icon:'fa-table' },
+                                { id:'parser', label:'AI 스마트 파서', icon:'fa-robot' },
+                                { id:'bom', label:'BOM 세트 조립', icon:'fa-boxes' }
+                            ].map(t => (
+                                <button key={t.id} onClick={() => { 
+                                    setLocalTab(t.id); 
+                                    setTargetCode(null); 
+                                    try {
+                                        const url = new URL(window.location.href);
+                                        url.searchParams.delete('tab');
+                                        url.searchParams.delete('code');
+                                        window.history.replaceState({}, '', url);
+                                    } catch (e) {
+                                        // Preview/Blob 환경에서 발생하는 보안 에러 무시
+                                    }
+                                }}
+                                    className={`flex items-center gap-2 px-5 py-2.5 text-sm font-bold rounded-t-lg border border-b-0 transition-colors
+                                    ${localTab === t.id ? 'bg-white border-gray-200 text-indigo-700 z-10 relative shadow-[0_-2px_4px_rgba(0,0,0,0.02)]' : 'bg-slate-100 border-transparent text-slate-500 hover:bg-slate-200 hover:text-slate-700'}`}
+                                    style={{ marginBottom: localTab === t.id ? '-1px' : '0' }}>
+                                    <i className={`fas ${t.icon} ${localTab === t.id ? 'text-indigo-600' : 'text-slate-400'}`}></i> {t.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Main Workspace Area */}
+                    <div className="flex-1 flex flex-col overflow-hidden bg-slate-50 z-0">
+                        {localTab === 'smartform' && <SmartFormView masterProducts={masterProducts} setMasterProducts={setMasterProducts} initialCode={targetCode} showToast={showToast} />}
+                        {localTab === 'excel' && <PlaceholderView title="엑셀 파이프라인" icon="fa-file-excel" message="다량의 외부 엑셀 데이터를 매핑하고 업로드하는 공간입니다. (기존 V1.6 모듈 연결 영역)" />}
+                        {localTab === 'parser' && <PlaceholderView title="AI 스마트 파서" icon="fa-robot" message="카톡 등 비정형 텍스트를 분석하여 SKU와 매칭합니다. (기존 V1.6 모듈 연결 영역)" />}
+                        {localTab === 'bom' && <PlaceholderView title="BOM 세트 조립" icon="fa-boxes" message="단품을 묶어 기획 세트 SKU를 발급합니다. (기존 V1.6 모듈 연결 영역)" />}
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
