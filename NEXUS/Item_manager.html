@@ -63,7 +63,7 @@
             return (
                 <header className="h-16 bg-[#0B1021] text-white flex items-center justify-between px-6 shrink-0 z-50 border-b border-slate-800/80 shadow-md">
                     <div className="flex items-center">
-                        <div className="flex items-center cursor-pointer group" onClick={() => window.location.href = 'dashboard.html'}>
+                        <div className="flex items-center cursor-pointer group" onClick={() => window.location.href = 'https://oneapp.orderz.co.kr/NEXUS/Dashboard'}>
                             <span className="font-black text-[22px] tracking-wider text-slate-100 mr-4">ONEAPP</span>
                             <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
                                 <div className="flex items-center">
@@ -93,9 +93,9 @@
 
         const NavigationBar = ({ activeTab }) => {
             const tabs = [
-                { id: 'dashboard', label: '대시보드', icon: "layout-dashboard", path: 'dashboard.html' },
-                { id: 'item-info', label: '상품정보', icon: "package-search", path: 'items.html' },
-                { id: 'item-manage', label: '상품관리', icon: "sliders-horizontal", path: 'item-manage.html' },
+                { id: 'dashboard', label: '대시보드', icon: "layout-dashboard", path: 'https://oneapp.orderz.co.kr/NEXUS/Dashboard' },
+                { id: 'item-info', label: '마스터 DB', icon: "package-search", path: 'https://oneapp.orderz.co.kr/NEXUS/Item_master' },
+                { id: 'item-manage', label: '상품관리', icon: "sliders-horizontal", path: 'https://oneapp.orderz.co.kr/NEXUS/Item_manager' },
                 { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'index.html' },
                 { id: 'outbound', label: '출고 관리', icon: "truck", path: '/outbound/' },
                 { id: 'inventory', label: '재고 관리', icon: "boxes", path: '/inventory/' },
@@ -190,7 +190,7 @@
                                 <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600"><i className={`fas ${isEditMode ? 'fa-edit' : 'fa-bolt'} text-lg`}></i></div>
                                 <div><h2 className="text-base font-bold text-slate-800">{isEditMode ? '상품 정보 수정' : '단건 신규 등록 (스마트 폼)'}</h2><p className="text-sm text-slate-500 mt-0.5">{isEditMode ? '마스터 DB의 데이터를 직접 수정합니다.' : '기초 정보 입력 시 시스템이 표준 SKU를 발급합니다.'}</p></div>
                             </div>
-                            {isEditMode && <button onClick={()=>window.location.href='items.html'} className="text-sm font-bold text-slate-500 hover:text-slate-800 underline">돌아가기</button>}
+                            {isEditMode && <button onClick={()=>window.location.href='https://oneapp.orderz.co.kr/NEXUS/Item_master'} className="text-sm font-bold text-slate-500 hover:text-slate-800 underline">돌아가기</button>}
                         </div>
                         <div className="p-8 space-y-6">
                             <div className="relative z-20">
