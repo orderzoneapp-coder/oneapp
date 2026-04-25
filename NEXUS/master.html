@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="ko" translate="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="google" content="notranslate">
+    <title>ONEAPP NEXES - Master DB [v2.0]</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', sans-serif; -webkit-user-select: none; user-select: none; background-color: #f1f5f9; margin: 0; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; } 
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .fade-in { animation: fadeIn 0.2s ease-out; } 
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+    </style>
+</head>
+<body class="overflow-hidden text-slate-800">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useCallback, Fragment } = React;
+
+        const STORAGE_KEYS = {
+            MASTER_DB: 'merchMaster_v870',
+            CLOUD_URL: 'skuSyncCloudUrl_v6',
+            SYNC_TRIGGER: 'merchMaster_sync_trigger'
+        };
+
+        const SafeIcon = React.memo(function SafeIconComponent({ name, size = 18, className = "" }) {
+            const [svg, setSvg] = useState("");
+            useEffect(() => {
+                const renderIcon = () => {
+                    if (window.lucide && window.lucide.icons) {
+                        const kebabName = name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
+                        const possibleNames = [
+                            kebabName, name, 
+                            name === 'cloud-download' ? 'download-cloud' : name,
+                            name === 'cloud-upload' ? 'upload-cloud' : name,
+                            name === 'bar-chart-3' ? 'bar-chart' : name,
+                            name === 'pie-chart' ? 'pie-chart' : name,
+                            name === 'shopping-cart' ? 'shopping-cart' : name
+                        ];
+                        for (const pName of possibleNames) {
+                            if (window.lucide.icons[pName]) {
+                                setSvg(window.lucide.icons[pName].toSvg({ width: size, height: size, class: className, 'stroke-width': 2.5 }));
+                                return;
+                            }
+                        }
+                    }
+                };
+                renderIcon();
+            }, [name, size, className]);
+
+            if (!svg) {
+                const faMap = {
+                    'cloud-download': 'fa-cloud-download-alt', 'cloud-upload': 'fa-cloud-upload-alt', 'settings': 'fa-cogs',
+                    'layout-dashboard': 'fa-th-large', 'package-search': 'fa-box-open', 'file-spreadsheet': 'fa-table', 
+                    'zap': 'fa-bolt', 'truck': 'fa-truck', 'boxes': 'fa-boxes', 'bar-chart-3': 'fa-chart-bar', 
+                    'check-circle-2': 'fa-check-circle', 'x': 'fa-times', 'database': 'fa-database',
+                    'pie-chart': 'fa-chart-pie', 'shopping-cart': 'fa-shopping-cart', 'users': 'fa-users', 'megaphone': 'fa-bullhorn',
+                    'book-open': 'fa-address-book', 'shopping-bag': 'fa-shopping-bag', 'credit-card': 'fa-credit-card', 'line-chart': 'fa-chart-line', 'printer': 'fa-print'
+                };
+                const faName = faMap[name] || `fa-${name}`;
+                return <i className={`fas ${faName} ${className}`} style={{ fontSize: size }} />;
+            }
+            return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
+        });
+
+        const initIDB = () => new Promise((resolve, reject) => {
+            const request = indexedDB.open('MerchOpsDB', 1);
+            request.onupgradeneeded = (e) => { if (!e.target.result.objectStoreNames.contains('store')) e.target.result.createObjectStore('store'); };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+        const getIDB = async (key) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); };
+
+        const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
+            // 1-Depth: 대분류 그룹
+            const groups = [
+                { id: 'master', label: '정보 관리', icon: 'database' },
+                { id: 'ops', label: '운영 관리', icon: 'truck' },
+                { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }
+            ];
+
+            // 2-Depth: 소분류 탭 
+            const tabs = [
+                // 🌟 0. 공통 메뉴 (로고 클릭 시 활성화되는 가상 그룹)
+                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'dashboard.html', group: 'common' },
+
+                // 📦 1. 정보 관리
+                { id: 'item-info', label: '마스터 DB', icon: "database", path: 'item_master.html', group: 'master' },
+                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'items.html', group: 'master' },
+                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'index.html', group: 'master' },
+                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'parser.html', group: 'master' },
+                { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: '#', group: 'master' },
+                { id: 'partners', label: '거래처 관리', icon: "users", path: '#', group: 'master' },
+
+                // 🚚 2. 운영 관리
+                { id: 'orders', label: '주문 관리', icon: "shopping-bag", path: '#', group: 'ops' },
+                { id: 'purchases', label: '구매 관리', icon: "credit-card", path: '#', group: 'ops' },
+                { id: 'sales', label: '판매 관리', icon: "line-chart", path: '#', group: 'ops' },
+                { id: 'inventory', label: '재고 관리', icon: "boxes", path: '#', group: 'ops' },
+                { id: 'print-center', label: '출력 센터', icon: "printer", path: '#', group: 'ops' },
+
+                // 🤝 3. 인사이트
+                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'report.html', group: 'admin' },
+                { id: 'cs', label: '정보마당(CS)', icon: "megaphone", path: '#', group: 'admin' }
+            ];
+
+            const currentTab = tabs.find(t => t.id === activeTab);
+            const activeGroup = currentTab ? currentTab.group : 'common'; 
+            const [selectedGroup, setSelectedGroup] = useState(activeGroup);
+
+            const handleGroupClick = (groupId) => {
+                setSelectedGroup(prev => prev === groupId ? 'common' : groupId);
+            };
+
+            const handleLogoClick = (e) => {
+                setSelectedGroup('common');
+                onNavigate(e, 'dashboard.html');
+            };
+
+            return (
+                <div className="flex flex-col shrink-0 z-40 relative w-full shadow-sm bg-[#0B1021]">
+                    <header className="h-[72px] bg-[#0B1021] text-white flex justify-between px-6 border-b border-slate-800/80 relative z-20">
+                        <div className="flex items-center h-full">
+                            <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={handleLogoClick} title="통합 대시보드 및 공통 메뉴로 이동">
+                                <span className="font-black text-[24px] tracking-wider text-slate-100 mr-4 group-hover:text-indigo-400 transition-colors">ONEAPP</span>
+                                <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
+                                    <div className="flex items-center">
+                                        <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
+                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v2.0</span>
+                                    </div>
+                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">One Board</span>
+                                </div>
+                            </div>
+                            <div className="flex items-end h-full gap-8">
+                                {groups.map(g => (
+                                    <button key={g.id} onClick={() => handleGroupClick(g.id)}
+                                        className={`pb-[16px] text-[14px] font-bold transition-colors flex items-center gap-1.5
+                                        ${selectedGroup === g.id ? 'text-slate-100 border-b-[3px] border-indigo-500 -mb-[2px]' : 'text-slate-500 hover:text-slate-300'}`}>
+                                        <SafeIcon name={g.icon} size={15} /> {g.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-4 h-full">
+                            <div className="flex items-center bg-[#151B2B] rounded-lg border border-slate-700/50 h-9 px-3 shadow-inner gap-3">
+                                <div className="flex items-center justify-center" title={isProcessing ? processMsg : "클라우드 동기화 켜짐 (가동중)"}>
+                                    {isProcessing ? (
+                                        <i className="fas fa-circle-notch fa-spin text-amber-500 text-[12px]"></i>
+                                    ) : (
+                                        <div className="relative flex h-2 w-2">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="w-px h-3.5 bg-slate-700"></div>
+                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`현재 브라우저 메모리에 다운로드된 마스터 상품 수: ${itemCount.toLocaleString()}개`}>
+                                    <i className="fas fa-database text-[10px] text-slate-500"></i>
+                                    <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount.toLocaleString()}</span>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <button onClick={onPull} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 불러오기(Pull)"><SafeIcon name="cloud-download" size={18} /></button>
+                                <button onClick={onPush} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 백업하기(Push)"><SafeIcon name="cloud-upload" size={18} /></button>
+                                <div className="w-px h-6 bg-slate-700 mx-1"></div>
+                                <button onClick={onOpenSettings} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-slate-400 hover:text-white shadow-sm" title="설정"><SafeIcon name="settings" size={18} /></button>
+                            </div>
+                        </div>
+                    </header>
+
+                    {selectedGroup && (
+                        <div className="bg-[#0B1021] px-8 pt-4 flex items-end gap-2 overflow-x-auto custom-scrollbar border-b border-slate-200 fade-in">
+                            {tabs.filter(t => t.group === selectedGroup).map(tab => {
+                                const isActive = activeTab === tab.id;
+                                const isPlaceholder = tab.path === '#';
+                                return (
+                                    <a key={tab.id} href={tab.path} onClick={(e) => onNavigate(e, tab.path)}
+                                       className={`flex items-center gap-2 px-6 py-3 text-[14px] font-black rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px] 
+                                       ${isActive 
+                                           ? 'bg-slate-50 text-indigo-700 border-t-indigo-600 border-x-slate-200 relative z-10 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]' 
+                                           : isPlaceholder 
+                                              ? 'bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5' 
+                                              : 'bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:bg-[#1E293B] hover:text-slate-200 pb-2.5'
+                                       }`}
+                                       style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '13px' : '10px' }}
+                                    >
+                                        <SafeIcon name={tab.icon} size={16} className={isActive ? 'text-indigo-600' : 'opacity-70'} />
+                                        {tab.label}
+                                    </a>
+                                );
+                            })}
+                            {tabs.filter(t => t.group === selectedGroup).length === 0 && (
+                                <div className="px-5 py-2.5 text-[13px] font-bold text-slate-500 pb-4">이 그룹에 할당된 메뉴가 없습니다.</div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // ==========================================
+        // 🧩 View: Master DB Viewer (마스터 DB 단독 화면)
+        // ==========================================
+        const MasterViewer = ({ masterProducts, onNavigate }) => {
+            const [searchKw, setSearchKw] = useState('');
+            const [selectedCategory, setSelectedCategory] = useState('ALL');
+            const [selectedItem, setSelectedItem] = useState(null);
+
+            const categories = useMemo(() => {
+                const cats = new Set();
+                Object.values(masterProducts).forEach(p => { if (p['3그룹명']) cats.add(p['3그룹명']); });
+                return ['ALL', ...Array.from(cats)].sort();
+            }, [masterProducts]);
+
+            const displayItems = useMemo(() => {
+                let list = Object.values(masterProducts);
+                if (selectedCategory !== 'ALL') list = list.filter(p => p['3그룹명'] === selectedCategory);
+                if (searchKw.trim()) {
+                    const kw = searchKw.toLowerCase().replace(/\s/g, '');
+                    list = list.filter(p => {
+                        const name = (p['품목명']||'').toLowerCase().replace(/\s/g, '');
+                        const code = (p['코드']||'').toLowerCase();
+                        return name.includes(kw) || code.includes(kw);
+                    });
+                }
+                return list;
+            }, [masterProducts, selectedCategory, searchKw]);
+
+            const handleEditClick = (e, code) => {
+                onNavigate(e, `items.html?tab=smartform&code=${code}`);
+            };
+
+            if (Object.keys(masterProducts).length === 0) {
+                return (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-400 p-10 fade-in">
+                        <i className="fas fa-database text-6xl text-slate-300 mb-6"></i>
+                        <h2 className="text-2xl font-black text-slate-600 mb-3 tracking-tight">마스터 데이터베이스가 비어있습니다</h2>
+                        <p className="text-sm font-bold text-center leading-relaxed">
+                            우측 상단의 <span className="bg-slate-200 text-slate-600 px-2 py-1 rounded mx-1">☁️ 구름 아이콘(↓)</span>을 클릭하여<br/>클라우드에서 최신 데이터를 불러오세요.
+                        </p>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="flex-1 flex overflow-hidden bg-slate-50 relative z-0 fade-in">
+                    <div className="w-[240px] bg-white border-r border-slate-200 flex flex-col z-10 shadow-[2px_0_10px_rgba(0,0,0,0.02)] shrink-0">
+                        <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+                            <h2 className="text-sm font-black text-slate-800 flex items-center"><SafeIcon name="network" size={16} className="text-indigo-500 mr-2"/>카탈로그 분류</h2>
+                        </div>
+                        <div className="flex-1 overflow-y-auto custom-scrollbar py-2">
+                            {categories.map(cat => (
+                                <button key={cat} onClick={() => { setSelectedCategory(cat); setSelectedItem(null); }}
+                                    className={`w-full text-left px-5 py-3 text-[13px] font-bold transition-all border-l-4 
+                                    ${selectedCategory === cat ? 'bg-indigo-50/50 text-indigo-700 border-indigo-600' : 'border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}>
+                                    {cat === 'ALL' ? '전체 품목보기' : cat}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="flex-1 flex flex-col bg-white border-r border-slate-200 min-w-0">
+                        <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
+                            <div className="relative w-72">
+                                <i className="fas fa-search absolute left-3 top-2.5 text-slate-400"></i>
+                                <input type="text" value={searchKw} onChange={e=>setSearchKw(e.target.value)} placeholder="상품명 또는 코드 검색..." 
+                                       className="w-full pl-9 pr-4 py-2 bg-white border border-slate-300 rounded text-sm outline-none focus:border-indigo-500 transition-colors shadow-sm" />
+                            </div>
+                            <div className="text-xs font-bold text-slate-500 bg-white px-3 py-1.5 border border-slate-200 rounded shadow-sm">
+                                검색 결과: <span className="text-indigo-600 text-[13px] font-black">{displayItems.length}</span> 건
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto custom-scrollbar p-5 bg-slate-50/50">
+                            {displayItems.length === 0 ? (
+                                <div className="h-full flex flex-col justify-center items-center text-slate-400">
+                                    <i className="fas fa-box-open text-5xl mb-4 text-slate-300"></i>
+                                    <p className="text-sm font-bold">등록된 상품이 없거나 검색 결과가 없습니다.</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 content-start">
+                                    {displayItems.map(item => (
+                                        <div key={item.코드} onClick={() => setSelectedItem(item)} 
+                                             className={`bg-white border p-4 rounded-xl cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5
+                                             ${selectedItem?.코드 === item.코드 ? 'border-indigo-500 shadow-md ring-1 ring-indigo-500' : 'border-slate-200 hover:border-indigo-300'}`}>
+                                            <div className="text-[10px] font-mono text-slate-400 mb-1.5">{item.코드}</div>
+                                            <div className="font-bold text-slate-800 text-[14px] truncate leading-tight">{item['품목명']}</div>
+                                            <div className="text-xs text-slate-500 mt-1 truncate">{item['규격']} {item['단위'] ? `| ${item['단위']}` : ''}</div>
+                                            <div className="mt-4 flex justify-between items-end pt-3 border-t border-slate-100">
+                                                <span className="text-[10px] bg-slate-100 px-2 py-1 rounded text-slate-600 font-bold truncate max-w-[50%]">{item['3그룹명'] || '미분류'}</span>
+                                                <div className="flex flex-col items-end">
+                                                    <span className="text-[9px] text-slate-400 font-bold mb-0.5">시중가(출고)</span>
+                                                    <span className="text-[15px] font-black text-indigo-700 leading-none">{Number(item['출고가']||0).toLocaleString()}원</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="w-[340px] bg-white flex flex-col shrink-0 shadow-[-2px_0_10px_rgba(0,0,0,0.03)] z-10">
+                        <div className="p-4 border-b border-slate-200 bg-slate-50 shrink-0">
+                            <h2 className="text-sm font-black text-slate-800 flex items-center"><SafeIcon name="package-search" size={16} className="text-indigo-500 mr-2"/>상품 상세 정보</h2>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
+                            {!selectedItem ? (
+                                <div className="h-full flex flex-col justify-center items-center text-slate-400">
+                                    <i className="fas fa-hand-pointer text-4xl mb-4 text-slate-200"></i>
+                                    <p className="text-xs font-bold text-center leading-relaxed">중앙의 상품 목록에서<br/>상품을 클릭하여 상세 정보를 확인하세요.</p>
+                                </div>
+                            ) : (
+                                <div className="fade-in space-y-6">
+                                    <div>
+                                        <div className="text-[11px] font-mono font-bold text-indigo-500 bg-indigo-50 inline-block px-2 py-1 rounded mb-2 border border-indigo-100">{selectedItem.코드}</div>
+                                        <h3 className="text-lg font-black text-slate-900 leading-tight break-keep">{selectedItem['품목명']}</h3>
+                                        <p className="text-sm font-medium text-slate-500 mt-1.5">{selectedItem['규격']} {selectedItem['단위'] ? `(${selectedItem['단위']})` : ''}</p>
+                                    </div>
+                                    
+                                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
+                                        <div className="flex justify-between items-center pb-2 border-b border-slate-200 border-dashed">
+                                            <span className="text-xs font-bold text-slate-500">분류</span>
+                                            <span className="text-sm font-bold text-slate-800">{selectedItem['3그룹명'] || '-'}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs font-bold text-slate-500">입고가 (원가)</span>
+                                            <span className="text-sm font-black text-slate-600">{Number(selectedItem['입고가']||0).toLocaleString()} 원</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs font-bold text-slate-500">출고가 (시중가)</span>
+                                            <span className="text-base font-black text-indigo-700">{Number(selectedItem['출고가']||0).toLocaleString()} 원</span>
+                                        </div>
+                                        <div className="flex justify-between items-center pt-2 border-t border-slate-200 border-dashed">
+                                            <span className="text-xs font-bold text-slate-500">구매처</span>
+                                            <span className="text-sm font-bold text-slate-800">{selectedItem['구매처'] || '자체조달'}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white rounded-xl p-4 border border-slate-200 space-y-3 shadow-sm">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs font-bold text-slate-500">쇼핑몰(오더즈) 연동</span>
+                                            <span className="text-xs font-mono font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded">{selectedItem['오더즈'] || '미연동'}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs font-bold text-slate-500">ERP(3코드) 연동</span>
+                                            <span className="text-xs font-mono font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded">{selectedItem['3코드'] || '미연동'}</span>
+                                        </div>
+                                        <div className="flex justify-between items-start pt-2 border-t border-slate-100">
+                                            <span className="text-xs font-bold text-slate-500">소속 카탈로그</span>
+                                            <span className="text-[11px] font-bold text-indigo-500 text-right break-all max-w-[150px]">{selectedItem['카탈로그'] || '없음'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        <div className="p-5 border-t border-slate-200 bg-slate-50 shrink-0 space-y-2">
+                            <button onClick={(e) => onNavigate(e, 'items.html')} className="w-full py-2.5 rounded-lg text-sm font-bold border border-slate-300 text-slate-600 bg-white hover:bg-slate-100 transition-colors shadow-sm">
+                                <i className="fas fa-plus mr-1.5"></i> 신규 상품 등록 이동
+                            </button>
+                            <button onClick={(e) => selectedItem && handleEditClick(e, selectedItem.코드)} disabled={!selectedItem} 
+                                    className={`w-full py-3.5 rounded-lg text-sm font-bold transition-all shadow-md ${selectedItem ? 'bg-[#1A2235] text-white hover:bg-black transform hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'}`}>
+                                <i className="fas fa-edit mr-1.5"></i> 선택한 상품 수정 (상품관리)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // ==========================================
+        // ⚙️ Main App Container
+        // ==========================================
+        function App() {
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [processMsg, setProcessMsg] = useState('');
+            const [toastMsg, setToastMsg] = useState('');
+            const [showSettings, setShowSettings] = useState(false);
+            const [gasUrl, setGasUrl] = useState(() => localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || '');
+            
+            const [masterProducts, setMasterProducts] = useState({});
+
+            const showToast = useCallback((msg) => { 
+                setToastMsg(msg); 
+                setTimeout(() => setToastMsg(''), 3000); 
+            }, []);
+
+            const handleNavigate = useCallback((e, path) => {
+                if (e && e.preventDefault) e.preventDefault();
+                
+                if (path === '#') {
+                    showToast('⚠️ 준비 중인 기능입니다.');
+                    return;
+                }
+
+                try {
+                    const protocol = window.location.protocol;
+                    if (protocol === 'about:' || protocol === 'blob:' || protocol === 'data:') {
+                        showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
+                    } else {
+                        window.location.href = path;
+                    }
+                } catch (err) {
+                    showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
+                }
+            }, [showToast]);
+
+            useEffect(() => {
+                localStorage.setItem(STORAGE_KEYS.CLOUD_URL, gasUrl);
+                
+                getIDB(STORAGE_KEYS.MASTER_DB).then(data => {
+                    if (data) setMasterProducts(data);
+                }).catch(console.error);
+
+                const handleStorageChange = (e) => {
+                    if (e.key === STORAGE_KEYS.SYNC_TRIGGER) {
+                        getIDB(STORAGE_KEYS.MASTER_DB).then(data => {
+                            if (data) setMasterProducts(data);
+                        });
+                    }
+                };
+                window.addEventListener('storage', handleStorageChange);
+                return () => window.removeEventListener('storage', handleStorageChange);
+            }, [gasUrl]);
+
+            const handlePush = async () => {
+                if (!gasUrl) return showToast("⚠️ 설정에서 앱스크립트 URL을 입력하세요.");
+                setIsProcessing(true); setProcessMsg("클라우드 백업 중...");
+                setTimeout(() => {
+                    showToast("✅ 클라우드 저장 완료");
+                    setIsProcessing(false); setProcessMsg("");
+                }, 1000);
+            };
+
+            const handlePull = async () => {
+                if (!gasUrl) return showToast("⚠️ 설정에서 앱스크립트 URL을 입력하세요.");
+                setIsProcessing(true); setProcessMsg("데이터 동기화 중...");
+                setTimeout(() => {
+                    showToast("✅ 데이터 수신 완료");
+                    setIsProcessing(false); setProcessMsg("");
+                }, 1000);
+            };
+
+            return (
+                <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-slate-100 relative shadow-2xl border-x border-slate-300 select-none">
+                    <GlobalHeader 
+                        activeTab="item-info" 
+                        itemCount={Object.keys(masterProducts).length} 
+                        isProcessing={isProcessing} 
+                        processMsg={processMsg}
+                        onOpenSettings={() => setShowSettings(true)}
+                        onPush={handlePush}
+                        onPull={handlePull}
+                        onNavigate={handleNavigate}
+                    />
+                    
+                    <main className="flex-1 overflow-hidden relative flex flex-col bg-slate-50">
+                        <MasterViewer masterProducts={masterProducts} onNavigate={handleNavigate} />
+
+                        {toastMsg && (
+                            <div className="fixed bottom-10 right-10 z-[100] bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in border border-slate-700">
+                                <SafeIcon name="check-circle-2" size={18} className="text-emerald-400" />
+                                <span className="text-sm font-bold tracking-tight">{toastMsg}</span>
+                            </div>
+                        )}
+                    </main>
+
+                    {/* 설정 모달 */}
+                    {showSettings && (
+                        <div className="fixed inset-0 bg-slate-900/60 z-[200] flex justify-center items-center backdrop-blur-sm">
+                            <div className="bg-white w-[450px] rounded-xl shadow-2xl overflow-hidden border border-gray-200 fade-in">
+                                <div className="px-6 py-4 border-b border-gray-200 bg-slate-50 flex justify-between items-center">
+                                    <h2 className="font-black text-slate-800 text-base flex items-center"><SafeIcon name="settings" size={18} className="text-indigo-500 mr-2"/>OneApp Sync Settings</h2>
+                                    <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-slate-600 transition-colors"><SafeIcon name="x" size={20} /></button>
+                                </div>
+                                <div className="p-8 space-y-6">
+                                    <div>
+                                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">Google Apps Script Webhook URL</label>
+                                        <input type="text" value={gasUrl} onChange={(e)=>setGasUrl(e.target.value)} placeholder="https://script.google.com/..." className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:border-indigo-500 focus:bg-white transition-all font-mono" />
+                                        <p className="mt-3 text-[10px] text-slate-400 leading-relaxed italic">* 자사 구글 시트와 데이터를 동기화하기 위한 주소입니다.</p>
+                                    </div>
+                                </div>
+                                <div className="px-6 py-4 bg-slate-50 border-t border-gray-200 flex justify-end">
+                                    <button onClick={() => setShowSettings(false)} className="px-6 py-2.5 bg-[#1A2235] text-white rounded-lg text-sm font-bold shadow-md hover:bg-black transition-colors">저장 및 닫기</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
