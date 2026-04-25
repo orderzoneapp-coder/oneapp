@@ -21,9 +21,11 @@
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        .fade-in { animation: fadeIn 0.3s ease-out; } 
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in { animation: fadeIn 0.2s ease-out; } 
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+        .row-hover { transition: all 0.15s ease; }
+        .row-hover:hover { background-color: #f8fafc; }
     </style>
 </head>
 <body class="overflow-hidden text-slate-800">
@@ -222,9 +224,8 @@
             const [showSettings, setShowSettings] = useState(false);
             const [gasUrl, setGasUrl] = useState(() => localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || '');
             const [globalSearch, setGlobalSearch] = useState('');
-            const [selectedRows, setSelectedRows] = useState(new Set()); // 💡 추가됨: 체크박스 선택 상태 관리
+            const [selectedRows, setSelectedRows] = useState(new Set()); 
 
-            // 💡 카테고리 네비게이션 상태 추가
             const [activeC1, setActiveC1] = useState('');
             const [activeC2, setActiveC2] = useState('');
             const [activeC3, setActiveC3] = useState('');
@@ -245,7 +246,6 @@
                 }
             }, [showToast]);
 
-            // 로컬 데이터 초기화 및 스토리지 이벤트 감지
             useEffect(() => {
                 localStorage.setItem(STORAGE_KEYS.CLOUD_URL, gasUrl);
                 
@@ -264,7 +264,7 @@
                 return () => window.removeEventListener('storage', handleStorageChange);
             }, [gasUrl]);
 
-            // 💡 최초 마스터 엑셀 업로드 로직 (Seeding)
+            // 💡 엑셀 헤더 자동 인식 업로드 로직
             const handleExcelUpload = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
@@ -278,23 +278,42 @@
                         const data = new Uint8Array(e.target.result);
                         const wb = window.XLSX.read(data, { type: 'array' });
                         const ws = wb.Sheets[wb.SheetNames[0]];
-                        const jsonAll = window.XLSX.utils.sheet_to_json(ws, { defval: "" });
+                        const jsonAll = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
 
+                        let headerRowIdx = 0;
+                        for (let i = 0; i < Math.min(15, jsonAll.length); i++) {
+                            const rowStr = jsonAll[i].join('').replace(/\s/g, '');
+                            if (rowStr.includes('품목코드') || rowStr.includes('코드') || rowStr.includes('품명')) {
+                                headerRowIdx = i;
+                                break;
+                            }
+                        }
+
+                        const headers = jsonAll[headerRowIdx];
                         const newMaster = {};
                         let count = 0;
-                        jsonAll.forEach(row => {
-                            const code = row['코드'] || row['품목코드'];
+
+                        for (let i = headerRowIdx + 1; i < jsonAll.length; i++) {
+                            const rowArr = jsonAll[i];
+                            if (!rowArr || rowArr.length === 0 || rowArr.join('').trim() === '') continue;
+                            
+                            const rowObj = {};
+                            headers.forEach((h, idx) => {
+                                if (h) rowObj[h] = rowArr[idx];
+                            });
+
+                            const code = rowObj['코드'] || rowObj['품목코드'];
                             if (code) {
-                                newMaster[code] = row;
+                                newMaster[code] = rowObj;
                                 count++;
                             }
-                        });
+                        }
 
                         setMasterProducts(newMaster);
                         await setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
                         localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
                         
-                        showToast(`✅ ${count}건의 초기 마스터 데이터가 로컬에 세팅되었습니다!`);
+                        showToast(`✅ ${count}건의 초기 마스터 데이터가 세팅되었습니다!`);
                     } catch(err) {
                         console.error(err);
                         showToast("❌ 엑셀 분석 중 오류가 발생했습니다.");
@@ -304,10 +323,9 @@
                     }
                 };
                 reader.readAsArrayBuffer(file);
-                e.target.value = ''; // input 초기화
+                e.target.value = ''; 
             };
 
-            // 💡 클라우드 저장 (Push) - 실제 통신 로직
             const handlePush = async () => {
                 if (!gasUrl) return showToast("⚠️ 설정에서 구글 앱스 스크립트 URL을 입력하세요.");
                 if (Object.keys(masterProducts).length === 0) return showToast("⚠️ 클라우드로 보낼 마스터 데이터가 없습니다.");
@@ -318,7 +336,7 @@
                     const dataArray = Object.values(masterProducts);
                     const response = await fetch(gasUrl + '?action=push&sheet=마스터', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // GAS CORS 회피
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({ data: dataArray, sheet: "마스터" })
                     });
                     
@@ -335,7 +353,6 @@
                 }
             };
 
-            // 💡 클라우드 수신 (Pull) - 실제 통신 로직
             const handlePull = async () => {
                 if (!gasUrl) return showToast("⚠️ 설정에서 구글 앱스 스크립트 URL을 입력하세요.");
                 setIsProcessing(true); setProcessMsg("클라우드에서 최신 데이터를 가져오는 중...");
@@ -375,7 +392,6 @@
                 }
             };
 
-            // 💡 선택 항목 삭제 로직 (기존 전체삭제 대체)
             const handleDeleteSelected = async () => {
                 if (!window.confirm(`선택하신 ${selectedRows.size}개 상품을 마스터 DB에서 삭제하시겠습니까?\n(클라우드 동기화 전까지 서버에는 반영되지 않습니다.)`)) return;
 
@@ -403,7 +419,6 @@
                 }
             };
 
-            // 💡 행 선택 토글
             const toggleRow = (code) => {
                 setSelectedRows(prev => {
                     const next = new Set(prev);
@@ -413,7 +428,6 @@
                 });
             };
 
-            // 💡 전체 선택 토글 (현재 화면에 보이는 행 기준)
             const toggleAllRows = () => {
                 if (selectedRows.size === displayRows.length && displayRows.length > 0) {
                     setSelectedRows(new Set());
@@ -424,19 +438,15 @@
                 }
             };
 
-            // 💡 필터 초기화 로직
             const handleResetFilters = () => {
                 setActiveC1('');
                 setActiveC2('');
                 setActiveC3('');
                 setGlobalSearch('');
                 setSelectedRows(new Set());
-                showToast("검색어 및 카테고리가 초기화되었습니다.");
+                showToast("검색어 및 필터가 초기화되었습니다.");
             };
 
-            // ==========================================
-            // 💡 계층형 카테고리 로직 구현
-            // ==========================================
             const c1List = useMemo(() => {
                 const map = new Map();
                 Object.values(masterProducts).forEach(p => {
@@ -477,7 +487,6 @@
                 return Array.from(map.values()).sort((a,b) => a.code.localeCompare(b.code));
             }, [masterProducts, activeC1, activeC2]);
 
-            // Auto-selection of categories
             useEffect(() => { if (c1List.length > 0 && !c1List.find(c => c.code === activeC1)) setActiveC1(c1List[0].code); }, [c1List, activeC1]);
             useEffect(() => { if (c2List.length > 0 && !c2List.find(c => c.code === activeC2)) setActiveC2(c2List[0].code); else if (c2List.length === 0) setActiveC2(''); }, [c2List, activeC2]);
             useEffect(() => { if (c3List.length > 0 && !c3List.find(c => c.code === activeC3)) setActiveC3(c3List[0].code); else if (c3List.length === 0) setActiveC3(''); }, [c3List, activeC3]);
@@ -485,23 +494,21 @@
             const displayRows = useMemo(() => {
                 const arr = Object.values(masterProducts);
                 
-                // 1. 글로벌 검색이 활성화된 경우 카테고리 무시하고 전체에서 검색
                 if (globalSearch.trim()) {
                     const kw = globalSearch.toLowerCase().replace(/\s+/g, '');
                     return arr.filter(item => {
                         const str = ((item['코드']||'') + (item['품목코드']||'') + (item['품목명']||'') + (item['규격']||'') + (item['카탈로그']||'')).toLowerCase().replace(/\s+/g, '');
                         return str.includes(kw);
-                    }).slice(0, 500); // 렌더링 최적화
+                    }).slice(0, 500); 
                 }
                 
-                // 2. 검색어가 없으면 선택된 카테고리에 해당하는 품목 필터링
                 if (activeC3) {
                     return arr.filter(p => {
                         const c1 = p['1코드'] || 'etc';
                         const c2 = p['2코드'] || 'etc';
                         const c3 = p['3코드'] || p['오더즈'] || 'etc';
                         return c1 === activeC1 && c2 === activeC2 && c3 === activeC3;
-                    }).slice(0, 500); // 렌더링 최적화
+                    }).slice(0, 500); 
                 }
                 
                 return [];
@@ -528,9 +535,9 @@
                     )}
 
                     <main className="flex-1 flex flex-col overflow-hidden bg-slate-50 border-t border-slate-200">
-                        {/* 💡 개선된 Toolbar */}
+                        {/* 💡 개선된 Toolbar: [좌측: 상태/삭제] --- [우측: 엑셀일괄등록, 초기화, 검색창] */}
                         <div className="px-6 py-3 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 z-10 shadow-sm">
-                            {/* 좌측: 데이터 삭제 및 상태 표시 */}
+                            
                             <div className="flex items-center gap-4">
                                 {selectedRows.size > 0 && (
                                     <button onClick={handleDeleteSelected} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-rose-50 text-rose-500 border border-rose-200 hover:border-rose-400 hover:bg-rose-100 transition-colors flex items-center justify-center shadow-sm" title="선택한 항목 삭제">
@@ -542,11 +549,10 @@
                                 </span>
                             </div>
                             
-                            {/* 우측: 엑셀 등록, 초기화, 검색창 순서로 정렬 */}
                             <div className="flex items-center gap-2">
                                 <label className="cursor-pointer h-9 px-4 rounded-lg text-[12px] font-bold bg-white text-slate-700 hover:bg-slate-100 border border-slate-300 transition-colors flex items-center shadow-sm">
                                     <SafeIcon name="upload" size={14} className="mr-2 text-slate-500" /> 엑셀 일괄 등록
-                                    <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleExcelUpload} />
+                                    <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleExcelUpload} />
                                 </label>
                                 
                                 <div className="w-px h-5 bg-slate-300 mx-1"></div>
@@ -568,13 +574,12 @@
                                 <i className="fas fa-database text-6xl text-slate-200 mb-5"></i>
                                 <h2 className="text-lg font-black text-slate-700 mb-2">마스터 데이터베이스가 비어있습니다.</h2>
                                 <p className="text-[13px] font-medium text-slate-500 mb-6 text-center leading-relaxed">
-                                    좌측 상단의 <strong>[엑셀 일괄 등록]</strong>을 통해 기존 데이터를 가져오거나,<br/>
+                                    우측 상단의 <strong>[엑셀 일괄 등록]</strong>을 통해 기존 데이터를 가져오거나,<br/>
                                     헤더의 <strong>[구름 아이콘]</strong>을 눌러 클라우드와 동기화하세요.
                                 </p>
                             </div>
                         ) : (
                             <div className="flex-1 flex flex-col overflow-hidden bg-slate-100 fade-in">
-                                {/* 1Depth Categories */}
                                 <div className="flex items-end px-4 pt-3 border-b border-slate-200 bg-slate-200/50 shrink-0 h-[50px]">
                                     <div className="flex overflow-x-auto custom-scrollbar h-full items-end w-full gap-1">
                                         {c1List.map(c1 => (
@@ -585,9 +590,7 @@
                                     </div>
                                 </div>
 
-                                {/* Split View Workspace */}
                                 <div className="flex-1 flex overflow-hidden">
-                                    {/* 2Depth */}
                                     <div className="w-[180px] bg-white border-r border-slate-200 overflow-y-auto py-2 shrink-0 custom-scrollbar z-10 shadow-[2px_0_10px_rgba(0,0,0,0.02)]">
                                         {c2List.map(c2 => (
                                             <button key={c2.code} onClick={() => { setActiveC2(c2.code); setActiveC3(''); setGlobalSearch(''); }} className={`w-full text-left px-5 py-3 text-[12px] font-bold transition-all border-l-4 ${activeC2 === c2.code ? 'bg-indigo-50/50 text-indigo-700 border-indigo-600' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}>
@@ -596,7 +599,6 @@
                                         ))}
                                     </div>
 
-                                    {/* 3Depth */}
                                     <div className="w-[200px] bg-slate-50 border-r border-slate-200 flex flex-col overflow-hidden shrink-0 z-10">
                                         <div className="px-4 py-3 border-b border-slate-200 bg-white shrink-0">
                                             <h3 className="text-[12px] font-black text-slate-800">소분류 (3차)</h3>
@@ -611,9 +613,7 @@
                                         </div>
                                     </div>
 
-                                    {/* Data Grid */}
                                     <div className="flex-1 bg-white flex flex-col overflow-hidden relative z-0">
-                                        {/* Grid Header Info */}
                                         {globalSearch ? (
                                             <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-[12px] font-bold text-amber-800 flex items-center shrink-0">
                                                 <i className="fas fa-search mr-2 text-amber-500"></i> 전체 검색 결과입니다. (카테고리 무시됨)
