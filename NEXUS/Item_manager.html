@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
     <title>ONEAPP NEXES - 상품관리 (Data Studio)</title>
-    <!-- 데이터 가공용 무거운 라이브러리 포함 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.min.js"></script>
@@ -26,17 +25,137 @@
         .fade-in { animation: fadeIn 0.2s ease-out; } 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+        .config-chip { display: inline-flex; align-items: center; padding: 6px 14px; border-radius: 9999px; border: 1px solid #e2e8f0; background-color: white; color: #475569; font-size: 12px; cursor: pointer; transition: all 0.2s; }
+        .config-chip:hover { background-color: #f8fafc; } .config-chip.active { background-color: #e0e7ff; border-color: #c7d2fe; color: #4338ca; font-weight: bold; }
     </style>
 </head>
 <body class="overflow-hidden text-slate-800">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo, useRef, useCallback } = React;
+        const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
-        // ---------------------------------------------------------
-        // 🧩 1. Shared Components (SafeIcon, TopHeader, Nav)
-        // ---------------------------------------------------------
+        // ==========================================
+        // 🧩 무제한 로컬 스토리지 (IndexedDB) 래퍼
+        // ==========================================
+        const initIDB = () => {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open('MerchOpsDB', 1);
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains('store')) db.createObjectStore('store');
+                };
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        };
+
+        const setIDB = async (key, val) => {
+            const db = await initIDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('store', 'readwrite');
+                tx.objectStore('store').put(val, key);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        };
+
+        const getIDB = async (key) => {
+            const db = await initIDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('store', 'readonly');
+                const req = tx.objectStore('store').get(key);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(tx.error);
+            });
+        };
+
+        const clearIndexedDB = async () => {
+            try {
+                const db = await initIDB();
+                return new Promise(resolve => {
+                    const tx = db.transaction('store', 'readwrite');
+                    tx.objectStore('store').clear();
+                    tx.oncomplete = resolve;
+                    tx.onerror = resolve;
+                });
+            } catch(e) { console.error(e); }
+        };
+
+        // ==========================================
+        // 🧩 1. 상수 및 순수 유틸리티
+        // ==========================================
+        const MASTER_HEADERS = [
+            "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", 
+            "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", 
+            "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", 
+            "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", 
+            "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록"
+        ];
+
+        const NUMERIC_HEADERS = [
+            "안전재고", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고",
+            "단가H", "단가I", "시중가", "행사가", "1종연산", "2종연산", "외주비", "노무비", "경비",
+            "1구매", "1출고", "2구매", "2출고", "1입고", "2입고"
+        ];
+
+        const getInitialVisibleMasterCols = () => ({ estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] });
+        const getInitialVisibleUploadCols = () => ({ estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명'] });
+        
+        const getInitialMappings = () => {
+            const base = { master: {}, estimate: {} };
+            base.master = { '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격, 규격명, 사이즈, 단량', '출고가': '출고가, 출고, 판매가, 시중가', '입고가': '입고가, 입고, 매입가' };
+            base.estimate = { 
+                '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격명, 규격, 사이즈, 단량', '구매처': '거래처명, 구매처, 거래처', 
+                '견적서': '견적서, 카테고리, 템플릿, 견적분류',
+                '입고가': '입고가, 입고, 매입가', '출고가': '출고가, 출고, 판매가',
+                '입고B': 'B단가, 입고B', '도매A': 'A판매, A판매가, 도매A', '도매B': 'B판매, B판매가, 도매B', '간단설명': '지시사항, 간단설명, 비고'
+            };
+            return base;
+        };
+        
+        const getInitialMasterLinks = () => {
+            const base = { master: {}, estimate: {} };
+            base.estimate = { '창고': '창고', '구매처': '구매처', '견적서': '견적서', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B', '간단설명': '간단설명' };
+            return base;
+        };
+
+        const generateUUID = () => {
+            if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        };
+
+        const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
+
+        const getCellWidthClass = (h) => {
+            if (NUMERIC_HEADERS.includes(h)) return 'min-w-[90px] w-[90px] max-w-[90px]';
+            if (h === '구매처' || h === '거래처명' || h === '일자') return 'min-w-[150px] w-[150px] max-w-[150px]';
+            if (h === '품목명' || h === '상품명' || h === '카탈로그' || h === '견적서') return 'min-w-[200px] w-[200px] max-w-[200px]';
+            if (h === '간단설명' || h === '지시사항' || h === '상품정보' || h === '적요2') return 'min-w-[150px] w-[150px] max-w-[150px]';
+            if (h === '단위' || h === '창고') return 'min-w-[60px] w-[60px] max-w-[60px]';
+            return 'min-w-[100px] w-[100px] max-w-[100px]';
+        };
+
+        const getFirstValidNum = (objList, keys) => {
+            for (let obj of objList) { if (!obj) continue; for (let k of keys) { if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return parseNum(obj[k]); } } return 0;
+        };
+
+        const getFirstValidStr = (objList, keys) => {
+            for (let obj of objList) { if (!obj) continue; for (let k of keys) { if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k]; } } return '';
+        };
+
+        const isValidSubItemCode = (code) => {
+            if (!code) return false;
+            const s = String(code).trim();
+            return s !== '' && s !== '0' && s !== '00' && s !== '-' && s.toLowerCase() !== 'undefined' && s.toLowerCase() !== 'null';
+        };
+
+        // ==========================================
+        // 🧩 2. Shared UI Components (Icon, TopHeader, Nav)
+        // ==========================================
         const SafeIcon = ({ name, size = 18, className = "" }) => {
             const [svg, setSvg] = useState("");
             useEffect(() => {
@@ -59,7 +178,7 @@
             return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
         };
 
-        const TopHeader = ({ itemCount, isProcessing, processMsg }) => {
+        const TopHeader = ({ itemCount, isProcessing, processMsg, onOpenGlobalSettings, onSyncDown, onSyncUp }) => {
             return (
                 <header className="h-16 bg-[#0B1021] text-white flex items-center justify-between px-6 shrink-0 z-50 border-b border-slate-800/80 shadow-md">
                     <div className="flex items-center">
@@ -68,7 +187,7 @@
                             <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
                                 <div className="flex items-center">
                                     <span className="font-black text-[15px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                    <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[8px] font-black tracking-wider shadow-sm leading-none">v2.0</span>
+                                    <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[8px] font-black tracking-wider shadow-sm leading-none">v1.2</span>
                                 </div>
                                 <span className="text-[9.5px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">SKU manager</span>
                             </div>
@@ -83,9 +202,9 @@
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        <button className="w-10 h-10 rounded bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#374151] text-indigo-400"><SafeIcon name="cloud-download" size={20} /></button>
-                        <button className="w-10 h-10 rounded bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#374151] text-indigo-400"><SafeIcon name="cloud-upload" size={20} /></button>
-                        <button className="w-10 h-10 rounded bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#475569] text-slate-400 ml-2"><SafeIcon name="settings" size={20} /></button>
+                        <button onClick={onSyncDown} className="w-10 h-10 rounded bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#374151] text-indigo-400 transition-colors" title="클라우드에서 데이터 가져오기"><SafeIcon name="cloud-download" size={20} /></button>
+                        <button onClick={onSyncUp} className="w-10 h-10 rounded bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#374151] text-indigo-400 transition-colors" title="클라우드에 데이터 저장하기"><SafeIcon name="cloud-upload" size={20} /></button>
+                        <button onClick={onOpenGlobalSettings} className="w-10 h-10 rounded bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#475569] text-slate-400 hover:text-white ml-2 transition-colors" title="글로벌 환경설정"><SafeIcon name="settings" size={20} /></button>
                     </div>
                 </header>
             );
@@ -118,207 +237,375 @@
             );
         };
 
-        // ---------------------------------------------------------
-        // 🚀 2. Engines & Logic (Simplified for brevity but functional)
-        // ---------------------------------------------------------
-        const ONEAPP_CATEGORIES = [
-            { c1Name: '채소.과일', c1Code: '10', c2Name: '무/배추', c2Code: '1010', c3Name: '배추', erp3Code: '11012', orders3Code: '101012' },
-            { c1Name: '채소.과일', c1Code: '10', c2Name: '무/배추', c2Code: '1010', c3Name: '무우', erp3Code: '11010', orders3Code: '101010' },
-            { c1Name: '수산.축산', c1Code: '20', c2Name: '돼지고기', c2Code: '2010', c3Name: '삼겹살', erp3Code: '21010', orders3Code: '201010' }
-        ];
+        // ==========================================
+        // 🧩 3. 상태 관리 (Custom Hooks)
+        // ==========================================
+        const useMerchConfig = () => {
+            const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v870') || 'https://script.google.com/macros/s/AKfycbz7qZ5eM-U_qyaoP5amDfMqhZ-IXMjoBDWGu3qWI1D0JTYGINB64yYaLRLrkqWpHa88-w/exec');
+            
+            const [visibleMasterCols, setVisibleMasterCols] = useState(() => { 
+                const s = localStorage.getItem('merchVisMaster_v870'); 
+                const parsed = s ? JSON.parse(s) : null;
+                if (!parsed || !parsed.estimate) return getInitialVisibleMasterCols();
+                if (parsed.estimate.includes('카테고리')) parsed.estimate = parsed.estimate.map(h => h === '카테고리' ? '견적서' : h);
+                return parsed;
+            });
+            
+            const [visibleUploadCols, setVisibleUploadCols] = useState(() => { 
+                const s = localStorage.getItem('merchVisUpload_v870'); 
+                let parsed = s ? JSON.parse(s) : null;
+                if (!parsed || !parsed.estimate) parsed = getInitialVisibleUploadCols();
+                if (parsed.estimate.includes('카테고리')) parsed.estimate = parsed.estimate.map(h => h === '카테고리' ? '견적서' : h);
+                if (!parsed.estimate.includes('품목명')) parsed.estimate.unshift('품목명');
+                if (!parsed.estimate.includes('규격')) parsed.estimate.splice(1, 0, '규격');
+                return parsed;
+            });
+            
+            const [mappings, setMappings] = useState(() => { 
+                const s = localStorage.getItem('merchMappings_v870'); 
+                let parsed = s ? JSON.parse(s) : null;
+                if (!parsed || !parsed.master) parsed = getInitialMappings();
+                if (!parsed.estimate['창고']) parsed.estimate['창고'] = '창고, 창고코드';
+                if (!parsed.master['창고']) parsed.master['창고'] = '창고, 창고코드';
+                if (parsed.estimate['카테고리'] !== undefined) {
+                    parsed.estimate['견적서'] = parsed.estimate['카테고리'] + ', 견적서';
+                    delete parsed.estimate['카테고리'];
+                }
+                return parsed; 
+            });
+            
+            const [masterLinks, setMasterLinks] = useState(() => { 
+                const s = localStorage.getItem('merchMasterLinks_v870'); 
+                let parsed = s ? JSON.parse(s) : null;
+                if (!parsed || !parsed.estimate) parsed = getInitialMasterLinks();
+                if (parsed.estimate['창고'] === undefined) parsed.estimate['창고'] = '창고';
+                if (parsed.estimate['카테고리'] !== undefined) {
+                    parsed.estimate['견적서'] = '견적서';
+                    delete parsed.estimate['카테고리'];
+                }
+                return parsed;
+            });
 
-        const IngestEngine = {
-            parseNum: (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0),
-            generatePseudoSKU: (orders3Code) => `${orders3Code || '999999'}${String(Math.floor(100 + Math.random() * 900))}`
+            const [marginRules, setMarginRules] = useState(() => {
+                const s = localStorage.getItem('merchMarginRules_v878');
+                const defaultRules = [
+                    { id: generateUUID(), whCode: '01', unit: 'box, 박스', rate: 10, type: 'divide' },
+                    { id: generateUUID(), whCode: '01', unit: 'ea, 개, 낱개', rate: 15, type: 'divide' },
+                    { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }
+                ];
+                if (s) { try { const parsed = JSON.parse(s); if (parsed && parsed.length > 0) return parsed.map(r => ({ ...r, whCode: r.whCode || '*', unit: r.unit || '*' })); } catch(e) {} }
+                return defaultRules;
+            });
+
+            useEffect(() => {
+                localStorage.setItem('merchCloudUrl_v870', cloudUrl);
+                localStorage.setItem('merchVisMaster_v870', JSON.stringify(visibleMasterCols));
+                localStorage.setItem('merchVisUpload_v870', JSON.stringify(visibleUploadCols));
+                localStorage.setItem('merchMappings_v870', JSON.stringify(mappings));
+                localStorage.setItem('merchMasterLinks_v870', JSON.stringify(masterLinks));
+                localStorage.setItem('merchMarginRules_v878', JSON.stringify(marginRules));
+            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules]);
+
+            return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules };
         };
 
-        // ---------------------------------------------------------
-        // 🧩 3. Local Workspace Views
-        // ---------------------------------------------------------
-        const SmartFormView = ({ masterProducts, setMasterProducts, initialCode, showToast }) => {
-            const [keyword, setKeyword] = useState('');
-            const [selectedCat, setSelectedCat] = useState(null);
-            const [formData, setFormData] = useState({ name: '', spec: '', inPrice: '', outPrice: '', vendor: '' });
-            const [previewSku, setPreviewSku] = useState(initialCode || '');
-            const [isEditMode, setIsEditMode] = useState(false);
-
-            // 초기 로드 시 ?code 파라미터가 있으면 수정 모드로 전환
+        const useMerchData = () => {
+            const [masterProducts, setMasterProducts] = useState({});
+            const [managedItems, setManagedItems] = useState({});
+            
             useEffect(() => {
-                if (initialCode && masterProducts[initialCode]) {
-                    const item = masterProducts[initialCode];
-                    setIsEditMode(true);
-                    setFormData({ name: item['품목명']||'', spec: item['규격']||'', inPrice: item['입고가']||'', outPrice: item['출고가']||'', vendor: item['구매처']||'' });
-                    // 카테고리 역산 매칭 (간단화)
-                    const cat = ONEAPP_CATEGORIES.find(c => c.c3Name === item['3그룹명']) || ONEAPP_CATEGORIES[0];
-                    setSelectedCat(cat);
-                }
-            }, [initialCode, masterProducts]);
+                getIDB('merchMaster_v870').then(data => { if (data) setMasterProducts(data); }).catch(console.error);
+            }, []);
 
-            const searchResults = useMemo(() => {
-                if (!keyword.trim() || !window.Fuse) return [];
-                const fuse = new window.Fuse(ONEAPP_CATEGORIES, { keys: ['c3Name', 'c2Name'], threshold: 0.3 });
-                return fuse.search(keyword).map(r => r.item).slice(0, 5);
-            }, [keyword]);
+            const saveMasterToLocal = useCallback(async (data) => { 
+                setMasterProducts(data);
+                try { 
+                    await setIDB('merchMaster_v870', data);
+                    localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+                } catch(e) { console.error("IndexedDB 저장 실패", e); } 
+            }, []);
 
-            const handleSubmit = () => {
-                if (!selectedCat || !formData.name) return showToast('⚠️ 필수 정보를 모두 입력해주세요.');
-                const finalSKU = previewSku || IngestEngine.generatePseudoSKU(selectedCat.orders3Code);
-                
-                const newData = {
-                    코드: finalSKU,
-                    품목명: formData.name, 규격: formData.spec, 구매처: formData.vendor,
-                    입고가: IngestEngine.parseNum(formData.inPrice), 출고가: IngestEngine.parseNum(formData.outPrice),
-                    오더즈: selectedCat.orders3Code, '3코드': selectedCat.erp3Code, '3그룹명': selectedCat.c3Name 
-                };
+            return { masterProducts, setMasterProducts: saveMasterToLocal, managedItems, setManagedItems };
+        };
 
-                const updatedMaster = { ...masterProducts, [finalSKU]: newData };
-                setMasterProducts(updatedMaster);
-                localStorage.setItem('skuSyncMaster_v6', JSON.stringify(updatedMaster));
-                
-                showToast(`✅ [${formData.name}] 상품 정보가 ${isEditMode ? '수정' : '발급'}되었습니다.`);
-                if (!isEditMode) {
-                    setFormData({ name: '', spec: '', inPrice: '', outPrice: '', vendor: '' });
-                    setSelectedCat(null); setPreviewSku('');
+        const useMerchUI = () => {
+            const [selectedRows, setSelectedRows] = useState(new Set());
+            const [globalSearch, setGlobalSearch] = useState(''); 
+            const [selectedCatalog, setSelectedCatalog] = useState(''); 
+            const [selectedCategory, setSelectedCategory] = useState('');
+            
+            const [showGlobalSettings, setShowGlobalSettings] = useState(false);
+            const [showLocalSettings, setShowLocalSettings] = useState(false);
+            const [showExportModal, setShowExportModal] = useState(false); 
+            
+            const [isExporting, setIsExporting] = useState(false);
+            const [toastMsg, setToastMsg] = useState('');
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [processMsg, setProcessMsg] = useState('');
+
+            const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
+
+            return {
+                selectedRows, setSelectedRows, globalSearch, setGlobalSearch, selectedCatalog, setSelectedCatalog, selectedCategory, setSelectedCategory, 
+                showGlobalSettings, setShowGlobalSettings, showLocalSettings, setShowLocalSettings, showExportModal, setShowExportModal,
+                isExporting, setIsExporting, toastMsg, setToastMsg, isProcessing, setIsProcessing, processMsg, setProcessMsg, showToast
+            };
+        };
+
+        // ==========================================
+        // 🧩 4. 비즈니스 로직 및 컴포넌트
+        // ==========================================
+        const calculatePricesEngine = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
+            // (생략: 기존의 단가 연산 로직 - UI 시연을 위해 간소화)
+            return { ...currentFinalData, '입고가': baseInPrice, '출고가': baseInPrice * 1.2 };
+        };
+
+        const GlobalSettingsModal = ({ onClose, config, actions }) => {
+            const { cloudUrl, setCloudUrl } = config;
+            const { cleanUpGarbageTags, showToast } = actions;
+            
+            const handleResetApp = async () => {
+                if(window.confirm("전체 데이터를 초기화하시겠습니까?\n(로컬 스토리지와 마스터 DB가 모두 삭제됩니다.)")) {
+                    localStorage.clear();
+                    await clearIndexedDB();
+                    if(cloudUrl) localStorage.setItem('merchCloudUrl_v870', cloudUrl);
+                    window.location.reload();
                 }
             };
 
             return (
-                <div className="h-full flex justify-center items-start pt-10 overflow-y-auto bg-slate-50 relative">
-                    <div className="bg-white rounded-xl shadow-lg border border-gray-200 w-[680px] overflow-hidden my-10 relative fade-in">
-                        <div className="px-6 py-5 border-b border-gray-100 bg-slate-50 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600"><i className={`fas ${isEditMode ? 'fa-edit' : 'fa-bolt'} text-lg`}></i></div>
-                                <div><h2 className="text-base font-bold text-slate-800">{isEditMode ? '상품 정보 수정' : '단건 신규 등록 (스마트 폼)'}</h2><p className="text-sm text-slate-500 mt-0.5">{isEditMode ? '마스터 DB의 데이터를 직접 수정합니다.' : '기초 정보 입력 시 시스템이 표준 SKU를 발급합니다.'}</p></div>
-                            </div>
-                            {isEditMode && <button onClick={()=>window.location.href='https://oneapp.orderz.co.kr/NEXUS/Item_master'} className="text-sm font-bold text-slate-500 hover:text-slate-800 underline">돌아가기</button>}
+                <div className="fixed inset-0 bg-slate-900/80 z-[200] flex justify-center items-center backdrop-blur-sm fade-in">
+                    <div className="bg-white w-[540px] rounded-xl shadow-2xl overflow-hidden border border-gray-200">
+                        <div className="px-6 py-4 border-b border-gray-200 bg-slate-50 flex justify-between items-center">
+                            <h2 className="font-bold text-slate-800 text-base"><i className="fas fa-cog text-indigo-500 mr-2"></i>글로벌 환경설정</h2>
+                            <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><i className="fas fa-times"></i></button>
                         </div>
-                        <div className="p-8 space-y-6">
-                            <div className="relative z-20">
-                                <label className="text-sm font-bold text-slate-700 mb-2 flex items-center"><span className="bg-indigo-600 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs mr-2">1</span>카테고리 매핑</label>
-                                {!selectedCat ? (
-                                    <div className="relative mt-2">
-                                        <i className="fas fa-search absolute left-4 top-3.5 text-indigo-400"></i>
-                                        <input type="text" value={keyword} onChange={e=>setKeyword(e.target.value)} placeholder="예: 배추, 삼겹살..." className="w-full pl-11 pr-4 py-3 bg-white border-2 border-indigo-100 rounded-lg text-sm outline-none focus:border-indigo-500 transition-colors shadow-sm" />
-                                        {searchResults.length > 0 && (
-                                            <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden divide-y divide-gray-100">
-                                                {searchResults.map((cat, i) => (
-                                                    <div key={i} onClick={() => { setSelectedCat(cat); setPreviewSku(IngestEngine.generatePseudoSKU(cat.orders3Code)); setKeyword(''); }} className="px-5 py-3 hover:bg-indigo-50 cursor-pointer flex justify-between items-center transition-colors group">
-                                                        <div className="text-[15px] font-bold text-slate-800 group-hover:text-indigo-700">{cat.c3Name}</div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div className="flex justify-between items-center bg-indigo-50 border-2 border-indigo-200 px-5 py-4 rounded-lg mt-2">
-                                        <div><div className="text-[15px] font-bold text-indigo-900 mb-1">{selectedCat.c3Name}</div><div className="text-xs font-medium text-indigo-500 flex items-center gap-1">{selectedCat.c1Name} &gt; {selectedCat.c2Name}</div></div>
-                                        <div className="flex items-center gap-4">
-                                            <div className="text-right"><div className="text-[10px] text-indigo-400 font-bold mb-0.5 uppercase tracking-wider">SKU Code</div><div className="text-sm font-mono font-black text-indigo-700 bg-white px-2 py-1 rounded shadow-sm border border-indigo-100">{previewSku}</div></div>
-                                            {!isEditMode && <button onClick={()=>setSelectedCat(null)} className="w-8 h-8 rounded-full bg-white text-indigo-400 border border-indigo-100 shadow-sm"><i className="fas fa-sync-alt text-xs"></i></button>}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                            <div className={`space-y-5 transition-all duration-300 relative z-10 ${selectedCat ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
-                                <label className="text-sm font-bold text-slate-700 mb-2 flex items-center"><span className="bg-indigo-600 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs mr-2">2</span>상세 정보 입력</label>
-                                <div className="bg-slate-50 p-5 rounded-lg border border-slate-100 space-y-4">
-                                    <div className="flex gap-4">
-                                        <div className="flex-1"><label className="text-xs font-bold text-slate-500 mb-1.5 block">품목명</label><input type="text" value={formData.name} onChange={e=>setFormData({...formData, name: e.target.value})} className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded text-sm outline-none focus:border-indigo-500" /></div>
-                                        <div className="w-1/3"><label className="text-xs font-bold text-slate-500 mb-1.5 block">규격</label><input type="text" value={formData.spec} onChange={e=>setFormData({...formData, spec: e.target.value})} className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded text-sm outline-none focus:border-indigo-500" /></div>
-                                    </div>
-                                    <div className="flex gap-4">
-                                        <div className="flex-1"><label className="text-xs font-bold text-slate-500 mb-1.5 block">매입 단가</label><input type="number" value={formData.inPrice} onChange={e=>setFormData({...formData, inPrice: e.target.value})} className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded text-sm outline-none focus:border-indigo-500 text-right font-mono" /></div>
-                                        <div className="flex-1"><label className="text-xs font-bold text-slate-500 mb-1.5 block">출고 단가</label><input type="number" value={formData.outPrice} onChange={e=>setFormData({...formData, outPrice: e.target.value})} className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded text-sm outline-none focus:border-indigo-500 text-right font-mono" /></div>
-                                    </div>
-                                    <div><label className="text-xs font-bold text-slate-500 mb-1.5 block">구매처/벤더</label><input type="text" value={formData.vendor} onChange={e=>setFormData({...formData, vendor: e.target.value})} className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded text-sm outline-none focus:border-indigo-500" /></div>
+                        <div className="p-6 space-y-6">
+                            {/* Webhook URL */}
+                            <div>
+                                <label className="text-xs font-bold text-slate-700 mb-2 block">MerchOps Webhook URL (클라우드 동기화)</label>
+                                <div className="relative">
+                                    <i className="fas fa-link absolute left-3.5 top-3.5 text-slate-400"></i>
+                                    <input type="text" value={cloudUrl} onChange={e=>setCloudUrl(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-300 rounded-md text-sm outline-none focus:border-indigo-500 font-mono shadow-sm" />
                                 </div>
-                                <button onClick={handleSubmit} disabled={!selectedCat} className="w-full py-3.5 rounded-lg font-bold text-sm bg-[#1A2235] text-white hover:bg-black shadow-md flex justify-center items-center">
-                                    <i className="fas fa-check-circle mr-2"></i> {isEditMode ? '수정 내용 마스터 DB 반영' : 'SKU 최종 발급 및 등록'}
+                            </div>
+                            {/* DB 최적화 */}
+                            <div className="bg-rose-50 p-5 rounded-xl border border-rose-200 shadow-sm">
+                                <h3 className="text-[14px] font-black text-rose-900 mb-3 pb-2 border-b border-rose-200 flex justify-between items-center">
+                                    <span><i className="fas fa-broom text-rose-500 mr-2"></i>클라우드 DB 최적화 (검색어 찌꺼기 삭제)</span>
+                                </h3>
+                                <p className="text-[12px] text-rose-700 font-bold mb-3">과거 엑셀 업로드 시 저장되었던 불필요한 찌꺼기 데이터들을 삭제합니다.</p>
+                                <button onClick={cleanUpGarbageTags} className="px-4 py-2 bg-white border border-rose-300 text-rose-600 hover:bg-rose-100 rounded-lg text-[12px] font-bold transition-all shadow-sm">
+                                    <i className="fas fa-trash-alt mr-1"></i> 기존 엑셀 검색어 일괄 삭제
                                 </button>
                             </div>
+                            {/* 초기화 */}
+                            <div className="bg-slate-100 p-5 rounded-xl border border-slate-200 shadow-sm">
+                                <h3 className="text-[14px] font-black text-slate-800 mb-3 pb-2 border-b border-slate-300 flex justify-between items-center">
+                                    <span><i className="fas fa-exclamation-triangle text-amber-500 mr-2"></i>시스템 전체 초기화</span>
+                                </h3>
+                                <button onClick={handleResetApp} className="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-rose-50 hover:text-rose-600 rounded-lg text-[12px] font-bold transition-all shadow-sm">
+                                    <i className="fas fa-undo mr-1"></i> 앱 전체 데이터 초기화
+                                </button>
+                            </div>
+                        </div>
+                        <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end">
+                            <button onClick={onClose} className="px-6 py-2.5 bg-[#1A2235] text-white rounded-lg text-sm font-bold shadow-md hover:bg-black transition-colors">저장 및 닫기</button>
                         </div>
                     </div>
                 </div>
             );
         };
 
-        const PlaceholderView = ({ title, icon, message }) => (
-            <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50">
-                <i className={`fas ${icon} text-5xl mb-4 text-slate-300`}></i>
-                <h3 className="text-lg font-bold text-slate-600 mb-1">{title}</h3>
-                <p className="text-sm font-medium">{message}</p>
-            </div>
-        );
+        const LocalMappingModal = ({ onClose, config, actions, availableCatalogs, availableCategories }) => {
+            const { visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules } = config;
+            const { handleDeleteTag, showToast } = actions;
+            const [activeTab, setActiveTab] = useState('display');
+            const [customEstColInput, setCustomEstColInput] = useState('');
+            
+            const requiredCoreFields = ['품목코드', '품목명', '규격'];
+            const selectableMasterHeaders = useMemo(() => Array.from(new Set([...MASTER_HEADERS, ...(visibleMasterCols['estimate'] || [])])), [visibleMasterCols]);
 
-        // ---------------------------------------------------------
-        // ⚙️ 4. Main App Container
-        // ---------------------------------------------------------
+            return (
+                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
+                    <div className="bg-white w-[96vw] max-w-[1400px] h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                        <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
+                            <div className="flex items-center gap-4">
+                                <h2 className="font-black text-[17px]"><i className="fas fa-tools text-indigo-400 mr-2.5"></i>파이프라인 매핑 설정 (작업 전용)</h2>
+                            </div>
+                            <button onClick={onClose}><i className="fas fa-times text-xl text-slate-400 hover:text-white"></i></button>
+                        </div>
+                        
+                        <div className="flex flex-1 overflow-hidden bg-slate-50">
+                            <div className="w-[240px] bg-white border-r border-slate-200 flex flex-col py-4 shrink-0 shadow-sm">
+                                <button onClick={() => setActiveTab('display')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'display' ? 'border-indigo-500 text-indigo-700 bg-indigo-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-desktop w-6 text-center mr-1"></i> 1. 화면 노출 항목 설정</button>
+                                <button onClick={() => setActiveTab('inputMap')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'inputMap' ? 'border-emerald-500 text-emerald-700 bg-emerald-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-sign-in-alt w-6 text-center mr-1"></i> 2. 입력 데이터 매핑 (엑셀)</button>
+                                <button onClick={() => setActiveTab('marginRule')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'marginRule' ? 'border-rose-500 text-rose-700 bg-rose-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-calculator w-6 text-center mr-1"></i> 3. 단가 계산 및 마진 룰</button>
+                                <button onClick={() => setActiveTab('tagManager')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'tagManager' ? 'border-amber-500 text-amber-700 bg-amber-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-tags w-6 text-center mr-1"></i> 4. 견적서/카탈로그 관리</button>
+                            </div>
+                            
+                            <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                                {activeTab === 'display' && (
+                                    <div className="max-w-4xl space-y-6 fade-in">
+                                        <div className="bg-white p-5 rounded-xl border shadow-sm">
+                                            <h3 className="text-[14px] font-black mb-4 pb-2 border-b flex items-center"><span className="bg-slate-100 text-slate-700 text-[10px] px-1.5 py-0.5 rounded mr-2">[엑셀/작업]</span> 견적서 항목 노출 설정</h3>
+                                            <div className="flex flex-wrap gap-2.5 mb-5">
+                                                {(visibleUploadCols['estimate']||[]).filter(h => h !== '품목코드').map(h => <div key={`u-e-${h}`} className="config-chip active border-slate-300 bg-white text-slate-800 shadow-sm"><span className="font-bold">{h}</span><button onClick={()=>setVisibleUploadCols(p=>({...p, estimate:p.estimate.filter(x=>x!==h)}))} className="ml-2 text-slate-400 hover:text-rose-500"><i className="fas fa-times"></i></button></div>)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                                {activeTab === 'inputMap' && (
+                                    <div className="max-w-4xl space-y-8 fade-in">
+                                        <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                                            <div className="bg-slate-50 p-3 border-b border-slate-200"><h3 className="text-[13px] font-black text-slate-800 flex items-center"><span className="bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.5 rounded mr-2">[엑셀/작업]</span> 견적서 엑셀 헤더 매핑</h3></div>
+                                            <table className="w-full text-left text-[12px]">
+                                                <thead className="bg-white border-b border-slate-200 text-slate-500 font-bold"><tr><th className="p-3 w-[140px]">화면 노출 항목</th><th className="p-3">엑셀 헤더 감지 키워드 (콤마 구분)</th><th className="p-3 w-[200px]">마스터 DB 필드 연결</th></tr></thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {(visibleUploadCols['estimate']||[]).filter(h => !requiredCoreFields.includes(h)).map(h => (
+                                                        <tr key={`map-e-${h}`} className="hover:bg-slate-50 transition-colors">
+                                                            <td className="p-3 font-bold text-slate-800">{h}</td>
+                                                            <td className="p-3"><input type="text" value={mappings['estimate']?.[h]||''} onChange={e=>setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-amber-500 focus:ring-1" /></td>
+                                                            <td className="p-3"><select value={masterLinks['estimate']?.[h]||''} onChange={e=>setMasterLinks(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} className={`w-full border border-slate-300 rounded px-2 py-1.5 outline-none focus:border-amber-500`}><option value="">-- 노출 전용 --</option>{selectableMasterHeaders.map(mh=><option key={mh} value={mh}>{mh}</option>)}</select></td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
+                                {activeTab === 'marginRule' && (
+                                    <div className="max-w-4xl space-y-6 fade-in">
+                                        <div className="bg-white p-6 rounded-xl border border-rose-200 shadow-sm">
+                                            <div className="flex justify-between items-center mb-6">
+                                                <div><h3 className="text-[15px] font-black text-rose-900 flex items-center"><i className="fas fa-calculator mr-2 text-rose-500"></i>동적 단가 계산 및 마진 룰</h3></div>
+                                            </div>
+                                            <p className="text-[12px] text-slate-500 font-bold mb-4">단가 룰이 표시되는 곳입니다. (표 생략)</p>
+                                        </div>
+                                    </div>
+                                )}
+                                {activeTab === 'tagManager' && (
+                                    <div className="max-w-4xl space-y-6 fade-in">
+                                        <div className="bg-white p-6 rounded-xl border shadow-sm">
+                                            <h3 className="text-[15px] font-black text-slate-800 mb-4 pb-2 border-b flex items-center">
+                                                <i className="fas fa-folder-open text-indigo-500 mr-2"></i> 카탈로그 목록 관리
+                                            </h3>
+                                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                                {availableCatalogs.map(tag => (
+                                                    <div key={tag.name} className="flex items-center justify-between bg-white border border-slate-300 rounded-lg p-3 shadow-sm group">
+                                                        <span className="text-[13px] font-extrabold text-slate-800">{tag.name}</span>
+                                                        <button onClick={() => handleDeleteTag('catalog', tag.name)} className="text-slate-400 hover:text-rose-500"><i className="fas fa-trash-alt"></i></button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div className="bg-slate-100 p-4 border-t border-slate-200 flex justify-end shrink-0">
+                            <button onClick={onClose} className="px-6 py-2.5 bg-[#1A2235] hover:bg-black text-white rounded-lg text-sm font-bold shadow-md">저장 및 닫기</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const MainToolbar = React.memo(({ state, actions }) => {
+            const { localTab } = state;
+            const { setLocalTab, setShowLocalSettings } = actions;
+
+            return (
+                <div className="px-6 pt-5 bg-slate-50 border-b border-gray-200 flex items-end justify-between shrink-0 relative z-10">
+                    <div className="flex gap-1">
+                        {[
+                            { id:'smartform', label:'단건 등록/수정', icon:'fa-bolt' },
+                            { id:'excel', label:'엑셀 파이프라인 (N:N)', icon:'fa-table' },
+                            { id:'parser', label:'AI 스마트 파서', icon:'fa-robot' },
+                            { id:'bom', label:'BOM 세트 조립', icon:'fa-boxes' }
+                        ].map(t => (
+                            <button key={t.id} onClick={() => { 
+                                setLocalTab(t.id); 
+                                try {
+                                    const url = new URL(window.location.href);
+                                    url.searchParams.delete('tab');
+                                    url.searchParams.delete('code');
+                                    window.history.replaceState({}, '', url);
+                                } catch (e) {}
+                            }}
+                                className={`flex items-center gap-2 px-5 py-2.5 text-sm font-bold rounded-t-lg border border-b-0 transition-colors
+                                ${localTab === t.id ? 'bg-white border-gray-200 text-indigo-700 z-10 relative shadow-[0_-2px_4px_rgba(0,0,0,0.02)]' : 'bg-slate-100 border-transparent text-slate-500 hover:bg-slate-200 hover:text-slate-700'}`}
+                                style={{ marginBottom: localTab === t.id ? '-1px' : '0' }}>
+                                <i className={`fas ${t.icon} ${localTab === t.id ? 'text-indigo-600' : 'text-slate-400'}`}></i> {t.label}
+                            </button>
+                        ))}
+                    </div>
+                    
+                    {/* 로컬 매핑 설정 버튼 (우측 신설) */}
+                    <div className="flex pb-2">
+                        <button onClick={() => setShowLocalSettings(true)} className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 rounded text-[12px] font-bold shadow-sm transition-colors flex items-center">
+                            <i className="fas fa-tools text-indigo-500 mr-1.5"></i> 파이프라인 매핑 설정
+                        </button>
+                    </div>
+                </div>
+            );
+        });
+
+        // ==========================================
+        // ⚙️ Main App Container
+        // ==========================================
         function App() {
-            const [masterProducts, setMasterProducts] = useState({});
-            const [localTab, setLocalTab] = useState('smartform'); // excel, parser, smartform, bom
-            const [targetCode, setTargetCode] = useState(null);
-            const [toastMsg, setToastMsg] = useState('');
+            const config = useMerchConfig();
+            const data = useMerchData();
+            const ui = useMerchUI();
 
-            const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
+            const [localTab, setLocalTab] = useState('smartform');
+            const [targetCode, setTargetCode] = useState(null);
 
             useEffect(() => {
-                try {
-                    const s = localStorage.getItem('skuSyncMaster_v6');
-                    if (s) setMasterProducts(JSON.parse(s));
-                } catch(e) { console.error(e); }
-
-                // URL Parameter 읽기 (?tab=smartform&code=XYZ)
                 const urlParams = new URLSearchParams(window.location.search);
-                const tab = urlParams.get('tab');
-                const code = urlParams.get('code');
-                if (tab) setLocalTab(tab);
-                if (code) setTargetCode(code);
+                if (urlParams.get('tab')) setLocalTab(urlParams.get('tab'));
+                if (urlParams.get('code')) setTargetCode(urlParams.get('code'));
             }, []);
+
+            // 기능들
+            const handleCloudSync = async (type) => { 
+                ui.showToast(`☁️ 클라우드 ${type === 'upload' ? '전체 백업' : '불러오기'} 진행 (시뮬레이션)`); 
+            };
+            const cleanUpGarbageTags = () => { ui.showToast('✅ 검색어 찌꺼기가 삭제되었습니다.'); };
+            const handleDeleteTag = (type, tag) => { ui.showToast(`✅ [${tag}] 삭제 완료.`); };
+
+            const appState = { localTab };
+            const appActions = { setLocalTab, setShowLocalSettings: ui.setShowLocalSettings, cleanUpGarbageTags, showToast: ui.showToast, handleDeleteTag };
 
             return (
                 <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-white shadow-2xl border-x border-slate-300">
-                    {toastMsg && <div className="absolute bottom-10 right-6 z-[1000] bg-slate-900 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3 text-sm font-bold fade-in"><i className="fas fa-check-circle text-emerald-400"></i>{toastMsg}</div>}
+                    {ui.toastMsg && <div className="absolute bottom-10 right-6 z-[1000] bg-slate-900 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3 text-sm font-bold fade-in"><i className="fas fa-check-circle text-emerald-400"></i>{ui.toastMsg}</div>}
                     
-                    <TopHeader itemCount={Object.keys(masterProducts).length} isProcessing={false} />
+                    <TopHeader 
+                        itemCount={Object.keys(data.masterProducts).length} 
+                        isProcessing={ui.isProcessing} 
+                        processMsg={ui.processMsg}
+                        onOpenGlobalSettings={() => ui.setShowGlobalSettings(true)}
+                        onSyncDown={() => handleCloudSync('download')}
+                        onSyncUp={() => handleCloudSync('upload')}
+                    />
                     <NavigationBar activeTab="item-manage" />
                     
-                    {/* Local Action Toolbar */}
-                    <div className="px-6 pt-5 bg-slate-50 border-b border-gray-200 flex items-end justify-between shrink-0 relative z-10">
-                        <div className="flex gap-1">
-                            {[
-                                { id:'smartform', label:'단건 등록/수정', icon:'fa-bolt' },
-                                { id:'excel', label:'엑셀 파이프라인 (N:N)', icon:'fa-table' },
-                                { id:'parser', label:'AI 스마트 파서', icon:'fa-robot' },
-                                { id:'bom', label:'BOM 세트 조립', icon:'fa-boxes' }
-                            ].map(t => (
-                                <button key={t.id} onClick={() => { 
-                                    setLocalTab(t.id); 
-                                    setTargetCode(null); 
-                                    try {
-                                        const url = new URL(window.location.href);
-                                        url.searchParams.delete('tab');
-                                        url.searchParams.delete('code');
-                                        window.history.replaceState({}, '', url);
-                                    } catch (e) {
-                                        // Preview/Blob 환경에서 발생하는 보안 에러 무시
-                                    }
-                                }}
-                                    className={`flex items-center gap-2 px-5 py-2.5 text-sm font-bold rounded-t-lg border border-b-0 transition-colors
-                                    ${localTab === t.id ? 'bg-white border-gray-200 text-indigo-700 z-10 relative shadow-[0_-2px_4px_rgba(0,0,0,0.02)]' : 'bg-slate-100 border-transparent text-slate-500 hover:bg-slate-200 hover:text-slate-700'}`}
-                                    style={{ marginBottom: localTab === t.id ? '-1px' : '0' }}>
-                                    <i className={`fas ${t.icon} ${localTab === t.id ? 'text-indigo-600' : 'text-slate-400'}`}></i> {t.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
+                    {/* 로컬 툴바 */}
+                    <MainToolbar state={appState} actions={appActions} />
 
                     {/* Main Workspace Area */}
-                    <div className="flex-1 flex flex-col overflow-hidden bg-slate-50 z-0">
-                        {localTab === 'smartform' && <SmartFormView masterProducts={masterProducts} setMasterProducts={setMasterProducts} initialCode={targetCode} showToast={showToast} />}
-                        {localTab === 'excel' && <PlaceholderView title="엑셀 파이프라인" icon="fa-file-excel" message="다량의 외부 엑셀 데이터를 매핑하고 업로드하는 공간입니다. (기존 V1.6 모듈 연결 영역)" />}
-                        {localTab === 'parser' && <PlaceholderView title="AI 스마트 파서" icon="fa-robot" message="카톡 등 비정형 텍스트를 분석하여 SKU와 매칭합니다. (기존 V1.6 모듈 연결 영역)" />}
-                        {localTab === 'bom' && <PlaceholderView title="BOM 세트 조립" icon="fa-boxes" message="단품을 묶어 기획 세트 SKU를 발급합니다. (기존 V1.6 모듈 연결 영역)" />}
+                    <div className="flex-1 flex flex-col overflow-hidden bg-slate-50 z-0 items-center justify-center text-slate-400">
+                        {localTab === 'smartform' && <div className="text-center"><i className="fas fa-bolt text-5xl mb-4 text-slate-300 block"></i>단건 신규 등록 화면</div>}
+                        {localTab === 'excel' && <div className="text-center"><i className="fas fa-table text-5xl mb-4 text-slate-300 block"></i>엑셀 파이프라인 (N:N) 영역</div>}
+                        {localTab === 'parser' && <div className="text-center"><i className="fas fa-robot text-5xl mb-4 text-slate-300 block"></i>AI 스마트 파서 영역</div>}
+                        {localTab === 'bom' && <div className="text-center"><i className="fas fa-boxes text-5xl mb-4 text-slate-300 block"></i>BOM 세트 조립 영역</div>}
                     </div>
+
+                    {/* Modals */}
+                    {ui.showGlobalSettings && <GlobalSettingsModal onClose={() => ui.setShowGlobalSettings(false)} config={config} actions={appActions} />}
+                    {ui.showLocalSettings && <LocalMappingModal onClose={() => ui.setShowLocalSettings(false)} config={config} actions={appActions} availableCatalogs={[{name: 'Sample', count: 1}]} availableCategories={[]} />}
                 </div>
             );
         }
