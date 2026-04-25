@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - Dashboard [v2.0]</title>
+    <title>ONEAPP NEXES - One Board [v2.0]</title>
     <!-- 핵심 라이브러리 CDN 로드 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -89,17 +89,11 @@
         // 🧩 Components: TopHeader & Nav
         // ==========================================
         const TopHeader = ({ itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull }) => {
-            const now = new Date();
-            const dateStr = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`;
-            const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-            
-            let statusText = `DB: ${itemCount}건 로드됨 (${dateStr} ${timeStr})`;
-            if (isProcessing) statusText = `${processMsg} (${dateStr} ${timeStr})`;
-
+            // ...
             return (
                 <header className="h-16 bg-[#0B1021] text-white flex items-center justify-between px-6 shrink-0 z-50 border-b border-slate-800/80 shadow-md">
                     <div className="flex items-center">
-                        <div className="flex items-center cursor-pointer group" onClick={() => window.location.href = 'dashboard.html'}>
+                        <div className="flex items-center cursor-pointer group" onClick={() => window.location.href = 'https://oneapp.orderz.co.kr/NEXUS/Dashboard'}>
                             <span className="font-black text-[22px] tracking-wider text-slate-100 mr-4">ONEAPP</span>
                             
                             <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
@@ -107,7 +101,7 @@
                                     <span className="font-black text-[15px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
                                     <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[8px] font-black tracking-wider shadow-sm leading-none">v2.0</span>
                                 </div>
-                                <span className="text-[9.5px] text-slate-400/90 font-medium tracking-[0.15em] mt-1">One Board</span>
+                                <span className="text-[9.5px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">One Board</span>
                             </div>
                         </div>
                         
@@ -146,10 +140,10 @@
 
         const NavigationBar = ({ activeTab }) => {
             const tabs = [
-                { id: 'dashboard', label: '대시보드', icon: "layout-dashboard", path: 'dashboard.html' },
-                { id: 'item', label: '품목 관리', icon: "package-search", path: 'items.html' },
+                { id: 'dashboard', label: '대시보드', icon: "layout-dashboard", path: 'https://oneapp.orderz.co.kr/NEXUS/Dashboard' },
+                { id: 'item-info', label: '마스터 DB', icon: "package-search", path: 'https://oneapp.orderz.co.kr/NEXUS/Item_master' },
+                { id: 'item-manage', label: '상품관리', icon: "sliders-horizontal", path: 'https://oneapp.orderz.co.kr/NEXUS/Item_manager' },
                 { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'index.html' },
-                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'parser.html' },
                 { id: 'outbound', label: '출고 관리', icon: "truck", path: '/outbound/' },
                 { id: 'inventory', label: '재고 관리', icon: "boxes", path: '/inventory/' },
                 { id: 'insight', label: '인사이트', icon: "bar-chart-3", path: '/insight/' }
@@ -245,7 +239,6 @@
             };
 
             return (
-                /* 💡 [복구] 기존 머치옵스와 동일하게 max-w-[1500px] 래퍼를 씌워 1500px 꽉 찬 중앙 정렬 및 섀도우를 복원합니다. */
                 <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-slate-100 relative shadow-2xl border-x border-slate-300 select-none">
                     <TopHeader 
                         itemCount={itemCount} 
