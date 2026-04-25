@@ -47,7 +47,7 @@
         // ==========================================
         // 🛠 SafeIcon: 아이콘 2중 안전장치
         // ==========================================
-        const SafeIcon = ({ name, size = 18, className = "" }) => {
+        const SafeIcon = React.memo(function SafeIconComponent({ name, size = 18, className = "" }) {
             const [svg, setSvg] = useState("");
             useEffect(() => {
                 const renderIcon = () => {
@@ -82,7 +82,7 @@
                 return <i className={`fas ${faName} ${className}`} style={{ fontSize: size }} />;
             }
             return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
-        };
+        });
 
         // ==========================================
         // 🧩 무제한 로컬 스토리지 (IndexedDB)
@@ -296,8 +296,8 @@
         // 🧩 4. 시세관리 전용 컴포넌트들
         // ==========================================
         
-        // 💡 [FIX] EditableCell의 선언 위치를 끌어올리고 isRisk 속성 처리 추가
-        const EditableCell = React.memo(({ rowCode, initialVal, field, linkedMasterField, mVal, onUpdateCell, isRisk = false }) => {
+        // 💡 [FIX] 호이스팅 보장을 위해 명시적 함수 선언(Function Declaration) 방식으로 변경
+        const EditableCell = React.memo(function EditableCellComponent({ rowCode, initialVal, field, linkedMasterField, mVal, onUpdateCell, isRisk = false }) {
             const isNumeric = NUMERIC_HEADERS.includes(linkedMasterField) || NUMERIC_HEADERS.includes(field);
             const [localVal, setLocalVal] = useState(initialVal);
             const [isFocused, setIsFocused] = useState(false);
@@ -325,6 +325,7 @@
                     e.target.blur();
                     
                     const td = e.target.closest('td');
+                    if (!td) return;
                     const tr = td.closest('tr');
                     const tbody = tr.closest('tbody');
                     
@@ -384,7 +385,6 @@
         });
 
         const PipelineEmptyState = ({ onUpload }) => {
-            // 💡 [NEW] 엑셀 템플릿 다운로드 로직 추가
             const downloadTemplate = () => {
                 const wb = window.XLSX.utils.book_new();
                 const ws = window.XLSX.utils.aoa_to_sheet([['품목코드', '품목명', '규격', '입고가', '출고가', '구매처', '간단설명']]);
@@ -434,7 +434,6 @@
                     else if (newP < oldP) { status = 'down'; down++; }
                     else { status = 'same'; same++; }
 
-                    // 💡 [NEW] 변동률(%) 및 급등 위험 감지 계산
                     const diff = newP - oldP;
                     const diffPercent = oldP > 0 ? ((diff / oldP) * 100).toFixed(1) : 0;
                     const isRisk = status === 'up' && Number(diffPercent) >= 20.0;
@@ -512,7 +511,6 @@
                                                     <td className="px-4 py-2 text-right text-slate-500">{item.기존단가 > 0 ? item.기존단가.toLocaleString() : '-'}</td>
                                                     <td className={`px-4 py-2 text-right font-black ${item.isRisk ? 'text-rose-600' : 'text-indigo-600'}`}>{item.새단가 > 0 ? item.새단가.toLocaleString() : '-'}</td>
                                                     <td className="px-4 py-2 text-right font-bold">
-                                                        {/* 💡 [NEW] 변동률 가시화 및 급등 경고 */}
                                                         {item.차액 > 0 ? (
                                                             <span className="text-rose-500 flex items-center justify-end gap-1">
                                                                 ▲ {item.차액.toLocaleString()}원 <span className="text-[10px] bg-rose-50 px-1 rounded font-mono">({item.diffPercent}%)</span>
@@ -590,7 +588,6 @@
 
             const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
 
-            // 💡 [NEW] 마스터 및 자동 저장 데이터(Pipeline) 초기 로드
             useEffect(() => {
                 getIDB(STORAGE_KEYS.MASTER_DB).then(data => { if (data) setMasterProducts(data); }).catch(console.error);
                 getIDB(STORAGE_KEYS.MANAGED_ITEMS).then(data => { if (data && Object.keys(data).length > 0) setManagedItems(data); }).catch(console.error);
@@ -600,7 +597,6 @@
                 return () => window.removeEventListener('storage', handleStorageChange);
             }, []);
 
-            // 💡 [NEW] 작업 중인 내용(managedItems) 실시간 자동 임시 저장 (Auto-Save)
             useEffect(() => {
                 if (Object.keys(managedItems).length > 0) {
                     setIDB(STORAGE_KEYS.MANAGED_ITEMS, managedItems).catch(console.error);
@@ -719,7 +715,6 @@
                 setMasterProducts(newMaster); setSelectedRows(new Set()); 
                 try { await setIDB(STORAGE_KEYS.MASTER_DB, newMaster); localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); } catch(e){}
                 
-                // 💡 [NEW] 마스터에 커밋 후 관리 아이템 비우기 (자동으로 IDB에서도 삭제됨)
                 setManagedItems({});
                 setGlobalSearch('');
                 showToast(`✅ ${commitCount}건 마스터 캐시에 업데이트 완료.`);
@@ -829,7 +824,6 @@
                                                         {visibleUploadCols.map(h => {
                                                             const linkedField = h; const mVal = mItem[linkedField]; const initialVal = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.estimate?.[h] || '');
                                                             
-                                                            // 💡 [NEW] 입고가가 기존 대비 20% 이상 올랐을 때 위험 감지
                                                             let isRisk = false;
                                                             if (h === '입고가') {
                                                                 const mIn = parseNum(mVal);
