@@ -14,7 +14,7 @@ import {
     Terminal,
     Search,
     Plus,
-    Network, // Sitemap 대신 Network 아이콘 사용
+    Network,
     FileCode,
     RefreshCw,
     X,
@@ -23,7 +23,7 @@ import {
 
 /**
  * MerchOps v9.0 - Item Management (품목 등록)
- * 로케이션: /item/index.html (또는 /SKU_Sync/)
+ * 로케이션: /Sync/sku1.0
  */
 
 // ==========================================
@@ -43,6 +43,7 @@ const ONEAPP_CATEGORIES = [
     { c1Name: '수산.축산', c1Code: '20', c2Name: '돼지고기', c2Code: '2010', c3Name: '삼겹살', erp3Code: '21010', orders3Code: '201010' },
     { c1Name: '수산.축산', c1Code: '20', c2Name: '닭고기', c2Code: '2020', c3Name: '생닭', erp3Code: '22010', orders3Code: '202010' },
     { c1Name: '가공.식품', c1Code: '30', c2Name: '면류', c2Code: '3010', c3Name: '라면', erp3Code: '31010', orders3Code: '301010' },
+    { c1Name: '가공.식품', c1Code: '30', c2Name: '면류', c2Code: '3010', c3Name: '소면', erp3Code: '31011', orders3Code: '301011' },
     { c1Name: '양념.소스', c1Code: '40', c2Name: '장류', c2Code: '4010', c3Name: '쌈장', erp3Code: '41030', orders3Code: '401030' },
     { c1Name: '주방.잡화', c1Code: '50', c2Name: '일회용품/비닐/호일', c2Code: '5020', c3Name: '재단비닐', erp3Code: '52056', orders3Code: '502056' },
     { c1Name: '주방.잡화', c1Code: '50', c2Name: '일회용품/비닐/호일', c2Code: '5020', c3Name: '비닐봉투', erp3Code: '52036', orders3Code: '502036' },
@@ -50,7 +51,6 @@ const ONEAPP_CATEGORIES = [
 ];
 
 const NUMERIC_HEADERS = ["안전재고", "출고가", "입고가"];
-const VISIBLE_COLS = ['입고가', '출고가', '구매처', '간단설명'];
 
 // ==========================================
 // 🧩 1. Components: 공통 UI 쉘
@@ -119,7 +119,8 @@ const TopHeader = ({ itemCount, isProcessing, processMsg }) => {
 const NavigationBar = ({ activeTab }) => {
     const tabs = [
         { id: 'dashboard', label: '대시보드', icon: LayoutDashboard, path: '/' },
-        { id: 'item', label: '품목 등록', icon: PackageSearch, path: '/item/' },
+        // 💡 품목 등록 탭 링크 주소 변경 반영
+        { id: 'item', label: '품목 등록', icon: PackageSearch, path: 'https://oneapp.orderz.co.kr/Sync/sku1.0' },
         { id: 'pipeline', label: '시세 관리', icon: FileSpreadsheet, path: '/pipeline/' },
         { id: 'parser', label: '스마트 파서', icon: Zap, path: '/parser/' },
         { id: 'outbound', label: '출고 관리', icon: Truck, path: '/outbound/' },
@@ -197,7 +198,6 @@ const CategorySourcingView = ({ data, ui }) => {
 
     return (
         <div className="flex h-full overflow-hidden bg-white rounded-xl shadow-sm border border-slate-200 fade-in m-6">
-            {/* 카테고리 트리 사이드바 */}
             <div className="w-[240px] bg-slate-50 border-r border-slate-200 flex flex-col shrink-0">
                 <div className="p-4 bg-slate-100 border-b border-slate-200 flex items-center font-bold text-slate-700 text-xs">
                     <Network size={14} className="mr-2" /> 카테고리 필터
@@ -225,7 +225,6 @@ const CategorySourcingView = ({ data, ui }) => {
                 </div>
             </div>
 
-            {/* 메인 리스트 영역 */}
             <div className="flex-1 flex flex-col overflow-hidden">
                 <div className="p-4 bg-white border-b border-slate-100 flex justify-between items-center">
                     <h3 className="text-sm font-black text-slate-800 uppercase tracking-tighter">Master Catalog List</h3>
@@ -257,7 +256,6 @@ const CategorySourcingView = ({ data, ui }) => {
                 </div>
             </div>
 
-            {/* 우측 장바구니/큐 */}
             <div className="w-[320px] bg-slate-50 border-l border-slate-200 flex flex-col shrink-0 shadow-[-5px_0_15px_rgba(0,0,0,0.02)]">
                 <div className="p-4 bg-slate-100 border-b border-slate-200 font-bold text-slate-700 text-xs flex justify-between items-center uppercase tracking-widest">
                     <span>Work Queue</span>
@@ -290,20 +288,24 @@ const CategorySourcingView = ({ data, ui }) => {
 // ⚙️ 3. Main App Container
 // ==========================================
 export default function App() {
-    // 💡 MPA 구성을 위해 pathname 기반 탭 활성화
     const getCurrentTab = () => {
-        const p = window.location.pathname;
-        if (p.includes('/item/')) return 'item';
-        if (p.includes('/pipeline/')) return 'pipeline';
-        if (p.includes('/parser/')) return 'parser';
-        if (p.includes('/outbound/')) return 'outbound';
-        if (p.includes('/inventory/')) return 'inventory';
-        if (p.includes('/insight/')) return 'insight';
-        return 'item'; // 기본값 (현재 이 페이지가 품목 등록이므로)
+        try {
+            const p = window.location.pathname;
+            // 💡 신규 경로(Sync/sku1.0)에 대한 체크 추가
+            if (p.includes('/Sync/sku1.0') || p.includes('/item/')) return 'item';
+            if (p.includes('/pipeline/')) return 'pipeline';
+            if (p.includes('/parser/')) return 'parser';
+            if (p.includes('/outbound/')) return 'outbound';
+            if (p.includes('/inventory/')) return 'inventory';
+            if (p.includes('/insight/')) return 'insight';
+            return 'item';
+        } catch (e) {
+            return 'item';
+        }
     };
 
     const [activeTab] = useState(getCurrentTab());
-    const [viewMode, setViewMode] = useState('catalog'); // 'catalog' | 'manual' | 'bom' | 'grid'
+    const [viewMode, setViewMode] = useState('catalog'); 
     const [globalSearch, setGlobalSearch] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
     const [processMsg, setProcessMsg] = useState('');
@@ -336,7 +338,6 @@ export default function App() {
             <TopHeader itemCount={data.masterCatalogProducts.length} isProcessing={isProcessing} processMsg={processMsg} />
             <NavigationBar activeTab={activeTab} />
             
-            {/* 서브 네비게이션 (품목 등록 내부 기능) */}
             <div className="px-8 py-4 bg-white border-b border-slate-200 flex items-center justify-between shadow-sm">
                 <div className="flex gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200">
                     {subNavs.map(nav => (
@@ -350,7 +351,6 @@ export default function App() {
                         </button>
                     ))}
                 </div>
-                
                 <div className="flex items-center gap-3">
                     <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-600 hover:text-white transition-all">
                         <RefreshCw size={14} /> 최신화
@@ -358,14 +358,12 @@ export default function App() {
                 </div>
             </div>
 
-            {/* 메인 워크스페이스 */}
             <main className="flex-1 overflow-hidden relative">
                 {viewMode === 'catalog' && <CategorySourcingView data={data} ui={{ globalSearch, setGlobalSearch, showToast }} />}
                 {viewMode === 'manual' && <div className="p-10 text-center text-slate-400 italic">단건 수기 등록 폼 준비 중...</div>}
                 {viewMode === 'bom' && <div className="p-10 text-center text-slate-400 italic">BOM 세트 조립기 준비 중...</div>}
                 {viewMode === 'grid' && <div className="p-10 text-center text-slate-400 italic">데이터 그리드 뷰 준비 중...</div>}
 
-                {/* 토스트 메시지 */}
                 {toastMsg && (
                     <div className="absolute bottom-10 right-10 z-[100] bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in border border-slate-700">
                         <CheckCircle2 size={18} className="text-emerald-400" />
