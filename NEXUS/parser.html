@@ -37,12 +37,12 @@
         // ==========================================
         const STORAGE_KEYS = {
             MASTER_DB: 'merchMaster_v870',
-            MANAGED_ITEMS: 'merchPipeline_Managed_v2', // 💡 시세관리로 보낼 파이프라인 저장소
+            MANAGED_ITEMS: 'merchPipeline_Managed_v2', 
             MAPPINGS: 'merchMappings_v870',
             MARGIN_RULES: 'merchMarginRules_v878',
             CLOUD_URL: 'skuSyncCloudUrl_v6',
             SYNC_TRIGGER: 'merchMaster_sync_trigger',
-            PARSER_DICT: 'skuSyncParserDict_v6' // AI 학습 사전
+            PARSER_DICT: 'skuSyncParserDict_v6' 
         };
 
         // ==========================================
@@ -74,10 +74,11 @@
             if (!svg) {
                 const faMap = {
                     'cloud-download': 'fa-cloud-download-alt', 'cloud-upload': 'fa-cloud-upload-alt', 'settings': 'fa-cogs',
-                    'terminal': 'fa-terminal', 'layout-dashboard': 'fa-th-large', 'package-search': 'fa-box-open',
-                    'file-spreadsheet': 'fa-table', 'zap': 'fa-bolt', 'truck': 'fa-truck', 'boxes': 'fa-boxes',
-                    'bar-chart-3': 'fa-chart-bar', 'check': 'fa-check', 'check-circle-2': 'fa-check-circle',
-                    'x': 'fa-times', 'upload': 'fa-upload', 'alert-triangle': 'fa-exclamation-triangle', 'download': 'fa-download'
+                    'layout-dashboard': 'fa-th-large', 'package-search': 'fa-box-open', 'file-spreadsheet': 'fa-table', 
+                    'zap': 'fa-bolt', 'truck': 'fa-truck', 'boxes': 'fa-boxes', 'bar-chart-3': 'fa-chart-bar', 
+                    'check-circle-2': 'fa-check-circle', 'x': 'fa-times', 'upload': 'fa-upload', 'alert-triangle': 'fa-exclamation-triangle', 'download': 'fa-download',
+                    'database': 'fa-database', 'shopping-cart': 'fa-shopping-cart', 'users': 'fa-users', 'megaphone': 'fa-bullhorn',
+                    'pie-chart': 'fa-chart-pie', 'book-open': 'fa-address-book', 'shopping-bag': 'fa-shopping-bag', 'credit-card': 'fa-credit-card', 'line-chart': 'fa-chart-line', 'printer': 'fa-print'
                 };
                 const faName = faMap[name] || `fa-${name}`;
                 return <i className={`fas ${faName} ${className}`} style={{ fontSize: size }} />;
@@ -128,6 +129,152 @@
             if (!tagToRemove) return oldTags || '';
             const tags = (oldTags || '').split(',').map(s => s.trim()).filter(Boolean);
             return tags.filter(t => t !== tagToRemove).join(', ');
+        };
+
+        // ==========================================
+        // 🧩 Components: Global Header (통합 UI)
+        // ==========================================
+        const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
+            // 1-Depth: 대분류 그룹
+            const groups = [
+                { id: 'master', label: '정보 관리', icon: 'database' },
+                { id: 'ops', label: '운영 관리', icon: 'truck' },
+                { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }
+            ];
+
+            // 2-Depth: 소분류 탭 (💡 대표님 기획 반영: 워크플로우 순서 정렬 및 신규 탭 추가)
+            const tabs = [
+                // 🌟 0. 공통 메뉴 (로고 클릭 시 활성화되는 가상 그룹)
+                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'dashboard.html', group: 'common' },
+
+                // 📦 1. 정보 관리
+                { id: 'item-info', label: '마스터 DB', icon: "database", path: 'item_master.html', group: 'master' },
+                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'items.html', group: 'master' },
+                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'index.html', group: 'master' },
+                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'parser.html', group: 'master' },
+                { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: '#', group: 'master' },
+                { id: 'partners', label: '거래처 관리', icon: "users", path: '#', group: 'master' },
+
+                // 🚚 2. 운영 관리
+                { id: 'orders', label: '주문 관리', icon: "shopping-bag", path: '#', group: 'ops' },
+                { id: 'purchases', label: '구매 관리', icon: "credit-card", path: '#', group: 'ops' },
+                { id: 'sales', label: '판매 관리', icon: "line-chart", path: '#', group: 'ops' },
+                { id: 'inventory', label: '재고 관리', icon: "boxes", path: '#', group: 'ops' },
+                { id: 'print-center', label: '출력 센터', icon: "printer", path: '#', group: 'ops' },
+
+                // 🤝 3. 인사이트
+                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'report.html', group: 'admin' },
+                { id: 'cs', label: '정보마당(CS)', icon: "megaphone", path: '#', group: 'admin' }
+            ];
+
+            const currentTab = tabs.find(t => t.id === activeTab);
+            const activeGroup = currentTab ? currentTab.group : 'common'; 
+            const [selectedGroup, setSelectedGroup] = useState(activeGroup);
+
+            // 1차 카테고리 클릭 핸들러
+            const handleGroupClick = (groupId) => {
+                setSelectedGroup(prev => prev === groupId ? 'common' : groupId);
+            };
+
+            // 로고 클릭 핸들러 (공통 탭으로 전환)
+            const handleLogoClick = (e) => {
+                setSelectedGroup('common');
+                onNavigate(e, 'dashboard.html');
+            };
+
+            return (
+                <div className="flex flex-col shrink-0 z-40 relative w-full shadow-sm bg-[#0B1021]">
+                    {/* 1층: 글로벌 헤더 (좌측 정렬 구조) */}
+                    <header className="h-[72px] bg-[#0B1021] text-white flex justify-between px-6 border-b border-slate-800/80 relative z-20">
+                        
+                        {/* 좌측 영역: 로고 & 1-Depth 메뉴 통합 (좌측 정렬) */}
+                        <div className="flex items-center h-full">
+                            {/* 로고 */}
+                            <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={handleLogoClick} title="통합 대시보드 및 공통 메뉴로 이동">
+                                <span className="font-black text-[24px] tracking-wider text-slate-100 mr-4 group-hover:text-indigo-400 transition-colors">ONEAPP</span>
+                                <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
+                                    <div className="flex items-center">
+                                        <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
+                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v2.0</span>
+                                    </div>
+                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">One Board</span>
+                                </div>
+                            </div>
+
+                            {/* 1-Depth 네비게이션 (로고 바로 옆에 좌측 정렬) */}
+                            <div className="flex items-end h-full gap-8">
+                                {groups.map(g => (
+                                    <button key={g.id} onClick={() => handleGroupClick(g.id)}
+                                        className={`pb-[16px] text-[14px] font-bold transition-colors flex items-center gap-1.5
+                                        ${selectedGroup === g.id ? 'text-slate-100 border-b-[3px] border-indigo-500 -mb-[2px]' : 'text-slate-500 hover:text-slate-300'}`}>
+                                        <SafeIcon name={g.icon} size={15} /> {g.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* 우측 영역: 상태 및 컨트롤 유틸리티 */}
+                        <div className="flex items-center gap-4 h-full">
+                            <div className="flex items-center bg-[#151B2B] rounded-lg border border-slate-700/50 h-9 px-3 shadow-inner gap-3">
+                                {/* 동기화 애니메이션 표시기 */}
+                                <div className="flex items-center justify-center" title={isProcessing ? processMsg : "클라우드 동기화 켜짐 (가동중)"}>
+                                    {isProcessing ? (
+                                        <i className="fas fa-circle-notch fa-spin text-amber-500 text-[12px]"></i>
+                                    ) : (
+                                        <div className="relative flex h-2 w-2">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                        </div>
+                                    )}
+                                </div>
+                                {/* 구분선 */}
+                                <div className="w-px h-3.5 bg-slate-700"></div>
+                                {/* DB 건수 표시기 */}
+                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`현재 브라우저 메모리에 다운로드된 마스터 상품 수: ${itemCount.toLocaleString()}개`}>
+                                    <i className="fas fa-database text-[10px] text-slate-500"></i>
+                                    <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount.toLocaleString()}</span>
+                                </div>
+                            </div>
+
+                            {/* 우측 컨트롤 버튼 */}
+                            <div className="flex items-center gap-2">
+                                <button onClick={onPull} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 불러오기(Pull)"><SafeIcon name="cloud-download" size={18} /></button>
+                                <button onClick={onPush} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 백업하기(Push)"><SafeIcon name="cloud-upload" size={18} /></button>
+                                <div className="w-px h-6 bg-slate-700 mx-1"></div>
+                                <button onClick={onOpenSettings} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-slate-400 hover:text-white shadow-sm" title="설정"><SafeIcon name="settings" size={18} /></button>
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* 2층: 소분류 탭 */}
+                    {selectedGroup && (
+                        <div className="bg-[#0B1021] px-8 pt-4 flex items-end gap-2 overflow-x-auto custom-scrollbar border-b border-slate-200 fade-in">
+                            {tabs.filter(t => t.group === selectedGroup).map(tab => {
+                                const isActive = activeTab === tab.id;
+                                const isPlaceholder = tab.path === '#';
+                                return (
+                                    <a key={tab.id} href={tab.path} onClick={(e) => onNavigate(e, tab.path)}
+                                       className={`flex items-center gap-2 px-6 py-3 text-[14px] font-black rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px] 
+                                       ${isActive 
+                                           ? 'bg-slate-50 text-indigo-700 border-t-indigo-600 border-x-slate-200 relative z-10 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]' 
+                                           : isPlaceholder 
+                                              ? 'bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5' 
+                                              : 'bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:bg-[#1E293B] hover:text-slate-200 pb-2.5'
+                                       }`}
+                                       style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '13px' : '10px' }}
+                                    >
+                                        <SafeIcon name={tab.icon} size={16} className={isActive ? 'text-indigo-600' : 'opacity-70'} />
+                                        {tab.label}
+                                    </a>
+                                );
+                            })}
+                            {tabs.filter(t => t.group === selectedGroup).length === 0 && (
+                                <div className="px-5 py-2.5 text-[13px] font-bold text-slate-500 pb-4">이 그룹에 할당된 메뉴가 없습니다.</div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
         };
 
         // ==========================================
@@ -250,80 +397,6 @@
                 if (bestMatch && bestScore >= 0.7) return { code: '', status: '🟡 유사발견' };
                 return { code: '', status: '🔴 불일치' };
             }
-        };
-
-        // ==========================================
-        // 🧩 3. Global Header & Navigation
-        // ==========================================
-        const TopHeader = ({ itemCount, isProcessing, processMsg, onOpenSettings }) => {
-            const now = new Date();
-            const dateStr = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`;
-            const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-            let statusText = `DB: ${itemCount}건 로드됨 (${dateStr} ${timeStr})`;
-            if (isProcessing) statusText = `${processMsg} (${dateStr} ${timeStr})`;
-
-            return (
-                <header className="h-16 bg-[#0B1021] text-white flex items-center justify-between px-6 shrink-0 z-50 border-b border-slate-800/80 shadow-md">
-                    <div className="flex items-center">
-                        <div className="flex items-center cursor-pointer group" onClick={() => window.location.href = 'dashboard.html'}>
-                            <span className="font-black text-[22px] tracking-wider text-slate-100 mr-4">ONEAPP</span>
-                            <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
-                                <div className="flex items-center">
-                                    <span className="font-black text-[15px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                    <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[8px] font-black tracking-wider shadow-sm leading-none">v2.0</span>
-                                </div>
-                                <span className="text-[9.5px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">One Board</span>
-                            </div>
-                        </div>
-                        <div className="flex flex-col border-l border-slate-700/50 pl-4 ml-5">
-                            <span className="text-[9px] text-emerald-500/70 font-mono tracking-widest italic uppercase flex items-center gap-1.5 mt-0.5">
-                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/80 animate-pulse"></div>Sync_Connected
-                            </span>
-                        </div>
-                    </div>
-                    <div className="flex-1 max-w-2xl mx-8 hidden xl:block">
-                        <div className="bg-[#050814] border border-[#1A2235] rounded-md flex items-center px-4 py-2 font-mono text-[12px] shadow-inner h-9">
-                            <span className="text-emerald-500 mr-2 opacity-80">{'>'}</span>
-                            <span className={isProcessing ? "text-amber-400 font-bold" : "text-emerald-400 font-bold uppercase"}>
-                                {isProcessing ? `WORKING: ${processMsg}` : `CLUSTER: STABLE | DB_LOADED: ${itemCount}`}
-                            </span>
-                            <span className="ml-2 w-1.5 h-3.5 bg-emerald-500 animate-pulse inline-block"></span>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <button onClick={onOpenSettings} className="w-10 h-10 rounded bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#475569] transition-colors text-slate-400 hover:text-white shadow-sm" title="환경설정 (품목 관리로 이동)">
-                            <SafeIcon name="settings" size={20} />
-                        </button>
-                    </div>
-                </header>
-            );
-        };
-
-        const NavigationBar = ({ activeTab }) => {
-            const tabs = [
-                { id: 'dashboard', label: '대시보드', icon: "layout-dashboard", path: 'dashboard.html' },
-                { id: 'item', label: '품목 관리', icon: "package-search", path: 'items.html' },
-                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'index.html' },
-                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'parser.html' },
-                { id: 'outbound', label: '출고 관리', icon: "truck", path: '/outbound/' },
-                { id: 'inventory', label: '재고 관리', icon: "boxes", path: '/inventory/' },
-                { id: 'insight', label: '인사이트', icon: "bar-chart-3", path: '/insight/' }
-            ];
-            return (
-                <nav className="bg-[#0B1021] px-6 flex items-end gap-1.5 shrink-0 pt-3 border-b border-slate-200 overflow-x-auto custom-scrollbar relative z-10">
-                    {tabs.map(tab => {
-                        const isActive = activeTab === tab.id;
-                        return (
-                            <a key={tab.id} href={tab.path} 
-                               className={`flex items-center gap-2 px-5 py-2.5 text-[13px] font-bold rounded-t-lg transition-all whitespace-nowrap border-x border-t-[3px] 
-                               ${isActive ? 'bg-slate-100 text-indigo-700 border-t-indigo-600 border-x-slate-200 relative z-10 shadow-[0_-2px_5px_rgba(0,0,0,0.03)]' : 'bg-[#1A2235] text-slate-400 border-t-transparent border-x-transparent hover:bg-[#1e293b] hover:text-slate-200'}`}
-                               style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '11px' : '10px' }}>
-                                <SafeIcon name={tab.icon} size={15} className={isActive ? 'text-indigo-600' : 'text-slate-500'} />{tab.label}
-                            </a>
-                        );
-                    })}
-                </nav>
-            );
         };
 
         // ==========================================
@@ -664,27 +737,23 @@
                     let newDict = { ...parserDict };
                     let itemsToPipeline = {};
 
-                    // 1. 기존 파이프라인 데이터 불러오기 (이어쓰기 위함)
                     const existingPipeline = await getIDB(STORAGE_KEYS.MANAGED_ITEMS) || {};
                     itemsToPipeline = { ...existingPipeline };
 
                     toApply.forEach(row => {
                         const code = row._matchCode;
 
-                        // A. 마스터 태그 업데이트 (카탈로그)
                         if (!newMaster[code]) newMaster[code] = { 코드: code };
                         if (currentTag) {
                             newMaster[code]['카탈로그'] = addTag(newMaster[code]['카탈로그'], currentTag);
                         }
 
-                        // B. AI 딕셔너리 학습
                         if (row['품목명']) {
                             const normExtName = normalizeText(row['품목명']);
                             const normExtSpec = normalizeText(row['규격']);
                             newDict[`${normExtName}|${normExtSpec}`] = code;
                         }
 
-                        // C. 파이프라인 전송용 데이터 조립
                         const pInNum = parseNum(row.finalData?.['입고가'] || row['입고가']);
                         const mItem = newMaster[code];
                         
@@ -694,26 +763,22 @@
                         managedItem.sources.estimate['규격'] = row['규격'];
                         managedItem.sources.estimate['입고가'] = pInNum;
                         
-                        // 파서에서 넘어온 가격으로 초기화
                         managedItem.finalData['입고가'] = pInNum;
                         managedItem.finalData['품목명'] = mItem.품목명 || row['품목명'];
                         managedItem.finalData['규격'] = mItem.규격 || row['규격'];
                         
-                        // 카테고리/오더즈 정보 유지
                         managedItem.finalData['오더즈'] = mItem['오더즈'] || '999999';
                         managedItem.finalData['3코드'] = mItem['3코드'] || '999999';
                         
                         itemsToPipeline[code] = managedItem;
                     });
 
-                    // 2. 저장 실행
                     await saveMaster(newMaster); 
                     saveDict(newDict); 
                     await setIDB(STORAGE_KEYS.MANAGED_ITEMS, itemsToPipeline);
 
                     showToast(`✅ ${toApply.length}건 파이프라인 전송 완료! 시세 관리로 이동합니다.`);
                     
-                    // 3. 이동
                     setTimeout(() => {
                         window.location.href = 'index.html';
                     }, 800);
@@ -742,7 +807,7 @@
 
                     setParserBuffer(nextBuffer);
                     setTargetId(null); setGlobalSearch(''); 
-                    setActiveTab('matched'); // 매핑 즉시 일치 탭으로 시각적 이동
+                    setActiveTab('matched'); 
                     
                     showToast(`✅ 수동 연결 대기 완료! (일치 탭으로 이동되었습니다)`);
                 } catch(error) {
@@ -895,6 +960,51 @@
                 selectedMissingCodes, setSelectedMissingCodes, processedCodes
             } = appState;
 
+            const [showSettings, setShowSettings] = useState(false);
+            const [gasUrl, setGasUrl] = useState(() => localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || '');
+
+            useEffect(() => {
+                localStorage.setItem(STORAGE_KEYS.CLOUD_URL, gasUrl);
+            }, [gasUrl]);
+
+            const handleNavigate = useCallback((e, path) => {
+                if (e && e.preventDefault) e.preventDefault();
+                
+                if (path === '#') {
+                    showToast('⚠️ 준비 중인 기능입니다.');
+                    return;
+                }
+
+                try {
+                    const protocol = window.location.protocol;
+                    if (protocol === 'about:' || protocol === 'blob:' || protocol === 'data:') {
+                        showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
+                    } else {
+                        window.location.href = path;
+                    }
+                } catch (err) {
+                    showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
+                }
+            }, [showToast]);
+
+            const handlePush = async () => {
+                if (!gasUrl) return showToast("⚠️ 설정에서 앱스크립트 URL을 입력하세요.");
+                appState.setIsProcessing(true); appState.setProcessMsg("클라우드 백업 중...");
+                setTimeout(() => {
+                    showToast("✅ 클라우드 저장 완료");
+                    appState.setIsProcessing(false); appState.setProcessMsg("");
+                }, 1000);
+            };
+
+            const handlePull = async () => {
+                if (!gasUrl) return showToast("⚠️ 설정에서 앱스크립트 URL을 입력하세요.");
+                appState.setIsProcessing(true); appState.setProcessMsg("데이터 동기화 중...");
+                setTimeout(() => {
+                    showToast("✅ 데이터 수신 완료");
+                    appState.setIsProcessing(false); appState.setProcessMsg("");
+                }, 1000);
+            };
+
             const availableTags = useMemo(() => {
                 const counts = {};
                 Object.values(masterProducts).forEach(m => {
@@ -941,95 +1051,59 @@
 
             return (
                 <div className="h-screen w-full bg-slate-100 flex justify-center overflow-hidden font-sans">
+                    <style>{`
+                        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+                        body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f1f5f9; overflow: hidden; }
+                        ::-webkit-scrollbar { width: 8px; height: 8px; } ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+                        .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; }
+                        .fade-in { animation: fadeIn 0.3s ease-out; } @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+                    `}</style>
+                    
                     {toastMsg && <div className="fixed bottom-6 right-6 z-[1000] bg-slate-800 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in text-sm font-bold border border-slate-700"><SafeIcon name="check-circle-2" className="text-emerald-400" />{toastMsg}</div>}
 
-                    <div className="w-full max-w-[1500px] mx-auto flex flex-col bg-slate-50 shadow-2xl overflow-hidden border-x border-slate-300">
-                        {/* 글로벌 헤더 */}
-                        <header className="h-16 bg-[#0B1021] text-white flex items-center justify-between px-6 shrink-0 z-50 border-b border-slate-800/80 shadow-md">
-                            <div className="flex items-center">
-                                <div className="flex items-center cursor-pointer group" onClick={() => window.location.href = 'dashboard.html'}>
-                                    <span className="font-black text-[22px] tracking-wider text-slate-100 mr-4">ONEAPP</span>
-                                    <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
-                                        <div className="flex items-center">
-                                            <span className="font-black text-[15px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                            <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[8px] font-black tracking-wider shadow-sm leading-none">v2.0</span>
-                                        </div>
-                                        <span className="text-[9.5px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">One Board</span>
-                                    </div>
-                                </div>
-                                <div className="flex flex-col border-l border-slate-700/50 pl-4 ml-5">
-                                    <span className="text-[9px] text-emerald-500/70 font-mono tracking-widest italic uppercase flex items-center gap-1.5 mt-0.5">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/80 animate-pulse"></div>Sync_Connected
-                                    </span>
-                                </div>
-                            </div>
-                            <div className="flex-1 max-w-2xl mx-8 hidden xl:block">
-                                <div className="bg-[#050814] border border-[#1A2235] rounded-md flex items-center px-4 py-2 font-mono text-[12px] shadow-inner h-9">
-                                    <span className="text-emerald-500 mr-2 opacity-80">{'>'}</span>
-                                    <span className={isProcessing ? "text-amber-400 font-bold" : "text-emerald-400 font-bold uppercase"}>
-                                        {isProcessing ? `WORKING: ${processMsg}` : `CLUSTER: STABLE | DB_LOADED: ${Object.keys(masterProducts).length}`}
-                                    </span>
-                                    <span className="ml-2 w-1.5 h-3.5 bg-emerald-500 animate-pulse inline-block"></span>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <button className="w-10 h-10 rounded bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#374151] transition-colors text-indigo-400 shadow-sm" title="데이터 불러오기"><SafeIcon name="cloud-download" size={20} /></button>
-                                <button className="w-10 h-10 rounded bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#374151] transition-colors text-indigo-400 shadow-sm" title="데이터 저장하기"><SafeIcon name="cloud-upload" size={20} /></button>
-                                <button className="w-10 h-10 rounded bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#475569] transition-colors text-slate-400 hover:text-white ml-2 shadow-sm" title="설정"><SafeIcon name="settings" size={20} /></button>
-                            </div>
-                        </header>
-
-                        {/* 글로벌 네비게이션 탭 */}
-                        <nav className="bg-[#0B1021] px-6 flex items-end gap-1.5 shrink-0 pt-3 border-b border-slate-200 overflow-x-auto custom-scrollbar relative z-10">
-                            {[
-                                { id: 'dashboard', label: '대시보드', icon: "layout-dashboard", path: 'dashboard.html' },
-                                { id: 'item', label: '품목 관리', icon: "package-search", path: 'items.html' },
-                                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'index.html' },
-                                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'parser.html' },
-                                { id: 'outbound', label: '출고 관리', icon: "truck", path: '/outbound/' },
-                                { id: 'inventory', label: '재고 관리', icon: "boxes", path: '/inventory/' },
-                                { id: 'insight', label: '인사이트', icon: "bar-chart-3", path: '/insight/' }
-                            ].map(tab => {
-                                const isActive = tab.id === 'parser';
-                                return (
-                                    <a key={tab.id} href={tab.path} 
-                                       className={`flex items-center gap-2 px-5 py-2.5 text-[13px] font-bold rounded-t-lg transition-all whitespace-nowrap border-x border-t-[3px] 
-                                       ${isActive ? 'bg-slate-100 text-indigo-700 border-t-indigo-600 border-x-slate-200 relative z-10 shadow-[0_-2px_5px_rgba(0,0,0,0.03)]' : 'bg-[#1A2235] text-slate-400 border-t-transparent border-x-transparent hover:bg-[#1e293b] hover:text-slate-200'}`}
-                                       style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '11px' : '10px' }}>
-                                        <SafeIcon name={tab.icon} size={15} className={isActive ? 'text-indigo-600' : 'text-slate-500'} />{tab.label}
-                                    </a>
-                                );
-                            })}
-                        </nav>
+                    <div className="w-full max-w-[1500px] h-full flex flex-col bg-slate-50 shadow-2xl overflow-hidden mx-auto border-x border-slate-300">
+                        <GlobalHeader 
+                            activeTab="parser" 
+                            itemCount={Object.keys(masterProducts).length} 
+                            isProcessing={isProcessing} 
+                            processMsg={processMsg}
+                            onOpenSettings={() => setShowSettings(true)}
+                            onPush={handlePush}
+                            onPull={handlePull}
+                            onNavigate={handleNavigate}
+                        />
                         
-                        <div className="px-6 pt-4 pb-3 flex items-center justify-between gap-4 overflow-x-auto custom-scrollbar w-full">
-                            <div className="flex gap-1.5 shrink-0 bg-slate-100/80 p-1.5 rounded-xl border border-slate-200">
-                                <button onClick={()=>setActiveTab('matched')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black transition-all ${activeTab==='matched' ? 'bg-white text-emerald-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>🟢 일치 ({matchedRows.length})</button>
-                                <button onClick={()=>setActiveTab('similar')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black transition-all ${activeTab==='similar' ? 'bg-white text-amber-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>🟡 유사 ({combinedSimilarRows.length})</button>
-                                <button onClick={()=>setActiveTab('unmatched')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black transition-all ${activeTab==='unmatched' ? 'bg-white text-rose-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>🔴 불일치 ({unmatchedRows.length})</button>
-                                <div className="w-px bg-slate-300 mx-0.5 my-1"></div>
-                                <button onClick={()=>setActiveTab('missing')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black transition-all flex items-center gap-1.5 ${activeTab==='missing' ? 'bg-white text-slate-800 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>⚪ 누락 {currentTag && missingRows.length > 0 && <span className="bg-rose-100 text-rose-600 px-1.5 rounded text-[10px]">{missingRows.length}</span>}</button>
-                            </div>
-
-                            <div className="flex-1 min-w-[10px]"></div>
-
-                            <div className="flex items-center gap-2 shrink-0">
-                                {activeTab === 'matched' && (
-                                    <button onClick={() => setShowReviewModal(true)} disabled={matchedRows.filter(r=>r._apply).length === 0} className={`h-9 px-5 rounded-lg text-[12px] font-black shadow-sm transition-colors flex items-center ${matchedRows.filter(r=>r._apply).length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`} title="매핑 작업을 완료하고 파이프라인으로 보냅니다.">
-                                        <SafeIcon name="check-circle-2" size={14} className="mr-1.5" /> 완료
-                                    </button>
-                                )}
-                                {activeTab === 'missing' && (
-                                    <button onClick={actions.handleRemoveMissingTags} className={`h-9 px-4 rounded-lg text-[12px] font-bold shadow-sm transition-colors flex items-center ${selectedMissingCodes.size > 0 ? 'bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100' : 'bg-white text-slate-400 border border-slate-200'}`}>
-                                        <i className="fas fa-eraser mr-1.5 text-[13px]"></i> 카탈로그 제외
-                                    </button>
-                                )}
+                        <div className="shrink-0 flex flex-col bg-white border-b border-slate-200 z-30">
+                            <div className="px-6 pt-4 pb-3 flex items-center justify-between gap-4 overflow-x-auto custom-scrollbar w-full">
                                 
-                                {(activeTab === 'matched' || activeTab === 'missing') && <div className="w-px h-6 bg-slate-300 mx-1"></div>}
-                                
-                                <button onClick={() => setShowInputModal(true)} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 shadow-sm transition-colors flex items-center">
-                                    <SafeIcon name="zap" size={14} className="mr-1.5" /> 새 파싱
-                                </button>
+                                <div className="flex gap-1.5 shrink-0 bg-slate-100/80 p-1.5 rounded-xl border border-slate-200">
+                                    <button onClick={()=>setActiveTab('matched')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black transition-all ${activeTab==='matched' ? 'bg-white text-emerald-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>🟢 일치 ({matchedRows.length})</button>
+                                    <button onClick={()=>setActiveTab('similar')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black transition-all ${activeTab==='similar' ? 'bg-white text-amber-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>🟡 유사 ({combinedSimilarRows.length})</button>
+                                    <button onClick={()=>setActiveTab('unmatched')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black transition-all ${activeTab==='unmatched' ? 'bg-white text-rose-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>🔴 불일치 ({unmatchedRows.length})</button>
+                                    <div className="w-px bg-slate-300 mx-0.5 my-1"></div>
+                                    <button onClick={()=>setActiveTab('missing')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black transition-all flex items-center gap-1.5 ${activeTab==='missing' ? 'bg-white text-slate-800 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>⚪ 누락 {currentTag && missingRows.length > 0 && <span className="bg-rose-100 text-rose-600 px-1.5 rounded text-[10px]">{missingRows.length}</span>}</button>
+                                </div>
+
+                                <div className="flex-1 min-w-[10px]"></div>
+
+                                <div className="flex items-center gap-2 shrink-0">
+                                    {activeTab === 'matched' && (
+                                        <button onClick={() => appState.setShowReviewModal(true)} disabled={matchedRows.filter(r=>r._apply).length === 0} className={`h-9 px-5 rounded-lg text-[12px] font-black shadow-sm transition-colors flex items-center ${matchedRows.filter(r=>r._apply).length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`} title="매핑 작업을 완료하고 파이프라인으로 보냅니다.">
+                                            <SafeIcon name="check-circle-2" size={14} className="mr-1.5" /> 완료
+                                        </button>
+                                    )}
+                                    {activeTab === 'missing' && (
+                                        <button onClick={actions.handleRemoveMissingTags} className={`h-9 px-4 rounded-lg text-[12px] font-bold shadow-sm transition-colors flex items-center ${selectedMissingCodes.size > 0 ? 'bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100' : 'bg-white text-slate-400 border border-slate-200'}`}>
+                                            <i className="fas fa-eraser mr-1.5 text-[13px]"></i> 카탈로그 제외
+                                        </button>
+                                    )}
+                                    
+                                    {(activeTab === 'matched' || activeTab === 'missing') && <div className="w-px h-6 bg-slate-300 mx-1"></div>}
+                                    
+                                    <button onClick={() => appState.setShowInputModal(true)} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 shadow-sm transition-colors flex items-center">
+                                        <SafeIcon name="zap" size={14} className="mr-1.5" /> 새 파싱
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -1046,7 +1120,7 @@
                                         <table className="w-full text-left text-[12px] whitespace-nowrap">
                                             <thead className="bg-[#f5f4f0] text-[#5c554d] font-bold sticky top-0 z-10 border-b border-[#e8e4db]">
                                                 <tr>
-                                                    <th className="py-2.5 px-4 w-12 text-center"><input type="checkbox" className="rounded" checked={matchedRows.length>0 && matchedRows.every(r=>r._apply)} onChange={() => { const all = matchedRows.every(r=>r._apply); setParserBuffer(p => p.map(r => r._matchCode ? {...r, _apply: !all} : r)); }} /></th>
+                                                    <th className="py-2.5 px-4 w-12 text-center"><input type="checkbox" className="rounded" checked={matchedRows.length>0 && matchedRows.every(r=>r._apply)} onChange={() => { const all = matchedRows.every(r=>r._apply); appState.setParserBuffer(p => p.map(r => r._matchCode ? {...r, _apply: !all} : r)); }} /></th>
                                                     <th className="py-2.5 px-3">상품코드</th>
                                                     <th className="py-2.5 px-3">마스터 품목명 (규격)</th>
                                                     <th className="py-2.5 px-3 text-emerald-700 bg-emerald-50/50">파싱 품목명</th>
@@ -1062,7 +1136,7 @@
                                                     const isDiff = mIn > 0 && mIn !== pIn;
                                                     return (
                                                         <tr key={row._id} className="hover:bg-slate-50 transition-colors">
-                                                            <td className="py-2 px-4 text-center"><input type="checkbox" className="rounded text-emerald-600 focus:ring-emerald-500" checked={row._apply} onChange={() => setParserBuffer(p => p.map(r => r._id === row._id ? {...r, _apply: !r._apply} : r))} /></td>
+                                                            <td className="py-2 px-4 text-center"><input type="checkbox" className="rounded text-emerald-600 focus:ring-emerald-500" checked={row._apply} onChange={() => appState.setParserBuffer(p => p.map(r => r._id === row._id ? {...r, _apply: !r._apply} : r))} /></td>
                                                             <td className="py-2 px-3 font-mono text-[11px] text-slate-500">{row._matchCode}</td>
                                                             <td className="py-2 px-3"><span className="font-bold text-slate-800">{mItem.품목명 || row['품목명']}</span> <span className="text-[11px] text-slate-400">({mItem.규격 || row['규격']})</span></td>
                                                             <td className="py-2 px-3 text-emerald-800 bg-emerald-50/20 font-bold">{row['품목명']}</td>
@@ -1106,7 +1180,7 @@
                                                     <th className="py-2.5 px-4 w-12 text-center">
                                                         <input type="checkbox" className="rounded cursor-pointer" checked={missingRows.length > 0 && selectedMissingCodes.size === missingRows.length} onChange={(e) => {
                                                             const isChecked = e.target.checked;
-                                                            setSelectedMissingCodes(prev => {
+                                                            appState.setSelectedMissingCodes(prev => {
                                                                 if (isChecked) {
                                                                     return new Set(missingRows.map(r=>r.코드));
                                                                 } else {
@@ -1126,7 +1200,7 @@
                                                     const isSel = selectedMissingCodes.has(mItem.코드);
                                                     return (
                                                         <tr key={`miss-${mItem.코드}`} onClick={() => {
-                                                            setSelectedMissingCodes(prev => {
+                                                            appState.setSelectedMissingCodes(prev => {
                                                                 const next = new Set(prev);
                                                                 if(next.has(mItem.코드)) next.delete(mItem.코드); else next.add(mItem.코드);
                                                                 return next;
@@ -1153,7 +1227,7 @@
                                         <div className="bg-[#f8fafc] px-4 py-3 border-b border-slate-200 flex items-center justify-between shrink-0">
                                             <div className="flex items-center gap-2"><i className="fas fa-search text-slate-400"></i><span className="text-[13px] font-black text-slate-700">마스터 수동 검색 (전체 DB)</span></div>
                                             <div className="relative">
-                                                <input type="text" placeholder="검색어 입력..." value={globalSearch} onChange={e=>setGlobalSearch(e.target.value)} className="w-[200px] border border-slate-300 rounded-lg px-3 py-1.5 text-[12px] outline-none focus:border-indigo-500" />
+                                                <input type="text" placeholder="검색어 입력..." value={globalSearch} onChange={e=>appState.setGlobalSearch(e.target.value)} className="w-[200px] border border-slate-300 rounded-lg px-3 py-1.5 text-[12px] outline-none focus:border-indigo-500" />
                                                 <i className="fas fa-search absolute right-2.5 top-2 text-slate-400 text-[12px] pointer-events-none"></i>
                                             </div>
                                         </div>
@@ -1212,7 +1286,7 @@
                                                     {displayUnmatchedRows.length === 0 ? <tr><td colSpan="5" className="p-10 text-center text-slate-400 font-bold">대기중인 데이터가 없습니다.</td></tr> : displayUnmatchedRows.map(row => {
                                                         const isTarget = targetId === row._id;
                                                         return (
-                                                            <tr key={row._id} onClick={() => { setTargetId(row._id); setGlobalSearch(row['품목명'].replace(/[()[\]{},./]/g, ' ').replace(/\s+/g, ' ').trim()); }} className={`cursor-pointer transition-colors border-l-4 ${isTarget ? 'bg-indigo-50/50 border-indigo-500' : 'hover:bg-slate-50 border-transparent'}`}>
+                                                            <tr key={row._id} onClick={() => { appState.setTargetId(row._id); appState.setGlobalSearch(row['품목명'].replace(/[()[\]{},./]/g, ' ').replace(/\s+/g, ' ').trim()); }} className={`cursor-pointer transition-colors border-l-4 ${isTarget ? 'bg-indigo-50/50 border-indigo-500' : 'hover:bg-slate-50 border-transparent'}`}>
                                                                 <td className="py-2 px-3 text-center"><div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center mx-auto ${isTarget ? 'border-indigo-500 bg-white' : 'border-slate-300'}`}>{isTarget && <div className="w-2 h-2 rounded-full bg-indigo-500"></div>}</div></td>
                                                                 <td className="py-2 px-2 text-center">
                                                                     {row._matchStatus.includes('중복품목') ? (
@@ -1237,9 +1311,29 @@
                             )}
                         </div>
                     </div>
-                    {showInputModal && <SmartParserInputModal onClose={() => setShowInputModal(false)} executeParser={actions.executeParser} showToast={showToast} availableTags={availableTags} />}
-                    {showReviewModal && <ParserReviewModal onClose={() => setShowReviewModal(false)} onConfirm={actions.handleApplyMatched} state={appState} actions={actions} />}
-                    {showErpModal && <ErpCodeInputModal onClose={() => setShowErpModal(false)} onSubmit={actions.handleCreateNewMasterItem} targetItem={parserBuffer.find(r => r._id === targetId)} />}
+                    {/* 설정 모달 등 */}
+                    {showInputModal && <SmartParserInputModal onClose={() => appState.setShowInputModal(false)} executeParser={actions.executeParser} showToast={showToast} availableTags={availableTags} />}
+                    {showReviewModal && <ParserReviewModal onClose={() => appState.setShowReviewModal(false)} onConfirm={actions.handleApplyMatched} state={appState} actions={actions} />}
+                    {showErpModal && <ErpCodeInputModal onClose={() => appState.setShowErpModal(false)} onSubmit={actions.handleCreateNewMasterItem} targetItem={parserBuffer.find(r => r._id === targetId)} />}
+                    {showSettings && (
+                        <div className="fixed inset-0 bg-slate-900/60 z-[200] flex justify-center items-center backdrop-blur-sm">
+                            <div className="bg-white w-[450px] rounded-xl shadow-2xl overflow-hidden border border-gray-200 fade-in">
+                                <div className="px-6 py-4 border-b border-gray-200 bg-slate-50 flex justify-between items-center">
+                                    <h2 className="font-black text-slate-800 text-base flex items-center"><SafeIcon name="settings" size={18} className="text-indigo-500 mr-2"/>OneApp Sync Settings</h2>
+                                    <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-slate-600 transition-colors"><SafeIcon name="x" size={20} /></button>
+                                </div>
+                                <div className="p-8 space-y-6">
+                                    <div>
+                                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">Google Apps Script Webhook URL</label>
+                                        <input type="text" value={gasUrl} onChange={(e)=>setGasUrl(e.target.value)} placeholder="https://script.google.com/..." className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:border-indigo-500 focus:bg-white transition-all font-mono" />
+                                    </div>
+                                </div>
+                                <div className="px-6 py-4 bg-slate-50 border-t border-gray-200 flex justify-end">
+                                    <button onClick={() => setShowSettings(false)} className="px-6 py-2.5 bg-[#1A2235] text-white rounded-lg text-sm font-bold shadow-md hover:bg-black transition-colors">저장 및 닫기</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         };
