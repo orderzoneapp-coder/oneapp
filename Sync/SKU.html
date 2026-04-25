@@ -1,0 +1,376 @@
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { 
+    LayoutDashboard,
+    Settings, 
+    PackageSearch, 
+    FileSpreadsheet, 
+    Zap, 
+    Truck, 
+    Boxes, 
+    BarChart3, 
+    CloudDownload, 
+    CloudUpload, 
+    UploadCloud,
+    Terminal,
+    Search,
+    Plus,
+    Network,
+    FileCode,
+    RefreshCw,
+    X,
+    CheckCircle2
+} from 'lucide-react';
+
+/**
+ * MerchOps v9.0 - Item Management (품목 등록)
+ * 로케이션: /Sync/sku1.0
+ */
+
+// ==========================================
+// 🧩 0. Constants & ONEAPP Dictionary
+// ==========================================
+const ONEAPP_CATEGORIES = [
+    { c1Name: '채소.과일', c1Code: '10', c2Name: '무/배추/대파/마늘', c2Code: '1010', c3Name: '무우', erp3Code: '11010', orders3Code: '101010' },
+    { c1Name: '채소.과일', c1Code: '10', c2Name: '무/배추/대파/마늘', c2Code: '1010', c3Name: '알타리', erp3Code: '11011', orders3Code: '101011' },
+    { c1Name: '채소.과일', c1Code: '10', c2Name: '무/배추/대파/마늘', c2Code: '1010', c3Name: '배추', erp3Code: '11012', orders3Code: '101012' },
+    { c1Name: '채소.과일', c1Code: '10', c2Name: '무/배추/대파/마늘', c2Code: '1010', c3Name: '대파', erp3Code: '11013', orders3Code: '101013' },
+    { c1Name: '채소.과일', c1Code: '10', c2Name: '무/배추/대파/마늘', c2Code: '1010', c3Name: '마늘', erp3Code: '11014', orders3Code: '101014' },
+    { c1Name: '채소.과일', c1Code: '10', c2Name: '무/배추/대파/마늘', c2Code: '1010', c3Name: '양파', erp3Code: '11015', orders3Code: '101015' },
+    { c1Name: '채소.과일', c1Code: '10', c2Name: '감자/고구마/당근', c2Code: '1020', c3Name: '감자', erp3Code: '11020', orders3Code: '102010' },
+    { c1Name: '채소.과일', c1Code: '10', c2Name: '감자/고구마/당근', c2Code: '1020', c3Name: '고구마', erp3Code: '11021', orders3Code: '102011' },
+    { c1Name: '채소.과일', c1Code: '10', c2Name: '버섯류', c2Code: '1030', c3Name: '새송이버섯', erp3Code: '11030', orders3Code: '103010' },
+    { c1Name: '채소.과일', c1Code: '10', c2Name: '버섯류', c2Code: '1030', c3Name: '팽이버섯', erp3Code: '11031', orders3Code: '103011' },
+    { c1Name: '수산.축산', c1Code: '20', c2Name: '돼지고기', c2Code: '2010', c3Name: '삼겹살', erp3Code: '21010', orders3Code: '201010' },
+    { c1Name: '수산.축산', c1Code: '20', c2Name: '닭고기', c2Code: '2020', c3Name: '생닭', erp3Code: '22010', orders3Code: '202010' },
+    { c1Name: '가공.식품', c1Code: '30', c2Name: '면류', c2Code: '3010', c3Name: '라면', erp3Code: '31010', orders3Code: '301010' },
+    { c1Name: '가공.식품', c1Code: '30', c2Name: '면류', c2Code: '3010', c3Name: '소면', erp3Code: '31011', orders3Code: '301011' },
+    { c1Name: '양념.소스', c1Code: '40', c2Name: '장류', c2Code: '4010', c3Name: '쌈장', erp3Code: '41030', orders3Code: '401030' },
+    { c1Name: '주방.잡화', c1Code: '50', c2Name: '일회용품/비닐/호일', c2Code: '5020', c3Name: '재단비닐', erp3Code: '52056', orders3Code: '502056' },
+    { c1Name: '주방.잡화', c1Code: '50', c2Name: '일회용품/비닐/호일', c2Code: '5020', c3Name: '비닐봉투', erp3Code: '52036', orders3Code: '502036' },
+    { c1Name: '주방.잡화', c1Code: '50', c2Name: '일회용품/비닐/호일', c2Code: '5020', c3Name: '단무지비닐', erp3Code: '52044', orders3Code: '502044' }
+];
+
+const NUMERIC_HEADERS = ["안전재고", "출고가", "입고가"];
+
+// ==========================================
+// 🧩 1. Components: 공통 UI 쉘
+// ==========================================
+
+const TopHeader = ({ itemCount, isProcessing, processMsg }) => {
+    const [time, setTime] = useState(new Date());
+    useEffect(() => {
+        const t = setInterval(() => setTime(new Date()), 1000);
+        return () => clearInterval(t);
+    }, []);
+
+    const timeStr = `${time.getFullYear()}.${String(time.getMonth()+1).padStart(2,'0')}.${String(time.getDate()).padStart(2,'0')} ${String(time.getHours()).padStart(2,'0')}:${String(time.getMinutes()).padStart(2,'0')}`;
+
+    return (
+        <header className="h-16 bg-[#0B1021] text-white flex items-center justify-between px-6 shrink-0 z-50 border-b border-slate-800 shadow-md">
+            <div className="flex items-center gap-4">
+                <div className="flex items-center cursor-pointer" onClick={() => window.location.href = '/'}>
+                    <Terminal className="text-emerald-400 mr-2" size={24} />
+                    <span className="font-black text-2xl tracking-wider text-slate-100">ONEAPP</span>
+                </div>
+                <div className="flex flex-col border-l-2 border-slate-700 pl-4">
+                    <div className="flex items-center">
+                        <span className="font-extrabold text-[15px] leading-tight text-indigo-400 tracking-wide uppercase">
+                            Merchandising Operations
+                        </span>
+                        <span className="ml-2 bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 px-1.5 py-0.5 rounded text-[10px] font-black tracking-wider shadow-sm">
+                            v9.0
+                        </span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono tracking-widest mt-0.5 italic">
+                        PRODUCT INFORMATION MANAGEMENT
+                    </span>
+                </div>
+            </div>
+
+            <div className="flex-1 max-w-2xl mx-8 hidden xl:block">
+                <div className="bg-[#050814] border border-[#1A2235] rounded-md flex items-center px-4 py-2 font-mono text-[12px] shadow-inner h-9">
+                    <span className="text-emerald-500 mr-2 opacity-80">{'>'}</span>
+                    <span className={isProcessing ? "text-amber-400 font-bold" : "text-emerald-400 font-bold"}>
+                        {isProcessing ? `RUNNING: ${processMsg}` : `STATUS: READY | SKU_DB: ${itemCount} LOADED`}
+                    </span>
+                    <span className="mx-3 text-slate-700">|</span>
+                    <span className="text-indigo-400">{timeStr}</span>
+                    <span className="ml-2 w-1.5 h-3.5 bg-emerald-500 animate-pulse inline-block"></span>
+                </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+                <div className="flex gap-1.5">
+                    <button className="w-9 h-9 rounded bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#374151] transition-colors text-indigo-400 shadow-sm" title="클라우드 동기화 (PULL)">
+                        <CloudDownload size={18} />
+                    </button>
+                    <button className="w-9 h-9 rounded bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#374151] transition-colors text-indigo-400 shadow-sm" title="데이터 백업 (PUSH)">
+                        <CloudUpload size={18} />
+                    </button>
+                    <a href="/settings/" className="w-9 h-9 rounded bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#475569] transition-colors text-slate-400 hover:text-white ml-2 shadow-sm" title="기초설정">
+                        <Settings size={18} />
+                    </a>
+                </div>
+            </div>
+        </header>
+    );
+};
+
+const NavigationBar = ({ activeTab }) => {
+    const tabs = [
+        { id: 'dashboard', label: '대시보드', icon: LayoutDashboard, path: '/' },
+        // 💡 품목 등록 탭 링크 주소 변경 반영
+        { id: 'item', label: '품목 등록', icon: PackageSearch, path: 'https://oneapp.orderz.co.kr/Sync/sku1.0' },
+        { id: 'pipeline', label: '시세 관리', icon: FileSpreadsheet, path: '/pipeline/' },
+        { id: 'parser', label: '스마트 파서', icon: Zap, path: '/parser/' },
+        { id: 'outbound', label: '출고 관리', icon: Truck, path: '/outbound/' },
+        { id: 'inventory', label: '재고 관리', icon: Boxes, path: '/inventory/' },
+        { id: 'insight', label: '인사이트', icon: BarChart3, path: '/insight/' }
+    ];
+
+    return (
+        <nav className="bg-[#1A2235] px-6 flex items-end gap-1 shrink-0 pt-2 shadow-sm border-b border-slate-300 overflow-x-auto custom-scrollbar">
+            {tabs.map(tab => {
+                const IconComponent = tab.icon;
+                const isActive = activeTab === tab.id;
+                return (
+                    <a
+                        key={tab.id}
+                        href={tab.path}
+                        className={`flex items-center gap-2 px-4 py-2.5 text-[12.5px] font-bold rounded-t-lg transition-all border border-b-0 whitespace-nowrap
+                            ${isActive 
+                                ? 'bg-white text-indigo-700 border-slate-300 relative z-10 shadow-[0_-2px_5px_rgba(0,0,0,0.1)]' 
+                                : 'bg-[#0f172a] text-slate-400 border-[#2a3655] hover:bg-[#1e293b] hover:text-slate-200'}`}
+                        style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '11px' : '10px' }}
+                    >
+                        <IconComponent size={15} className={isActive ? 'text-indigo-600' : 'text-slate-500'} />
+                        {tab.label}
+                    </a>
+                );
+            })}
+        </nav>
+    );
+};
+
+// ==========================================
+// 🧩 2. Core Engines (Logic)
+// ==========================================
+const IngestEngine = {
+    parseNum: (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0),
+    normalizeText: (text) => text ? String(text).replace(/\s+/g, '').toLowerCase() : '',
+    tokenize: (str) => str ? String(str).replace(/[^\w가-힣]/g, ' ').split(/\s+/).filter(Boolean) : []
+};
+
+// ==========================================
+// 🧩 3. Views: 품목 등록 세부 화면
+// ==========================================
+
+const CategorySourcingView = ({ data, ui }) => {
+    const [activeC1, setActiveC1] = useState('');
+    const [activeC2, setActiveC2] = useState('');
+    const [cartItems, setCartItems] = useState([]);
+    
+    const c1List = useMemo(() => {
+        const map = new Map();
+        data.masterCatalogProducts.forEach(p => { if (p.c1Code && !map.has(p.c1Code)) map.set(p.c1Code, p.c1Name || p.c1Code); });
+        return Array.from(map.entries()).map(([code, name]) => ({code, name})).sort((a,b) => a.code.localeCompare(b.code));
+    }, [data.masterCatalogProducts]);
+
+    const c2List = useMemo(() => {
+        if(!activeC1) return [];
+        const map = new Map();
+        data.masterCatalogProducts.filter(p => p.c1Code === activeC1).forEach(p => { if (p.c2Code && !map.has(p.c2Code)) map.set(p.c2Code, p.c2Name || p.c2Code); });
+        return Array.from(map.entries()).map(([code, name]) => ({code, name})).sort((a,b) => a.code.localeCompare(b.code));
+    }, [data.masterCatalogProducts, activeC1]);
+
+    const displayItems = useMemo(() => {
+        let baseList = data.masterCatalogProducts;
+        const kw = ui.globalSearch ? ui.globalSearch.toLowerCase().trim() : '';
+        if (kw) return baseList.filter(p => (p.name && p.name.toLowerCase().includes(kw)) || (p.id && p.id.toLowerCase().includes(kw)));
+        return activeC2 ? baseList.filter(p => p.c2Code === activeC2) : [];
+    }, [data.masterCatalogProducts, activeC2, ui.globalSearch]);
+
+    const handleCopyItem = (item) => {
+        if (cartItems.some(c => c.masterId === item.id)) return ui.showToast('이미 큐에 존재합니다.');
+        setCartItems(prev => [...prev, { ...item, cartId: Date.now(), qty: 1 }]);
+        ui.showToast('품목이 큐에 추가되었습니다.');
+    };
+
+    return (
+        <div className="flex h-full overflow-hidden bg-white rounded-xl shadow-sm border border-slate-200 fade-in m-6">
+            <div className="w-[240px] bg-slate-50 border-r border-slate-200 flex flex-col shrink-0">
+                <div className="p-4 bg-slate-100 border-b border-slate-200 flex items-center font-bold text-slate-700 text-xs">
+                    <Network size={14} className="mr-2" /> 카테고리 필터
+                </div>
+                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                    {c1List.map(c => (
+                        <div key={c.code}>
+                            <button 
+                                onClick={() => setActiveC1(c.code === activeC1 ? '' : c.code)}
+                                className={`w-full text-left px-4 py-3 text-[13px] font-bold border-l-4 transition-all ${activeC1 === c.code ? 'bg-indigo-50 text-indigo-700 border-indigo-600' : 'border-transparent text-slate-600 hover:bg-slate-100'}`}
+                            >
+                                {c.name}
+                            </button>
+                            {activeC1 === c.code && c2List.map(sc => (
+                                <button 
+                                    key={sc.code} 
+                                    onClick={() => setActiveC2(sc.code)}
+                                    className={`w-full text-left pl-8 pr-4 py-2 text-[12px] font-medium transition-all ${activeC2 === sc.code ? 'text-indigo-600 font-bold bg-indigo-50/50' : 'text-slate-500 hover:text-slate-800'}`}
+                                >
+                                    • {sc.name}
+                                </button>
+                            ))}
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <div className="flex-1 flex flex-col overflow-hidden">
+                <div className="p-4 bg-white border-b border-slate-100 flex justify-between items-center">
+                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-tighter">Master Catalog List</h3>
+                    <div className="relative">
+                        <input type="text" value={ui.globalSearch} onChange={e=>ui.setGlobalSearch(e.target.value)} placeholder="상품명 또는 코드 검색..." className="pl-9 pr-4 py-1.5 border border-slate-200 rounded-lg text-xs outline-none focus:border-indigo-400 w-64" />
+                        <Search className="absolute left-3 top-2 text-slate-400" size={14} />
+                    </div>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                    {displayItems.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center text-slate-300 italic text-sm">
+                            데이터가 없습니다. 카테고리를 선택하거나 검색어를 입력하세요.
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {displayItems.map(item => (
+                                <div key={item.id} className="p-4 border border-slate-100 rounded-lg hover:border-indigo-200 hover:bg-indigo-50/30 transition-all flex justify-between items-center group cursor-pointer" onClick={() => handleCopyItem(item)}>
+                                    <div>
+                                        <div className="text-[10px] font-mono text-indigo-400 mb-0.5">{item.id}</div>
+                                        <div className="text-[13px] font-bold text-slate-800">{item.name} <span className="text-[11px] text-slate-500 font-normal ml-1">({item.spec})</span></div>
+                                    </div>
+                                    <button className="w-8 h-8 rounded-full bg-slate-50 text-slate-400 group-hover:bg-indigo-600 group-hover:text-white flex items-center justify-center transition-all shadow-sm">
+                                        <Plus size={16} />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            <div className="w-[320px] bg-slate-50 border-l border-slate-200 flex flex-col shrink-0 shadow-[-5px_0_15px_rgba(0,0,0,0.02)]">
+                <div className="p-4 bg-slate-100 border-b border-slate-200 font-bold text-slate-700 text-xs flex justify-between items-center uppercase tracking-widest">
+                    <span>Work Queue</span>
+                    <span className="bg-indigo-600 text-white px-2 py-0.5 rounded-full text-[10px] font-black">{cartItems.length}</span>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 custom-scrollbar">
+                    {cartItems.map(item => (
+                        <div key={item.cartId} className="bg-white border border-slate-200 p-3 rounded-lg shadow-sm relative fade-in">
+                            <button onClick={() => setCartItems(prev => prev.filter(c => c.cartId !== item.cartId))} className="absolute top-2 right-2 text-slate-300 hover:text-rose-500 transition-colors"><X size={14}/></button>
+                            <div className="text-[11px] font-bold text-slate-800 truncate mb-1 pr-4">{item.name}</div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-[10px] text-slate-400 font-mono">{item.id}</span>
+                                <span className="text-[11px] font-black text-indigo-600">{Number(item.basePrice).toLocaleString()}원</span>
+                            </div>
+                        </div>
+                    ))}
+                    {cartItems.length === 0 && <div className="h-full flex items-center justify-center text-slate-300 text-[11px] italic">큐가 비어있습니다.</div>}
+                </div>
+                <div className="p-4 bg-white border-t border-slate-200">
+                    <button className={`w-full py-3 rounded-lg font-bold text-sm shadow-md transition-all ${cartItems.length > 0 ? 'bg-[#1A2235] text-white hover:bg-black' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>
+                        마스터 데이터 반영
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ==========================================
+// ⚙️ 3. Main App Container
+// ==========================================
+export default function App() {
+    const getCurrentTab = () => {
+        try {
+            const p = window.location.pathname;
+            // 💡 신규 경로(Sync/sku1.0)에 대한 체크 추가
+            if (p.includes('/Sync/sku1.0') || p.includes('/item/')) return 'item';
+            if (p.includes('/pipeline/')) return 'pipeline';
+            if (p.includes('/parser/')) return 'parser';
+            if (p.includes('/outbound/')) return 'outbound';
+            if (p.includes('/inventory/')) return 'inventory';
+            if (p.includes('/insight/')) return 'insight';
+            return 'item';
+        } catch (e) {
+            return 'item';
+        }
+    };
+
+    const [activeTab] = useState(getCurrentTab());
+    const [viewMode, setViewMode] = useState('catalog'); 
+    const [globalSearch, setGlobalSearch] = useState('');
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [processMsg, setProcessMsg] = useState('');
+    const [toastMsg, setToastMsg] = useState('');
+
+    const [data, setData] = useState({
+        masterProducts: {},
+        masterCatalogProducts: ONEAPP_CATEGORIES.map((c, i) => ({ ...c, id: `SKU-${1000 + i}`, name: c.c3Name, spec: 'EA', basePrice: 5000 + (i * 100) }))
+    });
+
+    const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
+
+    const subNavs = [
+        { id: 'catalog', label: '카탈로그 소싱', icon: Network },
+        { id: 'manual', label: '단건 수기등록', icon: FileCode },
+        { id: 'bom', label: 'BOM 세트 조립', icon: Boxes },
+        { id: 'grid', label: '데이터 그리드', icon: FileSpreadsheet }
+    ];
+
+    return (
+        <div className="h-screen w-full bg-[#f1f5f9] flex flex-col font-sans overflow-hidden select-none">
+            <style>{`
+                .fade-in { animation: fadeIn 0.2s ease-out; }
+                @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+                ::-webkit-scrollbar { width: 6px; height: 6px; }
+                ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+                .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+            `}</style>
+            
+            <TopHeader itemCount={data.masterCatalogProducts.length} isProcessing={isProcessing} processMsg={processMsg} />
+            <NavigationBar activeTab={activeTab} />
+            
+            <div className="px-8 py-4 bg-white border-b border-slate-200 flex items-center justify-between shadow-sm">
+                <div className="flex gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200">
+                    {subNavs.map(nav => (
+                        <button 
+                            key={nav.id} 
+                            onClick={() => setViewMode(nav.id)}
+                            className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-[12px] font-bold transition-all ${viewMode === nav.id ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}
+                        >
+                            <nav.icon size={14} />
+                            {nav.label}
+                        </button>
+                    ))}
+                </div>
+                <div className="flex items-center gap-3">
+                    <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-600 hover:text-white transition-all">
+                        <RefreshCw size={14} /> 최신화
+                    </button>
+                </div>
+            </div>
+
+            <main className="flex-1 overflow-hidden relative">
+                {viewMode === 'catalog' && <CategorySourcingView data={data} ui={{ globalSearch, setGlobalSearch, showToast }} />}
+                {viewMode === 'manual' && <div className="p-10 text-center text-slate-400 italic">단건 수기 등록 폼 준비 중...</div>}
+                {viewMode === 'bom' && <div className="p-10 text-center text-slate-400 italic">BOM 세트 조립기 준비 중...</div>}
+                {viewMode === 'grid' && <div className="p-10 text-center text-slate-400 italic">데이터 그리드 뷰 준비 중...</div>}
+
+                {toastMsg && (
+                    <div className="absolute bottom-10 right-10 z-[100] bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in border border-slate-700">
+                        <CheckCircle2 size={18} className="text-emerald-400" />
+                        <span className="text-sm font-bold">{toastMsg}</span>
+                    </div>
+                )}
+            </main>
+        </div>
+    );
+}
