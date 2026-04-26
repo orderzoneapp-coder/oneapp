@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - Insight & Report [v2.0]</title>
+    <title>ONEAPP NEXES - Insight & Report [v2.4]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -179,6 +179,19 @@
                 return def;
             });
 
+            const [opsMappings, setOpsMappings] = useState(() => {
+                const s = localStorage.getItem('merchOpsMappings_v870');
+                return s ? JSON.parse(s) : {
+                    orders: { id: '주문번호', code: '품목코드', qty: '수량', price: '판매가', date: '주문일자' },
+                    inventory: { code: '품목코드', qty: '안전재고', location: '창고' }
+                };
+            });
+
+            const [opsGrouping, setOpsGrouping] = useState(() => {
+                const s = localStorage.getItem('merchOpsGrouping_v870');
+                return s ? JSON.parse(s) : { primary: '1그룹명', secondary: '2그룹명' };
+            });
+
             useEffect(() => {
                 localStorage.setItem(STORAGE_KEYS.CLOUD_URL, cloudUrl); 
                 localStorage.setItem('merchVisMaster_v870', JSON.stringify(visibleMasterCols)); 
@@ -186,9 +199,20 @@
                 localStorage.setItem('merchMappings_v870', JSON.stringify(mappings)); 
                 localStorage.setItem('merchMasterLinks_v870', JSON.stringify(masterLinks)); 
                 localStorage.setItem('merchMarginRules_v878', JSON.stringify(marginRules));
-            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules]);
+                localStorage.setItem('merchOpsMappings_v870', JSON.stringify(opsMappings));
+                localStorage.setItem('merchOpsGrouping_v870', JSON.stringify(opsGrouping));
+            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules, opsMappings, opsGrouping]);
             
-            return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules };
+            return { 
+                cloudUrl, setCloudUrl, 
+                visibleMasterCols, setVisibleMasterCols, 
+                visibleUploadCols, setVisibleUploadCols, 
+                mappings, setMappings, 
+                masterLinks, setMasterLinks, 
+                marginRules, setMarginRules,
+                opsMappings, setOpsMappings,
+                opsGrouping, setOpsGrouping
+            };
         };
 
         // ==========================================
@@ -238,7 +262,7 @@
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
                                     <div className="flex items-center">
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v2.0</span>
+                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v2.4</span>
                                     </div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">INSIGHT ENGINE</span>
                                 </div>
@@ -317,7 +341,16 @@
         // 🧩 Mapping Center Modal (Global Setting Center)
         // ==========================================
         const MappingCenterModal = ({ onClose, config, actions, availableCatalogs, availableCategories }) => {
-            const { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules } = config;
+            const { 
+                cloudUrl, setCloudUrl, 
+                visibleMasterCols, setVisibleMasterCols, 
+                visibleUploadCols, setVisibleUploadCols, 
+                mappings, setMappings, 
+                masterLinks, setMasterLinks, 
+                marginRules, setMarginRules,
+                opsMappings, setOpsMappings,
+                opsGrouping, setOpsGrouping
+            } = config;
             const { cleanUpGarbageTags, handleDeleteTag, showToast, handleClearDB } = actions;
             const [activeTab, setActiveTab] = useState('display');
             const [customEstColInput, setCustomEstColInput] = useState('');
@@ -354,9 +387,10 @@
                         <div className="flex flex-1 overflow-hidden bg-slate-50">
                             <div className="w-[240px] bg-white border-r border-slate-200 flex flex-col py-4 shrink-0 shadow-sm">
                                 <button onClick={() => setActiveTab('display')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'display' ? 'border-indigo-500 text-indigo-700 bg-indigo-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-desktop w-6 text-center mr-1"></i> 1. 환경 및 화면 설정</button>
-                                <button onClick={() => setActiveTab('inputMap')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'inputMap' ? 'border-emerald-500 text-emerald-700 bg-emerald-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-sign-in-alt w-6 text-center mr-1"></i> 2. 입력 데이터 매핑 (엑셀)</button>
-                                <button onClick={() => setActiveTab('marginRule')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'marginRule' ? 'border-rose-500 text-rose-700 bg-rose-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-calculator w-6 text-center mr-1"></i> 3. 단가 계산 및 마진 룰</button>
-                                <button onClick={() => setActiveTab('tagManager')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'tagManager' ? 'border-amber-500 text-amber-700 bg-amber-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-tags w-6 text-center mr-1"></i> 4. 견적서/카탈로그 관리</button>
+                                <button onClick={() => setActiveTab('marginRule')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'marginRule' ? 'border-rose-500 text-rose-700 bg-rose-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-calculator w-6 text-center mr-1"></i> 2. 단가 계산 및 마진 룰</button>
+                                <button onClick={() => setActiveTab('tagManager')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'tagManager' ? 'border-amber-500 text-amber-700 bg-amber-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-tags w-6 text-center mr-1"></i> 3. 카탈로그/견적서 관리</button>
+                                <button onClick={() => setActiveTab('inputMap')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'inputMap' ? 'border-emerald-500 text-emerald-700 bg-emerald-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-sign-in-alt w-6 text-center mr-1"></i> 4. 시세 엑셀 데이터 매핑</button>
+                                <button onClick={() => setActiveTab('opsSettings')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'opsSettings' ? 'border-purple-500 text-purple-700 bg-purple-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-sliders-h w-6 text-center mr-1"></i> 5. 운영 매핑 및 기준</button>
                             </div>
                             
                             <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
@@ -396,32 +430,6 @@
                                                 {(visibleUploadCols['estimate']||[]).filter(h => h !== '품목코드').map(h => <div key={`u-e-${h}`} className="config-chip active border-slate-300 bg-white text-slate-800 hover:bg-rose-50 hover:border-rose-300 hover:text-rose-600 transition-colors group shadow-sm"><span className="font-bold">{h}</span><button onClick={()=>setVisibleUploadCols(p=>({...p, estimate:p.estimate.filter(x=>x!==h)}))} className="ml-2 text-slate-400 group-hover:text-rose-500"><i className="fas fa-times"></i></button></div>)}
                                             </div>
                                             <div className="flex items-center gap-2 max-w-sm"><input type="text" value={customEstColInput} onChange={e=>setCustomEstColInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addCustomUploadCol('estimate', customEstColInput)} placeholder="추가할 항목명 입력 (예: 마감시간)" className="flex-1 border border-slate-300 rounded px-3 py-2 text-[12px] outline-none focus:border-slate-500" /><button onClick={()=>addCustomUploadCol('estimate', customEstColInput)} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded text-[12px] font-bold transition-colors shadow-sm">추가</button></div>
-                                        </div>
-                                    </div>
-                                )}
-                                {activeTab === 'inputMap' && (
-                                    <div className="max-w-4xl space-y-8 fade-in">
-                                        <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                                            <div className="bg-slate-50 p-3 border-b border-slate-200"><h3 className="text-[13px] font-black text-slate-800 flex items-center"><span className="bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.5 rounded mr-2">[엑셀/작업]</span> 견적서 엑셀 헤더 매핑</h3></div>
-                                            <table className="w-full text-left text-[12px]">
-                                                <thead className="bg-white border-b border-slate-200 text-slate-500 font-bold"><tr><th className="p-3 w-[140px]">화면 노출 항목</th><th className="p-3">엑셀 헤더 감지 키워드 (콤마 구분)</th><th className="p-3 w-[200px]">마스터 DB 필드 연결</th></tr></thead>
-                                                <tbody className="divide-y divide-slate-100">
-                                                    {requiredCoreFields.map(h => (
-                                                        <tr key={`map-req-${h}`} className="bg-slate-50">
-                                                            <td className="p-3 font-bold text-slate-700"><i className="fas fa-lock text-slate-400 mr-2"></i>{h}</td>
-                                                            <td className="p-3"><input type="text" value={mappings['estimate']?.[h]||''} onChange={e=>setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-amber-500 focus:ring-1 bg-white" /></td>
-                                                            <td className="p-3"><div className="text-[11px] text-slate-500 bg-slate-200 px-3 py-1.5 rounded border border-slate-300 font-bold flex items-center justify-center shadow-inner"><i className="fas fa-key mr-1.5"></i>식별자 고정</div></td>
-                                                        </tr>
-                                                    ))}
-                                                    {(visibleUploadCols['estimate']||[]).filter(h => !requiredCoreFields.includes(h)).map(h => (
-                                                        <tr key={`map-e-${h}`} className="hover:bg-slate-50 transition-colors">
-                                                            <td className="p-3 font-bold text-slate-800">{h}</td>
-                                                            <td className="p-3"><input type="text" value={mappings['estimate']?.[h]||''} onChange={e=>setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-amber-500 focus:ring-1" /></td>
-                                                            <td className="p-3"><select value={masterLinks['estimate']?.[h]||''} onChange={e=>setMasterLinks(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} className={`w-full border border-slate-300 rounded px-2 py-1.5 outline-none focus:border-amber-500 ${masterLinks['estimate']?.[h]?'bg-amber-50 text-amber-700 font-bold':'bg-white'}`}><option value="">-- 단순 화면 노출 (업데이트 X) --</option>{selectableMasterHeaders.map(mh=><option key={mh} value={mh}>{mh}</option>)}</select></td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
                                         </div>
                                     </div>
                                 )}
@@ -498,6 +506,99 @@
                                                         </button>
                                                     </div>
                                                 ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                                {activeTab === 'inputMap' && (
+                                    <div className="max-w-4xl space-y-8 fade-in">
+                                        <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                                            <div className="bg-slate-50 p-3 border-b border-slate-200"><h3 className="text-[13px] font-black text-slate-800 flex items-center"><span className="bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.5 rounded mr-2">[엑셀/작업]</span> 견적서 엑셀 헤더 매핑</h3></div>
+                                            <table className="w-full text-left text-[12px]">
+                                                <thead className="bg-white border-b border-slate-200 text-slate-500 font-bold"><tr><th className="p-3 w-[140px]">화면 노출 항목</th><th className="p-3">엑셀 헤더 감지 키워드 (콤마 구분)</th><th className="p-3 w-[200px]">마스터 DB 필드 연결</th></tr></thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {requiredCoreFields.map(h => (
+                                                        <tr key={`map-req-${h}`} className="bg-slate-50">
+                                                            <td className="p-3 font-bold text-slate-700"><i className="fas fa-lock text-slate-400 mr-2"></i>{h}</td>
+                                                            <td className="p-3"><input type="text" value={mappings['estimate']?.[h]||''} onChange={e=>setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-amber-500 focus:ring-1 bg-white" /></td>
+                                                            <td className="p-3"><div className="text-[11px] text-slate-500 bg-slate-200 px-3 py-1.5 rounded border border-slate-300 font-bold flex items-center justify-center shadow-inner"><i className="fas fa-key mr-1.5"></i>식별자 고정</div></td>
+                                                        </tr>
+                                                    ))}
+                                                    {(visibleUploadCols['estimate']||[]).filter(h => !requiredCoreFields.includes(h)).map(h => (
+                                                        <tr key={`map-e-${h}`} className="hover:bg-slate-50 transition-colors">
+                                                            <td className="p-3 font-bold text-slate-800">{h}</td>
+                                                            <td className="p-3"><input type="text" value={mappings['estimate']?.[h]||''} onChange={e=>setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-amber-500 focus:ring-1" /></td>
+                                                            <td className="p-3"><select value={masterLinks['estimate']?.[h]||''} onChange={e=>setMasterLinks(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} className={`w-full border border-slate-300 rounded px-2 py-1.5 outline-none focus:border-amber-500 ${masterLinks['estimate']?.[h]?'bg-amber-50 text-amber-700 font-bold':'bg-white'}`}><option value="">-- 단순 화면 노출 (업데이트 X) --</option>{selectableMasterHeaders.map(mh=><option key={mh} value={mh}>{mh}</option>)}</select></td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
+                                {activeTab === 'opsSettings' && (
+                                    <div className="max-w-4xl space-y-6 fade-in">
+                                        <div className="bg-white p-6 rounded-xl border shadow-sm">
+                                            <h3 className="text-[15px] font-black text-slate-800 mb-4 pb-2 border-b flex items-center">
+                                                <i className="fas fa-truck text-purple-500 mr-2"></i>운영 품목 관리 기준 (Grouping)
+                                            </h3>
+                                            <div className="text-[12px] text-slate-500 font-bold mb-4 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                                                운영 관리 모듈(주문, 재고 등)에서 상품을 분류할 때 사용할 마스터 기준 필드를 선택하세요.
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-6">
+                                                <div>
+                                                    <label className="block text-[12px] font-bold text-slate-700 mb-2">대분류 기준 필드 (Primary)</label>
+                                                    <select value={opsGrouping.primary || ''} onChange={e => setOpsGrouping({...opsGrouping, primary: e.target.value})} className="w-full border border-slate-300 rounded-md px-3 py-2 text-[13px] outline-none focus:border-purple-500 focus:ring-1 bg-white">
+                                                        {MASTER_HEADERS.map(h => <option key={`pri-${h}`} value={h}>{h}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[12px] font-bold text-slate-700 mb-2">중분류 기준 필드 (Secondary)</label>
+                                                    <select value={opsGrouping.secondary || ''} onChange={e => setOpsGrouping({...opsGrouping, secondary: e.target.value})} className="w-full border border-slate-300 rounded-md px-3 py-2 text-[13px] outline-none focus:border-purple-500 focus:ring-1 bg-white">
+                                                        {MASTER_HEADERS.map(h => <option key={`sec-${h}`} value={h}>{h}</option>)}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="bg-white p-6 rounded-xl border shadow-sm">
+                                            <h3 className="text-[15px] font-black text-slate-800 mb-4 pb-2 border-b flex items-center">
+                                                <i className="fas fa-exchange-alt text-emerald-500 mr-2"></i>운영 관리 데이터 매핑 설정
+                                            </h3>
+                                            <div className="text-[12px] text-slate-500 font-bold mb-5">
+                                                주문, 판매, 재고 등 운영 데이터를 엑셀에서 붙여넣을 때 각 항목을 식별할 키워드를 지정합니다.
+                                            </div>
+                                            
+                                            <div className="space-y-6">
+                                                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                                                    <h4 className="text-[13px] font-black text-slate-800 mb-3 flex items-center"><i className="fas fa-shopping-cart text-slate-500 mr-1.5"></i>주문/판매 연동 키워드</h4>
+                                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                                        {Object.entries(opsMappings.orders || {}).map(([key, val]) => {
+                                                            const labelMap = { id: '주문번호', code: '품목코드', qty: '수량', price: '판매가', date: '주문일자' };
+                                                            return (
+                                                                <div key={`orders-${key}`}>
+                                                                    <label className="block text-[11px] font-bold text-slate-600 mb-1.5">{labelMap[key] || key}</label>
+                                                                    <input type="text" value={val} onChange={e => setOpsMappings({...opsMappings, orders: {...opsMappings.orders, [key]: e.target.value}})} placeholder="엑셀 헤더 키워드" className="w-full border border-slate-300 rounded px-3 py-1.5 text-[12px] outline-none focus:border-emerald-500 focus:ring-1" />
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+
+                                                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                                                    <h4 className="text-[13px] font-black text-slate-800 mb-3 flex items-center"><i className="fas fa-boxes text-slate-500 mr-1.5"></i>재고 데이터 연동 키워드</h4>
+                                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                                        {Object.entries(opsMappings.inventory || {}).map(([key, val]) => {
+                                                            const labelMap = { code: '품목코드', qty: '안전/실재고 수량', location: '창고/위치' };
+                                                            return (
+                                                                <div key={`inv-${key}`}>
+                                                                    <label className="block text-[11px] font-bold text-slate-600 mb-1.5">{labelMap[key] || key}</label>
+                                                                    <input type="text" value={val} onChange={e => setOpsMappings({...opsMappings, inventory: {...opsMappings.inventory, [key]: e.target.value}})} placeholder="엑셀 헤더 키워드" className="w-full border border-slate-300 rounded px-3 py-1.5 text-[12px] outline-none focus:border-emerald-500 focus:ring-1" />
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
