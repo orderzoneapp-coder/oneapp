@@ -786,6 +786,11 @@
 
                         const sysQty = Number(m.재고수량 || 0);
 
+                        // 🌟 최적화: 운영 데이터가 전혀 없는 텅 빈 상품은 화면에서 제외 (과부하 방지)
+                        if (sysQty === 0 && inQty === 0 && outQty === 0 && logs.length === 0) {
+                            continue;
+                        }
+
                         arr.push({
                             코드: code,
                             품명: m.품목명,
@@ -802,7 +807,8 @@
                         });
                     }
                     
-                    arr.sort((a,b) => a.품명.localeCompare(b.품명));
+                    // 🌟 정렬 변경: 품명순 -> 품목코드순 정렬
+                    arr.sort((a,b) => String(a.코드).localeCompare(String(b.코드)));
                     setInventoryData(arr);
                     
                 } catch(e) {
@@ -987,20 +993,59 @@
 
                     setInventoryData(prev => {
                         let updatedCount = 0;
-                        const newData = prev.map(item => {
-                            if (actualUpdates[item.코드] !== undefined) {
-                                const actual = actualUpdates[item.코드];
-                                const newLoss = actual - item.전산잔량;
-                                let newIssues = [...item.이슈].filter(msg => !msg.includes('실사조정'));
-                                
-                                if (newLoss !== 0) newIssues.push('🚨실사조정');
-                                
-                                updatedCount++;
-                                return { ...item, 실사: actual, 로스: newLoss, 이슈: newIssues };
+                        const newData = [...prev];
+                        const existingCodes = new Set(prev.map(i => i.코드));
+
+                        Object.keys(actualUpdates).forEach(code => {
+                            const actual = actualUpdates[code];
+                            
+                            if (existingCodes.has(code)) {
+                                // 이미 화면에 노출된 상품 업데이트
+                                const itemIndex = newData.findIndex(i => i.코드 === code);
+                                if (itemIndex !== -1) {
+                                    const item = { ...newData[itemIndex] };
+                                    const newLoss = actual - item.전산잔량;
+                                    let newIssues = [...item.이슈].filter(msg => !msg.includes('실사조정'));
+                                    
+                                    if (newLoss !== 0) newIssues.push('🚨실사조정');
+                                    
+                                    item.실사 = actual;
+                                    item.로스 = newLoss;
+                                    item.이슈 = newIssues;
+                                    newData[itemIndex] = item;
+                                    updatedCount++;
+                                }
+                            } else {
+                                // 🌟 노출 조건 미달로 숨겨졌던 상품이라도 엑셀에 실사가 있다면 화면에 추가로 불러옴
+                                const m = masterProducts[code];
+                                if (m) {
+                                    const sysQty = Number(m.재고수량 || 0);
+                                    const newLoss = actual - sysQty;
+                                    let newIssues = [];
+                                    if (newLoss !== 0) newIssues.push('🚨실사조정');
+                                    
+                                    newData.push({
+                                        코드: code,
+                                        품명: m.품목명,
+                                        기초: sysQty,
+                                        입고: 0,
+                                        출고: 0,
+                                        대체입고: 0,
+                                        대체출고: 0,
+                                        전산잔량: sysQty,
+                                        실사: actual,
+                                        로스: newLoss,
+                                        이슈: newIssues,
+                                        메모: ''
+                                    });
+                                    updatedCount++;
+                                }
                             }
-                            return item;
                         });
                         count = updatedCount;
+                        
+                        // 화면에 추가된 항목이 있을 수 있으므로 코드순 재정렬
+                        newData.sort((a,b) => String(a.코드).localeCompare(String(b.코드)));
                         return newData;
                     });
                     
