@@ -86,7 +86,45 @@
         const getIDB = async (key) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); };
         const setIDB = async (key, val) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readwrite'); tx.objectStore('store').put(val, key); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); };
 
-        // 🌟 SafeIcon: 전체 아이콘 지원 확장
+        const parseExcelRobust = (file) => new Promise((resolve, reject) => {
+            if (!window.XLSX) return reject(new Error("엑셀 파서 로드 안됨"));
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result); const wb = window.XLSX.read(data, { type: 'array', cellDates: true });
+                    const jsonAll = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "", raw: false });
+                    if(jsonAll.length === 0) return resolve([]);
+
+                    let headerRowIdx = 0;
+                    for (let i = 0; i < Math.min(15, jsonAll.length); i++) {
+                        const rowStr = jsonAll[i].join('').replace(/\s/g, '');
+                        if (rowStr.includes('코드') || rowStr.includes('품명') || rowStr.includes('상품')) { headerRowIdx = i; break; }
+                    }
+                    const headers = jsonAll[headerRowIdx] || [];
+                    let endIdx = jsonAll.length - 1;
+                    
+                    while (endIdx > headerRowIdx) {
+                        const rowArr = jsonAll[endIdx]; if (!rowArr || rowArr.length === 0) { endIdx--; continue; }
+                        let filledCount = 0, rawStr = '';
+                        for(let i=0; i<rowArr.length; i++) if(rowArr[i] !== undefined && String(rowArr[i]).trim() !== '') { filledCount++; rawStr += String(rowArr[i]).replace(/\s/g, ''); }
+                        if (rawStr === '') { endIdx--; continue; }
+                        if ((rawStr.includes('출력') || rawStr.includes('합계') || rawStr.includes('총계')) && filledCount <= 4) endIdx--; else break;
+                    }
+
+                    const parsedData = [];
+                    for (let i = headerRowIdx + 1; i <= endIdx; i++) {
+                        const row = jsonAll[i]; if (!row) continue;
+                        let isEmpty = true; const obj = {}; 
+                        headers.forEach((h, idx) => { if (h) { obj[h] = row[idx]; if(row[idx] !== undefined && String(row[idx]).trim() !== '') isEmpty = false; } }); 
+                        if(!isEmpty) parsedData.push(obj);
+                    } resolve(parsedData);
+                } catch(err) { reject(err); }
+            }; reader.readAsArrayBuffer(file);
+        });
+
+        // ==========================================
+        // 🧩 [아이콘 시스템] SafeIcon
+        // ==========================================
         const SafeIcon = React.memo(function SafeIconComponent({ name, size = 18, className = "" }) {
             const [svg, setSvg] = useState("");
             useEffect(() => {
@@ -109,14 +147,14 @@
             }, [name, size, className]);
 
             if (!svg) {
-                const faMap = { 'layout-dashboard':'fa-th-large', 'database':'fa-database', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'book-open':'fa-address-book', 'users':'fa-users', 'shopping-bag':'fa-shopping-bag', 'credit-card':'fa-credit-card', 'line-chart':'fa-chart-line', 'boxes':'fa-boxes', 'printer':'fa-print', 'pie-chart':'fa-chart-pie', 'megaphone':'fa-bullhorn', 'search':'fa-search', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'edit':'fa-edit', 'save':'fa-save', 'link':'fa-link', 'settings':'fa-cogs', 'desktop':'fa-desktop', 'sign-in-alt':'fa-sign-in-alt', 'calculator':'fa-calculator', 'tags':'fa-tags', 'layer-group':'fa-layer-group', 'sitemap':'fa-sitemap', 'ban':'fa-ban', 'bolt':'fa-bolt', 'sort-amount-down':'fa-sort-amount-down', 'info-circle':'fa-info-circle', 'lock':'fa-lock', 'key':'fa-key', 'trash-alt':'fa-trash-alt', 'folder-open':'fa-folder-open', 'file-invoice':'fa-file-invoice', 'broom':'fa-broom', 'cloud-download': 'fa-cloud-download-alt', 'cloud-upload': 'fa-cloud-upload-alt', 'sync': 'fa-sync-alt', 'file-excel': 'fa-file-excel', 'truck': 'fa-truck' };
+                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'database':'fa-database', 'upload':'fa-upload', 'pie-chart':'fa-chart-pie', 'shopping-cart':'fa-shopping-cart', 'users':'fa-users', 'megaphone':'fa-bullhorn', 'book-open':'fa-address-book', 'shopping-bag':'fa-shopping-bag', 'credit-card':'fa-credit-card', 'line-chart':'fa-chart-line', 'printer':'fa-print', 'search':'fa-search', 'plus':'fa-plus', 'trash-alt':'fa-trash-alt', 'edit':'fa-edit', 'save':'fa-save', 'file-excel':'fa-file-excel', 'link':'fa-link', 'ban':'fa-ban', 'layer-group':'fa-layer-group', 'desktop':'fa-desktop', 'sign-in-alt':'fa-sign-in-alt', 'calculator':'fa-calculator', 'tags':'fa-tags', 'broom':'fa-broom', 'info-circle':'fa-info-circle', 'lock':'fa-lock', 'key':'fa-key', 'folder-open':'fa-folder-open', 'file-invoice':'fa-file-invoice', 'sync': 'fa-sync-alt', 'building': 'fa-building', 'box': 'fa-box' };
                 return <i className={`fas ${faMap[name] || `fa-${name}`} ${className}`} style={{ fontSize: size }} />;
             }
             return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
         });
 
         // ==========================================
-        // 🧩 2. Global Config Hook (5대 전역 설정 연동)
+        // 🧩 [전역 설정 상태 관리 Hook] useMerchConfig
         // ==========================================
         const useMerchConfig = () => {
             const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || '');
@@ -195,7 +233,7 @@
         };
 
         // ==========================================
-        // 🧩 3. 통합 글로벌 헤더 (v2.4 UI)
+        // 🧩 [통합 글로벌 헤더] GlobalHeader
         // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [ { id: 'master', label: '정보 관리', icon: 'database' }, { id: 'ops', label: '운영 관리', icon: 'truck' }, { id: 'admin', label: '인사이트', icon: 'bar-chart-3' } ];
@@ -285,7 +323,7 @@
         };
 
         // ==========================================
-        // 🧩 4. Mapping Center Modal (5대 환경설정)
+        // 🧩 [5대 환경설정 모달] MappingCenterModal
         // ==========================================
         const MappingCenterModal = ({ onClose, config, actions, availableCatalogs, availableCategories }) => {
             const { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules, opsMappings, setOpsMappings, opsGrouping, setOpsGrouping } = config;
@@ -463,19 +501,19 @@
                                     <div className="max-w-4xl space-y-6 fade-in">
                                         <div className="bg-white p-6 rounded-xl border shadow-sm">
                                             <h3 className="text-[15px] font-black text-slate-800 mb-4 pb-2 border-b flex items-center">
-                                                <SafeIcon name="folder-open" size={16} className="text-indigo-500 mr-2"/> 파서 보관함 (카탈로그) 관리
+                                                <SafeIcon name="folder-open" size={16} className="text-indigo-500 mr-2"/> 카탈로그 목록 관리
                                             </h3>
                                             <div className="text-[12px] text-slate-500 font-bold mb-4 bg-slate-50 p-3 rounded-lg border border-slate-200">
-                                                스마트 파서에서 단가 작업 시 생성된 태그 목록입니다. 더 이상 사용하지 않는 데이터를 깔끔하게 삭제할 수 있습니다.
+                                                단가 작업 시 생성된 카탈로그(거래처) 태그 목록입니다. 더 이상 사용하지 않는 카탈로그를 깔끔하게 삭제할 수 있습니다.
                                             </div>
                                             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                                {availableCatalogs.length === 0 ? <div className="col-span-full text-[13px] text-slate-400 font-bold p-4 text-center">등록된 파서 데이터가 없습니다.</div> : availableCatalogs.map(tag => (
+                                                {availableCatalogs.length === 0 ? <div className="col-span-full text-[13px] text-slate-400 font-bold p-4 text-center">등록된 카탈로그가 없습니다.</div> : availableCatalogs.map(tag => (
                                                     <div key={tag.name} className="flex items-center justify-between bg-white border border-slate-300 rounded-lg p-3 shadow-sm hover:border-indigo-400 transition-colors group">
                                                         <div className="flex flex-col min-w-0">
                                                             <span className="text-[13px] font-extrabold text-slate-800 truncate">{tag.name}</span>
                                                             <span className="text-[11px] text-indigo-500 font-bold">{tag.count}개 상품</span>
                                                         </div>
-                                                        <button onClick={() => handleDeleteTag('catalog', tag.name)} className="w-8 h-8 rounded-md bg-slate-100 text-slate-400 hover:bg-rose-500 hover:text-white transition-colors shrink-0 flex items-center justify-center" title="이 데이터 삭제">
+                                                        <button onClick={() => handleDeleteTag('catalog', tag.name)} className="w-8 h-8 rounded-md bg-slate-100 text-slate-400 hover:bg-rose-500 hover:text-white transition-colors shrink-0 flex items-center justify-center" title="이 카탈로그 삭제">
                                                             <SafeIcon name="trash-alt" size={14} />
                                                         </button>
                                                     </div>
@@ -485,19 +523,19 @@
 
                                         <div className="bg-white p-6 rounded-xl border shadow-sm">
                                             <h3 className="text-[15px] font-black text-slate-800 mb-4 pb-2 border-b flex items-center">
-                                                <SafeIcon name="file-invoice" size={16} className="text-blue-500 mr-2"/> 저장된 카탈로그(견적서) 목록 관리
+                                                <SafeIcon name="file-invoice" size={16} className="text-blue-500 mr-2"/> 저장된 견적서 목록 관리
                                             </h3>
                                             <div className="text-[12px] text-slate-500 font-bold mb-4 bg-slate-50 p-3 rounded-lg border border-slate-200">
-                                                작업 화면에서 묶어둔 나만의 카탈로그(즐겨찾기) 목록입니다. 오래되거나 필요 없는 카탈로그를 일괄 삭제하세요.
+                                                작업 화면에서 묶어둔 나만의 견적서(즐겨찾기) 목록입니다. 오래되거나 필요 없는 견적서를 일괄 삭제하세요.
                                             </div>
                                             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                                {availableCategories.length === 0 ? <div className="col-span-full text-[13px] text-slate-400 font-bold p-4 text-center">저장된 카탈로그가 없습니다.</div> : availableCategories.map(tag => (
+                                                {availableCategories.length === 0 ? <div className="col-span-full text-[13px] text-slate-400 font-bold p-4 text-center">저장된 견적서가 없습니다.</div> : availableCategories.map(tag => (
                                                     <div key={tag.name} className="flex items-center justify-between bg-white border border-slate-300 rounded-lg p-3 shadow-sm hover:border-blue-400 transition-colors group">
                                                         <div className="flex flex-col min-w-0">
                                                             <span className="text-[13px] font-extrabold text-slate-800 truncate">{tag.name}</span>
                                                             <span className="text-[11px] text-blue-500 font-bold">{tag.count}개 상품</span>
                                                         </div>
-                                                        <button onClick={() => handleDeleteTag('category', tag.name)} className="w-8 h-8 rounded-md bg-slate-100 text-slate-400 hover:bg-rose-500 hover:text-white transition-colors shrink-0 flex items-center justify-center" title="이 카탈로그 삭제">
+                                                        <button onClick={() => handleDeleteTag('category', tag.name)} className="w-8 h-8 rounded-md bg-slate-100 text-slate-400 hover:bg-rose-500 hover:text-white transition-colors shrink-0 flex items-center justify-center" title="이 견적서 삭제">
                                                             <SafeIcon name="trash-alt" size={14} />
                                                         </button>
                                                     </div>
@@ -519,9 +557,9 @@
         };
 
         // ==========================================
-        // 📋 5. SalesListView
+        // 📋 View: SalesListView
         // ==========================================
-        const SalesListView = ({ salesData, updateSaleItem, syncWithOrders, handleConfirmDispatch, showToast, selectedRows, toggleRow, toggleAllRows, viewMode, setViewMode, searchKw, setSearchKw, handleFileUpload }) => {
+        const SalesListView = ({ salesData, masterProducts, updateSaleItem, syncWithOrders, handleConfirmDispatch, showToast, selectedRows, toggleRow, toggleAllRows, viewMode, setViewMode, searchKw, setSearchKw, handleFileUpload }) => {
             
             const filteredData = useMemo(() => {
                 if (!searchKw.trim()) return salesData;
@@ -564,6 +602,10 @@
                 const isCompleted = row.status === 'COMPLETED';
                 const isReturn = row.qty < 0;
 
+                const mItem = masterProducts[row.matchCode] || {};
+                const currentStock = parseNum(mItem.재고수량 || mItem.현재재고 || 0);
+                const isShortage = currentStock - row.qty < 0 && row.qty > 0;
+
                 return (
                     <tr key={row.id} onClick={() => !isCompleted && toggleRow(row.id)} className={`table-row-hover transition-colors group ${isCompleted ? 'bg-slate-50/50 opacity-60' : selectedRows.has(row.id) ? 'table-row-selected' : 'cursor-pointer'} ${isReturn ? 'bg-rose-50/30' : ''}`}>
                         <td className="py-3 px-4 text-center border-r border-slate-200 bg-inherit" onClick={e=>e.stopPropagation()}>
@@ -571,10 +613,19 @@
                         </td>
                         <td className="py-3 px-4 text-[11px] text-slate-400 font-mono border-r border-slate-200 bg-inherit">{row.date}</td>
                         {!omitPartner && <td className="py-3 px-4 font-bold text-slate-800 border-r border-slate-200 bg-inherit">{row.partner}</td>}
+                        
+                        {/* 💡 Lot 매핑 컬럼 */}
+                        <td className="py-2 px-3 border-r border-slate-200 bg-inherit" onClick={e=>e.stopPropagation()}>
+                            <input type="text" value={row.matchVendor || ''} onChange={(e) => updateSaleItem(row.id, 'matchVendor', e.target.value)} disabled={isCompleted} placeholder="지정안함" className="w-full bg-transparent hover:bg-white focus:bg-white border border-transparent focus:border-indigo-400 focus:ring-1 rounded px-2 py-1.5 outline-none transition-colors text-[12px] font-bold text-slate-700" />
+                        </td>
+
                         {!omitItem && (
                             <td className="py-3 px-4 border-r border-slate-200 bg-white">
                                 <div className="flex flex-col w-full overflow-hidden">
-                                    <span className="text-[10.5px] font-mono text-indigo-500 mb-0.5 tracking-tight font-bold">{row.matchCode || '미연결'}</span>
+                                    <div className="flex items-center justify-between mb-0.5">
+                                        <span className="text-[10.5px] font-mono text-indigo-500 tracking-tight font-bold">{row.matchCode || '미연결'}</span>
+                                        {isShortage && !isCompleted && <span className="text-[9px] bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded font-bold shadow-sm">🚨잔량부족</span>}
+                                    </div>
                                     <div className="flex items-baseline w-full min-w-0 overflow-hidden mt-0.5">
                                         <span className="text-[13px] font-extrabold truncate text-slate-800">{row.matchName || row.extName}</span>
                                         <span className="text-[11.5px] font-medium text-slate-400 truncate ml-1.5 shrink-0 max-w-[40%]">({row.matchSpec})</span>
@@ -585,9 +636,10 @@
                         <td className="py-3 px-4 text-right font-medium text-slate-500 border-r border-slate-200 bg-inherit">{row.costPrice > 0 ? row.costPrice.toLocaleString() : '-'}</td>
                         
                         <td className="py-2 px-3 border-r border-slate-200 bg-inherit" onClick={e=>e.stopPropagation()}>
-                            <div className="relative">
+                            <div className="relative flex flex-col items-center">
                                 <input type="number" value={row.qty} onChange={(e) => updateSaleItem(row.id, 'qty', e.target.value)} disabled={isCompleted}
-                                       className={`w-full text-center hover:bg-white focus:bg-white focus:ring-1 rounded px-2 py-1.5 outline-none transition-colors font-bold disabled:bg-transparent border border-transparent ${isReturn ? 'bg-rose-50 text-rose-700 hover:border-rose-300 focus:border-rose-500 focus:ring-rose-200' : 'bg-transparent text-indigo-700 hover:border-slate-300 focus:border-indigo-400 focus:ring-indigo-200'}`} onClick={e=>e.target.select()}/>
+                                       className={`w-full text-center hover:bg-white focus:bg-white focus:ring-1 rounded px-2 py-1.5 outline-none transition-colors font-bold disabled:bg-transparent border border-transparent ${isReturn ? 'bg-rose-50 text-rose-700 hover:border-rose-300 focus:border-rose-500 focus:ring-rose-200' : (isShortage && !isCompleted ? 'bg-rose-50 border-rose-300 text-rose-700 focus:ring-rose-200' : 'bg-transparent text-indigo-700 hover:border-slate-300 focus:border-indigo-400 focus:ring-indigo-200')}`} onClick={e=>e.target.select()}/>
+                                {!isCompleted && <span className={`text-[9px] mt-0.5 font-bold ${isShortage ? 'text-rose-500' : 'text-slate-400'}`}>재고: {currentStock.toLocaleString()}</span>}
                                 {isReturn && <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[9px] px-1.5 rounded-full font-bold shadow-sm">반품</span>}
                             </div>
                         </td>
@@ -659,7 +711,8 @@
                                         <tr>
                                             <th className="sticky top-0 z-40 bg-[#fdfcfc] px-4 py-3.5 border-b border-r border-slate-200 shadow-sm w-12 text-center" style={{left:0}}><input type="checkbox" className="rounded text-indigo-600 cursor-pointer w-4 h-4 border-slate-300 focus:ring-indigo-500" onChange={toggleAllRows} checked={filteredData.filter(i=>i.status!=='COMPLETED').length > 0 && selectedRows.size === filteredData.filter(i=>i.status!=='COMPLETED').length} /></th>
                                             <th className="sticky top-0 z-30 bg-[#fdfcfc] px-4 py-3.5 border-b border-r border-slate-200 shadow-sm w-32 text-center">주문일자</th>
-                                            {viewMode !== 'item' && <th className="sticky top-0 z-30 bg-[#fdfcfc] px-4 py-3.5 border-b border-r border-slate-200 shadow-sm text-center">거래처</th>}
+                                            {viewMode !== 'item' && <th className="sticky top-0 z-30 bg-[#fdfcfc] px-4 py-3.5 border-b border-r border-slate-200 shadow-sm text-center">매출처(고객)</th>}
+                                            <th className="sticky top-0 z-30 bg-[#fdfcfc] px-4 py-3.5 border-b border-r border-slate-200 shadow-sm text-center w-36">매입처(Lot)</th>
                                             <th className="sticky top-0 z-30 bg-[#fdfcfc] px-4 py-3.5 border-b border-r border-slate-200 shadow-sm min-w-[280px] w-[280px]">상품정보 (코드/품명/규격)</th>
                                             <th className="sticky top-0 z-30 bg-[#fdfcfc] px-4 py-3.5 border-b border-r border-slate-200 shadow-sm text-right w-24">매입 원가</th>
                                             <th className="sticky top-0 z-30 bg-indigo-50/50 px-3 py-3.5 border-b border-r border-indigo-100 shadow-sm text-center w-28 text-indigo-700">출고 수량</th>
@@ -676,7 +729,7 @@
                                             return (
                                                 <React.Fragment key={`group-${g.groupKey}`}>
                                                     <tr className="bg-slate-50/80 border-y border-slate-200">
-                                                        <td colSpan="9" className="px-5 py-3">
+                                                        <td colSpan="10" className="px-5 py-3">
                                                             <div className="flex justify-between items-center w-full">
                                                                 <div className="flex items-center">
                                                                     <SafeIcon name="building" size={16} className="text-slate-400 mr-2" />
@@ -698,7 +751,7 @@
                                         {viewMode === 'item' && groupedData.map(g => (
                                             <React.Fragment key={`group-${g.groupKey}`}>
                                                 <tr className="bg-slate-50/80 border-y border-slate-200">
-                                                    <td colSpan="8" className="px-5 py-3">
+                                                    <td colSpan="9" className="px-5 py-3">
                                                         <div className="flex justify-between items-center w-full">
                                                             <div className="flex items-center">
                                                                 <SafeIcon name="box" size={16} className="text-slate-400 mr-2" />
@@ -836,7 +889,7 @@
                 return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
             }, [masterProducts]);
 
-            // Business Logic
+            // 💡 엑셀 파싱 및 매핑
             const handleFileUpload = async (e) => {
                 const file = e.target.files[0]; if (!file) return;
                 setIsProcessing(true); setProcessMsg('매출 엑셀 분석 중...');
@@ -848,12 +901,33 @@
                     const todayStr = new Date().toISOString().slice(0, 10);
 
                     excelData.forEach(row => {
-                        const code = row['품목코드'] || row['코드'] || row['상품코드'];
+                        const findKey = (mappingString) => {
+                            if (!mappingString) return null;
+                            const keys = mappingString.split(',').map(k => k.trim());
+                            const rowKeys = Object.keys(row);
+                            for (const key of keys) {
+                                const matched = rowKeys.find(rk => rk.toLowerCase().replace(/\s/g, '') === key.toLowerCase().replace(/\s/g, ''));
+                                if (matched) return matched;
+                            }
+                            return null;
+                        };
+
+                        const codeKey = findKey(config.opsMappings.code) || '품목코드';
+                        const code = row[codeKey] || row['코드'] || row['상품코드'];
                         if (!code) return;
                         
-                        const qty = parseNum(row['수량'] || row['판매수량'] || row['출고량']);
-                        const price = parseNum(row['단가'] || row['출고가'] || row['판매가'] || row['판매단가']);
-                        const partner = row['구매처'] || row['거래처'] || row['매출처'] || row['고객명'] || '미지정';
+                        const qtyKey = findKey(config.opsMappings.qty) || '수량';
+                        const priceKey = findKey(config.opsMappings.price) || '단가';
+                        const vendorKey = findKey(config.opsMappings.vendor) || '거래처명';
+                        
+                        // 💡 Lot (매입처) 키워드 감지
+                        const matchVendorKey = findKey(config.opsMappings.matchVendor) || 'lot';
+                        
+                        const qty = parseNum(row[qtyKey] || row['판매수량'] || row['출고량']);
+                        const price = parseNum(row[priceKey] || row['출고가'] || row['판매가'] || row['판매단가']);
+                        const partner = row[vendorKey] || row['고객명'] || row['매출처'] || '미지정';
+                        const matchVendorVal = row[matchVendorKey] || '';
+                        
                         const mItem = masterProducts[code] || {};
                         
                         newSales.push({
@@ -867,6 +941,7 @@
                             qty: qty,
                             costPrice: parseNum(mItem.입고가) || 0,
                             salesPrice: price || parseNum(mItem.출고가) || 0,
+                            matchVendor: matchVendorVal,
                             status: 'PENDING'
                         });
                     });
@@ -913,6 +988,7 @@
                             qty: o.qty,
                             costPrice: costPrice,
                             salesPrice: salesPrice,
+                            matchVendor: '',
                             status: 'PENDING'
                         });
                     });
@@ -933,9 +1009,9 @@
             };
 
             const updateSaleItem = (id, field, value) => {
-                const numVal = parseNum(value);
+                const val = (field === 'qty' || field === 'salesPrice' || field === 'costPrice') ? parseNum(value) : value;
                 setSalesData(prev => {
-                    const newData = prev.map(item => item.id === id ? { ...item, [field]: numVal } : item);
+                    const newData = prev.map(item => item.id === id ? { ...item, [field]: val } : item);
                     setIDB(STORAGE_KEYS.SALES_DB, newData).catch(console.error);
                     return newData;
                 });
@@ -944,10 +1020,24 @@
             const handleConfirmDispatch = async () => {
                 if (selectedRows.size === 0) return showToast("⚠️ 출고 확정할 항목을 선택하세요.");
                 
-                const hasReturns = salesData.filter(item => selectedRows.has(item.id) && item.qty < 0).length > 0;
-                const confirmMsg = hasReturns 
+                const itemsToProcess = salesData.filter(item => selectedRows.has(item.id));
+                const hasReturns = itemsToProcess.filter(item => item.qty < 0).length > 0;
+                
+                // 💡 잔량 부족(마이너스 재고) 경고 방어 로직
+                let hasNegativeWarning = false;
+                itemsToProcess.forEach(item => {
+                    const mItem = masterProducts[item.matchCode] || { 재고수량: 0 };
+                    const oldQty = parseNum(mItem.재고수량 || mItem.현재재고 || 0);
+                    if (oldQty - item.qty < 0 && item.qty > 0) hasNegativeWarning = true;
+                });
+
+                let confirmMsg = hasReturns 
                     ? `선택한 ${selectedRows.size}개 판매 건을 확정합니다.\n(마이너스 수량은 '고객 반품'으로 인식되어 재고가 다시 증가합니다.)`
                     : `선택한 ${selectedRows.size}개 판매 건의 출고를 확정하고 마스터 재고를 차감하시겠습니까?`;
+
+                if (hasNegativeWarning) {
+                    confirmMsg = "⚠️ 경고: 선택한 항목 중 출고 시 재고가 마이너스(-)가 되는 품목이 있습니다.\n그래도 출고를 강제 확정하시겠습니까?";
+                }
 
                 if (!window.confirm(confirmMsg)) return;
 
@@ -959,8 +1049,6 @@
                     let newMaster = { ...master };
                     let newLogs = [];
                     const nowStr = new Date().toLocaleString('ko-KR');
-
-                    const itemsToProcess = salesData.filter(item => selectedRows.has(item.id));
                     
                     itemsToProcess.forEach(item => {
                         const mItem = newMaster[item.matchCode] || { 코드: item.matchCode, 재고수량: 0 };
@@ -974,7 +1062,7 @@
                         newMaster[item.matchCode] = { ...mItem, 재고수량: newQty };
                         
                         newLogs.push({
-                            id: `DIS-${Date.now()}-${Math.floor(Math.random()*1000)}`,
+                            id: `DIS-${Date.now()}-${generateUUID().slice(0,8)}`,
                             timestamp: nowStr,
                             date: item.date,
                             type: eventType,
@@ -985,6 +1073,7 @@
                             oldStock: oldQty,
                             newStock: newQty,
                             partner: item.partner,
+                            lotVendor: item.matchVendor || '미지정', // 💡 Lot 정보 수불부 기록
                             totalAmount: item.salesPrice * qtyToDeduct
                         });
                     });
@@ -1048,7 +1137,8 @@
                     
                     <main className="flex-1 overflow-hidden relative flex flex-col bg-slate-50">
                         <SalesListView 
-                            salesData={salesData} 
+                            salesData={salesData}
+                            masterProducts={masterProducts}
                             updateSaleItem={updateSaleItem} 
                             syncWithOrders={syncWithOrders} 
                             handleConfirmDispatch={handleConfirmDispatch}
