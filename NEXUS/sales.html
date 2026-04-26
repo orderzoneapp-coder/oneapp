@@ -604,14 +604,14 @@
                             <thead className="sticky top-0 bg-white shadow-sm border-b border-slate-200 text-slate-500 font-bold text-[12px] z-10">
                                 <tr>
                                     <th className="py-3 px-4 w-[280px] border-r border-slate-200">상품정보 (코드/품명)</th>
-                                    <th className="py-3 px-3 text-right w-20 border-r border-slate-200">기초</th>
-                                    <th className="py-3 px-3 text-right w-20 text-blue-600 border-r border-slate-200">당기입고</th>
-                                    <th className="py-3 px-3 text-right w-20 text-rose-600 border-r border-slate-200">당기출고</th>
-                                    <th className="py-3 px-3 text-right w-24 bg-indigo-50/50 text-indigo-700 border-r border-indigo-100">전산잔량</th>
-                                    <th className="py-3 px-4 text-center w-28 bg-indigo-50/50 text-indigo-700 border-r border-indigo-100">실사 수량</th>
-                                    <th className="py-3 px-4 text-right w-24 border-r border-slate-200">오차(로스)</th>
-                                    <th className="py-3 px-4 w-[250px] border-r border-slate-200">이슈 / 메모</th>
-                                    <th className="py-3 px-4 text-center w-16">조정</th>
+                                    <th className="py-3 px-3 text-right w-20 bg-slate-50 border-r border-slate-200" title="이전 마감에서 확정된 시작 재고">🏁 기초재고</th>
+                                    <th className="py-3 px-3 text-right w-20 text-blue-600 border-r border-slate-200" title="기초재고 이후 입고된 총량">당기입고(+)</th>
+                                    <th className="py-3 px-3 text-right w-20 text-rose-600 border-r border-slate-200" title="기초재고 이후 출고된 총량">당기출고(-)</th>
+                                    <th className="py-3 px-3 text-right w-24 bg-indigo-50/50 text-indigo-800 border-r border-indigo-100" title="기초 + 입고 - 출고">📊 전산잔량</th>
+                                    <th className="py-3 px-4 text-center w-28 bg-emerald-50/30 text-emerald-800 border-r border-emerald-100" title="전산잔량과 비교할 창고 실제 수량 입력">🔍 실사입력</th>
+                                    <th className="py-3 px-4 text-right w-24 border-r border-slate-200" title="실사수량 - 전산잔량">🚨 오차(로스)</th>
+                                    <th className="py-3 px-4 w-[250px] border-r border-slate-200">조정 사유 / 메모</th>
+                                    <th className="py-3 px-4 text-center w-16">승인</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-transparent text-slate-700">
@@ -632,13 +632,13 @@
                                                     <span className="text-[13px] font-extrabold text-slate-800 truncate">{item.품명}</span>
                                                 </div>
                                             </td>
-                                            <td className="py-2.5 px-3 text-right font-medium text-slate-500 border-r border-slate-200 bg-inherit">{item.기초.toLocaleString()}</td>
-                                            <td className="py-2.5 px-3 text-right font-bold text-blue-600 border-r border-slate-200 bg-inherit">{item.입고.toLocaleString()}</td>
-                                            <td className="py-2.5 px-3 text-right font-bold text-rose-600 border-r border-slate-200 bg-inherit">{item.출고.toLocaleString()}</td>
+                                            <td className="py-2.5 px-3 text-right font-medium text-slate-600 bg-slate-50 border-r border-slate-200">{item.기초.toLocaleString()}</td>
+                                            <td className="py-2.5 px-3 text-right font-bold text-blue-600 border-r border-slate-200 bg-white">{item.입고.toLocaleString()}</td>
+                                            <td className="py-2.5 px-3 text-right font-bold text-rose-600 border-r border-slate-200 bg-white">{item.출고.toLocaleString()}</td>
                                             
-                                            <td className="py-2.5 px-3 text-right font-black text-[15px] text-indigo-600 bg-indigo-50/30 border-r border-indigo-100">{item.전산잔량.toLocaleString()}</td>
+                                            <td className="py-2.5 px-3 text-right font-black text-[15px] text-indigo-700 bg-indigo-50/30 border-r border-indigo-100">{item.전산잔량.toLocaleString()}</td>
                                             
-                                            <td className="py-2 px-3 bg-indigo-50/30 border-r border-indigo-100 relative">
+                                            <td className="py-2 px-3 bg-emerald-50/30 border-r border-emerald-100 relative">
                                                 {isLinked && <div className="absolute -top-3 right-2 bg-slate-800 text-white text-[9px] px-1.5 py-0.5 rounded shadow animate-bounce">대상 선택</div>}
                                                 <input 
                                                     type="number" 
@@ -649,15 +649,15 @@
                                                         if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); handleSpacebar(item.코드); }
                                                     }}
                                                     placeholder={item.전산잔량}
-                                                    className={`w-full text-center hover:bg-white focus:bg-white border rounded px-2 py-1.5 text-[14px] font-black outline-none transition-colors shadow-sm ${item.로스 !== 0 ? 'border-orange-400 text-orange-700 bg-orange-50 focus:ring-orange-200' : 'border-transparent text-slate-800 focus:border-indigo-400 focus:ring-indigo-200 bg-transparent'}`} 
+                                                    className={`w-full text-center hover:bg-white focus:bg-white border rounded px-2 py-1.5 text-[14px] font-black outline-none transition-colors shadow-sm ${item.로스 !== 0 ? 'border-orange-400 text-orange-700 bg-orange-50 focus:ring-orange-200' : 'border-transparent text-emerald-800 focus:border-emerald-400 focus:ring-emerald-200 bg-transparent'}`} 
                                                 />
                                             </td>
 
-                                            <td className={`py-2.5 px-4 text-right font-black border-r border-slate-200 bg-inherit ${isNegativeLoss ? 'text-rose-600' : item.로스 > 0 ? 'text-blue-600' : 'text-slate-300'}`}>
+                                            <td className={`py-2.5 px-4 text-right font-black border-r border-slate-200 bg-white ${isNegativeLoss ? 'text-rose-600' : item.로스 > 0 ? 'text-blue-600' : 'text-slate-300'}`}>
                                                 {item.로스 > 0 ? '+' : ''}{item.로스 === 0 ? '-' : item.로스.toLocaleString()}
                                             </td>
                                             
-                                            <td className="py-2.5 px-4 border-r border-slate-200 bg-inherit">
+                                            <td className="py-2.5 px-4 border-r border-slate-200 bg-white">
                                                 <div className="flex items-center gap-1.5 flex-wrap">
                                                     {item.이슈.map((msg, i) => <IssueChip key={i} msg={msg} />)}
                                                     {item.메모 && <span className="px-2 py-0.5 bg-slate-100 text-slate-600 border border-slate-200 rounded font-medium text-[10px] shadow-sm flex items-center"><SafeIcon name="edit" size={10} className="mr-1 text-slate-400"/>{item.메모}</span>}
@@ -903,6 +903,65 @@
                 showToast(`✅ ${count}개의 상품에서 [${tagName}] 태그를 삭제했습니다.`);
             }, [masterProducts, showToast]);
 
+            // 기초 재고 셋업 (Snapshot)
+            const handleBaseStockUpload = async (e) => {
+                const file = e.target.files[0]; if (!file) return;
+                if (!window.confirm("업로드한 엑셀의 수량으로 '기초 재고'를 강제 초기화(Snapshot) 합니다.\n초기화된 품목의 과거 입출고 히스토리는 리셋됩니다. 진행하시겠습니까?")) { e.target.value = ''; return; }
+                
+                setIsProcessing(true); setProcessMsg('기초 재고 셋업 중...');
+                try {
+                    const excelData = await parseExcelRobust(file);
+                    if (excelData.length === 0) throw new Error("데이터가 없습니다.");
+                    
+                    let count = 0;
+                    let newMaster = { ...masterProducts };
+                    const history = await getIDB(STORAGE_KEYS.HISTORY_DB) || [];
+                    let newHistory = [...history];
+
+                    excelData.forEach(row => {
+                        const code = row['품목코드'] || row['코드'] || row['상품코드'];
+                        if (!code || !newMaster[code]) return;
+                        
+                        const qtyVal = row['기초'] || row['기초재고'] || row['재고'] || row['수량'] || row['실사'];
+                        if (qtyVal !== undefined && qtyVal !== '') {
+                            const setupQty = parseNum(qtyVal);
+                            
+                            // 마스터 DB 수량 업데이트
+                            newMaster[code] = { ...newMaster[code], 재고수량: setupQty };
+                            
+                            // 과거 히스토리 삭제 후 초기 기초재고 로그 생성 (Snapshot)
+                            newHistory = newHistory.filter(h => h.code !== code);
+                            newHistory.push({
+                                id: `OPEN-${Date.now()}-${Math.floor(Math.random()*1000)}`,
+                                timestamp: new Date().toLocaleString('ko-KR'),
+                                date: new Date().toISOString().slice(0, 10),
+                                type: 'OPENING_STOCK',
+                                code: code,
+                                name: newMaster[code].품목명,
+                                qty: setupQty, 
+                                oldStock: 0,
+                                newStock: setupQty,
+                                partner: '시스템 셋업',
+                                memo: '기초 재고 리셋 (Snapshot)'
+                            });
+                            count++;
+                        }
+                    });
+
+                    await setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
+                    await setIDB(STORAGE_KEYS.HISTORY_DB, newHistory);
+                    localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
+                    
+                    if(count > 0) showToast(`✅ ${count}건의 기초 재고가 성공적으로 셋업(고정)되었습니다.`);
+                    else showToast(`⚠️ 일치하는 품목을 찾을 수 없거나 수량 열을 찾을 수 없습니다.`);
+                    
+                    loadData();
+                } catch(error) { 
+                    showToast("❌ 셋업 오류: " + error.message); 
+                } finally { 
+                    e.target.value = ''; setIsProcessing(false); setProcessMsg(''); 
+                }
+            };
 
             // 실사 엑셀 업로드 연동
             const handleFileUpload = async (e) => {
@@ -1036,7 +1095,7 @@
                     return showToast("⚠️ 해결되지 않은 오류(🚨실사조정)가 남아있습니다. 스페이스바 상계 또는 사유 메모를 기록하여 모두 승인(✅) 처리 후 마감하세요.");
                 }
 
-                if (!window.confirm("현재의 실사 수량으로 재고를 덮어쓰고 수불부를 마감하시겠습니까?\n(오차가 있던 항목은 '실사조정' 내역으로 히스토리에 영구 보존됩니다.)")) return;
+                if (!window.confirm("✅ 현재의 '실사 수량'이 다음 달의 '기초 재고'로 확정 및 이월됩니다.\n수불부를 마감하시겠습니까?\n(오차가 있던 항목은 '실사조정' 내역으로 보존됩니다.)")) return;
 
                 setIsProcessing(true); setProcessMsg("수불부 마감 및 이월 처리 중...");
 
@@ -1107,8 +1166,14 @@
                         </div>
                         
                         <div className="flex items-center gap-4">
-                            <label className="cursor-pointer h-9 px-3 rounded-md text-[13px] font-bold bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50 transition-colors shadow-sm flex items-center shrink-0">
-                                <SafeIcon name="file-excel" size={14} className="mr-1.5 text-emerald-500" /> 실사 엑셀 업로드
+                            {/* 기초재고 셋업 버튼 추가 */}
+                            <label className="cursor-pointer h-9 px-3 rounded-md text-[13px] font-bold bg-white text-slate-600 border border-slate-300 hover:bg-slate-50 transition-colors shadow-sm flex items-center shrink-0" title="과거 이력을 리셋하고 현재 수량을 새로운 시작점(기초재고)으로 강제 세팅합니다.">
+                                <SafeIcon name="database" size={14} className="mr-1.5 text-slate-400" /> 기초재고 셋업
+                                <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleBaseStockUpload} disabled={isProcessing} />
+                            </label>
+
+                            <label className="cursor-pointer h-9 px-3 rounded-md text-[13px] font-bold bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50 transition-colors shadow-sm flex items-center shrink-0" title="전산잔량과 비교할 실제 창고 재고를 업로드하여 오차를 찾습니다.">
+                                <SafeIcon name="file-excel" size={14} className="mr-1.5 text-emerald-500" /> 실사 엑셀 대조
                                 <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} disabled={isProcessing} />
                             </label>
 
