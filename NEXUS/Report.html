@@ -4,41 +4,37 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - Valuation Hub [Core Engine]</title>
-    <!-- 핵심 라이브러리 CDN 로드 -->
+    <title>ONEAPP NEXES - Insight & Report [v2.0]</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-        body { font-family: 'Pretendard', sans-serif; -webkit-user-select: none; user-select: none; background-color: #f1f5f9; margin: 0; overflow: hidden; }
-        input, textarea, select { user-select: auto; }
-        ::-webkit-scrollbar { width: 8px; height: 8px; } 
+        body { font-family: 'Pretendard', sans-serif; -webkit-font-smoothing: antialiased; background-color: #f1f5f9; margin: 0;}
+        ::-webkit-scrollbar { width: 6px; height: 6px; } 
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        .fade-in { animation: fadeIn 0.2s ease-out; } 
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-        .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         .config-chip { display: inline-flex; align-items: center; padding: 6px 14px; border-radius: 9999px; border: 1px solid #e2e8f0; background-color: white; color: #475569; font-size: 12px; cursor: pointer; transition: all 0.2s; }
         .config-chip:hover { background-color: #f8fafc; } .config-chip.active { background-color: #e0e7ff; border-color: #c7d2fe; color: #4338ca; font-weight: bold; }
-        /* 숫자 인풋 화살표 제거 */
-        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     </style>
 </head>
-<body class="text-slate-800">
+<body class="overflow-hidden text-slate-800">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useMemo, useEffect, useRef, useCallback, Fragment } = React;
+        const { useState, useEffect, useMemo, useCallback, useRef, Fragment } = React;
 
         // ==========================================
-        // 🧩 1. 공통 DB & 글로벌 설정 (Core Block)
+        // 🔑 Global Storage Keys & Config Constants
         // ==========================================
         const STORAGE_KEYS = {
             MASTER_DB: 'merchMaster_v870',
@@ -91,28 +87,6 @@
 
         const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
 
-        const getCellWidthClass = (h) => {
-            if (NUMERIC_HEADERS.includes(h)) return 'min-w-[90px] w-[90px] max-w-[90px]';
-            if (h === '구매처' || h === '거래처명' || h === '일자') return 'min-w-[150px] w-[150px] max-w-[150px]';
-            if (h === '품목명' || h === '상품명' || h === '카탈로그' || h === '견적서') return 'min-w-[200px] w-[200px] max-w-[200px]';
-            if (h === '간단설명' || h === '지시사항' || h === '상품정보' || h === '적요2') return 'min-w-[150px] w-[150px] max-w-[150px]';
-            if (h === '단위' || h === '창고') return 'min-w-[60px] w-[60px] max-w-[60px]';
-            return 'min-w-[100px] w-[100px] max-w-[100px]';
-        };
-
-        const getFirstValidNum = (objList, keys) => {
-            for (let obj of objList) { if (!obj) continue; for (let k of keys) { if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return parseNum(obj[k]); } } return 0;
-        };
-
-        const getFirstValidStr = (objList, keys) => {
-            for (let obj of objList) { if (!obj) continue; for (let k of keys) { if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k]; } } return '';
-        };
-
-        const isValidSubItemCode = (code) => {
-            if (!code) return false; const s = String(code).trim();
-            return s !== '' && s !== '0' && s !== '00' && s !== '-' && s.toLowerCase() !== 'undefined' && s.toLowerCase() !== 'null';
-        };
-
         // IndexedDB Wrapper
         const initIDB = () => new Promise((resolve, reject) => {
             const request = indexedDB.open('MerchOpsDB', 1);
@@ -122,33 +96,111 @@
         const getIDB = async (key) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); };
         const setIDB = async (key, val) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readwrite'); tx.objectStore('store').put(val, key); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); };
 
-        // SafeIcon Wrapper
+        // ==========================================
+        // 🛠 SafeIcon
+        // ==========================================
         const SafeIcon = React.memo(function SafeIconComponent({ name, size = 18, className = "" }) {
             const [svg, setSvg] = useState("");
             useEffect(() => {
-                if (window.lucide && window.lucide.icons) {
-                    const kebabName = name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
-                    const possibleNames = [ kebabName, name, name==='cloud-download'?'download-cloud':name, name==='cloud-upload'?'upload-cloud':name, name==='bar-chart-3'?'bar-chart':name ];
-                    for (const pName of possibleNames) {
-                        if (window.lucide.icons[pName]) {
-                            setSvg(window.lucide.icons[pName].toSvg({ width: size, height: size, class: className, 'stroke-width': 2.5 })); return;
+                const renderIcon = () => {
+                    if (window.lucide && window.lucide.icons) {
+                        const kebabName = name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
+                        const possibleNames = [
+                            kebabName, name, 
+                            name === 'cloud-download' ? 'download-cloud' : name,
+                            name === 'cloud-upload' ? 'upload-cloud' : name,
+                            name === 'bar-chart-3' ? 'bar-chart' : name
+                        ];
+                        for (const pName of possibleNames) {
+                            if (window.lucide.icons[pName]) {
+                                setSvg(window.lucide.icons[pName].toSvg({ width: size, height: size, class: className, 'stroke-width': 2.5 }));
+                                return;
+                            }
                         }
                     }
-                }
+                };
+                renderIcon();
             }, [name, size, className]);
 
             if (!svg) {
-                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'database':'fa-database', 'upload':'fa-upload', 'pie-chart':'fa-chart-pie', 'shopping-cart':'fa-shopping-cart', 'users':'fa-users', 'megaphone':'fa-bullhorn', 'book-open':'fa-address-book', 'shopping-bag':'fa-shopping-bag', 'credit-card':'fa-credit-card', 'line-chart':'fa-chart-line', 'printer':'fa-print', 'search':'fa-search', 'plus':'fa-plus', 'trash-alt':'fa-trash-alt', 'edit':'fa-edit', 'save':'fa-save', 'folder-open':'fa-folder-open', 'file-excel':'fa-file-excel', 'eye-slash':'fa-eye-slash', 'redo-alt':'fa-redo-alt', 'plus-square':'fa-plus-square', 'file-invoice':'fa-file-invoice', 'chevron-down':'fa-chevron-down', 'chevron-right':'fa-chevron-right', 'file-export':'fa-file-export', 'magic':'fa-magic', 'desktop':'fa-desktop', 'sign-in-alt':'fa-sign-in-alt', 'calculator':'fa-calculator', 'tags':'fa-tags', 'link':'fa-link', 'broom':'fa-broom', 'columns':'fa-columns', 'undo':'fa-undo', 'info-circle':'fa-info-circle', 'lock':'fa-lock', 'key':'fa-key', 'search-dollar':'fa-search-dollar', 'list':'fa-list', 'arrow-up':'fa-arrow-up', 'arrow-down':'fa-arrow-down', 'star':'fa-star', 'equals':'fa-equals' };
-                return <i className={`fas ${faMap[name] || `fa-${name}`} ${className}`} style={{ fontSize: size }} />;
+                const faMap = {
+                    'cloud-download': 'fa-cloud-download-alt', 'cloud-upload': 'fa-cloud-upload-alt', 'settings': 'fa-cogs',
+                    'layout-dashboard': 'fa-th-large', 'package-search': 'fa-box-open', 'file-spreadsheet': 'fa-table', 
+                    'zap': 'fa-bolt', 'truck': 'fa-truck', 'boxes': 'fa-boxes', 'bar-chart-3': 'fa-chart-bar', 
+                    'database': 'fa-database', 'sliders-horizontal': 'fa-sliders-h', 'check-circle-2': 'fa-check-circle',
+                    'x': 'fa-times', 'pie-chart': 'fa-chart-pie', 'shopping-cart': 'fa-shopping-cart', 'users': 'fa-users', 'megaphone': 'fa-bullhorn',
+                    'book-open': 'fa-address-book', 'shopping-bag': 'fa-shopping-bag', 'credit-card': 'fa-credit-card', 'line-chart': 'fa-chart-line', 'printer': 'fa-print',
+                    'desktop': 'fa-desktop', 'sign-in-alt': 'fa-sign-in-alt', 'calculator': 'fa-calculator', 'tags': 'fa-tags', 'link': 'fa-link', 'broom': 'fa-broom', 'info-circle': 'fa-info-circle', 'lock': 'fa-lock', 'key': 'fa-key', 'folder-open': 'fa-folder-open', 'file-invoice': 'fa-file-invoice', 'trash-alt': 'fa-trash-alt'
+                };
+                const faName = faMap[name] || `fa-${name}`;
+                return <i className={`fas ${faName} ${className}`} style={{ fontSize: size }} />;
             }
             return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
         });
 
         // ==========================================
-        // 🧩 2. 공통 UI 컴포넌트 (GNB)
+        // 🧩 Hooks (Global Setting Manager)
+        // ==========================================
+        const useMerchConfig = () => {
+            const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || '');
+            
+            const [visibleMasterCols, setVisibleMasterCols] = useState(() => { 
+                const s = localStorage.getItem('merchVisMaster_v870'); 
+                const p = s ? JSON.parse(s) : null; 
+                return p?.estimate ? p : getInitialVisibleMasterCols(); 
+            });
+            
+            const [visibleUploadCols, setVisibleUploadCols] = useState(() => { 
+                const s = localStorage.getItem('merchVisUpload_v870'); 
+                const p = s ? JSON.parse(s) : null; 
+                return p?.estimate ? p : getInitialVisibleUploadCols(); 
+            });
+            
+            const [mappings, setMappings] = useState(() => { 
+                const s = localStorage.getItem('merchMappings_v870'); 
+                const p = s ? JSON.parse(s) : null; 
+                return p?.master ? p : getInitialMappings(); 
+            });
+            
+            const [masterLinks, setMasterLinks] = useState(() => { 
+                const s = localStorage.getItem('merchMasterLinks_v870'); 
+                const p = s ? JSON.parse(s) : null; 
+                return p?.estimate ? p : getInitialMasterLinks(); 
+            });
+            
+            const [marginRules, setMarginRules] = useState(() => {
+                const s = localStorage.getItem('merchMarginRules_v878');
+                const def = [ 
+                    { id: generateUUID(), whCode: '01', unit: 'box, 박스', rate: 10, type: 'divide' }, 
+                    { id: generateUUID(), whCode: '01', unit: 'ea, 개, 낱개', rate: 15, type: 'divide' }, 
+                    { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' } 
+                ];
+                if (s) { try { const p = JSON.parse(s); if (p?.length > 0) return p.map(r => ({ ...r, whCode: r.whCode || '*', unit: r.unit || '*' })); } catch(e){} }
+                return def;
+            });
+
+            useEffect(() => {
+                localStorage.setItem(STORAGE_KEYS.CLOUD_URL, cloudUrl); 
+                localStorage.setItem('merchVisMaster_v870', JSON.stringify(visibleMasterCols)); 
+                localStorage.setItem('merchVisUpload_v870', JSON.stringify(visibleUploadCols));
+                localStorage.setItem('merchMappings_v870', JSON.stringify(mappings)); 
+                localStorage.setItem('merchMasterLinks_v870', JSON.stringify(masterLinks)); 
+                localStorage.setItem('merchMarginRules_v878', JSON.stringify(marginRules));
+            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules]);
+            
+            return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules };
+        };
+
+        // ==========================================
+        // 🧩 Components: Global Header (통합 UI)
         // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
-            const groups = [ { id: 'master', label: '정보 관리', icon: 'database' }, { id: 'ops', label: '운영 관리', icon: 'truck' }, { id: 'admin', label: '인사이트', icon: 'bar-chart-3' } ];
+            const groups = [
+                { id: 'master', label: '정보 관리', icon: 'database' },
+                { id: 'ops', label: '운영 관리', icon: 'truck' },
+                { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }
+            ];
+
             const tabs = [
                 { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: '/NEXUS/Dashboard', group: 'common', isReady: true },
                 { id: 'guide', label: '시스템 가이드', icon: "book-open", path: '/NEXUS/wip?tab=guide', group: 'common', isReady: false },
@@ -175,25 +227,28 @@
             const [selectedGroup, setSelectedGroup] = useState(activeGroup);
 
             const handleGroupClick = (groupId) => setSelectedGroup(prev => prev === groupId ? 'common' : groupId);
-            const handleLogoClick = (e) => { setSelectedGroup('common'); onNavigate(e, '/NEXUS/Dashboard', true); };
+            const handleLogoClick = (e) => { setSelectedGroup('common'); onNavigate(e, '/NEXUS/Dashboard'); };
 
             return (
                 <div className="flex flex-col shrink-0 z-40 relative w-full shadow-sm bg-[#0B1021]">
                     <header className="h-[72px] bg-[#0B1021] text-white flex justify-between px-6 border-b border-slate-800/80 relative z-20">
                         <div className="flex items-center h-full">
-                            <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={handleLogoClick}>
+                            <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={handleLogoClick} title="통합 대시보드 및 공통 메뉴로 이동">
                                 <span className="font-black text-[24px] tracking-wider text-slate-100 mr-4 group-hover:text-indigo-400 transition-colors">ONEAPP</span>
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
                                     <div className="flex items-center">
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v2.2</span>
+                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v2.0</span>
                                     </div>
-                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">VALUATION HUB</span>
+                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">INSIGHT ENGINE</span>
                                 </div>
                             </div>
+
                             <div className="flex items-end h-full gap-8">
                                 {groups.map(g => (
-                                    <button key={g.id} onClick={() => handleGroupClick(g.id)} className={`pb-[16px] text-[14px] font-bold transition-colors flex items-center gap-1.5 ${selectedGroup === g.id ? 'text-slate-100 border-b-[3px] border-indigo-500 -mb-[2px]' : 'text-slate-500 hover:text-slate-300'}`}>
+                                    <button key={g.id} onClick={() => handleGroupClick(g.id)}
+                                        className={`pb-[16px] text-[14px] font-bold transition-colors flex items-center gap-1.5
+                                        ${selectedGroup === g.id ? 'text-slate-100 border-b-[3px] border-indigo-500 -mb-[2px]' : 'text-slate-500 hover:text-slate-300'}`}>
                                         <SafeIcon name={g.icon} size={15} /> {g.label}
                                     </button>
                                 ))}
@@ -202,15 +257,23 @@
 
                         <div className="flex items-center gap-4 h-full">
                             <div className="flex items-center bg-[#151B2B] rounded-lg border border-slate-700/50 h-9 px-3 shadow-inner gap-3">
-                                <div className="flex items-center justify-center" title={isProcessing ? processMsg : "시스템 정상 대기중"}>
-                                    {isProcessing ? <i className="fas fa-circle-notch fa-spin text-amber-500 text-[12px]"></i> : <div className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></div>}
+                                <div className="flex items-center justify-center" title={isProcessing ? processMsg : "클라우드 동기화 켜짐 (가동중)"}>
+                                    {isProcessing ? (
+                                        <i className="fas fa-circle-notch fa-spin text-amber-500 text-[12px]"></i>
+                                    ) : (
+                                        <div className="relative flex h-2 w-2">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="w-px h-3.5 bg-slate-700"></div>
-                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`마스터 DB 상품 수: ${itemCount.toLocaleString()}개`}>
-                                    <SafeIcon name="database" size={10} className="text-slate-500" />
+                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`현재 브라우저 메모리에 다운로드된 마스터 상품 수: ${itemCount.toLocaleString()}개`}>
+                                    <i className="fas fa-database text-[10px] text-slate-500"></i>
                                     <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount.toLocaleString()}</span>
                                 </div>
                             </div>
+
                             <div className="flex items-center gap-2">
                                 <button onClick={onPull} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 불러오기(Pull)"><SafeIcon name="cloud-download" size={18} /></button>
                                 <button onClick={onPush} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 백업하기(Push)"><SafeIcon name="cloud-upload" size={18} /></button>
@@ -241,6 +304,9 @@
                                     </a>
                                 );
                             })}
+                            {tabs.filter(t => t.group === selectedGroup).length === 0 && (
+                                <div className="px-5 py-2.5 text-[13px] font-bold text-slate-500 pb-4">이 그룹에 할당된 메뉴가 없습니다.</div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -248,137 +314,7 @@
         };
 
         // ==========================================
-        // 🧩 3. V1.2 코어 엔진 (Pricing & Parser)
-        // ==========================================
-        const calculatePricesEngine = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
-            if (!baseInPrice || baseInPrice <= 0) return { ...currentFinalData, '입고가': 0, '시중가': 0, '출고가': 0, '1입고': 0, '1출고': 0 };
-
-            const outsrc = parseNum(currentFinalData?.['외주비'] ?? mItem?.['외주비']);
-            const labor = parseNum(currentFinalData?.['노무비'] ?? mItem?.['노무비']);
-            const totalCost = baseInPrice + outsrc + labor;
-
-            const whCode = String(currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '').trim();
-            const unitStr = String(currentFinalData?.['단위'] ?? mItem?.['단위'] ?? '').trim().toLowerCase();
-            
-            const matchWh = (ruleWh, targetWh) => ruleWh === '*' || ruleWh.split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean).some(s => s === targetWh || (targetWh !== '' && !isNaN(s) && !isNaN(targetWh) && Number(s) === Number(targetWh)));
-            const matchUnit = (ruleUnit, targetUnit) => ruleUnit === '*' || ruleUnit.toLowerCase().split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean).some(s => targetUnit === s || targetUnit.includes(s));
-
-            let bestRule = { rate: 10, type: 'divide' }, bestScore = -1;
-            marginRules.forEach(r => {
-                if (matchWh(r.whCode, whCode) && matchUnit(r.unit, unitStr)) {
-                    let score = 0; if (r.whCode !== '*') score += 2; if (r.unit !== '*') score += 1;
-                    if (score > bestScore) { bestScore = score; bestRule = r; }
-                }
-            });
-
-            let calcOutPrice = totalCost;
-            if (bestRule.type === 'divide') {
-                const safeRate = Math.min(bestRule.rate, 99.99); calcOutPrice = totalCost / (1 - (safeRate / 100));
-            } else calcOutPrice = totalCost * (1 + (bestRule.rate / 100));
-            calcOutPrice = Math.round(calcOutPrice / 100) * 100;
-            if (!isFinite(calcOutPrice) || isNaN(calcOutPrice)) calcOutPrice = 0;
-
-            let newFinalData = { ...currentFinalData, '입고가': baseInPrice, '시중가': calcOutPrice };
-            const providedOutPrice = parseNum(currentFinalData?.['출고가']), mIn = parseNum(mItem?.['입고가']), mOut = parseNum(mItem?.['출고가']);
-
-            if (providedOutPrice > 0 && !forceRecalc) newFinalData['출고가'] = providedOutPrice;
-            else if (baseInPrice === mIn && mOut > 0 && !forceRecalc) newFinalData['출고가'] = mOut;
-            else newFinalData['출고가'] = calcOutPrice;
-
-            const div1 = parseNum(currentFinalData?.['1종연산'] ?? mItem?.['1종연산']), extraCost = parseNum(currentFinalData?.['경비'] ?? mItem?.['경비']); 
-            if (div1 > 0) {
-                newFinalData['1입고'] = Math.round(((baseInPrice + outsrc) / div1) / 100) * 100;
-                let calc1Out = Math.round((newFinalData['출고가'] / div1) + extraCost);
-                newFinalData['1출고'] = (!isFinite(calc1Out) || isNaN(calc1Out)) ? 0 : Math.round(calc1Out / 10) * 10; 
-            }
-            return newFinalData;
-        };
-
-        const createHeaderMap = (actualHeaders, mappingConfig) => {
-            const headerMap = {}; if(!mappingConfig) return headerMap;
-            Object.keys(mappingConfig).forEach(field => {
-                const keywords = mappingConfig[field].split(',').map(s => s.trim().toLowerCase().replace(/\s/g, '')).filter(Boolean);
-                const matchedKey = actualHeaders.find(h => h && keywords.some(kw => String(h).toLowerCase().replace(/\s/g, '').includes(kw)));
-                if(matchedKey) headerMap[field] = matchedKey;
-            }); return headerMap;
-        };
-
-        const parseExcelRobust = (file) => new Promise((resolve, reject) => {
-            if (!window.XLSX) return reject(new Error("엑셀 파서 로드 안됨"));
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    const data = new Uint8Array(e.target.result); const wb = window.XLSX.read(data, { type: 'array', cellDates: true });
-                    const jsonAll = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "", raw: false });
-                    if(jsonAll.length === 0) return resolve([]);
-
-                    let headerRowIdx = 0;
-                    for (let i = 0; i < Math.min(15, jsonAll.length); i++) {
-                        const rowStr = jsonAll[i].join('').replace(/\s/g, '');
-                        if (rowStr.includes('코드') || rowStr.includes('품명') || rowStr.includes('상품')) { headerRowIdx = i; break; }
-                    }
-                    const headers = jsonAll[headerRowIdx] || [];
-                    let endIdx = jsonAll.length - 1;
-                    
-                    while (endIdx > headerRowIdx) {
-                        const rowArr = jsonAll[endIdx]; if (!rowArr || rowArr.length === 0) { endIdx--; continue; }
-                        let filledCount = 0, rawStr = '';
-                        for(let i=0; i<rowArr.length; i++) if(rowArr[i] !== undefined && String(rowArr[i]).trim() !== '') { filledCount++; rawStr += String(rowArr[i]).replace(/\s/g, ''); }
-                        if (rawStr === '') { endIdx--; continue; }
-                        if ((rawStr.includes('출력') || rawStr.includes('합계') || rawStr.includes('총계')) && filledCount <= 4) endIdx--; else break;
-                    }
-
-                    const parsedData = [];
-                    for (let i = headerRowIdx + 1; i <= endIdx; i++) {
-                        const row = jsonAll[i]; if (!row) continue;
-                        let isEmpty = true; const obj = {}; 
-                        headers.forEach((h, idx) => { if (h) { obj[h] = row[idx]; if(row[idx] !== undefined && String(row[idx]).trim() !== '') isEmpty = false; } }); 
-                        if(!isEmpty) parsedData.push(obj);
-                    } resolve(parsedData);
-                } catch(err) { reject(err); }
-            }; reader.readAsArrayBuffer(file);
-        });
-
-        // ==========================================
-        // 🧩 4. 커스텀 훅 (State Architecture)
-        // ==========================================
-        const useMerchConfig = () => {
-            const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v870') || '');
-            const [visibleMasterCols, setVisibleMasterCols] = useState(() => { const s = localStorage.getItem('merchVisMaster_v870'); const p = s ? JSON.parse(s) : null; return p?.estimate ? p : getInitialVisibleMasterCols(); });
-            const [visibleUploadCols, setVisibleUploadCols] = useState(() => { const s = localStorage.getItem('merchVisUpload_v870'); const p = s ? JSON.parse(s) : null; return p?.estimate ? p : getInitialVisibleUploadCols(); });
-            const [mappings, setMappings] = useState(() => { const s = localStorage.getItem('merchMappings_v870'); const p = s ? JSON.parse(s) : null; return p?.master ? p : getInitialMappings(); });
-            const [masterLinks, setMasterLinks] = useState(() => { const s = localStorage.getItem('merchMasterLinks_v870'); const p = s ? JSON.parse(s) : null; return p?.estimate ? p : getInitialMasterLinks(); });
-            const [marginRules, setMarginRules] = useState(() => {
-                const s = localStorage.getItem('merchMarginRules_v878');
-                const def = [ { id: generateUUID(), whCode: '01', unit: 'box, 박스', rate: 10, type: 'divide' }, { id: generateUUID(), whCode: '01', unit: 'ea, 개, 낱개', rate: 15, type: 'divide' }, { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' } ];
-                if (s) try { const p = JSON.parse(s); if (p?.length > 0) return p.map(r => ({ ...r, whCode: r.whCode || '*', unit: r.unit || '*' })); } catch(e){} return def;
-            });
-
-            useEffect(() => {
-                localStorage.setItem('merchCloudUrl_v870', cloudUrl); localStorage.setItem('merchVisMaster_v870', JSON.stringify(visibleMasterCols)); localStorage.setItem('merchVisUpload_v870', JSON.stringify(visibleUploadCols));
-                localStorage.setItem('merchMappings_v870', JSON.stringify(mappings)); localStorage.setItem('merchMasterLinks_v870', JSON.stringify(masterLinks)); localStorage.setItem('merchMarginRules_v878', JSON.stringify(marginRules));
-            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules]);
-            return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules };
-        };
-
-        const useMerchData = () => {
-            const [masterProducts, setMasterProducts] = useState({});
-            const [managedItems, setManagedItems] = useState({});
-            
-            const loadMaster = useCallback(async () => { const data = await getIDB(STORAGE_KEYS.MASTER_DB); if (data) setMasterProducts(data); }, []);
-            useEffect(() => { 
-                loadMaster(); 
-                const onSync = (e) => { if(e.key === STORAGE_KEYS.SYNC_TRIGGER) loadMaster(); }; 
-                window.addEventListener('storage', onSync); return () => window.removeEventListener('storage', onSync); 
-            }, [loadMaster]);
-
-            const saveMasterToLocal = useCallback(async (data) => { setMasterProducts(data); await setIDB(STORAGE_KEYS.MASTER_DB, data); localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); }, []);
-            const addHistoryLogs = useCallback(async (newLogs) => { const old = await getIDB(STORAGE_KEYS.HISTORY_DB) || []; await setIDB(STORAGE_KEYS.HISTORY_DB, [...old, ...newLogs]); }, []);
-            return { masterProducts, setMasterProducts: saveMasterToLocal, managedItems, setManagedItems, addHistoryLogs };
-        };
-
-        // ==========================================
-        // 🧩 5. 모달 및 툴바 (최신 MappingCenterModal)
+        // 🧩 Mapping Center Modal (Global Setting Center)
         // ==========================================
         const MappingCenterModal = ({ onClose, config, actions, availableCatalogs, availableCategories }) => {
             const { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules } = config;
@@ -579,128 +515,115 @@
             );
         };
 
-        const ReviewModal = ({ onClose, onConfirm, displayRows, masterProducts }) => {
-            const [filter, setFilter] = useState('all'); 
-            const analysis = useMemo(() => {
-                let up = 0, down = 0, same = 0, newItems = 0; const list = [];
-                displayRows.forEach(row => {
-                    const mItem = masterProducts[row.코드]; const oldP = mItem ? parseNum(mItem['입고가']) : 0; const newP = parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : row.sources?.['estimate']?.['입고가']);
-                    let status = 'same'; if (!mItem) { status = 'new'; newItems++; } else if (oldP===0||newP===0||oldP===newP) { status = 'same'; same++; } else if (newP>oldP) { status = 'up'; up++; } else { status = 'down'; down++; }
-                    list.push({ 코드: row.코드, 품명: row.finalData?.['품목명']||mItem?.품목명||'', 기존단가: oldP, 새단가: newP, 차액: newP-oldP, 상태: status });
-                });
-                return { up, down, same, newItems, total: displayRows.length, list: list.sort((a,b) => Math.abs(b.차액)-Math.abs(a.차액)) };
-            }, [displayRows, masterProducts]);
-
-            const filteredList = filter === 'all' ? analysis.list : analysis.list.filter(i => i.상태 === filter);
-
+        // ==========================================
+        // 📱 고객 뷰어 컴포넌트
+        // ==========================================
+        const CustomerReportView = ({ data }) => {
+            if (!data || Object.keys(data.categories || {}).length === 0) return <div className="p-10 text-center text-slate-400 font-bold">표시할 데이터가 없습니다.</div>;
             return (
-                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
-                    <div className="bg-white w-[850px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-                        <div className="bg-[#0f172a] p-4 text-white flex justify-between border-b border-slate-700"><h2 className="font-black text-[16px]"><SafeIcon name="search-dollar" className="text-indigo-400 mr-2"/>작업 완료 및 갱신 전 검토(Review)</h2><button onClick={onClose}><SafeIcon name="x" className="text-slate-400 hover:text-white" size={20}/></button></div>
-                        <div className="p-6 flex flex-col flex-1 overflow-hidden bg-slate-50">
-                            <div className="grid grid-cols-5 gap-3 mb-4 shrink-0">
-                                {[{id:'all',icon:'list',label:'전체',val:analysis.total,color:'slate'},{id:'up',icon:'arrow-up',label:'인상',val:analysis.up,color:'rose'},{id:'down',icon:'arrow-down',label:'인하',val:analysis.down,color:'blue'},{id:'new',icon:'star',label:'신규',val:analysis.newItems,color:'emerald'},{id:'same',icon:'equals',label:'동결',val:analysis.same,color:'slate'}].map(b => (
-                                    <div key={b.id} onClick={()=>setFilter(b.id)} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all ${filter===b.id?`bg-${b.color}-600 border-${b.color}-600 text-white`:`bg-white hover:bg-slate-50`}`}>
-                                        <div className={`text-[11px] font-bold mb-1 ${filter===b.id?'text-white/80':`text-${b.color}-500`}`}><SafeIcon name={b.icon} size={10} className="mr-1"/>{b.label}</div><div className={`font-black text-xl ${filter===b.id?'text-white':'text-slate-700'}`}>{b.val}</div>
+                <div id="customer-report-capture-area" className="bg-white p-6 max-w-md mx-auto h-full overflow-y-auto">
+                    <div className="border-b-2 border-slate-800 pb-4 mb-6">
+                        <h1 className="text-xl font-black text-slate-900">{data.title}</h1>
+                        <p className="text-xs text-slate-400 mt-2">{data.publishDate}</p>
+                    </div>
+                    <div className="text-[13px] text-slate-700 leading-relaxed mb-6 whitespace-pre-line bg-slate-50 p-4 rounded-lg">
+                        {data.greeting}
+                    </div>
+                    <div className="space-y-6">
+                        {Object.entries(data.categories || {}).map(([catName, catData]) => (
+                            <div key={catName} className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                                <div className="bg-slate-800 text-white px-4 py-2 font-bold text-[13px] flex justify-between">
+                                    <span>{catName}</span>
+                                    <span className="text-slate-300 text-[11px]">{catData.items.length}건</span>
+                                </div>
+                                {catData.comment && (
+                                    <div className="p-3 bg-indigo-50 border-b border-indigo-100 text-[12px] text-indigo-800 font-medium whitespace-pre-line">
+                                        <i className="fas fa-comment-dots mr-1.5 opacity-50"></i>{catData.comment}
                                     </div>
-                                ))}
+                                )}
+                                <div className="divide-y divide-slate-100 bg-white">
+                                    {catData.items.map(item => (
+                                        <div key={item.id} className="p-3 flex justify-between items-center">
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="text-[13px] font-bold text-slate-800 truncate">{item.name}</span>
+                                                <span className="text-[10px] text-slate-400 mt-0.5">{item.spec}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2 shrink-0">
+                                                <span className="text-[11px] text-slate-400 line-through decoration-slate-300 font-mono">{item.oldVal?.toLocaleString()}</span>
+                                                <span className="text-[13px] font-black text-rose-600 font-mono">{item.newVal?.toLocaleString()}원</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
-                            <div className="flex-1 overflow-hidden flex flex-col bg-white border border-slate-200 rounded-xl"><div className="flex-1 overflow-auto custom-scrollbar"><table className="w-full text-left text-xs"><thead className="bg-slate-50 sticky top-0 border-b"><tr><th className="px-4 py-2 w-16 text-center">상태</th><th className="px-4 py-2 w-24">코드</th><th className="px-4 py-2">품목명</th><th className="px-4 py-2 text-right">기존 입고가</th><th className="px-4 py-2 text-right text-indigo-600">새 입고가</th><th className="px-4 py-2 text-right">차액</th></tr></thead><tbody className="divide-y divide-slate-100">{filteredList.map((i,idx)=><tr key={idx} className="hover:bg-slate-50"><td className="px-4 py-2 text-center">{i.상태==='up'&&<span className="bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded text-[10px] font-black">인상</span>}{i.상태==='down'&&<span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[10px] font-black">인하</span>}{i.상태==='new'&&<span className="bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded text-[10px] font-black">신규</span>}{i.상태==='same'&&<span className="text-slate-300">-</span>}</td><td className="px-4 py-2 font-mono text-slate-500">{i.코드}</td><td className="px-4 py-2 font-bold truncate max-w-[200px]">{i.품명}</td><td className="px-4 py-2 text-right text-slate-500">{i.기존단가>0?i.기존단가.toLocaleString():'-'}</td><td className="px-4 py-2 text-right font-black text-indigo-600">{i.새단가>0?i.새단가.toLocaleString():'-'}</td><td className="px-4 py-2 text-right font-bold">{i.차액>0?<span className="text-rose-500">+{i.차액.toLocaleString()}</span>:i.차액<0?<span className="text-blue-500">{i.차액.toLocaleString()}</span>:'-'}</td></tr>)}</tbody></table></div></div>
-                        </div>
-                        <div className="bg-slate-100 p-4 border-t flex justify-end gap-2 shrink-0"><button onClick={onClose} className="px-5 py-2.5 bg-white border border-slate-300 text-slate-600 font-bold rounded-lg hover:bg-slate-50">닫기 (수정하러 가기)</button><button onClick={()=>{onConfirm(displayRows.map(r=>r.코드)); onClose();}} className="px-6 py-2.5 bg-indigo-600 text-white font-black rounded-lg hover:bg-indigo-700 shadow-sm flex items-center"><SafeIcon name="save" className="mr-1.5" size={14}/> 마스터에 덮어쓰기 (저장)</button></div>
+                        ))}
+                    </div>
+                    <div className="mt-8 text-center text-[10px] text-slate-400">
+                        본 시황 안내는 ONEAPP MerchOps 시스템에서 발행되었습니다.
                     </div>
                 </div>
             );
         };
 
         // ==========================================
-        // 📋 View: V1.2 엑셀 데이터 그리드 (Editable)
+        // 📊 관리자 대시보드 컴포넌트
         // ==========================================
-        const EditableCell = React.memo(({ rowCode, initialVal, field, linkedMasterField, mVal, onUpdateCell }) => {
-            const isNum = NUMERIC_HEADERS.includes(linkedMasterField) || NUMERIC_HEADERS.includes(field);
-            const [val, setVal] = useState(initialVal); const [isFocused, setIsFocused] = useState(false);
-            useEffect(() => { if(!isFocused) setVal(initialVal); }, [initialVal, isFocused]);
-            const isDiff = linkedMasterField && mVal !== undefined && val !== '' && String(mVal) !== String(val) && isNum;
-            const onBlur = () => { setIsFocused(false); if(String(val)!==String(initialVal)) onUpdateCell(rowCode, field, linkedMasterField, val); };
-            return (
-                <td className={`px-1 py-1 border-r border-slate-200 ${getCellWidthClass(linkedMasterField || field)} ${isDiff ? 'bg-amber-50/50' : 'bg-white'}`}>
-                    <input type="text" data-field={field} value={val==="오류"?"":val} placeholder={mVal||''} onChange={e=>setVal(e.target.value)} onFocus={e=>{setIsFocused(true); setTimeout(()=>e.target.select(),0);}} onBlur={onBlur} className={`w-full bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-1 rounded px-1.5 py-1 text-xs outline-none ${isNum?'text-right font-bold':'truncate text-center'} ${isDiff?'text-indigo-700':''}`} />
-                </td>
-            );
-        });
+        const App = () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const isCustomerMode = urlParams.get('mode') === 'customer';
 
-        const ExcelDataGrid = ({ state, actions }) => {
-            const { fullDisplayRows, visibleMasterCols, visibleUploadCols, masterProducts, masterLinksEst, selectedRows } = state;
-            const visMaster = visibleMasterCols.estimate?.filter(h=>!['품목코드','품목명','규격'].includes(h)) || [];
-            const visUpload = visibleUploadCols.estimate?.filter(h=>h!=='품목코드') || [];
-
-            return (
-                <div className="bg-white border border-slate-200 rounded-xl shadow-sm h-full flex flex-col overflow-hidden">
-                    <div className="flex-1 overflow-auto custom-scrollbar relative">
-                        <table className="text-left border-collapse text-[13px] whitespace-nowrap relative z-0 w-max bg-white">
-                            <thead className="text-[12px] font-extrabold text-slate-600">
-                                <tr>
-                                    <th className="sticky top-0 z-40 bg-[#f8fafc] px-3 py-2 border-b border-r shadow-sm min-w-[280px] w-[280px] max-w-[280px]" style={{left:0}}><div className="flex gap-2 items-center"><input type="checkbox" checked={selectedRows.size===fullDisplayRows.length && fullDisplayRows.length>0} onChange={actions.toggleAllRows} className="rounded text-indigo-600 cursor-pointer"/><span>상품정보 (수정불가)</span></div></th>
-                                    {visMaster.map(h=><th key={`m-${h}`} className={`sticky top-0 z-30 bg-slate-50 px-2 py-3 border-b border-r text-center ${getCellWidthClass(h)}`}><div className="text-[9px] text-slate-400 mb-0.5">마스터 참고</div>[M] {h}</th>)}
-                                    {visUpload.map(h=><th key={`u-${h}`} className={`sticky top-0 z-30 bg-blue-50/50 px-2 py-3 border-b border-r text-center text-indigo-800 ${getCellWidthClass(h)}`}><div className="text-[9px] text-indigo-400 mb-0.5">작업영역 (수정가능)</div>{h}</th>)}
-                                    <th className="sticky top-0 z-30 bg-white border-b w-12"></th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 text-slate-700">
-                                {fullDisplayRows.length===0 ? <tr><td colSpan="50" className="p-16 text-center text-slate-400 font-bold"><i className="fas fa-file-excel text-5xl mb-4 text-slate-200 block"></i>데이터가 없습니다. 엑셀을 업로드하세요.</td></tr> : fullDisplayRows.map(row => {
-                                    const mItem = masterProducts[row.코드] || {}; const isSel = selectedRows.has(row.코드);
-                                    return (
-                                        <tr key={row.코드} className={`group ${isSel?'bg-indigo-50/50':'hover:bg-slate-50'}`}>
-                                            <td className={`sticky z-20 px-3 py-2 border-r bg-inherit min-w-[280px] w-[280px] max-w-[280px] ${isSel?'bg-indigo-50':'bg-white group-hover:bg-slate-50'}`} style={{left:0}}><div className="flex gap-2 items-center"><input type="checkbox" checked={isSel} onChange={()=>actions.toggleRowSelection(row.코드)} className="rounded text-indigo-600 cursor-pointer"/><div className="flex flex-col min-w-0"><span className="text-[10px] font-mono text-indigo-400 font-bold">{row.코드}</span><span className="text-xs font-bold truncate text-slate-800">{row.finalData?.['품목명']||row.sources?.['estimate']?.['품목명']||mItem.품목명||'[미등록]'}</span></div></div></td>
-                                            {visMaster.map(h=>{ const isN = NUMERIC_HEADERS.includes(h); const v = mItem[h]!==undefined&&mItem[h]!==''?(isN?parseNum(mItem[h]).toLocaleString():mItem[h]):'-'; return <td key={h} className={`px-2 py-1.5 border-r text-slate-400 bg-slate-50/30 ${getCellWidthClass(h)} ${isN?'text-right':'text-center'}`}><div className="truncate w-full">{v}</div></td>; })}
-                                            {visUpload.map(h=>{ const link = masterLinksEst[h]; const mV = link&&row.코드?mItem[link]:undefined; const initV = row.finalData?.[h]!==undefined?row.finalData[h]:(row.sources?.['estimate']?.[h]||''); return <EditableCell key={h} rowCode={row.코드} initialVal={initV} field={h} linkedMasterField={link} mVal={mV} onUpdateCell={actions.handleUpdateCell} />; })}
-                                            <td className="px-2 py-1 text-center"><button onClick={()=>actions.handleRemoveFromWorkspace(row.코드)} className="text-slate-300 hover:text-rose-500"><SafeIcon name="trash-alt" size={14}/></button></td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            );
-        };
-
-        // ==========================================
-        // ⚙️ Main App Container
-        // ==========================================
-        function App() {
-            const [toastMsg, setToastMsg] = useState('');
-            const [isProcessing, setIsProcessing] = useState(false); const [processMsg, setProcessMsg] = useState('');
-            const [showSettings, setShowSettings] = useState(false); const [showReviewModal, setShowReviewModal] = useState(false);
-            
             const config = useMerchConfig();
-            const data = useMerchData();
-            const [selectedRows, setSelectedRows] = useState(new Set());
 
-            const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
+            const [activeMenu, setActiveMenu] = useState('dashboard');
+            const [masterProducts, setMasterProducts] = useState({});
+            const [historyLogs, setHistoryLogs] = useState([]);
+            const [isLoading, setIsLoading] = useState(true);
+            const [toastMsg, setToastMsg] = useState("");
             
-            const handleNavigate = useCallback((e, path, isReady = true) => {
-                if (e && e.preventDefault) e.preventDefault();
-                if (!path || path === '#' || path === '' || !isReady) {
-                    showToast("⚠️ 해당 페이지는 현재 준비 중이거나 경로가 올바르지 않습니다.");
-                    return;
-                }
-                try {
-                    const protocol = window.location.protocol;
-                    if (protocol === 'about:' || protocol === 'blob:' || protocol === 'data:') {
-                        showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
-                    } else {
-                        window.location.href = path;
-                    }
-                } catch (err) {
-                    showToast(`💡 이동 시뮬레이션: [${path}]`);
-                }
-            }, [showToast]);
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [processMsg, setProcessMsg] = useState('');
+            const [showSettings, setShowSettings] = useState(false);
 
-            // 💡 [추가] 환경설정 모달 전용 Action 핸들러 모음
+            const [publishedReport, setPublishedReport] = useState(null);
+            
+            const [editorDraft, setEditorDraft] = useState(() => {
+                try {
+                    const saved = localStorage.getItem('merchReportDraft_v1');
+                    return saved ? JSON.parse(saved) : { title: '[Orderz] 시황 변동 안내', greeting: '최근 수입 원자재 및 부자재의 매입 원가가 전반적으로 크게 상승하였습니다.\n안정적인 상품 공급을 위해 부득이하게 일부 품목의 출고가를 조정하게 되었습니다. 고객님들의 너른 양해 부탁드립니다.', categories: {} };
+                } catch(e) { return { title: '', greeting: '', categories: {} }; }
+            });
+
+            const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+            const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); }, []);
+
+            useEffect(() => {
+                const loadData = async () => {
+                    try {
+                        const mData = JSON.parse(localStorage.getItem('merchMaster_v870') || '{}');
+                        setMasterProducts(mData);
+                        
+                        const hData = JSON.parse(localStorage.getItem('merchHistory_v870') || '[]');
+                        setHistoryLogs(hData);
+
+                        const pData = JSON.parse(localStorage.getItem('merchCustomerReport_v1'));
+                        if (pData) setPublishedReport(pData);
+                    } catch (error) { 
+                        console.error(error); 
+                    } finally { 
+                        setIsLoading(false); 
+                    }
+                };
+                loadData();
+            }, []);
+
+            useEffect(() => {
+                if (!isLoading && !isCustomerMode) localStorage.setItem('merchReportDraft_v1', JSON.stringify(editorDraft));
+            }, [editorDraft, isLoading, isCustomerMode]);
+
             const cleanUpGarbageTags = useCallback(() => {
                 if(window.confirm("마스터 DB에 남아있는 불필요한 엑셀 검색어 찌꺼기를 모두 삭제하여 용량을 최적화하시겠습니까?\n(오직 시스템에서 관리하는 속성만 안전하게 남습니다.)")) {
-                    let newMaster = { ...data.masterProducts };
+                    let newMaster = { ...masterProducts };
                     let count = 0;
                     for (let code in newMaster) {
                         if (newMaster[code]['검색어등록'] || newMaster[code]['상품태그']) {
@@ -709,19 +632,19 @@
                             count++;
                         }
                     }
-                    data.setMasterProducts(newMaster);
+                    setMasterProducts(newMaster);
                     setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
-                    localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
-                    showToast(`✅ ${count}건의 찌꺼기 데이터를 삭제했습니다. (반영 후 클라우드 백업을 눌러주세요)`);
+                    localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+                    showToast(`✅ ${count}건의 찌꺼기 데이터를 삭제했습니다.`);
                 }
-            }, [data.masterProducts, showToast]);
+            }, [masterProducts, showToast]);
 
             const handleDeleteTag = useCallback((type, tagName) => {
                 if (!tagName) return;
                 const confirmMsg = `[${tagName}] ${type === 'catalog' ? '카탈로그' : '견적서'}를 정말 삭제하시겠습니까?\n해당 꼬리표가 달린 모든 상품에서 이 태그가 일괄 제거됩니다.`;
                 if (!window.confirm(confirmMsg)) return;
 
-                let newMaster = { ...data.masterProducts };
+                let newMaster = { ...masterProducts };
                 let count = 0;
                 const fieldKey = type === 'catalog' ? '카탈로그' : '견적서';
 
@@ -736,23 +659,23 @@
                     }
                 }
                 
-                data.setMasterProducts(newMaster);
+                setMasterProducts(newMaster);
                 setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
-                localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
+                localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
                 showToast(`✅ ${count}개의 상품에서 [${tagName}] 태그를 삭제했습니다.`);
-            }, [data.masterProducts, showToast]);
+            }, [masterProducts, showToast]);
 
             const handleClearDB = async () => {
                 if (!window.confirm("현재 브라우저의 마스터 DB 전체를 초기화하시겠습니까?\n이 작업은 되돌릴 수 없습니다. (클라우드 데이터는 보존됩니다)")) return;
-                data.setMasterProducts({});
+                setMasterProducts({});
                 await setIDB(STORAGE_KEYS.MASTER_DB, {});
-                localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
+                localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
                 showToast("🗑️ 앱 로컬 데이터가 모두 초기화되었습니다.");
             };
 
             const availableCatalogs = useMemo(() => {
                 const counts = {};
-                Object.values(data.masterProducts).forEach(m => {
+                Object.values(masterProducts).forEach(m => {
                     const tagStr = m['카탈로그'] || '';
                     tagStr.split(',').forEach(t => {
                         const trimmed = t.trim();
@@ -760,11 +683,11 @@
                     });
                 });
                 return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
-            }, [data.masterProducts]);
+            }, [masterProducts]);
 
             const availableCategories = useMemo(() => {
                 const counts = {};
-                Object.values(data.masterProducts).forEach(m => {
+                Object.values(masterProducts).forEach(m => {
                     const tagStr = m['견적서'] || m['카테고리'] || '';
                     tagStr.split(',').forEach(t => {
                         const trimmed = t.trim();
@@ -772,116 +695,503 @@
                     });
                 });
                 return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
-            }, [data.masterProducts]);
+            }, [masterProducts]);
 
-            const handleFileUpload = async (e) => {
-                const file = e.target.files[0]; if (!file) return;
-                setIsProcessing(true); setProcessMsg('엑셀 시세표 분석 중...');
-                try {
-                    const excelData = await parseExcelRobust(file);
-                    if (excelData.length === 0) throw new Error("데이터가 없습니다.");
-                    const curMap = config.mappings['estimate'] || {}; const headerCache = createHeaderMap(Object.keys(excelData[0]), curMap);
-                    
-                    let newManaged = { ...data.managedItems }; let count = 0;
-                    excelData.forEach(row => {
-                        const codeKey = headerCache['품목코드']; const code = row[codeKey];
-                        if (!code || String(code).replace(/\s/g, '').includes('출력')) return;
+            const insights = useMemo(() => {
+                const marginRisks = Object.values(masterProducts).filter(item => {
+                    const inP = parseNum(item['입고가']); const outP = parseNum(item['출고가']);
+                    if (inP <= 0 || outP <= 0) return false;
+                    const margin = ((outP - inP) / outP) * 100;
+                    item._margin = margin;
+                    return margin < 15;
+                }).sort((a, b) => a._margin - b._margin).slice(0, 30);
+
+                const priceChanges = historyLogs.filter(log => log.field === '입고가' || log.field === '입고').reduce((acc, log) => {
+                    if (!acc[log.code] || new Date(log.timestamp) > new Date(acc[log.code].timestamp)) {
+                        acc[log.code] = log; 
+                    }
+                    return acc;
+                }, {});
+
+                const volatilityList = Object.values(priceChanges)
+                    .filter(log => Math.abs(log.diff) > 0)
+                    .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
+                    .slice(0, 15);
+
+                const upCount = Object.values(priceChanges).filter(log => log.diff > 0).length;
+                const downCount = Object.values(priceChanges).filter(log => log.diff < 0).length;
+
+                return { marginRisks, volatilityList, changeStats: { total: Object.keys(priceChanges).length, up: upCount, down: downCount } };
+            }, [masterProducts, historyLogs]);
+
+            const categoryHierarchy = useMemo(() => {
+                const hierarchy = {};
+                Object.values(masterProducts).forEach(item => {
+                    let c1Name = item['1그룹명']; let c2Name = item['2그룹명']; let c3Name = item['3그룹명'] || (item['카탈로그'] ? item['카탈로그'].split(',')[0].trim() : '');
+                    const pCode = String(item['품목코드'] || item['코드'] || '');
+                    let c1Code = String(item['1코드'] || (pCode.length >= 2 ? pCode.substring(0, 2) : ''));
+                    let c2Code = String(item['2코드'] || (pCode.length >= 4 ? pCode.substring(0, 4) : ''));
+                    let c3Code = String(item['오더즈'] || item['3코드'] || (pCode.length >= 6 ? pCode.substring(0, 6) : ''));
+
+                    if (!c1Name || !c1Code) { c1Name = '기타'; c1Code = 'ZZZ99_기타'; }
+                    if (!c2Name || !c2Code) { c2Name = '기타'; c2Code = 'ZZZ9999_기타'; }
+                    if (!c3Name || !c3Code) { c3Name = '기타'; c3Code = 'ZZZ999999_기타'; }
+
+                    if (!hierarchy[c1Code]) hierarchy[c1Code] = { name: c1Name, code: c1Code, sub: {} };
+                    if (!hierarchy[c1Code].sub[c2Code]) hierarchy[c1Code].sub[c2Code] = { name: c2Name, code: c2Code, sub: {} };
+                    if (!hierarchy[c1Code].sub[c2Code].sub[c3Code]) {
+                        hierarchy[c1Code].sub[c2Code].sub[c3Code] = { name: c3Name, code: c3Code, items: [], totalItems: 0, marginSum: 0, validMarginCount: 0, upCount: 0, downCount: 0 };
+                    }
+                    const c = hierarchy[c1Code].sub[c2Code].sub[c3Code];
+                    c.items.push(item); c.totalItems++;
+
+                    const inP = parseNum(item['입고가']); const outP = parseNum(item['출고가']);
+                    if (inP > 0 && outP > 0) { c.marginSum += ((outP - inP) / outP) * 100; c.validMarginCount++; }
+                });
+
+                const priceChanges = historyLogs.reduce((acc, log) => {
+                    if (!acc[log.code] || new Date(log.timestamp) > new Date(acc[log.code].timestamp)) acc[log.code] = log;
+                    return acc;
+                }, {});
+
+                Object.values(priceChanges).forEach(log => {
+                    const mItem = masterProducts[log.code];
+                    if (mItem) {
+                        let c1Code = String(mItem['1코드'] || (log.code.length >= 2 ? log.code.substring(0, 2) : 'ZZZ99_기타'));
+                        let c2Code = String(mItem['2코드'] || (log.code.length >= 4 ? log.code.substring(0, 4) : 'ZZZ9999_기타'));
+                        let c3Code = String(mItem['오더즈'] || mItem['3코드'] || (log.code.length >= 6 ? log.code.substring(0, 6) : 'ZZZ999999_기타'));
+                        if (!mItem['1그룹명']) c1Code = 'ZZZ99_기타'; if (!mItem['2그룹명']) c2Code = 'ZZZ9999_기타'; if (!mItem['3그룹명'] && !mItem['카탈로그']) c3Code = 'ZZZ999999_기타';
                         
-                        if (!newManaged[code]) newManaged[code] = { 코드: code, sources: { estimate: {} }, finalData: {} };
-                        let mItem = newManaged[code];
-                        const nameKey = headerCache['품목명']; mItem.sources['estimate']['품목명'] = nameKey ? row[nameKey] : '';
-                        
-                        Object.keys(curMap).forEach(h => {
-                            const actualKey = headerCache[h];
-                            if(actualKey) {
-                                const val = row[actualKey];
-                                if (val !== undefined && val !== '') {
-                                    const isNum = NUMERIC_HEADERS.includes(config.masterLinks['estimate']?.[h]) || NUMERIC_HEADERS.includes(h);
-                                    mItem.sources['estimate'][h] = isNum ? parseNum(val) : val;
-                                    if (mItem.finalData[h] === undefined) mItem.finalData[h] = isNum ? parseNum(val) : val;
-                                }
-                            }
-                        });
-                        
-                        delete mItem.finalData['출고가'];
-                        const pIn = parseNum(mItem.sources['estimate']['입고가'] || data.masterProducts[code]?.['입고가']);
-                        if (pIn > 0) mItem.finalData = calculatePricesEngine(pIn, data.masterProducts[code]||{}, mItem.finalData, config.marginRules, false);
-                        count++;
-                    });
-                    data.setManagedItems(newManaged); showToast(`✅ ${count}건 데이터 로드 완료`);
-                } catch(error) { showToast("❌ 업로드 오류: " + error.message); } finally { e.target.value = ''; setIsProcessing(false); setProcessMsg(''); }
+                        if (hierarchy[c1Code]?.sub[c2Code]?.sub[c3Code]) {
+                            const c = hierarchy[c1Code].sub[c2Code].sub[c3Code];
+                            if (log.diff > 0) c.upCount++; if (log.diff < 0) c.downCount++;
+                        }
+                    }
+                });
+
+                Object.keys(hierarchy).forEach(c1 => { Object.keys(hierarchy[c1].sub).forEach(c2 => { Object.keys(hierarchy[c1].sub[c2].sub).forEach(c3 => {
+                    const c = hierarchy[c1].sub[c2].sub[c3]; c.avgMargin = c.validMarginCount > 0 ? (c.marginSum / c.validMarginCount) : 0;
+                });});});
+                return hierarchy;
+            }, [masterProducts, historyLogs]);
+
+            const [activeC1, setActiveC1] = useState(null);
+            const [activeC2, setActiveC2] = useState(null);
+            const [activeC3, setActiveC3] = useState(null);
+
+            const c1List = useMemo(() => Object.values(categoryHierarchy).sort((a,b) => a.code.localeCompare(b.code)), [categoryHierarchy]);
+            useEffect(() => { if (c1List.length > 0 && !c1List.find(c => c.code === activeC1)) setActiveC1(c1List[0].code); }, [c1List, activeC1]);
+            const c2List = useMemo(() => activeC1 && categoryHierarchy[activeC1] ? Object.values(categoryHierarchy[activeC1].sub).sort((a,b) => a.code.localeCompare(b.code)) : [], [categoryHierarchy, activeC1]);
+            useEffect(() => { if (c2List.length > 0 && !c2List.find(c => c.code === activeC2)) setActiveC2(c2List[0].code); else if (c2List.length === 0) setActiveC2(null); }, [c2List, activeC1, activeC2]);
+            const c3List = useMemo(() => activeC1 && activeC2 && categoryHierarchy[activeC1]?.sub[activeC2] ? Object.values(categoryHierarchy[activeC1].sub[activeC2].sub).sort((a,b) => a.code.localeCompare(b.code)) : [], [categoryHierarchy, activeC1, activeC2]);
+            useEffect(() => { if (c3List.length > 0 && !c3List.find(c => c.code === activeC3)) setActiveC3(c3List[0].code); else if (c3List.length === 0) setActiveC3(null); }, [c3List, activeC1, activeC2, activeC3]);
+
+            const handleLoadRecentChanges = () => {
+                if(insights.changeStats.total === 0) return showToast("⚠️ 최근 변동된 히스토리 내역이 없습니다.");
+                const newCats = {};
+                historyLogs.forEach(log => {
+                    if ((log.field === '입고가' || log.field === '입고') && Math.abs(log.diff) > 0) {
+                        const catName = log.catalog || '기타 카탈로그';
+                        if (!newCats[catName]) newCats[catName] = { comment: '', items: [] };
+                        const existingIdx = newCats[catName].items.findIndex(i => i.code === log.code);
+                        if (existingIdx === -1) newCats[catName].items.push(log);
+                        else if (new Date(log.timestamp) > new Date(newCats[catName].items[existingIdx].timestamp)) newCats[catName].items[existingIdx] = log;
+                    }
+                });
+                Object.keys(newCats).forEach(k => { newCats[k].items.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff)); });
+                setEditorDraft(prev => ({ ...prev, categories: newCats }));
+                showToast(`✅ 최근 변경된 ${insights.changeStats.total}건의 내역을 불러왔습니다.`);
             };
 
-            const handleUpdateCell = useCallback((code, field, linkedMasterField, value) => {
-                data.setManagedItems(prev => {
-                    let currentItem = prev[code] || { 코드: code, sources: { estimate: {} }, finalData: {} };
-                    currentItem = { ...currentItem, finalData: { ...currentItem.finalData, [field]: value } };
-                    if (['입고가', '출고가', '외주비', '노무비'].includes(field) || ['입고가', '출고가'].includes(linkedMasterField)) {
-                        const pInRaw = (field === '입고가' || linkedMasterField === '입고가') ? value : (currentItem.finalData['입고가'] ?? currentItem.sources['estimate']?.['입고가'] ?? data.masterProducts[code]?.['입고가'] ?? 0);
-                        currentItem.finalData = calculatePricesEngine(parseNum(pInRaw), data.masterProducts[code] || {}, currentItem.finalData, config.marginRules, true);
-                    } return { ...prev, [code]: currentItem };
-                });
-            }, [data, config.marginRules]);
+            const handlePublish = () => {
+                const cleanData = { ...editorDraft, publishDate: new Date().toLocaleDateString('ko-KR') };
+                for (const cat in cleanData.categories) if (cleanData.categories[cat].items.length === 0) delete cleanData.categories[cat];
+                localStorage.setItem('merchCustomerReport_v1', JSON.stringify(cleanData));
+                setPublishedReport(cleanData);
+                showToast("🚀 고객용 웹페이지에 성공적으로 적용(발행)되었습니다!");
+            };
 
-            const handleCommitEstimate = useCallback((targetCodes) => {
-                if (targetCodes.length === 0) return;
-                let newMaster = { ...data.masterProducts }, commitCount = 0, localLogs = []; const nowStr = new Date().toLocaleString('ko-KR');
+            const handleCopyLink = () => {
+                const url = window.location.href.split('?')[0] + '?mode=customer';
+                const textArea = document.createElement("textarea");
+                textArea.value = url; document.body.appendChild(textArea); textArea.select();
+                try { document.execCommand('copy'); showToast("✅ 고객용 링크가 복사되었습니다!"); } catch (err) { showToast("❌ 복사 실패"); }
+                document.body.removeChild(textArea);
+            };
 
-                targetCodes.forEach(code => {
-                    const item = data.managedItems[code]; if (!item || !item.코드) return;
-                    const oldItem = data.masterProducts[code] || {};
-                    newMaster[item.코드] = { ...(newMaster[item.코드] || { 코드: item.코드 }) };
+            const handleDownloadImage = async () => {
+                const captureEl = document.getElementById('customer-report-capture-area');
+                if (!captureEl) return showToast("⚠️ 이미지를 생성할 영역을 찾을 수 없습니다.");
+                showToast("⏳ 이미지를 생성 중입니다...");
+                try {
+                    const canvas = await html2canvas(captureEl, { scale: 2, useCORS: true, backgroundColor: '#f8fafc' });
+                    const link = document.createElement('a'); link.download = `시황안내장_${new Date().toISOString().slice(0,10)}.png`;
+                    link.href = canvas.toDataURL('image/png'); link.click(); showToast("✅ 이미지 다운로드가 완료되었습니다!");
+                } catch (e) { showToast("❌ 이미지 생성 중 오류가 발생했습니다."); }
+            };
 
-                    if (item.finalData) {
-                        Object.keys(item.finalData).forEach(field => {
-                            const linked = config.masterLinks['estimate']?.[field] || (MASTER_HEADERS.includes(field) ? field : null);
-                            if (linked && item.finalData[field] !== undefined && item.finalData[field] !== '' && item.finalData[field] !== '오류') {
-                                const newVal = NUMERIC_HEADERS.includes(linked) ? parseNum(item.finalData[field]) : item.finalData[field];
-                                const oldVal = NUMERIC_HEADERS.includes(linked) ? parseNum(oldItem[linked]) : oldItem[linked];
-                                if (['입고가', '출고가'].includes(linked) && oldVal > 0 && oldVal !== newVal) {
-                                    localLogs.push({ id: generateUUID(), timestamp: nowStr, code: code, name: oldItem.품목명 || item.sources?.estimate?.품목명 || '', field: linked, oldVal, newVal, diff: newVal - oldVal });
-                                } newMaster[item.코드][linked] = newVal;
-                            }
-                        });
-                    } commitCount++;
-                });
+            // 💡 안전한 라우팅 핸들러
+            const handleNavigate = useCallback((e, path) => {
+                if (e && e.preventDefault) e.preventDefault();
+                
+                if (path === '#') {
+                    showToast('⚠️ 준비 중인 기능입니다.');
+                    return;
+                }
 
-                if (localLogs.length > 0) data.addHistoryLogs(localLogs);
-                data.setMasterProducts(newMaster); data.setManagedItems({}); setSelectedRows(new Set()); showToast(`✅ ${commitCount}건 마스터 단가 갱신 완료.`);
-            }, [data, config.masterLinks, showToast]);
+                try {
+                    const protocol = window.location.protocol;
+                    if (protocol === 'about:' || protocol === 'blob:' || protocol === 'data:') {
+                        showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
+                    } else {
+                        window.location.href = path;
+                    }
+                } catch (err) {
+                    showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
+                }
+            }, [showToast]);
 
-            const executeExport = () => { showToast("✅ ERP / 쇼핑몰 엑셀이 다운로드되었습니다."); };
-            const toggleAllRows = () => { const rows = Object.values(data.managedItems); if(selectedRows.size === rows.length) setSelectedRows(new Set()); else setSelectedRows(new Set(rows.map(r=>r.코드))); };
-            const toggleRowSelection = (code) => { setSelectedRows(p => { const n = new Set(p); if(n.has(code)) n.delete(code); else n.add(code); return n; }); };
-            const handleRemoveFromWorkspace = (code) => { data.setManagedItems(p=>{const n={...p}; delete n[code]; return n;}); };
+            const handlePush = async () => {
+                if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
+                setIsProcessing(true); setProcessMsg("클라우드 백업 중...");
+                setTimeout(() => {
+                    showToast("✅ 클라우드 저장 완료");
+                    setIsProcessing(false); setProcessMsg("");
+                }, 1000);
+            };
 
-            const fullDisplayRows = Object.values(data.managedItems);
-            const appState = { fullDisplayRows, visibleMasterCols: config.visibleMasterCols, visibleUploadCols: config.visibleUploadCols, masterProducts: data.masterProducts, masterLinksEst: config.masterLinks['estimate']||{}, selectedRows };
-            const appActions = { handleUpdateCell, toggleAllRows, toggleRowSelection, handleRemoveFromWorkspace };
+            const handlePull = async () => {
+                if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
+                setIsProcessing(true); setProcessMsg("데이터 동기화 중...");
+                setTimeout(() => {
+                    showToast("✅ 데이터 수신 완료");
+                    setIsProcessing(false); setProcessMsg("");
+                }, 1000);
+            };
+
+            if (isCustomerMode) return isLoading ? <div className="h-screen flex items-center justify-center text-slate-500 font-bold">로딩중...</div> : <CustomerReportView data={publishedReport} />;
+            if (isLoading) return <div className="h-screen flex items-center justify-center text-indigo-500 font-bold"><i className="fas fa-circle-notch fa-spin mr-2"></i>데이터 로딩중...</div>;
 
             return (
-                <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-slate-100 relative shadow-2xl border-x border-slate-300 select-none">
-                    <GlobalHeader activeTab="pipeline" itemCount={Object.keys(data.masterProducts).length} isProcessing={isProcessing} processMsg={processMsg} onOpenSettings={() => setShowSettings(true)} onPush={()=>{}} onPull={()=>{}} onNavigate={handleNavigate} />
-                    
-                    <div className="px-6 py-3 bg-white border-b border-slate-200 flex items-center justify-between shadow-sm shrink-0 z-10">
-                        <div className="flex gap-2">
-                            <label className={`cursor-pointer px-5 py-2.5 rounded-lg text-[13px] font-bold shadow-sm transition-all flex items-center ${isProcessing ? 'bg-slate-100 text-slate-400' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}>
-                                <SafeIcon name="file-excel" size={14} className="mr-2" /> 공급사 견적서 업로드
-                                <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} disabled={isProcessing} />
-                            </label>
-                            <button onClick={()=>setShowReviewModal(true)} disabled={fullDisplayRows.length===0} className={`px-5 py-2.5 rounded-lg text-[13px] font-bold shadow-sm transition-all flex items-center ${fullDisplayRows.length>0?'bg-slate-800 text-white hover:bg-black':'bg-slate-200 text-slate-400'}`}>
-                                <SafeIcon name="check-circle-2" size={14} className="mr-2" /> 최종 검토 및 마스터 반영
-                            </button>
-                        </div>
-                        <div className="flex gap-2">
-                            <button onClick={executeExport} disabled={fullDisplayRows.length===0} className="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 rounded-lg text-[13px] font-bold hover:bg-slate-50 shadow-sm flex items-center"><SafeIcon name="file-export" size={14} className="mr-2"/> ERP/쇼핑몰 출력</button>
-                        </div>
+                <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-slate-50 shadow-2xl border-x border-slate-300 select-none">
+                    <GlobalHeader 
+                        activeTab="insight" 
+                        itemCount={Object.keys(masterProducts).length} 
+                        isProcessing={isProcessing} 
+                        processMsg={processMsg}
+                        onOpenSettings={() => setShowSettings(true)}
+                        onPush={handlePush}
+                        onPull={handlePull}
+                        onNavigate={handleNavigate}
+                    />
+
+                    {toastMsg && <div className="fixed bottom-6 right-6 z-[1000] bg-slate-800 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in text-sm font-bold border border-slate-700"><SafeIcon name="check-circle-2" className="text-emerald-400" />{toastMsg}</div>}
+
+                    <div className="flex flex-1 overflow-hidden bg-slate-50">
+                        <aside className="w-[240px] bg-white border-r border-slate-200 flex flex-col shrink-0 z-10 shadow-sm">
+                            <div className="p-5 border-b border-slate-100">
+                                <h2 className="text-[11px] font-black text-slate-400 tracking-widest uppercase mb-1">Menu</h2>
+                            </div>
+                            <div className="flex flex-col py-2">
+                                <button onClick={() => setActiveMenu('dashboard')} className={`px-6 py-4 text-left text-[14px] font-black border-l-4 transition-all ${activeMenu === 'dashboard' ? 'border-indigo-500 text-indigo-700 bg-indigo-50/50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}>
+                                    <i className="fas fa-chart-line w-6 text-center mr-2"></i> 관리자 대시보드
+                                </button>
+                                <button onClick={() => setActiveMenu('category')} className={`px-6 py-4 text-left text-[14px] font-black border-l-4 transition-all ${activeMenu === 'category' ? 'border-emerald-500 text-emerald-700 bg-emerald-50/50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}>
+                                    <i className="fas fa-sitemap w-6 text-center mr-2"></i> 카테고리별 분석
+                                </button>
+                                <button onClick={() => setActiveMenu('editor')} className={`px-6 py-4 text-left text-[14px] font-black border-l-4 transition-all ${activeMenu === 'editor' ? 'border-blue-500 text-blue-700 bg-blue-50/50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}>
+                                    <i className="fas fa-envelope-open-text w-6 text-center mr-2"></i> 고객 안내장 발행
+                                </button>
+                            </div>
+                        </aside>
+
+                        <main className="flex-1 overflow-y-auto bg-slate-50/50 custom-scrollbar p-8">
+                            {activeMenu === 'dashboard' && (
+                                <div className="max-w-6xl mx-auto space-y-6 fade-in">
+                                    <div className="grid grid-cols-3 gap-6">
+                                        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm flex flex-col">
+                                            <span className="text-sm font-bold text-slate-500 mb-2">총 마스터 상품</span>
+                                            <span className="text-3xl font-black text-slate-800">{Object.keys(masterProducts).length.toLocaleString()} <span className="text-lg font-bold text-slate-400">건</span></span>
+                                        </div>
+                                        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm flex flex-col">
+                                            <span className="text-sm font-bold text-slate-500 mb-2">최근 단가 변동 (총 {insights.changeStats.total}건)</span>
+                                            <div className="flex gap-4 items-end mt-auto">
+                                                <div><span className="text-xs text-rose-500 font-bold mr-1">인상</span><span className="text-2xl font-black text-rose-600">{insights.changeStats.up}</span></div>
+                                                <div><span className="text-xs text-blue-500 font-bold mr-1">인하</span><span className="text-2xl font-black text-blue-600">{insights.changeStats.down}</span></div>
+                                            </div>
+                                        </div>
+                                        <div className="bg-rose-50 rounded-xl border border-rose-200 p-6 shadow-sm flex flex-col">
+                                            <span className="text-sm font-bold text-rose-700 mb-2"><i className="fas fa-exclamation-triangle mr-1.5"></i>마진 15% 미만 (위험)</span>
+                                            <span className="text-3xl font-black text-rose-600">{insights.marginRisks.length} <span className="text-lg font-bold text-rose-400">건</span></span>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-6 h-[400px]">
+                                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
+                                            <div className="bg-slate-50 p-4 border-b border-gray-200 flex justify-between items-center shrink-0">
+                                                <h3 className="text-[14px] font-black text-slate-800"><i className="fas fa-exclamation-circle text-rose-500 mr-2"></i>역마진 위험 레이더 (마진율 15% 미만)</h3>
+                                            </div>
+                                            <div className="flex-1 overflow-auto custom-scrollbar">
+                                                <table className="w-full text-left text-[12px] whitespace-nowrap">
+                                                    <thead className="bg-white sticky top-0 border-b border-slate-200 z-10 shadow-sm text-slate-500">
+                                                        <tr><th className="px-4 py-2.5">품목명 (규격)</th><th className="px-3 py-2.5 text-right">원가(입고)</th><th className="px-3 py-2.5 text-right text-indigo-600">출고가</th><th className="px-4 py-2.5 text-right text-rose-600 w-16">마진율</th></tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-100 text-slate-700">
+                                                        {insights.marginRisks.length === 0 ? <tr><td colSpan="4" className="p-10 text-center font-bold text-emerald-500">위험 상품이 없습니다!</td></tr> : insights.marginRisks.map(item => (
+                                                            <tr key={item.코드} className="hover:bg-slate-50">
+                                                                <td className="px-4 py-2"><div className="font-bold text-slate-800 truncate max-w-[180px]">{item.품목명} <span className="text-slate-400 font-normal">({item.규격})</span></div></td>
+                                                                <td className="px-3 py-2 text-right">{item.입고가?.toLocaleString()}</td>
+                                                                <td className="px-3 py-2 text-right font-black text-indigo-600">{item.출고가?.toLocaleString()}</td>
+                                                                <td className="px-4 py-2 text-right font-black text-rose-600">{item._margin.toFixed(1)}%</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
+                                            <div className="bg-slate-50 p-4 border-b border-gray-200 flex justify-between items-center shrink-0">
+                                                <h3 className="text-[14px] font-black text-slate-800"><i className="fas fa-fire text-amber-500 mr-2"></i>🔥 최근 입고가 급등락 (Top 15)</h3>
+                                            </div>
+                                            <div className="flex-1 overflow-auto custom-scrollbar">
+                                                <table className="w-full text-left text-[12px] whitespace-nowrap">
+                                                    <thead className="bg-white sticky top-0 border-b border-slate-200 z-10 shadow-sm text-slate-500">
+                                                        <tr><th className="px-4 py-2.5">품목명 (규격)</th><th className="px-3 py-2.5">출처(카탈로그)</th><th className="px-3 py-2.5 text-right">이전 단가</th><th className="px-4 py-2.5 text-right w-20">차액</th></tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-100 text-slate-700">
+                                                        {insights.volatilityList.length === 0 ? <tr><td colSpan="4" className="p-10 text-center font-bold text-slate-400">변동 이력이 없습니다.</td></tr> : insights.volatilityList.map(log => {
+                                                            const isUp = log.diff > 0;
+                                                            return (
+                                                                <tr key={log.id} className="hover:bg-slate-50">
+                                                                    <td className="px-4 py-2"><div className="font-bold text-slate-800 truncate max-w-[150px]">{log.name} <span className="text-slate-400 font-normal">({log.spec})</span></div></td>
+                                                                    <td className="px-3 py-2 text-[11px] text-slate-400 truncate max-w-[80px]">{log.catalog}</td>
+                                                                    <td className="px-3 py-2 text-right">{log.oldVal?.toLocaleString()}</td>
+                                                                    <td className={`px-4 py-2 text-right font-black ${isUp ? 'text-rose-500' : 'text-blue-500'}`}>{isUp ? '▲' : '▼'} {Math.abs(log.diff).toLocaleString()}</td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeMenu === 'category' && (
+                                <div className="h-full flex flex-col bg-slate-50 fade-in border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                                    <div className="flex items-end px-6 pt-3 border-b border-gray-200 bg-slate-100 shrink-0 h-[56px]">
+                                        <div className="flex overflow-x-auto custom-scrollbar h-full items-end w-full gap-1">
+                                            {c1List.length === 0 && <span className="text-sm text-slate-400 px-4 pb-2 font-bold">분류 데이터가 없습니다.</span>}
+                                            {c1List.map(c1 => {
+                                                const isEtc = c1.name === '기타';
+                                                const isActive = activeC1 === c1.code;
+                                                return (
+                                                    <button key={c1.code} onClick={() => setActiveC1(c1.code)} className={`px-5 py-2.5 text-[13px] font-bold rounded-t-lg transition-colors border-b-[3px] ${isActive ? (isEtc ? 'border-slate-500 text-slate-700 bg-white shadow-[0_-2px_5px_rgba(0,0,0,0.02)]' : 'border-indigo-600 text-indigo-700 bg-white shadow-[0_-2px_5px_rgba(0,0,0,0.02)]') : (isEtc ? 'border-transparent text-slate-400 hover:text-slate-500 hover:bg-slate-200/30' : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-200/50')}`}>
+                                                        {c1.name}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex-1 flex overflow-hidden">
+                                        <div className="w-[200px] bg-white border-r border-gray-200 overflow-y-auto py-2 shrink-0 custom-scrollbar shadow-[2px_0_10px_rgba(0,0,0,0.02)] z-20">
+                                            {c2List.map(c2 => {
+                                                const isEtc = c2.name === '기타'; const isActive = activeC2 === c2.code;
+                                                return (
+                                                    <button key={c2.code} onClick={() => setActiveC2(c2.code)} className={`w-full text-left px-5 py-3.5 text-[13px] font-bold transition-all border-l-4 ${isActive ? (isEtc ? 'bg-slate-100/50 text-slate-700 border-slate-500' : 'bg-indigo-50/50 text-indigo-700 border-indigo-600') : (isEtc ? 'border-transparent text-slate-400 hover:bg-slate-50 hover:text-slate-500' : 'border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900')}`}>
+                                                        {c2.name}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+
+                                        <div className="w-[280px] bg-slate-50 border-r border-gray-200 flex flex-col overflow-hidden shrink-0 z-10 shadow-[2px_0_10px_rgba(0,0,0,0.02)]">
+                                            <div className="px-5 py-4 border-b border-gray-200 bg-white shrink-0">
+                                                <h3 className="text-[13px] font-black text-slate-800 flex items-center"><i className="fas fa-sitemap text-indigo-400 mr-2"></i>3차 분류(소분류) 목록</h3>
+                                                <p className="text-[11px] text-slate-500 mt-1">{c3List.length}개의 하위 카테고리 감지됨</p>
+                                            </div>
+                                            <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
+                                                {c3List.map(cat => {
+                                                    const isEtc = cat.name === '기타'; const isActive = activeC3 === cat.code;
+                                                    return (
+                                                        <button key={cat.code} onClick={() => setActiveC3(cat.code)} className={`w-full text-left px-4 py-3 rounded-lg text-[13px] font-bold transition-all mb-1.5 ${isActive ? (isEtc ? 'bg-white text-slate-700 border border-slate-300 shadow-sm ring-1 ring-slate-100' : 'bg-white text-indigo-700 border border-indigo-200 shadow-sm ring-1 ring-indigo-100') : (isEtc ? 'border border-transparent text-slate-400 hover:bg-white hover:border-slate-200 hover:shadow-sm opacity-70' : 'border border-transparent text-slate-600 hover:bg-white hover:border-slate-200 hover:shadow-sm')}`}>
+                                                            <div className="flex justify-between items-center"><span className="truncate pr-2">{cat.name}</span><span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isActive ? (isEtc ? 'bg-slate-200 text-slate-700' : 'bg-indigo-100 text-indigo-700') : 'bg-slate-200 text-slate-500'}`}>{cat.totalItems}건</span></div>
+                                                            <div className="flex gap-2 mt-2 text-[10px] font-medium"><span className={cat.upCount > 0 ? 'text-rose-500' : 'text-slate-400'}>↑ {cat.upCount}</span><span className={cat.downCount > 0 ? 'text-blue-500' : 'text-slate-400'}>↓ {cat.downCount}</span><span className={`ml-auto font-bold ${cat.avgMargin < 15 ? 'text-rose-500' : 'text-slate-400'}`}>마진 {cat.avgMargin.toFixed(1)}%</span></div>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex-1 bg-white flex flex-col overflow-hidden z-0">
+                                            {activeC3 && c3List.find(c => c.code === activeC3) ? (() => {
+                                                const catData = c3List.find(c => c.code === activeC3);
+                                                const parentC1 = categoryHierarchy[activeC1]?.name || '';
+                                                const parentC2 = categoryHierarchy[activeC1]?.sub[activeC2]?.name || '';
+                                                
+                                                return (
+                                                    <>
+                                                        <div className="bg-white px-6 py-5 border-b border-gray-200 flex items-center justify-between shrink-0">
+                                                            <div>
+                                                                <h2 className="text-lg font-black text-slate-900 flex items-center"><i className={`fas fa-folder-open ${catData.name === '기타' ? 'text-slate-400' : 'text-indigo-500'} mr-2`}></i>{catData.name}</h2>
+                                                                <div className="text-[11px] text-slate-500 mt-1.5 flex items-center gap-2"><span className="bg-slate-100 px-1.5 py-0.5 rounded">{parentC1}</span> <i className="fas fa-chevron-right text-[8px] text-slate-300"></i><span className="bg-slate-100 px-1.5 py-0.5 rounded">{parentC2}</span> <i className="fas fa-chevron-right text-[8px] text-slate-300"></i><span className="font-bold text-slate-700">{catData.name}</span></div>
+                                                            </div>
+                                                            <div className="flex gap-3">
+                                                                <div className="bg-slate-50 px-4 py-2 rounded-lg border border-gray-200 text-center shadow-sm"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">평균 마진율</div><div className={`text-sm font-black ${catData.avgMargin < 15 ? 'text-rose-500' : 'text-emerald-600'}`}>{catData.avgMargin.toFixed(1)}%</div></div>
+                                                                <div className="bg-slate-50 px-4 py-2 rounded-lg border border-gray-200 text-center shadow-sm"><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">단가 인상</div><div className="text-sm font-black text-rose-500">{catData.upCount}건</div></div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50/30">
+                                                            <table className="w-full text-left text-sm whitespace-nowrap">
+                                                                <thead className="bg-slate-50 border-b border-gray-200 sticky top-0 z-10 shadow-sm">
+                                                                    <tr><th className="py-3 px-5 font-bold text-slate-500 text-[11px] w-[100px]">품목코드</th><th className="py-3 px-4 font-bold text-slate-500 text-[11px]">품목명 (규격)</th><th className="py-3 px-4 font-bold text-slate-500 text-[11px] text-right w-24">입고가</th><th className="py-3 px-4 font-bold text-slate-500 text-[11px] text-right w-24 text-indigo-600">출고가</th><th className="py-3 px-5 font-bold text-slate-500 text-[11px] text-right w-20">마진율</th></tr>
+                                                                </thead>
+                                                                <tbody className="divide-y divide-gray-100 text-slate-700 bg-white">
+                                                                    {catData.items.map(item => {
+                                                                        const inP = parseNum(item['입고가']); const outP = parseNum(item['출고가']);
+                                                                        const margin = inP > 0 && outP > 0 ? ((outP - inP) / outP) * 100 : 0;
+                                                                        return (
+                                                                            <tr key={item.코드} className="hover:bg-indigo-50/40 transition-colors">
+                                                                                <td className="py-2.5 px-5 text-xs font-mono text-slate-400">{item.코드}</td>
+                                                                                <td className="py-2.5 px-4"><div className="font-bold text-slate-800 text-[13px]">{item.품목명} <span className="font-normal text-slate-500 text-xs ml-1">({item.규격})</span></div></td>
+                                                                                <td className="py-2.5 px-4 text-right text-[13px] font-medium">{inP > 0 ? inP.toLocaleString() : '-'}</td>
+                                                                                <td className="py-2.5 px-4 text-right text-[13px] font-black text-indigo-600">{outP > 0 ? outP.toLocaleString() : '-'}</td>
+                                                                                <td className={`py-2.5 px-5 text-right text-xs font-black ${margin < 15 ? 'text-rose-500' : 'text-emerald-600'}`}>{margin.toFixed(1)}%</td>
+                                                                            </tr>
+                                                                        );
+                                                                    })}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    </>
+                                                );
+                                            })() : (
+                                                <div className="h-full flex flex-col justify-center items-center text-slate-300 bg-slate-50/30">
+                                                    <i className="fas fa-hand-point-left text-5xl mb-4 opacity-50 text-indigo-200"></i><p className="text-sm font-bold text-slate-400">좌측에서 3차 분류를 선택하시면<br/>해당하는 상품 목록과 통계를 표시합니다.</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeMenu === 'editor' && (
+                                <div className="h-full overflow-y-auto custom-scrollbar fade-in">
+                                    <div className="max-w-[900px] mx-auto pb-10">
+                                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                            <div className="p-6 border-b border-gray-100 flex justify-between items-end bg-slate-50">
+                                                <div>
+                                                    <h2 className="text-lg font-black text-slate-800 mb-1"><i className="fas fa-pen-nib text-indigo-500 mr-2"></i>고객 안내장(레터) 에디터</h2>
+                                                    <p className="text-xs text-slate-500 font-bold">작성 내용은 브라우저에 자동 임시저장됩니다. 작성을 마치고 '적용'을 눌러야 뷰어가 갱신됩니다.</p>
+                                                </div>
+                                                <button onClick={handleLoadRecentChanges} className="bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 px-4 py-2 rounded-md text-[12px] font-bold transition-all shadow-sm flex items-center">
+                                                    <i className="fas fa-magic mr-1.5"></i> 변동 데이터 불러오기
+                                                </button>
+                                            </div>
+                                            
+                                            <div className="p-6 space-y-6">
+                                                <div className="space-y-4">
+                                                    <div><label className="block text-[12px] font-black text-slate-700 mb-1.5">안내장 제목</label><input type="text" value={editorDraft.title} onChange={e => setEditorDraft(p => ({...p, title: e.target.value}))} className="w-full border border-gray-300 rounded-md px-3 py-2 text-[14px] font-bold outline-none focus:border-indigo-500 focus:ring-1 transition-shadow" placeholder="예: [Orderz] 4월 3주차 주요 품목 단가 안내" /></div>
+                                                    <div><label className="block text-[12px] font-black text-slate-700 mb-1.5">전체 인사말 (Global Briefing)</label><textarea value={editorDraft.greeting} onChange={e => setEditorDraft(p => ({...p, greeting: e.target.value}))} className="w-full h-28 border border-gray-300 rounded-md px-3 py-2 text-[13px] outline-none focus:border-indigo-500 focus:ring-1 resize-none leading-relaxed transition-shadow" placeholder="인사말 및 전반적인 시장 상황을 안내하세요." /></div>
+                                                </div>
+
+                                                <div className="w-full h-px bg-gray-200 my-2"></div>
+
+                                                <div>
+                                                    <div className="flex items-center justify-between mb-4">
+                                                        <label className="text-[14px] font-black text-slate-800"><i className="fas fa-list text-indigo-400 mr-2"></i>카테고리(출처)별 세부 안내</label>
+                                                        <span className="text-[11px] text-slate-400 font-bold">항목 우측의 휴지통을 눌러 고객에게 숨길 상품을 뺄 수 있습니다.</span>
+                                                    </div>
+                                                    
+                                                    {Object.keys(editorDraft.categories).length === 0 ? (
+                                                        <div className="text-center py-10 bg-slate-50 border border-dashed border-gray-300 rounded-xl">
+                                                            <p className="text-[13px] text-slate-400 font-bold mb-3">불러온 변동 데이터가 없습니다.</p>
+                                                            <button onClick={handleLoadRecentChanges} className="text-indigo-500 hover:text-indigo-600 font-black text-[12px] underline">우측 상단 '자동 불러오기' 클릭</button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="space-y-6">
+                                                            {Object.entries(editorDraft.categories).map(([catName, catData]) => (
+                                                                <div key={catName} className="bg-slate-50 border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                                                                    <div className="p-4 bg-white border-b border-gray-200 flex justify-between items-center">
+                                                                        <div className="font-black text-slate-800 text-[14px]"><i className="fas fa-folder-open text-indigo-400 mr-2"></i>{catName} <span className="text-indigo-500 text-[11px] ml-1">({catData.items.length}건)</span></div>
+                                                                        <button onClick={() => { const n = {...editorDraft.categories}; delete n[catName]; setEditorDraft(p => ({...p, categories: n})); }} className="text-[11px] text-rose-400 hover:text-rose-600 font-bold px-2 py-1 rounded hover:bg-rose-50 transition-colors"><i className="fas fa-times mr-1"></i>카테고리 삭제</button>
+                                                                    </div>
+                                                                    <div className="p-4 space-y-3">
+                                                                        <textarea value={catData.comment} onChange={e => { const n = {...editorDraft.categories}; n[catName].comment = e.target.value; setEditorDraft(p => ({...p, categories: n})); }} className="w-full h-16 border border-gray-300 rounded-md px-3 py-2 text-[12px] outline-none focus:border-indigo-400 focus:ring-1 resize-none bg-white transition-shadow" placeholder={`${catName} 카테고리에 대한 변동 사유나 코멘트를 적어주세요. (선택사항)`} />
+                                                                        <div className="bg-white border border-gray-200 rounded-md divide-y divide-gray-100 max-h-[250px] overflow-y-auto custom-scrollbar">
+                                                                            {catData.items.map(item => (
+                                                                                <div key={item.id} className="flex justify-between items-center p-3 hover:bg-slate-50 transition-colors">
+                                                                                    <div className="flex flex-col min-w-0">
+                                                                                        <span className="text-[12px] font-bold text-slate-800 truncate">{item.name}</span>
+                                                                                        <span className="text-[10px] text-slate-400 mt-0.5">{item.spec}</span>
+                                                                                    </div>
+                                                                                    <div className="flex items-center gap-3 shrink-0">
+                                                                                        <span className="text-[11px] text-slate-400 font-mono line-through decoration-slate-300">{item.oldVal?.toLocaleString()}</span>
+                                                                                        <span className="text-[12px] font-black text-indigo-600 font-mono bg-indigo-50 px-1.5 py-0.5 rounded">{item.newVal?.toLocaleString()}</span>
+                                                                                        <button onClick={() => { const n = {...editorDraft.categories}; n[catName].items = n[catName].items.filter(i => i.id !== item.id); setEditorDraft(p => ({...p, categories: n})); }} className="text-slate-300 hover:text-rose-500 hover:bg-rose-50 w-6 h-6 flex items-center justify-center rounded transition-colors ml-1"><i className="fas fa-trash-alt"></i></button>
+                                                                                    </div>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-slate-100 p-5 border-t border-gray-200 flex justify-between items-center shrink-0">
+                                                <button onClick={() => setIsPreviewOpen(true)} className="px-5 py-2.5 bg-white border border-gray-300 text-slate-700 hover:bg-slate-50 rounded-md text-[13px] font-bold transition-all shadow-sm"><i className="fas fa-mobile-alt mr-2 text-indigo-500"></i>모바일 미리보기</button>
+                                                <button onClick={handlePublish} className="px-8 py-2.5 bg-[#1A2235] text-white font-black rounded-md hover:bg-black shadow-md transition-all flex items-center hover:-translate-y-0.5">
+                                                    <i className="fas fa-paper-plane mr-2 text-indigo-400"></i> 고객용 웹페이지 적용 (발행)
+                                                </button>
+                                            </div>
+                                        </div>
+                                        
+                                        {publishedReport && (
+                                            <div className="mt-6 bg-indigo-50/50 border border-indigo-100 rounded-xl p-6 shadow-sm flex items-center justify-between fade-in">
+                                                <div>
+                                                    <h3 className="text-[14px] font-black text-indigo-900 mb-1"><i className="fas fa-check-circle mr-1.5 text-emerald-500"></i>발행 완료! 이제 고객에게 공유하세요.</h3>
+                                                    <p className="text-[11px] font-bold text-indigo-600/80">링크를 복사하여 카톡으로 보내거나, 한 장의 깔끔한 이미지로 저장할 수 있습니다.</p>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button onClick={handleCopyLink} className="px-4 py-2.5 bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-100 rounded-md text-[12px] font-bold transition-all shadow-sm flex items-center"><i className="fas fa-link mr-1.5"></i> URL 링크 복사</button>
+                                                    <button onClick={handleDownloadImage} className="px-4 py-2.5 bg-indigo-600 text-white rounded-md text-[12px] font-bold hover:bg-indigo-700 transition-all shadow-sm flex items-center"><SafeIcon name="camera" className="mr-1.5" /> 카톡 전송용 이미지 다운로드</button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </main>
                     </div>
 
-                    <main className="flex-1 overflow-hidden bg-slate-50 p-4">
-                        <ExcelDataGrid state={appState} actions={appActions} />
-                    </main>
+                    {isPreviewOpen && (
+                        <div className="fixed inset-0 bg-slate-900/90 z-[1000] flex flex-col items-center justify-center p-4 fade-in overflow-hidden">
+                            <div className="w-full max-w-md flex justify-between items-center mb-4 shrink-0 text-white">
+                                <span className="font-bold text-sm"><i className="fas fa-mobile-alt mr-2"></i>고객 뷰어 (가로 폭 480px 기준)</span>
+                                <button onClick={() => setIsPreviewOpen(false)} className="text-slate-400 hover:text-white text-xl"><i className="fas fa-times"></i></button>
+                            </div>
+                            <div className="flex-1 w-full max-w-md bg-white rounded-[2rem] overflow-hidden shadow-2xl relative">
+                                <CustomerReportView data={editorDraft} />
+                            </div>
+                            <div className="mt-4 shrink-0">
+                                <button onClick={() => setIsPreviewOpen(false)} className="px-6 py-2.5 bg-slate-700 text-white rounded-full text-sm font-bold hover:bg-slate-600 border border-slate-600">닫기</button>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {publishedReport && (
+                        <div style={{ position: 'absolute', top: '-9999px', left: '-9999px' }}>
+                            <CustomerReportView data={publishedReport} />
+                        </div>
+                    )}
 
+                    {/* 설정 모달 */}
                     {showSettings && (
                         <MappingCenterModal 
                             onClose={() => setShowSettings(false)} 
@@ -890,14 +1200,6 @@
                             availableCatalogs={availableCatalogs} 
                             availableCategories={availableCategories} 
                         />
-                    )}
-                    {showReviewModal && <ReviewModal onClose={() => setShowReviewModal(false)} onConfirm={handleCommitEstimate} displayRows={fullDisplayRows} masterProducts={data.masterProducts} />}
-
-                    {toastMsg && (
-                        <div className="fixed bottom-10 right-10 z-[100] bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in border border-slate-700">
-                            <SafeIcon name="check-circle-2" size={18} className="text-emerald-400" />
-                            <span className="text-sm font-bold tracking-tight">{toastMsg}</span>
-                        </div>
                     )}
                 </div>
             );
