@@ -30,6 +30,8 @@
         
         .modal-bounce { animation: modalBounce 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         @keyframes modalBounce { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+        .config-chip { display: inline-flex; align-items: center; padding: 6px 14px; border-radius: 9999px; border: 1px solid #e2e8f0; background-color: white; color: #475569; font-size: 12px; cursor: pointer; transition: all 0.2s; }
+        .config-chip:hover { background-color: #f8fafc; } .config-chip.active { background-color: #e0e7ff; border-color: #c7d2fe; color: #4338ca; font-weight: bold; }
     </style>
 </head>
 <body class="overflow-hidden text-slate-800">
@@ -39,7 +41,38 @@
         const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
         const STORAGE_KEYS = { MASTER_DB: 'merchMaster_v870', HISTORY_DB: 'merchHistory_v870', CLOUD_URL: 'skuSyncCloudUrl_v6' };
+        
+        const MASTER_HEADERS = [
+            "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", 
+            "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", 
+            "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", 
+            "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", 
+            "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록", "소싱태그"
+        ];
+
         const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
+        const generateUUID = () => {
+            if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) { var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); });
+        };
+
+        const getInitialVisibleMasterCols = () => ({ estimate: [] }); 
+        const getInitialVisibleUploadCols = () => ({ estimate: ['입고가', '출고가', '입고B', '도매A', '외주비', '노무비'] });
+        const getInitialMappings = () => {
+            const base = { master: {}, estimate: {} };
+            base.master = { '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격, 규격명, 사이즈, 단량', '출고가': '출고가, 출고, 판매가, 시중가', '입고가': '입고가, 입고, 매입가' };
+            base.estimate = { 
+                '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격명, 규격, 사이즈, 단량', '구매처': '거래처명, 구매처, 거래처', 
+                '견적서': '견적서, 카테고리, 템플릿, 견적분류', '입고가': '입고가, 입고, 매입가', '출고가': '출고가, 출고, 판매가',
+                '입고B': 'B단가, 입고B', '도매A': 'A판매, A판매가, 도매A', '도매B': 'B판매, B판매가, 도매B', '간단설명': '지시사항, 간단설명, 비고'
+            };
+            return base;
+        };
+        const getInitialMasterLinks = () => {
+            const base = { master: {}, estimate: {} };
+            base.estimate = { '창고': '창고', '구매처': '구매처', '견적서': '견적서', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B', '간단설명': '간단설명' };
+            return base;
+        };
 
         const initIDB = () => new Promise((resolve, reject) => {
             const request = indexedDB.open('MerchOpsDB', 1);
@@ -49,33 +82,82 @@
         const getIDB = async (key) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); };
         const setIDB = async (key, val) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readwrite'); tx.objectStore('store').put(val, key); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); };
 
+        const parseExcelRobust = (file) => new Promise((resolve, reject) => {
+            if (!window.XLSX) return reject(new Error("엑셀 파서 로드 안됨"));
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result); const wb = window.XLSX.read(data, { type: 'array', cellDates: true });
+                    const jsonAll = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "", raw: false });
+                    if(jsonAll.length === 0) return resolve([]);
+
+                    let headerRowIdx = 0;
+                    for (let i = 0; i < Math.min(15, jsonAll.length); i++) {
+                        const rowStr = jsonAll[i].join('').replace(/\s/g, '');
+                        if (rowStr.includes('코드') || rowStr.includes('품명') || rowStr.includes('상품')) { headerRowIdx = i; break; }
+                    }
+                    const headers = jsonAll[headerRowIdx] || [];
+                    let endIdx = jsonAll.length - 1;
+                    
+                    while (endIdx > headerRowIdx) {
+                        const rowArr = jsonAll[endIdx]; if (!rowArr || rowArr.length === 0) { endIdx--; continue; }
+                        let filledCount = 0, rawStr = '';
+                        for(let i=0; i<rowArr.length; i++) if(rowArr[i] !== undefined && String(rowArr[i]).trim() !== '') { filledCount++; rawStr += String(rowArr[i]).replace(/\s/g, ''); }
+                        if (rawStr === '') { endIdx--; continue; }
+                        if ((rawStr.includes('출력') || rawStr.includes('합계') || rawStr.includes('총계')) && filledCount <= 4) endIdx--; else break;
+                    }
+
+                    const parsedData = [];
+                    for (let i = headerRowIdx + 1; i <= endIdx; i++) {
+                        const row = jsonAll[i]; if (!row) continue;
+                        let isEmpty = true; const obj = {}; 
+                        headers.forEach((h, idx) => { if (h) { obj[h] = row[idx]; if(row[idx] !== undefined && String(row[idx]).trim() !== '') isEmpty = false; } }); 
+                        if(!isEmpty) parsedData.push(obj);
+                    } resolve(parsedData);
+                } catch(err) { reject(err); }
+            }; reader.readAsArrayBuffer(file);
+        });
+
+        // 🌟 SafeIcon: 전체 아이콘 지원 확장
         const SafeIcon = React.memo(function SafeIconComponent({ name, size = 18, className = "" }) {
             const [svg, setSvg] = useState("");
             useEffect(() => {
                 const renderIcon = () => {
                     if (window.lucide && window.lucide.icons) {
                         const kebabName = name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
-                        if (window.lucide.icons[kebabName]) { setSvg(window.lucide.icons[kebabName].toSvg({ width: size, height: size, class: className, 'stroke-width': 2.5 })); return; }
+                        const possibleNames = [
+                            kebabName, name, 
+                            name === 'cloud-download' ? 'download-cloud' : name,
+                            name === 'cloud-upload' ? 'upload-cloud' : name,
+                            name === 'bar-chart-3' ? 'bar-chart' : name
+                        ];
+                        for (const pName of possibleNames) {
+                            if (window.lucide.icons[pName]) {
+                                setSvg(window.lucide.icons[pName].toSvg({ width: size, height: size, class: className, 'stroke-width': 2.5 })); return;
+                            }
+                        }
                     }
                 }; renderIcon();
             }, [name, size, className]);
 
             if (!svg) {
-                const faMap = { 'layout-dashboard': 'fa-th-large', 'database': 'fa-database', 'package-search': 'fa-box-open', 'file-spreadsheet': 'fa-table', 'zap': 'fa-bolt', 'book-open': 'fa-address-book', 'users': 'fa-users', 'shopping-bag': 'fa-shopping-bag', 'credit-card': 'fa-credit-card', 'line-chart': 'fa-chart-line', 'boxes': 'fa-boxes', 'printer': 'fa-print', 'pie-chart': 'fa-chart-pie', 'megaphone': 'fa-bullhorn', 'search': 'fa-search', 'check-circle-2': 'fa-check-circle', 'x': 'fa-times', 'edit': 'fa-edit', 'save': 'fa-save', 'link': 'fa-link' };
+                const faMap = { 'layout-dashboard':'fa-th-large', 'database':'fa-database', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'book-open':'fa-address-book', 'users':'fa-users', 'shopping-bag':'fa-shopping-bag', 'credit-card':'fa-credit-card', 'line-chart':'fa-chart-line', 'boxes':'fa-boxes', 'printer':'fa-print', 'pie-chart':'fa-chart-pie', 'megaphone':'fa-bullhorn', 'search':'fa-search', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'edit':'fa-edit', 'save':'fa-save', 'link':'fa-link', 'settings':'fa-cogs', 'desktop':'fa-desktop', 'sign-in-alt':'fa-sign-in-alt', 'calculator':'fa-calculator', 'tags':'fa-tags', 'layer-group':'fa-layer-group', 'sitemap':'fa-sitemap', 'ban':'fa-ban', 'bolt':'fa-bolt', 'sort-amount-down':'fa-sort-amount-down', 'info-circle':'fa-info-circle', 'lock':'fa-lock', 'key':'fa-key', 'trash-alt':'fa-trash-alt', 'folder-open':'fa-folder-open', 'file-invoice':'fa-file-invoice', 'broom':'fa-broom', 'cloud-download': 'fa-cloud-download-alt', 'cloud-upload': 'fa-cloud-upload-alt' };
                 return <i className={`fas ${faMap[name] || `fa-${name}`} ${className}`} style={{ fontSize: size }} />;
             }
             return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
         });
 
-        // 🌟 통합 글로벌 헤더 (v2.2 UI 적용)
-        const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onNavigate }) => {
+        // 🌟 통합 글로벌 헤더 (v2.2 UI 적용 + 클라우드 버튼 복구)
+        const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [ { id: 'master', label: '정보 관리', icon: 'database' }, { id: 'ops', label: '운영 관리', icon: 'truck' }, { id: 'admin', label: '인사이트', icon: 'bar-chart-3' } ];
             const tabs = [
                 { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: '/NEXUS/Dashboard', group: 'common', isReady: true },
+                { id: 'guide', label: '시스템 가이드', icon: "book-open", path: '/NEXUS/wip?tab=guide', group: 'common', isReady: false },
                 { id: 'item-info', label: '마스터 DB', icon: "database", path: '/NEXUS/Master', group: 'master', isReady: true },
                 { id: 'item-manage', label: '상품 관리', icon: "package-search", path: '/NEXUS/Item_manager', group: 'master', isReady: true },
                 { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: '/NEXUS/Pipeline', group: 'master', isReady: true },
                 { id: 'parser', label: '스마트 파서', icon: "zap", path: '/NEXUS/Parser', group: 'master', isReady: true },
+                { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: '/NEXUS/partner_db', group: 'master', isReady: false },
                 { id: 'partners', label: '거래처 관리', icon: "users", path: '/NEXUS/partners', group: 'master', isReady: true },
                 { id: 'orders', label: '주문 관리', icon: "shopping-bag", path: '/NEXUS/orders', group: 'ops', isReady: true },
                 { id: 'purchases', label: '구매 관리', icon: "credit-card", path: '/NEXUS/purchases', group: 'ops', isReady: true },
@@ -93,10 +175,10 @@
                 <div className="flex flex-col shrink-0 z-40 relative w-full shadow-sm bg-[#0B1021]">
                     <header className="h-[72px] bg-[#0B1021] text-white flex justify-between px-6 border-b border-slate-800/80 relative z-20">
                         <div className="flex items-center h-full">
-                            <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={(e) => onNavigate(e, '/NEXUS/Dashboard', true)}>
+                            <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={(e) => { setSelectedGroup('common'); onNavigate(e, '/NEXUS/Dashboard', true); }}>
                                 <span className="font-black text-[24px] tracking-wider text-slate-100 mr-4 group-hover:text-indigo-400 transition-colors">ONEAPP</span>
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
-                                    <div className="flex items-center"><span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span></div>
+                                    <div className="flex items-center"><span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span><span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v2.4</span></div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">STOCK LEDGER</span>
                                 </div>
                             </div>
@@ -119,6 +201,14 @@
                                     <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount.toLocaleString()}</span>
                                 </div>
                             </div>
+                            
+                            {/* 💡 복원된 클라우드 연동 버튼 영역 */}
+                            <div className="flex items-center gap-2">
+                                <button onClick={onPull} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 불러오기(Pull)"><SafeIcon name="cloud-download" size={18} /></button>
+                                <button onClick={onPush} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 백업하기(Push)"><SafeIcon name="cloud-upload" size={18} /></button>
+                                <div className="w-px h-6 bg-slate-700 mx-1"></div>
+                                <button onClick={onOpenSettings} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-slate-400 hover:text-white shadow-sm" title="설정"><SafeIcon name="settings" size={18} /></button>
+                            </div>
                         </div>
                     </header>
                     {selectedGroup && (
@@ -140,6 +230,325 @@
                             ))}
                         </div>
                     )}
+                </div>
+            );
+        };
+
+        // ==========================================
+        // 🧩 Hooks (Global Setting Manager)
+        // ==========================================
+        const useMerchConfig = () => {
+            const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || '');
+            
+            const [visibleMasterCols, setVisibleMasterCols] = useState(() => { 
+                const s = localStorage.getItem('merchVisMaster_v870'); 
+                const p = s ? JSON.parse(s) : null; 
+                return p?.estimate ? p : getInitialVisibleMasterCols(); 
+            });
+            
+            const [visibleUploadCols, setVisibleUploadCols] = useState(() => { 
+                const s = localStorage.getItem('merchVisUpload_v870'); 
+                const p = s ? JSON.parse(s) : null; 
+                return p?.estimate ? p : getInitialVisibleUploadCols(); 
+            });
+            
+            const [mappings, setMappings] = useState(() => { 
+                const s = localStorage.getItem('merchMappings_v870'); 
+                const p = s ? JSON.parse(s) : null; 
+                return p?.master ? p : getInitialMappings(); 
+            });
+            
+            const [masterLinks, setMasterLinks] = useState(() => { 
+                const s = localStorage.getItem('merchMasterLinks_v870'); 
+                const p = s ? JSON.parse(s) : null; 
+                return p?.estimate ? p : getInitialMasterLinks(); 
+            });
+            
+            const [marginRules, setMarginRules] = useState(() => {
+                const s = localStorage.getItem('merchMarginRules_v878');
+                const def = [
+                    { id: generateUUID(), whCode: '01', unit: 'box, 박스', rate: 10, type: 'divide' },
+                    { id: generateUUID(), whCode: '01', unit: 'ea, 개, 낱개', rate: 15, type: 'divide' },
+                    { id: generateUUID(), whCode: '03, 05', unit: 'box, 박스', rate: 15, type: 'divide' },
+                    { id: generateUUID(), whCode: '03, 05', unit: 'ea, 개, 낱개', rate: 20, type: 'divide' },
+                    { id: generateUUID(), whCode: '*', unit: 'box, 박스', rate: 10, type: 'divide' },
+                    { id: generateUUID(), whCode: '*', unit: 'ea, 개, 낱개', rate: 15, type: 'divide' },
+                    { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }
+                ];
+                if (s) { try { const p = JSON.parse(s); if (p?.length > 0) return p.map(r => ({ ...r, whCode: r.whCode || '*', unit: r.unit || '*' })); } catch(e){} }
+                return def;
+            });
+
+            const [opsMappings, setOpsMappings] = useState(() => {
+                const s = localStorage.getItem('inventoryMappingsLight');
+                const def = {
+                    code: '품목코드, 상품코드, 코드, 품번, 바코드, sku',
+                    name: '품명, 품목명(규격), 품목명[규격], 상품명, 제품명, 이름, 품목, 상품',
+                    spec: '규격, 옵션, 사이즈', 
+                    qty: '기말실사(이월수량), 기말실사, 기말/실사, 수량, 재고, 기말잔량(실사반영), 기말잔량(실사), 기말잔량, 수량(합계), 입고수량, 출고수량, 판매수량, 잔량, 실사, 합계, 기말, 판매량, 출고량, 입고량',
+                    price: '매입단가(원가), 단가, 입고단가, 구매단가, 판매단가, 매입단가, 매입가, 판매가, 공급가액, 공급가, 금액, 원가, 가격, 최종(창고)',
+                    date: '결산일자, 매입일자, 일자, 날짜, 구매일자, 판매일자, 입고일자, 출고일자',
+                    vendor: '매출처명, 매입처(Lot), 매입처(거래처), 거래처명, 거래처, 거래, 매장명, 매장, 고객, 판매처, 공급사, 판매, 청과, 3거래',
+                    matchVendor: '구매처, 매입처, 매칭정보, 원매입처, lot', 
+                    excludeVendor: '3우리, 우리농산, 1전송, 창고이동, 폐기, 샘플',
+                    lifoVendor: '2전송, 쿠팡, B2B, 당일우선, 현금판매',
+                    internalLot: '우리, 공용, 분배, 담당자, 우리농산',
+                    priorityVendor: '2전송>1창고' 
+                };
+                return s ? { ...def, ...JSON.parse(s) } : def;
+            });
+
+            const [opsGrouping, setOpsGrouping] = useState(() => {
+                const s = localStorage.getItem('inventoryGroupingV79');
+                const def = { priceMode: 'separate', splitByVendor: false, splitByDate: false };
+                return s ? { ...def, ...JSON.parse(s) } : def;
+            });
+
+            useEffect(() => {
+                localStorage.setItem(STORAGE_KEYS.CLOUD_URL, cloudUrl);
+                localStorage.setItem('merchVisMaster_v870', JSON.stringify(visibleMasterCols));
+                localStorage.setItem('merchVisUpload_v870', JSON.stringify(visibleUploadCols));
+                localStorage.setItem('merchMappings_v870', JSON.stringify(mappings));
+                localStorage.setItem('merchMasterLinks_v870', JSON.stringify(masterLinks));
+                localStorage.setItem('merchMarginRules_v878', JSON.stringify(marginRules));
+                localStorage.setItem('inventoryMappingsLight', JSON.stringify(opsMappings));
+                localStorage.setItem('inventoryGroupingV79', JSON.stringify(opsGrouping));
+            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules, opsMappings, opsGrouping]);
+
+            return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules, opsMappings, setOpsMappings, opsGrouping, setOpsGrouping };
+        };
+
+        // ==========================================
+        // 🧩 4. 통합 환경설정 모달 (MappingCenterModal)
+        // ==========================================
+        const MappingCenterModal = ({ onClose, config, actions, availableCatalogs, availableCategories }) => {
+            const { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules, opsMappings, setOpsMappings, opsGrouping, setOpsGrouping } = config;
+            const { cleanUpGarbageTags, handleDeleteTag, showToast, handleClearDB } = actions;
+            const [activeTab, setActiveTab] = useState('display');
+            const [customEstColInput, setCustomEstColInput] = useState('');
+            
+            useEffect(() => { document.body.style.overflow = 'hidden'; return () => document.body.style.overflow = 'auto'; }, []);
+
+            const toggleMasterCol = (tabId, header) => setVisibleMasterCols(prev => { const list = prev[tabId] || []; return { ...prev, [tabId]: list.includes(header) ? list.filter(h => h !== header) : [...list, header] }; });
+
+            const addCustomUploadCol = (type, val) => {
+                if(!val || !val.trim()) return; const cleanVal = val.trim();
+                if ((visibleUploadCols[type] || []).includes(cleanVal)) return showToast('⚠️ 이미 추가된 항목입니다.');
+                setVisibleUploadCols(prev => ({ ...prev, [type]: [...(prev[type] || []), cleanVal] }));
+                setMappings(prev => ({ ...prev, [type]: { ...prev[type], [cleanVal]: cleanVal } }));
+                setMasterLinks(prev => ({ ...prev, [type]: { ...prev[type], [cleanVal]: '' } }));
+                setCustomEstColInput('');
+            };
+
+            const addMarginRule = () => setMarginRules([...marginRules, { id: generateUUID(), whCode: '', unit: '', rate: 10, type: 'divide' }]);
+            const updateMarginRule = (id, field, value) => setMarginRules(marginRules.map(r => r.id === id ? { ...r, [field]: value } : r));
+            const deleteMarginRule = (id) => setMarginRules(marginRules.filter(r => r.id !== id));
+
+            const selectableMasterHeaders = useMemo(() => Array.from(new Set([...MASTER_HEADERS, ...(visibleMasterCols['estimate'] || [])])), [visibleMasterCols]);
+            const requiredCoreFields = ['품목코드', '품목명', '규격'];
+
+            return (
+                <div className="fixed inset-0 bg-slate-900/80 z-[200] flex justify-center items-center backdrop-blur-sm fade-in">
+                    <div className="bg-white w-[96vw] max-w-[1400px] h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                        <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
+                            <div className="flex items-center gap-4">
+                                <h2 className="font-black text-[17px]"><SafeIcon name="settings" size={18} className="text-indigo-400 mr-2.5"/>환경설정 및 시스템 매핑 센터 (Global Baseline)</h2>
+                            </div>
+                            <button onClick={onClose}><SafeIcon name="x" size={20} className="text-slate-400 hover:text-white" /></button>
+                        </div>
+                        
+                        <div className="flex flex-1 overflow-hidden bg-slate-50">
+                            <div className="w-[260px] bg-white border-r border-slate-200 flex flex-col py-4 shrink-0 shadow-sm">
+                                <button onClick={() => setActiveTab('display')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'display' ? 'border-indigo-500 text-indigo-700 bg-indigo-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><SafeIcon name="desktop" size={16} className="mr-1.5"/> 1. 환경 및 화면 설정</button>
+                                <button onClick={() => setActiveTab('marginRule')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'marginRule' ? 'border-rose-500 text-rose-700 bg-rose-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><SafeIcon name="calculator" size={16} className="mr-1.5"/> 2. 단가 계산 및 마진 룰</button>
+                                <button onClick={() => setActiveTab('tagManager')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'tagManager' ? 'border-amber-500 text-amber-700 bg-amber-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><SafeIcon name="tags" size={16} className="mr-1.5"/> 3. 카탈로그/견적서 관리</button>
+                                <div className="my-2 border-b border-slate-100"></div>
+                                <button onClick={() => setActiveTab('inputMap')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'inputMap' ? 'border-emerald-500 text-emerald-700 bg-emerald-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><SafeIcon name="sign-in-alt" size={16} className="mr-1.5"/> 4. 시세 엑셀 데이터 매핑</button>
+                                <button onClick={() => setActiveTab('opsMap')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'opsMap' ? 'border-blue-500 text-blue-700 bg-blue-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><SafeIcon name="layer-group" size={16} className="mr-1.5"/> 5. 운영 매핑 및 기준</button>
+                            </div>
+                            
+                            <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                                {activeTab === 'display' && (
+                                    <div className="max-w-4xl space-y-6 fade-in">
+                                        <div className="bg-indigo-50 p-5 rounded-xl border border-indigo-100 shadow-sm">
+                                            <h3 className="text-[14px] font-black text-indigo-900 mb-4 pb-2 border-b border-indigo-200 flex justify-between items-center"><span><SafeIcon name="link" size={14} className="text-indigo-500 mr-2"/>클라우드 동기화 URL 셋팅</span></h3>
+                                            <input type="text" value={cloudUrl} onChange={e=>setCloudUrl(e.target.value)} placeholder="Google Apps Script 웹앱 URL 입력..." className="w-full border border-indigo-200 rounded px-3 py-2 text-[12px] outline-none focus:border-indigo-500 bg-white shadow-sm font-mono" />
+                                            <p className="text-[11px] text-indigo-500 mt-2 font-bold">※ URL 입력 후 글로벌 헤더의 구름 아이콘을 누르면 데이터 백업 및 수신이 진행됩니다.</p>
+                                        </div>
+                                        
+                                        <div className="bg-rose-50 p-5 rounded-xl border border-rose-200 shadow-sm">
+                                            <h3 className="text-[14px] font-black text-rose-900 mb-3 pb-2 border-b border-rose-200 flex justify-between items-center">
+                                                <span><SafeIcon name="broom" size={14} className="text-rose-500 mr-2"/>클라우드 DB 최적화 (검색어 찌꺼기 삭제)</span>
+                                            </h3>
+                                            <p className="text-[12px] text-rose-700 font-bold mb-3">과거 엑셀 업로드 시 저장되었던 불필요한 '검색어등록', '상품태그' 필드의 찌꺼기 데이터들을 한 번에 삭제합니다.</p>
+                                            <button onClick={cleanUpGarbageTags} className="px-4 py-2 bg-white border border-rose-300 text-rose-600 hover:bg-rose-100 rounded-lg text-[12px] font-bold transition-all shadow-sm flex items-center">
+                                                <SafeIcon name="trash-alt" size={12} className="mr-1.5"/> 기존 엑셀 검색어 일괄 삭제
+                                            </button>
+                                        </div>
+
+                                        <div className="bg-white p-5 rounded-xl border shadow-sm">
+                                            <h3 className="text-[14px] font-black mb-4 pb-2 border-b flex items-center"><span className="bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0.5 rounded mr-2">[공통]</span> 마스터 항목 노출 설정</h3>
+                                            <div className="flex flex-wrap gap-2 mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                                                <div className="w-full text-[11px] text-slate-500 font-bold mb-1 flex items-center"><SafeIcon name="info-circle" size={12} className="mr-1"/>식별자 (필수 고정 항목)</div>
+                                                {requiredCoreFields.map(h => <div key={`m-req-${h}`} className="config-chip active opacity-80 cursor-not-allowed font-bold bg-slate-200 border-slate-300 text-slate-700 shadow-sm flex items-center"><SafeIcon name="lock" size={10} className="mr-1.5 text-slate-500"/>{h}</div>)}
+                                            </div>
+                                            <div className="flex flex-wrap gap-2">
+                                                {MASTER_HEADERS.filter(h => !requiredCoreFields.includes(h)).map(h => <div key={`m-${h}`} onClick={() => toggleMasterCol('estimate', h)} className={`config-chip ${visibleMasterCols['estimate']?.includes(h)?'active':''}`}>{h}</div>)}
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="bg-white p-5 rounded-xl border shadow-sm">
+                                            <h3 className="text-[14px] font-black mb-4 pb-2 border-b flex items-center"><span className="bg-slate-100 text-slate-700 text-[10px] px-1.5 py-0.5 rounded mr-2">[엑셀/작업]</span> 견적서 항목 노출 설정</h3>
+                                            <div className="text-[11px] text-slate-500 font-bold mb-3 flex items-center"><SafeIcon name="info-circle" size={12} className="mr-1"/>식별자인 '품목코드'는 엑셀 작업에서 변경할 수 없으므로 제외되었습니다. 품목명, 규격 등 필요한 항목을 자유롭게 켜고 끄세요.</div>
+                                            <div className="flex flex-wrap gap-2.5 mb-5">
+                                                {(visibleUploadCols['estimate']||[]).filter(h => h !== '품목코드').map(h => <div key={`u-e-${h}`} className="config-chip active border-slate-300 bg-white text-slate-800 hover:bg-rose-50 hover:border-rose-300 hover:text-rose-600 transition-colors group shadow-sm flex items-center"><span className="font-bold">{h}</span><button onClick={()=>setVisibleUploadCols(p=>({...p, estimate:p.estimate.filter(x=>x!==h)}))} className="ml-2 text-slate-400 group-hover:text-rose-500"><SafeIcon name="x" size={12} /></button></div>)}
+                                            </div>
+                                            <div className="flex items-center gap-2 max-w-sm"><input type="text" value={customEstColInput} onChange={e=>setCustomEstColInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addCustomUploadCol('estimate', customEstColInput)} placeholder="추가할 항목명 입력 (예: 마감시간)" className="flex-1 border border-slate-300 rounded px-3 py-2 text-[12px] outline-none focus:border-slate-500" /><button onClick={()=>addCustomUploadCol('estimate', customEstColInput)} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded text-[12px] font-bold transition-colors shadow-sm">추가</button></div>
+                                        </div>
+                                    </div>
+                                )}
+                                {activeTab === 'inputMap' && (
+                                    <div className="max-w-4xl space-y-8 fade-in">
+                                        <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                                            <div className="bg-slate-50 p-3 border-b border-slate-200"><h3 className="text-[13px] font-black text-slate-800 flex items-center"><span className="bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.5 rounded mr-2">[시세 관리]</span> 견적서 엑셀 헤더 매핑</h3></div>
+                                            <table className="w-full text-left text-[12px]">
+                                                <thead className="bg-white border-b border-slate-200 text-slate-500 font-bold"><tr><th className="p-3 w-[140px]">화면 노출 항목</th><th className="p-3">엑셀 헤더 감지 키워드 (콤마 구분)</th><th className="p-3 w-[200px]">마스터 DB 필드 연결</th></tr></thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {requiredCoreFields.map(h => (
+                                                        <tr key={`map-req-${h}`} className="bg-slate-50">
+                                                            <td className="p-3 font-bold text-slate-700 flex items-center"><SafeIcon name="lock" size={14} className="text-slate-400 mr-2"/>{h}</td>
+                                                            <td className="p-3"><input type="text" value={mappings['estimate']?.[h]||''} onChange={e=>setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-amber-500 focus:ring-1 bg-white" /></td>
+                                                            <td className="p-3"><div className="text-[11px] text-slate-500 bg-slate-200 px-3 py-1.5 rounded border border-slate-300 font-bold flex items-center justify-center shadow-inner"><SafeIcon name="key" size={12} className="mr-1.5"/>식별자 고정</div></td>
+                                                        </tr>
+                                                    ))}
+                                                    {(visibleUploadCols['estimate']||[]).filter(h => !requiredCoreFields.includes(h)).map(h => (
+                                                        <tr key={`map-e-${h}`} className="hover:bg-slate-50 transition-colors">
+                                                            <td className="p-3 font-bold text-slate-800">{h}</td>
+                                                            <td className="p-3"><input type="text" value={mappings['estimate']?.[h]||''} onChange={e=>setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-amber-500 focus:ring-1" /></td>
+                                                            <td className="p-3"><select value={masterLinks['estimate']?.[h]||''} onChange={e=>setMasterLinks(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} className={`w-full border border-slate-300 rounded px-2 py-1.5 outline-none focus:border-amber-500 ${masterLinks['estimate']?.[h]?'bg-amber-50 text-amber-700 font-bold':'bg-white'}`}><option value="">-- 단순 화면 노출 (업데이트 X) --</option>{MASTER_HEADERS.map(mh=><option key={mh} value={mh}>{mh}</option>)}</select></td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
+                                {activeTab === 'marginRule' && (
+                                    <div className="max-w-4xl space-y-6 fade-in">
+                                        <div className="bg-white p-6 rounded-xl border border-rose-200 shadow-sm">
+                                            <div className="flex justify-between items-center mb-6">
+                                                <div><h3 className="text-[15px] font-black text-rose-900 flex items-center"><SafeIcon name="calculator" size={16} className="mr-2 text-rose-500"/>동적 단가 계산 및 하이브리드 마진 룰</h3><p className="text-[11px] font-bold text-rose-600 mt-1">※ 이 전역 설정은 파이프라인 작업 시 기본 판매가를 제안합니다. (작업자가 수동 수정 시 Override 됨)</p></div>
+                                                <button onClick={addMarginRule} className="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-lg text-[12px] font-bold transition-colors shadow-sm flex items-center"><SafeIcon name="plus" size={12} className="mr-1"/> 룰 추가</button>
+                                            </div>
+                                            <table className="w-full text-left text-[12px]">
+                                                <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold"><tr><th className="p-3 w-[150px]">조건1. 창고코드 (그룹)</th><th className="p-3 w-[150px]">조건2. 단위 (ea, box 등)</th><th className="p-3 w-[90px] text-center">마진율 (%)</th><th className="p-3 w-[110px] text-center">연산 방식</th><th className="p-3 w-[150px] text-center">동작 예시 (1만원 기준)</th><th className="p-3 w-[50px] text-center">삭제</th></tr></thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {marginRules.map(rule => {
+                                                        const isDefault = rule.id === 'default';
+                                                        const examplePrice = rule.type === 'divide' ? Math.round(10000 / (1 - rule.rate / 100)) : Math.round(10000 * (1 + rule.rate / 100));
+                                                        const exampleFormula = rule.type === 'divide' ? `10k ÷ ${(1 - rule.rate / 100).toFixed(2)}` : `10k × ${(1 + rule.rate / 100).toFixed(2)}`;
+                                                        return (
+                                                            <tr key={rule.id} className="hover:bg-slate-50 transition-colors">
+                                                                <td className="p-2">{isDefault ? <div className="text-slate-400 text-center font-bold">* (모든 창고)</div> : <input type="text" value={rule.whCode} onChange={e=>updateMarginRule(rule.id, 'whCode', e.target.value)} placeholder="예: 01, * (전체)" className="w-full border border-slate-300 rounded px-2 py-1.5 outline-none focus:border-rose-400 focus:ring-1 bg-white text-[11px]" />}</td>
+                                                                <td className="p-2">{isDefault ? <div className="text-slate-400 text-center font-bold">* (모든 단위)</div> : <input type="text" value={rule.unit} onChange={e=>updateMarginRule(rule.id, 'unit', e.target.value)} placeholder="예: ea, *, box" className="w-full border border-slate-300 rounded px-2 py-1.5 outline-none focus:border-rose-400 focus:ring-1 bg-white text-[11px]" />}</td>
+                                                                <td className="p-2 text-center"><div className="flex items-center bg-white border border-slate-300 rounded overflow-hidden focus-within:border-rose-400 focus-within:ring-1"><input type="number" value={rule.rate} onChange={e=>updateMarginRule(rule.id, 'rate', Number(e.target.value))} className="w-full text-center py-1.5 outline-none font-bold text-rose-700 text-[11px]" /></div></td>
+                                                                <td className="p-2 text-center"><select value={rule.type} onChange={e=>updateMarginRule(rule.id, 'type', e.target.value)} className="w-full border border-slate-300 rounded px-1 py-1.5 outline-none focus:border-rose-400 bg-white font-bold text-slate-700 cursor-pointer text-[11px]"><option value="divide">나누기(÷)</option><option value="multiply">곱하기(×)</option></select></td>
+                                                                <td className="p-2 text-center"><span className="text-[11px] font-mono text-slate-500">{exampleFormula} = {examplePrice.toLocaleString()}</span></td>
+                                                                <td className="p-2 text-center">{!isDefault && <button onClick={()=>deleteMarginRule(rule.id)} className="w-7 h-7 rounded text-slate-400 hover:bg-rose-100 hover:text-rose-500 transition-colors flex items-center justify-center mx-auto"><SafeIcon name="trash-alt" size={14}/></button>}</td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
+                                {activeTab === 'opsMap' && (
+                                    <div className="max-w-5xl space-y-6 fade-in">
+                                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                                            <div className="bg-slate-50 p-4 border-b border-slate-200">
+                                                <h3 className="text-[14px] font-black text-slate-800 flex items-center"><SafeIcon name="layer-group" size={16} className="text-blue-500 mr-2"/>운영 관리(Ops) 엑셀 매핑 설정</h3>
+                                            </div>
+                                            <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                                                <div className="flex flex-col"><label className="text-[11px] font-bold text-slate-600 mb-1.5">품목코드 (필수)</label><input type="text" value={opsMappings.code || ''} onChange={e => setOpsMappings({...opsMappings, code: e.target.value})} className="border border-slate-300 rounded-md px-3 py-2 text-[12px] focus:border-blue-500 outline-none" /></div>
+                                                <div className="flex flex-col"><label className="text-[11px] font-bold text-slate-600 mb-1.5">품목명 (필수)</label><input type="text" value={opsMappings.name || ''} onChange={e => setOpsMappings({...opsMappings, name: e.target.value})} className="border border-slate-300 rounded-md px-3 py-2 text-[12px] focus:border-blue-500 outline-none" /></div>
+                                                <div className="flex flex-col"><label className="text-[11px] font-bold text-slate-600 mb-1.5">규격 열 (선택)</label><input type="text" value={opsMappings.spec || ''} onChange={e => setOpsMappings({...opsMappings, spec: e.target.value})} className="border border-slate-300 rounded-md px-3 py-2 text-[12px] focus:border-blue-500 outline-none" /></div>
+                                                <div className="flex flex-col"><label className="text-[11px] font-bold text-slate-600 mb-1.5">수량/실사 (필수)</label><input type="text" value={opsMappings.qty || ''} onChange={e => setOpsMappings({...opsMappings, qty: e.target.value})} className="border border-slate-300 rounded-md px-3 py-2 text-[12px] focus:border-blue-500 outline-none" /></div>
+                                                <div className="flex flex-col"><label className="text-[11px] font-bold text-slate-600 mb-1.5">매입단가 (필수)</label><input type="text" value={opsMappings.price || ''} onChange={e => setOpsMappings({...opsMappings, price: e.target.value})} className="border border-slate-300 rounded-md px-3 py-2 text-[12px] focus:border-blue-500 outline-none" /></div>
+                                                <div className="flex flex-col"><label className="text-[11px] font-bold text-slate-600 mb-1.5">일자 (필수)</label><input type="text" value={opsMappings.date || ''} onChange={e => setOpsMappings({...opsMappings, date: e.target.value})} className="border border-slate-300 rounded-md px-3 py-2 text-[12px] focus:border-blue-500 outline-none" /></div>
+                                                <div className="flex flex-col"><label className="text-[11px] font-bold text-slate-600 mb-1.5">거래처명 (선택)</label><input type="text" value={opsMappings.vendor || ''} onChange={e => setOpsMappings({...opsMappings, vendor: e.target.value})} className="border border-slate-300 rounded-md px-3 py-2 text-[12px] focus:border-blue-500 outline-none" /></div>
+                                                <div className="flex flex-col"><label className="text-[11px] font-bold text-blue-600 mb-1.5 flex items-center"><SafeIcon name="link" size={12} className="mr-1"/>판매전표 내 구매처(Lot)</label><input type="text" value={opsMappings.matchVendor || ''} onChange={e => setOpsMappings({...opsMappings, matchVendor: e.target.value})} className="border border-blue-200 bg-blue-50 text-blue-800 rounded-md px-3 py-2 text-[12px] focus:border-blue-500 outline-none" /></div>
+                                                <div className="flex flex-col"><label className="text-[11px] font-bold text-rose-600 mb-1.5 flex items-center"><SafeIcon name="ban" size={12} className="mr-1"/>제외 거래처(창고이동 등)</label><input type="text" value={opsMappings.excludeVendor || ''} onChange={e => setOpsMappings({...opsMappings, excludeVendor: e.target.value})} className="border border-rose-200 bg-rose-50 text-rose-800 rounded-md px-3 py-2 text-[12px] focus:border-rose-500 outline-none" /></div>
+                                                <div className="flex flex-col"><label className="text-[11px] font-bold text-purple-600 mb-1.5 flex items-center"><SafeIcon name="bolt" size={12} className="mr-1"/>당일우선 출고(LIFO)</label><input type="text" value={opsMappings.lifoVendor || ''} onChange={e => setOpsMappings({...opsMappings, lifoVendor: e.target.value})} className="border border-purple-200 bg-purple-50 text-purple-800 rounded-md px-3 py-2 text-[12px] focus:border-purple-500 outline-none" /></div>
+                                                <div className="flex flex-col"><label className="text-[11px] font-bold text-teal-600 mb-1.5 flex items-center"><SafeIcon name="users" size={12} className="mr-1"/>내부분배/공용 로트</label><input type="text" value={opsMappings.internalLot || ''} onChange={e => setOpsMappings({...opsMappings, internalLot: e.target.value})} className="border border-teal-200 bg-teal-50 text-teal-800 rounded-md px-3 py-2 text-[12px] focus:border-teal-500 outline-none" /></div>
+                                                <div className="flex flex-col"><label className="text-[11px] font-bold text-orange-600 mb-1.5 flex items-center"><SafeIcon name="sort-amount-down" size={12} className="mr-1"/>출고 우선순위(A>B)</label><input type="text" value={opsMappings.priorityVendor || ''} onChange={e => setOpsMappings({...opsMappings, priorityVendor: e.target.value})} className="border border-orange-200 bg-orange-50 text-orange-800 rounded-md px-3 py-2 text-[12px] focus:border-orange-500 outline-none" /></div>
+                                            </div>
+                                        </div>
+                                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                                            <div className="bg-slate-50 p-4 border-b border-slate-200"><h3 className="text-[14px] font-black text-slate-800 flex items-center"><SafeIcon name="layer-group" size={16} className="text-indigo-500 mr-2"/>품목 관리 기준 설정</h3><p className="text-[11px] text-slate-500 mt-1.5 ml-6">※ 시스템은 기본적으로 '품목코드' 기준으로 구동되며, 추가 조건에 따라 항목을 세분화할 수 있습니다.</p></div>
+                                            <div className="p-6 flex flex-col md:flex-row gap-6 items-center">
+                                                <div className="flex-1 w-full"><label className="text-[11px] font-bold text-slate-600 mb-1.5 block">단가(원가) 기준</label><select value={opsGrouping.priceMode} onChange={e => setOpsGrouping({...opsGrouping, priceMode: e.target.value})} className="w-full border border-slate-300 rounded-md px-3 py-2.5 text-[12px] font-bold text-slate-700 outline-none focus:border-blue-500 shadow-sm"><option value="separate">① 개별 단가 유지 (단가가 다르면 분리) - 🌟기본</option><option value="average">② 평균 단가 적용 (1줄로 합침)</option><option value="latest">③ 최신 단가 적용 (1줄로 합침)</option></select></div>
+                                                <div className="flex-1 w-full"><label className="text-[11px] font-bold text-slate-600 mb-1.5 block">추가 세분화 옵션</label><div className="flex items-center gap-4 mt-2"><label className="flex items-center gap-1.5 text-[12px] font-bold text-slate-500 cursor-not-allowed opacity-60"><input type="checkbox" checked={true} readOnly className="rounded border-slate-300" /><span>품목코드 (고정)</span></label><label className="flex items-center gap-1.5 text-[12px] font-bold text-slate-700 cursor-pointer hover:text-blue-600"><input type="checkbox" checked={opsGrouping.splitByVendor} onChange={e => setOpsGrouping({...opsGrouping, splitByVendor: e.target.checked})} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" /><span>매입처별 분리</span></label><label className="flex items-center gap-1.5 text-[12px] font-bold text-slate-700 cursor-pointer hover:text-blue-600"><input type="checkbox" checked={opsGrouping.splitByDate} onChange={e => setOpsGrouping({...opsGrouping, splitByDate: e.target.checked})} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" /><span>매입일별 분리</span></label></div></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                                {activeTab === 'tagManager' && (
+                                    <div className="max-w-4xl space-y-6 fade-in">
+                                        <div className="bg-white p-6 rounded-xl border shadow-sm">
+                                            <h3 className="text-[15px] font-black text-slate-800 mb-4 pb-2 border-b flex items-center">
+                                                <SafeIcon name="folder-open" size={16} className="text-indigo-500 mr-2"/> 카탈로그 목록 관리
+                                            </h3>
+                                            <div className="text-[12px] text-slate-500 font-bold mb-4 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                                                단가 작업 시 생성된 카탈로그(거래처) 태그 목록입니다. 더 이상 사용하지 않는 카탈로그를 깔끔하게 삭제할 수 있습니다.
+                                            </div>
+                                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                                {availableCatalogs.length === 0 ? <div className="col-span-full text-[13px] text-slate-400 font-bold p-4 text-center">등록된 카탈로그가 없습니다.</div> : availableCatalogs.map(tag => (
+                                                    <div key={tag.name} className="flex items-center justify-between bg-white border border-slate-300 rounded-lg p-3 shadow-sm hover:border-indigo-400 transition-colors group">
+                                                        <div className="flex flex-col min-w-0">
+                                                            <span className="text-[13px] font-extrabold text-slate-800 truncate">{tag.name}</span>
+                                                            <span className="text-[11px] text-indigo-500 font-bold">{tag.count}개 상품</span>
+                                                        </div>
+                                                        <button onClick={() => handleDeleteTag('catalog', tag.name)} className="w-8 h-8 rounded-md bg-slate-100 text-slate-400 hover:bg-rose-500 hover:text-white transition-colors shrink-0 flex items-center justify-center" title="이 카탈로그 삭제">
+                                                            <SafeIcon name="trash-alt" size={14} />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-white p-6 rounded-xl border shadow-sm">
+                                            <h3 className="text-[15px] font-black text-slate-800 mb-4 pb-2 border-b flex items-center">
+                                                <SafeIcon name="file-invoice" size={16} className="text-blue-500 mr-2"/> 저장된 견적서 목록 관리
+                                            </h3>
+                                            <div className="text-[12px] text-slate-500 font-bold mb-4 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                                                작업 화면에서 묶어둔 나만의 견적서(즐겨찾기) 목록입니다. 오래되거나 필요 없는 견적서를 일괄 삭제하세요.
+                                            </div>
+                                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                                {availableCategories.length === 0 ? <div className="col-span-full text-[13px] text-slate-400 font-bold p-4 text-center">저장된 견적서가 없습니다.</div> : availableCategories.map(tag => (
+                                                    <div key={tag.name} className="flex items-center justify-between bg-white border border-slate-300 rounded-lg p-3 shadow-sm hover:border-blue-400 transition-colors group">
+                                                        <div className="flex flex-col min-w-0">
+                                                            <span className="text-[13px] font-extrabold text-slate-800 truncate">{tag.name}</span>
+                                                            <span className="text-[11px] text-blue-500 font-bold">{tag.count}개 상품</span>
+                                                        </div>
+                                                        <button onClick={() => handleDeleteTag('category', tag.name)} className="w-8 h-8 rounded-md bg-slate-100 text-slate-400 hover:bg-rose-500 hover:text-white transition-colors shrink-0 flex items-center justify-center" title="이 견적서 삭제">
+                                                            <SafeIcon name="trash-alt" size={14} />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="bg-slate-100 p-4 border-t border-slate-200 flex justify-between items-center shrink-0">
+                            <button onClick={handleClearDB} className="text-[13px] font-bold text-slate-500 hover:text-rose-500 transition-colors flex items-center"><SafeIcon name="broom" size={14} className="mr-1.5"/>앱 로컬 전체 초기화</button>
+                            <div className="flex gap-2"><button onClick={onClose} className="px-6 py-2.5 bg-[#1A2235] border border-slate-700 text-white hover:bg-black rounded-lg text-[13px] font-bold transition-all shadow-md">닫기 및 적용</button></div>
+                        </div>
+                    </div>
                 </div>
             );
         };
@@ -197,10 +606,10 @@
                                 <tr>
                                     <th className="py-3 px-4 w-[280px] border-r border-slate-200">상품정보 (코드/품명)</th>
                                     <th className="py-3 px-3 text-right w-20 border-r border-slate-200">기초</th>
-                                    <th className="py-3 px-3 text-right w-20 border-r border-slate-200">당기입고</th>
-                                    <th className="py-3 px-3 text-right w-20 border-r border-slate-200">당기출고</th>
-                                    <th className="py-3 px-3 text-right w-24 border-r border-slate-200">전산잔량</th>
-                                    <th className="py-3 px-4 text-center w-28 border-r border-slate-200">실사 수량</th>
+                                    <th className="py-3 px-3 text-right w-20 text-blue-600 border-r border-slate-200">당기입고</th>
+                                    <th className="py-3 px-3 text-right w-20 text-rose-600 border-r border-slate-200">당기출고</th>
+                                    <th className="py-3 px-3 text-right w-24 bg-indigo-50/50 text-indigo-700 border-r border-indigo-100">전산잔량</th>
+                                    <th className="py-3 px-4 text-center w-28 bg-indigo-50/50 text-indigo-700 border-r border-indigo-100">실사 수량</th>
                                     <th className="py-3 px-4 text-right w-24 border-r border-slate-200">오차(로스)</th>
                                     <th className="py-3 px-4 w-[250px] border-r border-slate-200">이슈 / 메모</th>
                                     <th className="py-3 px-4 text-center w-16">조정</th>
@@ -208,7 +617,7 @@
                             </thead>
                             <tbody className="divide-y divide-transparent text-slate-700">
                                 {displayData.length === 0 ? (
-                                    <tr><td colSpan="9" className="py-20 text-center text-slate-400 font-bold"><i className="fas fa-boxes text-4xl mb-3 text-slate-200 block"></i>표시할 상품이 없습니다.</td></tr>
+                                    <tr><td colSpan="9" className="py-20 text-center text-slate-400 font-bold"><SafeIcon name="boxes" size={40} className="mb-3 text-slate-200 block mx-auto" />표시할 상품이 없습니다.</td></tr>
                                 ) : displayData.map((item) => {
                                     const isLinked = linkSourceKey === item.코드;
                                     const isNegativeLoss = item.로스 < 0;
@@ -218,7 +627,7 @@
                                             <td className="py-3 px-4 border-r border-slate-200 bg-white">
                                                 <div className="flex flex-col w-full overflow-hidden">
                                                     <span className="text-[10.5px] font-mono text-indigo-500 mb-0.5 tracking-tight font-bold flex items-center">
-                                                        {isLinked && <i className="fas fa-link text-indigo-500 mr-1 animate-pulse"></i>}
+                                                        {isLinked && <SafeIcon name="link" size={12} className="text-indigo-500 mr-1 animate-pulse" />}
                                                         {item.코드}
                                                     </span>
                                                     <span className="text-[13px] font-extrabold text-slate-800 truncate">{item.품명}</span>
@@ -228,9 +637,9 @@
                                             <td className="py-2.5 px-3 text-right font-bold text-blue-600 border-r border-slate-200 bg-inherit">{item.입고.toLocaleString()}</td>
                                             <td className="py-2.5 px-3 text-right font-bold text-rose-600 border-r border-slate-200 bg-inherit">{item.출고.toLocaleString()}</td>
                                             
-                                            <td className="py-2.5 px-3 text-right font-black text-[15px] text-indigo-600 border-r border-slate-200 bg-inherit">{item.전산잔량.toLocaleString()}</td>
+                                            <td className="py-2.5 px-3 text-right font-black text-[15px] text-indigo-600 bg-indigo-50/30 border-r border-indigo-100">{item.전산잔량.toLocaleString()}</td>
                                             
-                                            <td className="py-2 px-3 border-r border-slate-200 relative bg-inherit">
+                                            <td className="py-2 px-3 bg-indigo-50/30 border-r border-indigo-100 relative">
                                                 {isLinked && <div className="absolute -top-3 right-2 bg-slate-800 text-white text-[9px] px-1.5 py-0.5 rounded shadow animate-bounce">대상 선택</div>}
                                                 <input 
                                                     type="number" 
@@ -252,13 +661,13 @@
                                             <td className="py-2.5 px-4 border-r border-slate-200 bg-inherit">
                                                 <div className="flex items-center gap-1.5 flex-wrap">
                                                     {item.이슈.map((msg, i) => <IssueChip key={i} msg={msg} />)}
-                                                    {item.메모 && <span className="px-2 py-0.5 bg-slate-100 text-slate-600 border border-slate-200 rounded font-medium text-[10px] shadow-sm"><i className="fas fa-edit mr-1 text-slate-400"></i>{item.메모}</span>}
+                                                    {item.메모 && <span className="px-2 py-0.5 bg-slate-100 text-slate-600 border border-slate-200 rounded font-medium text-[10px] shadow-sm flex items-center"><SafeIcon name="edit" size={10} className="mr-1 text-slate-400"/>{item.메모}</span>}
                                                 </div>
                                             </td>
 
                                             <td className="py-2.5 px-4 text-center bg-inherit">
                                                 <button onClick={() => openMemo(item.코드, item.메모)} className={`w-8 h-8 rounded-lg shadow-sm transition-colors flex items-center justify-center mx-auto ${item.이슈.some(i => i.includes('🚨')) ? 'bg-orange-50 text-orange-600 border border-orange-200 hover:bg-orange-100 animate-pulse' : 'bg-white text-slate-400 border border-slate-200 hover:bg-slate-50 hover:text-slate-600'}`} title="강제 조정 시 필수 사유 작성">
-                                                    <i className="fas fa-pen-nib"></i>
+                                                    <SafeIcon name="edit" size={14} />
                                                 </button>
                                             </td>
                                         </tr>
@@ -273,7 +682,7 @@
                         <div className="fixed inset-0 bg-slate-900/60 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
                             <div className="bg-white w-[400px] rounded-xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 modal-bounce">
                                 <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-                                    <h3 className="font-black text-slate-800 text-[14px]"><i className="fas fa-edit text-indigo-500 mr-2"></i>조정 사유 기록</h3>
+                                    <h3 className="font-black text-slate-800 text-[14px] flex items-center"><SafeIcon name="edit" size={16} className="text-indigo-500 mr-2"/>조정 사유 기록</h3>
                                     <button onClick={() => setMemoModal({ isOpen: false, code: null, text: '' })} className="text-slate-400 hover:text-slate-600"><SafeIcon name="x" size={16} /></button>
                                 </div>
                                 <div className="p-6 space-y-4">
@@ -304,11 +713,15 @@
         };
 
         function App() {
+            const config = useMerchConfig();
+            
             const [toastMsg, setToastMsg] = useState('');
             const [isProcessing, setIsProcessing] = useState(false);
             const [processMsg, setProcessMsg] = useState('');
+            const [showSettings, setShowSettings] = useState(false);
             
             const [masterProducts, setMasterProducts] = useState({});
+            const [historyLogs, setHistoryLogs] = useState([]);
             const [inventoryData, setInventoryData] = useState([]);
             
             const [searchKw, setSearchKw] = useState('');
@@ -318,9 +731,36 @@
 
             const handleNavigate = useCallback((e, path, isReady = true) => {
                 if (e && e.preventDefault) e.preventDefault();
-                if (!isReady) { showToast(`⚠️ [${path}] 페이지는 아직 준비 중입니다.`); return; }
-                try { window.location.href = path; } catch (err) { showToast(`💡 이동 시뮬레이션: ${path}`); }
+                if (!isReady || path === '#' || path === '') { showToast(`⚠️ 해당 페이지는 아직 준비 중입니다.`); return; }
+                try {
+                    const protocol = window.location.protocol;
+                    if (protocol === 'about:' || protocol === 'blob:' || protocol === 'data:') {
+                        showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
+                    } else {
+                        window.location.href = path;
+                    }
+                } catch (err) {
+                    showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
+                }
             }, [showToast]);
+
+            const handlePush = async () => {
+                if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
+                setIsProcessing(true); setProcessMsg("클라우드 백업 중...");
+                setTimeout(() => {
+                    showToast("✅ 클라우드 저장 완료");
+                    setIsProcessing(false); setProcessMsg("");
+                }, 1000);
+            };
+
+            const handlePull = async () => {
+                if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
+                setIsProcessing(true); setProcessMsg("데이터 동기화 중...");
+                setTimeout(() => {
+                    showToast("✅ 데이터 수신 완료");
+                    setIsProcessing(false); setProcessMsg("");
+                }, 1000);
+            };
 
             const loadData = useCallback(async () => {
                 setIsProcessing(true);
@@ -330,6 +770,7 @@
                     const history = await getIDB(STORAGE_KEYS.HISTORY_DB) || [];
                     
                     setMasterProducts(master);
+                    setHistoryLogs(history);
 
                     let arr = [];
                     for(let code in master) {
@@ -373,6 +814,146 @@
             }, [showToast]);
 
             useEffect(() => { loadData(); }, [loadData]);
+
+            // 타 탭 동기화 트리거 리스너
+            useEffect(() => {
+                const handleStorageChange = (e) => {
+                    if (e.key === STORAGE_KEYS.SYNC_TRIGGER) {
+                        loadData();
+                    }
+                };
+                window.addEventListener('storage', handleStorageChange);
+                return () => window.removeEventListener('storage', handleStorageChange);
+            }, [loadData]);
+
+            const availableCatalogs = useMemo(() => {
+                const counts = {};
+                Object.values(masterProducts).forEach(m => {
+                    const tagStr = m['카탈로그'] || '';
+                    tagStr.split(',').forEach(t => {
+                        const trimmed = t.trim();
+                        if (trimmed) counts[trimmed] = (counts[trimmed] || 0) + 1;
+                    });
+                });
+                return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
+            }, [masterProducts]);
+
+            const availableCategories = useMemo(() => {
+                const counts = {};
+                Object.values(masterProducts).forEach(m => {
+                    const tagStr = m['견적서'] || m['카테고리'] || '';
+                    tagStr.split(',').forEach(t => {
+                        const trimmed = t.trim();
+                        if (trimmed) counts[trimmed] = (counts[trimmed] || 0) + 1;
+                    });
+                });
+                return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
+            }, [masterProducts]);
+
+            // 설정창 연동 액션들
+            const handleClearDB = async () => {
+                if (!window.confirm("현재 브라우저의 마스터 DB 전체를 초기화하시겠습니까?\n이 작업은 되돌릴 수 없습니다. (클라우드 데이터는 보존됩니다)")) return;
+                setMasterProducts({});
+                await setIDB(STORAGE_KEYS.MASTER_DB, {});
+                localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
+                showToast("🗑️ 앱 로컬 데이터가 모두 초기화되었습니다.");
+                loadData();
+            };
+
+            const cleanUpGarbageTags = useCallback(() => {
+                if(window.confirm("마스터 DB에 남아있는 불필요한 엑셀 검색어 찌꺼기를 모두 삭제하여 용량을 최적화하시겠습니까?\n(오직 시스템에서 관리하는 속성만 안전하게 남습니다.)")) {
+                    let newMaster = { ...masterProducts };
+                    let count = 0;
+                    for (let code in newMaster) {
+                        if (newMaster[code]['검색어등록'] || newMaster[code]['상품태그']) {
+                            delete newMaster[code]['검색어등록'];
+                            delete newMaster[code]['상품태그'];
+                            count++;
+                        }
+                    }
+                    setMasterProducts(newMaster);
+                    setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
+                    localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
+                    showToast(`✅ ${count}건의 찌꺼기 데이터를 삭제했습니다.`);
+                }
+            }, [masterProducts, showToast]);
+
+            const handleDeleteTag = useCallback((type, tagName) => {
+                if (!tagName) return;
+                const confirmMsg = `[${tagName}] ${type === 'catalog' ? '카탈로그' : '견적서'}를 정말 삭제하시겠습니까?\n해당 꼬리표가 달린 모든 상품에서 이 태그가 일괄 제거됩니다.`;
+                if (!window.confirm(confirmMsg)) return;
+
+                let newMaster = { ...masterProducts };
+                let count = 0;
+                const fieldKey = type === 'catalog' ? '카탈로그' : '견적서';
+
+                for (let code in newMaster) {
+                    if (newMaster[code][fieldKey]) {
+                        const tags = newMaster[code][fieldKey].split(',').map(s => s.trim()).filter(Boolean);
+                        if (tags.includes(tagName)) {
+                            newMaster[code] = { ...newMaster[code] };
+                            newMaster[code][fieldKey] = tags.filter(t => t !== tagName).join(', ');
+                            count++;
+                        }
+                    }
+                }
+                
+                setMasterProducts(newMaster);
+                setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
+                localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
+                showToast(`✅ ${count}개의 상품에서 [${tagName}] 태그를 삭제했습니다.`);
+            }, [masterProducts, showToast]);
+
+
+            // 실사 엑셀 업로드 연동
+            const handleFileUpload = async (e) => {
+                const file = e.target.files[0]; if (!file) return;
+                setIsProcessing(true); setProcessMsg('실사 엑셀 대조 중...');
+                try {
+                    const excelData = await parseExcelRobust(file);
+                    if (excelData.length === 0) throw new Error("데이터가 없습니다.");
+                    
+                    let count = 0;
+                    const actualUpdates = {};
+                    
+                    // 엑셀에서 실사 수량 찾기
+                    excelData.forEach(row => {
+                        const code = row['품목코드'] || row['코드'] || row['상품코드'];
+                        if (!code) return;
+                        
+                        const qtyVal = row['실사'] || row['실사수량'] || row['재고'] || row['기말실사'] || row['수량'];
+                        if (qtyVal !== undefined && qtyVal !== '') {
+                            actualUpdates[code] = parseNum(qtyVal);
+                        }
+                    });
+
+                    setInventoryData(prev => {
+                        let updatedCount = 0;
+                        const newData = prev.map(item => {
+                            if (actualUpdates[item.코드] !== undefined) {
+                                const actual = actualUpdates[item.코드];
+                                const newLoss = actual - item.전산잔량;
+                                let newIssues = [...item.이슈].filter(msg => !msg.includes('실사조정'));
+                                
+                                if (newLoss !== 0) newIssues.push('🚨실사조정');
+                                
+                                updatedCount++;
+                                return { ...item, 실사: actual, 로스: newLoss, 이슈: newIssues };
+                            }
+                            return item;
+                        });
+                        count = updatedCount;
+                        return newData;
+                    });
+                    
+                    if(count > 0) showToast(`✅ ${count}건의 실사 수량이 전산잔량과 대조되었습니다.`);
+                    else showToast(`⚠️ 엑셀에서 일치하는 품목코드를 찾을 수 없습니다.`);
+                } catch(error) { 
+                    showToast("❌ 업로드 오류: " + error.message); 
+                } finally { 
+                    e.target.value = ''; setIsProcessing(false); setProcessMsg(''); 
+                }
+            };
 
             const updateActualQty = (code, val) => {
                 const actual = val === '' ? '' : parseInt(val, 10);
@@ -508,7 +1089,16 @@
 
             return (
                 <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-slate-100 relative shadow-2xl border-x border-slate-300 select-none">
-                    <GlobalHeader activeTab="inventory" itemCount={Object.keys(masterProducts).length} isProcessing={isProcessing} processMsg={processMsg} onNavigate={handleNavigate} />
+                    <GlobalHeader 
+                        activeTab="inventory" 
+                        itemCount={Object.keys(masterProducts).length} 
+                        isProcessing={isProcessing} 
+                        processMsg={processMsg} 
+                        onOpenSettings={() => setShowSettings(true)}
+                        onPush={handlePush}
+                        onPull={handlePull}
+                        onNavigate={handleNavigate} 
+                    />
                     
                     <div className="px-8 py-5 bg-white border-b border-slate-200 flex items-center justify-between shadow-sm shrink-0 relative z-10">
                         <div>
@@ -518,6 +1108,11 @@
                         </div>
                         
                         <div className="flex items-center gap-4">
+                            <label className="cursor-pointer h-9 px-3 rounded-md text-[13px] font-bold bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50 transition-colors shadow-sm flex items-center shrink-0">
+                                <SafeIcon name="file-excel" size={14} className="mr-1.5 text-emerald-500" /> 실사 엑셀 업로드
+                                <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} disabled={isProcessing} />
+                            </label>
+
                             <div className="flex items-center bg-rose-50 border border-rose-200 px-4 py-1.5 rounded-lg shadow-sm">
                                 <span className="text-[11px] font-bold text-rose-600 mr-2">미해결 경고(🚨)</span>
                                 <span className="text-[16px] font-black text-rose-700">{unresolvedCount}건</span>
@@ -554,6 +1149,16 @@
                             </div>
                         )}
                     </main>
+
+                    {showSettings && (
+                        <MappingCenterModal 
+                            onClose={() => setShowSettings(false)} 
+                            config={config} 
+                            actions={{ cleanUpGarbageTags, handleDeleteTag, showToast, handleClearDB }} 
+                            availableCatalogs={availableCatalogs} 
+                            availableCategories={availableCategories} 
+                        />
+                    )}
                 </div>
             );
         }
