@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - Valuation Hub</title>
+    <title>ONEAPP NEXES - Valuation Hub [Core Engine v2.4]</title>
     <!-- 핵심 라이브러리 CDN 로드 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -105,14 +105,6 @@
             return 'min-w-[100px] w-[100px] max-w-[100px]';
         };
 
-        const getFirstValidNum = (objList, keys) => {
-            for (let obj of objList) { if (!obj) continue; for (let k of keys) { if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return parseNum(obj[k]); } } return 0;
-        };
-
-        const getFirstValidStr = (objList, keys) => {
-            for (let obj of objList) { if (!obj) continue; for (let k of keys) { if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k]; } } return '';
-        };
-
         // IndexedDB Wrapper
         const initIDB = () => new Promise((resolve, reject) => {
             const request = indexedDB.open('MerchOpsDB', 1);
@@ -122,7 +114,7 @@
         const getIDB = async (key) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); };
         const setIDB = async (key, val) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readwrite'); tx.objectStore('store').put(val, key); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); };
 
-        // SafeIcon Wrapper
+        // [컴포넌트] SafeIcon Wrapper (lucide-react + font-awesome 폴백)
         const SafeIcon = React.memo(function SafeIconComponent({ name, size = 18, className = "" }) {
             const [svg, setSvg] = useState("");
             useEffect(() => {
@@ -141,14 +133,14 @@
             }, [name, size, className]);
 
             if (!svg) {
-                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'database':'fa-database', 'upload':'fa-upload', 'pie-chart':'fa-chart-pie', 'shopping-cart':'fa-shopping-cart', 'users':'fa-users', 'megaphone':'fa-bullhorn', 'book-open':'fa-address-book', 'shopping-bag':'fa-shopping-bag', 'credit-card':'fa-credit-card', 'line-chart':'fa-chart-line', 'printer':'fa-print', 'search':'fa-search', 'plus':'fa-plus', 'trash-alt':'fa-trash-alt', 'edit':'fa-edit', 'save':'fa-save', 'folder-open':'fa-folder-open', 'file-excel':'fa-file-excel', 'eye-slash':'fa-eye-slash', 'redo-alt':'fa-redo-alt', 'file-invoice':'fa-file-invoice', 'chevron-down':'fa-chevron-down', 'chevron-right':'fa-chevron-right', 'file-export':'fa-file-export', 'magic':'fa-magic', 'desktop':'fa-desktop', 'sign-in-alt':'fa-sign-in-alt', 'calculator':'fa-calculator', 'tags':'fa-tags', 'link':'fa-link', 'broom':'fa-broom', 'info-circle':'fa-info-circle', 'lock':'fa-lock', 'key':'fa-key', 'search-dollar':'fa-search-dollar', 'list':'fa-list', 'arrow-up':'fa-arrow-up', 'arrow-down':'fa-arrow-down', 'star':'fa-star', 'equals':'fa-equals' };
+                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'database':'fa-database', 'upload':'fa-upload', 'pie-chart':'fa-chart-pie', 'shopping-cart':'fa-shopping-cart', 'users':'fa-users', 'megaphone':'fa-bullhorn', 'book-open':'fa-address-book', 'shopping-bag':'fa-shopping-bag', 'credit-card':'fa-credit-card', 'line-chart':'fa-chart-line', 'printer':'fa-print', 'search':'fa-search', 'plus':'fa-plus', 'trash-alt':'fa-trash-alt', 'edit':'fa-edit', 'save':'fa-save', 'folder-open':'fa-folder-open', 'file-excel':'fa-file-excel', 'eye-slash':'fa-eye-slash', 'redo-alt':'fa-redo-alt', 'file-invoice':'fa-file-invoice', 'chevron-down':'fa-chevron-down', 'chevron-right':'fa-chevron-right', 'file-export':'fa-file-export', 'magic':'fa-magic', 'desktop':'fa-desktop', 'sign-in-alt':'fa-sign-in-alt', 'calculator':'fa-calculator', 'tags':'fa-tags', 'link':'fa-link', 'broom':'fa-broom', 'info-circle':'fa-info-circle', 'lock':'fa-lock', 'key':'fa-key', 'search-dollar':'fa-search-dollar', 'list':'fa-list', 'arrow-up':'fa-arrow-up', 'arrow-down':'fa-arrow-down', 'star':'fa-star', 'equals':'fa-equals', 'sitemap':'fa-sitemap' };
                 return <i className={`fas ${faMap[name] || `fa-${name}`} ${className}`} style={{ fontSize: size }} />;
             }
             return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
         });
 
         // ==========================================
-        // 🧩 2. 공통 UI 컴포넌트 (GNB - v2.2)
+        // 🧩 2. 공통 UI 컴포넌트 (GNB - v2.4 기준)
         // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [ { id: 'master', label: '정보 관리', icon: 'database' }, { id: 'ops', label: '운영 관리', icon: 'truck' }, { id: 'admin', label: '인사이트', icon: 'bar-chart-3' } ];
@@ -189,7 +181,8 @@
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
                                     <div className="flex items-center">
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v2.2</span>
+                                        {/* v2.4 뱃지 업데이트 */}
+                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v2.4</span>
                                     </div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">VALUATION HUB</span>
                                 </div>
@@ -251,7 +244,7 @@
         };
 
         // ==========================================
-        // 🧩 3. V1.2 코어 엔진 (Pricing & Parser)
+        // 🧩 3. V1.2 코어 엔진 (Pricing & Parser) - 유지
         // ==========================================
         const calculatePricesEngine = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
             if (!baseInPrice || baseInPrice <= 0) return { ...currentFinalData, '입고가': 0, '시중가': 0, '출고가': 0, '1입고': 0, '1출고': 0 };
@@ -343,7 +336,7 @@
         });
 
         // ==========================================
-        // 🧩 4. 커스텀 훅 (State Architecture)
+        // 🧩 4. [업데이트] 커스텀 훅 (State Architecture v2.4)
         // ==========================================
         const useMerchConfig = () => {
             const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v870') || '');
@@ -351,17 +344,51 @@
             const [visibleUploadCols, setVisibleUploadCols] = useState(() => { const s = localStorage.getItem('merchVisUpload_v870'); const p = s ? JSON.parse(s) : null; return p?.estimate ? p : getInitialVisibleUploadCols(); });
             const [mappings, setMappings] = useState(() => { const s = localStorage.getItem('merchMappings_v870'); const p = s ? JSON.parse(s) : null; return p?.master ? p : getInitialMappings(); });
             const [masterLinks, setMasterLinks] = useState(() => { const s = localStorage.getItem('merchMasterLinks_v870'); const p = s ? JSON.parse(s) : null; return p?.estimate ? p : getInitialMasterLinks(); });
+            
             const [marginRules, setMarginRules] = useState(() => {
                 const s = localStorage.getItem('merchMarginRules_v878');
                 const def = [ { id: generateUUID(), whCode: '01', unit: 'box, 박스', rate: 10, type: 'divide' }, { id: generateUUID(), whCode: '01', unit: 'ea, 개, 낱개', rate: 15, type: 'divide' }, { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' } ];
                 if (s) try { const p = JSON.parse(s); if (p?.length > 0) return p.map(r => ({ ...r, whCode: r.whCode || '*', unit: r.unit || '*' })); } catch(e){} return def;
             });
 
+            // v2.4 신규: 운영 관리 매핑 설정
+            const [opsMappings, setOpsMappings] = useState(() => {
+                const s = localStorage.getItem('merchOpsMappings_v240');
+                const def = {
+                    order: { '주문번호': '주문번호, 오더번호', '주문일자': '일자, 주문일', '상품명': '상품명, 품목명', '수량': '수량, 개수', '단가': '단가, 판매가' },
+                    purchase: { '발주번호': '발주번호', '매입처': '매입처, 거래처', '상품명': '품목명', '수량': '수량', '단가': '입고가, 매입가' },
+                    sales: { '판매번호': '판매번호', '판매일': '판매일', '상품명': '품목명', '수량': '수량', '단가': '단가' },
+                    inventory: { '창고': '창고', '상품명': '품목명', '재고수량': '재고' }
+                };
+                if (s) try { const p = JSON.parse(s); if (p) return p; } catch(e){} return def;
+            });
+
+            // v2.4 신규: 운영 품목 관리 기준
+            const [opsGrouping, setOpsGrouping] = useState(() => {
+                const s = localStorage.getItem('merchOpsGrouping_v240');
+                const def = {
+                    criterion: '브랜드',
+                    rules: [ { id: generateUUID(), groupName: '기본그룹', keyword: '*' } ]
+                };
+                if (s) try { const p = JSON.parse(s); if (p) return p; } catch(e){} return def;
+            });
+
             useEffect(() => {
-                localStorage.setItem('merchCloudUrl_v870', cloudUrl); localStorage.setItem('merchVisMaster_v870', JSON.stringify(visibleMasterCols)); localStorage.setItem('merchVisUpload_v870', JSON.stringify(visibleUploadCols));
-                localStorage.setItem('merchMappings_v870', JSON.stringify(mappings)); localStorage.setItem('merchMasterLinks_v870', JSON.stringify(masterLinks)); localStorage.setItem('merchMarginRules_v878', JSON.stringify(marginRules));
-            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules]);
-            return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules };
+                localStorage.setItem('merchCloudUrl_v870', cloudUrl); 
+                localStorage.setItem('merchVisMaster_v870', JSON.stringify(visibleMasterCols)); 
+                localStorage.setItem('merchVisUpload_v870', JSON.stringify(visibleUploadCols));
+                localStorage.setItem('merchMappings_v870', JSON.stringify(mappings)); 
+                localStorage.setItem('merchMasterLinks_v870', JSON.stringify(masterLinks)); 
+                localStorage.setItem('merchMarginRules_v878', JSON.stringify(marginRules));
+                localStorage.setItem('merchOpsMappings_v240', JSON.stringify(opsMappings));
+                localStorage.setItem('merchOpsGrouping_v240', JSON.stringify(opsGrouping));
+            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules, opsMappings, opsGrouping]);
+
+            return { 
+                cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, 
+                mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules,
+                opsMappings, setOpsMappings, opsGrouping, setOpsGrouping
+            };
         };
 
         const useMerchData = () => {
@@ -381,13 +408,23 @@
         };
 
         // ==========================================
-        // 🧩 5. 모달 및 툴바 (최신 MappingCenterModal 등)
+        // 🧩 5. [업데이트] 5대 환경설정 모달 (MappingCenterModal)
         // ==========================================
         const MappingCenterModal = ({ onClose, config, actions, availableCatalogs, availableCategories }) => {
-            const { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules } = config;
+            const { 
+                cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, 
+                visibleUploadCols, setVisibleUploadCols, mappings, setMappings, 
+                masterLinks, setMasterLinks, marginRules, setMarginRules,
+                opsMappings, setOpsMappings, opsGrouping, setOpsGrouping
+            } = config;
+            
             const { cleanUpGarbageTags, handleDeleteTag, showToast, handleClearDB } = actions;
             const [activeTab, setActiveTab] = useState('display');
             const [customEstColInput, setCustomEstColInput] = useState('');
+            
+            // JSON 문자열 편집용 로컬 상태 (운영 탭 전용)
+            const [localOpsMappings, setLocalOpsMappings] = useState(() => JSON.stringify(opsMappings, null, 2));
+
             useEffect(() => { document.body.style.overflow = 'hidden'; return () => document.body.style.overflow = 'auto'; }, []);
 
             const toggleMasterCol = (tabId, header) => setVisibleMasterCols(prev => { const list = prev[tabId] || []; return { ...prev, [tabId]: list.includes(header) ? list.filter(h => h !== header) : [...list, header] }; });
@@ -405,6 +442,16 @@
             const updateMarginRule = (id, field, value) => setMarginRules(marginRules.map(r => r.id === id ? { ...r, [field]: value } : r));
             const deleteMarginRule = (id) => setMarginRules(marginRules.filter(r => r.id !== id));
 
+            const handleOpsMappingsBlur = () => {
+                try {
+                    const parsed = JSON.parse(localOpsMappings);
+                    setOpsMappings(parsed);
+                    showToast('운영 매핑 설정이 유효성 검사를 통과하여 임시 저장되었습니다.');
+                } catch(err) {
+                    showToast('⚠️ JSON 형식이 올바르지 않습니다. 다시 확인해주세요.');
+                }
+            };
+
             const selectableMasterHeaders = useMemo(() => Array.from(new Set([...MASTER_HEADERS, ...(visibleMasterCols['estimate'] || [])])), [visibleMasterCols]);
             const requiredCoreFields = ['품목코드', '품목명', '규격'];
 
@@ -419,14 +466,16 @@
                         </div>
                         
                         <div className="flex flex-1 overflow-hidden bg-slate-50">
-                            <div className="w-[240px] bg-white border-r border-slate-200 flex flex-col py-4 shrink-0 shadow-sm">
+                            <div className="w-[250px] bg-white border-r border-slate-200 flex flex-col py-4 shrink-0 shadow-sm">
                                 <button onClick={() => setActiveTab('display')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'display' ? 'border-indigo-500 text-indigo-700 bg-indigo-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-desktop w-6 text-center mr-1"></i> 1. 환경 및 화면 설정</button>
-                                <button onClick={() => setActiveTab('inputMap')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'inputMap' ? 'border-emerald-500 text-emerald-700 bg-emerald-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-sign-in-alt w-6 text-center mr-1"></i> 2. 입력 데이터 매핑 (엑셀)</button>
-                                <button onClick={() => setActiveTab('marginRule')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'marginRule' ? 'border-rose-500 text-rose-700 bg-rose-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-calculator w-6 text-center mr-1"></i> 3. 단가 계산 및 마진 룰</button>
-                                <button onClick={() => setActiveTab('tagManager')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'tagManager' ? 'border-amber-500 text-amber-700 bg-amber-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-tags w-6 text-center mr-1"></i> 4. 견적서/카탈로그 관리</button>
+                                <button onClick={() => setActiveTab('marginRule')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'marginRule' ? 'border-rose-500 text-rose-700 bg-rose-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-calculator w-6 text-center mr-1"></i> 2. 단가 계산 및 마진 룰</button>
+                                <button onClick={() => setActiveTab('tagManager')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'tagManager' ? 'border-amber-500 text-amber-700 bg-amber-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-tags w-6 text-center mr-1"></i> 3. 카탈로그/견적서 관리</button>
+                                <button onClick={() => setActiveTab('inputMap')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'inputMap' ? 'border-emerald-500 text-emerald-700 bg-emerald-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-file-excel w-6 text-center mr-1"></i> 4. 시세 엑셀 데이터 매핑</button>
+                                <button onClick={() => setActiveTab('opsConfig')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'opsConfig' ? 'border-blue-500 text-blue-700 bg-blue-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-truck w-6 text-center mr-1"></i> 5. 운영 매핑 및 기준</button>
                             </div>
                             
                             <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                                {/* 1. 환경 및 화면 설정 */}
                                 {activeTab === 'display' && (
                                     <div className="max-w-4xl space-y-6 fade-in">
                                         <div className="bg-indigo-50 p-5 rounded-xl border border-indigo-100 shadow-sm">
@@ -466,32 +515,8 @@
                                         </div>
                                     </div>
                                 )}
-                                {activeTab === 'inputMap' && (
-                                    <div className="max-w-4xl space-y-8 fade-in">
-                                        <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                                            <div className="bg-slate-50 p-3 border-b border-slate-200"><h3 className="text-[13px] font-black text-slate-800 flex items-center"><span className="bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.5 rounded mr-2">[엑셀/작업]</span> 견적서 엑셀 헤더 매핑</h3></div>
-                                            <table className="w-full text-left text-[12px]">
-                                                <thead className="bg-white border-b border-slate-200 text-slate-500 font-bold"><tr><th className="p-3 w-[140px]">화면 노출 항목</th><th className="p-3">엑셀 헤더 감지 키워드 (콤마 구분)</th><th className="p-3 w-[200px]">마스터 DB 필드 연결</th></tr></thead>
-                                                <tbody className="divide-y divide-slate-100">
-                                                    {requiredCoreFields.map(h => (
-                                                        <tr key={`map-req-${h}`} className="bg-slate-50">
-                                                            <td className="p-3 font-bold text-slate-700"><i className="fas fa-lock text-slate-400 mr-2"></i>{h}</td>
-                                                            <td className="p-3"><input type="text" value={mappings['estimate']?.[h]||''} onChange={e=>setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-amber-500 focus:ring-1 bg-white" /></td>
-                                                            <td className="p-3"><div className="text-[11px] text-slate-500 bg-slate-200 px-3 py-1.5 rounded border border-slate-300 font-bold flex items-center justify-center shadow-inner"><i className="fas fa-key mr-1.5"></i>식별자 고정</div></td>
-                                                        </tr>
-                                                    ))}
-                                                    {(visibleUploadCols['estimate']||[]).filter(h => !requiredCoreFields.includes(h)).map(h => (
-                                                        <tr key={`map-e-${h}`} className="hover:bg-slate-50 transition-colors">
-                                                            <td className="p-3 font-bold text-slate-800">{h}</td>
-                                                            <td className="p-3"><input type="text" value={mappings['estimate']?.[h]||''} onChange={e=>setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-amber-500 focus:ring-1" /></td>
-                                                            <td className="p-3"><select value={masterLinks['estimate']?.[h]||''} onChange={e=>setMasterLinks(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} className={`w-full border border-slate-300 rounded px-2 py-1.5 outline-none focus:border-amber-500 ${masterLinks['estimate']?.[h]?'bg-amber-50 text-amber-700 font-bold':'bg-white'}`}><option value="">-- 단순 화면 노출 (업데이트 X) --</option>{MASTER_HEADERS.map(mh=><option key={mh} value={mh}>{mh}</option>)}</select></td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                )}
+                                
+                                {/* 2. 단가 계산 및 마진 룰 */}
                                 {activeTab === 'marginRule' && (
                                     <div className="max-w-4xl space-y-6 fade-in">
                                         <div className="bg-white p-6 rounded-xl border border-rose-200 shadow-sm">
@@ -522,6 +547,8 @@
                                         </div>
                                     </div>
                                 )}
+                                
+                                {/* 3. 카탈로그/견적서 관리 */}
                                 {activeTab === 'tagManager' && (
                                     <div className="max-w-4xl space-y-6 fade-in">
                                         <div className="bg-white p-6 rounded-xl border shadow-sm">
@@ -569,13 +596,84 @@
                                         </div>
                                     </div>
                                 )}
+                                
+                                {/* 4. 시세 엑셀 데이터 매핑 */}
+                                {activeTab === 'inputMap' && (
+                                    <div className="max-w-4xl space-y-8 fade-in">
+                                        <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                                            <div className="bg-slate-50 p-3 border-b border-slate-200"><h3 className="text-[13px] font-black text-slate-800 flex items-center"><span className="bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.5 rounded mr-2">[엑셀/작업]</span> 견적서 엑셀 헤더 매핑</h3></div>
+                                            <table className="w-full text-left text-[12px]">
+                                                <thead className="bg-white border-b border-slate-200 text-slate-500 font-bold"><tr><th className="p-3 w-[140px]">화면 노출 항목</th><th className="p-3">엑셀 헤더 감지 키워드 (콤마 구분)</th><th className="p-3 w-[200px]">마스터 DB 필드 연결</th></tr></thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {requiredCoreFields.map(h => (
+                                                        <tr key={`map-req-${h}`} className="bg-slate-50">
+                                                            <td className="p-3 font-bold text-slate-700"><i className="fas fa-lock text-slate-400 mr-2"></i>{h}</td>
+                                                            <td className="p-3"><input type="text" value={mappings['estimate']?.[h]||''} onChange={e=>setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-amber-500 focus:ring-1 bg-white" /></td>
+                                                            <td className="p-3"><div className="text-[11px] text-slate-500 bg-slate-200 px-3 py-1.5 rounded border border-slate-300 font-bold flex items-center justify-center shadow-inner"><i className="fas fa-key mr-1.5"></i>식별자 고정</div></td>
+                                                        </tr>
+                                                    ))}
+                                                    {(visibleUploadCols['estimate']||[]).filter(h => !requiredCoreFields.includes(h)).map(h => (
+                                                        <tr key={`map-e-${h}`} className="hover:bg-slate-50 transition-colors">
+                                                            <td className="p-3 font-bold text-slate-800">{h}</td>
+                                                            <td className="p-3"><input type="text" value={mappings['estimate']?.[h]||''} onChange={e=>setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-amber-500 focus:ring-1" /></td>
+                                                            <td className="p-3"><select value={masterLinks['estimate']?.[h]||''} onChange={e=>setMasterLinks(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} className={`w-full border border-slate-300 rounded px-2 py-1.5 outline-none focus:border-amber-500 ${masterLinks['estimate']?.[h]?'bg-amber-50 text-amber-700 font-bold':'bg-white'}`}><option value="">-- 단순 화면 노출 (업데이트 X) --</option>{MASTER_HEADERS.map(mh=><option key={mh} value={mh}>{mh}</option>)}</select></td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                {/* 5. [신규] 운영 매핑 및 기준 */}
+                                {activeTab === 'opsConfig' && (
+                                    <div className="max-w-4xl space-y-6 fade-in">
+                                        <div className="bg-white p-6 rounded-xl border shadow-sm">
+                                            <h3 className="text-[15px] font-black text-slate-800 mb-4 pb-2 border-b flex items-center">
+                                                <i className="fas fa-truck text-blue-500 mr-2"></i> 운영 관리 모듈 엑셀 헤더 매핑
+                                            </h3>
+                                            <div className="text-[12px] text-slate-500 font-medium mb-4 bg-slate-50 p-3 rounded-lg border border-slate-200 leading-relaxed">
+                                                주문, 구매, 판매 등 <strong>운영 관리 시스템에서 공통으로 사용할 엑셀 데이터 파싱 기준</strong>을 정의합니다.<br/>
+                                                <span className="text-rose-500 font-bold">* JSON 형식으로 자유롭게 편집할 수 있으며, 편집 창을 벗어나면 유효성 검사 후 임시 저장됩니다.</span>
+                                            </div>
+                                            <textarea 
+                                                className="w-full h-56 text-[12.5px] font-mono p-4 border border-slate-300 rounded-lg bg-[#f8fafc] text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all custom-scrollbar"
+                                                value={localOpsMappings}
+                                                onChange={(e) => setLocalOpsMappings(e.target.value)}
+                                                onBlur={handleOpsMappingsBlur}
+                                                spellCheck="false"
+                                            />
+                                        </div>
+
+                                        <div className="bg-white p-6 rounded-xl border shadow-sm">
+                                            <h3 className="text-[15px] font-black text-slate-800 mb-4 pb-2 border-b flex items-center">
+                                                <i className="fas fa-sitemap text-emerald-500 mr-2"></i> 운영 품목 관리 기준 (그룹핑)
+                                            </h3>
+                                            <div className="text-[12px] text-slate-500 font-medium mb-4 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                                                운영 데이터 분석 시 품목을 묶어볼 기준 필드(예: 브랜드, 카테고리)를 글로벌 환경에 적용합니다.
+                                            </div>
+                                            <div className="flex items-center gap-4">
+                                                <span className="text-[13px] font-bold text-slate-700">기본 분류 기준 필드:</span>
+                                                <select 
+                                                    value={opsGrouping?.criterion || '브랜드'}
+                                                    onChange={(e) => setOpsGrouping(p => ({...p, criterion: e.target.value}))}
+                                                    className="border border-slate-300 rounded-md px-3 py-1.5 text-[13px] font-bold text-slate-700 outline-none focus:border-emerald-500 bg-white shadow-sm"
+                                                >
+                                                    {MASTER_HEADERS.map(h => <option key={`grp-${h}`} value={h}>{h}</option>)}
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
                         {/* Modal Footer */}
                         <div className="bg-slate-100 p-4 border-t border-slate-200 flex justify-between items-center shrink-0">
                             <button onClick={handleClearDB} className="text-[13px] font-bold text-slate-500 hover:text-rose-500 transition-colors"><i className="fas fa-undo mr-1"></i>앱 로컬 전체 초기화</button>
-                            <div className="flex gap-2"><button onClick={onClose} className="px-6 py-2.5 bg-[#1A2235] border border-slate-700 text-white hover:bg-black rounded-lg text-[13px] font-bold transition-all shadow-md">닫기 및 적용</button></div>
+                            <div className="flex gap-2">
+                                <button onClick={() => { handleOpsMappingsBlur(); onClose(); }} className="px-6 py-2.5 bg-[#1A2235] border border-slate-700 text-white hover:bg-black rounded-lg text-[13px] font-bold transition-all shadow-md">닫기 및 적용</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -626,7 +724,7 @@
             return (
                 <div className="px-6 py-3 flex items-center justify-between gap-4 bg-white border-b border-slate-200 z-10 w-full shrink-0">
                     <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 -mb-1">
-                        {/* 카탈로그(파서) 그룹: 이제 툴바에서 만들지 않고 불러오기만 합니다. */}
+                        {/* 카탈로그(파서) 그룹 */}
                         <div className="flex items-center gap-1">
                             <div className="relative">
                                 <select value={selectedCatalog} onChange={(e) => setSelectedCatalog(e.target.value)} className="appearance-none bg-white border border-indigo-200 text-indigo-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-indigo-400 cursor-pointer h-9 shadow-sm" title="파서에서 매핑 완료한 데이터를 불러옵니다.">
@@ -753,7 +851,7 @@
 
             return (
                 <tr className={`table-row-hover transition-colors ${isSel ? 'table-row-selected' : ''}`} onClick={() => onToggleSelection(rowCode)}>
-                    {/* 상품정보 열 (이미지2 UI 적용 - 더 시원한 여백) */}
+                    {/* 상품정보 열 */}
                     <td className={`sticky z-20 px-4 py-3 border-r border-[#e8eaed] min-w-[280px] w-[280px] max-w-[280px] bg-white`} style={{left:0}}>
                         <div className="flex flex-col w-full overflow-hidden">
                             <span className="text-[10.5px] font-mono text-indigo-500 mb-0.5 tracking-tight font-bold">{rowCode}</span>
@@ -764,7 +862,7 @@
                         </div>
                     </td>
 
-                    {/* 마스터 열 */}
+                    {/* 마스터 열 및 작업/업로드 열 */}
                     {!isEstimateUploaded ? (
                         visMasterCols.map(h => {
                             const isNum = NUMERIC_HEADERS.includes(h);
@@ -814,7 +912,7 @@
             const [scrollTop, setScrollTop] = useState(0);
             const handleScroll = useCallback((e) => setScrollTop(e.target.scrollTop), []);
 
-            const ROW_HEIGHT = 56; // 대략적인 행 높이 py-3 기준
+            const ROW_HEIGHT = 56; 
             const BUFFER_SIZE = 15; 
             const VIEWPORT_HEIGHT = 800; 
 
@@ -914,11 +1012,15 @@
         function App() {
             const [toastMsg, setToastMsg] = useState('');
             const [isProcessing, setIsProcessing] = useState(false); const [processMsg, setProcessMsg] = useState('');
-            const [showSettings, setShowSettings] = useState(false); const [showReviewModal, setShowReviewModal] = useState(false);
+            
+            // v2.4 환경설정 모달 제어
+            const config = useMerchConfig();
+            const [showSettings, setShowSettings] = useState(false); 
+            
+            const [showReviewModal, setShowReviewModal] = useState(false);
             const [showCategoryModal, setShowCategoryModal] = useState(false);
             const [showExportModal, setShowExportModal] = useState(false);
             
-            const config = useMerchConfig();
             const data = useMerchData();
             const [selectedRows, setSelectedRows] = useState(new Set());
 
