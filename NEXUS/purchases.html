@@ -1,4 +1,4 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko" translate="no">
 <head>
     <meta charset="UTF-8">
@@ -149,7 +149,7 @@
             }, [name, size, className]);
 
             if (!svg) {
-                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'database':'fa-database', 'upload':'fa-upload', 'pie-chart':'fa-chart-pie', 'shopping-cart':'fa-shopping-cart', 'users':'fa-users', 'megaphone':'fa-bullhorn', 'book-open':'fa-address-book', 'shopping-bag':'fa-shopping-bag', 'credit-card':'fa-credit-card', 'line-chart':'fa-chart-line', 'printer':'fa-print', 'search':'fa-search', 'plus':'fa-plus', 'trash-alt':'fa-trash-alt', 'edit':'fa-edit', 'save':'fa-save', 'file-excel':'fa-file-excel', 'link':'fa-link', 'ban':'fa-ban', 'layer-group':'fa-layer-group', 'desktop':'fa-desktop', 'sign-in-alt':'fa-sign-in-alt', 'calculator':'fa-calculator', 'tags':'fa-tags', 'broom':'fa-broom', 'info-circle':'fa-info-circle', 'lock':'fa-lock', 'key':'fa-key', 'folder-open':'fa-folder-open', 'file-invoice':'fa-file-invoice' };
+                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'database':'fa-database', 'upload':'fa-upload', 'pie-chart':'fa-chart-pie', 'shopping-cart':'fa-shopping-cart', 'users':'fa-users', 'megaphone':'fa-bullhorn', 'book-open':'fa-address-book', 'shopping-bag':'fa-shopping-bag', 'credit-card':'fa-credit-card', 'line-chart':'fa-chart-line', 'printer':'fa-print', 'search':'fa-search', 'plus':'fa-plus', 'trash-alt':'fa-trash-alt', 'edit':'fa-edit', 'save':'fa-save', 'file-excel':'fa-file-excel', 'link':'fa-link', 'ban':'fa-ban', 'layer-group':'fa-layer-group', 'desktop':'fa-desktop', 'sign-in-alt':'fa-sign-in-alt', 'calculator':'fa-calculator', 'tags':'fa-tags', 'broom':'fa-broom', 'info-circle':'fa-info-circle', 'lock':'fa-lock', 'key':'fa-key', 'folder-open':'fa-folder-open', 'file-invoice':'fa-file-invoice', 'history':'fa-history' };
                 return <i className={`fas ${faMap[name] || `fa-${name}`} ${className}`} style={{ fontSize: size }} />;
             }
             return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
@@ -431,7 +431,7 @@
                                                         <tr key={`map-e-${h}`} className="hover:bg-slate-50 transition-colors">
                                                             <td className="p-3 font-bold text-slate-800">{h}</td>
                                                             <td className="p-3"><input type="text" value={mappings['estimate']?.[h]||''} onChange={e=>setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-amber-500 focus:ring-1" /></td>
-                                                            <td className="p-3"><select value={masterLinks['estimate']?.[h]||''} onChange={e=>setMasterLinks(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} className={`w-full border border-slate-300 rounded px-2 py-1.5 outline-none focus:border-amber-500 ${masterLinks['estimate']?.[h]?'bg-amber-50 text-amber-700 font-bold':'bg-white'}`}><option value="">-- 단순 화면 노출 (업데이트 X) --</option>{MASTER_HEADERS.map(mh=><option key={mh} value={mh}>{mh}</option>)}</select></td>
+                                                            <td className="p-3"><select value={masterLinks['estimate']?.[h]||''} onChange={e=>setMasterLinks(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} className={`w-full border border-slate-300 rounded px-2 py-1.5 outline-none focus:border-amber-500 ${masterLinks['estimate']?.[h]?'bg-amber-50 text-amber-700 font-bold':'bg-white'}`}><option value="">-- 단순 화면 노출 (업데이트 X) --</option>{selectableMasterHeaders.map(mh=><option key={mh} value={mh}>{mh}</option>)}</select></td>
                                                         </tr>
                                                     ))}
                                                 </tbody>
@@ -549,6 +549,7 @@
                             </div>
                         </div>
 
+                        {/* Modal Footer */}
                         <div className="bg-slate-100 p-4 border-t border-slate-200 flex justify-between items-center shrink-0">
                             <button onClick={handleClearDB} className="text-[13px] font-bold text-slate-500 hover:text-rose-500 transition-colors flex items-center"><SafeIcon name="broom" size={14} className="mr-1.5"/>앱 로컬 전체 초기화</button>
                             <div className="flex gap-2"><button onClick={onClose} className="px-6 py-2.5 bg-[#1A2235] border border-slate-700 text-white hover:bg-black rounded-lg text-[13px] font-bold transition-all shadow-md">닫기 및 적용</button></div>
@@ -584,8 +585,11 @@
                 if (!path || path === '#' || !isReady) return showToast("⚠️ 해당 페이지는 현재 준비 중이거나 경로가 올바르지 않습니다.");
                 try {
                     const protocol = window.location.protocol;
-                    if (protocol === 'about:' || protocol === 'blob:' || protocol === 'data:') showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
-                    else window.location.href = path;
+                    if (protocol === 'about:' || protocol === 'blob:' || protocol === 'data:') {
+                        showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
+                    } else {
+                        window.location.href = path;
+                    }
                 } catch (err) { showToast(`💡 이동 시뮬레이션: [${path}]`); }
             }, [showToast]);
 
@@ -646,18 +650,36 @@
                     
                     let newCartItems = [];
                     excelData.forEach(row => {
-                        const code = row['품목코드'] || row['코드'] || row['상품코드'];
+                        const findKey = (mappingString) => {
+                            if (!mappingString) return null;
+                            const keys = mappingString.split(',').map(k => k.trim());
+                            const rowKeys = Object.keys(row);
+                            for (const key of keys) {
+                                const matched = rowKeys.find(rk => rk.toLowerCase().replace(/\s/g, '') === key.toLowerCase().replace(/\s/g, ''));
+                                if (matched) return matched;
+                            }
+                            return null;
+                        };
+
+                        const codeKey = findKey(config.opsMappings.code) || '품목코드';
+                        const code = row[codeKey] || row['코드'] || row['상품코드'];
                         if (!code) return;
                         
-                        const qty = parseNum(row['수량'] || row['입고수량'] || row['구매수량']);
-                        const price = parseNum(row['단가'] || row['입고가'] || row['매입단가'] || row['매입가']);
+                        const qtyKey = findKey(config.opsMappings.qty) || '수량';
+                        const priceKey = findKey(config.opsMappings.price) || '단가';
+                        const vendorKey = findKey(config.opsMappings.vendor) || findKey(config.opsMappings.matchVendor) || '거래처명';
+                        
+                        const qty = parseNum(row[qtyKey] || row['입고수량'] || row['구매수량']);
+                        const price = parseNum(row[priceKey] || row['입고가'] || row['매입단가'] || row['매입가']);
+                        const vendorVal = row[vendorKey] || '';
                         
                         newCartItems.push({
                             코드: code,
                             품목명: row['품목명'] || row['상품명'] || masterProducts[code]?.품목명 || '알 수 없음',
                             규격: row['규격'] || masterProducts[code]?.규격 || '',
                             단가: price || parseNum(masterProducts[code]?.입고가) || 0,
-                            수량: qty
+                            수량: qty,
+                            vendor: vendorVal
                         });
                     });
 
@@ -667,7 +689,7 @@
                             const existing = merged.find(c => c.코드 === newItem.코드);
                             if (existing) {
                                 existing.수량 += newItem.수량;
-                                if(newItem.단가 > 0) existing.단가 = newItem.단가;
+                                if(newItem.단가 > 0) existing.단가 = newItem.단가; // 엑셀의 최신 단가 우선
                             } else {
                                 merged.push(newItem);
                             }
@@ -690,15 +712,16 @@
                     품목명: item.품목명,
                     규격: item.규격,
                     단가: parseNum(item.입고가) || 0,
-                    수량: 0
+                    수량: 0,
+                    vendor: ''
                 }, ...cart]);
             };
 
             const updateCartItem = (code, field, value) => {
                 setCart(cart.map(c => {
                     if (c.코드 === code) {
-                        const numVal = value === '' ? '' : parseNum(value);
-                        return { ...c, [field]: numVal };
+                        const val = field === 'vendor' ? value : (value === '' ? '' : parseNum(value));
+                        return { ...c, [field]: val };
                     }
                     return c;
                 }));
@@ -711,7 +734,12 @@
             const handleCommitPurchases = async () => {
                 const validItems = cart.filter(c => c.수량 !== 0 && c.수량 !== '');
                 if (validItems.length === 0) return showToast("⚠️ 수량이 입력된 항목이 없습니다.");
-                if (!vendorInput.trim()) return showToast("⚠️ 매입처(벤더)를 입력해주세요.");
+                
+                // 개별 벤더 확인 (모두 비어있으면 상단 글로벌 벤더 요구)
+                const hasAnyVendor = validItems.some(c => c.vendor?.trim() !== '');
+                if (!hasAnyVendor && !vendorInput.trim()) {
+                    return showToast("⚠️ 공통 매입처 또는 개별 매입처를 입력해주세요.");
+                }
 
                 setIsProcessing(true);
                 
@@ -721,17 +749,28 @@
                     const nowStr = new Date().toLocaleString('ko-KR');
                     
                     const existingHistory = await getIDB(STORAGE_KEYS.HISTORY_DB) || [];
+                    const priceMode = config.opsGrouping.priceMode || 'separate';
 
                     validItems.forEach(item => {
                         const code = item.코드;
                         const qty = item.수량;
                         const price = item.단가;
+                        const itemVendor = (item.vendor || '').trim() || vendorInput.trim() || '미지정';
                         
                         const isReturn = qty < 0;
                         const eventType = isReturn ? 'PURCHASE_RETURN' : 'PURCHASE';
                         
                         if (!isReturn && newMaster[code]) {
-                            newMaster[code] = { ...newMaster[code], 입고가: price };
+                            const oldQty = parseNum(newMaster[code].재고수량 || 0);
+                            const oldPrice = parseNum(newMaster[code].입고가 || 0);
+
+                            if (priceMode === 'average' && (oldQty + qty) > 0) {
+                                const avgPrice = ((oldQty * oldPrice) + (qty * price)) / (oldQty + qty);
+                                newMaster[code] = { ...newMaster[code], 입고가: Math.round(avgPrice) };
+                            } else {
+                                // latest or separate: 마스터는 최신 단가로 업데이트 (히스토리에 개별 단가 보존)
+                                newMaster[code] = { ...newMaster[code], 입고가: price };
+                            }
                         }
 
                         newLogs.push({
@@ -743,7 +782,7 @@
                             name: item.품목명,
                             qty: qty, 
                             price: price,
-                            vendor: vendorInput.trim(),
+                            vendor: itemVendor,
                             totalAmount: qty * price
                         });
                     });
@@ -759,6 +798,7 @@
                     
                     showToast(`✅ ${validItems.length}건의 매입/반출 전표가 확정되었습니다.`);
                 } catch(err) {
+                    console.error(err);
                     showToast("❌ 전표 확정 중 오류가 발생했습니다.");
                 } finally {
                     setIsProcessing(false);
@@ -887,8 +927,8 @@
                                     </div>
                                     <div className="w-px h-5 bg-slate-200 mx-1"></div>
                                     <div className="flex items-center gap-2">
-                                        <label className="text-[12px] font-bold text-slate-600">매입처</label>
-                                        <input type="text" value={vendorInput} onChange={e=>setVendorInput(e.target.value)} placeholder="벤더명 입력" className="w-36 border border-slate-300 rounded-lg px-3 py-1.5 text-[12px] font-bold outline-none focus:border-indigo-500 shadow-sm" />
+                                        <label className="text-[12px] font-bold text-slate-600">공통 매입처</label>
+                                        <input type="text" value={vendorInput} onChange={e=>setVendorInput(e.target.value)} placeholder="일괄 적용 시 입력" className="w-36 border border-slate-300 rounded-lg px-3 py-1.5 text-[12px] font-bold outline-none focus:border-indigo-500 shadow-sm" />
                                     </div>
                                 </div>
                             </div>
@@ -899,16 +939,17 @@
                                         <thead className="text-[12px] font-bold text-slate-500 bg-white">
                                             <tr>
                                                 <th className="sticky top-0 z-40 bg-white px-4 py-3.5 border-b border-r border-slate-200 shadow-sm w-12 text-center">No</th>
-                                                <th className="sticky top-0 z-40 bg-white px-4 py-3.5 border-b border-r border-slate-200 shadow-sm">상품정보 (코드/품명/규격)</th>
-                                                <th className="sticky top-0 z-30 bg-indigo-50/50 px-4 py-3.5 border-b border-r border-indigo-100 shadow-sm text-center w-32 text-indigo-700">매입 수량</th>
-                                                <th className="sticky top-0 z-30 bg-white px-4 py-3.5 border-b border-r border-slate-200 shadow-sm text-right w-32">매입 단가</th>
-                                                <th className="sticky top-0 z-30 bg-white px-4 py-3.5 border-b border-r border-slate-200 shadow-sm text-right w-36">공급가액</th>
+                                                <th className="sticky top-0 z-40 bg-white px-4 py-3.5 border-b border-r border-slate-200 shadow-sm">상품명 (규격)</th>
+                                                <th className="sticky top-0 z-30 bg-white px-4 py-3.5 border-b border-r border-slate-200 shadow-sm w-36">매입처/로트</th>
+                                                <th className="sticky top-0 z-30 bg-indigo-50/50 px-4 py-3.5 border-b border-r border-indigo-100 shadow-sm text-center w-28 text-indigo-700">매입 수량</th>
+                                                <th className="sticky top-0 z-30 bg-white px-4 py-3.5 border-b border-r border-slate-200 shadow-sm text-right w-28">매입 단가</th>
+                                                <th className="sticky top-0 z-30 bg-white px-4 py-3.5 border-b border-r border-slate-200 shadow-sm text-right w-32">공급가액</th>
                                                 <th className="sticky top-0 z-30 bg-white px-3 py-3.5 border-b border-slate-200 shadow-sm w-12 text-center">삭제</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-transparent text-slate-700">
                                             {cart.length === 0 ? (
-                                                <tr><td colSpan="6" className="p-16 text-center text-slate-400 font-bold"><SafeIcon name="package-search" size={40} className="mb-3 text-slate-200 block mx-auto" />좌측에서 매입/반출할 상품을 검색해 담아주세요.</td></tr>
+                                                <tr><td colSpan="7" className="p-16 text-center text-slate-400 font-bold"><SafeIcon name="package-search" size={40} className="mb-3 text-slate-200 block mx-auto" />좌측에서 매입/반출할 상품을 검색해 담아주세요.</td></tr>
                                             ) : cart.map((item, idx) => {
                                                 const amt = parseNum(item.수량) * parseNum(item.단가);
                                                 const isReturn = parseNum(item.수량) < 0;
@@ -923,6 +964,9 @@
                                                                     {item.규격 && <span className="text-[11.5px] font-medium text-slate-400 truncate ml-1.5 shrink-0 max-w-[40%]">({item.규격})</span>}
                                                                 </div>
                                                             </div>
+                                                        </td>
+                                                        <td className="py-2.5 px-3 border-r border-slate-200 bg-inherit">
+                                                            <input type="text" value={item.vendor || ''} onChange={e=>updateCartItem(item.코드, 'vendor', e.target.value)} placeholder="공통 매입처" className={`w-full border rounded-lg px-2 py-1.5 text-[12px] font-bold outline-none shadow-sm transition-colors ${item.vendor ? 'border-indigo-300 text-indigo-700 bg-indigo-50/30' : 'border-slate-300 text-slate-600 bg-white focus:border-slate-500'}`} />
                                                         </td>
                                                         <td className="py-2 px-3 border-r border-slate-200 bg-inherit">
                                                             <div className="relative">
@@ -969,7 +1013,8 @@
                                                 <tr>
                                                     <th className="py-2 px-4 w-16 text-center">유형</th>
                                                     <th className="py-2 px-4 w-20">시간</th>
-                                                    <th className="py-2 px-4">매입처 및 품목</th>
+                                                    <th className="py-2 px-4 w-32">매입처(로트)</th>
+                                                    <th className="py-2 px-4">품목명</th>
                                                     <th className="py-2 px-4 text-right w-20">수량</th>
                                                     <th className="py-2 px-4 text-right w-24">단가</th>
                                                     <th className="py-2 px-4 text-right w-24">합계</th>
@@ -977,14 +1022,15 @@
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
                                                 {todayLogs.length === 0 ? (
-                                                    <tr><td colSpan="6" className="p-6 text-center text-slate-400 font-bold">기록된 전표가 없습니다.</td></tr>
+                                                    <tr><td colSpan="7" className="p-6 text-center text-slate-400 font-bold">기록된 전표가 없습니다.</td></tr>
                                                 ) : todayLogs.map(log => (
                                                     <tr key={log.id} className="hover:bg-slate-50">
                                                         <td className="py-1.5 px-4 text-center">
                                                             {log.type === 'PURCHASE' ? <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[10px] font-black">매입</span> : <span className="bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded text-[10px] font-black">반출</span>}
                                                         </td>
                                                         <td className="py-1.5 px-4 text-slate-400 font-mono text-[10px]">{log.timestamp.split(' ')[1]}</td>
-                                                        <td className="py-1.5 px-4 font-bold text-slate-800"><span className="text-slate-500 font-normal mr-2">[{log.vendor}]</span>{log.name}</td>
+                                                        <td className="py-1.5 px-4 font-bold text-slate-600"><span className="bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">{log.vendor || '-'}</span></td>
+                                                        <td className="py-1.5 px-4 font-bold text-slate-800">{log.name}</td>
                                                         <td className={`py-1.5 px-4 text-right font-black ${log.type === 'PURCHASE' ? 'text-blue-600' : 'text-rose-600'}`}>{log.qty}</td>
                                                         <td className="py-1.5 px-4 text-right text-slate-500">{log.price?.toLocaleString()}</td>
                                                         <td className="py-1.5 px-4 text-right font-bold text-slate-700">{log.totalAmount?.toLocaleString()}</td>
