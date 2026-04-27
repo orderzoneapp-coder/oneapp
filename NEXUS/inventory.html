@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - Stock Ledger [DataOps Engine]</title>
+    <title>ONEAPP NEXES - Stock Ledger [DataOps Closing]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -30,8 +30,6 @@
         .table-row-hover:last-child { border-bottom: none; }
         .table-row-hover:hover td { background-color: #f8fafc; }
         .table-row-selected td { background-color: #eef2ff; }
-        .config-chip { display: inline-flex; align-items: center; padding: 6px 14px; border-radius: 9999px; border: 1px solid #e2e8f0; background-color: white; color: #475569; font-size: 12px; cursor: pointer; transition: all 0.2s; }
-        .config-chip:hover { background-color: #f8fafc; } .config-chip.active { background-color: #e0e7ff; border-color: #c7d2fe; color: #4338ca; font-weight: bold; }
         
         .modal-bounce { animation: modalBounce 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         @keyframes modalBounce { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
@@ -42,6 +40,8 @@
             font-size: 11px; font-weight: 500; white-space: nowrap; z-index: 100;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); pointer-events: none;
         }
+        .editable-cell { background-color: rgba(255,255,255,0.7); border: 1px solid transparent; border-radius: 6px; transition: all 0.2s; }
+        .editable-cell:hover, .editable-cell:focus-within { background-color: #fff; border-color: #cbd5e1; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); }
     </style>
 </head>
 <body class="text-slate-800">
@@ -51,14 +51,14 @@
         const { useState, useMemo, useEffect, useRef, useCallback, Fragment } = React;
 
         // ==========================================
-        // 🔑 1. Global Constants & Utilities
+        // 🔑 Global Constants & IDB Utilities
         // ==========================================
         const STORAGE_KEYS = { 
             MASTER_DB: 'merchMaster_v870', 
             CLOUD_URL: 'skuSyncCloudUrl_v6', 
             SYNC_TRIGGER: 'merchMaster_sync_trigger', 
             HISTORY_DB: 'merchHistory_v870',
-            CLOSING_DB: 'merchClosing_v1' // 🌟 스냅샷 DB 추가
+            CLOSING_DB: 'merchClosing_v1'
         };
 
         const generateUUID = () => {
@@ -75,32 +75,6 @@
         const getIDB = async (key) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); };
         const setIDB = async (key, val) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readwrite'); tx.objectStore('store').put(val, key); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); };
 
-        const MASTER_HEADERS = [
-            "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", 
-            "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", 
-            "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", 
-            "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", 
-            "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록", "소싱태그"
-        ];
-
-        const getInitialVisibleMasterCols = () => ({ estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] });
-        const getInitialVisibleUploadCols = () => ({ estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명'] });
-        const getInitialMappings = () => {
-            const base = { master: {}, estimate: {} };
-            base.master = { '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격, 규격명, 사이즈, 단량', '출고가': '출고가, 출고, 판매가, 시중가', '입고가': '입고가, 입고, 매입가' };
-            base.estimate = { 
-                '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격명, 규격, 사이즈, 단량', '구매처': '거래처명, 구매처, 거래처', 
-                '견적서': '견적서, 카테고리, 템플릿, 견적분류', '입고가': '입고가, 입고, 매입가', '출고가': '출고가, 출고, 판매가',
-                '입고B': 'B단가, 입고B', '도매A': 'A판매, A판매가, 도매A', '도매B': 'B판매, B판매가, 도매B', '간단설명': '지시사항, 간단설명, 비고'
-            };
-            return base;
-        };
-        const getInitialMasterLinks = () => {
-            const base = { master: {}, estimate: {} };
-            base.estimate = { '창고': '창고', '구매처': '구매처', '견적서': '견적서', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B', '간단설명': '간단설명' };
-            return base;
-        };
-
         const parseExcelRobust = (file) => new Promise((resolve, reject) => {
             if (!window.XLSX) return reject(new Error("엑셀 파서 로드 안됨"));
             const reader = new FileReader();
@@ -109,7 +83,6 @@
                     const data = new Uint8Array(e.target.result); const wb = window.XLSX.read(data, { type: 'array', cellDates: true });
                     const jsonAll = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "", raw: false });
                     if(jsonAll.length === 0) return resolve([]);
-
                     let headerRowIdx = 0;
                     for (let i = 0; i < Math.min(15, jsonAll.length); i++) {
                         const rowStr = jsonAll[i].join('').replace(/\s/g, '');
@@ -117,7 +90,6 @@
                     }
                     const headers = jsonAll[headerRowIdx] || [];
                     let endIdx = jsonAll.length - 1;
-                    
                     while (endIdx > headerRowIdx) {
                         const rowArr = jsonAll[endIdx]; if (!rowArr || rowArr.length === 0) { endIdx--; continue; }
                         let filledCount = 0, rawStr = '';
@@ -125,158 +97,87 @@
                         if (rawStr === '') { endIdx--; continue; }
                         if ((rawStr.includes('출력') || rawStr.includes('합계') || rawStr.includes('총계')) && filledCount <= 4) endIdx--; else break;
                     }
-
                     const parsedData = [];
                     for (let i = headerRowIdx + 1; i <= endIdx; i++) {
                         const row = jsonAll[i]; if (!row) continue;
                         let isEmpty = true; const obj = {}; 
                         headers.forEach((h, idx) => { if (h) { obj[h] = row[idx]; if(row[idx] !== undefined && String(row[idx]).trim() !== '') isEmpty = false; } }); 
-                        if(!isEmpty) parsedData.push(obj);
+                        if(!isEmpty) { obj['_raw'] = row; parsedData.push(obj); }
                     } resolve(parsedData);
                 } catch(err) { reject(err); }
             }; reader.readAsArrayBuffer(file);
         });
 
         // ==========================================
-        // 🧩 [아이콘 시스템] SafeIcon
+        // 🧩 SafeIcon Component
         // ==========================================
         const SafeIcon = React.memo(function SafeIconComponent({ name, size = 18, className = "" }) {
             const [svg, setSvg] = useState("");
             useEffect(() => {
-                const renderIcon = () => {
-                    if (window.lucide && window.lucide.icons) {
-                        const kebabName = name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
-                        const possibleNames = [
-                            kebabName, name, 
-                            name === 'cloud-download' ? 'download-cloud' : name,
-                            name === 'cloud-upload' ? 'upload-cloud' : name,
-                            name === 'bar-chart-3' ? 'bar-chart' : name
-                        ];
-                        for (const pName of possibleNames) {
-                            if (window.lucide.icons[pName]) {
-                                setSvg(window.lucide.icons[pName].toSvg({ width: size, height: size, class: className, 'stroke-width': 2.5 })); return;
-                            }
-                        }
+                if (window.lucide && window.lucide.icons) {
+                    const kebabName = name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
+                    const possibleNames = [kebabName, name, name==='cloud-download'?'download-cloud':name, name==='cloud-upload'?'upload-cloud':name, name==='bar-chart-3'?'bar-chart':name];
+                    for (const pName of possibleNames) {
+                        if (window.lucide.icons[pName]) { setSvg(window.lucide.icons[pName].toSvg({ width: size, height: size, class: className, 'stroke-width': 2.5 })); return; }
                     }
-                }; renderIcon();
+                }
             }, [name, size, className]);
 
             if (!svg) {
-                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'edit':'fa-edit', 'save':'fa-save', 'link':'fa-link', 'ban':'fa-ban', 'layer-group':'fa-layer-group', 'sitemap':'fa-sitemap', 'bolt':'fa-bolt', 'sort-amount-down':'fa-sort-amount-down', 'info-circle':'fa-info-circle', 'lock':'fa-lock', 'key':'fa-key', 'trash-alt':'fa-trash-alt', 'folder-open':'fa-folder-open', 'file-invoice':'fa-file-invoice', 'broom':'fa-broom', 'undo':'fa-undo', 'exchange-alt':'fa-exchange-alt', 'list':'fa-list', 'check-double':'fa-check-double', 'balance-scale':'fa-balance-scale', 'search-plus':'fa-search-plus', 'file-export':'fa-file-export', 'truck-loading':'fa-truck-loading', 'history':'fa-history', 'exclamation-circle': 'fa-exclamation-circle', 'calendar-alt': 'fa-calendar-alt' };
+                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'edit':'fa-edit', 'save':'fa-save', 'link':'fa-link', 'ban':'fa-ban', 'layer-group':'fa-layer-group', 'sitemap':'fa-sitemap', 'bolt':'fa-bolt', 'sort-amount-down':'fa-sort-amount-down', 'info-circle':'fa-info-circle', 'lock':'fa-lock', 'key':'fa-key', 'trash-alt':'fa-trash-alt', 'folder-open':'fa-folder-open', 'file-invoice':'fa-file-invoice', 'broom':'fa-broom', 'undo':'fa-undo', 'exchange-alt':'fa-exchange-alt', 'list':'fa-list', 'check-double':'fa-check-double', 'balance-scale':'fa-balance-scale', 'search-plus':'fa-search-plus', 'file-export':'fa-file-export', 'truck-loading':'fa-truck-loading', 'history':'fa-history', 'exclamation-circle': 'fa-exclamation-circle', 'calendar-alt': 'fa-calendar-alt', 'lock':'fa-lock', 'cut':'fa-cut' };
                 return <i className={`fas ${faMap[name] || `fa-${name}`} ${className}`} style={{ fontSize: size }} />;
             }
             return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
         });
 
         // ==========================================
-        // 🧩 [전역 설정 상태 관리 Hook] useMerchConfig
+        // 🧩 Read-only Config Hook (Settings.html 연동)
         // ==========================================
         const useMerchConfig = () => {
-            const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || '');
-            
-            const [visibleMasterCols, setVisibleMasterCols] = useState(() => { 
-                const s = localStorage.getItem('merchVisMaster_v870'); 
-                const p = s ? JSON.parse(s) : null; 
-                return p?.estimate ? p : getInitialVisibleMasterCols(); 
-            });
-            
-            const [visibleUploadCols, setVisibleUploadCols] = useState(() => { 
-                const s = localStorage.getItem('merchVisUpload_v870'); 
-                const p = s ? JSON.parse(s) : null; 
-                return p?.estimate ? p : getInitialVisibleUploadCols(); 
-            });
-            
-            const [mappings, setMappings] = useState(() => { 
-                const s = localStorage.getItem('merchMappings_v870'); 
-                const p = s ? JSON.parse(s) : null; 
-                return p?.master ? p : getInitialMappings(); 
-            });
-            
-            const [masterLinks, setMasterLinks] = useState(() => { 
-                const s = localStorage.getItem('merchMasterLinks_v870'); 
-                const p = s ? JSON.parse(s) : null; 
-                return p?.estimate ? p : getInitialMasterLinks(); 
-            });
-            
-            const [marginRules, setMarginRules] = useState(() => {
-                const s = localStorage.getItem('merchMarginRules_v878');
-                const def = [
-                    { id: generateUUID(), whCode: '01', unit: 'box, 박스', rate: 10, type: 'divide' },
-                    { id: generateUUID(), whCode: '01', unit: 'ea, 개, 낱개', rate: 15, type: 'divide' },
-                    { id: generateUUID(), whCode: '03, 05', unit: 'box, 박스', rate: 15, type: 'divide' },
-                    { id: generateUUID(), whCode: '03, 05', unit: 'ea, 개, 낱개', rate: 20, type: 'divide' },
-                    { id: generateUUID(), whCode: '*', unit: 'box, 박스', rate: 10, type: 'divide' },
-                    { id: generateUUID(), whCode: '*', unit: 'ea, 개, 낱개', rate: 15, type: 'divide' },
-                    { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }
-                ];
-                if (s) { try { const p = JSON.parse(s); if (p?.length > 0) return p.map(r => ({ ...r, whCode: r.whCode || '*', unit: r.unit || '*' })); } catch(e){} }
-                return def;
-            });
-
-            const [opsMappings, setOpsMappings] = useState(() => {
+            const [cloudUrl] = useState(() => localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || '');
+            const [opsMappings] = useState(() => {
                 const s = localStorage.getItem('inventoryMappingsLight');
-                const def = {
-                    code: '품목코드, 상품코드, 코드, 품번, 바코드, sku', name: '품명, 품목명(규격), 품목명[규격], 상품명, 제품명, 이름, 품목, 상품', spec: '규격, 옵션, 사이즈', 
-                    qty: '기말실사(이월수량), 기말실사, 기말/실사, 수량, 재고, 기말잔량(실사반영), 기말잔량(실사), 기말잔량, 수량(합계), 입고수량, 출고수량, 판매수량, 잔량, 실사, 합계, 기말, 판매량, 출고량, 입고량',
-                    price: '매입단가(원가), 단가, 입고단가, 구매단가, 판매단가, 매입단가, 매입가, 판매가, 공급가액, 공급가, 금액, 원가, 가격, 최종(창고)',
-                    date: '결산일자, 매입일자, 일자, 날짜, 구매일자, 판매일자, 입고일자, 출고일자',
-                    vendor: '매출처명, 매입처(Lot), 매입처(거래처), 거래처명, 거래처, 거래, 매장명, 매장, 고객, 판매처, 공급사, 판매, 청과, 3거래',
-                    matchVendor: '구매처, 매입처, 매칭정보, 원매입처, lot', excludeVendor: '3우리, 우리농산, 1전송, 창고이동, 폐기, 샘플', lifoVendor: '2전송, 쿠팡, B2B, 당일우선, 현금판매', internalLot: '우리, 공용, 분배, 담당자, 우리농산', priorityVendor: '2전송>1창고' 
-                };
+                const def = { code: '품목코드, 상품코드, 코드, 품번, 바코드, sku', qty: '기말실사(이월수량), 기말실사, 기말/실사, 수량, 재고, 기말잔량(실사반영), 기말잔량(실사), 기말잔량, 수량(합계), 입고수량, 출고수량, 판매수량, 잔량, 실사, 합계, 기말, 판매량, 출고량, 입고량' };
                 return s ? { ...def, ...JSON.parse(s) } : def;
             });
-
-            const [opsGrouping, setOpsGrouping] = useState(() => {
+            const [opsGrouping] = useState(() => {
                 const s = localStorage.getItem('inventoryGroupingV79');
-                const def = { priceMode: 'separate', splitByVendor: false, splitByDate: false };
-                return s ? { ...def, ...JSON.parse(s) } : def;
+                return s ? { ...{ priceMode: 'separate', splitByVendor: false, splitByDate: false }, ...JSON.parse(s) } : { priceMode: 'separate', splitByVendor: false, splitByDate: false };
             });
-
-            useEffect(() => {
-                localStorage.setItem(STORAGE_KEYS.CLOUD_URL, cloudUrl);
-                localStorage.setItem('merchVisMaster_v870', JSON.stringify(visibleMasterCols));
-                localStorage.setItem('merchVisUpload_v870', JSON.stringify(visibleUploadCols));
-                localStorage.setItem('merchMappings_v870', JSON.stringify(mappings));
-                localStorage.setItem('merchMasterLinks_v870', JSON.stringify(masterLinks));
-                localStorage.setItem('merchMarginRules_v878', JSON.stringify(marginRules));
-                localStorage.setItem('inventoryMappingsLight', JSON.stringify(opsMappings));
-                localStorage.setItem('inventoryGroupingV79', JSON.stringify(opsGrouping));
-            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules, opsMappings, opsGrouping]);
-
-            return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules, opsMappings, setOpsMappings, opsGrouping, setOpsGrouping };
+            return { cloudUrl, opsMappings, opsGrouping };
         };
 
         // ==========================================
-        // 🧩 [통합 글로벌 헤더] GlobalHeader
+        // 🧩 Global Header
         // ==========================================
-        const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
+        const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onNavigate, onPush, onPull }) => {
             const groups = [ { id: 'master', label: '정보 관리', icon: 'database' }, { id: 'ops', label: '운영 관리', icon: 'truck' }, { id: 'admin', label: '인사이트', icon: 'bar-chart-3' } ];
             const tabs = [
-                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: '/NEXUS/Dashboard', group: 'common', isReady: true },
-                { id: 'guide', label: '시스템 가이드', icon: "book-open", path: '/NEXUS/wip?tab=guide', group: 'common', isReady: false },
-                { id: 'item-info', label: '마스터 DB', icon: "database", path: '/NEXUS/Master', group: 'master', isReady: true },
-                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: '/NEXUS/Item_manager', group: 'master', isReady: true },
-                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: '/NEXUS/Pipeline', group: 'master', isReady: true },
-                { id: 'parser', label: '스마트 파서', icon: "zap", path: '/NEXUS/Parser', group: 'master', isReady: true },
-                { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: '/NEXUS/partner_db', group: 'master', isReady: false },
-                { id: 'partners', label: '거래처 관리', icon: "users", path: '/NEXUS/partners', group: 'master', isReady: true },
-                { id: 'orders', label: '주문 관리', icon: "shopping-bag", path: '/NEXUS/orders', group: 'ops', isReady: true },
-                { id: 'purchases', label: '구매 관리', icon: "credit-card", path: '/NEXUS/purchases', group: 'ops', isReady: true },
-                { id: 'sales', label: '판매 관리', icon: "line-chart", path: '/NEXUS/sales', group: 'ops', isReady: true },
-                { id: 'inventory', label: '재고 관리', icon: "boxes", path: '/NEXUS/inventory', group: 'ops', isReady: true },
-                { id: 'print-center', label: '출력 센터', icon: "printer", path: '/NEXUS/print_center', group: 'ops', isReady: false },
-                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: '/NEXUS/Report', group: 'admin', isReady: true },
-                { id: 'cs', label: '정보마당(CS)', icon: "megaphone", path: '/NEXUS/cs', group: 'admin', isReady: false }
+                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: '/NEXUS/Dashboard', group: 'common' },
+                { id: 'item-info', label: '마스터 DB', icon: "database", path: '/NEXUS/Master', group: 'master' },
+                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: '/NEXUS/Item_manager', group: 'master' },
+                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: '/NEXUS/Pipeline', group: 'master' },
+                { id: 'parser', label: '스마트 파서', icon: "zap", path: '/NEXUS/Parser', group: 'master' },
+                { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: '/NEXUS/partner_db', group: 'master' },
+                { id: 'partners', label: '거래처 관리', icon: "users", path: '/NEXUS/partners', group: 'master' },
+                { id: 'orders', label: '주문 관리', icon: "shopping-bag", path: '/NEXUS/orders', group: 'ops' },
+                { id: 'purchases', label: '구매 관리', icon: "credit-card", path: '/NEXUS/purchases', group: 'ops' },
+                { id: 'sales', label: '판매 관리', icon: "line-chart", path: '/NEXUS/sales', group: 'ops' },
+                { id: 'inventory', label: '재고 마감', icon: "boxes", path: '/NEXUS/inventory', group: 'ops' },
+                { id: 'print-center', label: '출력 센터', icon: "printer", path: '/NEXUS/print_center', group: 'ops' },
+                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: '/NEXUS/Report', group: 'admin' },
+                { id: 'cs', label: '정보마당(CS)', icon: "megaphone", path: '/NEXUS/cs', group: 'admin' }
             ];
 
             const currentTab = tabs.find(t => t.id === activeTab);
-            const [selectedGroup, setSelectedGroup] = useState(currentTab ? currentTab.group : 'common');
+            const activeGroup = currentTab ? currentTab.group : 'common'; 
+            const [selectedGroup, setSelectedGroup] = useState(activeGroup);
 
             return (
                 <div className="flex flex-col shrink-0 z-40 relative w-full shadow-sm bg-[#0B1021]">
                     <header className="h-[72px] bg-[#0B1021] text-white flex justify-between px-6 border-b border-slate-800/80 relative z-20">
                         <div className="flex items-center h-full">
-                            <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={(e) => { setSelectedGroup('common'); onNavigate(e, '/NEXUS/Dashboard', true); }}>
+                            <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={(e) => { setSelectedGroup('common'); onNavigate(e, 'dashboard.html'); }}>
                                 <span className="font-black text-[24px] tracking-wider text-slate-100 mr-4 group-hover:text-indigo-400 transition-colors">ONEAPP</span>
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
                                     <div className="flex items-center"><span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span><span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v2.4</span></div>
@@ -306,176 +207,21 @@
                                 <button onClick={onPull} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 불러오기(Pull)"><SafeIcon name="cloud-download" size={18} /></button>
                                 <button onClick={onPush} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 백업하기(Push)"><SafeIcon name="cloud-upload" size={18} /></button>
                                 <div className="w-px h-6 bg-slate-700 mx-1"></div>
-                                <button onClick={onOpenSettings} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-slate-400 hover:text-white shadow-sm" title="설정"><SafeIcon name="settings" size={18} /></button>
+                                <button onClick={(e) => onNavigate(e, 'settings.html')} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-slate-400 hover:text-white shadow-sm" title="통합 환경설정"><SafeIcon name="settings" size={18} /></button>
                             </div>
                         </div>
                     </header>
                     {selectedGroup && (
                         <div className="bg-[#0B1021] px-8 pt-4 flex items-end gap-2 overflow-x-auto custom-scrollbar border-b border-slate-200 fade-in">
                             {tabs.filter(t => t.group === selectedGroup).map(tab => (
-                                <a key={tab.id} href={tab.path} onClick={(e) => onNavigate(e, tab.path, tab.isReady)}
-                                   className={`flex items-center gap-2 px-6 py-3 text-[14px] font-black rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px] 
-                                   ${activeTab === tab.id 
-                                       ? 'bg-white text-indigo-600 border-t-indigo-500 border-x-slate-200 relative z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]' 
-                                       : !tab.isReady 
-                                          ? 'bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5' 
-                                          : 'bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5'
-                                   }`}
-                                   style={{ marginBottom: activeTab === tab.id ? '-1px' : '0', paddingBottom: activeTab === tab.id ? '13px' : '10px' }}
-                                >
-                                    <SafeIcon name={tab.icon} size={16} className={activeTab === tab.id ? 'text-indigo-600' : 'opacity-70'} />
-                                    {tab.label}
+                                <a key={tab.id} href={tab.path} onClick={(e) => onNavigate(e, tab.path)}
+                                   className={`flex items-center gap-2 px-6 py-3 text-[14px] font-black rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px] ${activeTab === tab.id ? 'bg-white text-indigo-600 border-t-indigo-500 border-x-slate-200 relative z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]' : 'bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:bg-[#1E293B] hover:text-slate-200 pb-2.5'}`}
+                                   style={{ marginBottom: activeTab === tab.id ? '-1px' : '0', paddingBottom: activeTab === tab.id ? '13px' : '10px' }}>
+                                    <SafeIcon name={tab.icon} size={16} className={activeTab === tab.id ? 'text-indigo-600' : 'opacity-70'} /> {tab.label}
                                 </a>
                             ))}
                         </div>
                     )}
-                </div>
-            );
-        };
-
-        // ==========================================
-        // 🧩 [5대 환경설정 모달] MappingCenterModal
-        // ==========================================
-        const MappingCenterModal = ({ onClose, config, actions, availableCatalogs, availableCategories }) => {
-            const { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules, opsMappings, setOpsMappings, opsGrouping, setOpsGrouping } = config;
-            const { cleanUpGarbageTags, handleDeleteTag, showToast, handleClearDB } = actions;
-            const [activeTab, setActiveTab] = useState('display');
-            const [customEstColInput, setCustomEstColInput] = useState('');
-            
-            useEffect(() => { document.body.style.overflow = 'hidden'; return () => document.body.style.overflow = 'auto'; }, []);
-
-            const toggleMasterCol = (tabId, header) => setVisibleMasterCols(prev => { const list = prev[tabId] || []; return { ...prev, [tabId]: list.includes(header) ? list.filter(h => h !== header) : [...list, header] }; });
-
-            const addCustomUploadCol = (type, val) => {
-                if(!val || !val.trim()) return; const cleanVal = val.trim();
-                if ((visibleUploadCols[type] || []).includes(cleanVal)) return showToast('⚠️ 이미 추가된 항목입니다.');
-                setVisibleUploadCols(prev => ({ ...prev, [type]: [...(prev[type] || []), cleanVal] }));
-                setMappings(prev => ({ ...prev, [type]: { ...prev[type], [cleanVal]: cleanVal } }));
-                setMasterLinks(prev => ({ ...prev, [type]: { ...prev[type], [cleanVal]: '' } }));
-                setCustomEstColInput('');
-            };
-
-            const addMarginRule = () => setMarginRules([...marginRules, { id: generateUUID(), whCode: '', unit: '', rate: 10, type: 'divide' }]);
-            const updateMarginRule = (id, field, value) => setMarginRules(marginRules.map(r => r.id === id ? { ...r, [field]: value } : r));
-            const deleteMarginRule = (id) => setMarginRules(marginRules.filter(r => r.id !== id));
-
-            const requiredCoreFields = ['품목코드', '품목명', '규격'];
-
-            return (
-                <div className="fixed inset-0 bg-slate-900/80 z-[200] flex justify-center items-center backdrop-blur-sm fade-in">
-                    <div className="bg-white w-[96vw] max-w-[1400px] h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-                        <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
-                            <div className="flex items-center gap-4"><h2 className="font-black text-[17px]"><SafeIcon name="settings" size={18} className="text-indigo-400 mr-2.5"/>환경설정 및 시스템 매핑 센터 (Global Baseline)</h2></div>
-                            <button onClick={onClose}><SafeIcon name="x" size={20} className="text-slate-400 hover:text-white" /></button>
-                        </div>
-                        <div className="flex flex-1 overflow-hidden bg-slate-50">
-                            <div className="w-[260px] bg-white border-r border-slate-200 flex flex-col py-4 shrink-0 shadow-sm">
-                                <button onClick={() => setActiveTab('display')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'display' ? 'border-indigo-500 text-indigo-700 bg-indigo-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><SafeIcon name="desktop" size={16} className="mr-1.5"/> 1. 환경 및 화면 설정</button>
-                                <button onClick={() => setActiveTab('marginRule')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'marginRule' ? 'border-rose-500 text-rose-700 bg-rose-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><SafeIcon name="calculator" size={16} className="mr-1.5"/> 2. 단가 계산 및 마진 룰</button>
-                                <button onClick={() => setActiveTab('tagManager')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'tagManager' ? 'border-amber-500 text-amber-700 bg-amber-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><SafeIcon name="tags" size={16} className="mr-1.5"/> 3. 카탈로그/견적서 관리</button>
-                                <div className="my-2 border-b border-slate-100"></div>
-                                <button onClick={() => setActiveTab('inputMap')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'inputMap' ? 'border-emerald-500 text-emerald-700 bg-emerald-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><SafeIcon name="sign-in-alt" size={16} className="mr-1.5"/> 4. 시세 엑셀 데이터 매핑</button>
-                                <button onClick={() => setActiveTab('opsMap')} className={`px-5 py-3.5 text-left text-[13px] font-bold border-l-4 transition-all ${activeTab === 'opsMap' ? 'border-blue-500 text-blue-700 bg-blue-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><SafeIcon name="layer-group" size={16} className="mr-1.5"/> 5. 운영 매핑 및 기준</button>
-                            </div>
-                            <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-                                {activeTab === 'display' && (
-                                    <div className="max-w-4xl space-y-6 fade-in">
-                                        <div className="bg-indigo-50 p-5 rounded-xl border border-indigo-100 shadow-sm">
-                                            <h3 className="text-[14px] font-black text-indigo-900 mb-4 pb-2 border-b border-indigo-200 flex justify-between items-center"><span><SafeIcon name="link" size={14} className="text-indigo-500 mr-2"/>클라우드 동기화 URL 셋팅</span></h3>
-                                            <input type="text" value={cloudUrl} onChange={e=>setCloudUrl(e.target.value)} placeholder="Google Apps Script 웹앱 URL 입력..." className="w-full border border-indigo-200 rounded px-3 py-2 text-[12px] outline-none focus:border-indigo-500 bg-white shadow-sm font-mono" />
-                                            <p className="text-[11px] text-indigo-500 mt-2 font-bold">※ URL 입력 후 글로벌 헤더의 구름 아이콘을 누르면 데이터 백업 및 수신이 진행됩니다.</p>
-                                        </div>
-                                        <div className="bg-rose-50 p-5 rounded-xl border border-rose-200 shadow-sm">
-                                            <h3 className="text-[14px] font-black text-rose-900 mb-3 pb-2 border-b border-rose-200 flex justify-between items-center"><span><SafeIcon name="broom" size={14} className="text-rose-500 mr-2"/>클라우드 DB 최적화 (검색어 찌꺼기 삭제)</span></h3>
-                                            <p className="text-[12px] text-rose-700 font-bold mb-3">과거 엑셀 업로드 시 저장되었던 불필요한 '검색어등록', '상품태그' 필드의 찌꺼기 데이터들을 한 번에 삭제합니다.</p>
-                                            <button onClick={cleanUpGarbageTags} className="px-4 py-2 bg-white border border-rose-300 text-rose-600 hover:bg-rose-100 rounded-lg text-[12px] font-bold transition-all shadow-sm flex items-center"><SafeIcon name="trash-alt" size={12} className="mr-1.5"/> 기존 엑셀 검색어 일괄 삭제</button>
-                                        </div>
-                                        <div className="bg-white p-5 rounded-xl border shadow-sm">
-                                            <h3 className="text-[14px] font-black mb-4 pb-2 border-b flex items-center"><span className="bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0.5 rounded mr-2">[공통]</span> 마스터 항목 노출 설정</h3>
-                                            <div className="flex flex-wrap gap-2 mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg"><div className="w-full text-[11px] text-slate-500 font-bold mb-1 flex items-center"><SafeIcon name="info-circle" size={12} className="mr-1"/>식별자 (필수 고정 항목)</div>{requiredCoreFields.map(h => <div key={`m-req-${h}`} className="config-chip active opacity-80 cursor-not-allowed font-bold bg-slate-200 border-slate-300 text-slate-700 shadow-sm flex items-center"><SafeIcon name="lock" size={10} className="mr-1.5 text-slate-500"/>{h}</div>)}</div>
-                                            <div className="flex flex-wrap gap-2">{MASTER_HEADERS.filter(h => !requiredCoreFields.includes(h)).map(h => <div key={`m-${h}`} onClick={() => toggleMasterCol('estimate', h)} className={`config-chip ${visibleMasterCols['estimate']?.includes(h)?'active':''}`}>{h}</div>)}</div>
-                                        </div>
-                                        <div className="bg-white p-5 rounded-xl border shadow-sm">
-                                            <h3 className="text-[14px] font-black mb-4 pb-2 border-b flex items-center"><span className="bg-slate-100 text-slate-700 text-[10px] px-1.5 py-0.5 rounded mr-2">[엑셀/작업]</span> 견적서 항목 노출 설정</h3>
-                                            <div className="text-[11px] text-slate-500 font-bold mb-3 flex items-center"><SafeIcon name="info-circle" size={12} className="mr-1"/>식별자인 '품목코드'는 엑셀 작업에서 변경할 수 없으므로 제외되었습니다. 품목명, 규격 등 필요한 항목을 자유롭게 켜고 끄세요.</div>
-                                            <div className="flex flex-wrap gap-2.5 mb-5">{(visibleUploadCols['estimate']||[]).filter(h => h !== '품목코드').map(h => <div key={`u-e-${h}`} className="config-chip active border-slate-300 bg-white text-slate-800 hover:bg-rose-50 hover:border-rose-300 hover:text-rose-600 transition-colors group shadow-sm flex items-center"><span className="font-bold">{h}</span><button onClick={()=>setVisibleUploadCols(p=>({...p, estimate:p.estimate.filter(x=>x!==h)}))} className="ml-2 text-slate-400 group-hover:text-rose-500"><SafeIcon name="x" size={12} /></button></div>)}</div>
-                                            <div className="flex items-center gap-2 max-w-sm"><input type="text" value={customEstColInput} onChange={e=>setCustomEstColInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addCustomUploadCol('estimate', customEstColInput)} placeholder="추가할 항목명 입력 (예: 마감시간)" className="flex-1 border border-slate-300 rounded px-3 py-2 text-[12px] outline-none focus:border-slate-500" /><button onClick={()=>addCustomUploadCol('estimate', customEstColInput)} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded text-[12px] font-bold transition-colors shadow-sm">추가</button></div>
-                                        </div>
-                                    </div>
-                                )}
-                                {activeTab === 'inputMap' && (
-                                    <div className="max-w-4xl space-y-8 fade-in">
-                                        <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                                            <div className="bg-slate-50 p-3 border-b border-slate-200"><h3 className="text-[13px] font-black text-slate-800 flex items-center"><span className="bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.5 rounded mr-2">[시세 관리]</span> 견적서 엑셀 헤더 매핑</h3></div>
-                                            <table className="w-full text-left text-[12px]"><thead className="bg-white border-b border-slate-200 text-slate-500 font-bold"><tr><th className="p-3 w-[140px]">화면 노출 항목</th><th className="p-3">엑셀 헤더 감지 키워드 (콤마 구분)</th><th className="p-3 w-[200px]">마스터 DB 필드 연결</th></tr></thead><tbody className="divide-y divide-slate-100">
-                                                {requiredCoreFields.map(h => (
-                                                    <tr key={`map-req-${h}`} className="bg-slate-50"><td className="p-3 font-bold text-slate-700 flex items-center"><SafeIcon name="lock" size={14} className="text-slate-400 mr-2"/>{h}</td><td className="p-3"><input type="text" value={mappings['estimate']?.[h]||''} onChange={e=>setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-amber-500 focus:ring-1 bg-white" /></td><td className="p-3"><div className="text-[11px] text-slate-500 bg-slate-200 px-3 py-1.5 rounded border border-slate-300 font-bold flex items-center justify-center shadow-inner"><SafeIcon name="key" size={12} className="mr-1.5"/>식별자 고정</div></td></tr>
-                                                ))}
-                                                {(visibleUploadCols['estimate']||[]).filter(h => !requiredCoreFields.includes(h)).map(h => (
-                                                    <tr key={`map-e-${h}`} className="hover:bg-slate-50 transition-colors"><td className="p-3 font-bold text-slate-800">{h}</td><td className="p-3"><input type="text" value={mappings['estimate']?.[h]||''} onChange={e=>setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded px-3 py-1.5 outline-none focus:border-amber-500 focus:ring-1" /></td><td className="p-3"><select value={masterLinks['estimate']?.[h]||''} onChange={e=>setMasterLinks(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} className={`w-full border border-slate-300 rounded px-2 py-1.5 outline-none focus:border-amber-500 ${masterLinks['estimate']?.[h]?'bg-amber-50 text-amber-700 font-bold':'bg-white'}`}><option value="">-- 단순 화면 노출 (업데이트 X) --</option>{MASTER_HEADERS.map(mh=><option key={mh} value={mh}>{mh}</option>)}</select></td></tr>
-                                                ))}
-                                            </tbody></table>
-                                        </div>
-                                    </div>
-                                )}
-                                {activeTab === 'marginRule' && (
-                                    <div className="max-w-4xl space-y-6 fade-in">
-                                        <div className="bg-white p-6 rounded-xl border border-rose-200 shadow-sm">
-                                            <div className="flex justify-between items-center mb-6">
-                                                <div><h3 className="text-[15px] font-black text-rose-900 flex items-center"><SafeIcon name="calculator" size={16} className="mr-2 text-rose-500"/>동적 단가 계산 및 하이브리드 마진 룰</h3><p className="text-[11px] font-bold text-rose-600 mt-1">※ 이 전역 설정은 파이프라인 작업 시 기본 판매가를 제안합니다.</p></div>
-                                                <button onClick={addMarginRule} className="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-lg text-[12px] font-bold transition-colors shadow-sm flex items-center"><SafeIcon name="plus" size={12} className="mr-1"/> 룰 추가</button>
-                                            </div>
-                                            <table className="w-full text-left text-[12px]"><thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold"><tr><th className="p-3 w-[150px]">조건1. 창고코드 (그룹)</th><th className="p-3 w-[150px]">조건2. 단위 (ea, box 등)</th><th className="p-3 w-[90px] text-center">마진율 (%)</th><th className="p-3 w-[110px] text-center">연산 방식</th><th className="p-3 w-[150px] text-center">동작 예시 (1만원 기준)</th><th className="p-3 w-[50px] text-center">삭제</th></tr></thead><tbody className="divide-y divide-slate-100">
-                                                {marginRules.map(rule => {
-                                                    const isDefault = rule.id === 'default'; const examplePrice = rule.type === 'divide' ? Math.round(10000 / (1 - rule.rate / 100)) : Math.round(10000 * (1 + rule.rate / 100)); const exampleFormula = rule.type === 'divide' ? `10k ÷ ${(1 - rule.rate / 100).toFixed(2)}` : `10k × ${(1 + rule.rate / 100).toFixed(2)}`;
-                                                    return (
-                                                        <tr key={rule.id} className="hover:bg-slate-50 transition-colors">
-                                                            <td className="p-2">{isDefault ? <div className="text-slate-400 text-center font-bold">* (모든 창고)</div> : <input type="text" value={rule.whCode} onChange={e=>updateMarginRule(rule.id, 'whCode', e.target.value)} placeholder="예: 01, * (전체)" className="w-full border border-slate-300 rounded px-2 py-1.5 outline-none focus:border-rose-400 focus:ring-1 bg-white text-[11px]" />}</td>
-                                                            <td className="p-2">{isDefault ? <div className="text-slate-400 text-center font-bold">* (모든 단위)</div> : <input type="text" value={rule.unit} onChange={e=>updateMarginRule(rule.id, 'unit', e.target.value)} placeholder="예: ea, *, box" className="w-full border border-slate-300 rounded px-2 py-1.5 outline-none focus:border-rose-400 focus:ring-1 bg-white text-[11px]" />}</td>
-                                                            <td className="p-2 text-center"><div className="flex items-center bg-white border border-slate-300 rounded overflow-hidden focus-within:border-rose-400 focus-within:ring-1"><input type="number" value={rule.rate} onChange={e=>updateMarginRule(rule.id, 'rate', Number(e.target.value))} className="w-full text-center py-1.5 outline-none font-bold text-rose-700 text-[11px]" /></div></td>
-                                                            <td className="p-2 text-center"><select value={rule.type} onChange={e=>updateMarginRule(rule.id, 'type', e.target.value)} className="w-full border border-slate-300 rounded px-1 py-1.5 outline-none focus:border-rose-400 bg-white font-bold text-slate-700 cursor-pointer text-[11px]"><option value="divide">나누기(÷)</option><option value="multiply">곱하기(×)</option></select></td>
-                                                            <td className="p-2 text-center"><span className="text-[11px] font-mono text-slate-500">{exampleFormula} = {examplePrice.toLocaleString()}</span></td>
-                                                            <td className="p-2 text-center">{!isDefault && <button onClick={()=>deleteMarginRule(rule.id)} className="w-7 h-7 rounded text-slate-400 hover:bg-rose-100 hover:text-rose-500 transition-colors flex items-center justify-center mx-auto"><SafeIcon name="trash-alt" size={14}/></button>}</td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                            </tbody></table>
-                                        </div>
-                                    </div>
-                                )}
-                                {activeTab === 'opsMap' && (
-                                    <div className="max-w-5xl space-y-6 fade-in">
-                                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                                            <div className="bg-slate-50 p-4 border-b border-slate-200"><h3 className="text-[14px] font-black text-slate-800 flex items-center"><SafeIcon name="layer-group" size={16} className="text-blue-500 mr-2"/>운영 관리(Ops) 엑셀 매핑 설정</h3></div>
-                                            <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-                                                {Object.entries({ code: '품목코드 (필수)', name: '품목명 (필수)', spec: '규격 열 (선택)', qty: '수량/실사 (필수)', price: '매입단가 (필수)', date: '일자 (필수)', vendor: '거래처명 (선택)', matchVendor: '판매전표 내 구매처(Lot)', excludeVendor: '제외 거래처(창고이동 등)', lifoVendor: '당일우선 출고(LIFO)', internalLot: '내부분배/공용 로트', priorityVendor: '출고 우선순위(A>B)' }).map(([k, lbl]) => (
-                                                    <div key={k} className="flex flex-col"><label className={`text-[11px] font-bold mb-1.5 flex items-center ${['excludeVendor','matchVendor','lifoVendor','internalLot','priorityVendor'].includes(k) ? (k==='excludeVendor'?'text-rose-600':k==='matchVendor'?'text-blue-600':k==='lifoVendor'?'text-purple-600':k==='internalLot'?'text-teal-600':'text-orange-600') : 'text-slate-600'}`}>{['excludeVendor','matchVendor','lifoVendor','internalLot','priorityVendor'].includes(k) && <SafeIcon name={k==='excludeVendor'?'ban':k==='matchVendor'?'link':k==='lifoVendor'?'bolt':k==='internalLot'?'users':'sort-amount-down'} size={12} className="mr-1"/>}{lbl}</label><input type="text" value={opsMappings[k] || ''} onChange={e => setOpsMappings({...opsMappings, [k]: e.target.value})} className={`border rounded-md px-3 py-2 text-[12px] focus:outline-none ${['excludeVendor','matchVendor','lifoVendor','internalLot','priorityVendor'].includes(k) ? (k==='excludeVendor'?'border-rose-200 bg-rose-50 text-rose-800 focus:border-rose-500':k==='matchVendor'?'border-blue-200 bg-blue-50 text-blue-800 focus:border-blue-500':k==='lifoVendor'?'border-purple-200 bg-purple-50 text-purple-800 focus:border-purple-500':k==='internalLot'?'border-teal-200 bg-teal-50 text-teal-800 focus:border-teal-500':'border-orange-200 bg-orange-50 text-orange-800 focus:border-orange-500') : 'border-slate-300 focus:border-blue-500'}`} /></div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                                            <div className="bg-slate-50 p-4 border-b border-slate-200"><h3 className="text-[14px] font-black text-slate-800 flex items-center"><SafeIcon name="layer-group" size={16} className="text-indigo-500 mr-2"/>품목 관리 기준 설정</h3></div>
-                                            <div className="p-6 flex flex-col md:flex-row gap-6 items-center">
-                                                <div className="flex-1 w-full"><label className="text-[11px] font-bold text-slate-600 mb-1.5 block">단가(원가) 기준</label><select value={opsGrouping.priceMode} onChange={e => setOpsGrouping({...opsGrouping, priceMode: e.target.value})} className="w-full border border-slate-300 rounded-md px-3 py-2.5 text-[12px] font-bold text-slate-700 outline-none focus:border-blue-500 shadow-sm"><option value="separate">① 개별 단가 유지 - 🌟기본</option><option value="average">② 평균 단가 적용</option><option value="latest">③ 최신 단가 적용</option></select></div>
-                                                <div className="flex-1 w-full"><label className="text-[11px] font-bold text-slate-600 mb-1.5 block">추가 세분화 옵션</label><div className="flex items-center gap-4 mt-2"><label className="flex items-center gap-1.5 text-[12px] font-bold text-slate-500 cursor-not-allowed opacity-60"><input type="checkbox" checked={true} readOnly className="rounded border-slate-300" /><span>품목코드 (고정)</span></label><label className="flex items-center gap-1.5 text-[12px] font-bold text-slate-700 cursor-pointer hover:text-blue-600"><input type="checkbox" checked={opsGrouping.splitByVendor} onChange={e => setOpsGrouping({...opsGrouping, splitByVendor: e.target.checked})} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" /><span>매입처별 분리</span></label><label className="flex items-center gap-1.5 text-[12px] font-bold text-slate-700 cursor-pointer hover:text-blue-600"><input type="checkbox" checked={opsGrouping.splitByDate} onChange={e => setOpsGrouping({...opsGrouping, splitByDate: e.target.checked})} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" /><span>매입일별 분리</span></label></div></div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                                {activeTab === 'tagManager' && (
-                                    <div className="max-w-4xl space-y-6 fade-in">
-                                        <div className="bg-white p-6 rounded-xl border shadow-sm"><h3 className="text-[15px] font-black text-slate-800 mb-4 pb-2 border-b flex items-center"><SafeIcon name="folder-open" size={16} className="text-indigo-500 mr-2"/> 카탈로그 목록 관리</h3><div className="grid grid-cols-2 md:grid-cols-3 gap-3">{availableCatalogs.length === 0 ? <div className="col-span-full text-[13px] text-slate-400 font-bold p-4 text-center">등록된 카탈로그가 없습니다.</div> : availableCatalogs.map(tag => (<div key={tag.name} className="flex items-center justify-between bg-white border border-slate-300 rounded-lg p-3 shadow-sm hover:border-indigo-400 transition-colors group"><div className="flex flex-col min-w-0"><span className="text-[13px] font-extrabold text-slate-800 truncate">{tag.name}</span><span className="text-[11px] text-indigo-500 font-bold">{tag.count}개 상품</span></div><button onClick={() => handleDeleteTag('catalog', tag.name)} className="w-8 h-8 rounded-md bg-slate-100 text-slate-400 hover:bg-rose-500 hover:text-white transition-colors shrink-0 flex items-center justify-center" title="이 카탈로그 삭제"><SafeIcon name="trash-alt" size={14} /></button></div>))}</div></div>
-                                        <div className="bg-white p-6 rounded-xl border shadow-sm"><h3 className="text-[15px] font-black text-slate-800 mb-4 pb-2 border-b flex items-center"><SafeIcon name="file-invoice" size={16} className="text-blue-500 mr-2"/> 저장된 견적서 목록 관리</h3><div className="grid grid-cols-2 md:grid-cols-3 gap-3">{availableCategories.length === 0 ? <div className="col-span-full text-[13px] text-slate-400 font-bold p-4 text-center">저장된 견적서가 없습니다.</div> : availableCategories.map(tag => (<div key={tag.name} className="flex items-center justify-between bg-white border border-slate-300 rounded-lg p-3 shadow-sm hover:border-blue-400 transition-colors group"><div className="flex flex-col min-w-0"><span className="text-[13px] font-extrabold text-slate-800 truncate">{tag.name}</span><span className="text-[11px] text-blue-500 font-bold">{tag.count}개 상품</span></div><button onClick={() => handleDeleteTag('category', tag.name)} className="w-8 h-8 rounded-md bg-slate-100 text-slate-400 hover:bg-rose-500 hover:text-white transition-colors shrink-0 flex items-center justify-center" title="이 견적서 삭제"><SafeIcon name="trash-alt" size={14} /></button></div>))}</div></div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="bg-slate-100 p-4 border-t border-slate-200 flex justify-between items-center shrink-0">
-                            <button onClick={handleClearDB} className="text-[13px] font-bold text-slate-500 hover:text-rose-500 transition-colors flex items-center"><SafeIcon name="broom" size={14} className="mr-1.5"/>앱 로컬 전체 초기화</button>
-                            <div className="flex gap-2"><button onClick={onClose} className="px-6 py-2.5 bg-[#1A2235] border border-slate-700 text-white hover:bg-black rounded-lg text-[13px] font-bold transition-all shadow-md">닫기 및 적용</button></div>
-                        </div>
-                    </div>
                 </div>
             );
         };
@@ -500,18 +246,11 @@
                 colorClass = "bg-slate-100 text-slate-600 border-slate-200 font-medium max-w-[150px] truncate inline-block align-bottom";
             }
 
-            return (
-                <span data-tooltip={tooltip} className={`px-2 py-0.5 rounded border font-bold text-[10px] cursor-help ${colorClass}`}>
-                    {shortMsg}
-                </span>
-            );
+            return <span data-tooltip={tooltip} className={`px-2 py-0.5 rounded border font-bold text-[10px] cursor-help ${colorClass}`}>{shortMsg}</span>;
         });
 
-        // 🌟 타임라인 모달 신규 추가 (당기 발생 내역 모아보기)
         const TimelineModal = ({ itemCode, itemName, historyLogs, onClose }) => {
-            const logs = useMemo(() => {
-                return historyLogs.filter(h => h.code === itemCode).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
-            }, [historyLogs, itemCode]);
+            const logs = useMemo(() => historyLogs.filter(h => h.code === itemCode).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)), [historyLogs, itemCode]);
 
             return (
                 <div className="fixed inset-0 z-[300] bg-slate-900/60 flex items-center justify-center p-4 backdrop-blur-sm fade-in">
@@ -526,44 +265,23 @@
                         </div>
                         <div className="p-6 overflow-y-auto custom-scrollbar bg-white flex-1 relative">
                             {logs.length === 0 ? (
-                                <div className="text-center text-slate-400 py-20 font-bold flex flex-col items-center">
-                                    <SafeIcon name="history" size={40} className="mb-4 text-slate-200" />
-                                    당기에 발생한 입/출고 이력이 없습니다.
-                                </div>
+                                <div className="text-center text-slate-400 py-20 font-bold flex flex-col items-center"><SafeIcon name="history" size={40} className="mb-4 text-slate-200" />당기에 발생한 입/출고 이력이 없습니다.</div>
                             ) : (
                                 <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-slate-200">
                                     {logs.map(log => {
-                                        const isPur = log.type && log.type.includes('PURCHASE');
-                                        const isDis = log.type && log.type.includes('DISPATCH');
-                                        const isAdj = log.type && log.type.includes('ADJUSTMENT');
-                                        const color = isPur ? 'blue' : (isDis ? 'rose' : 'orange');
-                                        const icon = isPur ? 'truck-loading' : (isDis ? 'truck' : 'edit');
-                                        const title = isPur ? '매입 / 입고' : (isDis ? '판매 / 출고' : '실사 / 수기조정');
-                                        
+                                        const isPur = log.type && log.type.includes('PURCHASE'); const isDis = log.type && log.type.includes('DISPATCH'); const isAdj = log.type && log.type.includes('ADJUSTMENT');
+                                        const color = isPur ? 'blue' : (isDis ? 'rose' : 'orange'); const icon = isPur ? 'truck-loading' : (isDis ? 'truck' : 'edit'); const title = isPur ? '매입 / 입고' : (isDis ? '판매 / 출고' : '실사 / 수기조정');
                                         return (
                                             <div key={log.id} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group">
-                                                <div className={`flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-${color}-500 text-white shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-md z-10`}>
-                                                    <i className={`fas fa-${icon} text-[13px]`}></i>
-                                                </div>
+                                                <div className={`flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-${color}-500 text-white shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-md z-10`}><i className={`fas fa-${icon} text-[13px]`}></i></div>
                                                 <div className={`w-[calc(100%-3.5rem)] md:w-[calc(50%-2.5rem)] bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow hover:border-${color}-300`}>
-                                                    <div className="flex items-center justify-between mb-2 border-b border-slate-100 pb-2">
-                                                        <span className={`text-[11px] font-black text-${color}-700 bg-${color}-50 border border-${color}-100 px-2 py-0.5 rounded`}>{title}</span>
-                                                        <span className="text-[10px] font-mono text-slate-400 font-bold">{log.timestamp}</span>
-                                                    </div>
+                                                    <div className="flex items-center justify-between mb-2 border-b border-slate-100 pb-2"><span className={`text-[11px] font-black text-${color}-700 bg-${color}-50 border border-${color}-100 px-2 py-0.5 rounded`}>{title}</span><span className="text-[10px] font-mono text-slate-400 font-bold">{log.timestamp}</span></div>
                                                     <div className="text-[12px] text-slate-700 font-medium space-y-1.5 bg-slate-50 p-2.5 rounded border border-slate-100 mb-2">
                                                         {isPur && <div className="flex justify-between"><span className="text-slate-500 font-bold">벤더명:</span> <span>{log.vendor || '-'}</span></div>}
-                                                        {isDis && (
-                                                            <>
-                                                                <div className="flex justify-between"><span className="text-slate-500 font-bold">고객명:</span> <span>{log.partner || '-'}</span></div>
-                                                                <div className="flex justify-between"><span className="text-slate-500 font-bold">차감로트:</span> <span>{log.lotVendor || '-'}</span></div>
-                                                            </>
-                                                        )}
+                                                        {isDis && (<><div className="flex justify-between"><span className="text-slate-500 font-bold">고객명:</span> <span>{log.partner || '-'}</span></div><div className="flex justify-between"><span className="text-slate-500 font-bold">차감로트:</span> <span>{log.lotVendor || '-'}</span></div></>)}
                                                         {isAdj && <div className="flex flex-col"><span className="text-slate-500 font-bold mb-1">조정 사유:</span> <span className="bg-white p-1.5 rounded border border-slate-200">{log.memo || '-'}</span></div>}
                                                     </div>
-                                                    <div className="pt-2 flex justify-between items-center px-1">
-                                                        <div className="text-xs font-bold text-slate-500">수량: <strong className={`text-${color}-600 text-[14px] ml-1`}>{log.qty}</strong></div>
-                                                        {log.price > 0 && <div className="text-xs font-bold text-slate-500">단가: <strong className="text-slate-800 text-[14px] ml-1">{Number(log.price).toLocaleString()}</strong></div>}
-                                                    </div>
+                                                    <div className="pt-2 flex justify-between items-center px-1"><div className="text-xs font-bold text-slate-500">수량: <strong className={`text-${color}-600 text-[14px] ml-1`}>{log.qty}</strong></div>{log.price > 0 && <div className="text-xs font-bold text-slate-500">단가: <strong className="text-slate-800 text-[14px] ml-1">{Number(log.price).toLocaleString()}</strong></div>}</div>
                                                 </div>
                                             </div>
                                         );
@@ -576,73 +294,82 @@
             );
         };
 
-        const ProductRow = React.memo(({ item, idx, isLinked, onStockChange, onSpacebar, onBaseDataChange, onOpenMemo, onShowTimeline }) => {
+        const ProductRow = React.memo(({ item, idx, isLinked, isDragOver, onStockChange, onSpacebar, onBaseDataChange, onOpenMemo, onShowTimeline, onSalesMove }) => {
             const displayIssues = item.이슈 ? [...item.이슈] : [];
             const hasIssue = displayIssues.length > 0;
             const isNegativeActual = item.실사 < 0;
             const cellInputBase = "w-full text-right bg-slate-50 border border-slate-200 hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none rounded text-[13px] px-1.5 py-1 transition-all shadow-sm";
 
             return (
-                <tr className={`table-row-hover transition-colors ${isLinked ? 'table-row-selected relative z-10 scale-[1.01] shadow-sm' : ''}`}>
+                <tr data-batch={item.batchKey}
+                    onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('bg-blue-50', 'ring-2', 'ring-blue-400', 'z-20', 'shadow-md'); }} 
+                    onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('bg-blue-50', 'ring-2', 'ring-blue-400', 'z-20', 'shadow-md'); }} 
+                    onDrop={(e) => { 
+                        e.preventDefault(); e.currentTarget.classList.remove('bg-blue-50', 'ring-2', 'ring-blue-400', 'z-20', 'shadow-md'); 
+                        try { 
+                            const d = JSON.parse(e.dataTransfer.getData('text/plain')); 
+                            const moveQty = Number(d.qty);
+                            const isCtrlPressed = e.ctrlKey || e.metaKey;
+                            if (d.sourceKey !== item.batchKey && !isNaN(moveQty) && moveQty > 0) {
+                                onSalesMove(d.sourceKey, item.batchKey, d.vendor, moveQty, isCtrlPressed); 
+                            }
+                        } catch (err) {} 
+                    }}
+                    className={`table-row-hover transition-all duration-200 ${isLinked ? 'table-row-selected relative z-10 scale-[1.01] shadow-sm' : 'hover:bg-slate-50'}`}
+                >
                     <td className="py-3 px-4 border-r border-slate-200 bg-white group">
                         <div className="flex justify-between items-start w-full">
                             <div className="flex flex-col overflow-hidden max-w-[240px]">
-                                <span className="text-[10.5px] font-mono text-indigo-500 mb-0.5 tracking-tight font-bold flex items-center">
-                                    {isLinked && <SafeIcon name="link" size={12} className="text-indigo-500 mr-1 animate-pulse" />}
-                                    {item.코드}
-                                </span>
+                                <span className="text-[10.5px] font-mono text-indigo-500 mb-0.5 tracking-tight font-bold flex items-center">{isLinked && <SafeIcon name="link" size={12} className="text-indigo-500 mr-1 animate-pulse" />}{item.코드}</span>
                                 <div className="flex items-baseline w-full min-w-0 overflow-hidden mt-0.5">
-                                    <span className="text-[13px] font-extrabold text-slate-800 truncate" title={item.품명}>{item.품명}</span>
-                                    {item.규격 && <span className="text-[11.5px] font-medium text-slate-400 truncate ml-1.5 shrink-0 max-w-[40%]">({item.규격})</span>}
+                                    <span className="text-[13px] font-extrabold text-slate-800 truncate" title={item.품명}>{item.품명}</span>{item.규격 && <span className="text-[11.5px] font-medium text-slate-400 truncate ml-1.5 shrink-0 max-w-[40%]">({item.규격})</span>}
                                 </div>
                             </div>
-                            <button onClick={() => onShowTimeline(item.코드, item.품명)} className="w-7 h-7 rounded bg-slate-100 text-slate-400 hover:bg-indigo-600 hover:text-white transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100 shadow-sm" title="당기 발생 상세 이력 보기">
-                                <i className="fas fa-search-plus"></i>
-                            </button>
+                            <button onClick={() => onShowTimeline(item.코드, item.품명)} className="w-7 h-7 rounded bg-slate-100 text-slate-400 hover:bg-indigo-600 hover:text-white transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100 shadow-sm" title="당기 발생 상세 이력 보기"><i className="fas fa-search-plus"></i></button>
                         </div>
                     </td>
-                    <td className="py-2.5 px-3 border-r border-slate-200 bg-inherit">
-                        <input type="number" value={item.기초 === 0 ? '' : item.기초} onChange={(e) => onBaseDataChange(item.batchKey, '기초', e.target.value)} onClick={e=>e.target.select()} placeholder="0" className={`${cellInputBase} font-medium text-slate-500`} />
-                    </td>
-                    <td className="py-2.5 px-3 border-r border-slate-200 bg-inherit">
-                        <input type="number" value={item.입고 === 0 ? '' : item.입고} onChange={(e) => onBaseDataChange(item.batchKey, '입고', e.target.value)} onClick={e=>e.target.select()} placeholder="0" className={`${cellInputBase} font-bold text-blue-600`} />
-                    </td>
-                    <td className="py-2.5 px-3 border-r border-slate-200 bg-inherit">
-                        <input type="number" value={item.출고 === 0 ? '' : item.출고} onChange={(e) => onBaseDataChange(item.batchKey, '출고', e.target.value)} onClick={e=>e.target.select()} placeholder="0" className={`${cellInputBase} font-bold text-rose-600`} />
-                    </td>
-                    
+                    <td className="py-2.5 px-3 border-r border-slate-200 bg-inherit"><input type="number" value={item.기초 === 0 ? '' : item.기초} onChange={(e) => onBaseDataChange(item.batchKey, '기초', e.target.value)} onClick={e=>e.target.select()} placeholder="0" className={`${cellInputBase} font-medium text-slate-500`} /></td>
+                    <td className="py-2.5 px-3 border-r border-slate-200 bg-inherit"><input type="number" value={item.입고 === 0 ? '' : item.입고} onChange={(e) => onBaseDataChange(item.batchKey, '입고', e.target.value)} onClick={e=>e.target.select()} placeholder="0" className={`${cellInputBase} font-bold text-blue-600`} /></td>
+                    <td className="py-2.5 px-3 border-r border-slate-200 bg-inherit"><input type="number" value={item.출고 === 0 ? '' : item.출고} onChange={(e) => onBaseDataChange(item.batchKey, '출고', e.target.value)} onClick={e=>e.target.select()} placeholder="0" className={`${cellInputBase} font-bold text-rose-600`} /></td>
                     <td className="py-2.5 px-3 text-right font-black text-[15px] text-indigo-600 bg-indigo-50/30 border-r border-indigo-100">{item.전산잔량.toLocaleString()}</td>
                     
                     <td className="py-2 px-3 bg-indigo-50/30 border-r border-indigo-100 relative">
                         {isLinked && <div className="absolute -top-3 right-2 bg-slate-800 text-white text-[9px] px-1.5 py-0.5 rounded shadow animate-bounce">대상 선택</div>}
-                        <input 
-                            id={`actual-input-${idx}`}
-                            type="number" 
-                            value={item.실사 === null ? '' : item.실사} 
-                            onChange={(e) => onStockChange(item.batchKey, e.target.value)}
-                            onClick={e=>e.target.select()}
-                            onFocus={e => e.target.select()}
-                            onKeyDown={(e) => { if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); onSpacebar(item.batchKey, idx); } }}
-                            placeholder={item.전산잔량}
-                            className={`w-full text-center hover:bg-white focus:bg-white border rounded px-2 py-1.5 text-[14px] font-black outline-none transition-colors shadow-sm cursor-pointer ${isNegativeActual ? 'bg-rose-50 border-rose-400 text-rose-700 focus:ring-rose-200' : (item.로스 !== 0 ? 'border-orange-400 text-orange-700 bg-orange-50 focus:ring-orange-200' : 'border-transparent text-slate-800 focus:border-indigo-400 focus:ring-indigo-200 bg-transparent')}`} 
-                        />
+                        <input id={`actual-input-${idx}`} type="number" value={item.실사 === null ? '' : item.실사} onChange={(e) => onStockChange(item.batchKey, e.target.value)} onClick={e=>e.target.select()} onFocus={e => e.target.select()} onKeyDown={(e) => { if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); onSpacebar(item.batchKey, idx); } }} placeholder={item.전산잔량} className={`w-full text-center hover:bg-white focus:bg-white border rounded px-2 py-1.5 text-[14px] font-black outline-none transition-colors shadow-sm cursor-pointer ${isNegativeActual ? 'bg-rose-50 border-rose-400 text-rose-700 focus:ring-rose-200' : (item.로스 !== 0 ? 'border-orange-400 text-orange-700 bg-orange-50 focus:ring-orange-200' : 'border-transparent text-slate-800 focus:border-indigo-400 focus:ring-indigo-200 bg-transparent')}`} />
                     </td>
 
-                    <td className={`py-2.5 px-4 text-right font-black border-r border-slate-200 bg-inherit ${item.로스 < 0 ? 'text-rose-600' : item.로스 > 0 ? 'text-blue-600' : 'text-slate-300'}`}>
-                        {item.로스 > 0 ? '+' : ''}{item.로스 === 0 ? '-' : item.로스.toLocaleString()}
-                    </td>
+                    <td className={`py-2.5 px-4 text-right font-black border-r border-slate-200 bg-inherit ${item.로스 < 0 ? 'text-rose-600' : item.로스 > 0 ? 'text-blue-600' : 'text-slate-300'}`}>{item.로스 > 0 ? '+' : ''}{item.로스 === 0 ? '-' : item.로스.toLocaleString()}</td>
                     
                     <td className="py-2.5 px-4 border-r border-slate-200 bg-inherit">
                         <div className="flex items-center gap-1.5 flex-wrap">
                             {hasIssue && displayIssues.map((msg, i) => <IssueChip key={i} msg={msg} />)}
                             {item.메모 && <span className="px-2 py-0.5 bg-slate-100 text-slate-600 border border-slate-200 rounded font-medium text-[10px] shadow-sm flex items-center"><SafeIcon name="edit" size={10} className="mr-1 text-slate-400"/>{item.메모}</span>}
                         </div>
+                        {item.출고내역 && Object.keys(item.출고내역).length > 0 && (
+                            <div className="mt-1.5 flex flex-wrap gap-1.5 items-center">
+                                {Object.entries(item.출고내역).map(([vendor, data]) => {
+                                    return (
+                                        <div key={vendor} draggable 
+                                            onDragStart={(e) => { 
+                                                e.stopPropagation(); 
+                                                e.dataTransfer.setData('text/plain', JSON.stringify({sourceKey: item.batchKey, vendor, qty: data.qty})); 
+                                                e.currentTarget.classList.add('opacity-50');
+                                            }} 
+                                            onDragEnd={(e) => { e.currentTarget.classList.remove('opacity-50'); }}
+                                            className="flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold cursor-grab active:cursor-grabbing border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 transition-colors"
+                                            title={`${data.qty}개 출고 - 드래그하여 다른 품목으로 이동 (Ctrl+드롭: 분할)`}
+                                        >
+                                            <SafeIcon name="truck" size={10} className="mr-1 text-slate-400" />
+                                            <span className="truncate max-w-[100px]">{vendor}({data.qty})</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </td>
 
                     <td className="py-2.5 px-4 text-center bg-inherit">
-                        <button onClick={() => onOpenMemo(item.batchKey, item.메모)} className={`w-8 h-8 rounded-lg shadow-sm transition-colors flex items-center justify-center mx-auto ${item.이슈.some(i => i.includes('🚨')) ? 'bg-orange-50 text-orange-600 border border-orange-200 hover:bg-orange-100 animate-pulse' : 'bg-white text-slate-400 border border-slate-200 hover:bg-slate-50 hover:text-slate-600'}`} title="강제 조정 시 필수 사유 작성">
-                            <SafeIcon name="edit" size={14} />
-                        </button>
+                        <button onClick={() => onOpenMemo(item.batchKey, item.메모)} className={`w-8 h-8 rounded-lg shadow-sm transition-colors flex items-center justify-center mx-auto ${item.이슈.some(i => i.includes('🚨')) ? 'bg-orange-50 text-orange-600 border border-orange-200 hover:bg-orange-100 animate-pulse' : 'bg-white text-slate-400 border border-slate-200 hover:bg-slate-50 hover:text-slate-600'}`} title="강제 조정 시 필수 사유 작성"><SafeIcon name="edit" size={14} /></button>
                     </td>
                 </tr>
             );
@@ -653,99 +380,151 @@
         // ==========================================
         function App() {
             const config = useMerchConfig();
-            const [showSettings, setShowSettings] = useState(false);
-            
             const [toastMsg, setToastMsg] = useState('');
             const [isProcessing, setIsProcessing] = useState(false);
             const [processMsg, setProcessMsg] = useState('');
             
-            const [masterProducts, setMasterProducts] = useState({});
-            const [historyLogs, setHistoryLogs] = useState([]);
-            const [inventoryData, setInventoryData] = useState([]);
+            const [targetMonth, setTargetMonth] = useState(() => new Date().toISOString().slice(0, 7));
+            const [isClosedMonth, setIsClosedMonth] = useState(false);
             
+            const [inventoryData, setInventoryData] = useState([]);
+            const [historyLogs, setHistoryLogs] = useState([]);
             const [searchKw, setSearchKw] = useState('');
+            
             const [linkSourceKey, setLinkSourceKey] = useState(null);
             const [memoModal, setMemoModal] = useState({ isOpen: false, batchKey: null, text: '' });
             const [timelineModal, setTimelineModal] = useState({ isOpen: false, itemCode: null, itemName: '' });
             const [substHistory, setSubstHistory] = useState([]);
             const [undoUi, setUndoUi] = useState({ state: 'closed' });
 
-            // 💡 추가: 에러 로그 및 마감 롤백 상태
             const [uploadErrors, setUploadErrors] = useState([]);
             const [showUploadErrorModal, setShowUploadErrorModal] = useState(false);
             const [closingSnapshots, setClosingSnapshots] = useState([]);
             const [showClosingHistory, setShowClosingHistory] = useState(false);
 
+            // 💡 추가된 상태: 이슈 추적용
+            const [activeIssueMode, setActiveIssueMode] = useState(null); // 'loss', 'manual'
+            const currentIssueIdxRef = useRef(-1);
+            const activeIssueModeRef = useRef(null);
+            const [splitModal, setSplitModal] = useState({ isOpen: false, payload: null });
+
             const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
 
-            const handleNavigate = useCallback((e, path, isReady = true) => {
+            const handleNavigate = useCallback((e, path) => {
                 if (e && e.preventDefault) e.preventDefault();
-                if (!isReady || path === '#' || path === '') { showToast(`⚠️ 해당 페이지는 아직 준비 중입니다.`); return; }
                 try {
                     const protocol = window.location.protocol;
-                    if (protocol === 'about:' || protocol === 'blob:' || protocol === 'data:') {
-                        showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
-                    } else {
-                        window.location.href = path;
-                    }
-                } catch (err) {
-                    showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
-                }
+                    if (protocol === 'about:' || protocol === 'blob:' || protocol === 'data:') showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
+                    else window.location.href = path;
+                } catch (err) { showToast(`💡 이동 시뮬레이션: [${path}]`); }
             }, [showToast]);
 
-            // 🌟 1. 지능형 수불 집계 엔진 (loadData 고도화)
+            const generateBatchKey = useCallback((code, price, vendor, date) => {
+                let key = code || 'NO_CODE';
+                if (config.opsGrouping.priceMode === 'separate') key += `|${price}`;
+                if (config.opsGrouping.splitByVendor) key += `|${vendor}`;
+                if (config.opsGrouping.splitByDate) key += `|${date}`;
+                return key;
+            }, [config.opsGrouping]);
+
             const loadData = useCallback(async () => {
-                setIsProcessing(true); setProcessMsg("지능형 수불 엔진 동기화 중...");
+                setIsProcessing(true); setProcessMsg("수불 엔진 동기화 및 이월 처리 중...");
                 try {
                     const master = await getIDB(STORAGE_KEYS.MASTER_DB) || {};
                     const history = await getIDB(STORAGE_KEYS.HISTORY_DB) || [];
+                    const closings = await getIDB(STORAGE_KEYS.CLOSING_DB) || [];
                     
-                    setMasterProducts(master);
-                    setHistoryLogs(history);
+                    const currentMonthClosing = closings.find(c => c.closingMonth === targetMonth);
+                    if (currentMonthClosing) {
+                        setIsClosedMonth(true);
+                        setInventoryData(currentMonthClosing.snapshotData);
+                        setHistoryLogs(history.filter(h => h.date && h.date.startsWith(targetMonth)).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp)));
+                        return;
+                    }
+                    
+                    setIsClosedMonth(false);
 
-                    let pData = {};
+                    const pastClosings = closings.filter(c => c.closingMonth < targetMonth).sort((a,b) => b.closingMonth.localeCompare(a.closingMonth));
+                    const lastClosing = pastClosings.length > 0 ? pastClosings[0] : null;
                     
-                    // 1) 마스터를 기준으로 초기 버킷(기초/전산재고 뼈대) 구성
-                    const totalInOutByCode = {};
-                    history.forEach(log => {
-                        if(!totalInOutByCode[log.code]) totalInOutByCode[log.code] = { in: 0, out: 0 };
-                        if(log.type === 'PURCHASE') totalInOutByCode[log.code].in += log.qty;
-                        if(log.type === 'PURCHASE_RETURN') totalInOutByCode[log.code].in -= log.qty;
-                        if(log.type === 'DISPATCH') totalInOutByCode[log.code].out += log.qty;
-                        if(log.type === 'SALES_RETURN') totalInOutByCode[log.code].out -= log.qty;
-                    });
+                    let pData = {};
+                    let stockPool = {};
 
                     for(let code in master) {
                         const m = master[code];
-                        const sysQty = Number(m.재고수량 || 0);
-                        const inOut = totalInOutByCode[code] || { in: 0, out: 0 };
-                        const baseQty = sysQty - inOut.in + inOut.out; // 기초수량 역산 (임시)
-                        
                         const price = parseNum(m.입고가);
-                        const vendor = '기초재고';
-                        
-                        // 💡 설정에 따른 Grouping Key 생성
-                        const batchKey = `${code}|${config.opsGrouping.priceMode === 'separate' ? price : 'avg'}|${config.opsGrouping.splitByVendor ? vendor : 'all'}|all`;
+                        const batchKey = `${code}|${config.opsGrouping.priceMode === 'separate' ? price : 'avg'}|${config.opsGrouping.splitByVendor ? '기초재고' : 'all'}|all`;
                         
                         pData[batchKey] = {
-                            batchKey, 코드: code, 품명: m.품목명, 규격: m.규격, 단가: price, 거래처: vendor, 일자: '',
-                            기초: baseQty, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 
-                            전산잔량: baseQty, 실사: null, 로스: 0, 
-                            이슈: [], 메모: '', 출고내역: {}, _orig: { 기초: baseQty, 입고: 0, 출고: 0, 단가: price },
+                            batchKey, 코드: code, 품명: m.품목명, 규격: m.규격, 단가: price, 거래처: '기초재고', 일자: '',
+                            기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 
+                            이슈: [], 메모: '', 출고내역: {}, _orig: { 기초: 0, 입고: 0, 출고: 0, 단가: price },
                             isDummy: false, 수기확인완료: true
                         };
                     }
 
-                    // 2) History 데이터 시간순으로 돌면서 버킷에 당기 발생 할당
-                    const sortedHistory = [...history].sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+                    if (lastClosing) {
+                        lastClosing.snapshotData.forEach(item => {
+                            const code = item.코드;
+                            const qty = item.실사 || 0;
+                            if (qty === 0) return;
 
-                    sortedHistory.forEach(log => {
+                            const batchKey = item.batchKey; 
+                            if (!pData[batchKey]) {
+                                 pData[batchKey] = { ...item, 기초: qty, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: qty, 실사: null, 로스: 0, 이슈: [], 메모: '', 출고내역: {} };
+                            } else {
+                                 pData[batchKey].기초 = qty;
+                                 pData[batchKey].단가 = item.단가;
+                                 pData[batchKey].거래처 = item.거래처;
+                            }
+                            
+                            if (!stockPool[code]) stockPool[code] = { buckets: [] };
+                            stockPool[code].buckets.push({ batchKey, 단가: item.단가, 수량: qty, 거래처: item.거래처 });
+                        });
+                    } else {
+                        const preHistory = history.filter(h => h.date < targetMonth + "-01");
+                        const preInOutByCode = {};
+                        preHistory.forEach(log => {
+                            if(!preInOutByCode[log.code]) preInOutByCode[log.code] = 0;
+                            if(log.type === 'PURCHASE') preInOutByCode[log.code] += Number(log.qty);
+                            if(log.type === 'PURCHASE_RETURN') preInOutByCode[log.code] -= Number(log.qty);
+                            if(log.type === 'DISPATCH') preInOutByCode[log.code] -= Number(log.qty);
+                            if(log.type === 'SALES_RETURN') preInOutByCode[log.code] += Number(log.qty);
+                            if(log.type === 'ADJUSTMENT') preInOutByCode[log.code] += Number(log.qty); 
+                        });
+
+                        Object.keys(preInOutByCode).forEach(code => {
+                            const qty = preInOutByCode[code];
+                            if (qty === 0) return;
+                            const m = master[code] || {};
+                            const price = parseNum(m.입고가);
+                            const batchKey = `${code}|${config.opsGrouping.priceMode === 'separate' ? price : 'avg'}|${config.opsGrouping.splitByVendor ? '기초재고' : 'all'}|all`;
+                            
+                            if (pData[batchKey]) {
+                                pData[batchKey].기초 = qty;
+                            } else {
+                                pData[batchKey] = {
+                                    batchKey, 코드: code, 품명: m.품목명 || '미상', 규격: m.규격 || '', 단가: price, 거래처: '기초재고', 일자: '',
+                                    기초: qty, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: qty, 실사: null, 로스: 0, 
+                                    이슈: [], 메모: '', 출고내역: {}, _orig: { 기초: qty, 입고: 0, 출고: 0, 단가: price },
+                                    isDummy: !master[code], 수기확인완료: true
+                                };
+                            }
+                            if (!stockPool[code]) stockPool[code] = { buckets: [] };
+                            stockPool[code].buckets.push({ batchKey, 단가: price, 수량: qty, 거래처: '기초재고' });
+                        });
+                    }
+
+                    const currentHistory = history.filter(h => h.date && h.date.startsWith(targetMonth)).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+                    setHistoryLogs(currentHistory);
+
+                    currentHistory.forEach(log => {
                         const code = log.code;
-                        if (log.type === 'PURCHASE') {
+                        if (log.type === 'PURCHASE' || log.type === 'PURCHASE_RETURN') {
+                            const qty = log.type === 'PURCHASE' ? Number(log.qty) : -Number(log.qty);
                             const price = parseNum(log.price);
                             const vendor = log.vendor || '미지정';
                             const date = log.date || '';
-                            
                             const batchKey = `${code}|${config.opsGrouping.priceMode === 'separate' ? price : 'avg'}|${config.opsGrouping.splitByVendor ? vendor : 'all'}|${config.opsGrouping.splitByDate ? date : 'all'}`;
                             
                             if (!pData[batchKey]) {
@@ -757,80 +536,208 @@
                                     isDummy: !master[code], 수기확인완료: true
                                 };
                             }
-                            pData[batchKey].입고 += log.qty;
+                            pData[batchKey].입고 += qty;
+                            
+                            if (!stockPool[code]) stockPool[code] = { buckets: [] };
+                            let bucket = stockPool[code].buckets.find(b => b.batchKey === batchKey);
+                            if (bucket) bucket.수량 += qty;
+                            else stockPool[code].buckets.push({ batchKey, 단가: price, 수량: qty, 거래처: vendor });
                         } 
-                        else if (log.type === 'DISPATCH') {
+                        else if (log.type === 'DISPATCH' || log.type === 'SALES_RETURN') {
+                            const qty = log.type === 'DISPATCH' ? Number(log.qty) : -Number(log.qty);
                             const targetVendor = log.lotVendor || '미지정';
-                            const buckets = Object.values(pData).filter(p => p.코드 === code).sort((a,b) => (a.기초+a.입고-a.출고) > (b.기초+b.입고-b.출고) ? -1 : 1);
                             
-                            let remaining = log.qty;
+                            if (!stockPool[code]) return;
+                            const buckets = stockPool[code].buckets.sort((a,b) => b.수량 - a.수량);
+                            let remaining = qty;
                             
-                            // 1차: 매입처(Lot) 일치 버킷에서 우선 차감
+                            // 1차: 지정된 Lot
                             for(let b of buckets) {
                                 if (remaining <= 0) break;
                                 if (config.opsGrouping.splitByVendor && b.거래처 !== targetVendor) continue;
-                                const avail = (b.기초 + b.입고 - b.출고);
+                                const pItem = pData[b.batchKey];
+                                const avail = (pItem.기초 + pItem.입고 - pItem.출고);
                                 if (avail > 0) {
                                     const take = Math.min(avail, remaining);
-                                    b.출고 += take;
+                                    pItem.출고 += take;
+                                    b.수량 -= take;
                                     remaining -= take;
+                                    
+                                    // 💡 출고내역 로트 기록
+                                    const dispVendor = log.partner || targetVendor;
+                                    if (!pItem.출고내역[dispVendor]) pItem.출고내역[dispVendor] = { qty: 0 };
+                                    pItem.출고내역[dispVendor].qty += take;
                                 }
                             }
-                            
-                            // 2차: 남은게 있다면 가장 여유있는 버킷에서 차감 (FIFO 유사 방식)
+                            // 2차: 여유분
                             for(let b of buckets) {
                                 if (remaining <= 0) break;
-                                const avail = (b.기초 + b.입고 - b.출고);
+                                const pItem = pData[b.batchKey];
+                                const avail = (pItem.기초 + pItem.입고 - pItem.출고);
                                 if (avail > 0) {
                                     const take = Math.min(avail, remaining);
-                                    b.출고 += take;
+                                    pItem.출고 += take;
+                                    b.수량 -= take;
                                     remaining -= take;
+
+                                    const dispVendor = log.partner || targetVendor;
+                                    if (!pItem.출고내역[dispVendor]) pItem.출고내역[dispVendor] = { qty: 0 };
+                                    pItem.출고내역[dispVendor].qty += take;
                                 }
                             }
-                            
-                            // 3차: 그래도 남으면(마이너스 재고) 첫번째 버킷에 강제 할당
+                            // 3차: 마이너스 강제
                             if (remaining > 0 && buckets.length > 0) {
-                                buckets[0].출고 += remaining;
+                                const pItem = pData[buckets[0].batchKey];
+                                pItem.출고 += remaining;
+                                buckets[0].수량 -= remaining;
+
+                                const dispVendor = log.partner || targetVendor;
+                                if (!pItem.출고내역[dispVendor]) pItem.출고내역[dispVendor] = { qty: 0 };
+                                pItem.출고내역[dispVendor].qty += remaining;
                             }
                         }
                     });
 
-                    // 3) 전산잔량 계산 및 최종 정리
                     Object.values(pData).forEach(item => {
                         item.전산잔량 = item.기초 + item.입고 + item.대체입고 - item.출고 - item.대체출고;
-                        item.실사 = item.전산잔량; // 초기 실사값은 전산잔량과 동일
-                        item.로스 = 0;
+                        item.실사 = item.실사 !== null ? item.실사 : item.전산잔량; 
+                        item.로스 = item.실사 - item.전산잔량;
                         item._orig = { 기초: item.기초, 입고: item.입고, 출고: item.출고, 단가: item.단가 };
                     });
 
-                    const finalData = Object.values(pData).sort((a,b) => a.품명.localeCompare(b.품명) || a.단가 - b.단가);
-                    setInventoryData(finalData);
-                    
+                    setInventoryData(Object.values(pData).sort((a,b) => a.품명.localeCompare(b.품명) || a.단가 - b.단가));
                 } catch(e) {
+                    console.error(e);
                     showToast("❌ 데이터 로드 중 오류 발생");
                 } finally {
                     setIsProcessing(false); setProcessMsg('');
                 }
-            }, [config.opsGrouping, showToast]);
+            }, [targetMonth, config.opsGrouping, showToast]);
 
             useEffect(() => { loadData(); }, [loadData]);
 
-            useEffect(() => {
-                const handleStorageChange = (e) => { if (e.key === STORAGE_KEYS.SYNC_TRIGGER) loadData(); };
-                window.addEventListener('storage', handleStorageChange);
-                return () => window.removeEventListener('storage', handleStorageChange);
-            }, [loadData]);
+            // 💡 1. 이슈 탐색 기능 (Tab / Shift+Tab) 복구
+            useEffect(() => { activeIssueModeRef.current = activeIssueMode; }, [activeIssueMode]);
+            
+            const handleIssueJump = useCallback((type, direction = 'next', fromCardClick = false) => {
+                setActiveIssueMode(type);
+                
+                let currIdx = fromCardClick ? -1 : currentIssueIdxRef.current;
+                const condition = (p) => {
+                    if (type === 'loss') return p.로스 !== 0 || p.전산잔량 < 0 || p.이슈.some(i => i.includes('🚨'));
+                    if (type === 'manual') return p.이슈.some(i => i.includes('✅') || i.includes('🔄'));
+                    return false;
+                };
 
-            // 🌟 단축키 F9 리포트 연결
+                const targetItems = inventoryData.map((p, i) => ({...p, index: i})).filter(condition);
+                if (targetItems.length === 0) {
+                    if(!fromCardClick) showToast("해당하는 항목이 없습니다.");
+                    setActiveIssueMode(null);
+                    return;
+                }
+
+                let targetItem = null;
+                if (direction === 'next') {
+                    targetItem = targetItems.find(p => p.index > currIdx) || targetItems[0];
+                } else {
+                    for (let i = targetItems.length - 1; i >= 0; i--) {
+                        if (targetItems[i].index < currIdx) { targetItem = targetItems[i]; break; }
+                    }
+                    if (!targetItem) targetItem = targetItems[targetItems.length - 1];
+                }
+
+                if (targetItem) {
+                    currentIssueIdxRef.current = targetItem.index;
+                    setTimeout(() => {
+                        const row = document.querySelector(`tr[data-batch="${targetItem.batchKey}"]`);
+                        if (row) {
+                            const input = document.getElementById(`actual-input-${targetItem.index}`);
+                            if (input) { input.focus({ preventScroll: true }); input.select(); }
+                            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            
+                            const colorClass = type === 'loss' ? 'bg-orange-50' : 'bg-emerald-50';
+                            row.classList.add(colorClass);
+                            setTimeout(() => row.classList.remove(colorClass), 1500);
+                        }
+                    }, 100);
+                }
+            }, [inventoryData, showToast]);
+
             useEffect(() => {
                 const handleGlobalKeys = (e) => {
+                    if (e.key === 'Tab' && activeIssueModeRef.current) {
+                        e.preventDefault();
+                        handleIssueJump(activeIssueModeRef.current, e.shiftKey ? 'prev' : 'next');
+                    }
                     if (e.key === 'F9') { e.preventDefault(); handleCombinedExport(); }
+                    if (e.key === 'Escape') {
+                        if (activeIssueModeRef.current) {
+                            setActiveIssueMode(null);
+                            currentIssueIdxRef.current = -1;
+                        }
+                        if (linkSourceKey) setLinkSourceKey(null);
+                    }
                 };
                 window.addEventListener('keydown', handleGlobalKeys);
                 return () => window.removeEventListener('keydown', handleGlobalKeys);
-            }, [inventoryData, historyLogs]);
+            }, [handleIssueJump, handleCombinedExport, linkSourceKey]);
 
-            // 실사 엑셀 업로드 연동
+            // 💡 2. 드래그 앤 드롭 (로트 부분 이동) 기능 복구
+            const handleSalesMove = useCallback((sourceKey, targetKey, vendorName, qtyToMove) => {
+                setInventoryData(prevP => {
+                    return prevP.map(p => {
+                        if (p.batchKey === sourceKey) {
+                            const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역)) };
+                            np.출고 -= qtyToMove;
+                            if (np.출고내역[vendorName]) {
+                                np.출고내역[vendorName].qty -= qtyToMove;
+                                if (np.출고내역[vendorName].qty <= 0) delete np.출고내역[vendorName];
+                            }
+                            np.전산잔량 = np.기초 + np.입고 + np.대체입고 - np.출고 - np.대체출고;
+                            if (np.실사 !== null && np.실사 !== '') { 
+                                np.실사 = Number(np.실사) + qtyToMove; 
+                                np.로스 = np.실사 - np.전산잔량; 
+                            } else { 
+                                np.실사 = np.전산잔량; np.로스 = 0; 
+                            }
+                            np.이슈 = np.이슈.filter(msg => !msg.includes('수량부족'));
+                            np.수기확인완료 = true;
+                            return np;
+                        }
+                        if (p.batchKey === targetKey) {
+                            const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역)), 이슈: [...p.이슈] };
+                            np.출고 += qtyToMove;
+                            if (!np.출고내역[vendorName]) np.출고내역[vendorName] = { qty: 0 };
+                            np.출고내역[vendorName].qty += qtyToMove;
+                            
+                            np.전산잔량 = np.기초 + np.입고 + np.대체입고 - np.출고 - np.대체출고;
+                            if (np.실사 !== null && np.실사 !== '') { 
+                                np.실사 = Number(np.실사) - qtyToMove; 
+                                np.로스 = np.실사 - np.전산잔량; 
+                            } else { 
+                                np.실사 = np.전산잔량; np.로스 = 0; 
+                            }
+                            
+                            np.이슈 = np.이슈.filter(msg => !msg.includes('수량부족'));
+                            np.수기확인완료 = true;
+                            return np;
+                        }
+                        return p;
+                    });
+                });
+                
+                showToast(`✅ ${qtyToMove}건의 매출이 성공적으로 이동되었습니다.`);
+            }, [showToast]);
+
+            const handleChipDropRequest = useCallback((sourceKey, targetKey, vendor, maxQty, isCtrlPressed) => {
+                if (isCtrlPressed && maxQty > 1) {
+                    setSplitModal({ isOpen: true, payload: { sourceKey, targetKey, vendor, maxQty } });
+                } else {
+                    handleSalesMove(sourceKey, targetKey, vendor, maxQty);
+                }
+            }, [handleSalesMove]);
+
+
             const handleFileUpload = async (e) => {
                 const file = e.target.files[0]; if (!file) return;
                 setIsProcessing(true); setProcessMsg('실사 엑셀 대조 중...');
@@ -838,76 +745,46 @@
                     const excelData = await parseExcelRobust(file);
                     if (excelData.length === 0) throw new Error("데이터가 없습니다.");
                     
-                    let count = 0;
-                    const actualUpdates = {};
-                    let errors = []; // 💡 에러 추적 배열
+                    let count = 0; const actualUpdates = {}; let errors = [];
                     
-                    // 엑셀에서 실사 수량 찾기
                     excelData.forEach((row, idx) => {
                         const findKey = (mappingString) => {
                             if (!mappingString) return null;
-                            const keys = mappingString.split(',').map(k => k.trim());
-                            const rowKeys = Object.keys(row);
-                            for (const key of keys) {
-                                const matched = rowKeys.find(rk => rk.toLowerCase().replace(/\s/g, '') === key.toLowerCase().replace(/\s/g, ''));
-                                if (matched) return matched;
-                            }
-                            return null;
+                            const keys = mappingString.split(',').map(k => k.trim()); const rowKeys = Object.keys(row);
+                            for (const key of keys) { const matched = rowKeys.find(rk => rk.toLowerCase().replace(/\s/g, '') === key.toLowerCase().replace(/\s/g, '')); if (matched) return matched; } return null;
                         };
-
                         const codeKey = findKey(config.opsMappings.code) || '품목코드';
                         const code = row[codeKey] || row['코드'] || row['상품코드'];
-                        
                         if (!code) { errors.push({ row: idx + 2, code: '-', reason: '품목코드 또는 상품코드 누락' }); return; }
                         
                         const qtyKey = findKey(config.opsMappings.qty) || '실사';
                         const qtyVal = row[qtyKey] || row['기말실사'] || row['수량'];
-                        
                         if (qtyVal === undefined || qtyVal === '') { errors.push({ row: idx + 2, code, reason: '실사 수량 누락' }); return; }
                         
                         actualUpdates[code] = parseNum(qtyVal);
                     });
 
                     setInventoryData(prev => {
-                        let updatedCount = 0;
-                        const currentCodes = new Set(prev.map(i => i.코드));
-                        
-                        // 마스터에 없는 코드 검출
-                        Object.keys(actualUpdates).forEach(code => {
-                            if (!currentCodes.has(code)) {
-                                errors.push({ row: '-', code, reason: '마스터 DB에 존재하지 않는 품목코드' });
-                            }
-                        });
+                        let updatedCount = 0; const currentCodes = new Set(prev.map(i => i.코드));
+                        Object.keys(actualUpdates).forEach(code => { if (!currentCodes.has(code)) errors.push({ row: '-', code, reason: '마스터 DB에 존재하지 않는 품목코드' }); });
 
                         const newData = prev.map(item => {
                             if (actualUpdates[item.코드] !== undefined) {
-                                const actual = actualUpdates[item.코드];
-                                const newLoss = actual - item.전산잔량;
+                                const actual = actualUpdates[item.코드]; const newLoss = actual - item.전산잔량;
                                 let newIssues = [...item.이슈].filter(msg => !msg.includes('실사조정') && !msg.includes('수량변동'));
-                                
                                 if (newLoss !== 0) newIssues.push('🚨수량변동(실사반영)');
-                                
                                 updatedCount++;
                                 return { ...item, 실사: actual, 로스: newLoss, 이슈: newIssues, 수기확인완료: newLoss === 0 };
                             }
                             return item;
                         });
-                        count = updatedCount;
-                        return newData;
+                        count = updatedCount; return newData;
                     });
                     
-                    if (errors.length > 0) {
-                        setUploadErrors(errors);
-                        setShowUploadErrorModal(true);
-                    }
-                    
+                    if (errors.length > 0) { setUploadErrors(errors); setShowUploadErrorModal(true); }
                     if(count > 0) showToast(`✅ ${count}건의 실사 수량이 전산잔량과 대조되었습니다.`);
                     else showToast(`⚠️ 정상적으로 대조된 항목이 없습니다.`);
-                } catch(error) { 
-                    showToast("❌ 업로드 오류: " + error.message); 
-                } finally { 
-                    e.target.value = ''; setIsProcessing(false); setProcessMsg(''); 
-                }
+                } catch(error) { showToast("❌ 업로드 오류: " + error.message); } finally { e.target.value = ''; setIsProcessing(false); setProcessMsg(''); }
             };
 
             const handleBaseDataChange = useCallback((batchKey, field, val) => {
@@ -932,14 +809,11 @@
             const updateActualQty = useCallback((code, val) => {
                 const actual = val === '' ? '' : parseInt(val, 10);
                 setInventoryData(prev => prev.map(item => {
-                    if (item.batchKey === code) { // batchKey로 변경
-                        const lossCalcVal = actual === '' ? 0 : actual;
-                        const newLoss = lossCalcVal - item.전산잔량;
+                    if (item.batchKey === code) {
+                        const newLoss = (actual === '' ? 0 : actual) - item.전산잔량;
                         let newIssues = [...item.이슈].filter(msg => !msg.includes('실사조정') && !msg.includes('실사 수기조정'));
-                        
                         if (newLoss === 0) newIssues = newIssues.filter(msg => !msg.includes('수량변동') && !msg.includes('과다로스'));
                         if (item.전산잔량 >= 0) newIssues = newIssues.filter(msg => !msg.includes('수량부족'));
-                        
                         newIssues = newIssues.map(msg => msg.replace(/🚨/g, '✅'));
                         if (actual !== '' && newLoss !== 0) newIssues.push('🚨실사조정');
                         return { ...item, 실사: actual, 로스: newLoss, 이슈: newIssues, 수기확인완료: true };
@@ -963,45 +837,31 @@
                     else if (targetItem.로스 < 0 && sourceItem.로스 > 0) { let temp = sourceItem; sourceItem = targetItem; targetItem = temp; }
                     else { showToast("⚠️ 상계 불가! 로스가 음수(-)와 양수(+)여야 합니다."); return prev; }
 
-                    const sQty = Math.abs(sourceItem.로스); const tQty = Math.abs(targetItem.로스);
-                    const moveQty = Math.min(sQty, tQty);
+                    const moveQty = Math.min(Math.abs(sourceItem.로스), Math.abs(targetItem.로스));
 
-                    sourceItem.대체출고 += moveQty;
-                    sourceItem.전산잔량 -= moveQty;
-                    sourceItem.로스 = sourceItem.실사 - sourceItem.전산잔량;
-                    
+                    sourceItem.대체출고 += moveQty; sourceItem.전산잔량 -= moveQty; sourceItem.로스 = sourceItem.실사 - sourceItem.전산잔량;
                     if (sourceItem.로스 === 0) sourceItem.이슈 = sourceItem.이슈.filter(msg => !msg.includes('수량변동') && !msg.includes('실사조정') && !msg.includes('실사 수기조정') && !msg.includes('과다로스'));
-                    sourceItem.이슈.push(`🔄 (-${moveQty})`); 
-                    sourceItem.수기확인완료 = true;
+                    sourceItem.이슈.push(`🔄 (-${moveQty})`); sourceItem.수기확인완료 = true;
 
-                    targetItem.대체입고 += moveQty;
-                    targetItem.전산잔량 += moveQty;
-                    targetItem.로스 = targetItem.실사 - targetItem.전산잔량;
-                    
+                    targetItem.대체입고 += moveQty; targetItem.전산잔량 += moveQty; targetItem.로스 = targetItem.실사 - targetItem.전산잔량;
                     if (targetItem.로스 === 0) targetItem.이슈 = targetItem.이슈.filter(msg => !msg.includes('수량변동') && !msg.includes('실사조정') && !msg.includes('실사 수기조정') && !msg.includes('과다로스'));
-                    targetItem.이슈.push(`🔄 (+${moveQty} ${sourceItem.품명})`);
-                    targetItem.수기확인완료 = true;
+                    targetItem.이슈.push(`🔄 (+${moveQty} ${sourceItem.품명})`); targetItem.수기확인완료 = true;
 
-                    setSubstHistory(h => [...h, {
-                        id: Date.now(), sourceKey: sourceItem.batchKey, targetKey: targetItem.batchKey, sourceName: sourceItem.품명, targetName: targetItem.품명, 
-                        sQty: moveQty, tQty: moveQty, sourceItemPrev: sourceItemOrig, targetItemPrev: targetItemOrig
-                    }]);
-
-                    const newData = [...prev];
-                    newData[idx1] = sourceItem;
-                    newData[realIdx2] = targetItem;
+                    setSubstHistory(h => [...h, { id: Date.now(), sourceKey: sourceItem.batchKey, targetKey: targetItem.batchKey, sourceName: sourceItem.품명, targetName: targetItem.품명, sQty: moveQty, tQty: moveQty, sourceItemPrev: sourceItemOrig, targetItemPrev: targetItemOrig }]);
+                    const newData = [...prev]; newData[idx1] = sourceItem; newData[realIdx2] = targetItem;
                     showToast(`✅ [${sourceItem.품명}] ➔ [${targetItem.품명}] 로스 상계 완료`);
                     return newData;
                 });
             }, [showToast]);
 
             const handleSpacebarLink = useCallback((targetBatchKey, targetIdx) => {
+                if (isClosedMonth) return showToast("🔒 마감된 월은 수정할 수 없습니다.");
                 setLinkSourceKey(prevKey => {
                     if (!prevKey) { setTimeout(() => { const input = document.getElementById(`actual-input-${targetIdx}`); if (input) { input.focus(); input.select(); } }, 50); return targetBatchKey; }
                     if (prevKey === targetBatchKey) { setTimeout(() => { const input = document.getElementById(`actual-input-${targetIdx}`); if (input) { input.focus(); input.select(); } }, 50); return null; }
                     setTimeout(() => executeImmediateSubstitution(prevKey, targetBatchKey, targetIdx), 0); return null; 
                 });
-            }, [executeImmediateSubstitution]);
+            }, [executeImmediateSubstitution, isClosedMonth, showToast]);
 
             const handleUndoAction = useCallback((historyItem) => {
                 setInventoryData(prev => {
@@ -1022,9 +882,7 @@
                 setInventoryData(prev => prev.map(item => {
                     if (item.batchKey === batchKey) {
                         let newIssues = [...item.이슈];
-                        if (newIssues.some(i => i.includes('🚨실사조정'))) {
-                            newIssues = newIssues.map(msg => msg.replace('🚨실사조정', '✅실사조정(수기)'));
-                        }
+                        if (newIssues.some(i => i.includes('🚨실사조정'))) newIssues = newIssues.map(msg => msg.replace('🚨실사조정', '✅실사조정(수기)'));
                         return { ...item, 메모: text, 이슈: newIssues };
                     }
                     return item;
@@ -1032,82 +890,21 @@
                 showToast("✅ 사유가 기록되어 조정 내역이 승인되었습니다.");
             }, [showToast]);
 
-            // 🌟 2. 마감 엑셀 다운로드 복원 (F9 단축키 연결)
-            const handleCombinedExport = useCallback(() => {
-                if (inventoryData.length === 0) { showToast("⚠️ 다운로드할 데이터가 없습니다."); return; }
-                
-                setIsProcessing(true); setProcessMsg("결산 리포트 엑셀 생성 중...");
-                
-                setTimeout(() => {
-                    const targetDateStr = new Date().toISOString().slice(0, 10);
-                    const exportFileNameDate = targetDateStr.replace(/-/g, '');
-                    
-                    // 시트 1: 재고수불_마감
-                    const exportData1 = inventoryData.map(item => {
-                        const qty = item.실사 === '' || item.실사 === null ? 0 : parseNum(item.실사);
-                        const adjust = (parseNum(item.로스) || 0) + (parseNum(item.대체입고) || 0) - (parseNum(item.대체출고) || 0);
-                        const price = parseNum(item.단가) || 0;
-                        return { 
-                            '결산일자': targetDateStr, '매입처(Lot)': item.거래처, '상품코드': item.코드, '상품명(규격)': item.품명, 
-                            '기초수량': item.기초, '입고수량': item.입고, '출고량': item.출고, '기말실사(이월수량)': qty, 
-                            '매입단가(원가)': price, '기말재고액(자산가치)': qty * price, '로스/조정수량': adjust, 
-                            '이슈/결과': item.이슈.join(', '), '수기메모': item.메모 || '' 
-                        };
-                    });
-
-                    // 시트 2: 매입현황 (History 참조)
-                    const exportData2 = historyLogs.filter(h => h.type === 'PURCHASE').map(h => ({
-                        '결산일자': targetDateStr, '매입일자': h.date || targetDateStr, '매입처명(공급사)': h.vendor || '미지정',
-                        '상품코드': h.code, '상품명(규격)': h.name, '매입수량': h.qty, '매입단가': h.price, '매입총액(합계)': h.totalAmount
-                    }));
-
-                    // 시트 3: 판매현황 (History 참조)
-                    const exportData3 = historyLogs.filter(h => h.type === 'DISPATCH').map(h => ({
-                        '결산일자': targetDateStr, '매출처명': h.partner || '미지정', '매입처(Lot)': h.lotVendor || '미지정',
-                        '상품코드': h.code, '상품명(규격)': h.name, '판매수량': h.qty, '판매단가': h.price, '공급가액': h.totalAmount
-                    }));
-
-                    const wb = XLSX.utils.book_new();
-                    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportData1), '재고수불_마감');
-                    
-                    if (exportData2.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportData2), '매입현황');
-                    else XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([{'메시지': '매입내역이 없습니다.'}]), '매입현황');
-                    
-                    if (exportData3.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportData3), '판매현황');
-                    else XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([{'메시지': '판매내역이 없습니다.'}]), '판매현황');
-
-                    try {
-                        const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-                        const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a'); a.href = url; a.download = `DataOps_수불마감리포트_${exportFileNameDate}.xlsx`;
-                        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-                        showToast("✅ 수불부 결산 데이터가 엑셀로 다운로드되었습니다.");
-                    } catch (err) { 
-                        console.error('엑셀 생성 중 오류:', err); 
-                        showToast("❌ 엑셀 파일 생성 중 오류가 발생했습니다."); 
-                    } finally {
-                        setIsProcessing(false); setProcessMsg('');
-                    }
-                }, 500);
-            }, [inventoryData, historyLogs, showToast]);
-
-            // 🌟 4. 마감 이월 스냅샷 (CLOSING_DB) 로직 및 롤백 정보 추가
             const handleClosing = async () => {
                 const hasErrors = inventoryData.some(item => item.이슈.some(msg => msg.includes('🚨')));
                 if (hasErrors) {
                     return showToast("⚠️ 해결되지 않은 오류(🚨실사조정)가 남아있습니다. 스페이스바 상계 또는 사유 메모를 기록하여 모두 승인(✅) 처리 후 마감하세요.");
                 }
 
-                if (!window.confirm("현재의 실사 수량으로 재고를 덮어쓰고 수불부를 마감하시겠습니까?\n(오차가 있던 항목은 '실사조정' 내역으로 히스토리에 영구 보존됩니다.)")) return;
+                if (!window.confirm(`현재의 실사 수량으로 [${targetMonth}] 월의 수불부를 최종 마감하시겠습니까?\n(오차가 있던 항목은 '실사조정' 내역으로 히스토리에 영구 보존되며, 마감 스냅샷이 저장됩니다.)`)) return;
 
-                setIsProcessing(true); setProcessMsg("수불부 마감 및 이월 처리 중...");
+                setIsProcessing(true); setProcessMsg("수불부 마감 및 스냅샷 생성 중...");
 
                 try {
                     const master = await getIDB(STORAGE_KEYS.MASTER_DB) || {};
                     let newMaster = { ...master };
                     let newLogs = [];
-                    let logIds = []; // 롤백용 ID 추적
+                    let logIds = []; 
                     const nowStr = new Date().toLocaleString('ko-KR');
                     const history = await getIDB(STORAGE_KEYS.HISTORY_DB) || [];
 
@@ -1124,7 +921,7 @@
                             newLogs.push({
                                 id: logId,
                                 timestamp: nowStr,
-                                date: new Date().toISOString().slice(0, 10),
+                                date: new Date().toISOString().slice(0, 10), 
                                 type: 'ADJUSTMENT',
                                 code: code,
                                 name: item.품명,
@@ -1138,15 +935,15 @@
                         }
                     });
 
-                    // 스냅샷 데이터 생성 및 저장
                     const closings = await getIDB(STORAGE_KEYS.CLOSING_DB) || [];
                     const snapshot = {
-                        id: `CLOSE-${Date.now()}`,
+                        id: `CLOSE-${targetMonth}-${Date.now()}`,
                         date: new Date().toISOString(),
+                        closingMonth: targetMonth,
                         stats: { totalItems: inventoryData.length, lossValue: inventoryData.reduce((sum, item) => sum + Math.abs((item.로스||0) * (item.단가||0)), 0) },
                         snapshotData: inventoryData,
-                        masterBackup: master, // 롤백을 위한 마스터 백업
-                        historyLogIds: logIds // 롤백 시 삭제할 로그 ID 목록
+                        masterBackup: master, 
+                        historyLogIds: logIds 
                     };
 
                     await setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
@@ -1154,7 +951,7 @@
                     await setIDB(STORAGE_KEYS.CLOSING_DB, [snapshot, ...closings]);
                     localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
 
-                    showToast("🎉 월 마감이 완료되어 재고가 최종 확정되었습니다! (스냅샷 저장됨)");
+                    showToast(`🎉 ${targetMonth}월 마감이 완료되었습니다! (스냅샷 저장됨)`);
                     setTimeout(() => loadData(), 1000); 
                 } catch(e) {
                     showToast("❌ 마감 처리 중 오류 발생");
@@ -1170,7 +967,7 @@
             };
 
             const handleRollback = async (snapshot) => {
-                if (!window.confirm(`⚠️ 경고: [${new Date(snapshot.date).toLocaleString('ko-KR')}]에 실행된 가장 최근 마감을 취소하고 이전 재고 상태로 되돌리시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
+                if (!window.confirm(`⚠️ 경고: [${snapshot.closingMonth}] 월에 실행된 가장 최근 마감을 취소하고 이전 재고 상태로 되돌리시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
                 
                 setIsProcessing(true); setProcessMsg("마감 상태 롤백 중...");
                 try {
@@ -1188,7 +985,7 @@
                     
                     localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
                     setShowClosingHistory(false);
-                    showToast("✅ 마감이 취소되고 이전 상태로 복구되었습니다.");
+                    showToast(`✅ [${snapshot.closingMonth}] 마감이 취소되고 이전 상태로 복구되었습니다.`);
                     setTimeout(() => loadData(), 1000);
                 } catch(err) {
                     showToast("❌ 롤백 중 오류가 발생했습니다.");
@@ -1196,6 +993,33 @@
                     setIsProcessing(false); setProcessMsg("");
                 }
             };
+
+            const handleCombinedExport = useCallback(() => {
+                if (inventoryData.length === 0) return showToast("⚠️ 다운로드할 데이터가 없습니다.");
+                setIsProcessing(true); setProcessMsg("결산 리포트 엑셀 생성 중...");
+                setTimeout(() => {
+                    const exportDateStr = new Date().toISOString().slice(0, 10);
+                    const exportData1 = inventoryData.map(item => {
+                        const qty = item.실사 === '' || item.실사 === null ? 0 : parseNum(item.실사);
+                        return { '결산일자': exportDateStr, '매입처(Lot)': item.거래처, '상품코드': item.코드, '상품명(규격)': item.품명, '기초수량': item.기초, '입고수량': item.입고, '출고량': item.출고, '기말실사(이월수량)': qty, '매입단가(원가)': parseNum(item.단가)||0, '기말재고액(자산가치)': qty * (parseNum(item.단가)||0), '로스/조정수량': (parseNum(item.로스)||0) + (parseNum(item.대체입고)||0) - (parseNum(item.대체출고)||0), '이슈/결과': item.이슈.join(', '), '수기메모': item.메모 || '' };
+                    });
+
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportData1), '재고수불_마감');
+
+                    try {
+                        const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                        const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a'); a.href = url; a.download = `DataOps_수불마감리포트_${targetMonth.replace(/-/g, '')}.xlsx`;
+                        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+                        showToast("✅ 수불부 결산 데이터가 엑셀로 다운로드되었습니다.");
+                    } catch (err) { showToast("❌ 엑셀 파일 생성 중 오류가 발생했습니다."); } finally { setIsProcessing(false); setProcessMsg(''); }
+                }, 500);
+            }, [inventoryData, targetMonth, showToast]);
+
+            const handlePush = async () => { showToast("✅ 클라우드 저장 완료"); };
+            const handlePull = async () => { showToast("✅ 데이터 수신 완료"); };
 
             const displayData = useMemo(() => {
                 if (!searchKw.trim()) return inventoryData;
@@ -1212,82 +1036,24 @@
                 return { total: inventoryData.length, lossCount, manualCount };
             }, [inventoryData]);
 
-            // Helper for Mapping Center
-            const cleanUpGarbageTags = useCallback(() => {
-                if(window.confirm("마스터 DB에 남아있는 불필요한 엑셀 검색어 찌꺼기를 모두 삭제하여 용량을 최적화하시겠습니까?")) {
-                    getIDB(STORAGE_KEYS.MASTER_DB).then(master => {
-                        let newMaster = { ...master }; let count = 0;
-                        for (let code in newMaster) { if (newMaster[code]['검색어등록'] || newMaster[code]['상품태그']) { delete newMaster[code]['검색어등록']; delete newMaster[code]['상품태그']; count++; } }
-                        setIDB(STORAGE_KEYS.MASTER_DB, newMaster); localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); showToast(`✅ ${count}건의 찌꺼기 데이터를 삭제했습니다.`);
-                    });
-                }
-            }, [showToast]);
-
-            const handleDeleteTag = useCallback((type, tagName) => {
-                if (!tagName) return;
-                if (!window.confirm(`[${tagName}] 태그를 정말 삭제하시겠습니까?`)) return;
-                getIDB(STORAGE_KEYS.MASTER_DB).then(master => {
-                    let newMaster = { ...master }; let count = 0; const fieldKey = type === 'catalog' ? '카탈로그' : '견적서';
-                    for (let code in newMaster) {
-                        if (newMaster[code][fieldKey]) {
-                            const tags = newMaster[code][fieldKey].split(',').map(s => s.trim()).filter(Boolean);
-                            if (tags.includes(tagName)) { newMaster[code] = { ...newMaster[code] }; newMaster[code][fieldKey] = tags.filter(t => t !== tagName).join(', '); count++; }
-                        }
-                    }
-                    setIDB(STORAGE_KEYS.MASTER_DB, newMaster); localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); showToast(`✅ ${count}개의 상품에서 [${tagName}] 태그를 삭제했습니다.`);
-                });
-            }, [showToast]);
-
-            const handleClearDB = async () => {
-                if (!window.confirm("현재 브라우저의 마스터 DB 전체를 초기화하시겠습니까?\n이 작업은 되돌릴 수 없습니다. (클라우드 데이터는 보존됩니다)")) return;
-                await setIDB(STORAGE_KEYS.MASTER_DB, {}); localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); showToast("🗑️ 앱 로컬 데이터가 모두 초기화되었습니다."); loadData();
-            };
-
-            const availableCatalogs = useMemo(() => {
-                const counts = {};
-                inventoryData.forEach(m => {
-                    // productData doesn't have tags natively mapped, fetching directly from DB would be better, but we can mock it here for the modal if needed, or rely on the actual modal props
-                });
-                return [];
-            }, [inventoryData]);
-
-            const availableCategories = useMemo(() => { return []; }, [inventoryData]);
-
-            const handlePush = async () => {
-                if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
-                setIsProcessing(true); setProcessMsg("클라우드 백업 중...");
-                setTimeout(() => { showToast("✅ 클라우드 저장 완료"); setIsProcessing(false); setProcessMsg(""); }, 1000);
-            };
-
-            const handlePull = async () => {
-                if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
-                setIsProcessing(true); setProcessMsg("데이터 동기화 중...");
-                setTimeout(() => { showToast("✅ 데이터 수신 완료"); setIsProcessing(false); setProcessMsg(""); }, 1000);
-            };
-
             return (
                 <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-slate-100 relative shadow-2xl border-x border-slate-300 select-none">
-                    <GlobalHeader 
-                        activeTab="inventory" 
-                        itemCount={inventoryData.length} 
-                        isProcessing={isProcessing} 
-                        processMsg={processMsg} 
-                        onOpenSettings={() => setShowSettings(true)}
-                        onPush={handlePush}
-                        onPull={handlePull}
-                        onNavigate={handleNavigate} 
-                    />
+                    <GlobalHeader activeTab="inventory" itemCount={inventoryData.length} isProcessing={isProcessing} processMsg={processMsg} onNavigate={handleNavigate} onPush={handlePush} onPull={handlePull} />
                     
-                    {/* 상단 툴바 및 스탯 카드 통합 (DataOps 스타일) */}
                     <div className="px-8 py-5 bg-white border-b border-slate-200 flex flex-col shadow-sm shrink-0 relative z-10 gap-4">
                         <div className="flex items-center justify-between">
                             <h1 className="text-[18px] font-black text-slate-900 flex items-center">
                                 <SafeIcon name="boxes" size={22} className="mr-2.5 text-indigo-500" /> 재고 수불부 마감 및 실사 조정
                             </h1>
                             <div className="flex items-center gap-3">
-                                <label className="cursor-pointer h-9 px-3 rounded-md text-[13px] font-bold bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50 transition-colors shadow-sm flex items-center shrink-0">
+                                <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200 shadow-inner mr-2">
+                                    <SafeIcon name="calendar-alt" size={14} className="text-slate-500 ml-2" />
+                                    <input type="month" value={targetMonth} onChange={e => setTargetMonth(e.target.value)} className="bg-transparent text-[13px] font-black text-indigo-600 outline-none cursor-pointer w-28" />
+                                </div>
+                                
+                                <label className={`h-9 px-3 rounded-md text-[13px] font-bold transition-colors shadow-sm flex items-center shrink-0 ${isClosedMonth ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50 cursor-pointer'}`}>
                                     <SafeIcon name="file-excel" size={14} className="mr-1.5 text-emerald-500" /> 실사 엑셀 업로드
-                                    <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} disabled={isProcessing} />
+                                    <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} disabled={isProcessing || isClosedMonth} />
                                 </label>
                                 <button onClick={handleCombinedExport} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50 transition-colors shadow-sm flex items-center shrink-0">
                                     <SafeIcon name="file-export" size={14} className="mr-1.5 text-indigo-500" /> 정산 엑셀 다운 (F9)
@@ -1295,8 +1061,9 @@
                                 <button onClick={loadClosingHistory} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-slate-600 border border-slate-300 hover:bg-slate-50 transition-colors shadow-sm flex items-center shrink-0">
                                     <SafeIcon name="history" size={14} className="mr-1.5 text-slate-500" /> 마감 이력 관리
                                 </button>
-                                <button onClick={handleClosing} disabled={isProcessing || closingStats.lossCount > 0} className={`h-9 px-6 rounded-md text-[13px] font-black shadow-sm transition-all flex items-center ${closingStats.lossCount === 0 && inventoryData.length > 0 ? 'bg-[#0B1021] text-white hover:bg-black hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>
-                                    <SafeIcon name="save" size={14} className="mr-2" /> 최종 마감 (Closing)
+                                <button onClick={handleClosing} disabled={isProcessing || closingStats.lossCount > 0 || isClosedMonth} className={`h-9 px-6 rounded-md text-[13px] font-black shadow-sm transition-all flex items-center ${isClosedMonth ? 'bg-slate-200 text-slate-400 border border-slate-200 cursor-not-allowed' : (closingStats.lossCount === 0 && inventoryData.length > 0 ? 'bg-[#0B1021] text-white hover:bg-black hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed')}`}>
+                                    {isClosedMonth ? <SafeIcon name="lock" size={14} className="mr-2 inline" /> : <SafeIcon name="save" size={14} className="mr-2 inline" />}
+                                    {isClosedMonth ? '마감 완료' : '최종 마감 (Closing)'}
                                 </button>
                                 <div className="w-px h-6 bg-slate-200 mx-1"></div>
                                 <div className="relative">
@@ -1306,36 +1073,53 @@
                             </div>
                         </div>
                         
-                        {/* 🌟 DataOps 3대 스탯 카드 🌟 */}
                         {inventoryData.length > 0 && (
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
                                 <div className="bg-white border-slate-200 p-4 rounded-xl border transition-all flex flex-col justify-between relative overflow-hidden hover:shadow-md">
                                     <div className="text-xs font-bold mb-1 flex items-center justify-between text-slate-600"><span className="flex items-center"><SafeIcon name="database" size={16} className="text-slate-500 mr-2"/>총 관리 버킷(분할)</span></div>
                                     <div className="flex items-end justify-between mt-2"><div><div className="text-3xl font-black text-slate-800">{closingStats.total}<span className="text-sm font-bold text-slate-500 ml-1">건</span></div><div className="text-[12px] text-slate-400 font-semibold mt-1">지능형 수불 엔진 동기화됨</div></div></div>
                                 </div>
-                                <div className={`p-4 rounded-xl border-[3px] transition-all flex flex-col justify-between relative overflow-hidden ${closingStats.lossCount > 0 ? 'bg-orange-50 border-orange-500 shadow-sm' : 'bg-white border-orange-200 hover:border-orange-400 hover:shadow-md'}`}>
+                                <div 
+                                    onClick={() => {
+                                        if(activeIssueMode !== 'loss') {
+                                            handleIssueJump('loss', 'next', true);
+                                        } else {
+                                            setActiveIssueMode(null);
+                                        }
+                                    }}
+                                    className={`p-4 rounded-xl border-[3px] transition-all flex flex-col justify-between relative overflow-hidden cursor-pointer ${activeIssueMode === 'loss' ? 'bg-orange-50 border-orange-500 shadow-md ring-4 ring-orange-500/20' : (closingStats.lossCount > 0 ? 'bg-orange-50 border-orange-200 hover:border-orange-400 hover:shadow-md' : 'bg-white border-slate-200 hover:border-slate-300')}`}
+                                >
                                     <div className={`text-xs font-bold mb-1 flex items-center justify-between ${closingStats.lossCount > 0 ? 'text-orange-800' : 'text-slate-600'}`}>
-                                        <span className="flex items-center"><SafeIcon name="balance-scale" size={16} className="text-orange-500 mr-2"/>실사 오차 (로스) 확인</span>
+                                        <span className="flex items-center"><SafeIcon name="balance-scale" size={16} className={`${activeIssueMode === 'loss' || closingStats.lossCount > 0 ? 'text-orange-500' : 'text-slate-400'} mr-2`}/>실사 오차 (로스) 확인</span>
                                         {closingStats.lossCount > 0 && <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.6)]"></span>}
                                     </div>
                                     <div className="flex items-end justify-between mt-2">
                                         <div>
-                                            <div className={`text-3xl font-black ${closingStats.lossCount > 0 ? 'text-orange-900' : 'text-slate-800'}`}>{closingStats.lossCount}<span className="text-sm font-bold text-slate-500 ml-1">건</span></div>
-                                            {closingStats.lossCount > 0 ? <div className="text-[12px] text-orange-600 font-bold mt-1">실사 수량 확인하세요</div> : <div className="text-[12px] text-slate-400 font-semibold mt-1">모든 변동 확인됨</div>}
+                                            <div className={`text-3xl font-black ${activeIssueMode === 'loss' || closingStats.lossCount > 0 ? 'text-orange-900' : 'text-slate-800'}`}>{closingStats.lossCount}<span className="text-sm font-bold text-slate-500 ml-1">건</span></div>
+                                            {closingStats.lossCount > 0 ? <div className="text-[12px] text-orange-600 font-bold mt-1">클릭/Tab키로 추적 (수정요망)</div> : <div className="text-[12px] text-slate-400 font-semibold mt-1">모든 변동 확인됨</div>}
                                         </div>
                                     </div>
                                 </div>
-                                <div className={`p-4 rounded-xl border transition-all flex flex-col justify-between relative overflow-hidden ${closingStats.manualCount > 0 ? 'bg-emerald-50 border-emerald-500 shadow-sm' : 'bg-white border-emerald-200 hover:border-emerald-400 hover:shadow-md'}`}>
+                                <div 
+                                    onClick={() => {
+                                        if(activeIssueMode !== 'manual') {
+                                            handleIssueJump('manual', 'next', true);
+                                        } else {
+                                            setActiveIssueMode(null);
+                                        }
+                                    }}
+                                    className={`p-4 rounded-xl border-[3px] transition-all flex flex-col justify-between relative overflow-hidden cursor-pointer ${activeIssueMode === 'manual' ? 'bg-emerald-50 border-emerald-500 shadow-md ring-4 ring-emerald-500/20' : (closingStats.manualCount > 0 ? 'bg-emerald-50 border-emerald-200 hover:border-emerald-400 hover:shadow-md' : 'bg-white border-slate-200 hover:border-slate-300')}`}
+                                >
                                     <div className={`text-xs font-bold mb-1 flex items-center justify-between ${closingStats.manualCount > 0 ? 'text-emerald-800' : 'text-slate-600'}`}>
-                                        <span className="flex items-center"><SafeIcon name="exchange-alt" size={16} className="text-emerald-500 mr-2"/>상계 및 수기조정</span>
+                                        <span className="flex items-center"><SafeIcon name="exchange-alt" size={16} className={`${activeIssueMode === 'manual' || closingStats.manualCount > 0 ? 'text-emerald-500' : 'text-slate-400'} mr-2`}/>상계 및 수기조정</span>
                                     </div>
                                     <div className="flex items-end justify-between mt-2">
                                         <div>
-                                            <div className={`text-3xl font-black ${closingStats.manualCount > 0 ? 'text-emerald-900' : 'text-slate-800'}`}>{closingStats.manualCount}<span className="text-sm font-bold text-slate-500 ml-1">건</span></div>
+                                            <div className={`text-3xl font-black ${activeIssueMode === 'manual' || closingStats.manualCount > 0 ? 'text-emerald-900' : 'text-slate-800'}`}>{closingStats.manualCount}<span className="text-sm font-bold text-slate-500 ml-1">건</span></div>
                                             <div className="text-[12px] text-emerald-600 font-bold mt-1">확인 및 승인됨</div>
                                         </div>
                                         {substHistory.length > 0 && (
-                                            <button onClick={() => setUndoUi({ state: 'list' })} className="px-3 py-1.5 bg-white rounded border border-rose-200 text-rose-600 hover:bg-rose-50 font-bold text-[11px] shadow-sm transition flex items-center">
+                                            <button onClick={(e) => { e.stopPropagation(); setUndoUi({ state: 'list' }); }} className="px-3 py-1.5 bg-white rounded border border-rose-200 text-rose-600 hover:bg-rose-50 font-bold text-[11px] shadow-sm transition flex items-center">
                                                 <SafeIcon name="undo" size={12} className="mr-1"/> 취소 ({substHistory.length})
                                             </button>
                                         )}
@@ -1346,6 +1130,19 @@
                     </div>
 
                     <main className="flex-1 overflow-hidden relative flex flex-col bg-slate-50 p-6">
+                        {isClosedMonth && (
+                            <div className="absolute inset-0 z-20 bg-slate-900/5 backdrop-blur-[1px] flex items-center justify-center">
+                                <div className="bg-white/90 px-8 py-4 rounded-2xl shadow-xl flex items-center border border-slate-200">
+                                    <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mr-4 shadow-inner">
+                                        <SafeIcon name="lock" size={24} className="text-slate-500" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-lg font-black text-slate-800">마감 완료된 월입니다</h2>
+                                        <p className="text-[13px] font-bold text-slate-500 mt-1">데이터를 조회할 수 있지만, 실사 수정이나 상계는 불가합니다.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                         <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden relative fade-in">
                             <div className="flex-1 overflow-y-auto custom-scrollbar">
                                 <table className="w-full text-left text-[13px] whitespace-nowrap">
@@ -1366,208 +1163,68 @@
                                         {displayData.length === 0 ? (
                                             <tr><td colSpan="9" className="py-20 text-center text-slate-400 font-bold"><SafeIcon name="boxes" size={40} className="mb-3 text-slate-200 block mx-auto" />표시할 상품이 없습니다.</td></tr>
                                         ) : displayData.map((item, idx) => (
-                                            <ProductRow 
-                                                key={item.batchKey} item={item} idx={idx} 
-                                                isLinked={linkSourceKey === item.batchKey}
-                                                onStockChange={updateActualQty} 
-                                                onSpacebar={handleSpacebarLink} 
-                                                onBaseDataChange={handleBaseDataChange}
-                                                onOpenMemo={(key, text) => setMemoModal({ isOpen: true, batchKey: key, text })}
-                                                onShowTimeline={(code, name) => setTimelineModal({ isOpen: true, itemCode: code, itemName: name })}
-                                            />
+                                            <ProductRow key={item.batchKey} item={item} idx={idx} isLinked={linkSourceKey === item.batchKey} onStockChange={updateActualQty} onSpacebar={handleSpacebarLink} onBaseDataChange={handleBaseDataChange} onOpenMemo={(key, text) => setMemoModal({ isOpen: true, batchKey: key, text })} onShowTimeline={(code, name) => setTimelineModal({ isOpen: true, itemCode: code, itemName: name })} onSalesMove={handleChipDropRequest} />
                                         ))}
                                     </tbody>
                                 </table>
                             </div>
                         </div>
 
-                        {/* 타임라인 모달 */}
-                        {timelineModal.isOpen && (
-                            <TimelineModal 
-                                itemCode={timelineModal.itemCode} 
-                                itemName={timelineModal.itemName} 
-                                historyLogs={historyLogs} 
-                                onClose={() => setTimelineModal({ isOpen: false, itemCode: null, itemName: '' })} 
-                            />
-                        )}
+                        {timelineModal.isOpen && <TimelineModal itemCode={timelineModal.itemCode} itemName={timelineModal.itemName} historyLogs={historyLogs} onClose={() => setTimelineModal({ isOpen: false, itemCode: null, itemName: '' })} />}
 
-                        {/* 메모 모달 */}
                         {memoModal.isOpen && (
                             <div className="fixed inset-0 bg-slate-900/60 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
                                 <div className="bg-white w-[400px] rounded-xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 modal-bounce">
-                                    <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-                                        <h3 className="font-black text-slate-800 text-[14px] flex items-center"><SafeIcon name="edit" size={16} className="text-indigo-500 mr-2"/>조정 사유 기록</h3>
-                                        <button onClick={() => setMemoModal({ isOpen: false, batchKey: null, text: '' })} className="text-slate-400 hover:text-slate-600"><SafeIcon name="x" size={16} /></button>
-                                    </div>
-                                    <div className="p-6 space-y-4">
-                                        <p className="text-[12px] text-slate-500 font-bold leading-relaxed">
-                                            실사 수량이 전산과 다릅니다. 폐기, 분실, 샘플제공 등 오차 발생 사유를 기록하면 <span className="text-emerald-600">정상적인 조정(✅)</span>으로 승인됩니다.
-                                        </p>
-                                        <textarea 
-                                            value={memoModal.text} 
-                                            onChange={e=>setMemoModal({...memoModal, text: e.target.value})} 
-                                            autoFocus 
-                                            rows="3"
-                                            placeholder="예: 1박스 샘플 제공, 침수로 인한 폐기 처리" 
-                                            className="w-full px-4 py-3 bg-white border border-slate-300 rounded-lg text-[13px] outline-none focus:border-indigo-500 focus:ring-1 shadow-sm resize-none" 
-                                            onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSaveMemo(memoModal.batchKey, memoModal.text); setMemoModal({ isOpen: false, batchKey: null, text: '' }); } }}
-                                        />
-                                        <div className="flex gap-2 pt-2">
-                                            <button onClick={() => setMemoModal({ isOpen: false, batchKey: null, text: '' })} className="flex-1 bg-slate-100 text-slate-600 font-bold py-2.5 rounded-lg hover:bg-slate-200 transition-colors text-[13px]">취소</button>
-                                            <button onClick={() => { handleSaveMemo(memoModal.batchKey, memoModal.text); setMemoModal({ isOpen: false, batchKey: null, text: '' }); }} className={`flex-1 font-bold py-2.5 rounded-lg transition-all text-[13px] shadow-sm bg-indigo-600 text-white hover:bg-indigo-700`}>
-                                                사유 기록 승인
-                                            </button>
-                                        </div>
-                                    </div>
+                                    <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center"><h3 className="font-black text-slate-800 text-[14px] flex items-center"><SafeIcon name="edit" size={16} className="text-indigo-500 mr-2"/>조정 사유 기록</h3><button onClick={() => setMemoModal({ isOpen: false, batchKey: null, text: '' })} className="text-slate-400 hover:text-slate-600"><SafeIcon name="x" size={16} /></button></div>
+                                    <div className="p-6 space-y-4"><p className="text-[12px] text-slate-500 font-bold leading-relaxed">실사 수량이 전산과 다릅니다. 폐기, 분실, 샘플제공 등 오차 발생 사유를 기록하면 <span className="text-emerald-600">정상적인 조정(✅)</span>으로 승인됩니다.</p><textarea value={memoModal.text} onChange={e=>setMemoModal({...memoModal, text: e.target.value})} autoFocus rows="3" placeholder="예: 1박스 샘플 제공, 침수로 인한 폐기 처리" className="w-full px-4 py-3 bg-white border border-slate-300 rounded-lg text-[13px] outline-none focus:border-indigo-500 focus:ring-1 shadow-sm resize-none" onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSaveMemo(memoModal.batchKey, memoModal.text); setMemoModal({ isOpen: false, batchKey: null, text: '' }); } }} /><div className="flex gap-2 pt-2"><button onClick={() => setMemoModal({ isOpen: false, batchKey: null, text: '' })} className="flex-1 bg-slate-100 text-slate-600 font-bold py-2.5 rounded-lg hover:bg-slate-200 transition-colors text-[13px]">취소</button><button onClick={() => { handleSaveMemo(memoModal.batchKey, memoModal.text); setMemoModal({ isOpen: false, batchKey: null, text: '' }); }} className={`flex-1 font-bold py-2.5 rounded-lg transition-all text-[13px] shadow-sm bg-indigo-600 text-white hover:bg-indigo-700`}>사유 기록 승인</button></div></div>
                                 </div>
                             </div>
                         )}
 
-                        {/* Undo 모달 */}
                         {undoUi.state === 'list' && (
                             <div className="fixed inset-0 z-[200] bg-slate-900 bg-opacity-70 flex items-center justify-center p-4 transition-opacity backdrop-blur-sm">
                                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col modal-bounce border border-slate-200">
-                                    <div className="bg-slate-900 p-5 flex justify-between items-center text-white">
-                                        <h3 className="font-black text-lg flex items-center"><SafeIcon name="history" size={18} className="text-slate-400 mr-2"/>재고조정 내역 목록</h3>
-                                        <button onClick={() => setUndoUi({ state: 'closed' })} className="text-slate-400 hover:text-white transition"><SafeIcon name="x" size={24}/></button>
-                                    </div>
-                                    <div className="p-6 overflow-y-auto max-h-[60vh] bg-slate-50">
-                                        {substHistory.length === 0 ? (
-                                            <div className="text-center text-slate-500 py-10 font-medium">조정 내역이 없습니다.</div>
-                                        ) : (
-                                            <table className="w-full text-sm text-left border-collapse bg-white rounded-lg shadow-sm overflow-hidden border border-slate-200">
-                                                <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-                                                    <tr>
-                                                        <th className="p-3 font-semibold">원물 (차감 내역)</th>
-                                                        <th className="p-3 font-semibold">소분/대체 (증가 내역)</th>
-                                                        <th className="p-3 text-right font-semibold">작업</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100">
-                                                    {[...substHistory].reverse().map(h => (
-                                                        <tr key={h.id} className="hover:bg-slate-50 transition-colors">
-                                                            <td className="p-3">
-                                                                <span className="inline-block w-8 text-rose-600 font-black">-{h.sQty}</span> 
-                                                                <span className="font-semibold text-slate-800">{h.sourceName}</span>
-                                                            </td>
-                                                            <td className="p-3">
-                                                                <span className="inline-block w-8 text-blue-600 font-black">+{h.tQty}</span> 
-                                                                <span className="font-semibold text-slate-800">{h.targetName}</span>
-                                                            </td>
-                                                            <td className="p-3 text-right">
-                                                                <button onClick={() => handleUndoAction(h)} className="bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded hover:bg-slate-100 hover:text-rose-600 hover:border-rose-300 text-xs font-bold transition shadow-sm">개별 취소</button>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        )}
-                                    </div>
-                                    <div className="bg-white p-4 border-t border-slate-200 flex justify-between items-center">
-                                        {substHistory.length > 0 ? (
-                                            <button onClick={handleUndoAll} className="text-rose-600 font-bold hover:text-rose-800 hover:bg-rose-50 border border-transparent hover:border-rose-200 px-4 py-2 rounded-lg text-sm transition flex items-center"><SafeIcon name="trash-alt" size={14} className="mr-2"/>모두 취소</button>
-                                        ) : <div></div>}
-                                        <button onClick={() => setUndoUi({ state: 'closed' })} className="bg-slate-800 text-white px-8 py-2.5 rounded-lg font-bold hover:bg-slate-900 shadow-md transition">닫기</button>
-                                    </div>
+                                    <div className="bg-slate-900 p-5 flex justify-between items-center text-white"><h3 className="font-black text-lg flex items-center"><SafeIcon name="history" size={18} className="text-slate-400 mr-2"/>재고조정 내역 목록</h3><button onClick={() => setUndoUi({ state: 'closed' })} className="text-slate-400 hover:text-white transition"><SafeIcon name="x" size={24}/></button></div>
+                                    <div className="p-6 overflow-y-auto max-h-[60vh] bg-slate-50">{substHistory.length === 0 ? <div className="text-center text-slate-500 py-10 font-medium">조정 내역이 없습니다.</div> : <table className="w-full text-sm text-left border-collapse bg-white rounded-lg shadow-sm overflow-hidden border border-slate-200"><thead className="bg-slate-50 text-slate-600 border-b border-slate-200"><tr><th className="p-3 font-semibold">원물 (차감 내역)</th><th className="p-3 font-semibold">소분/대체 (증가 내역)</th><th className="p-3 text-right font-semibold">작업</th></tr></thead><tbody className="divide-y divide-slate-100">{[...substHistory].reverse().map(h => <tr key={h.id} className="hover:bg-slate-50 transition-colors"><td className="p-3"><span className="inline-block w-8 text-rose-600 font-black">-{h.sQty}</span> <span className="font-semibold text-slate-800">{h.sourceName}</span></td><td className="p-3"><span className="inline-block w-8 text-blue-600 font-black">+{h.tQty}</span> <span className="font-semibold text-slate-800">{h.targetName}</span></td><td className="p-3 text-right"><button onClick={() => handleUndoAction(h)} className="bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded hover:bg-slate-100 hover:text-rose-600 hover:border-rose-300 text-xs font-bold transition shadow-sm">개별 취소</button></td></tr>)}</tbody></table>}</div>
+                                    <div className="bg-white p-4 border-t border-slate-200 flex justify-between items-center">{substHistory.length > 0 ? <button onClick={handleUndoAll} className="text-rose-600 font-bold hover:text-rose-800 hover:bg-rose-50 border border-transparent hover:border-rose-200 px-4 py-2 rounded-lg text-sm transition flex items-center"><SafeIcon name="trash-alt" size={14} className="mr-2"/>모두 취소</button> : <div></div>}<button onClick={() => setUndoUi({ state: 'closed' })} className="bg-slate-800 text-white px-8 py-2.5 rounded-lg font-bold hover:bg-slate-900 shadow-md transition">닫기</button></div>
                                 </div>
                             </div>
                         )}
 
-                        {/* 💡 업로드 에러 모달 */}
                         {showUploadErrorModal && (
                             <div className="fixed inset-0 bg-slate-900/60 z-[300] flex justify-center items-center backdrop-blur-sm fade-in">
                                 <div className="bg-white w-[500px] max-h-[80vh] rounded-xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 modal-bounce">
-                                    <div className="px-5 py-4 border-b border-slate-200 bg-rose-50 flex justify-between items-center">
-                                        <h3 className="font-black text-rose-800 text-[14px] flex items-center"><SafeIcon name="exclamation-circle" size={16} className="text-rose-500 mr-2"/>엑셀 업로드 누락/오류 보고서</h3>
-                                        <button onClick={() => setShowUploadErrorModal(false)} className="text-rose-400 hover:text-rose-600"><SafeIcon name="x" size={16} /></button>
-                                    </div>
-                                    <div className="p-6 overflow-y-auto custom-scrollbar bg-white flex-1">
-                                        <p className="text-[12px] text-slate-600 mb-4 font-bold">총 <span className="text-rose-600">{uploadErrors.length}</span>건의 데이터가 양식 오류 또는 코드 불일치로 누락되었습니다. 원본 엑셀을 확인해주세요.</p>
-                                        <table className="w-full text-left text-[12px]">
-                                            <thead className="bg-slate-100 text-slate-600 border-b border-slate-200 sticky top-0">
-                                                <tr><th className="py-2 px-3 w-16 text-center">행(Row)</th><th className="py-2 px-3 w-24">품목코드</th><th className="py-2 px-3">누락 사유</th></tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-100">
-                                                {uploadErrors.map((err, i) => (
-                                                    <tr key={i} className="hover:bg-slate-50">
-                                                        <td className="py-2 px-3 text-center text-slate-400 font-mono">{err.row}</td>
-                                                        <td className="py-2 px-3 font-bold text-slate-700">{err.code}</td>
-                                                        <td className="py-2 px-3 text-rose-600 font-medium">{err.reason}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                    <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-end">
-                                        <button onClick={() => setShowUploadErrorModal(false)} className="px-6 py-2.5 bg-slate-800 text-white rounded-lg text-[13px] font-bold shadow-md hover:bg-black transition-all">확인 및 닫기</button>
-                                    </div>
+                                    <div className="px-5 py-4 border-b border-slate-200 bg-rose-50 flex justify-between items-center"><h3 className="font-black text-rose-800 text-[14px] flex items-center"><SafeIcon name="exclamation-circle" size={16} className="text-rose-500 mr-2"/>엑셀 업로드 누락/오류 보고서</h3><button onClick={() => setShowUploadErrorModal(false)} className="text-rose-400 hover:text-rose-600"><SafeIcon name="x" size={16} /></button></div>
+                                    <div className="p-6 overflow-y-auto custom-scrollbar bg-white flex-1"><p className="text-[12px] text-slate-600 mb-4 font-bold">총 <span className="text-rose-600">{uploadErrors.length}</span>건의 데이터가 양식 오류 또는 코드 불일치로 누락되었습니다. 원본 엑셀을 확인해주세요.</p><table className="w-full text-left text-[12px]"><thead className="bg-slate-100 text-slate-600 border-b border-slate-200 sticky top-0"><tr><th className="py-2 px-3 w-16 text-center">행(Row)</th><th className="py-2 px-3 w-24">품목코드</th><th className="py-2 px-3">누락 사유</th></tr></thead><tbody className="divide-y divide-slate-100">{uploadErrors.map((err, i) => <tr key={i} className="hover:bg-slate-50"><td className="py-2 px-3 text-center text-slate-400 font-mono">{err.row}</td><td className="py-2 px-3 font-bold text-slate-700">{err.code}</td><td className="py-2 px-3 text-rose-600 font-medium">{err.reason}</td></tr>)}</tbody></table></div>
+                                    <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-end"><button onClick={() => setShowUploadErrorModal(false)} className="px-6 py-2.5 bg-slate-800 text-white rounded-lg text-[13px] font-bold shadow-md hover:bg-black transition-all">확인 및 닫기</button></div>
                                 </div>
                             </div>
                         )}
 
-                        {/* 💡 마감 이력 조회 및 롤백 모달 */}
                         {showClosingHistory && (
                             <div className="fixed inset-0 bg-slate-900/60 z-[300] flex justify-center items-center backdrop-blur-sm fade-in">
                                 <div className="bg-white w-[700px] max-h-[80vh] rounded-xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 modal-bounce">
-                                    <div className="px-5 py-4 border-b border-slate-200 bg-slate-900 flex justify-between items-center text-white">
-                                        <h3 className="font-black text-[15px] flex items-center"><SafeIcon name="history" size={16} className="text-indigo-400 mr-2"/>수불 마감 이력 및 롤백(Roll-back)</h3>
-                                        <button onClick={() => setShowClosingHistory(false)} className="text-slate-400 hover:text-white"><SafeIcon name="x" size={16} /></button>
-                                    </div>
-                                    <div className="p-6 overflow-y-auto custom-scrollbar bg-slate-50 flex-1">
-                                        {closingSnapshots.length === 0 ? (
-                                            <div className="text-center py-10 text-slate-400 font-bold">마감 이력이 없습니다.</div>
-                                        ) : (
-                                            <div className="space-y-4">
-                                                {closingSnapshots.sort((a,b)=>new Date(b.date)-new Date(a.date)).map((snap, idx) => (
-                                                    <div key={snap.id} className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col gap-3 shadow-sm hover:border-indigo-300 transition-colors">
-                                                        <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                                                            <div className="font-black text-[14px] text-slate-800 flex items-center">
-                                                                <SafeIcon name="calendar-alt" size={14} className="mr-1.5 text-slate-400"/>
-                                                                {new Date(snap.date).toLocaleString('ko-KR')} 마감본
-                                                                {idx === 0 && <span className="ml-2 bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded text-[10px] font-bold">최신</span>}
-                                                            </div>
-                                                            <div className="text-[10px] font-mono text-slate-400">{snap.id}</div>
-                                                        </div>
-                                                        <div className="flex justify-between items-end pt-1">
-                                                            <div className="flex gap-6 text-[12px]">
-                                                                <div className="flex flex-col"><span className="text-slate-500 font-bold mb-1">총 관리 품목</span><span className="font-black text-slate-800 text-[15px]">{snap.stats?.totalItems?.toLocaleString() || 0}건</span></div>
-                                                                <div className="flex flex-col"><span className="text-slate-500 font-bold mb-1">조정 발생액</span><span className="font-black text-rose-600 text-[15px]">{snap.stats?.lossValue?.toLocaleString() || 0}원</span></div>
-                                                            </div>
-                                                            {idx === 0 && (
-                                                                <button onClick={() => handleRollback(snap)} className="px-4 py-2 bg-white border border-rose-200 text-rose-600 rounded-lg text-[12px] font-bold hover:bg-rose-50 hover:border-rose-400 transition-colors shadow-sm flex items-center">
-                                                                    <SafeIcon name="undo" size={14} className="mr-1.5"/> 마감 취소 (롤백)
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-end">
-                                        <button onClick={() => setShowClosingHistory(false)} className="px-6 py-2.5 bg-slate-800 text-white rounded-lg text-[13px] font-bold shadow-md hover:bg-black transition-all">닫기</button>
-                                    </div>
+                                    <div className="px-5 py-4 border-b border-slate-200 bg-slate-900 flex justify-between items-center text-white"><h3 className="font-black text-[15px] flex items-center"><SafeIcon name="history" size={16} className="text-indigo-400 mr-2"/>수불 마감 이력 및 롤백(Roll-back)</h3><button onClick={() => setShowClosingHistory(false)} className="text-slate-400 hover:text-white"><SafeIcon name="x" size={16} /></button></div>
+                                    <div className="p-6 overflow-y-auto custom-scrollbar bg-slate-50 flex-1">{closingSnapshots.length === 0 ? <div className="text-center py-10 text-slate-400 font-bold">마감 이력이 없습니다.</div> : <div className="space-y-4">{closingSnapshots.sort((a,b)=>new Date(b.date)-new Date(a.date)).map((snap, idx) => <div key={snap.id} className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col gap-3 shadow-sm hover:border-indigo-300 transition-colors"><div className="flex justify-between items-center border-b border-slate-100 pb-3"><div className="font-black text-[14px] text-slate-800 flex items-center"><SafeIcon name="calendar-alt" size={14} className="mr-1.5 text-slate-400"/>[{snap.closingMonth}] 마감 스냅샷{idx === 0 && <span className="ml-2 bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded text-[10px] font-bold">최신</span>}</div><div className="text-[10px] font-mono text-slate-400">{new Date(snap.date).toLocaleString('ko-KR')} 저장됨</div></div><div className="flex justify-between items-end pt-1"><div className="flex gap-6 text-[12px]"><div className="flex flex-col"><span className="text-slate-500 font-bold mb-1">총 관리 품목</span><span className="font-black text-slate-800 text-[15px]">{snap.stats?.totalItems?.toLocaleString() || 0}건</span></div><div className="flex flex-col"><span className="text-slate-500 font-bold mb-1">조정 발생액</span><span className="font-black text-rose-600 text-[15px]">{snap.stats?.lossValue?.toLocaleString() || 0}원</span></div></div>{idx === 0 && <button onClick={() => handleRollback(snap)} className="px-4 py-2 bg-white border border-rose-200 text-rose-600 rounded-lg text-[12px] font-bold hover:bg-rose-50 hover:border-rose-400 transition-colors shadow-sm flex items-center"><SafeIcon name="undo" size={14} className="mr-1.5"/> 마감 취소 (롤백)</button>}</div></div>)}</div>}</div>
+                                    <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-end"><button onClick={() => setShowClosingHistory(false)} className="px-6 py-2.5 bg-slate-800 text-white rounded-lg text-[13px] font-bold shadow-md hover:bg-black transition-all">닫기</button></div>
                                 </div>
                             </div>
                         )}
 
-                        {toastMsg && (
-                            <div className="fixed bottom-10 right-10 z-[100] bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in border border-slate-700">
-                                <SafeIcon name="check-circle-2" size={18} className="text-emerald-400" />
-                                <span className="text-sm font-bold tracking-tight">{toastMsg}</span>
+                        {/* 💡 Ctrl+Drop 부분 분할 모달 */}
+                        {splitModal.isOpen && (
+                            <div className="fixed inset-0 bg-slate-900/60 z-[400] flex justify-center items-center backdrop-blur-sm fade-in">
+                                <div className="bg-white w-[320px] rounded-xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 modal-bounce">
+                                    <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center"><h3 className="font-black text-slate-800 text-[14px] flex items-center"><SafeIcon name="cut" size={16} className="text-indigo-500 mr-2"/>분할 이동 수량</h3><button onClick={() => setSplitModal({ isOpen: false, payload: null })} className="text-slate-400 hover:text-slate-600"><SafeIcon name="x" size={16} /></button></div>
+                                    <div className="p-6 space-y-4">
+                                        <p className="text-[12px] text-slate-500 font-bold">최대 <span className="text-indigo-600">{splitModal.payload?.maxQty}</span>개까지 분할하여 이동시킬 수 있습니다.</p>
+                                        <input id="split-qty-input" type="number" min="1" max={splitModal.payload?.maxQty || 1} defaultValue={splitModal.payload?.maxQty || 1} autoFocus className="w-full text-center text-lg font-black text-indigo-700 bg-white border border-slate-300 rounded-lg px-4 py-3 outline-none focus:border-indigo-500 focus:ring-1 shadow-sm" onKeyDown={(e) => { if(e.key === 'Enter') { const val = Number(e.target.value); if(splitModal.payload && val > 0 && val <= splitModal.payload.maxQty) { handleSalesMove(splitModal.payload.sourceKey, splitModal.payload.targetKey, splitModal.payload.vendor, val); setSplitModal({ isOpen: false, payload: null }); } } }} />
+                                        <div className="flex gap-2 pt-2"><button onClick={() => setSplitModal({ isOpen: false, payload: null })} className="flex-1 bg-slate-100 text-slate-600 font-bold py-2.5 rounded-lg hover:bg-slate-200 transition-colors text-[13px]">취소</button><button onClick={() => { const val = Number(document.getElementById('split-qty-input').value); if(splitModal.payload && val > 0 && val <= splitModal.payload.maxQty) { handleSalesMove(splitModal.payload.sourceKey, splitModal.payload.targetKey, splitModal.payload.vendor, val); setSplitModal({ isOpen: false, payload: null }); } }} className={`flex-1 font-bold py-2.5 rounded-lg transition-all text-[13px] shadow-sm bg-indigo-600 text-white hover:bg-indigo-700`}>분할 이동</button></div>
+                                    </div>
+                                </div>
                             </div>
                         )}
                     </main>
-
-                    {showSettings && (
-                        <MappingCenterModal 
-                            onClose={() => setShowSettings(false)} 
-                            config={config} 
-                            actions={{ cleanUpGarbageTags, handleDeleteTag, showToast, handleClearDB }} 
-                            availableCatalogs={availableCatalogs} 
-                            availableCategories={availableCategories} 
-                        />
-                    )}
                 </div>
             );
         }
