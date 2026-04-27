@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="ko" translate="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="google" content="notranslate">
+    <title>ONEAPP NEXES - 마감 조작 가이드 & 시뮬레이터</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', sans-serif; -webkit-user-select: none; user-select: none; background-color: #f8fafc; margin: 0; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; } 
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .fade-in { animation: fadeIn 0.3s ease-out; } 
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .pulse-border { animation: pulseBorder 2s infinite; }
+        @keyframes pulseBorder { 0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); } 70% { box-shadow: 0 0 0 6px rgba(99, 102, 241, 0); } 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); } }
+    </style>
+</head>
+<body class="text-slate-800">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback } = React;
+
+        // ==========================================
+        // 🧩 SafeIcon Component
+        // ==========================================
+        const SafeIcon = React.memo(function SafeIconComponent({ name, size = 18, className = "" }) {
+            const [svg, setSvg] = useState("");
+            useEffect(() => {
+                if (window.lucide && window.lucide.icons) {
+                    const kebabName = name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
+                    const possibleNames = [kebabName, name, name==='cloud-download'?'download-cloud':name, name==='cloud-upload'?'upload-cloud':name, name==='bar-chart-3'?'bar-chart':name, name==='help-circle'?'help-circle':name];
+                    for (const pName of possibleNames) {
+                        if (window.lucide.icons[pName]) { setSvg(window.lucide.icons[pName].toSvg({ width: size, height: size, class: className, 'stroke-width': 2.5 })); return; }
+                    }
+                }
+            }, [name, size, className]);
+
+            if (!svg) {
+                const faMap = { 'book-open': 'fa-book-open', 'play-circle': 'fa-play-circle', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'edit':'fa-edit', 'link':'fa-link', 'truck':'fa-truck', 'boxes':'fa-boxes', 'info-circle':'fa-info-circle', 'rocket':'fa-rocket', 'mouse-pointer': 'fa-mouse-pointer', 'keyboard': 'fa-keyboard', 'arrow-left': 'fa-arrow-left', 'lightbulb': 'fa-lightbulb', 'refresh-cw': 'fa-sync-alt', 'list-checks': 'fa-tasks', 'alert-triangle': 'fa-exclamation-triangle' };
+                return <i className={`fas ${faMap[name] || `fa-${name}`} ${className}`} style={{ fontSize: size }} />;
+            }
+            return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
+        });
+
+        // ==========================================
+        // 🎮 [시뮬레이션 1] 스페이스바 상계 실습
+        // ==========================================
+        const SimSpacebar = () => {
+            const initialData = [
+                { id: 1, name: '고당도 수박 (1박스)', loss: -10, actual: 90, selected: false, resolved: false },
+                { id: 2, name: '고당도 수박 (낱개)', loss: 10, actual: 30, selected: false, resolved: false }
+            ];
+            const [items, setItems] = useState(initialData);
+            const [selectedId, setSelectedId] = useState(null);
+            const [isSuccess, setIsSuccess] = useState(false);
+
+            const handleSpacebar = (id, e) => {
+                if (e.key === ' ' || e.code === 'Space') {
+                    e.preventDefault();
+                    if (!selectedId) {
+                        setSelectedId(id);
+                        setItems(items.map(item => item.id === id ? { ...item, selected: true } : item));
+                    } else if (selectedId !== id) {
+                        // Resolve
+                        setItems(items.map(item => ({ ...item, loss: 0, resolved: true, selected: false })));
+                        setSelectedId(null);
+                        setIsSuccess(true);
+                    } else {
+                        // Cancel
+                        setSelectedId(null);
+                        setItems(items.map(item => ({ ...item, selected: false })));
+                    }
+                }
+            };
+
+            const reset = () => { setItems(initialData); setSelectedId(null); setIsSuccess(false); };
+
+            return (
+                <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm mb-8 relative overflow-hidden">
+                    <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+                        <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center"><SafeIcon name="keyboard" size={20} /></div>
+                        <div><h3 className="font-black text-[16px] text-slate-800">조작 실습 1. 스페이스바 로스 상계</h3><span className="text-[12px] font-bold text-slate-500">박스와 낱개 간의 오차를 연결하여 퉁치기</span></div>
+                    </div>
+                    
+                    <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-6 flex items-start gap-3">
+                        <SafeIcon name="lightbulb" size={18} className="text-amber-500 mt-0.5 shrink-0" />
+                        <div className="text-[13px] text-slate-700 leading-relaxed font-medium">
+                            <strong>미션:</strong> 1번 품목의 입력창을 클릭하고 <kbd className="bg-white border border-slate-300 px-1.5 py-0.5 rounded text-xs shadow-sm font-mono mx-1">Space</kbd> 키를 누르세요. 
+                            이후 2번 품목의 입력창에서 다시 <kbd className="bg-white border border-slate-300 px-1.5 py-0.5 rounded text-xs shadow-sm font-mono mx-1">Space</kbd> 키를 누르면 오차가 상계됩니다.
+                        </div>
+                    </div>
+
+                    <div className="relative">
+                        {isSuccess && (
+                            <div className="absolute inset-0 z-20 bg-white/80 backdrop-blur-[2px] flex flex-col items-center justify-center fade-in rounded-lg">
+                                <div className="bg-emerald-50 text-emerald-600 w-16 h-16 rounded-full flex items-center justify-center mb-3 shadow-inner"><SafeIcon name="check-circle-2" size={32} /></div>
+                                <h4 className="font-black text-lg text-slate-800">상계 처리 성공!</h4>
+                                <p className="text-sm font-bold text-slate-500 mt-1 mb-4">두 품목의 오차(로스)가 정상적으로 사라졌습니다.</p>
+                                <button onClick={reset} className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold shadow hover:bg-black transition-colors flex items-center"><SafeIcon name="refresh-cw" size={14} className="mr-2" /> 다시 해보기</button>
+                            </div>
+                        )}
+                        <table className="w-full text-left text-[13px] border border-slate-200 rounded-lg overflow-hidden bg-white">
+                            <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold">
+                                <tr><th className="p-3">상품명</th><th className="p-3 text-center">실사 입력 (클릭 후 Space)</th><th className="p-3 text-right w-24">오차(로스)</th><th className="p-3">상태</th></tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {items.map((item, idx) => (
+                                    <tr key={item.id} className={`transition-all duration-300 ${item.selected ? 'bg-indigo-50 shadow-inner' : (item.resolved ? 'bg-emerald-50/30' : '')}`}>
+                                        <td className="p-3 font-bold text-slate-700">{item.name}</td>
+                                        <td className="p-3 relative text-center">
+                                            {item.selected && <div className="absolute -top-2 right-1/2 translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-0.5 rounded shadow animate-bounce pointer-events-none whitespace-nowrap">대상 선택됨</div>}
+                                            <input 
+                                                type="number" 
+                                                value={item.actual} 
+                                                readOnly
+                                                onKeyDown={(e) => handleSpacebar(item.id, e)}
+                                                className={`w-24 text-center py-1.5 rounded border outline-none font-black text-sm cursor-pointer transition-colors ${item.resolved ? 'border-emerald-300 text-emerald-700 bg-white focus:ring-emerald-200' : (item.selected ? 'border-indigo-400 ring-2 ring-indigo-200 bg-white text-indigo-700' : 'border-rose-300 bg-rose-50 text-rose-700 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 pulse-border')}`}
+                                            />
+                                        </td>
+                                        <td className={`p-3 text-right font-black ${item.loss < 0 ? 'text-rose-600' : (item.loss > 0 ? 'text-blue-600' : 'text-slate-300')}`}>
+                                            {item.loss > 0 ? '+' : ''}{item.loss === 0 ? '-' : item.loss}
+                                        </td>
+                                        <td className="p-3">
+                                            {item.resolved ? <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-bold border border-emerald-200">🔄 상계완료</span> : <span className="bg-rose-100 text-rose-700 px-2 py-0.5 rounded text-[10px] font-bold border border-rose-200">🚨수량변동</span>}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        };
+
+        // ==========================================
+        // 🎮 [시뮬레이션 2] 로트 드래그 앤 드롭 실습
+        // ==========================================
+        const SimDragDrop = () => {
+            const initialItems = [
+                { id: 1, name: '프리미엄 딸기 (A상사)', loss: -5, actual: 45, vendor: 'A상사', outQty: 5, resolved: false },
+                { id: 2, name: '프리미엄 딸기 (B상사)', loss: 5, actual: 25, vendor: 'B상사', outQty: 0, resolved: false }
+            ];
+            const [items, setItems] = useState(initialItems);
+            const [isSuccess, setIsSuccess] = useState(false);
+            const [isDragging, setIsDragging] = useState(false);
+
+            const handleDrop = (e, targetId) => {
+                e.preventDefault();
+                setIsDragging(false);
+                const sourceId = Number(e.dataTransfer.getData('sourceId'));
+                
+                if (sourceId !== targetId) {
+                    setItems(items.map(item => {
+                        if (item.id === sourceId) return { ...item, loss: 0, outQty: 0, resolved: true };
+                        if (item.id === targetId) return { ...item, loss: 0, outQty: item.outQty + 5, resolved: true };
+                        return item;
+                    }));
+                    setIsSuccess(true);
+                }
+            };
+
+            const reset = () => { setItems(initialItems); setIsSuccess(false); };
+
+            return (
+                <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm mb-8 relative overflow-hidden">
+                    <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+                        <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center"><SafeIcon name="mouse-pointer" size={20} /></div>
+                        <div><h3 className="font-black text-[16px] text-slate-800">조작 실습 2. 매출(출고) 로트 이관</h3><span className="text-[12px] font-bold text-slate-500">드래그 앤 드롭으로 잘못 빠진 매출 바로잡기</span></div>
+                    </div>
+                    
+                    <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-6 flex items-start gap-3">
+                        <SafeIcon name="lightbulb" size={18} className="text-amber-500 mt-0.5 shrink-0" />
+                        <div className="text-[13px] text-slate-700 leading-relaxed font-medium">
+                            <strong>미션:</strong> 1번 품목의 이슈 칸에 있는 <span className="inline-flex items-center px-1.5 py-0.5 border border-slate-300 bg-white rounded shadow-sm text-[10px] mx-1"><SafeIcon name="truck" size={10} className="mr-1 text-slate-400"/>A상사(5)</span> 매출 내역 칩을 마우스로 클릭한 채 끌어서(Drag), 2번 품목 위로 떨어뜨리세요(Drop).
+                        </div>
+                    </div>
+
+                    <div className="relative">
+                        {isSuccess && (
+                            <div className="absolute inset-0 z-20 bg-white/80 backdrop-blur-[2px] flex flex-col items-center justify-center fade-in rounded-lg">
+                                <div className="bg-blue-50 text-blue-600 w-16 h-16 rounded-full flex items-center justify-center mb-3 shadow-inner"><SafeIcon name="check-circle-2" size={32} /></div>
+                                <h4 className="font-black text-lg text-slate-800">매출 이관 성공!</h4>
+                                <p className="text-sm font-bold text-slate-500 mt-1 mb-4">A상사에서 B상사로 출고 내역이 완벽하게 이동하여 로스가 해결되었습니다.</p>
+                                <button onClick={reset} className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold shadow hover:bg-black transition-colors flex items-center"><SafeIcon name="refresh-cw" size={14} className="mr-2" /> 다시 해보기</button>
+                            </div>
+                        )}
+                        <table className="w-full text-left text-[13px] border border-slate-200 rounded-lg overflow-hidden bg-white">
+                            <thead className="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold">
+                                <tr><th className="p-3">상품명 (로트)</th><th className="p-3 text-right w-24">오차(로스)</th><th className="p-3">출고내역 칩 (드래그 가능)</th></tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {items.map(item => (
+                                    <tr key={item.id} 
+                                        onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('bg-blue-50', 'ring-2', 'ring-blue-400'); }}
+                                        onDragLeave={e => { e.currentTarget.classList.remove('bg-blue-50', 'ring-2', 'ring-blue-400'); }}
+                                        onDrop={e => { e.currentTarget.classList.remove('bg-blue-50', 'ring-2', 'ring-blue-400'); handleDrop(e, item.id); }}
+                                        className={`transition-all duration-300 ${item.resolved ? 'bg-emerald-50/30' : 'hover:bg-slate-50'} ${isDragging ? 'border-dashed border-2 border-slate-300' : ''}`}
+                                    >
+                                        <td className="p-3 font-bold text-slate-700">{item.name}</td>
+                                        <td className={`p-3 text-right font-black ${item.loss < 0 ? 'text-rose-600' : (item.loss > 0 ? 'text-blue-600' : 'text-slate-300')}`}>
+                                            {item.loss > 0 ? '+' : ''}{item.loss === 0 ? '-' : item.loss}
+                                        </td>
+                                        <td className="p-3">
+                                            <div className="flex items-center gap-2">
+                                                {item.resolved ? <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-bold border border-emerald-200">✅정상</span> : <span className="bg-rose-100 text-rose-700 px-2 py-0.5 rounded text-[10px] font-bold border border-rose-200 pulse-border">🚨수량변동</span>}
+                                                {item.outQty > 0 && (
+                                                    <div 
+                                                        draggable={!item.resolved}
+                                                        onDragStart={(e) => { setIsDragging(true); e.dataTransfer.setData('sourceId', item.id); e.currentTarget.classList.add('opacity-50'); }}
+                                                        onDragEnd={(e) => { setIsDragging(false); e.currentTarget.classList.remove('opacity-50'); }}
+                                                        className={`flex items-center px-2 py-1 rounded text-[11px] font-semibold bg-white border border-slate-300 text-slate-700 shadow-sm transition-all ${item.resolved ? 'cursor-default opacity-80' : 'cursor-grab active:cursor-grabbing hover:border-blue-400 hover:shadow pulse-border'}`}
+                                                    >
+                                                        <SafeIcon name="truck" size={12} className="mr-1.5 text-blue-500" />
+                                                        매출: {item.vendor} ({item.outQty})
+                                                    </div>
+                                                )}
+                                                {!item.resolved && item.id === 2 && isDragging && (
+                                                    <div className="text-[10px] font-bold text-blue-600 animate-pulse flex items-center bg-blue-50 px-2 py-1 rounded"><SafeIcon name="arrow-left" size={10} className="mr-1"/>여기로 드롭하세요</div>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        };
+
+        // ==========================================
+        // 📚 Main Layout
+        // ==========================================
+        function App() {
+            const [activeTab, setActiveTab] = useState('intro');
+
+            const menuItems = [
+                { id: 'intro', icon: 'book-open', title: '마감 업무 개요' },
+                { id: 'genesis', icon: 'rocket', title: '초기 자산 셋업 (최초 1회)' },
+                { id: 'routine', icon: 'list-checks', title: '월간 실사 대조 (정규 업무)' },
+                { id: 'simulator', icon: 'play-circle', title: '로스 해결 시뮬레이터 (실습)' },
+                { id: 'closing', icon: 'lock', title: '최종 마감 및 스냅샷 롤백' }
+            ];
+
+            return (
+                <div className="min-h-screen flex flex-col bg-slate-100">
+                    {/* Header */}
+                    <header className="h-[72px] bg-[#0B1021] text-white flex justify-between items-center px-8 shrink-0 shadow-md relative z-20">
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg"><SafeIcon name="book-open" size={20} className="text-white" /></div>
+                            <div className="flex flex-col">
+                                <h1 className="font-black text-[18px] tracking-wide flex items-center">DataOps Closing Guide <span className="ml-2 bg-indigo-500 text-[10px] px-2 py-0.5 rounded text-white font-bold border border-indigo-400">공식 매뉴얼</span></h1>
+                                <span className="text-[11px] text-slate-400 font-medium tracking-wide">ONEAPP NEXES 전문가용 재고 수불부 조작 가이드</span>
+                            </div>
+                        </div>
+                        {/* 🌟 앱으로 돌아가기 버튼 */}
+                        <a href="inventory.html" className="flex items-center gap-2 px-5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg text-[13px] font-bold transition-all shadow-sm group">
+                            <SafeIcon name="arrow-left" size={14} className="text-slate-400 group-hover:-translate-x-1 transition-transform" />
+                            실제 마감 앱으로 돌아가기
+                        </a>
+                    </header>
+
+                    <div className="flex flex-1 overflow-hidden">
+                        {/* Sidebar */}
+                        <div className="w-[280px] bg-white border-r border-slate-200 flex flex-col shrink-0 shadow-[2px_0_10px_rgba(0,0,0,0.02)] z-10 p-4 gap-2">
+                            <div className="px-4 py-3 mb-2 border-b border-slate-100"><h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Guide Index</h3></div>
+                            {menuItems.map(menu => (
+                                <button 
+                                    key={menu.id} 
+                                    onClick={() => setActiveTab(menu.id)}
+                                    className={`w-full text-left px-5 py-3.5 rounded-lg text-[13px] font-bold transition-all flex items-center gap-3 ${activeTab === menu.id ? 'bg-indigo-50 text-indigo-700 shadow-sm border border-indigo-100' : 'text-slate-600 hover:bg-slate-50 border border-transparent'}`}
+                                >
+                                    <SafeIcon name={menu.icon} size={16} className={activeTab === menu.id ? 'text-indigo-500' : 'opacity-60'} />
+                                    {menu.title}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Content Area */}
+                        <div className="flex-1 overflow-y-auto custom-scrollbar p-10 bg-slate-50">
+                            <div className="max-w-4xl mx-auto pb-20 fade-in">
+                                
+                                {activeTab === 'intro' && (
+                                    <div className="space-y-6 fade-in">
+                                        <div className="bg-white p-8 rounded-xl border border-slate-200 shadow-sm">
+                                            <h2 className="text-2xl font-black text-slate-800 mb-4 border-b border-slate-100 pb-4 flex items-center"><SafeIcon name="book-open" size={24} className="mr-3 text-indigo-500"/>데이터옵스 마감 업무 개요</h2>
+                                            <p className="text-[14px] text-slate-600 leading-loose mb-6">
+                                                ONEAPP NEXES의 [재고 마감] 앱은 월말 결산 시 창고의 실제 수량과 전산 수량을 일치시키고, 오차의 원인을 규명하여 자산을 투명하게 확정(Lock)짓는 최고 권한의 관제소입니다.
+                                            </p>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                <div className="bg-slate-50 p-5 rounded-lg border border-slate-200">
+                                                    <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-black text-sm mb-3">1</div>
+                                                    <h4 className="font-bold text-[14px] text-slate-800 mb-2">스마트 대조</h4>
+                                                    <p className="text-[12px] text-slate-500">실사 엑셀을 업로드하면 전산 잔량과 즉시 대조하여 1초 만에 붉은색 경고(🚨)로 오차를 찾아냅니다.</p>
+                                                </div>
+                                                <div className="bg-slate-50 p-5 rounded-lg border border-slate-200">
+                                                    <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center font-black text-sm mb-3">2</div>
+                                                    <h4 className="font-bold text-[14px] text-slate-800 mb-2">원인 규명 및 상계</h4>
+                                                    <p className="text-[12px] text-slate-500">마우스 드래그나 스페이스바로 분할/박스 오차를 퉁치거나(상계), 사유를 적어 오차를 정상(✅)으로 승인합니다.</p>
+                                                </div>
+                                                <div className="bg-slate-50 p-5 rounded-lg border border-slate-200">
+                                                    <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-black text-sm mb-3">3</div>
+                                                    <h4 className="font-bold text-[14px] text-slate-800 mb-2">스냅샷 봉인</h4>
+                                                    <p className="text-[12px] text-slate-500">오류가 0이 되면 마감 버튼이 켜집니다. 이를 누르면 해당 월의 장부가 영구 스냅샷으로 보존되며 다음 달 기초로 이월됩니다.</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {activeTab === 'genesis' && (
+                                    <div className="space-y-6 fade-in">
+                                        <div className="bg-white p-8 rounded-xl border border-slate-200 shadow-sm">
+                                            <h2 className="text-2xl font-black text-slate-800 mb-4 border-b border-slate-100 pb-4 flex items-center"><SafeIcon name="rocket" size={24} className="mr-3 text-indigo-500"/>초기 자산 셋업 (마이그레이션)</h2>
+                                            
+                                            <div className="flex items-start gap-4 mb-8 bg-blue-50 p-5 rounded-lg border border-blue-200">
+                                                <SafeIcon name="info-circle" size={24} className="text-blue-500 mt-1 shrink-0" />
+                                                <p className="text-[13px] text-blue-800 leading-relaxed font-medium">
+                                                    시스템을 처음 도입하여 <strong>마감 스냅샷이 단 하나도 없을 때만 노출되는 특별한 기능</strong>입니다.<br/>
+                                                    현재 창고에 있는 물건들의 수량을 최초로 시스템에 밀어 넣는 작업입니다. (1회성 작업)
+                                                </p>
+                                            </div>
+
+                                            <h3 className="font-bold text-[15px] text-slate-800 mb-3">스마트 하이브리드 단가 매칭</h3>
+                                            <p className="text-[13px] text-slate-600 mb-4 leading-relaxed">
+                                                초기 재고 엑셀을 올릴 때, 시스템은 사용자를 대신해 가장 똑똑한 방법으로 단가를 채웁니다.
+                                            </p>
+                                            
+                                            <ul className="space-y-3 mb-6 bg-slate-50 p-5 rounded-lg border border-slate-200">
+                                                <li className="flex items-center text-[13px] text-slate-700"><SafeIcon name="check-circle-2" size={16} className="text-emerald-500 mr-2 shrink-0"/> <strong>엑셀에 매입단가가 적혀있는 품목:</strong> 엑셀의 숫자를 최우선으로 반영합니다.</li>
+                                                <li className="flex items-center text-[13px] text-slate-700"><SafeIcon name="check-circle-2" size={16} className="text-emerald-500 mr-2 shrink-0"/> <strong>엑셀에 단가가 비어있는 품목:</strong> 마스터 DB의 입고가를 자동으로 조회하여 빈칸을 알아서 채웁니다.</li>
+                                                <li className="flex items-center text-[13px] text-slate-700"><SafeIcon name="alert-triangle" size={16} className="text-amber-500 mr-2 shrink-0"/> 둘 다 없는 경우에만 0원으로 처리됩니다.</li>
+                                            </ul>
+
+                                            <div className="bg-slate-800 text-white p-4 rounded-lg flex items-center justify-between shadow-md">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="animate-pulse bg-white/20 p-2 rounded-lg"><SafeIcon name="rocket" size={18} /></div>
+                                                    <span className="font-bold text-sm">마감 화면 중앙에 이 버튼이 보이면 클릭하여 엑셀을 업로드하세요.</span>
+                                                </div>
+                                                <button disabled className="px-4 py-2 bg-indigo-500 rounded text-xs font-bold opacity-80 cursor-not-allowed">초기 자산 셋업 (클릭 시뮬레이션 불가)</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {activeTab === 'routine' && (
+                                    <div className="space-y-6 fade-in">
+                                        <div className="bg-white p-8 rounded-xl border border-slate-200 shadow-sm">
+                                            <h2 className="text-2xl font-black text-slate-800 mb-4 border-b border-slate-100 pb-4 flex items-center"><SafeIcon name="list-checks" size={24} className="mr-3 text-indigo-500"/>월간 실사 대조 (정규 업무)</h2>
+                                            
+                                            <div className="space-y-8">
+                                                <div className="flex gap-4">
+                                                    <div className="w-10 h-10 rounded-full bg-slate-100 font-black text-slate-500 flex items-center justify-center shrink-0 border border-slate-200">1</div>
+                                                    <div>
+                                                        <h3 className="font-bold text-[15px] text-slate-800 mb-1">결산 기준월 확인</h3>
+                                                        <p className="text-[13px] text-slate-600">작업 화면 상단의 달력이 마감하려는 월(Month)로 맞춰져 있는지 확인합니다. 시스템은 선택된 월의 발생 내역만 불러와 전산 잔량을 렌더링합니다.</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-4">
+                                                    <div className="w-10 h-10 rounded-full bg-emerald-50 font-black text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-200">2</div>
+                                                    <div>
+                                                        <h3 className="font-bold text-[15px] text-slate-800 mb-1">실사 엑셀 업로드</h3>
+                                                        <p className="text-[13px] text-slate-600 mb-3">창고 직원이 보내준 <strong>[품목코드, 실사수량]</strong> 엑셀을 업로드 버튼을 눌러 넣습니다. 단가가 없어도 시스템이 알아서 처리(Silent Mode)하며 에러 팝업을 띄우지 않습니다.</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-4">
+                                                    <div className="w-10 h-10 rounded-full bg-amber-50 font-black text-amber-600 flex items-center justify-center shrink-0 border border-amber-200">3</div>
+                                                    <div>
+                                                        <h3 className="font-bold text-[15px] text-slate-800 mb-1">오차(🚨) 추적 및 해결</h3>
+                                                        <p className="text-[13px] text-slate-600 mb-3">
+                                                            업로드가 끝나면 화면 우측 상단의 <strong className="text-amber-600">[실사 오차 확인]</strong> 카드를 클릭하세요. 오차가 난 행으로 화면이 자동 스크롤되며 깜빡입니다.<br/>
+                                                            이후 키보드 <kbd className="bg-white border border-slate-300 px-1.5 py-0.5 rounded text-xs shadow-sm mx-1">Tab</kbd> 키를 누르면 다음 오차 항목으로 쾌속 이동합니다.
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {activeTab === 'simulator' && (
+                                    <div className="space-y-6 fade-in">
+                                        <div className="bg-gradient-to-r from-slate-800 to-indigo-900 p-8 rounded-xl shadow-lg text-white mb-6">
+                                            <h2 className="text-2xl font-black mb-2 flex items-center"><SafeIcon name="play-circle" size={24} className="mr-3 text-indigo-300"/>시뮬레이터 (Simulator)</h2>
+                                            <p className="text-[13px] text-slate-300">실제 데이터를 건드리지 않고 엔진의 오차 해결 로직을 실습해 볼 수 있는 안전한 샌드박스입니다.</p>
+                                        </div>
+                                        
+                                        <SimSpacebar />
+                                        <SimDragDrop />
+                                        
+                                        <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm mb-8">
+                                            <div className="flex items-center gap-3 mb-4 pb-4 border-b border-slate-100">
+                                                <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center"><SafeIcon name="edit" size={20} /></div>
+                                                <div><h3 className="font-black text-[16px] text-slate-800">조작 실습 3. 사유 기록 (수기 승인)</h3><span className="text-[12px] font-bold text-slate-500">상계할 수 없는 진짜 로스 처리법</span></div>
+                                            </div>
+                                            <p className="text-[13px] text-slate-600 leading-relaxed mb-4">
+                                                도저히 수량을 맞출 수 없는 폐기, 샘플 제공, 분실 등의 경우에는 <strong>해당 행의 맨 우측 끝에 있는 [연필 아이콘 ✏️]</strong>을 클릭하여 텍스트 사유를 입력하세요.<br/>
+                                                사유를 적고 엔터를 치면 붉은색 🚨 에러가 녹색의 ✅ 정상 승인 내역으로 변환됩니다.
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {activeTab === 'closing' && (
+                                    <div className="space-y-6 fade-in">
+                                        <div className="bg-white p-8 rounded-xl border border-slate-200 shadow-sm">
+                                            <h2 className="text-2xl font-black text-slate-800 mb-4 border-b border-slate-100 pb-4 flex items-center"><SafeIcon name="lock" size={24} className="mr-3 text-indigo-500"/>마감 확정 및 안전 롤백</h2>
+                                            
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                <div className="bg-slate-50 p-6 rounded-xl border border-slate-200">
+                                                    <h3 className="font-black text-[15px] text-slate-800 flex items-center mb-3"><SafeIcon name="save" size={18} className="text-indigo-600 mr-2"/>최종 마감 (Closing)</h3>
+                                                    <p className="text-[13px] text-slate-600 leading-relaxed mb-4">
+                                                        화면에 붉은색 🚨 에러가 단 하나도 남지 않게 되면, 우측 상단의 <strong>[최종 마감]</strong> 버튼에 불이 들어옵니다.<br/><br/>
+                                                        이 버튼을 누르면 현재 입력된 실사 숫자가 <strong>다음 달의 기초 재고로 영구 봉인</strong>되며, 이번 달의 모든 오차 수정 이력(Adjustment)이 히스토리 DB에 기록됩니다.
+                                                    </p>
+                                                </div>
+                                                <div className="bg-slate-50 p-6 rounded-xl border border-slate-200">
+                                                    <h3 className="font-black text-[15px] text-slate-800 flex items-center mb-3"><SafeIcon name="history" size={18} className="text-rose-500 mr-2"/>마감 롤백 (마감 취소)</h3>
+                                                    <p className="text-[13px] text-slate-600 leading-relaxed mb-4">
+                                                        마감을 끝냈는데 치명적인 실수를 뒤늦게 발견했다면?<br/>
+                                                        <strong>[마감 이력 관리]</strong> 버튼을 누르고 스냅샷 보관소 모달을 여세요. 가장 최신의 마감 내역을 찾아 <strong>[마감 롤백]</strong>을 클릭하면 버튼 한 번에 이전 상태로 완벽히 복구됩니다.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
