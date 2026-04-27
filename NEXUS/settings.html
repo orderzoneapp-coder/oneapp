@@ -58,7 +58,7 @@
             }, [name, size, className]);
 
             if (!svg) {
-                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'database':'fa-database', 'users':'fa-users', 'shopping-bag':'fa-shopping-bag', 'credit-card':'fa-credit-card', 'line-chart':'fa-chart-line', 'printer':'fa-print', 'pie-chart':'fa-chart-pie', 'megaphone':'fa-bullhorn', 'book-open':'fa-address-book', 'link':'fa-link', 'broom':'fa-broom', 'trash-alt':'fa-trash-alt', 'folder-open':'fa-folder-open', 'file-invoice':'fa-file-invoice', 'calculator':'fa-calculator', 'sign-in-alt':'fa-sign-in-alt', 'layer-group':'fa-layer-group', 'desktop':'fa-desktop', 'tags':'fa-tags', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'info-circle':'fa-info-circle', 'lock':'fa-lock', 'key':'fa-key', 'ban':'fa-ban', 'bolt':'fa-bolt', 'sort-amount-down':'fa-sort-amount-down' };
+                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'database':'fa-database', 'users':'fa-users', 'shopping-bag':'fa-shopping-bag', 'credit-card':'fa-credit-card', 'line-chart':'fa-chart-line', 'printer':'fa-print', 'pie-chart':'fa-chart-pie', 'megaphone':'fa-bullhorn', 'book-open':'fa-address-book', 'link':'fa-link', 'broom':'fa-broom', 'trash-alt':'fa-trash-alt', 'folder-open':'fa-folder-open', 'file-invoice':'fa-file-invoice', 'calculator':'fa-calculator', 'sign-in-alt':'fa-sign-in-alt', 'layer-group':'fa-layer-group', 'desktop':'fa-desktop', 'tags':'fa-tags', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'info-circle':'fa-info-circle', 'lock':'fa-lock', 'key':'fa-key', 'ban':'fa-ban', 'bolt':'fa-bolt', 'sort-amount-down':'fa-sort-amount-down', 'alert-triangle':'fa-exclamation-triangle', 'download':'fa-download', 'upload':'fa-upload', 'skull':'fa-skull', 'file-code':'fa-file-code' };
                 return <i className={`fas ${faMap[name] || `fa-${name}`} ${className}`} style={{ fontSize: size }} />;
             }
             return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
@@ -88,7 +88,8 @@
             });
             const [marginRules, setMarginRules] = useState(() => {
                 const s = localStorage.getItem('merchMarginRules_v878');
-                return s ? JSON.parse(s) : [ { id: generateUUID(), whCode: '01', unit: 'box, 박스', rate: 10, type: 'divide' }, { id: generateUUID(), whCode: '01', unit: 'ea, 개, 낱개', rate: 15, type: 'divide' }, { id: generateUUID(), whCode: '03, 05', unit: 'box, 박스', rate: 15, type: 'divide' }, { id: generateUUID(), whCode: '03, 05', unit: 'ea, 개, 낱개', rate: 20, type: 'divide' }, { id: generateUUID(), whCode: '*', unit: 'box, 박스', rate: 10, type: 'divide' }, { id: generateUUID(), whCode: '*', unit: 'ea, 개, 낱개', rate: 15, type: 'divide' }, { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' } ];
+                const def = [ { id: generateUUID(), whCode: '01', unit: 'box, 박스', rate: 10, type: 'divide' }, { id: generateUUID(), whCode: '01', unit: 'ea, 개, 낱개', rate: 15, type: 'divide' }, { id: generateUUID(), whCode: '03, 05', unit: 'box, 박스', rate: 15, type: 'divide' }, { id: generateUUID(), whCode: '03, 05', unit: 'ea, 개, 낱개', rate: 20, type: 'divide' }, { id: generateUUID(), whCode: '*', unit: 'box, 박스', rate: 10, type: 'divide' }, { id: generateUUID(), whCode: '*', unit: 'ea, 개, 낱개', rate: 15, type: 'divide' }, { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' } ];
+                return s ? JSON.parse(s) : def;
             });
 
             const [opsMappings, setOpsMappings] = useState(() => {
@@ -102,7 +103,7 @@
                 return s ? { ...{ priceMode: 'separate', splitByVendor: false, splitByDate: false }, ...JSON.parse(s) } : { priceMode: 'separate', splitByVendor: false, splitByDate: false };
             });
 
-            const saveConfig = () => {
+            useEffect(() => {
                 localStorage.setItem(STORAGE_KEYS.CLOUD_URL, cloudUrl);
                 localStorage.setItem('merchVisMaster_v870', JSON.stringify(visibleMasterCols));
                 localStorage.setItem('merchVisUpload_v870', JSON.stringify(visibleUploadCols));
@@ -111,14 +112,13 @@
                 localStorage.setItem('merchMarginRules_v878', JSON.stringify(marginRules));
                 localStorage.setItem('inventoryMappingsLight', JSON.stringify(opsMappings));
                 localStorage.setItem('inventoryGroupingV79', JSON.stringify(opsGrouping));
-                return true;
-            };
+            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules, opsMappings, opsGrouping]);
 
-            return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules, opsMappings, setOpsMappings, opsGrouping, setOpsGrouping, saveConfig };
+            return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules, opsMappings, setOpsMappings, opsGrouping, setOpsGrouping };
         };
 
         const GlobalHeader = ({ onNavigate }) => {
-            const groups = [ { id: 'master', label: '정보 관리', icon: 'database' }, { id: 'ops', label: '운영 관리', icon: 'truck' }, { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }, { id: 'settings', label: '시스템 설정', icon: 'settings' } ];
+            const groups = [ { id: 'master', label: '정보 관리', icon: 'database' }, { id: 'ops', label: '운영 관리', icon: 'truck' }, { id: 'admin', label: '인사이트', icon: 'bar-chart-3' } ];
             const tabs = [
                 { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: '/NEXUS/Dashboard', group: 'common' },
                 { id: 'item-info', label: '마스터 DB', icon: "database", path: '/NEXUS/Master', group: 'master' },
@@ -133,12 +133,10 @@
                 { id: 'inventory', label: '재고 마감', icon: "boxes", path: '/NEXUS/inventory', group: 'ops' },
                 { id: 'print-center', label: '출력 센터', icon: "printer", path: '/NEXUS/print_center', group: 'ops' },
                 { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: '/NEXUS/Report', group: 'admin' },
-                { id: 'cs', label: '정보마당(CS)', icon: "megaphone", path: '/NEXUS/cs', group: 'admin' },
-                { id: 'settings_main', label: '통합 환경설정', icon: "settings", path: '/NEXUS/settings', group: 'settings' }
+                { id: 'cs', label: '정보마당(CS)', icon: "megaphone", path: '/NEXUS/cs', group: 'admin' }
             ];
 
-            const currentTab = tabs.find(t => t.id === 'settings_main');
-            const [selectedGroup, setSelectedGroup] = useState('settings');
+            const [selectedGroup, setSelectedGroup] = useState(null);
 
             return (
                 <div className="flex flex-col shrink-0 z-40 relative w-full shadow-sm bg-[#0B1021]">
@@ -147,7 +145,7 @@
                             <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={(e) => { setSelectedGroup('common'); onNavigate(e, '/NEXUS/Dashboard'); }}>
                                 <span className="font-black text-[24px] tracking-wider text-slate-100 mr-4 group-hover:text-indigo-400 transition-colors">ONEAPP</span>
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
-                                    <div className="flex items-center"><span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span><span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v2.4</span></div>
+                                    <div className="flex items-center"><span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span><span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.0</span></div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">CONTROL PANEL</span>
                                 </div>
                             </div>
@@ -160,7 +158,7 @@
                             </div>
                         </div>
                         <div className="flex items-center gap-4 h-full">
-                            <button onClick={() => onNavigate(null, '/NEXUS/Dashboard')} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-indigo-600 flex items-center justify-center border border-slate-700 transition-colors text-slate-400 hover:text-white shadow-sm" title="종료하고 대시보드로 돌아가기"><SafeIcon name="x" size={18} /></button>
+                            <button onClick={(e) => onNavigate(e, '/NEXUS/Dashboard')} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-indigo-600 flex items-center justify-center border border-slate-700 transition-colors text-slate-400 hover:text-white shadow-sm" title="종료하고 대시보드로 돌아가기"><SafeIcon name="x" size={18} /></button>
                         </div>
                     </header>
                     {selectedGroup && (
@@ -184,6 +182,10 @@
             const [toastMsg, setToastMsg] = useState('');
             const [masterProducts, setMasterProducts] = useState({});
             const [customEstColInput, setCustomEstColInput] = useState('');
+            const [isProcessing, setIsProcessing] = useState(false);
+            
+            // 💡 위험구역 잠금 텍스트
+            const [dangerLock, setDangerLock] = useState('');
 
             const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
 
@@ -255,12 +257,71 @@
                 showToast(`✅ ${count}개의 상품에서 [${tagName}] 태그를 삭제했습니다.`);
             }, [masterProducts, showToast]);
 
-            const handleClearDB = async () => {
-                if (!window.confirm("경고: 마스터 DB 및 수불 이력을 전부 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.")) return;
-                setMasterProducts({});
-                await setIDB(STORAGE_KEYS.MASTER_DB, {}); await setIDB(STORAGE_KEYS.HISTORY_DB, []); await setIDB(STORAGE_KEYS.CLOSING_DB, []);
-                localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
-                showToast("🗑️ 앱 로컬 데이터가 모두 초기화되었습니다.");
+            // 💡 설정 백업(Export) 
+            const handleExportSettings = () => {
+                const keys = ['skuSyncCloudUrl_v6', 'merchVisMaster_v870', 'merchVisUpload_v870', 'merchMappings_v870', 'merchMasterLinks_v870', 'merchMarginRules_v878', 'inventoryMappingsLight', 'inventoryGroupingV79'];
+                const data = {};
+                keys.forEach(k => { data[k] = localStorage.getItem(k); });
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = `ONEAPP_Settings_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+                showToast("✅ 설정 백업 파일이 다운로드되었습니다.");
+            };
+
+            // 💡 설정 복원(Import)
+            const handleImportSettings = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    try {
+                        const imported = JSON.parse(evt.target.result);
+                        Object.keys(imported).forEach(k => {
+                            if (imported[k] !== null && imported[k] !== undefined) localStorage.setItem(k, imported[k]);
+                        });
+                        showToast("✅ 설정이 성공적으로 복원되었습니다. 적용을 위해 화면을 새로고침합니다.");
+                        setTimeout(() => window.location.reload(), 1500);
+                    } catch(err) {
+                        showToast("❌ 설정 파일 형식이 올바르지 않습니다.");
+                    }
+                };
+                reader.readAsText(file);
+                e.target.value = '';
+            };
+
+            // 💡 DB 초기화 (위험 구역)
+            const handleDataClear = async () => {
+                if (dangerLock !== '데이터를 모두 삭제합니다') return showToast('⚠️ 안전 잠금 해제 문구를 정확히 띄어쓰기하여 입력하세요.');
+                if (!window.confirm("경고: 실무 데이터(마스터, 주문, 구매, 판매, 재고)가 모두 영구 삭제됩니다.\n이 작업은 복구할 수 없습니다. 계속하시겠습니까?")) return;
+                
+                setIsProcessing(true);
+                try {
+                    await setIDB(STORAGE_KEYS.MASTER_DB, {});
+                    await setIDB(STORAGE_KEYS.HISTORY_DB, []);
+                    await setIDB(STORAGE_KEYS.CLOSING_DB, []);
+                    await setIDB('merchOrders_v9', []);
+                    await setIDB('merchSales_v9', []);
+                    await setIDB('merchPipeline_Managed_v2', {});
+                    localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
+                    setDangerLock('');
+                    setMasterProducts({});
+                    showToast("🗑️ 데이터베이스가 완전히 초기화되었습니다.");
+                } catch(e) { showToast("❌ 데이터 삭제 실패"); } finally { setIsProcessing(false); }
+            };
+
+            // 💡 설정 공장 초기화 (위험 구역)
+            const handleFactoryReset = () => {
+                if (dangerLock !== '데이터를 모두 삭제합니다') return showToast('⚠️ 안전 잠금 해제 문구를 정확히 띄어쓰기하여 입력하세요.');
+                if (!window.confirm("경고: 커스텀된 매핑 규칙과 환경설정이 모두 초기화됩니다.\n진행하시겠습니까?")) return;
+                
+                const keys = ['skuSyncCloudUrl_v6', 'merchVisMaster_v870', 'merchVisUpload_v870', 'merchMappings_v870', 'merchMasterLinks_v870', 'merchMarginRules_v878', 'inventoryMappingsLight', 'inventoryGroupingV79'];
+                keys.forEach(k => localStorage.removeItem(k));
+                setDangerLock('');
+                showToast("🔄 설정이 기본값으로 초기화되었습니다. 화면을 새로고침합니다.");
+                setTimeout(() => window.location.reload(), 1500);
             };
 
             const toggleMasterCol = (tabId, header) => config.setVisibleMasterCols(prev => { const list = prev[tabId] || []; return { ...prev, [tabId]: list.includes(header) ? list.filter(h => h !== header) : [...list, header] }; });
@@ -279,9 +340,10 @@
             const deleteMarginRule = (id) => config.setMarginRules(config.marginRules.filter(r => r.id !== id));
 
             const saveAll = () => {
-                config.saveConfig();
-                showToast("💾 모든 설정이 저장되었습니다.");
+                showToast("💾 설정 저장은 변경 즉시 백그라운드에서 자동 적용되고 있습니다.");
             };
+
+            const requiredCoreFields = ['품목코드', '품목명', '규격'];
 
             return (
                 <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-slate-100 relative shadow-2xl border-x border-slate-300 select-none">
@@ -293,7 +355,6 @@
                             <p className="text-[12px] text-slate-500 mt-1 ml-8">모든 NEXES 운영 모듈(시세, 구매, 판매, 재고)에 공통으로 적용되는 전역 규칙(Global Baseline)을 관리합니다.</p>
                         </div>
                         <div className="flex gap-3">
-                            <button onClick={handleClearDB} className="px-5 py-2.5 bg-white border border-rose-200 text-rose-600 rounded-lg text-[13px] font-bold shadow-sm hover:bg-rose-50 transition-colors flex items-center"><SafeIcon name="broom" size={14} className="mr-1.5"/> 시스템 초기화</button>
                             <button onClick={saveAll} className="px-8 py-2.5 bg-indigo-600 text-white rounded-lg text-[13px] font-black shadow-md hover:bg-indigo-700 transition-all flex items-center"><SafeIcon name="save" size={14} className="mr-1.5"/> 설정 저장 및 적용</button>
                         </div>
                     </div>
@@ -308,12 +369,34 @@
                             <button onClick={() => setActiveTab('inputMap')} className={`px-6 py-4 text-left text-[14px] font-bold border-l-4 transition-all flex items-center ${activeTab === 'inputMap' ? 'border-emerald-500 text-emerald-700 bg-emerald-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><SafeIcon name="file-spreadsheet" size={16} className="mr-2.5 opacity-80"/> 4. 시세 엑셀 매핑 사전</button>
                             <button onClick={() => setActiveTab('opsMap')} className={`px-6 py-4 text-left text-[14px] font-bold border-l-4 transition-all flex items-center ${activeTab === 'opsMap' ? 'border-blue-500 text-blue-700 bg-blue-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><SafeIcon name="layer-group" size={16} className="mr-2.5 opacity-80"/> 5. 운영 엑셀 매핑 사전</button>
                             <button onClick={() => setActiveTab('uiCustom')} className={`px-6 py-4 text-left text-[14px] font-bold border-l-4 transition-all flex items-center ${activeTab === 'uiCustom' ? 'border-purple-500 text-purple-700 bg-purple-50' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}><SafeIcon name="desktop" size={16} className="mr-2.5 opacity-80"/> 6. 화면 표시(UI) 커스텀</button>
+                            <div className="my-2 border-b border-slate-200"></div>
+                            <button onClick={() => setActiveTab('dangerZone')} className={`px-6 py-4 text-left text-[14px] font-bold border-l-4 transition-all flex items-center ${activeTab === 'dangerZone' ? 'border-rose-500 text-rose-700 bg-rose-50' : 'border-transparent text-rose-600 hover:bg-rose-50'}`}><SafeIcon name="alert-triangle" size={16} className="mr-2.5 opacity-80"/> 7. 위험 구역 (초기화)</button>
                         </div>
                         
                         {/* Main Content */}
                         <div className="flex-1 overflow-y-auto p-10 custom-scrollbar relative bg-slate-50">
                             {activeTab === 'display' && (
                                 <div className="max-w-4xl space-y-6 fade-in mx-auto">
+                                    {/* 🌟 1번 업데이트: 시스템 설정 백업/복원 기능 */}
+                                    <div className="bg-emerald-50 p-6 rounded-xl border border-emerald-200 shadow-sm">
+                                        <h3 className="text-[15px] font-black text-emerald-900 mb-3 pb-2 border-b border-emerald-200 flex items-center">
+                                            <SafeIcon name="download" size={16} className="text-emerald-500 mr-2"/>시스템 설정 백업 및 복원 (Export / Import)
+                                        </h3>
+                                        <p className="text-[13px] text-emerald-700 font-bold mb-4 leading-relaxed">
+                                            현재 세팅된 엑셀 매핑 규칙, 화면 노출 항목, 단가 마진 룰을 파일로 안전하게 저장하거나 불러옵니다.<br/>
+                                            PC 교체 시나 시스템 초기화 전 필수 백업용으로 사용하세요.
+                                        </p>
+                                        <div className="flex gap-3">
+                                            <button onClick={handleExportSettings} className="px-5 py-2.5 bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-100 rounded-lg text-[13px] font-bold transition-all shadow-sm flex items-center">
+                                                <SafeIcon name="download" size={14} className="mr-1.5"/> 설정 파일 백업 다운로드
+                                            </button>
+                                            <label className="cursor-pointer px-5 py-2.5 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg text-[13px] font-bold transition-all shadow-sm flex items-center">
+                                                <SafeIcon name="upload" size={14} className="mr-1.5"/> 백업 파일 불러오기 (Import)
+                                                <input type="file" className="hidden" accept=".json" onChange={handleImportSettings} />
+                                            </label>
+                                        </div>
+                                    </div>
+
                                     <div className="bg-indigo-50 p-6 rounded-xl border border-indigo-100 shadow-sm">
                                         <h3 className="text-[15px] font-black text-indigo-900 mb-4 pb-2 border-b border-indigo-200 flex items-center"><SafeIcon name="link" size={16} className="text-indigo-500 mr-2"/>클라우드 동기화 URL 셋팅</h3>
                                         <input type="text" value={config.cloudUrl} onChange={e=>config.setCloudUrl(e.target.value)} placeholder="Google Apps Script 웹앱 URL 입력..." className="w-full border border-indigo-200 rounded-lg px-4 py-3 text-[13px] outline-none focus:border-indigo-500 bg-white shadow-sm font-mono focus:ring-2 focus:ring-indigo-200" />
@@ -323,6 +406,52 @@
                                         <h3 className="text-[15px] font-black text-rose-900 mb-3 pb-2 border-b border-rose-200 flex items-center"><SafeIcon name="broom" size={16} className="text-rose-500 mr-2"/>클라우드 DB 최적화 (검색어 찌꺼기 삭제)</h3>
                                         <p className="text-[13px] text-rose-700 font-bold mb-4">과거 엑셀 업로드 시 저장되었던 불필요한 '검색어등록', '상품태그' 필드의 찌꺼기 데이터들을 한 번에 삭제합니다.</p>
                                         <button onClick={cleanUpGarbageTags} className="px-5 py-2.5 bg-white border border-rose-300 text-rose-600 hover:bg-rose-100 rounded-lg text-[13px] font-bold transition-all shadow-sm flex items-center"><SafeIcon name="trash-alt" size={14} className="mr-1.5"/> 기존 엑셀 검색어 일괄 삭제</button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* 🌟 2번 업데이트: 위험 구역 (Danger Zone) 전용 탭 */}
+                            {activeTab === 'dangerZone' && (
+                                <div className="max-w-4xl space-y-6 fade-in mx-auto">
+                                    <div className="bg-white p-8 rounded-xl border-2 border-rose-500 shadow-lg relative overflow-hidden">
+                                        <div className="absolute top-0 left-0 w-full h-2 bg-rose-500"></div>
+                                        <div className="flex items-center mb-6">
+                                            <div className="w-14 h-14 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mr-4 shadow-inner">
+                                                <SafeIcon name="skull" size={28} />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-xl font-black text-rose-700">위험 구역 (Danger Zone)</h3>
+                                                <p className="text-[13px] font-bold text-slate-500 mt-1">이곳의 작업은 시스템 전체에 치명적이며, 실행 시 절대 복구할 수 없습니다.</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-rose-50 p-6 rounded-lg border border-rose-200 mb-8 shadow-inner">
+                                            <label className="block text-[14px] font-black text-rose-800 mb-2">안전 잠금 해제 (Safety Lock)</label>
+                                            <p className="text-[12px] text-rose-600 mb-4 font-medium">초기화를 진행하려면 아래 칸에 <strong className="bg-white px-2 py-0.5 rounded border border-rose-200 shadow-sm select-all">데이터를 모두 삭제합니다</strong> 라고 정확히 띄어쓰기하여 입력하세요.</p>
+                                            <input type="text" value={dangerLock} onChange={e=>setDangerLock(e.target.value)} placeholder="데이터를 모두 삭제합니다" className="w-full border-2 border-rose-300 rounded-lg px-4 py-3 text-[14px] font-black text-rose-700 outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-200 bg-white shadow-sm transition-all" />
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            <div className="flex items-center justify-between p-5 bg-white border border-slate-200 rounded-xl hover:border-rose-300 transition-colors shadow-sm">
+                                                <div>
+                                                    <h4 className="text-[15px] font-black text-slate-800">상품 데이터베이스 (DB) 완전 삭제</h4>
+                                                    <p className="text-[12px] text-slate-500 font-medium mt-1.5 leading-relaxed">마스터 상품, 주문 내역, 구매/판매 내역, 재고 및 모든 히스토리를 영구 삭제합니다.<br/>※ 매핑 규칙, 마진 룰 등의 <strong className="text-indigo-500">환경설정은 유지</strong>됩니다.</p>
+                                                </div>
+                                                <button onClick={handleDataClear} disabled={dangerLock !== '데이터를 모두 삭제합니다'} className={`px-6 py-3 rounded-lg text-[13px] font-bold transition-all shadow-sm flex items-center shrink-0 ${dangerLock === '데이터를 모두 삭제합니다' ? 'bg-rose-600 text-white hover:bg-rose-700' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}>
+                                                    <SafeIcon name="trash-alt" size={14} className="mr-1.5"/> DB 전체 초기화
+                                                </button>
+                                            </div>
+
+                                            <div className="flex items-center justify-between p-5 bg-white border border-slate-200 rounded-xl hover:border-orange-300 transition-colors shadow-sm">
+                                                <div>
+                                                    <h4 className="text-[15px] font-black text-slate-800">시스템 환경설정 공장 초기화 (Factory Reset)</h4>
+                                                    <p className="text-[12px] text-slate-500 font-medium mt-1.5 leading-relaxed">모든 엑셀 매핑 규칙, 마진 룰, 화면 컬럼 설정값을 앱 설치 최초 상태로 되돌립니다.<br/>※ 마스터 상품 등의 <strong className="text-emerald-500">데이터베이스는 유지</strong>됩니다.</p>
+                                                </div>
+                                                <button onClick={handleFactoryReset} disabled={dangerLock !== '데이터를 모두 삭제합니다'} className={`px-6 py-3 rounded-lg text-[13px] font-bold transition-all shadow-sm flex items-center shrink-0 ${dangerLock === '데이터를 모두 삭제합니다' ? 'bg-orange-500 text-white hover:bg-orange-600' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}>
+                                                    <SafeIcon name="broom" size={14} className="mr-1.5"/> 설정 기본값 복원
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -374,7 +503,7 @@
                                                 <h3 className="text-[18px] font-black text-rose-900 flex items-center"><SafeIcon name="calculator" size={20} className="mr-2 text-rose-500"/>동적 단가 계산 및 하이브리드 마진 룰</h3>
                                                 <p className="text-[13px] font-bold text-rose-600 mt-1.5">※ 매입 원가(입고가)에 마진을 곱하거나 나누어, 전사의 기준이 되는 **최종 출고가(시중가)**를 제안하는 공식입니다.</p>
                                             </div>
-                                            <button onClick={addMarginRule} className="bg-rose-500 hover:bg-rose-600 text-white px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all shadow-md flex items-center transform hover:scale-105"><SafeIcon name="plus" size={14} className="mr-1.5"/> 룰 추가</button>
+                                            <button onClick={config.addMarginRule} className="bg-rose-500 hover:bg-rose-600 text-white px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all shadow-md flex items-center transform hover:scale-105"><SafeIcon name="plus" size={14} className="mr-1.5"/> 룰 추가</button>
                                         </div>
                                         <div className="overflow-x-auto">
                                             <table className="w-full text-left text-[13px]">
@@ -388,12 +517,12 @@
                                                         const exampleFormula = rule.type === 'divide' ? `10k ÷ ${(1 - rule.rate / 100).toFixed(2)}` : `10k × ${(1 + rule.rate / 100).toFixed(2)}`;
                                                         return (
                                                             <tr key={rule.id} className="hover:bg-slate-50 transition-colors group">
-                                                                <td className="p-3">{isDefault ? <div className="text-slate-400 text-center font-bold bg-slate-100 py-2 rounded">* (모든 창고)</div> : <input type="text" value={rule.whCode} onChange={e=>updateMarginRule(rule.id, 'whCode', e.target.value)} placeholder="예: 01, * (전체)" className="w-full border border-slate-300 rounded-md px-3 py-2 outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100 bg-white text-[13px] font-bold text-slate-700 transition-all" />}</td>
-                                                                <td className="p-3">{isDefault ? <div className="text-slate-400 text-center font-bold bg-slate-100 py-2 rounded">* (모든 단위)</div> : <input type="text" value={rule.unit} onChange={e=>updateMarginRule(rule.id, 'unit', e.target.value)} placeholder="예: ea, *, box" className="w-full border border-slate-300 rounded-md px-3 py-2 outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100 bg-white text-[13px] font-bold text-slate-700 transition-all" />}</td>
-                                                                <td className="p-3"><div className="flex items-center bg-white border border-slate-300 rounded-md overflow-hidden focus-within:border-rose-400 focus-within:ring-2 focus-within:ring-rose-100 transition-all shadow-sm"><input type="number" value={rule.rate} onChange={e=>updateMarginRule(rule.id, 'rate', Number(e.target.value))} className="w-full text-center py-2 outline-none font-black text-rose-700 text-[14px] bg-transparent" /></div></td>
-                                                                <td className="p-3"><select value={rule.type} onChange={e=>updateMarginRule(rule.id, 'type', e.target.value)} className="w-full border border-slate-300 rounded-md px-2 py-2 outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100 bg-white font-bold text-slate-700 cursor-pointer text-[13px] transition-all shadow-sm"><option value="divide">나누기(÷)</option><option value="multiply">곱하기(×)</option></select></td>
+                                                                <td className="p-3">{isDefault ? <div className="text-slate-400 text-center font-bold bg-slate-100 py-2 rounded">* (모든 창고)</div> : <input type="text" value={rule.whCode} onChange={e=>config.updateMarginRule(rule.id, 'whCode', e.target.value)} placeholder="예: 01, * (전체)" className="w-full border border-slate-300 rounded-md px-3 py-2 outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100 bg-white text-[13px] font-bold text-slate-700 transition-all" />}</td>
+                                                                <td className="p-3">{isDefault ? <div className="text-slate-400 text-center font-bold bg-slate-100 py-2 rounded">* (모든 단위)</div> : <input type="text" value={rule.unit} onChange={e=>config.updateMarginRule(rule.id, 'unit', e.target.value)} placeholder="예: ea, *, box" className="w-full border border-slate-300 rounded-md px-3 py-2 outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100 bg-white text-[13px] font-bold text-slate-700 transition-all" />}</td>
+                                                                <td className="p-3"><div className="flex items-center bg-white border border-slate-300 rounded-md overflow-hidden focus-within:border-rose-400 focus-within:ring-2 focus-within:ring-rose-100 transition-all shadow-sm"><input type="number" value={rule.rate} onChange={e=>config.updateMarginRule(rule.id, 'rate', Number(e.target.value))} className="w-full text-center py-2 outline-none font-black text-rose-700 text-[14px] bg-transparent" /></div></td>
+                                                                <td className="p-3"><select value={rule.type} onChange={e=>config.updateMarginRule(rule.id, 'type', e.target.value)} className="w-full border border-slate-300 rounded-md px-2 py-2 outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100 bg-white font-bold text-slate-700 cursor-pointer text-[13px] transition-all shadow-sm"><option value="divide">나누기(÷)</option><option value="multiply">곱하기(×)</option></select></td>
                                                                 <td className="p-3 text-center"><div className="bg-slate-100 py-2 px-3 rounded-md inline-block"><span className="text-[12px] font-mono text-slate-500 font-bold">{exampleFormula} <i className="fas fa-arrow-right mx-1 text-slate-400"></i> <span className="text-slate-800">{examplePrice.toLocaleString()}원</span></span></div></td>
-                                                                <td className="p-3 text-center">{!isDefault && <button onClick={()=>deleteMarginRule(rule.id)} className="w-9 h-9 rounded-md text-slate-400 bg-slate-100 hover:bg-rose-500 hover:text-white transition-colors flex items-center justify-center mx-auto shadow-sm"><SafeIcon name="trash-alt" size={14}/></button>}</td>
+                                                                <td className="p-3 text-center">{!isDefault && <button onClick={()=>config.deleteMarginRule(rule.id)} className="w-9 h-9 rounded-md text-slate-400 bg-slate-100 hover:bg-rose-500 hover:text-white transition-colors flex items-center justify-center mx-auto shadow-sm"><SafeIcon name="trash-alt" size={14}/></button>}</td>
                                                             </tr>
                                                         );
                                                     })}
@@ -412,14 +541,14 @@
                                             <table className="w-full text-left text-[13px]">
                                                 <thead className="bg-white border-b-2 border-slate-200 text-slate-500 font-bold"><tr><th className="p-4 w-[160px]">화면 노출 항목 (Target)</th><th className="p-4">엑셀 헤더 감지 키워드 (콤마 구분)</th><th className="p-4 w-[220px] text-center">마스터 DB 동기화</th></tr></thead>
                                                 <tbody className="divide-y divide-slate-100">
-                                                    {['품목코드', '품목명', '규격'].map(h => (
+                                                    {requiredCoreFields.map(h => (
                                                         <tr key={`map-req-${h}`} className="bg-slate-50/50">
                                                             <td className="p-4 font-bold text-slate-700 flex items-center"><SafeIcon name="lock" size={14} className="text-slate-400 mr-2"/>{h}</td>
                                                             <td className="p-4"><input type="text" value={config.mappings['estimate']?.[h]||''} onChange={e=>config.setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded-lg px-4 py-2 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white font-bold text-slate-700 shadow-sm transition-all" /></td>
                                                             <td className="p-4"><div className="text-[12px] text-slate-500 bg-slate-200 px-4 py-2 rounded-lg border border-slate-300 font-bold flex items-center justify-center shadow-inner"><SafeIcon name="key" size={14} className="mr-1.5"/>고유 식별자 고정</div></td>
                                                         </tr>
                                                     ))}
-                                                    {(config.visibleUploadCols['estimate']||[]).filter(h => !['품목코드', '품목명', '규격'].includes(h)).map(h => (
+                                                    {(config.visibleUploadCols['estimate']||[]).filter(h => !requiredCoreFields.includes(h)).map(h => (
                                                         <tr key={`map-e-${h}`} className="hover:bg-slate-50 transition-colors">
                                                             <td className="p-4 font-bold text-slate-800 flex items-center"><span className="w-2 h-2 rounded-full bg-emerald-400 mr-3"></span>{h}</td>
                                                             <td className="p-4"><input type="text" value={config.mappings['estimate']?.[h]||''} onChange={e=>config.setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded-lg px-4 py-2 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white font-bold text-slate-700 shadow-sm transition-all" /></td>
