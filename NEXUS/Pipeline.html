@@ -483,21 +483,55 @@
             );
         };
 
-        const CategorySaveModal = ({ onClose, onSave }) => {
+        const CategorySaveModal = ({ onClose, onSave, availableCategories }) => {
             const [name, setName] = useState('');
+            const isExisting = availableCategories && availableCategories.some(c => c.name === name.trim());
+
             return (
                 <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
-                    <div className="bg-white w-[400px] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                    <div className="bg-white w-[450px] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
                         <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
-                            <h2 className="font-black text-[16px]"><i className="fas fa-save text-blue-400 mr-2"></i>현재 화면 카탈로그로 저장</h2>
+                            <h2 className="font-black text-[16px]"><i className="fas fa-save text-blue-400 mr-2"></i>저장 (병합/추가)</h2>
                             <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>
                         </div>
                         <div className="p-6 flex flex-col gap-4">
                             <div className="text-[13px] text-slate-600 font-bold mb-2">현재 화면에 띄워진 상품 목록을 언제든 엑셀 없이 불러올 수 있도록 카탈로그로 묶어 저장합니다.</div>
-                            <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="저장할 카탈로그 이름을 입력하세요 (예: A업체 주말견적)" className="w-full border border-slate-300 rounded-lg px-4 py-3 text-[13px] font-bold outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200" autoFocus onKeyDown={(e) => e.key === 'Enter' && onSave(name)} />
-                            <div className="flex gap-2 mt-4">
+                            
+                            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                                <label className="text-[12px] font-bold text-slate-500 mb-1.5 block">1. 기존 카탈로그 선택 (오타 방지)</label>
+                                <select 
+                                    onChange={(e) => { if(e.target.value) setName(e.target.value); }} 
+                                    className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-[13px] font-bold outline-none focus:border-indigo-500 shadow-sm mb-4 bg-white text-slate-700 cursor-pointer"
+                                >
+                                    <option value="">-- 기존 카탈로그 목록에서 선택 --</option>
+                                    {availableCategories && availableCategories.map(c => (
+                                        <option key={c.name} value={c.name}>{c.name} ({c.count}건)</option>
+                                    ))}
+                                </select>
+
+                                <label className="text-[12px] font-bold text-slate-500 mb-1.5 block">2. 카탈로그 명칭 (직접 입력 가능)</label>
+                                <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="저장할 카탈로그 이름" className="w-full border border-slate-300 rounded-lg px-4 py-3 text-[13px] font-bold outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 bg-white" autoFocus onKeyDown={(e) => { if(e.key === 'Enter' && name) onSave(name); }} />
+                            </div>
+                            
+                            {isExisting ? (
+                                <div className="text-[12px] font-bold text-indigo-700 bg-indigo-50 p-3 rounded-lg border border-indigo-200 fade-in flex items-start">
+                                    <i className="fas fa-info-circle mr-1.5 mt-0.5"></i>
+                                    <div>
+                                        이미 존재하는 카탈로그입니다.
+                                        <p className="mt-1 text-[11px] text-indigo-600 font-medium leading-relaxed">선택하신 카탈로그에 새로운 상품들이 <strong>병합(추가)</strong>됩니다.<br/>기존 상품의 변동된 단가는 이미 최신으로 업데이트되었습니다.</p>
+                                    </div>
+                                </div>
+                            ) : name.trim() !== '' ? (
+                                <div className="text-[12px] font-bold text-emerald-700 bg-emerald-50 p-3 rounded-lg border border-emerald-200 fade-in flex items-center">
+                                    <i className="fas fa-magic mr-1.5"></i> 완전히 새로운 카탈로그가 생성됩니다.
+                                </div>
+                            ) : null}
+
+                            <div className="flex gap-2 mt-2">
                                 <button onClick={onClose} className="flex-1 bg-slate-100 text-slate-600 font-bold py-3 rounded-xl hover:bg-slate-200 transition-colors">취소</button>
-                                <button onClick={() => onSave(name)} className="flex-1 bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition-colors">저장하기</button>
+                                <button onClick={() => onSave(name)} disabled={!name.trim()} className={`flex-1 font-bold py-3 rounded-xl transition-colors shadow-sm ${name.trim() ? (isExisting ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-blue-600 text-white hover:bg-blue-700') : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>
+                                    {isExisting ? '기존 목록에 병합(추가)' : '새로 저장하기'}
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -535,7 +569,7 @@
                                 <i className="fas fa-chevron-down absolute right-2.5 top-3 text-blue-400 text-[10px] pointer-events-none"></i>
                             </div>
                             <button onClick={() => actions.setShowCategoryModal(true)} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-blue-600 border border-blue-200 hover:bg-blue-50 transition-colors shadow-sm flex items-center shrink-0" title="현재 화면의 상품들을 묶어서 새로운 카탈로그로 만듭니다.">
-                                <i className="fas fa-save mr-1.5 text-blue-500"></i> 새 저장
+                                <i className="fas fa-save mr-1.5 text-blue-500"></i> 저장
                             </button>
                         </div>
 
@@ -1045,7 +1079,7 @@
                 localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
 
                 setShowCategoryModal(false);
-                showToast(`✅ ${count}개 상품이 [${safeName}] 카탈로그에 저장되었습니다.`);
+                showToast(`✅ ${count}개 신규 상품이 [${safeName}] 카탈로그에 병합/추가되었습니다.`);
                 setIsProcessing(false);
                 setProcessMsg('');
             }, [managedItems, masterProducts, showToast]);
@@ -1161,7 +1195,7 @@
                     <IframeSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
                     
                     {showReviewModal && <ReviewModal onClose={() => setShowReviewModal(false)} onConfirm={handleCommitEstimate} displayRows={fullDisplayRows} masterProducts={masterProducts} />}
-                    {showCategoryModal && <CategorySaveModal onClose={() => setShowCategoryModal(false)} onSave={handleSaveAsCategory} />}
+                    {showCategoryModal && <CategorySaveModal onClose={() => setShowCategoryModal(false)} onSave={handleSaveAsCategory} availableCategories={availableCategories} />}
                     {showExportModal && <ExportModal onClose={() => setShowExportModal(false)} executeExport={executeExport} />}
 
                     {toastMsg && (
