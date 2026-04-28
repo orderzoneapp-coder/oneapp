@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - Sales & Dispatch [v3.0]</title>
+    <title>ONEAPP NEXES - Order Management [v3.0]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.min.js"></script>
@@ -32,7 +32,6 @@
         .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
         input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         
-        /* 🌟 공통 테이블 하이라이트 스타일 */
         .table-row-hover { border-bottom: 1px solid #f1f5f9; transition: background-color 0.2s ease; }
         .table-row-hover:last-child { border-bottom: none; }
         .table-row-hover:hover td { background-color: #f8fafc; }
@@ -48,7 +47,7 @@
         // ==========================================
         // 🔑 1. Global Constants & Utilities
         // ==========================================
-        const STORAGE_KEYS = { MASTER_DB: 'merchMaster_v870', CLOUD_URL: 'skuSyncCloudUrl_v6', SYNC_TRIGGER: 'merchMaster_sync_trigger', HISTORY_DB: 'merchHistory_v870' };
+        const STORAGE_KEYS = { MASTER_DB: 'merchMaster_v870', CLOUD_URL: 'skuSyncCloudUrl_v6', SYNC_TRIGGER: 'merchMaster_sync_trigger', ORDERS_DB: 'merchOrders_v9', PARSER_DICT: 'parserDict_v870' };
 
         const generateUUID = () => {
             if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -77,7 +76,7 @@
                     let headerRowIdx = 0;
                     for (let i = 0; i < Math.min(15, jsonAll.length); i++) {
                         const rowStr = jsonAll[i].join('').replace(/\s/g, '');
-                        if (rowStr.includes('코드') || rowStr.includes('품명') || rowStr.includes('상품')) { headerRowIdx = i; break; }
+                        if (rowStr.includes('품명') || rowStr.includes('상품') || rowStr.includes('수량')) { headerRowIdx = i; break; }
                     }
                     const headers = jsonAll[headerRowIdx] || [];
                     let endIdx = jsonAll.length - 1;
@@ -110,23 +109,16 @@
                 const renderIcon = () => {
                     if (window.lucide && window.lucide.icons) {
                         const kebabName = name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
-                        const possibleNames = [
-                            kebabName, name, 
-                            name === 'cloud-download' ? 'download-cloud' : name,
-                            name === 'cloud-upload' ? 'upload-cloud' : name,
-                            name === 'bar-chart-3' ? 'bar-chart' : name
-                        ];
+                        const possibleNames = [kebabName, name, name === 'cloud-download' ? 'download-cloud' : name, name === 'cloud-upload' ? 'upload-cloud' : name, name === 'bar-chart-3' ? 'bar-chart' : name];
                         for (const pName of possibleNames) {
-                            if (window.lucide.icons[pName]) {
-                                setSvg(window.lucide.icons[pName].toSvg({ width: size, height: size, class: className, 'stroke-width': 2.5 })); return;
-                            }
+                            if (window.lucide.icons[pName]) { setSvg(window.lucide.icons[pName].toSvg({ width: size, height: size, class: className, 'stroke-width': 2.5 })); return; }
                         }
                     }
                 }; renderIcon();
             }, [name, size, className]);
 
             if (!svg) {
-                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'database':'fa-database', 'upload':'fa-upload', 'pie-chart':'fa-chart-pie', 'shopping-cart':'fa-shopping-cart', 'users':'fa-users', 'megaphone':'fa-bullhorn', 'book-open':'fa-address-book', 'shopping-bag':'fa-shopping-bag', 'credit-card':'fa-credit-card', 'line-chart':'fa-chart-line', 'printer':'fa-print', 'search':'fa-search', 'plus':'fa-plus', 'trash-alt':'fa-trash-alt', 'edit':'fa-edit', 'save':'fa-save', 'file-excel':'fa-file-excel', 'link':'fa-link', 'ban':'fa-ban', 'layer-group':'fa-layer-group', 'desktop':'fa-desktop', 'sign-in-alt':'fa-sign-in-alt', 'calculator':'fa-calculator', 'tags':'fa-tags', 'broom':'fa-broom', 'info-circle':'fa-info-circle', 'lock':'fa-lock', 'key':'fa-key', 'folder-open':'fa-folder-open', 'file-invoice':'fa-file-invoice', 'history':'fa-history' };
+                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'database':'fa-database', 'upload':'fa-upload', 'pie-chart':'fa-chart-pie', 'shopping-cart':'fa-shopping-cart', 'users':'fa-users', 'megaphone':'fa-bullhorn', 'book-open':'fa-address-book', 'shopping-bag':'fa-shopping-bag', 'credit-card':'fa-credit-card', 'line-chart':'fa-chart-line', 'printer':'fa-print', 'search':'fa-search', 'plus':'fa-plus', 'trash-alt':'fa-trash-alt', 'edit':'fa-edit', 'save':'fa-save', 'file-excel':'fa-file-excel', 'link':'fa-link', 'ban':'fa-ban', 'layer-group':'fa-layer-group', 'desktop':'fa-desktop', 'sign-in-alt':'fa-sign-in-alt', 'calculator':'fa-calculator', 'tags':'fa-tags', 'broom':'fa-broom', 'info-circle':'fa-info-circle', 'lock':'fa-lock', 'key':'fa-key', 'folder-open':'fa-folder-open', 'file-invoice':'fa-file-invoice', 'history':'fa-history', 'arrow-right':'fa-arrow-right', 'arrow-up':'fa-arrow-up', 'arrow-down':'fa-arrow-down' };
                 const faName = faMap[name] || `fa-${name}`;
                 return <i className={`fas ${faName} ${className}`} style={{ fontSize: size }} />;
             }
@@ -139,24 +131,7 @@
         const useMerchConfig = () => {
             const loadConfig = () => {
                 const cloudUrl = localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || '';
-                
-                const defaultOpsMappings = {
-                    code: '품목코드, 상품코드, 코드, 품번, 바코드, sku', name: '품명, 품목명(규격), 품목명[규격], 상품명, 제품명, 이름, 품목, 상품', spec: '규격, 옵션, 사이즈', 
-                    qty: '기말실사(이월수량), 기말실사, 기말/실사, 수량, 재고, 기말잔량(실사반영), 기말잔량(실사), 기말잔량, 수량(합계), 입고수량, 출고수량, 판매수량, 잔량, 실사, 합계, 기말, 판매량, 출고량, 입고량',
-                    price: '매입단가(원가), 단가, 입고단가, 구매단가, 판매단가, 매입단가, 매입가, 판매가, 공급가액, 공급가, 금액, 원가, 가격, 최종(창고)',
-                    date: '결산일자, 매입일자, 일자, 날짜, 구매일자, 판매일자, 입고일자, 출고일자',
-                    vendor: '매출처명, 매입처(Lot), 매입처(거래처), 거래처명, 거래처, 거래, 매장명, 매장, 고객, 판매처, 공급사, 판매, 청과, 3거래',
-                    matchVendor: '구매처, 매입처, 매칭정보, 원매입처, lot', 
-                    excludeVendor: '3우리, 우리농산, 1전송, 창고이동, 폐기, 샘플', lifoVendor: '2전송, 쿠팡, B2B, 당일우선, 현금판매', internalLot: '우리, 공용, 분배, 담당자, 우리농산', priorityVendor: '2전송>1창고' 
-                };
-
-                let opsMappings = JSON.parse(localStorage.getItem('inventoryMappingsLight') || 'null');
-                if (!opsMappings) opsMappings = defaultOpsMappings;
-
-                let opsGrouping = JSON.parse(localStorage.getItem('inventoryGroupingV79') || 'null');
-                if (!opsGrouping) opsGrouping = { priceMode: 'separate', splitByVendor: false, splitByDate: false };
-
-                return { cloudUrl, opsMappings, opsGrouping };
+                return { cloudUrl };
             };
 
             const [config, setConfig] = useState(loadConfig());
@@ -171,7 +146,7 @@
         };
 
         // ==========================================
-        // 🧩 통합 글로벌 헤더 (v3.0)
+        // 🧩 통합 글로벌 헤더 (v3.0 표준 규격) - 모든 파일 공통
         // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [
@@ -180,7 +155,6 @@
                 { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }
             ];
 
-            // 💡 이미지에 맞춘 대소문자 탭 주소 세팅 완료
             const tabs = [
                 { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true },
                 { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: false },
@@ -220,7 +194,9 @@
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
                                         <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.0</span>
                                     </div>
-                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">SALES & DISPATCH</span>
+                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">
+                                        {currentTab ? currentTab.label : 'WORKSPACE'}
+                                    </span>
                                 </div>
                             </div>
 
@@ -248,7 +224,7 @@
                                     )}
                                 </div>
                                 <div className="w-px h-3.5 bg-slate-700"></div>
-                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`현재 브라우저 메모리에 다운로드된 마스터 상품 수: ${itemCount.toLocaleString()}개`}>
+                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`현재 데이터 건수: ${itemCount.toLocaleString()}건`}>
                                     <SafeIcon name="database" size={10} className="text-slate-500" />
                                     <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount.toLocaleString()}</span>
                                 </div>
@@ -326,7 +302,7 @@
         };
 
         // ==========================================
-        // ⚙️ Main App Container (Sales)
+        // ⚙️ Main App Container (Orders)
         // ==========================================
         function App() {
             const config = useMerchConfig();
@@ -335,17 +311,18 @@
             const [isProcessing, setIsProcessing] = useState(false);
             const [processMsg, setProcessMsg] = useState('');
             
-            // 🌟 v3.0 추가: 설정 모달 상태
             const [showSettingsModal, setShowSettingsModal] = useState(false);
             
             const [masterProducts, setMasterProducts] = useState({});
-            const [historyLogs, setHistoryLogs] = useState([]);
+            const [parserDict, setParserDict] = useState({});
             
-            const [cart, setCart] = useState([]);
+            const [rawText, setRawText] = useState('');
+            const [parsedList, setParsedList] = useState([]);
+            const [activeTab, setActiveTab] = useState('MATCH'); // MATCH | SIMILAR | MISMATCH
+            const [selectedItemToMap, setSelectedItemToMap] = useState(null);
             const [searchKw, setSearchKw] = useState('');
-            const [partnerInput, setPartnerInput] = useState(''); // 매출처(고객사)
-            const [lotVendorInput, setLotVendorInput] = useState(''); // 차감할 매입처(로트)
             const [dateInput, setDateInput] = useState(() => new Date().toISOString().slice(0,10));
+            const [partnerInput, setPartnerInput] = useState('');
 
             const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
 
@@ -365,17 +342,18 @@
             const loadData = async () => {
                 const mDB = await getIDB(STORAGE_KEYS.MASTER_DB) || {};
                 setMasterProducts(mDB);
-                const hDB = await getIDB(STORAGE_KEYS.HISTORY_DB) || [];
-                setHistoryLogs(hDB);
+                const dict = await getIDB(STORAGE_KEYS.PARSER_DICT) || {};
+                setParserDict(dict);
             };
 
             useEffect(() => { loadData(); }, []);
 
             useEffect(() => {
-                const handleStorageChange = (e) => { if (e.key === STORAGE_KEYS.SYNC_TRIGGER) loadData(); };
+                const handleStorageChange = (e) => { 
+                    if (e.key === STORAGE_KEYS.SYNC_TRIGGER) loadData(); 
+                };
                 window.addEventListener('storage', handleStorageChange);
                 
-                // 🌟 Iframe 메시지 수신 (설정창 닫힘 감지)
                 const handleMessage = (e) => {
                     if (e.data && e.data.type === 'CLOSE_SETTINGS') {
                         setShowSettingsModal(false);
@@ -390,190 +368,6 @@
                 };
             }, []);
 
-            // 품목코드순 정렬이 적용된 검색 결과 로직
-            const searchResults = useMemo(() => {
-                const arr = Object.values(masterProducts);
-                const sortFn = (a, b) => String(a.코드 || '').localeCompare(String(b.코드 || ''), undefined, { numeric: true, sensitivity: 'base' });
-                
-                if (!searchKw.trim()) {
-                    return arr.sort(sortFn).slice(0, 50);
-                }
-                const kw = searchKw.toLowerCase().replace(/\s+/g, '');
-                return arr.filter(item => {
-                    const str = ((item['코드']||'') + (item['품목명']||'') + (item['규격']||'')).toLowerCase().replace(/\s+/g, '');
-                    return str.includes(kw);
-                }).sort(sortFn).slice(0, 50);
-            }, [masterProducts, searchKw]);
-
-            // 출고(판매) 엑셀 파싱 로직
-            const handleFileUpload = async (e) => {
-                const file = e.target.files[0]; if (!file) return;
-                setIsProcessing(true); setProcessMsg('매출 엑셀 분석 중...');
-                try {
-                    const excelData = await parseExcelRobust(file);
-                    if (excelData.length === 0) throw new Error("데이터가 없습니다.");
-                    
-                    let newCartItems = [];
-                    excelData.forEach(row => {
-                        const findKey = (mappingString) => {
-                            if (!mappingString) return null;
-                            const keys = mappingString.split(',').map(k => k.trim());
-                            const rowKeys = Object.keys(row);
-                            for (const key of keys) {
-                                const matched = rowKeys.find(rk => rk.toLowerCase().replace(/\s/g, '') === key.toLowerCase().replace(/\s/g, ''));
-                                if (matched) return matched;
-                            }
-                            return null;
-                        };
-
-                        const codeKey = findKey(config.opsMappings.code) || '품목코드';
-                        const code = row[codeKey] || row['코드'] || row['상품코드'];
-                        if (!code) return;
-                        
-                        const qtyKey = findKey(config.opsMappings.qty) || '수량';
-                        const priceKey = findKey(config.opsMappings.price) || '단가';
-                        // 판매 관리에서는 고객사(partner)와 차감로트(lotVendor)가 필요함
-                        const partnerKey = findKey(config.opsMappings.vendor) || '거래처명'; // 매출처로 매핑됨
-                        const lotVendorKey = findKey(config.opsMappings.matchVendor) || '구매처'; // 차감할 매입처
-                        
-                        const qty = parseNum(row[qtyKey] || row['판매수량'] || row['출고량']);
-                        const price = parseNum(row[priceKey] || row['판매가'] || row['출고가']);
-                        const partnerVal = row[partnerKey] || '';
-                        const lotVendorVal = row[lotVendorKey] || '';
-                        
-                        newCartItems.push({
-                            코드: code,
-                            품목명: row['품목명'] || row['상품명'] || masterProducts[code]?.품목명 || '알 수 없음',
-                            규격: row['규격'] || masterProducts[code]?.규격 || '',
-                            단가: price || parseNum(masterProducts[code]?.출고가) || 0, // 판매니까 출고가 기준
-                            수량: qty,
-                            partner: partnerVal,
-                            lotVendor: lotVendorVal
-                        });
-                    });
-
-                    setCart(prevCart => {
-                        const merged = [...prevCart];
-                        newCartItems.forEach(newItem => {
-                            // 같은 코드, 같은 고객사, 같은 로트면 수량 합산
-                            const existing = merged.find(c => c.코드 === newItem.코드 && c.partner === newItem.partner && c.lotVendor === newItem.lotVendor);
-                            if (existing) {
-                                existing.수량 += newItem.수량;
-                                if(newItem.단가 > 0) existing.단가 = newItem.단가; 
-                            } else {
-                                merged.push(newItem);
-                            }
-                        });
-                        return merged;
-                    });
-                    
-                    showToast(`✅ ${newCartItems.length}건의 매출 내역이 큐에 추가되었습니다.`);
-                } catch(error) { 
-                    showToast("❌ 업로드 오류: " + error.message); 
-                } finally { 
-                    e.target.value = ''; setIsProcessing(false); setProcessMsg(''); 
-                }
-            };
-
-            const addToCart = (item) => {
-                // 동일 상품이 여러 로트로 출고될 수 있으므로 고유 ID 부여
-                setCart([{
-                    cartId: generateUUID(),
-                    코드: item.코드,
-                    품목명: item.품목명,
-                    규격: item.규격,
-                    단가: parseNum(item.출고가) || 0, // 판매는 기본 출고가
-                    수량: 0,
-                    partner: '',
-                    lotVendor: ''
-                }, ...cart]);
-            };
-
-            // 🌟 수정된 부분: 배열 내 객체 반환 시 소괄호 추가
-            const updateCartItem = (cartId, field, value) => {
-                setCart(cart.map(c => {
-                    if (c.cartId === cartId) {
-                        const val = (field === 'partner' || field === 'lotVendor') ? value : (value === '' ? '' : parseNum(value));
-                        return { ...c, [field]: val };
-                    }
-                    return c;
-                }));
-            };
-
-            const removeFromCart = (cartId) => {
-                setCart(cart.filter(c => c.cartId !== cartId));
-            };
-
-            const handleCommitSales = async () => {
-                const validItems = cart.filter(c => c.수량 !== 0 && c.수량 !== '');
-                if (validItems.length === 0) return showToast("⚠️ 수량이 입력된 항목이 없습니다.");
-                
-                // 고객사 확인
-                const hasAnyPartner = validItems.some(c => c.partner?.trim() !== '');
-                if (!hasAnyPartner && !partnerInput.trim()) {
-                    return showToast("⚠️ 공통 고객사 또는 개별 고객사를 입력해주세요.");
-                }
-
-                setIsProcessing(true);
-                
-                try {
-                    let newMaster = { ...masterProducts };
-                    let newLogs = [];
-                    const nowStr = new Date().toLocaleString('ko-KR');
-                    
-                    const existingHistory = await getIDB(STORAGE_KEYS.HISTORY_DB) || [];
-
-                    validItems.forEach(item => {
-                        const code = item.코드;
-                        const qty = item.수량; // 양수면 출고(DISPATCH), 음수면 반품입고(SALES_RETURN)
-                        const price = item.단가;
-                        const itemPartner = (item.partner || '').trim() || partnerInput.trim() || '미지정';
-                        const itemLotVendor = (item.lotVendor || '').trim() || lotVendorInput.trim() || '';
-                        
-                        const isReturn = qty < 0;
-                        const eventType = isReturn ? 'SALES_RETURN' : 'DISPATCH';
-                        
-                        // 판매에서는 마스터의 출고가나 입고가를 변경하지 않음 (단지 트랜잭션만 남김)
-                        // 단, 재고수량 등 단순 표시용 필드가 있다면 업데이트 가능 (여기서는 History를 신뢰하므로 생략)
-
-                        newLogs.push({
-                            id: `SAL-${Date.now()}-${generateUUID().slice(0,8)}`,
-                            timestamp: nowStr,
-                            date: dateInput,
-                            type: eventType,
-                            code: code,
-                            name: item.품목명,
-                            qty: Math.abs(qty), // DISPATCH/SALES_RETURN 타입 자체로 증감 판단, 수량은 절대값 저장 (Inventory 엔진이 type보고 차감함)
-                            price: price,
-                            partner: itemPartner,
-                            lotVendor: itemLotVendor, // 어느 매입처 물건을 깠는지 기록
-                            totalAmount: Math.abs(qty) * price
-                        });
-                    });
-
-                    await setIDB(STORAGE_KEYS.HISTORY_DB, [...existingHistory, ...newLogs]);
-                    localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
-                    
-                    setHistoryLogs([...existingHistory, ...newLogs]);
-                    setCart([]);
-                    
-                    showToast(`✅ ${validItems.length}건의 매출/환불 전표가 확정되었습니다.`);
-                } catch(err) {
-                    console.error(err);
-                    showToast("❌ 전표 확정 중 오류가 발생했습니다.");
-                } finally {
-                    setIsProcessing(false);
-                }
-            };
-
-            const totalAmount = cart.reduce((sum, item) => sum + (parseNum(item.수량) * parseNum(item.단가)), 0);
-
-            const todayLogs = useMemo(() => {
-                return historyLogs
-                    .filter(log => (log.type === 'DISPATCH' || log.type === 'SALES_RETURN') && log.date === dateInput)
-                    .sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
-            }, [historyLogs, dateInput]);
-
             const handlePush = async () => {
                 if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
                 setIsProcessing(true); setProcessMsg("클라우드 백업 중...");
@@ -586,10 +380,213 @@
                 setTimeout(() => { showToast("✅ 데이터 수신 완료"); setIsProcessing(false); setProcessMsg(""); }, 1000);
             };
 
+            // 카톡 발주서(텍스트)를 수량 기준으로 파싱 (주문 관리용 특화)
+            const handleParse = () => {
+                if (!rawText.trim()) return showToast("⚠️ 발주서 텍스트를 입력해주세요.");
+                
+                setIsProcessing(true); setProcessMsg("발주 내역 시맨틱 매칭 중...");
+                
+                setTimeout(() => {
+                    const lines = rawText.split('\n');
+                    const items = [];
+                    
+                    lines.forEach(line => {
+                        const trimmed = line.trim();
+                        if (!trimmed) return;
+                        
+                        // 발주서는 수량을 추출 (예: "사과 10kg 2박스" -> 2)
+                        // 수량 패턴 (숫자 뒤에 개, 박스, ea, 단, 단 등)
+                        const qtyMatch = trimmed.match(/([\d,]+)\s*(개|박스|box|ea|단|묶음|봉지|포)?\s*$/i);
+                        
+                        if (qtyMatch) {
+                            const qty = parseNum(qtyMatch[1]);
+                            if (qty > 0) {
+                                const nameSpec = trimmed.replace(qtyMatch[0], '').trim();
+                                if (nameSpec) {
+                                    items.push({ id: generateUUID(), rawName: nameSpec, qty: qty, originalLine: trimmed, status: 'PENDING', isManual: false });
+                                }
+                            }
+                        } else {
+                            // 수량이 없으면 1개로 간주
+                            items.push({ id: generateUUID(), rawName: trimmed, qty: 1, originalLine: trimmed, status: 'PENDING', isManual: false });
+                        }
+                    });
+
+                    if (items.length === 0) {
+                        setIsProcessing(false);
+                        return showToast("⚠️ 유효한 발주 데이터를 찾지 못했습니다.");
+                    }
+
+                    const mArr = Object.values(masterProducts);
+                    const fuse = new Fuse(mArr, {
+                        keys: ['품목명', '검색어등록', '소싱태그', '규격'],
+                        includeScore: true,
+                        threshold: 0.5
+                    });
+
+                    const processedItems = items.map(item => {
+                        const cleanRawName = item.rawName.replace(/\s+/g, '');
+                        
+                        // A. Dictionary Exact Match
+                        const dictCode = parserDict[cleanRawName];
+                        if (dictCode && masterProducts[dictCode]) {
+                            const m = masterProducts[dictCode];
+                            return { ...item, matchedCode: dictCode, matchedName: m['품목명'], matchedSpec: m['규격'], outPrice: parseNum(m['출고가']), status: 'MATCH', score: 0 };
+                        }
+
+                        // B. Fuse.js Fuzzy Match
+                        const result = fuse.search(item.rawName);
+                        if (result.length > 0) {
+                            const bestMatch = result[0];
+                            const m = bestMatch.item;
+                            if (bestMatch.score < 0.15) { // 매우 유사
+                                return { ...item, matchedCode: m['코드'] || m['품목코드'], matchedName: m['품목명'], matchedSpec: m['규격'], outPrice: parseNum(m['출고가']), status: 'MATCH', score: bestMatch.score };
+                            } else if (bestMatch.score < 0.35) { // 유사 (확인 필요)
+                                return { ...item, matchedCode: m['코드'] || m['품목코드'], matchedName: m['품목명'], matchedSpec: m['규격'], outPrice: parseNum(m['출고가']), status: 'SIMILAR', score: bestMatch.score };
+                            }
+                        }
+
+                        // C. Mismatch
+                        return { ...item, status: 'MISMATCH' };
+                    });
+
+                    setParsedList(processedItems);
+                    
+                    const hasSimilar = processedItems.some(i => i.status === 'SIMILAR');
+                    const hasMismatch = processedItems.some(i => i.status === 'MISMATCH');
+                    if (hasSimilar) setActiveTab('SIMILAR');
+                    else if (hasMismatch) setActiveTab('MISMATCH');
+                    else setActiveTab('MATCH');
+
+                    setIsProcessing(false); setProcessMsg('');
+                    showToast(`✅ ${processedItems.length}건 발주 분석 완료!`);
+                }, 500); 
+            };
+
+            const masterSearchResults = useMemo(() => {
+                if (!searchKw.trim()) return [];
+                const arr = Object.values(masterProducts);
+                const fuse = new Fuse(arr, { keys: ['품목명', '코드', '품목코드'], threshold: 0.3 });
+                return fuse.search(searchKw).map(r => r.item).slice(0, 10);
+            }, [masterProducts, searchKw]);
+
+            const handleManualMatch = (itemId, masterItem) => {
+                setParsedList(prev => prev.map(item => {
+                    if (item.id === itemId) {
+                        return { ...item, matchedCode: masterItem['코드'] || masterItem['품목코드'], matchedName: masterItem['품목명'], matchedSpec: masterItem['규격'], outPrice: parseNum(masterItem['출고가']), status: 'MATCH', isManual: true };
+                    }
+                    return item;
+                }));
+                setSearchKw(''); setSelectedItemToMap(null);
+                showToast("✅ 수동 매핑 완료. [일치] 탭으로 이동되었습니다.");
+            };
+
+            const handleCancelMatch = (itemId) => {
+                setParsedList(prev => prev.map(item => {
+                    if (item.id === itemId) {
+                        return { ...item, matchedCode: null, matchedName: null, matchedSpec: null, outPrice: 0, status: 'MISMATCH', isManual: false };
+                    }
+                    return item;
+                }));
+                showToast("❌ 매핑이 취소되었습니다.");
+            };
+
+            const updateQty = (itemId, val) => {
+                setParsedList(prev => prev.map(item => item.id === itemId ? { ...item, qty: parseNum(val) } : item));
+            };
+
+            const handleCommitOrders = async () => {
+                const readyItems = parsedList.filter(i => i.status === 'MATCH');
+                if (readyItems.length === 0) return showToast("⚠️ 확정할 수 있는 (일치) 항목이 없습니다.");
+                if (!partnerInput.trim()) return showToast("⚠️ 수주처(고객사)를 입력해주세요.");
+
+                setIsProcessing(true); setProcessMsg("주문서 생성 및 AI 사전 학습 중...");
+                
+                try {
+                    const nowStr = new Date().toLocaleString('ko-KR');
+                    const existingOrders = await getIDB(STORAGE_KEYS.ORDERS_DB) || [];
+                    
+                    const newOrderList = [];
+                    let newDict = { ...parserDict };
+
+                    readyItems.forEach(item => {
+                        newOrderList.push({
+                            id: `ORD-${Date.now()}-${generateUUID().slice(0,8)}`,
+                            timestamp: nowStr,
+                            date: dateInput,
+                            partner: partnerInput.trim(),
+                            code: item.matchedCode,
+                            name: item.matchedName,
+                            spec: item.matchedSpec,
+                            qty: item.qty,
+                            price: item.outPrice,
+                            totalAmount: item.qty * item.outPrice,
+                            status: 'ORDERED' // ORDERED -> PREPARED -> SHIPPED
+                        });
+
+                        // AI 사전 학습 (수동 매핑했거나 스코어가 0이 아니었던 경우)
+                        if (item.isManual || item.score > 0) {
+                            const cleanRawName = item.rawName.replace(/\s+/g, '');
+                            newDict[cleanRawName] = item.matchedCode;
+                        }
+                    });
+
+                    await setIDB(STORAGE_KEYS.ORDERS_DB, [...newOrderList, ...existingOrders]);
+                    await setIDB(STORAGE_KEYS.PARSER_DICT, newDict);
+                    
+                    setParserDict(newDict);
+                    setParsedList(parsedList.filter(i => i.status !== 'MATCH')); // 일치했던 항목만 제거
+                    
+                    showToast(`🎉 ${newOrderList.length}건의 주문이 확정 및 전송되었습니다!`);
+                } catch(err) {
+                    console.error(err);
+                    showToast("❌ 주문 확정 중 오류가 발생했습니다.");
+                } finally {
+                    setIsProcessing(false); setProcessMsg('');
+                }
+            };
+
+            const handleExportOrders = async () => {
+                const orders = await getIDB(STORAGE_KEYS.ORDERS_DB) || [];
+                const targetOrders = orders.filter(o => o.date === dateInput);
+                
+                if (targetOrders.length === 0) return showToast(`⚠️ ${dateInput} 에 생성된 주문 내역이 없습니다.`);
+
+                const exportData = targetOrders.map(o => ({
+                    '주문일자': o.date,
+                    '고객사(수주처)': o.partner,
+                    '상품코드': o.code,
+                    '상품명': o.name,
+                    '규격': o.spec,
+                    '주문수량': o.qty,
+                    '판매단가': o.price,
+                    '합계금액': o.totalAmount,
+                    '상태': o.status
+                }));
+
+                const wb = window.XLSX.utils.book_new();
+                window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(exportData), '수주내역');
+                const excelBuffer = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = url; a.download = `수주내역서_${dateInput.replace(/-/g,'')}.xlsx`;
+                document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+                showToast("✅ 주문 내역 엑셀 다운로드가 완료되었습니다.");
+            };
+
+            const stats = useMemo(() => {
+                return {
+                    match: parsedList.filter(i => i.status === 'MATCH').length,
+                    similar: parsedList.filter(i => i.status === 'SIMILAR').length,
+                    mismatch: parsedList.filter(i => i.status === 'MISMATCH').length,
+                    totalAmount: parsedList.filter(i => i.status === 'MATCH').reduce((sum, item) => sum + (item.qty * item.outPrice), 0)
+                };
+            }, [parsedList]);
+
             return (
                 <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-[#f1f5f9] relative shadow-2xl border-x border-slate-300 select-none">
                     <GlobalHeader 
-                        activeTab="sales" 
+                        activeTab="orders" 
                         itemCount={Object.keys(masterProducts).length} 
                         isProcessing={isProcessing} 
                         processMsg={processMsg}
@@ -599,177 +596,166 @@
                         onNavigate={handleNavigate}
                     />
 
-                    <main className="flex-1 flex overflow-hidden bg-slate-50">
-                        {/* Left: Master Search */}
-                        <div className="w-1/3 min-w-[320px] max-w-[400px] bg-white border-r border-slate-200 flex flex-col z-10 shadow-[2px_0_10px_rgba(0,0,0,0.02)]">
-                            <div className="p-4 bg-[#f8fafc] border-b border-slate-200 shrink-0">
-                                <div className="flex items-center justify-between mb-3">
-                                    <h2 className="text-[13px] font-black text-slate-800"><SafeIcon name="search" size={14} className="text-indigo-500 mr-2"/>마스터 상품 검색</h2>
-                                    <label className="cursor-pointer px-3 py-1.5 rounded text-[11px] font-bold transition-all flex items-center justify-center bg-white text-blue-600 shadow-sm hover:bg-blue-50 border border-blue-200" title="엑셀 매출장을 업로드합니다.">
-                                        <SafeIcon name="file-excel" size={12} className="mr-1.5" /> 엑셀 업로드
-                                        <input type="file" className="hidden" multiple onChange={handleFileUpload} accept=".xlsx, .xls, .csv" disabled={isProcessing} />
+                    <main className="flex-1 flex overflow-hidden bg-slate-50 relative p-6 gap-6">
+                        
+                        {/* 🌟 Left: Data Ingest (카톡 발주서 입력) */}
+                        <div className="w-[380px] bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col z-10 shrink-0">
+                            <div className="p-5 border-b border-slate-100 bg-[#f8fafc] rounded-t-xl shrink-0">
+                                <h2 className="text-[15px] font-black text-slate-800 flex items-center mb-1"><SafeIcon name="shopping-bag" size={18} className="text-indigo-500 mr-2"/>카톡/문자 발주서 등록</h2>
+                                <p className="text-[11px] text-slate-500 font-medium">카톡 발주서를 복사해 넣으면 수량과 상품을 자동 분석합니다.</p>
+                            </div>
+                            
+                            <div className="p-5 flex-1 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
+                                <div className="flex-1 flex flex-col h-full">
+                                    <label className="text-[12px] font-bold text-slate-700 mb-1.5 flex items-center">
+                                        <SafeIcon name="file-invoice" size={14} className="mr-1.5 text-slate-400"/> 발주 내용 (Ctrl+V)
                                     </label>
-                                </div>
-                                <div className="relative">
-                                    <input type="text" value={searchKw} onChange={e=>setSearchKw(e.target.value)} placeholder="품명, 규격, 코드 검색..." className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-lg text-[12px] font-medium outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 transition-shadow shadow-sm" />
-                                    <SafeIcon name="search" size={14} className="absolute left-3 top-2.5 text-slate-400" />
+                                    <textarea value={rawText} onChange={e=>setRawText(e.target.value)} placeholder="사과 10kg 2박스&#10;감자 1박스&#10;..." className="w-full flex-1 border border-slate-300 rounded-lg p-3 text-[13px] outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100 shadow-inner resize-none font-mono leading-relaxed" />
                                 </div>
                             </div>
-                            <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
-                                {searchResults.length === 0 ? (
-                                    <div className="py-10 text-center text-[12px] text-slate-400 font-bold">검색 결과가 없습니다.</div>
-                                ) : searchResults.map(item => (
-                                    <div key={item.코드} onClick={() => addToCart(item)} className="p-3 bg-white border border-slate-100 rounded-lg hover:border-indigo-300 hover:bg-indigo-50/50 cursor-pointer flex justify-between items-center group transition-all">
-                                        <div className="flex flex-col min-w-0 pr-2">
-                                            <span className="text-[10px] font-mono text-slate-400 mb-0.5">{item.코드}</span>
-                                            <span className="text-[13px] font-bold text-slate-800 truncate group-hover:text-indigo-700">{item.품목명} <span className="text-[11px] text-slate-400 font-normal">({item.규격})</span></span>
-                                        </div>
-                                        <button className="w-6 h-6 rounded bg-slate-50 text-slate-400 group-hover:bg-indigo-600 group-hover:text-white flex items-center justify-center transition-all shrink-0">
-                                            <SafeIcon name="plus" size={12} />
-                                        </button>
-                                    </div>
-                                ))}
+
+                            <div className="p-5 bg-white border-t border-slate-200 shrink-0">
+                                <button onClick={handleParse} disabled={isProcessing || !rawText.trim()} className={`w-full py-3.5 rounded-lg font-black text-[14px] shadow-md transition-all flex items-center justify-center ${rawText.trim() ? 'bg-indigo-600 text-white hover:bg-indigo-700 hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'}`}>
+                                    <SafeIcon name="zap" size={16} className="mr-2" /> 시맨틱 발주 파싱 시작
+                                </button>
                             </div>
                         </div>
 
-                        {/* Right: Work Queue (Sales) */}
-                        <div className="flex-1 flex flex-col bg-[#f1f5f9] overflow-hidden relative p-6">
-                            <div className="px-5 py-3 mb-4 bg-white border border-slate-200 rounded-xl shrink-0 flex justify-between items-center z-10 shadow-sm">
-                                <div>
-                                    <h1 className="text-[15px] font-black text-slate-800 flex items-center"><SafeIcon name="shopping-cart" size={18} className="mr-2 text-indigo-500" />매출(출고) 및 환불 전표 작성</h1>
-                                    <p className="text-[11px] text-slate-500 font-medium mt-1">수량을 마이너스(-)로 입력 시 <strong>'고객 반품(환불)'</strong> 처리되어 재고가 다시 입고됩니다.</p>
-                                </div>
+                        {/* 🌟 Right: Order Processing (주문 처리) */}
+                        <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden z-10 relative">
+                            
+                            <div className="px-5 py-4 border-b border-slate-200 shrink-0 flex justify-between items-center bg-white z-20 shadow-sm">
                                 <div className="flex items-center gap-3">
                                     <div className="flex items-center gap-2">
-                                        <label className="text-[12px] font-bold text-slate-600">일자</label>
+                                        <label className="text-[12px] font-bold text-slate-600">주문 일자</label>
                                         <input type="date" value={dateInput} onChange={e=>setDateInput(e.target.value)} className="border border-slate-300 rounded-lg px-3 py-1.5 text-[12px] font-bold outline-none focus:border-indigo-500 shadow-sm" />
                                     </div>
                                     <div className="w-px h-5 bg-slate-200 mx-1"></div>
                                     <div className="flex items-center gap-2">
-                                        <label className="text-[12px] font-bold text-slate-600">차감 로트(매입처)</label>
-                                        <input type="text" value={lotVendorInput} onChange={e=>setLotVendorInput(e.target.value)} placeholder="선택사항" className="w-28 border border-slate-300 rounded-lg px-3 py-1.5 text-[12px] font-bold outline-none focus:border-indigo-500 shadow-sm" />
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <label className="text-[12px] font-bold text-slate-600">공통 고객사</label>
-                                        <input type="text" value={partnerInput} onChange={e=>setPartnerInput(e.target.value)} placeholder="매출처 일괄 적용" className="w-32 border border-slate-300 rounded-lg px-3 py-1.5 text-[12px] font-bold outline-none focus:border-indigo-500 shadow-sm" />
+                                        <label className="text-[12px] font-bold text-slate-600">수주처(고객사)</label>
+                                        <input type="text" value={partnerInput} onChange={e=>setPartnerInput(e.target.value)} placeholder="필수 입력" className="w-40 border border-slate-300 rounded-lg px-3 py-1.5 text-[12px] font-bold outline-none focus:border-indigo-500 shadow-sm" />
                                     </div>
                                 </div>
+                                <button onClick={handleExportOrders} className="h-9 px-3 rounded-md text-[12px] font-bold bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50 transition-colors shadow-sm flex items-center">
+                                    <SafeIcon name="file-excel" size={14} className="mr-1.5 text-emerald-500" /> 오늘 주문 다운로드
+                                </button>
                             </div>
 
-                            <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden mb-6 flex-1 flex flex-col">
-                                <div className="flex-1 overflow-auto custom-scrollbar">
-                                    <table className="w-full text-left text-[13px] whitespace-nowrap">
-                                        <thead className="text-[12px] font-bold text-slate-500 bg-white">
-                                            <tr>
-                                                <th className="sticky top-0 z-40 bg-white px-4 py-3.5 border-b border-r border-slate-200 shadow-sm w-12 text-center">No</th>
-                                                <th className="sticky top-0 z-40 bg-white px-4 py-3.5 border-b border-r border-slate-200 shadow-sm">상품명 (규격)</th>
-                                                <th className="sticky top-0 z-30 bg-white px-3 py-3.5 border-b border-r border-slate-200 shadow-sm w-28">고객사(매출처)</th>
-                                                <th className="sticky top-0 z-30 bg-white px-3 py-3.5 border-b border-r border-slate-200 shadow-sm w-28">차감 로트(매입처)</th>
-                                                <th className="sticky top-0 z-30 bg-indigo-50/50 px-3 py-3.5 border-b border-r border-indigo-100 shadow-sm text-center w-24 text-indigo-700">판매 수량</th>
-                                                <th className="sticky top-0 z-30 bg-white px-4 py-3.5 border-b border-r border-slate-200 shadow-sm text-right w-28">판매 단가</th>
-                                                <th className="sticky top-0 z-30 bg-white px-4 py-3.5 border-b border-r border-slate-200 shadow-sm text-right w-32">매출 합계</th>
-                                                <th className="sticky top-0 z-30 bg-white px-3 py-3.5 border-b border-slate-200 shadow-sm w-12 text-center">삭제</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-transparent text-slate-700">
-                                            {cart.length === 0 ? (
-                                                <tr><td colSpan="8" className="p-16 text-center text-slate-400 font-bold"><SafeIcon name="shopping-cart" size={40} className="mb-3 text-slate-200 block mx-auto" />좌측에서 판매(출고)할 상품을 검색해 담아주세요.</td></tr>
-                                            ) : cart.map((item, idx) => {
-                                                const amt = parseNum(item.수량) * parseNum(item.단가);
-                                                const isReturn = parseNum(item.수량) < 0;
-                                                return (
-                                                    <tr key={item.cartId} className={`table-row-hover transition-colors ${isReturn ? 'bg-blue-50/30' : ''}`}>
-                                                        <td className="py-3 px-4 text-center text-slate-400 font-bold text-[11px] border-r border-slate-200 bg-white">{idx + 1}</td>
-                                                        <td className="py-3 px-4 border-r border-slate-200 bg-white">
-                                                            <div className="flex flex-col w-full overflow-hidden">
-                                                                <span className="text-[10.5px] font-mono text-indigo-500 mb-0.5 tracking-tight font-bold">{item.코드}</span>
-                                                                <div className="flex items-baseline w-full min-w-0 overflow-hidden mt-0.5">
-                                                                    <span className="text-[13px] font-extrabold truncate text-slate-800" title={item.품목명}>{item.품목명}</span>
-                                                                    {item.규격 && <span className="text-[11.5px] font-medium text-slate-400 truncate ml-1.5 shrink-0 max-w-[40%]">({item.규격})</span>}
-                                                                </div>
-                                                            </div>
-                                                        </td>
-                                                        <td className="py-2.5 px-2 border-r border-slate-200 bg-inherit">
-                                                            <input type="text" value={item.partner || ''} onChange={e=>updateCartItem(item.cartId, 'partner', e.target.value)} placeholder="고객사명" className={`w-full border rounded-lg px-2 py-1.5 text-[12px] font-bold outline-none shadow-sm transition-colors ${item.partner ? 'border-indigo-300 text-indigo-700 bg-indigo-50/30' : 'border-slate-300 text-slate-600 bg-white focus:border-slate-500'}`} />
-                                                        </td>
-                                                        <td className="py-2.5 px-2 border-r border-slate-200 bg-inherit">
-                                                            <input type="text" value={item.lotVendor || ''} onChange={e=>updateCartItem(item.cartId, 'lotVendor', e.target.value)} placeholder="선택사항" className={`w-full border rounded-lg px-2 py-1.5 text-[12px] font-bold outline-none shadow-sm transition-colors ${item.lotVendor ? 'border-amber-300 text-amber-700 bg-amber-50/30' : 'border-slate-300 text-slate-600 bg-white focus:border-slate-500'}`} />
-                                                        </td>
-                                                        <td className="py-2 px-2 border-r border-slate-200 bg-inherit">
-                                                            <div className="relative">
-                                                                <input type="number" value={item.수량} onChange={e=>updateCartItem(item.cartId, '수량', e.target.value)} onClick={e=>e.target.select()} placeholder="0" className={`w-full bg-transparent hover:bg-white focus:bg-white border focus:ring-1 rounded px-2 py-1.5 text-center text-[13px] font-black outline-none transition-colors ${isReturn ? 'border-blue-300 text-blue-600 focus:border-blue-500 focus:ring-blue-200' : 'border-transparent hover:border-slate-300 text-indigo-700 focus:border-indigo-400 focus:ring-indigo-200'}`} />
-                                                                {isReturn && <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-[9px] px-1.5 rounded-full font-bold shadow-sm">환불</span>}
-                                                            </div>
-                                                        </td>
-                                                        <td className="py-2 px-3 border-r border-slate-200 bg-inherit">
-                                                            <input type="number" value={item.단가} onChange={e=>updateCartItem(item.cartId, '단가', e.target.value)} onClick={e=>e.target.select()} placeholder="0" className="w-full bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-300 focus:border-slate-400 rounded px-2 py-1.5 text-right text-[13px] font-bold outline-none transition-colors" />
-                                                        </td>
-                                                        <td className={`py-3 px-4 text-right font-black border-r border-slate-200 bg-inherit ${isReturn ? 'text-blue-600' : 'text-slate-800'}`}>
-                                                            {amt.toLocaleString()}
-                                                        </td>
-                                                        <td className="py-3 px-3 text-center bg-white">
-                                                            <button onClick={() => removeFromCart(item.cartId)} className="text-slate-300 hover:text-rose-500 transition-colors"><SafeIcon name="x" size={14}/></button>
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                            
-                            {cart.length > 0 && (
-                                <div className="bg-[#0B1021] rounded-xl p-5 shadow-lg flex justify-between items-center text-white mb-6 shrink-0 fade-in">
-                                    <div>
-                                        <div className="text-[12px] font-bold text-slate-400 mb-1">매출/환불 총합계</div>
-                                        <div className="text-2xl font-black">{totalAmount.toLocaleString()} <span className="text-sm font-bold text-slate-400">원</span></div>
+                            {parsedList.length === 0 && !isProcessing && (
+                                <div className="absolute inset-0 top-[70px] flex flex-col items-center justify-center bg-slate-50/50 z-10 fade-in">
+                                    <div className="w-20 h-20 rounded-full bg-white shadow-sm flex items-center justify-center mb-4">
+                                        <SafeIcon name="shopping-cart" size={40} className="text-slate-300" />
                                     </div>
-                                    <button onClick={handleCommitSales} disabled={isProcessing} className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-black text-[14px] shadow-[0_0_15px_rgba(79,70,229,0.4)] transition-all transform hover:-translate-y-0.5 flex items-center border border-indigo-500">
-                                        <SafeIcon name="check-circle-2" size={16} className="mr-2" /> 전표 확정 및 재고 차감
-                                    </button>
+                                    <h3 className="text-lg font-black text-slate-700 mb-2">접수된 발주 내역이 없습니다.</h3>
+                                    <p className="text-[13px] text-slate-500 font-medium">좌측에 카톡이나 문자로 받은 발주서를 붙여넣으세요.</p>
                                 </div>
                             )}
 
-                            {/* Today's Log */}
-                            <div className="shrink-0 max-h-[30%] flex flex-col">
-                                <h3 className="text-[13px] font-black text-slate-800 mb-2 flex items-center"><SafeIcon name="history" size={14} className="text-slate-400 mr-2"/>당일 처리 내역 요약</h3>
-                                <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex-1 flex flex-col">
-                                    <div className="flex-1 overflow-y-auto custom-scrollbar">
-                                        <table className="w-full text-left text-[12px] whitespace-nowrap">
-                                            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold sticky top-0">
-                                                <tr>
-                                                    <th className="py-2 px-4 w-16 text-center">유형</th>
-                                                    <th className="py-2 px-4 w-20">시간</th>
-                                                    <th className="py-2 px-4 w-32">고객사(파트너)</th>
-                                                    <th className="py-2 px-4">품목명</th>
-                                                    <th className="py-2 px-4 text-right w-20">수량</th>
-                                                    <th className="py-2 px-4 text-right w-24">단가</th>
-                                                    <th className="py-2 px-4 text-right w-24">합계</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-100">
-                                                {todayLogs.length === 0 ? (
-                                                    <tr><td colSpan="7" className="p-6 text-center text-slate-400 font-bold">기록된 출고 전표가 없습니다.</td></tr>
-                                                ) : todayLogs.map(log => (
-                                                    <tr key={log.id} className="hover:bg-slate-50">
-                                                        <td className="py-1.5 px-4 text-center">
-                                                            {log.type === 'DISPATCH' ? <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded text-[10px] font-black">매출</span> : <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[10px] font-black">환불</span>}
-                                                        </td>
-                                                        <td className="py-1.5 px-4 text-slate-400 font-mono text-[10px]">{log.timestamp.split(' ')[1]}</td>
-                                                        <td className="py-1.5 px-4 font-bold text-slate-600">
-                                                            <span className="bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">{log.partner || '-'}</span>
-                                                            {log.lotVendor && <span className="text-[9px] text-slate-400 ml-1">({log.lotVendor} 차감)</span>}
-                                                        </td>
-                                                        <td className="py-1.5 px-4 font-bold text-slate-800">{log.name}</td>
-                                                        <td className={`py-1.5 px-4 text-right font-black ${log.type === 'DISPATCH' ? 'text-emerald-600' : 'text-blue-600'}`}>{log.qty}</td>
-                                                        <td className="py-1.5 px-4 text-right text-slate-500">{log.price?.toLocaleString()}</td>
-                                                        <td className="py-1.5 px-4 text-right font-bold text-slate-700">{log.totalAmount?.toLocaleString()}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                            {/* 3-Tabs Header */}
+                            <div className="flex px-2 pt-2 bg-[#0f172a] shrink-0 border-b border-slate-800">
+                                {[
+                                    { id: 'MATCH', label: '발주 일치', icon: 'check-circle-2', color: 'emerald', count: stats.match },
+                                    { id: 'SIMILAR', label: '상품 확인', icon: 'alert-triangle', color: 'amber', count: stats.similar },
+                                    { id: 'MISMATCH', label: '수동 매핑', icon: 'x', color: 'rose', count: stats.mismatch }
+                                ].map(tab => (
+                                    <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 flex flex-col items-center justify-center py-2.5 px-2 rounded-t-xl font-bold transition-colors border-t-[3px] mx-0.5 relative z-10 ${activeTab === tab.id ? `bg-white text-slate-800 border-${tab.color}-500` : 'bg-transparent text-slate-400 border-transparent hover:bg-slate-800 hover:text-slate-300'}`} style={{ marginBottom: activeTab === tab.id ? '-1px' : '0' }}>
+                                        <div className="flex items-center gap-1.5 text-[12px]">
+                                            <SafeIcon name={tab.icon} size={14} className={activeTab === tab.id ? `text-${tab.color}-500` : ''} /> {tab.label} <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] bg-slate-200 text-slate-600 ${activeTab === tab.id ? `bg-${tab.color}-100 text-${tab.color}-700` : ''}`}>{tab.count}</span>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* List Content */}
+                            <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50/50 p-4">
+                                <div className="space-y-3 fade-in">
+                                    {parsedList.filter(i => i.status === activeTab).length === 0 ? (
+                                        <div className="py-20 text-center text-slate-400 font-bold">해당하는 항목이 없습니다.</div>
+                                    ) : parsedList.filter(i => i.status === activeTab).map(item => (
+                                        <div key={item.id} className={`bg-white border p-4 rounded-xl shadow-sm transition-all hover:shadow-md ${activeTab === 'MATCH' ? 'border-emerald-200 hover:border-emerald-300' : activeTab === 'SIMILAR' ? 'border-amber-200 hover:border-amber-300' : 'border-rose-200 hover:border-rose-300'}`}>
+                                            <div className="flex justify-between items-start mb-2 pb-2 border-b border-slate-100">
+                                                <div className="flex-1 min-w-0 pr-4">
+                                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">고객 발주 원문</div>
+                                                    <div className="text-[14px] font-black text-slate-800 truncate" title={item.rawName}>{item.rawName}</div>
+                                                </div>
+                                                <div className="text-right shrink-0">
+                                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">주문 수량</div>
+                                                    <input type="number" value={item.qty} onChange={e=>updateQty(item.id, e.target.value)} className="w-20 text-[16px] font-black text-indigo-600 font-mono text-right border border-slate-300 rounded px-2 py-0.5 outline-none focus:border-indigo-500 focus:ring-1" />
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex-1">
+                                                    {item.status === 'MATCH' ? (
+                                                        <div className="flex items-center">
+                                                            <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mr-2"><SafeIcon name="check" size={12}/></div>
+                                                            <div className="flex flex-col">
+                                                                <span className="text-[13px] font-bold text-emerald-800">{item.matchedName} <span className="font-normal text-emerald-600 ml-1">({item.matchedSpec})</span></span>
+                                                                <span className="text-[10px] text-emerald-500 font-mono">{item.matchedCode} {item.isManual && <span className="bg-emerald-200 text-emerald-800 px-1 py-0.5 rounded ml-1">수동 연결됨</span>}</span>
+                                                            </div>
+                                                        </div>
+                                                    ) : item.status === 'SIMILAR' ? (
+                                                        <div className="flex items-center">
+                                                            <div className="w-6 h-6 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mr-2"><SafeIcon name="info-circle" size={12}/></div>
+                                                            <div className="flex flex-col">
+                                                                <span className="text-[12px] text-amber-600 font-bold mb-0.5">아래 상품이 맞습니까? (유사도 {((1-item.score)*100).toFixed(0)}%)</span>
+                                                                <span className="text-[13px] font-bold text-slate-800">{item.matchedName} <span className="font-normal text-slate-500 ml-1">({item.matchedSpec})</span></span>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-[12px] font-bold text-rose-500 flex items-center"><SafeIcon name="x" size={14} className="mr-1.5"/>매칭되는 마스터 상품을 찾지 못했습니다.</div>
+                                                    )}
+                                                </div>
+
+                                                <div className="shrink-0 flex items-center gap-2">
+                                                    {item.status === 'MATCH' && item.isManual && (
+                                                        <button onClick={() => handleCancelMatch(item.id)} className="px-3 py-1.5 bg-white border border-slate-200 text-rose-500 hover:bg-rose-50 hover:border-rose-300 rounded text-[11px] font-bold transition-colors flex items-center shadow-sm"><SafeIcon name="trash-alt" size={12} className="mr-1.5"/>취소</button>
+                                                    )}
+                                                    {item.status === 'SIMILAR' && (
+                                                        <>
+                                                            <button onClick={() => handleCancelMatch(item.id)} className="px-4 py-2 bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 rounded text-[12px] font-bold transition-colors shadow-sm">아닙니다</button>
+                                                            <button onClick={() => handleManualMatch(item.id, {코드: item.matchedCode, 품목명: item.matchedName, 규격: item.matchedSpec, 출고가: item.outPrice})} className="px-4 py-2 bg-indigo-600 text-white rounded text-[12px] font-bold hover:bg-indigo-700 transition-colors shadow-sm">예 (연결)</button>
+                                                        </>
+                                                    )}
+                                                    {item.status === 'MISMATCH' && (
+                                                        <button onClick={() => setSelectedItemToMap(item.id)} className="px-4 py-2 bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 rounded text-[12px] font-bold transition-colors shadow-sm flex items-center"><SafeIcon name="search" size={12} className="mr-1.5"/>마스터에서 수동 찾기</button>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* 수동 매핑 검색창 전개 */}
+                                            {selectedItemToMap === item.id && (
+                                                <div className="mt-3 pt-3 border-t border-slate-100 bg-slate-50 -mx-4 -mb-4 px-4 pb-4 rounded-b-xl fade-in">
+                                                    <div className="relative mb-2">
+                                                        <input type="text" value={searchKw} onChange={e=>setSearchKw(e.target.value)} placeholder="마스터 품명 검색..." autoFocus className="w-full pl-8 pr-3 py-2 border border-slate-300 rounded-lg text-[12px] outline-none focus:border-indigo-500 shadow-sm" />
+                                                        <SafeIcon name="search" size={12} className="absolute left-3 top-2.5 text-slate-400" />
+                                                    </div>
+                                                    <div className="max-h-40 overflow-y-auto custom-scrollbar space-y-1">
+                                                        {masterSearchResults.length === 0 ? <div className="text-[11px] text-slate-400 text-center py-2">검색 결과가 없습니다.</div> : masterSearchResults.map(m => (
+                                                            <div key={m.코드} onClick={() => handleManualMatch(item.id, m)} className="flex justify-between items-center p-2 bg-white border border-slate-200 rounded hover:border-indigo-400 hover:bg-indigo-50 cursor-pointer transition-colors group">
+                                                                <div className="text-[12px] font-bold text-slate-700 group-hover:text-indigo-700 truncate">{m['품목명']} <span className="text-[10px] text-slate-400">({m['규격']})</span></div>
+                                                                <button className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded group-hover:bg-indigo-600 group-hover:text-white transition-colors">선택</button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <div className="mt-2 text-right">
+                                                        <button onClick={() => {setSelectedItemToMap(null); setSearchKw('');}} className="text-[11px] text-slate-500 hover:text-slate-700 underline font-bold">닫기</button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
                                 </div>
+                            </div>
+
+                            <div className="p-5 border-t border-slate-200 bg-white shrink-0 flex justify-between items-center z-10">
+                                <div>
+                                    <div className="text-[12px] font-bold text-slate-500 mb-1">발주 승인 예정액 ({stats.match}건)</div>
+                                    <div className="text-2xl font-black text-indigo-700">{stats.totalAmount.toLocaleString()} <span className="text-sm font-bold text-slate-500">원</span></div>
+                                </div>
+                                <button onClick={handleCommitOrders} disabled={stats.match === 0 || isProcessing} className={`px-8 py-3.5 rounded-xl font-black text-[14px] shadow-md transition-all flex items-center ${stats.match > 0 ? 'bg-[#0B1021] text-white hover:bg-black hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'}`}>
+                                    <SafeIcon name="check-circle-2" size={16} className="mr-2" /> 선택 발주서(주문) 생성 완료
+                                </button>
                             </div>
                         </div>
                     </main>
@@ -778,7 +764,7 @@
                     <IframeSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
                     
                     {toastMsg && (
-                        <div className="fixed bottom-10 right-10 z-[100] bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in border border-slate-700">
+                        <div className="fixed bottom-10 right-10 z-[1000] bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in border border-slate-700">
                             <SafeIcon name="check-circle-2" size={18} className="text-emerald-400" />
                             <span className="text-sm font-bold tracking-tight">{toastMsg}</span>
                         </div>
