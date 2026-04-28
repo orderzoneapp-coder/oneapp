@@ -504,14 +504,14 @@
 
         const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
             const { selectedRows, globalSearch, selectedCatalog, selectedCategory } = state;
-            const { handleLoadCategory, handleRemoveFromWorkspace, handleExportCurrentView, setShowReviewModal, setGlobalSearch, setSelectedCatalog, handleReset, handleFileUpload } = actions;
+            const { handleCategoryChange, handleRemoveFromWorkspace, handleExportCurrentView, setShowReviewModal, setGlobalSearch, handleCatalogChange, handleReset, handleFileUpload } = actions;
 
             return (
                 <div className="px-6 py-3 flex items-center justify-between gap-4 bg-white border-b border-slate-200 z-10 w-full shrink-0">
                     <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 -mb-1">
                         <div className="flex items-center gap-1">
                             <div className="relative">
-                                <select value={selectedCatalog} onChange={(e) => setSelectedCatalog(e.target.value)} className="appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm w-[160px]" title="스마트 파서에서 매핑 완료한 데이터를 불러옵니다.">
+                                <select value={selectedCatalog} onChange={handleCatalogChange} className="appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm w-[160px]" title="스마트 파서에서 매핑 완료한 데이터를 불러옵니다.">
                                     <option value="">파서 보관함</option>
                                     {availableCatalogs.map(tag => <option key={tag.name} value={tag.name}>{tag.name} ({tag.count}건)</option>)}
                                 </select>
@@ -524,7 +524,7 @@
 
                         <div className="flex items-center gap-1">
                             <div className="relative">
-                                <select value={selectedCategory} onChange={(e) => handleLoadCategory(e.target.value)} className="appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm w-[160px]">
+                                <select value={selectedCategory} onChange={handleCategoryChange} className="appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm w-[160px]">
                                     <option value="">카탈로그</option>
                                     {availableCategories.map(cat => <option key={cat.name} value={cat.name}>{cat.name} ({cat.count}건)</option>)}
                                 </select>
@@ -929,12 +929,14 @@
                 showToast('✅ 선택한 항목이 화면에서 숨겨졌습니다.');
             };
 
-            const handleLoadCategory = useCallback((categoryName) => {
-                setSelectedCategory(categoryName);
-                if (!categoryName) return;
+            const handleLoadWorkspaceData = useCallback((catalog, category) => {
+                if (!catalog && !category) {
+                    setManagedItems({});
+                    return;
+                }
 
                 setIsProcessing(true);
-                setProcessMsg('파서 데이터 및 카탈로그 병합 중...');
+                setProcessMsg('작업 공간 데이터 로드 중...');
                 
                 setTimeout(() => {
                     let newManaged = {};
@@ -942,40 +944,53 @@
                     Object.values(masterProducts).forEach(mItem => {
                         let isMatch = false;
 
-                        const catStr = mItem['견적서'] || mItem['카테고리'] || '';
-                        if (catStr.split(',').map(c => c.trim()).includes(categoryName)) {
-                            isMatch = true;
+                        if (catalog) {
+                            const catalogStr = mItem['카탈로그'] || '';
+                            if (catalogStr.split(',').map(c => c.trim()).includes(catalog)) isMatch = true;
                         }
 
-                        if (selectedCatalog) {
-                            const catalogStr = mItem['카탈로그'] || '';
-                            if (catalogStr.split(',').map(c => c.trim()).includes(selectedCatalog)) {
-                                isMatch = true;
-                            }
+                        if (category) {
+                            const catStr = mItem['견적서'] || mItem['카테고리'] || '';
+                            if (catStr.split(',').map(c => c.trim()).includes(category)) isMatch = true;
                         }
 
                         if (isMatch) {
-                            newManaged[mItem.코드] = {
-                                코드: mItem.코드,
-                                sources: { estimate: {} },
-                                finalData: calculatePricesEngine(parseNum(mItem['입고가']), mItem, {}, config.marginRules, false)
-                            };
+                            const itemCode = mItem['코드'] || mItem['품목코드']; // 💡 핵심 해결: 품목코드로 매칭 시에도 인식되도록 보강
+                            if (itemCode) {
+                                newManaged[itemCode] = {
+                                    코드: itemCode,
+                                    sources: { estimate: {} },
+                                    finalData: calculatePricesEngine(parseNum(mItem['입고가']), mItem, {}, config.marginRules, false)
+                                };
+                            }
                         }
                     });
                     
                     setManagedItems(newManaged);
                     setSelectedRows(new Set()); 
                     
-                    if (selectedCatalog) {
-                        showToast(`✅ [${selectedCatalog}] 파서 데이터와 [${categoryName}] 카탈로그가 병합되었습니다. (${Object.keys(newManaged).length}건)`);
-                    } else {
-                        showToast(`✅ [${categoryName}] 카탈로그 로드 완료! (${Object.keys(newManaged).length}건)`);
-                    }
+                    let msg = "";
+                    if (catalog && category) msg = `✅ [${catalog}] 및 [${category}] 데이터 로드 완료! (${Object.keys(newManaged).length}건)`;
+                    else if (catalog) msg = `✅ [${catalog}] 파서 데이터 로드 완료! (${Object.keys(newManaged).length}건)`;
+                    else if (category) msg = `✅ [${category}] 카탈로그 로드 완료! (${Object.keys(newManaged).length}건)`;
                     
+                    showToast(msg);
                     setIsProcessing(false);
                     setProcessMsg('');
                 }, 100);
-            }, [masterProducts, config.marginRules, selectedCatalog]);
+            }, [masterProducts, config.marginRules, showToast]);
+
+            const handleCatalogChange = (e) => {
+                const val = e.target.value;
+                setSelectedCatalog(val);
+                handleLoadWorkspaceData(val, selectedCategory);
+            };
+
+            const handleCategoryChange = (e) => {
+                const val = e.target.value;
+                setSelectedCategory(val);
+                handleLoadWorkspaceData(selectedCatalog, val);
+            };
 
             const handleSaveAsCategory = useCallback(async (categoryName) => {
                 if (!categoryName || !categoryName.trim()) return;
@@ -1101,7 +1116,7 @@
             }, [managedItems, masterProducts, globalSearch, selectedCatalog, selectedCategory]);
 
             const appState = { fullDisplayRows, visibleMasterCols: config.visibleMasterCols, visibleUploadCols: config.visibleUploadCols, masterProducts, masterLinksEst: config.masterLinks['estimate']||{}, selectedRows, isEstimateUploaded: Object.keys(managedItems).length > 0, globalSearch, selectedCatalog, selectedCategory, isProcessing };
-            const appActions = { handleUpdateCell, toggleAllRows, toggleRowSelection, handleRemoveFromWorkspace, setShowReviewModal, setShowExportModal, setShowCategoryModal, setGlobalSearch, setSelectedCatalog, handleReset, handleFileUpload, handleLoadCategory, showToast };
+            const appActions = { handleUpdateCell, toggleAllRows, toggleRowSelection, handleRemoveFromWorkspace, setShowReviewModal, setShowExportModal, setShowCategoryModal, setGlobalSearch, handleCatalogChange, handleCategoryChange, handleReset, handleFileUpload, showToast };
 
             return (
                 <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-[#f1f5f9] relative shadow-2xl border-x border-slate-300 select-none">
