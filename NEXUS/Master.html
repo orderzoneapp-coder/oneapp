@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
     <title>ONEAPP NEXES - Master DB [v3.0]</title>
-    <!-- 핵심 라이브러리 CDN 로드 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -24,7 +23,6 @@
         .fade-in { animation: fadeIn 0.3s ease-out; } 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         
-        /* 🌟 Iframe 드로어용 슬라이딩 애니메이션 추가 */
         @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
         .slide-in-right { animation: slideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
 
@@ -75,7 +73,6 @@
 
         const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
 
-        // IndexedDB Wrapper
         const initIDB = () => new Promise((resolve, reject) => {
             const request = indexedDB.open('MerchOpsDB', 1);
             request.onupgradeneeded = (e) => { if (!e.target.result.objectStoreNames.contains('store')) e.target.result.createObjectStore('store'); };
@@ -143,7 +140,7 @@
         };
 
         // ==========================================
-        // 🧩 통합 글로벌 헤더 (v3.0)
+        // 🧩 통합 글로벌 헤더 (v3.0 표준 규격)
         // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [
@@ -153,13 +150,13 @@
             ];
 
             const tabs = [
-                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'dashboard.html', group: 'common', isReady: true },
-                { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'guide.html', group: 'common', isReady: false },
+                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true },
+                { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: false },
                 
-                { id: 'item-info', label: '마스터 DB', icon: "database", path: 'item_master.html', group: 'master', isReady: true },
-                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'items.html', group: 'master', isReady: true },
-                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'index.html', group: 'master', isReady: true },
-                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'parser.html', group: 'master', isReady: true },
+                { id: 'item-info', label: '마스터 DB', icon: "database", path: 'Master.html', group: 'master', isReady: true },
+                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'Item_manager.html', group: 'master', isReady: true },
+                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'Pipeline.html', group: 'master', isReady: true },
+                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'Parser.html', group: 'master', isReady: true },
                 { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: 'partner_db.html', group: 'master', isReady: false },
                 { id: 'partners', label: '거래처 관리', icon: "users", path: 'partners.html', group: 'master', isReady: true },
 
@@ -169,7 +166,7 @@
                 { id: 'inventory', label: '재고 마감', icon: "boxes", path: 'inventory.html', group: 'ops', isReady: true },
                 { id: 'print-center', label: '출력 센터', icon: "printer", path: 'print_center.html', group: 'ops', isReady: false },
 
-                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'report.html', group: 'admin', isReady: true },
+                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'Report.html', group: 'admin', isReady: true },
                 { id: 'cs', label: '정보마당(CS)', icon: "megaphone", path: 'cs.html', group: 'admin', isReady: false }
             ];
 
@@ -178,7 +175,7 @@
             const [selectedGroup, setSelectedGroup] = useState(activeGroup);
 
             const handleGroupClick = (groupId) => setSelectedGroup(prev => prev === groupId ? 'common' : groupId);
-            const handleLogoClick = (e) => { setSelectedGroup('common'); onNavigate(e, 'dashboard.html', true); };
+            const handleLogoClick = (e) => { setSelectedGroup('common'); onNavigate(e, 'Dashboard.html', true); };
 
             return (
                 <div className="flex flex-col shrink-0 z-40 relative w-full shadow-sm bg-[#0B1021]">
@@ -191,7 +188,7 @@
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
                                         <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.0</span>
                                     </div>
-                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">GOLDEN RECORD</span>
+                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">WORKSPACE</span>
                                 </div>
                             </div>
 
@@ -219,7 +216,7 @@
                                     )}
                                 </div>
                                 <div className="w-px h-3.5 bg-slate-700"></div>
-                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`현재 브라우저 메모리에 다운로드된 마스터 상품 수: ${itemCount.toLocaleString()}개`}>
+                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`현재 데이터 건수: ${itemCount.toLocaleString()}건`}>
                                     <SafeIcon name="database" size={10} className="text-slate-500" />
                                     <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount.toLocaleString()}</span>
                                 </div>
@@ -262,7 +259,7 @@
         };
 
         // ==========================================
-        // 🌟 Iframe 설정 모달 (경량화)
+        // 🌟 Iframe 설정 모달
         // ==========================================
         const IframeSettingsModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
@@ -791,32 +788,7 @@
 
                     {/* 🌟 Iframe Overlay 로 설정 모달 표시 */}
                     {showSettingsModal && (
-                        <div className="fixed inset-0 z-[500] flex justify-end bg-slate-900/60 backdrop-blur-sm fade-in">
-                            <div className="w-full max-w-[1100px] h-full bg-white shadow-[0_0_40px_rgba(0,0,0,0.3)] flex flex-col slide-in-right border-l border-slate-300 relative overflow-hidden">
-                                <div className="bg-[#0f172a] px-6 py-4 flex justify-between items-center text-white shrink-0 border-b border-slate-700 shadow-md relative z-10">
-                                    <div className="flex items-center gap-3">
-                                        <SafeIcon name="settings" size={20} className="text-indigo-400"/>
-                                        <h2 className="font-black text-[17px] tracking-wide">통합 환경설정 센터</h2>
-                                        <span className="bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold border border-indigo-500/30 ml-2">Iframe Overlay</span>
-                                    </div>
-                                    <div className="flex items-center gap-4">
-                                        <span className="text-[12px] text-slate-400 font-medium hidden md:inline-block">설정을 변경하고 창을 닫으면 작업 화면에 즉시 반영됩니다.</span>
-                                        <button onClick={() => setShowSettingsModal(false)} className="text-slate-300 hover:text-white transition-colors bg-slate-800 hover:bg-rose-500 w-8 h-8 rounded-lg flex items-center justify-center shadow-sm border border-slate-700 hover:border-rose-400">
-                                            <SafeIcon name="x" size={18} />
-                                        </button>
-                                    </div>
-                                </div>
-                                <div className="flex-1 w-full bg-slate-100 relative">
-                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                        <div className="text-slate-300 flex flex-col items-center">
-                                            <i className="fas fa-circle-notch fa-spin text-3xl mb-3"></i>
-                                            <span className="font-bold text-sm">설정 모듈을 불러오는 중입니다...</span>
-                                        </div>
-                                    </div>
-                                    <iframe src="settings.html?mode=iframe" className="absolute inset-0 w-full h-full border-0 bg-white relative z-10" title="Settings Center"></iframe>
-                                </div>
-                            </div>
-                        </div>
+                        <IframeSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
                     )}
                 </div>
             );
