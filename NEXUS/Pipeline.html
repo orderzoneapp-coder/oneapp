@@ -176,8 +176,11 @@
                 let visibleUploadCols = JSON.parse(localStorage.getItem('merchVisUpload_v870') || 'null');
                 if (!visibleUploadCols || !visibleUploadCols.estimate) visibleUploadCols = getInitialVisibleUploadCols();
                 if (visibleUploadCols.estimate.includes('카테고리')) visibleUploadCols.estimate = visibleUploadCols.estimate.map(h => h === '카테고리' ? '견적서' : h);
-                if (!visibleUploadCols.estimate.includes('품목명')) visibleUploadCols.estimate.unshift('품목명');
-                if (!visibleUploadCols.estimate.includes('규격')) visibleUploadCols.estimate.splice(1, 0, '규격');
+                
+                // 💡 [핵심 방어막 1] 입력 영역에서 품목코드, 품명, 규격을 완전히 제거 (왼쪽 고정 열에서만 안전하게 조회)
+                if (visibleUploadCols.estimate) {
+                    visibleUploadCols.estimate = visibleUploadCols.estimate.filter(h => h !== '품목코드' && h !== '품목명' && h !== '규격');
+                }
 
                 let mappings = JSON.parse(localStorage.getItem('merchMappings_v870') || 'null');
                 if (!mappings || !mappings.master) mappings = getInitialMappings();
@@ -565,7 +568,7 @@
                             <i className="fas fa-redo-alt text-[13px]"></i>
                         </button>
                         <div className="relative w-48 sm:w-64 h-9">
-                            <input type="text" placeholder="결과 내 검색 (F3)" value={globalSearch} onChange={e=>setGlobalSearch(e.target.value)} className="w-full h-full pl-3 pr-8 py-1 border border-slate-300 rounded-md text-[12px] outline-none focus:border-blue-400 shadow-sm text-slate-700 font-medium" />
+                            <input id="global-search-input" type="text" placeholder="결과 내 검색 (F3)" value={globalSearch} onChange={e=>setGlobalSearch(e.target.value)} className="w-full h-full pl-3 pr-8 py-1 border border-slate-300 rounded-md text-[12px] outline-none focus:border-blue-400 shadow-sm text-slate-700 font-medium" />
                             <i className="fas fa-search absolute right-3 top-2.5 text-slate-400 text-[13px] pointer-events-none"></i>
                         </div>
                     </div>
@@ -806,9 +809,23 @@
                 };
                 window.addEventListener('message', handleMessage);
 
+                // 🌟 단축키 (F3 검색창 포커스)
+                const handleKeyDown = (e) => {
+                    if (e.key === 'F3') {
+                        e.preventDefault();
+                        const searchInput = document.getElementById('global-search-input');
+                        if (searchInput) {
+                            searchInput.focus();
+                            searchInput.select();
+                        }
+                    }
+                };
+                window.addEventListener('keydown', handleKeyDown);
+
                 return () => {
                     window.removeEventListener('storage', onSync); 
                     window.removeEventListener('message', handleMessage);
+                    window.removeEventListener('keydown', handleKeyDown);
                 };
             }, [loadMaster]);
 
@@ -892,6 +909,9 @@
 
                     if (item.finalData) {
                         Object.keys(item.finalData).forEach(field => {
+                            // 💡 [핵심 방어막 2] 기존 상품일 경우 품목명과 규격은 마스터 덮어쓰기 절대 금지 (무시)
+                            if ((field === '품목명' || field === '규격') && oldItem['품목명']) return;
+
                             const linked = config.masterLinks['estimate']?.[field] || (MASTER_HEADERS.includes(field) ? field : null);
                             if (linked && item.finalData[field] !== undefined && item.finalData[field] !== '' && item.finalData[field] !== '오류') {
                                 const newVal = NUMERIC_HEADERS.includes(linked) ? parseNum(item.finalData[field]) : item.finalData[field];
