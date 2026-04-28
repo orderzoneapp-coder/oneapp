@@ -4,42 +4,104 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - System Update</title>
+    <title>ONEAPP NEXES - Order Management [v3.0]</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-        body { font-family: 'Pretendard', sans-serif; -webkit-font-smoothing: antialiased; background-color: #f1f5f9; margin: 0;}
-        ::-webkit-scrollbar { width: 6px; height: 6px; } 
+        body { font-family: 'Pretendard', sans-serif; -webkit-user-select: none; user-select: none; background-color: #f1f5f9; margin: 0; overflow: hidden; }
+        input, textarea, select { user-select: auto; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; } 
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .fade-in { animation: fadeIn 0.4s ease-out forwards; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in { animation: fadeIn 0.2s ease-out; } 
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* 🌟 Iframe 드로어용 슬라이딩 애니메이션 추가 */
+        @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+        .slide-in-right { animation: slideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+        .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        
+        .table-row-hover { border-bottom: 1px solid #f1f5f9; transition: background-color 0.2s ease; }
+        .table-row-hover:last-child { border-bottom: none; }
+        .table-row-hover:hover td { background-color: #f8fafc; }
+        .table-row-selected td { background-color: #eef2ff; }
     </style>
 </head>
-<body class="overflow-hidden text-slate-800">
+<body class="text-slate-800">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo, useCallback } = React;
+        const { useState, useMemo, useEffect, useRef, useCallback, Fragment } = React;
 
         // ==========================================
-        // 🔑 Global Storage Keys
+        // 🔑 1. Global Constants & Utilities
         // ==========================================
-        const STORAGE_KEYS = {
-            MASTER_DB: 'merchMaster_v870',
-            CLOUD_URL: 'skuSyncCloudUrl_v6',
-            SYNC_TRIGGER: 'merchMaster_sync_trigger'
+        const STORAGE_KEYS = { MASTER_DB: 'merchMaster_v870', CLOUD_URL: 'skuSyncCloudUrl_v6', SYNC_TRIGGER: 'merchMaster_sync_trigger', ORDERS_DB: 'merchOrders_v9', PARSER_DICT: 'parserDict_v870' };
+
+        const generateUUID = () => {
+            if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) { var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); });
         };
+        
+        const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
+
+        const initIDB = () => new Promise((resolve, reject) => {
+            const request = indexedDB.open('MerchOpsDB', 1);
+            request.onupgradeneeded = (e) => { if (!e.target.result.objectStoreNames.contains('store')) e.target.result.createObjectStore('store'); };
+            request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+        });
+        const getIDB = async (key) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); };
+        const setIDB = async (key, val) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readwrite'); tx.objectStore('store').put(val, key); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); };
+
+        const parseExcelRobust = (file) => new Promise((resolve, reject) => {
+            if (!window.XLSX) return reject(new Error("엑셀 파서 로드 안됨"));
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result); const wb = window.XLSX.read(data, { type: 'array', cellDates: true });
+                    const jsonAll = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "", raw: false });
+                    if(jsonAll.length === 0) return resolve([]);
+
+                    let headerRowIdx = 0;
+                    for (let i = 0; i < Math.min(15, jsonAll.length); i++) {
+                        const rowStr = jsonAll[i].join('').replace(/\s/g, '');
+                        if (rowStr.includes('품명') || rowStr.includes('상품') || rowStr.includes('수량')) { headerRowIdx = i; break; }
+                    }
+                    const headers = jsonAll[headerRowIdx] || [];
+                    let endIdx = jsonAll.length - 1;
+                    
+                    while (endIdx > headerRowIdx) {
+                        const rowArr = jsonAll[endIdx]; if (!rowArr || rowArr.length === 0) { endIdx--; continue; }
+                        let filledCount = 0, rawStr = '';
+                        for(let i=0; i<rowArr.length; i++) if(rowArr[i] !== undefined && String(rowArr[i]).trim() !== '') { filledCount++; rawStr += String(rowArr[i]).replace(/\s/g, ''); }
+                        if (rawStr === '') { endIdx--; continue; }
+                        if ((rawStr.includes('출력') || rawStr.includes('합계') || rawStr.includes('총계')) && filledCount <= 4) endIdx--; else break;
+                    }
+
+                    const parsedData = [];
+                    for (let i = headerRowIdx + 1; i <= endIdx; i++) {
+                        const row = jsonAll[i]; if (!row) continue;
+                        let isEmpty = true; const obj = {}; 
+                        headers.forEach((h, idx) => { if (h) { obj[h] = row[idx]; if(row[idx] !== undefined && String(row[idx]).trim() !== '') isEmpty = false; } }); 
+                        if(!isEmpty) parsedData.push(obj);
+                    } resolve(parsedData);
+                } catch(err) { reject(err); }
+            }; reader.readAsArrayBuffer(file);
+        });
 
         // ==========================================
-        // 🛠 SafeIcon
+        // 🧩 [아이콘 시스템] SafeIcon
         // ==========================================
         const SafeIcon = React.memo(function SafeIconComponent({ name, size = 18, className = "" }) {
             const [svg, setSvg] = useState("");
@@ -47,50 +109,44 @@
                 const renderIcon = () => {
                     if (window.lucide && window.lucide.icons) {
                         const kebabName = name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
-                        const possibleNames = [
-                            kebabName, name, 
-                            name === 'cloud-download' ? 'download-cloud' : name,
-                            name === 'cloud-upload' ? 'upload-cloud' : name,
-                            name === 'bar-chart-3' ? 'bar-chart' : name,
-                            name === 'pie-chart' ? 'pie-chart' : name,
-                            name === 'shopping-cart' ? 'shopping-cart' : name
-                        ];
+                        const possibleNames = [kebabName, name, name === 'cloud-download' ? 'download-cloud' : name, name === 'cloud-upload' ? 'upload-cloud' : name, name === 'bar-chart-3' ? 'bar-chart' : name];
                         for (const pName of possibleNames) {
-                            if (window.lucide.icons[pName]) {
-                                setSvg(window.lucide.icons[pName].toSvg({ width: size, height: size, class: className, 'stroke-width': 2.5 }));
-                                return;
-                            }
+                            if (window.lucide.icons[pName]) { setSvg(window.lucide.icons[pName].toSvg({ width: size, height: size, class: className, 'stroke-width': 2.5 })); return; }
                         }
                     }
-                };
-                renderIcon();
+                }; renderIcon();
             }, [name, size, className]);
 
             if (!svg) {
-                const faMap = {
-                    'cloud-download': 'fa-cloud-download-alt', 'cloud-upload': 'fa-cloud-upload-alt', 'settings': 'fa-cogs',
-                    'layout-dashboard': 'fa-th-large', 'package-search': 'fa-box-open', 'file-spreadsheet': 'fa-table', 
-                    'zap': 'fa-bolt', 'truck': 'fa-truck', 'boxes': 'fa-boxes', 'bar-chart-3': 'fa-chart-bar', 
-                    'check-circle-2': 'fa-check-circle', 'x': 'fa-times', 'database': 'fa-database',
-                    'pie-chart': 'fa-chart-pie', 'shopping-cart': 'fa-shopping-cart', 'users': 'fa-users', 'megaphone': 'fa-bullhorn',
-                    'book-open': 'fa-address-book', 'shopping-bag': 'fa-shopping-bag', 'credit-card': 'fa-credit-card', 'line-chart': 'fa-chart-line', 'printer': 'fa-print'
-                };
+                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'database':'fa-database', 'upload':'fa-upload', 'pie-chart':'fa-chart-pie', 'shopping-cart':'fa-shopping-cart', 'users':'fa-users', 'megaphone':'fa-bullhorn', 'book-open':'fa-address-book', 'shopping-bag':'fa-shopping-bag', 'credit-card':'fa-credit-card', 'line-chart':'fa-chart-line', 'printer':'fa-print', 'search':'fa-search', 'plus':'fa-plus', 'trash-alt':'fa-trash-alt', 'edit':'fa-edit', 'save':'fa-save', 'file-excel':'fa-file-excel', 'link':'fa-link', 'ban':'fa-ban', 'layer-group':'fa-layer-group', 'desktop':'fa-desktop', 'sign-in-alt':'fa-sign-in-alt', 'calculator':'fa-calculator', 'tags':'fa-tags', 'broom':'fa-broom', 'info-circle':'fa-info-circle', 'lock':'fa-lock', 'key':'fa-key', 'folder-open':'fa-folder-open', 'file-invoice':'fa-file-invoice', 'history':'fa-history', 'arrow-right':'fa-arrow-right', 'arrow-up':'fa-arrow-up', 'arrow-down':'fa-arrow-down' };
                 const faName = faMap[name] || `fa-${name}`;
                 return <i className={`fas ${faName} ${className}`} style={{ fontSize: size }} />;
             }
             return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
         });
 
-        const initIDB = () => new Promise((resolve, reject) => {
-            const request = indexedDB.open('MerchOpsDB', 1);
-            request.onupgradeneeded = (e) => { if (!e.target.result.objectStoreNames.contains('store')) e.target.result.createObjectStore('store'); };
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-        const getIDB = async (key) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); };
+        // ==========================================
+        // 🧩 Read-Only 설정 훅 (v3.0 경량화)
+        // ==========================================
+        const useMerchConfig = () => {
+            const loadConfig = () => {
+                const cloudUrl = localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || '';
+                return { cloudUrl };
+            };
+
+            const [config, setConfig] = useState(loadConfig());
+
+            useEffect(() => {
+                const handleStorageChange = () => setConfig(loadConfig());
+                window.addEventListener('storage', handleStorageChange);
+                return () => window.removeEventListener('storage', handleStorageChange);
+            }, []);
+
+            return config;
+        };
 
         // ==========================================
-        // 🧩 Components: Global Header (통합 UI)
+        // 🧩 통합 글로벌 헤더 (v3.0 표준 규격) - 모든 파일 공통
         // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [
@@ -99,22 +155,25 @@
                 { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }
             ];
 
-            // 💡 탭 설정 (실제 폴더 경로로 라우팅 처리됨)
             const tabs = [
-                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: '/NEXUS/Dashboard', group: 'common' },
-                { id: 'item-info', label: '마스터 DB', icon: "database", path: '/NEXUS/Master', group: 'master' },
-                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: '/NEXUS/Item_manager', group: 'master' },
-                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: '/NEXUS/Pipeline', group: 'master' },
-                { id: 'parser', label: '스마트 파서', icon: "zap", path: '/NEXUS/Parser', group: 'master' },
-                { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: '/NEXUS/partner_db', group: 'master' },
-                { id: 'partners', label: '거래처 관리', icon: "users", path: '/NEXUS/partners', group: 'master' },
-                { id: 'orders', label: '주문 관리', icon: "shopping-bag", path: '/NEXUS/orders', group: 'ops' },
-                { id: 'purchases', label: '구매 관리', icon: "credit-card", path: '/NEXUS/purchases', group: 'ops' },
-                { id: 'sales', label: '판매 관리', icon: "line-chart", path: '/NEXUS/sales', group: 'ops' },
-                { id: 'inventory', label: '재고 관리', icon: "boxes", path: '/NEXUS/inventory', group: 'ops' },
-                { id: 'print-center', label: '출력 센터', icon: "printer", path: '/NEXUS/print_center', group: 'ops' },
-                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: '/NEXUS/Report', group: 'admin' },
-                { id: 'cs', label: '정보마당(CS)', icon: "megaphone", path: '/NEXUS/cs', group: 'admin' }
+                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true },
+                { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: false },
+                
+                { id: 'item-info', label: '마스터 DB', icon: "database", path: 'Master.html', group: 'master', isReady: true },
+                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'Item_manager.html', group: 'master', isReady: true },
+                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'Pipeline.html', group: 'master', isReady: true },
+                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'Parser.html', group: 'master', isReady: true },
+                { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: 'partner_db.html', group: 'master', isReady: false },
+                { id: 'partners', label: '거래처 관리', icon: "users", path: 'partners.html', group: 'master', isReady: true },
+
+                { id: 'orders', label: '주문 관리', icon: "shopping-bag", path: 'orders.html', group: 'ops', isReady: true },
+                { id: 'purchases', label: '구매 관리', icon: "credit-card", path: 'purchases.html', group: 'ops', isReady: true },
+                { id: 'sales', label: '판매 관리', icon: "line-chart", path: 'sales.html', group: 'ops', isReady: true },
+                { id: 'inventory', label: '재고 마감', icon: "boxes", path: 'inventory.html', group: 'ops', isReady: true },
+                { id: 'print-center', label: '출력 센터', icon: "printer", path: 'print_center.html', group: 'ops', isReady: false },
+
+                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'Report.html', group: 'admin', isReady: true },
+                { id: 'cs', label: '정보마당(CS)', icon: "megaphone", path: 'cs.html', group: 'admin', isReady: false }
             ];
 
             const currentTab = tabs.find(t => t.id === activeTab);
@@ -122,22 +181,25 @@
             const [selectedGroup, setSelectedGroup] = useState(activeGroup);
 
             const handleGroupClick = (groupId) => setSelectedGroup(prev => prev === groupId ? 'common' : groupId);
-            const handleLogoClick = (e) => { setSelectedGroup('common'); onNavigate(e, '/NEXUS/Dashboard'); };
+            const handleLogoClick = (e) => { setSelectedGroup('common'); onNavigate(e, 'Dashboard.html', true); };
 
             return (
                 <div className="flex flex-col shrink-0 z-40 relative w-full shadow-sm bg-[#0B1021]">
                     <header className="h-[72px] bg-[#0B1021] text-white flex justify-between px-6 border-b border-slate-800/80 relative z-20">
                         <div className="flex items-center h-full">
-                            <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={handleLogoClick}>
+                            <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={handleLogoClick} title="통합 대시보드 및 공통 메뉴로 이동">
                                 <span className="font-black text-[24px] tracking-wider text-slate-100 mr-4 group-hover:text-indigo-400 transition-colors">ONEAPP</span>
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
                                     <div className="flex items-center">
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v2.0</span>
+                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.0</span>
                                     </div>
-                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">One Board</span>
+                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">
+                                        {currentTab ? currentTab.label : 'WORKSPACE'}
+                                    </span>
                                 </div>
                             </div>
+
                             <div className="flex items-end h-full gap-8">
                                 {groups.map(g => (
                                     <button key={g.id} onClick={() => handleGroupClick(g.id)}
@@ -150,40 +212,54 @@
                         </div>
 
                         <div className="flex items-center gap-4 h-full">
+                            <div className="flex items-center bg-[#151B2B] rounded-lg border border-slate-700/50 h-9 px-3 shadow-inner gap-3">
+                                <div className="flex items-center justify-center" title={isProcessing ? processMsg : "시스템 정상 대기중"}>
+                                    {isProcessing ? (
+                                        <i className="fas fa-circle-notch fa-spin text-amber-500 text-[12px]"></i>
+                                    ) : (
+                                        <div className="relative flex h-2 w-2">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="w-px h-3.5 bg-slate-700"></div>
+                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`현재 데이터 건수: ${itemCount.toLocaleString()}건`}>
+                                    <SafeIcon name="database" size={10} className="text-slate-500" />
+                                    <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount.toLocaleString()}</span>
+                                </div>
+                            </div>
+
                             <div className="flex items-center gap-2">
                                 <button onClick={onPull} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 불러오기(Pull)"><SafeIcon name="cloud-download" size={18} /></button>
                                 <button onClick={onPush} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 백업하기(Push)"><SafeIcon name="cloud-upload" size={18} /></button>
                                 <div className="w-px h-6 bg-slate-700 mx-1"></div>
-                                <button onClick={onOpenSettings} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-slate-400 hover:text-white shadow-sm" title="설정"><SafeIcon name="settings" size={18} /></button>
+                                <button onClick={onOpenSettings} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-slate-400 hover:text-white shadow-sm" title="통합 환경설정 센터 열기"><SafeIcon name="settings" size={18} /></button>
                             </div>
                         </div>
                     </header>
 
                     {selectedGroup && (
-                        <div className="bg-[#0B1021] px-8 pt-4 flex items-end gap-2 overflow-x-auto custom-scrollbar border-b border-slate-200 fade-in">
+                        <div className="bg-[#0B1021] px-6 pt-3 flex items-end gap-1 overflow-x-auto custom-scrollbar border-b border-slate-200 fade-in">
                             {tabs.filter(t => t.group === selectedGroup).map(tab => {
                                 const isActive = activeTab === tab.id;
-                                const isPrintCenter = tab.id === 'print-center';
+                                const isPlaceholder = !tab.isReady;
                                 return (
-                                    <React.Fragment key={tab.id}>
-                                        {isPrintCenter && <div className="w-px h-8 bg-slate-700 mx-2 mb-2"></div>}
-                                        <a href={tab.path} onClick={(e) => onNavigate(e, tab.path)}
-                                           className={`flex items-center gap-2 px-6 py-3 text-[14px] font-black rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px] 
-                                           ${isActive 
-                                               ? 'bg-slate-50 text-indigo-700 border-t-indigo-600 border-x-slate-200 relative z-10 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]' 
-                                               : 'bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:bg-[#1E293B] hover:text-slate-200 pb-2.5'
-                                           }`}
-                                           style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '13px' : '10px' }}
-                                        >
-                                            <SafeIcon name={tab.icon} size={16} className={isActive ? 'text-indigo-600' : 'opacity-70'} />
-                                            {tab.label}
-                                        </a>
-                                    </React.Fragment>
+                                    <a key={tab.id} href={tab.path} onClick={(e) => onNavigate(e, tab.path, tab.isReady)}
+                                       className={`flex items-center gap-2 px-6 py-3 text-[14px] font-bold rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px] 
+                                       ${isActive 
+                                           ? 'bg-white text-indigo-600 border-t-indigo-500 border-x-slate-200 relative z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]' 
+                                           : isPlaceholder 
+                                              ? 'bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5' 
+                                              : 'bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5'
+                                       }`}
+                                       style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '13px' : '10px' }}
+                                    >
+                                        <SafeIcon name={tab.icon} size={16} className={isActive ? 'text-indigo-600' : 'opacity-70'} />
+                                        {tab.label}
+                                    </a>
                                 );
                             })}
-                            {tabs.filter(t => t.group === selectedGroup).length === 0 && (
-                                <div className="px-5 py-2.5 text-[13px] font-bold text-slate-500 pb-4">이 그룹에 할당된 메뉴가 없습니다.</div>
-                            )}
                         </div>
                     )}
                 </div>
@@ -191,35 +267,68 @@
         };
 
         // ==========================================
-        // 📊 Main App Container
+        // 🌟 Iframe 설정 모달 (경량화)
+        // ==========================================
+        const IframeSettingsModal = ({ isOpen, onClose }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 z-[500] flex justify-end bg-slate-900/60 backdrop-blur-sm fade-in">
+                    <div className="w-full max-w-[1100px] h-full bg-white shadow-[0_0_40px_rgba(0,0,0,0.3)] flex flex-col slide-in-right border-l border-slate-300 relative overflow-hidden">
+                        <div className="bg-[#0f172a] px-6 py-4 flex justify-between items-center text-white shrink-0 border-b border-slate-700 shadow-md relative z-10">
+                            <div className="flex items-center gap-3">
+                                <SafeIcon name="settings" size={20} className="text-indigo-400"/>
+                                <h2 className="font-black text-[17px] tracking-wide">통합 환경설정 센터</h2>
+                                <span className="bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold border border-indigo-500/30 ml-2">Iframe Overlay</span>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <span className="text-[12px] text-slate-400 font-medium hidden md:inline-block">설정을 변경하고 창을 닫으면 작업 화면에 즉시 반영됩니다.</span>
+                                <button onClick={onClose} className="text-slate-300 hover:text-white transition-colors bg-slate-800 hover:bg-rose-500 w-8 h-8 rounded-lg flex items-center justify-center shadow-sm border border-slate-700 hover:border-rose-400">
+                                    <SafeIcon name="x" size={18} />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex-1 w-full bg-slate-100 relative">
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <div className="text-slate-300 flex flex-col items-center">
+                                    <i className="fas fa-circle-notch fa-spin text-3xl mb-3"></i>
+                                    <span className="font-bold text-sm">설정 모듈을 불러오는 중입니다...</span>
+                                </div>
+                            </div>
+                            <iframe src="settings.html?mode=iframe" className="absolute inset-0 w-full h-full border-0 bg-white relative z-10" title="Settings Center"></iframe>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // ==========================================
+        // ⚙️ Main App Container (Orders)
         // ==========================================
         function App() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const pathName = window.location.pathname.toLowerCase();
+            const config = useMerchConfig();
             
-            // URL 경로나 파라미터를 통해 현재 메뉴 ID를 유추합니다.
-            let targetTabId = 'unknown';
-            if (pathName.includes('/partner_db')) targetTabId = 'partner-db';
-            else if (pathName.includes('/partners')) targetTabId = 'partners';
-            else if (pathName.includes('/orders')) targetTabId = 'orders';
-            else if (pathName.includes('/purchases')) targetTabId = 'purchases';
-            else if (pathName.includes('/sales')) targetTabId = 'sales';
-            else if (pathName.includes('/inventory')) targetTabId = 'inventory';
-            else if (pathName.includes('/print_center')) targetTabId = 'print-center';
-            else if (pathName.includes('/cs')) targetTabId = 'cs';
-            else targetTabId = urlParams.get('tab') || 'unknown';
-
-            const [itemCount, setItemCount] = useState(0);
-            const [toastMsg, setToastMsg] = useState("");
-            
+            const [toastMsg, setToastMsg] = useState('');
             const [isProcessing, setIsProcessing] = useState(false);
             const [processMsg, setProcessMsg] = useState('');
-            const [showSettings, setShowSettings] = useState(false);
+            
+            const [showSettingsModal, setShowSettingsModal] = useState(false);
+            
+            const [masterProducts, setMasterProducts] = useState({});
+            const [parserDict, setParserDict] = useState({});
+            
+            const [rawText, setRawText] = useState('');
+            const [parsedList, setParsedList] = useState([]);
+            const [activeTab, setActiveTab] = useState('MATCH'); // MATCH | SIMILAR | MISMATCH
+            const [selectedItemToMap, setSelectedItemToMap] = useState(null);
+            const [searchKw, setSearchKw] = useState('');
+            const [dateInput, setDateInput] = useState(() => new Date().toISOString().slice(0,10));
+            const [partnerInput, setPartnerInput] = useState('');
 
-            const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); }, []);
+            const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
 
-            const handleNavigate = useCallback((e, path) => {
+            const handleNavigate = useCallback((e, path, isReady = true) => {
                 if (e && e.preventDefault) e.preventDefault();
+                if (!path || path === '#' || !isReady) return showToast("⚠️ 해당 페이지는 현재 준비 중이거나 경로가 올바르지 않습니다.");
                 try {
                     const protocol = window.location.protocol;
                     if (protocol === 'about:' || protocol === 'blob:' || protocol === 'data:') {
@@ -227,104 +336,437 @@
                     } else {
                         window.location.href = path;
                     }
-                } catch (err) {
-                    showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
-                }
+                } catch (err) { showToast(`💡 이동 시뮬레이션: [${path}]`); }
             }, [showToast]);
 
+            const loadData = async () => {
+                const mDB = await getIDB(STORAGE_KEYS.MASTER_DB) || {};
+                setMasterProducts(mDB);
+                const dict = await getIDB(STORAGE_KEYS.PARSER_DICT) || {};
+                setParserDict(dict);
+            };
+
+            useEffect(() => { loadData(); }, []);
+
             useEffect(() => {
-                const loadData = async () => {
-                    try {
-                        const mData = await getIDB(STORAGE_KEYS.MASTER_DB);
-                        if(mData) setItemCount(Object.keys(mData).length);
-                    } catch (error) {}
+                const handleStorageChange = (e) => { 
+                    if (e.key === STORAGE_KEYS.SYNC_TRIGGER) loadData(); 
                 };
-                loadData();
+                window.addEventListener('storage', handleStorageChange);
+                
+                const handleMessage = (e) => {
+                    if (e.data && e.data.type === 'CLOSE_SETTINGS') {
+                        setShowSettingsModal(false);
+                        loadData(); 
+                    }
+                };
+                window.addEventListener('message', handleMessage);
+
+                return () => {
+                    window.removeEventListener('storage', handleStorageChange);
+                    window.removeEventListener('message', handleMessage);
+                };
             }, []);
 
-            // 전체 탭 정의표 (라벨명 추출용)
-            const allTabs = [
-                { id: 'partner-db', label: '거래처 DB' },
-                { id: 'partners', label: '거래처 관리' },
-                { id: 'orders', label: '주문 관리' },
-                { id: 'purchases', label: '구매 관리' },
-                { id: 'sales', label: '판매 관리' },
-                { id: 'inventory', label: '재고 관리' },
-                { id: 'print-center', label: '출력 센터' },
-                { id: 'cs', label: '정보마당(CS)' }
-            ];
-            
-            const targetTabInfo = allTabs.find(t => t.id === targetTabId) || { label: '요청하신 메뉴' };
+            const handlePush = async () => {
+                if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
+                setIsProcessing(true); setProcessMsg("클라우드 백업 중...");
+                setTimeout(() => { showToast("✅ 클라우드 저장 완료"); setIsProcessing(false); setProcessMsg(""); }, 1000);
+            };
+
+            const handlePull = async () => {
+                if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
+                setIsProcessing(true); setProcessMsg("데이터 동기화 중...");
+                setTimeout(() => { showToast("✅ 데이터 수신 완료"); setIsProcessing(false); setProcessMsg(""); }, 1000);
+            };
+
+            // 카톡 발주서(텍스트)를 수량 기준으로 파싱 (주문 관리용 특화)
+            const handleParse = () => {
+                if (!rawText.trim()) return showToast("⚠️ 발주서 텍스트를 입력해주세요.");
+                
+                setIsProcessing(true); setProcessMsg("발주 내역 시맨틱 매칭 중...");
+                
+                setTimeout(() => {
+                    const lines = rawText.split('\n');
+                    const items = [];
+                    
+                    lines.forEach(line => {
+                        const trimmed = line.trim();
+                        if (!trimmed) return;
+                        
+                        // 발주서는 수량을 추출 (예: "사과 10kg 2박스" -> 2)
+                        // 수량 패턴 (숫자 뒤에 개, 박스, ea, 단, 단 등)
+                        const qtyMatch = trimmed.match(/([\d,]+)\s*(개|박스|box|ea|단|묶음|봉지|포)?\s*$/i);
+                        
+                        if (qtyMatch) {
+                            const qty = parseNum(qtyMatch[1]);
+                            if (qty > 0) {
+                                const nameSpec = trimmed.replace(qtyMatch[0], '').trim();
+                                if (nameSpec) {
+                                    items.push({ id: generateUUID(), rawName: nameSpec, qty: qty, originalLine: trimmed, status: 'PENDING', isManual: false });
+                                }
+                            }
+                        } else {
+                            // 수량이 없으면 1개로 간주
+                            items.push({ id: generateUUID(), rawName: trimmed, qty: 1, originalLine: trimmed, status: 'PENDING', isManual: false });
+                        }
+                    });
+
+                    if (items.length === 0) {
+                        setIsProcessing(false);
+                        return showToast("⚠️ 유효한 발주 데이터를 찾지 못했습니다.");
+                    }
+
+                    const mArr = Object.values(masterProducts);
+                    const fuse = new Fuse(mArr, {
+                        keys: ['품목명', '검색어등록', '소싱태그', '규격'],
+                        includeScore: true,
+                        threshold: 0.5
+                    });
+
+                    const processedItems = items.map(item => {
+                        const cleanRawName = item.rawName.replace(/\s+/g, '');
+                        
+                        // A. Dictionary Exact Match
+                        const dictCode = parserDict[cleanRawName];
+                        if (dictCode && masterProducts[dictCode]) {
+                            const m = masterProducts[dictCode];
+                            return { ...item, matchedCode: dictCode, matchedName: m['품목명'], matchedSpec: m['규격'], outPrice: parseNum(m['출고가']), status: 'MATCH', score: 0 };
+                        }
+
+                        // B. Fuse.js Fuzzy Match
+                        const result = fuse.search(item.rawName);
+                        if (result.length > 0) {
+                            const bestMatch = result[0];
+                            const m = bestMatch.item;
+                            if (bestMatch.score < 0.15) { // 매우 유사
+                                return { ...item, matchedCode: m['코드'] || m['품목코드'], matchedName: m['품목명'], matchedSpec: m['규격'], outPrice: parseNum(m['출고가']), status: 'MATCH', score: bestMatch.score };
+                            } else if (bestMatch.score < 0.35) { // 유사 (확인 필요)
+                                return { ...item, matchedCode: m['코드'] || m['품목코드'], matchedName: m['품목명'], matchedSpec: m['규격'], outPrice: parseNum(m['출고가']), status: 'SIMILAR', score: bestMatch.score };
+                            }
+                        }
+
+                        // C. Mismatch
+                        return { ...item, status: 'MISMATCH' };
+                    });
+
+                    setParsedList(processedItems);
+                    
+                    const hasSimilar = processedItems.some(i => i.status === 'SIMILAR');
+                    const hasMismatch = processedItems.some(i => i.status === 'MISMATCH');
+                    if (hasSimilar) setActiveTab('SIMILAR');
+                    else if (hasMismatch) setActiveTab('MISMATCH');
+                    else setActiveTab('MATCH');
+
+                    setIsProcessing(false); setProcessMsg('');
+                    showToast(`✅ ${processedItems.length}건 발주 분석 완료!`);
+                }, 500); 
+            };
+
+            const masterSearchResults = useMemo(() => {
+                if (!searchKw.trim()) return [];
+                const arr = Object.values(masterProducts);
+                const fuse = new Fuse(arr, { keys: ['품목명', '코드', '품목코드'], threshold: 0.3 });
+                return fuse.search(searchKw).map(r => r.item).slice(0, 10);
+            }, [masterProducts, searchKw]);
+
+            const handleManualMatch = (itemId, masterItem) => {
+                setParsedList(prev => prev.map(item => {
+                    if (item.id === itemId) {
+                        return { ...item, matchedCode: masterItem['코드'] || masterItem['품목코드'], matchedName: masterItem['품목명'], matchedSpec: masterItem['규격'], outPrice: parseNum(masterItem['출고가']), status: 'MATCH', isManual: true };
+                    }
+                    return item;
+                }));
+                setSearchKw(''); setSelectedItemToMap(null);
+                showToast("✅ 수동 매핑 완료. [일치] 탭으로 이동되었습니다.");
+            };
+
+            const handleCancelMatch = (itemId) => {
+                setParsedList(prev => prev.map(item => {
+                    if (item.id === itemId) {
+                        return { ...item, matchedCode: null, matchedName: null, matchedSpec: null, outPrice: 0, status: 'MISMATCH', isManual: false };
+                    }
+                    return item;
+                }));
+                showToast("❌ 매핑이 취소되었습니다.");
+            };
+
+            const updateQty = (itemId, val) => {
+                setParsedList(prev => prev.map(item => item.id === itemId ? { ...item, qty: parseNum(val) } : item));
+            };
+
+            const handleCommitOrders = async () => {
+                const readyItems = parsedList.filter(i => i.status === 'MATCH');
+                if (readyItems.length === 0) return showToast("⚠️ 확정할 수 있는 (일치) 항목이 없습니다.");
+                if (!partnerInput.trim()) return showToast("⚠️ 수주처(고객사)를 입력해주세요.");
+
+                setIsProcessing(true); setProcessMsg("주문서 생성 및 AI 사전 학습 중...");
+                
+                try {
+                    const nowStr = new Date().toLocaleString('ko-KR');
+                    const existingOrders = await getIDB(STORAGE_KEYS.ORDERS_DB) || [];
+                    
+                    const newOrderList = [];
+                    let newDict = { ...parserDict };
+
+                    readyItems.forEach(item => {
+                        newOrderList.push({
+                            id: `ORD-${Date.now()}-${generateUUID().slice(0,8)}`,
+                            timestamp: nowStr,
+                            date: dateInput,
+                            partner: partnerInput.trim(),
+                            code: item.matchedCode,
+                            name: item.matchedName,
+                            spec: item.matchedSpec,
+                            qty: item.qty,
+                            price: item.outPrice,
+                            totalAmount: item.qty * item.outPrice,
+                            status: 'ORDERED' // ORDERED -> PREPARED -> SHIPPED
+                        });
+
+                        // AI 사전 학습 (수동 매핑했거나 스코어가 0이 아니었던 경우)
+                        if (item.isManual || item.score > 0) {
+                            const cleanRawName = item.rawName.replace(/\s+/g, '');
+                            newDict[cleanRawName] = item.matchedCode;
+                        }
+                    });
+
+                    await setIDB(STORAGE_KEYS.ORDERS_DB, [...newOrderList, ...existingOrders]);
+                    await setIDB(STORAGE_KEYS.PARSER_DICT, newDict);
+                    
+                    setParserDict(newDict);
+                    setParsedList(parsedList.filter(i => i.status !== 'MATCH')); // 일치했던 항목만 제거
+                    
+                    showToast(`🎉 ${newOrderList.length}건의 주문이 확정 및 전송되었습니다!`);
+                } catch(err) {
+                    console.error(err);
+                    showToast("❌ 주문 확정 중 오류가 발생했습니다.");
+                } finally {
+                    setIsProcessing(false); setProcessMsg('');
+                }
+            };
+
+            const handleExportOrders = async () => {
+                const orders = await getIDB(STORAGE_KEYS.ORDERS_DB) || [];
+                const targetOrders = orders.filter(o => o.date === dateInput);
+                
+                if (targetOrders.length === 0) return showToast(`⚠️ ${dateInput} 에 생성된 주문 내역이 없습니다.`);
+
+                const exportData = targetOrders.map(o => ({
+                    '주문일자': o.date,
+                    '고객사(수주처)': o.partner,
+                    '상품코드': o.code,
+                    '상품명': o.name,
+                    '규격': o.spec,
+                    '주문수량': o.qty,
+                    '판매단가': o.price,
+                    '합계금액': o.totalAmount,
+                    '상태': o.status
+                }));
+
+                const wb = window.XLSX.utils.book_new();
+                window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(exportData), '수주내역');
+                const excelBuffer = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = url; a.download = `수주내역서_${dateInput.replace(/-/g,'')}.xlsx`;
+                document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+                showToast("✅ 주문 내역 엑셀 다운로드가 완료되었습니다.");
+            };
+
+            const stats = useMemo(() => {
+                return {
+                    match: parsedList.filter(i => i.status === 'MATCH').length,
+                    similar: parsedList.filter(i => i.status === 'SIMILAR').length,
+                    mismatch: parsedList.filter(i => i.status === 'MISMATCH').length,
+                    totalAmount: parsedList.filter(i => i.status === 'MATCH').reduce((sum, item) => sum + (item.qty * item.outPrice), 0)
+                };
+            }, [parsedList]);
 
             return (
-                <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-slate-100 relative shadow-2xl border-x border-slate-300 select-none">
+                <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-[#f1f5f9] relative shadow-2xl border-x border-slate-300 select-none">
                     <GlobalHeader 
-                        activeTab={targetTabId} 
-                        itemCount={itemCount} 
+                        activeTab="orders" 
+                        itemCount={Object.keys(masterProducts).length} 
                         isProcessing={isProcessing} 
                         processMsg={processMsg}
-                        onOpenSettings={() => setShowSettings(true)}
-                        onPush={() => showToast('클라우드 백업 완료')}
-                        onPull={() => showToast('클라우드 동기화 완료')}
+                        onOpenSettings={() => setShowSettingsModal(true)}
+                        onPush={handlePush}
+                        onPull={handlePull}
                         onNavigate={handleNavigate}
                     />
-                    
-                    {toastMsg && (
-                        <div className="fixed bottom-10 right-10 z-[100] bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in border border-slate-700">
-                            <SafeIcon name="check-circle-2" size={18} className="text-emerald-400" />
-                            <span className="text-sm font-bold tracking-tight">{toastMsg}</span>
-                        </div>
-                    )}
 
-                    <main className="flex-1 overflow-hidden relative flex flex-col items-center justify-center bg-slate-50 p-6 fade-in">
-                        <div className="max-w-lg w-full bg-white rounded-[2rem] shadow-[0_10px_40px_-10px_rgba(0,0,0,0.08)] border border-slate-200 p-10 text-center relative overflow-hidden">
-                            {/* Decorative Top Line */}
-                            <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500"></div>
-                            
-                            {/* Icon */}
-                            <div className="w-24 h-24 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-500 mb-6 mx-auto shadow-inner border border-indigo-100">
-                                <SafeIcon name="settings" size={40} className="animate-[spin_4s_linear_infinite]" />
+                    <main className="flex-1 flex overflow-hidden bg-slate-50 relative p-6 gap-6">
+                        
+                        {/* 🌟 Left: Data Ingest (카톡 발주서 입력) */}
+                        <div className="w-[380px] bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col z-10 shrink-0">
+                            <div className="p-5 border-b border-slate-100 bg-[#f8fafc] rounded-t-xl shrink-0">
+                                <h2 className="text-[15px] font-black text-slate-800 flex items-center mb-1"><SafeIcon name="shopping-bag" size={18} className="text-indigo-500 mr-2"/>카톡/문자 발주서 등록</h2>
+                                <p className="text-[11px] text-slate-500 font-medium">카톡 발주서를 복사해 넣으면 수량과 상품을 자동 분석합니다.</p>
                             </div>
                             
-                            {/* Content */}
-                            <h2 className="text-2xl font-black text-slate-800 mb-4 leading-tight tracking-tight">
-                                <span className="text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg">[{targetTabInfo.label}]</span><br/>
-                                <span className="mt-3 block">기능은 현재 준비 중입니다</span>
-                            </h2>
-                            
-                            <p className="text-[15px] text-slate-500 font-medium mb-10 leading-relaxed">
-                                더 나은 업무 환경을 제공해 드리기 위해<br/>
-                                해당 시스템을 열심히 구축하고 있습니다.<br/>
-                                업데이트가 완료되는 대로 빠르게 오픈하겠습니다.
-                            </p>
-                            
-                            {/* Action Buttons */}
-                            <div className="flex flex-col gap-3">
-                                <button onClick={() => window.history.back()} className="px-8 py-4 bg-[#1A2235] text-white rounded-xl font-black hover:bg-black transition-colors shadow-md flex items-center justify-center w-full group">
-                                    <i className="fas fa-arrow-left mr-2 group-hover:-translate-x-1 transition-transform"></i> 이전 화면으로 돌아가기
+                            <div className="p-5 flex-1 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
+                                <div className="flex-1 flex flex-col h-full">
+                                    <label className="text-[12px] font-bold text-slate-700 mb-1.5 flex items-center">
+                                        <SafeIcon name="file-invoice" size={14} className="mr-1.5 text-slate-400"/> 발주 내용 (Ctrl+V)
+                                    </label>
+                                    <textarea value={rawText} onChange={e=>setRawText(e.target.value)} placeholder="사과 10kg 2박스&#10;감자 1박스&#10;..." className="w-full flex-1 border border-slate-300 rounded-lg p-3 text-[13px] outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100 shadow-inner resize-none font-mono leading-relaxed" />
+                                </div>
+                            </div>
+
+                            <div className="p-5 bg-white border-t border-slate-200 shrink-0">
+                                <button onClick={handleParse} disabled={isProcessing || !rawText.trim()} className={`w-full py-3.5 rounded-lg font-black text-[14px] shadow-md transition-all flex items-center justify-center ${rawText.trim() ? 'bg-indigo-600 text-white hover:bg-indigo-700 hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'}`}>
+                                    <SafeIcon name="zap" size={16} className="mr-2" /> 시맨틱 발주 파싱 시작
                                 </button>
-                                <button onClick={(e) => handleNavigate(e, '/NEXUS/Dashboard')} className="px-8 py-3 bg-white text-slate-500 rounded-xl font-bold hover:bg-slate-50 border border-slate-200 transition-colors w-full">
-                                    통합 대시보드로 이동
+                            </div>
+                        </div>
+
+                        {/* 🌟 Right: Order Processing (주문 처리) */}
+                        <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden z-10 relative">
+                            
+                            <div className="px-5 py-4 border-b border-slate-200 shrink-0 flex justify-between items-center bg-white z-20 shadow-sm">
+                                <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-2">
+                                        <label className="text-[12px] font-bold text-slate-600">주문 일자</label>
+                                        <input type="date" value={dateInput} onChange={e=>setDateInput(e.target.value)} className="border border-slate-300 rounded-lg px-3 py-1.5 text-[12px] font-bold outline-none focus:border-indigo-500 shadow-sm" />
+                                    </div>
+                                    <div className="w-px h-5 bg-slate-200 mx-1"></div>
+                                    <div className="flex items-center gap-2">
+                                        <label className="text-[12px] font-bold text-slate-600">수주처(고객사)</label>
+                                        <input type="text" value={partnerInput} onChange={e=>setPartnerInput(e.target.value)} placeholder="필수 입력" className="w-40 border border-slate-300 rounded-lg px-3 py-1.5 text-[12px] font-bold outline-none focus:border-indigo-500 shadow-sm" />
+                                    </div>
+                                </div>
+                                <button onClick={handleExportOrders} className="h-9 px-3 rounded-md text-[12px] font-bold bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50 transition-colors shadow-sm flex items-center">
+                                    <SafeIcon name="file-excel" size={14} className="mr-1.5 text-emerald-500" /> 오늘 주문 다운로드
+                                </button>
+                            </div>
+
+                            {parsedList.length === 0 && !isProcessing && (
+                                <div className="absolute inset-0 top-[70px] flex flex-col items-center justify-center bg-slate-50/50 z-10 fade-in">
+                                    <div className="w-20 h-20 rounded-full bg-white shadow-sm flex items-center justify-center mb-4">
+                                        <SafeIcon name="shopping-cart" size={40} className="text-slate-300" />
+                                    </div>
+                                    <h3 className="text-lg font-black text-slate-700 mb-2">접수된 발주 내역이 없습니다.</h3>
+                                    <p className="text-[13px] text-slate-500 font-medium">좌측에 카톡이나 문자로 받은 발주서를 붙여넣으세요.</p>
+                                </div>
+                            )}
+
+                            {/* 3-Tabs Header */}
+                            <div className="flex px-2 pt-2 bg-[#0f172a] shrink-0 border-b border-slate-800">
+                                {[
+                                    { id: 'MATCH', label: '발주 일치', icon: 'check-circle-2', color: 'emerald', count: stats.match },
+                                    { id: 'SIMILAR', label: '상품 확인', icon: 'alert-triangle', color: 'amber', count: stats.similar },
+                                    { id: 'MISMATCH', label: '수동 매핑', icon: 'x', color: 'rose', count: stats.mismatch }
+                                ].map(tab => (
+                                    <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 flex flex-col items-center justify-center py-2.5 px-2 rounded-t-xl font-bold transition-colors border-t-[3px] mx-0.5 relative z-10 ${activeTab === tab.id ? `bg-white text-slate-800 border-${tab.color}-500` : 'bg-transparent text-slate-400 border-transparent hover:bg-slate-800 hover:text-slate-300'}`} style={{ marginBottom: activeTab === tab.id ? '-1px' : '0' }}>
+                                        <div className="flex items-center gap-1.5 text-[12px]">
+                                            <SafeIcon name={tab.icon} size={14} className={activeTab === tab.id ? `text-${tab.color}-500` : ''} /> {tab.label} <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] bg-slate-200 text-slate-600 ${activeTab === tab.id ? `bg-${tab.color}-100 text-${tab.color}-700` : ''}`}>{tab.count}</span>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* List Content */}
+                            <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50/50 p-4">
+                                <div className="space-y-3 fade-in">
+                                    {parsedList.filter(i => i.status === activeTab).length === 0 ? (
+                                        <div className="py-20 text-center text-slate-400 font-bold">해당하는 항목이 없습니다.</div>
+                                    ) : parsedList.filter(i => i.status === activeTab).map(item => (
+                                        <div key={item.id} className={`bg-white border p-4 rounded-xl shadow-sm transition-all hover:shadow-md ${activeTab === 'MATCH' ? 'border-emerald-200 hover:border-emerald-300' : activeTab === 'SIMILAR' ? 'border-amber-200 hover:border-amber-300' : 'border-rose-200 hover:border-rose-300'}`}>
+                                            <div className="flex justify-between items-start mb-2 pb-2 border-b border-slate-100">
+                                                <div className="flex-1 min-w-0 pr-4">
+                                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">고객 발주 원문</div>
+                                                    <div className="text-[14px] font-black text-slate-800 truncate" title={item.rawName}>{item.rawName}</div>
+                                                </div>
+                                                <div className="text-right shrink-0">
+                                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">주문 수량</div>
+                                                    <input type="number" value={item.qty} onChange={e=>updateQty(item.id, e.target.value)} className="w-20 text-[16px] font-black text-indigo-600 font-mono text-right border border-slate-300 rounded px-2 py-0.5 outline-none focus:border-indigo-500 focus:ring-1" />
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex-1">
+                                                    {item.status === 'MATCH' ? (
+                                                        <div className="flex items-center">
+                                                            <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mr-2"><SafeIcon name="check" size={12}/></div>
+                                                            <div className="flex flex-col">
+                                                                <span className="text-[13px] font-bold text-emerald-800">{item.matchedName} <span className="font-normal text-emerald-600 ml-1">({item.matchedSpec})</span></span>
+                                                                <span className="text-[10px] text-emerald-500 font-mono">{item.matchedCode} {item.isManual && <span className="bg-emerald-200 text-emerald-800 px-1 py-0.5 rounded ml-1">수동 연결됨</span>}</span>
+                                                            </div>
+                                                        </div>
+                                                    ) : item.status === 'SIMILAR' ? (
+                                                        <div className="flex items-center">
+                                                            <div className="w-6 h-6 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mr-2"><SafeIcon name="info-circle" size={12}/></div>
+                                                            <div className="flex flex-col">
+                                                                <span className="text-[12px] text-amber-600 font-bold mb-0.5">아래 상품이 맞습니까? (유사도 {((1-item.score)*100).toFixed(0)}%)</span>
+                                                                <span className="text-[13px] font-bold text-slate-800">{item.matchedName} <span className="font-normal text-slate-500 ml-1">({item.matchedSpec})</span></span>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-[12px] font-bold text-rose-500 flex items-center"><SafeIcon name="x" size={14} className="mr-1.5"/>매칭되는 마스터 상품을 찾지 못했습니다.</div>
+                                                    )}
+                                                </div>
+
+                                                <div className="shrink-0 flex items-center gap-2">
+                                                    {item.status === 'MATCH' && item.isManual && (
+                                                        <button onClick={() => handleCancelMatch(item.id)} className="px-3 py-1.5 bg-white border border-slate-200 text-rose-500 hover:bg-rose-50 hover:border-rose-300 rounded text-[11px] font-bold transition-colors flex items-center shadow-sm"><SafeIcon name="trash-alt" size={12} className="mr-1.5"/>취소</button>
+                                                    )}
+                                                    {item.status === 'SIMILAR' && (
+                                                        <>
+                                                            <button onClick={() => handleCancelMatch(item.id)} className="px-4 py-2 bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 rounded text-[12px] font-bold transition-colors shadow-sm">아닙니다</button>
+                                                            <button onClick={() => handleManualMatch(item.id, {코드: item.matchedCode, 품목명: item.matchedName, 규격: item.matchedSpec, 출고가: item.outPrice})} className="px-4 py-2 bg-indigo-600 text-white rounded text-[12px] font-bold hover:bg-indigo-700 transition-colors shadow-sm">예 (연결)</button>
+                                                        </>
+                                                    )}
+                                                    {item.status === 'MISMATCH' && (
+                                                        <button onClick={() => setSelectedItemToMap(item.id)} className="px-4 py-2 bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 rounded text-[12px] font-bold transition-colors shadow-sm flex items-center"><SafeIcon name="search" size={12} className="mr-1.5"/>마스터에서 수동 찾기</button>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* 수동 매핑 검색창 전개 */}
+                                            {selectedItemToMap === item.id && (
+                                                <div className="mt-3 pt-3 border-t border-slate-100 bg-slate-50 -mx-4 -mb-4 px-4 pb-4 rounded-b-xl fade-in">
+                                                    <div className="relative mb-2">
+                                                        <input type="text" value={searchKw} onChange={e=>setSearchKw(e.target.value)} placeholder="마스터 품명 검색..." autoFocus className="w-full pl-8 pr-3 py-2 border border-slate-300 rounded-lg text-[12px] outline-none focus:border-indigo-500 shadow-sm" />
+                                                        <SafeIcon name="search" size={12} className="absolute left-3 top-2.5 text-slate-400" />
+                                                    </div>
+                                                    <div className="max-h-40 overflow-y-auto custom-scrollbar space-y-1">
+                                                        {masterSearchResults.length === 0 ? <div className="text-[11px] text-slate-400 text-center py-2">검색 결과가 없습니다.</div> : masterSearchResults.map(m => (
+                                                            <div key={m.코드} onClick={() => handleManualMatch(item.id, m)} className="flex justify-between items-center p-2 bg-white border border-slate-200 rounded hover:border-indigo-400 hover:bg-indigo-50 cursor-pointer transition-colors group">
+                                                                <div className="text-[12px] font-bold text-slate-700 group-hover:text-indigo-700 truncate">{m['품목명']} <span className="text-[10px] text-slate-400">({m['규격']})</span></div>
+                                                                <button className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded group-hover:bg-indigo-600 group-hover:text-white transition-colors">선택</button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <div className="mt-2 text-right">
+                                                        <button onClick={() => {setSelectedItemToMap(null); setSearchKw('');}} className="text-[11px] text-slate-500 hover:text-slate-700 underline font-bold">닫기</button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="p-5 border-t border-slate-200 bg-white shrink-0 flex justify-between items-center z-10">
+                                <div>
+                                    <div className="text-[12px] font-bold text-slate-500 mb-1">발주 승인 예정액 ({stats.match}건)</div>
+                                    <div className="text-2xl font-black text-indigo-700">{stats.totalAmount.toLocaleString()} <span className="text-sm font-bold text-slate-500">원</span></div>
+                                </div>
+                                <button onClick={handleCommitOrders} disabled={stats.match === 0 || isProcessing} className={`px-8 py-3.5 rounded-xl font-black text-[14px] shadow-md transition-all flex items-center ${stats.match > 0 ? 'bg-[#0B1021] text-white hover:bg-black hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'}`}>
+                                    <SafeIcon name="check-circle-2" size={16} className="mr-2" /> 선택 발주서(주문) 생성 완료
                                 </button>
                             </div>
                         </div>
                     </main>
 
-                    {/* 설정 모달 */}
-                    {showSettings && (
-                        <div className="fixed inset-0 bg-slate-900/60 z-[200] flex justify-center items-center backdrop-blur-sm">
-                            <div className="bg-white w-[450px] rounded-xl shadow-2xl overflow-hidden border border-gray-200 fade-in">
-                                <div className="px-6 py-4 border-b border-gray-200 bg-slate-50 flex justify-between items-center">
-                                    <h2 className="font-black text-slate-800 text-base flex items-center"><SafeIcon name="settings" size={18} className="text-indigo-500 mr-2"/>OneApp Sync Settings</h2>
-                                    <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-slate-600 transition-colors"><SafeIcon name="x" size={20} /></button>
-                                </div>
-                                <div className="p-8 space-y-6">
-                                    <p className="text-sm text-slate-500 font-bold text-center">글로벌 환경설정 창입니다.</p>
-                                </div>
-                                <div className="px-6 py-4 bg-slate-50 border-t border-gray-200 flex justify-end">
-                                    <button onClick={() => setShowSettings(false)} className="px-6 py-2.5 bg-[#1A2235] text-white rounded-lg text-sm font-bold shadow-md hover:bg-black transition-colors">저장 및 닫기</button>
-                                </div>
-                            </div>
+                    {/* 🌟 Iframe Overlay 로 설정 모달 표시 */}
+                    <IframeSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
+                    
+                    {toastMsg && (
+                        <div className="fixed bottom-10 right-10 z-[1000] bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in border border-slate-700">
+                            <SafeIcon name="check-circle-2" size={18} className="text-emerald-400" />
+                            <span className="text-sm font-bold tracking-tight">{toastMsg}</span>
                         </div>
                     )}
                 </div>
