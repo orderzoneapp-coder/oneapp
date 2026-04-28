@@ -162,13 +162,13 @@
             ];
 
             const tabs = [
-                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'dashboard.html', group: 'common', isReady: true },
-                { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'guide.html', group: 'common', isReady: false },
+                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true },
+                { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: false },
                 
-                { id: 'item-info', label: '마스터 DB', icon: "database", path: 'item_master.html', group: 'master', isReady: true },
-                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'items.html', group: 'master', isReady: true },
-                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'index.html', group: 'master', isReady: true },
-                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'parser.html', group: 'master', isReady: true },
+                { id: 'item-info', label: '마스터 DB', icon: "database", path: 'Master.html', group: 'master', isReady: true },
+                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'Item_manager.html', group: 'master', isReady: true },
+                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'Pipeline.html', group: 'master', isReady: true },
+                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'Parser.html', group: 'master', isReady: true },
                 { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: 'partner_db.html', group: 'master', isReady: false },
                 { id: 'partners', label: '거래처 관리', icon: "users", path: 'partners.html', group: 'master', isReady: true },
 
@@ -178,7 +178,7 @@
                 { id: 'inventory', label: '재고 마감', icon: "boxes", path: 'inventory.html', group: 'ops', isReady: true },
                 { id: 'print-center', label: '출력 센터', icon: "printer", path: 'print_center.html', group: 'ops', isReady: false },
 
-                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'report.html', group: 'admin', isReady: true },
+                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'Report.html', group: 'admin', isReady: true },
                 { id: 'cs', label: '정보마당(CS)', icon: "megaphone", path: 'cs.html', group: 'admin', isReady: false }
             ];
 
@@ -187,7 +187,7 @@
             const [selectedGroup, setSelectedGroup] = useState(activeGroup);
 
             const handleGroupClick = (groupId) => setSelectedGroup(prev => prev === groupId ? 'common' : groupId);
-            const handleLogoClick = (e) => { setSelectedGroup('common'); onNavigate(e, 'dashboard.html', true); };
+            const handleLogoClick = (e) => { setSelectedGroup('common'); onNavigate(e, 'Dashboard.html', true); };
 
             return (
                 <div className="flex flex-col shrink-0 z-40 relative w-full shadow-sm bg-[#0B1021]">
@@ -200,7 +200,9 @@
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
                                         <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.0</span>
                                     </div>
-                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">SKU FORGE</span>
+                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">
+                                        {currentTab ? currentTab.label : 'WORKSPACE'}
+                                    </span>
                                 </div>
                             </div>
 
@@ -228,8 +230,8 @@
                                     )}
                                 </div>
                                 <div className="w-px h-3.5 bg-slate-700"></div>
-                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`현재 브라우저 메모리에 다운로드된 마스터 상품 수: ${itemCount.toLocaleString()}개`}>
-                                    <i className="fas fa-database text-[10px] text-slate-500"></i>
+                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`현재 데이터 건수: ${itemCount.toLocaleString()}건`}>
+                                    <SafeIcon name="database" size={10} className="text-slate-500" />
                                     <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount.toLocaleString()}</span>
                                 </div>
                             </div>
