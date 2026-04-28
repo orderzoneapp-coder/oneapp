@@ -25,7 +25,6 @@
         .fade-in { animation: fadeIn 0.2s ease-out; } 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         
-        /* 🌟 Iframe 드로어용 슬라이딩 애니메이션 추가 */
         @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
         .slide-in-right { animation: slideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
 
@@ -210,7 +209,7 @@
         };
 
         // ==========================================
-        // 🧩 3. 통합 글로벌 헤더 (v3.0)
+        // 🧩 3. 통합 글로벌 헤더 (v3.0 규격 링크 100% 반영)
         // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [
@@ -258,12 +257,17 @@
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
                                         <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.0</span>
                                     </div>
-                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">VALUATION HUB</span>
+                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">
+                                        {currentTab ? currentTab.label : 'WORKSPACE'}
+                                    </span>
                                 </div>
                             </div>
+
                             <div className="flex items-end h-full gap-8">
                                 {groups.map(g => (
-                                    <button key={g.id} onClick={() => handleGroupClick(g.id)} className={`pb-[16px] text-[14px] font-bold transition-colors flex items-center gap-1.5 ${selectedGroup === g.id ? 'text-slate-100 border-b-[3px] border-indigo-500 -mb-[2px]' : 'text-slate-500 hover:text-slate-300'}`}>
+                                    <button key={g.id} onClick={() => handleGroupClick(g.id)}
+                                        className={`pb-[16px] text-[14px] font-bold transition-colors flex items-center gap-1.5
+                                        ${selectedGroup === g.id ? 'text-slate-100 border-b-[3px] border-indigo-500 -mb-[2px]' : 'text-slate-500 hover:text-slate-300'}`}>
                                         <SafeIcon name={g.icon} size={15} /> {g.label}
                                     </button>
                                 ))}
@@ -273,14 +277,22 @@
                         <div className="flex items-center gap-4 h-full">
                             <div className="flex items-center bg-[#151B2B] rounded-lg border border-slate-700/50 h-9 px-3 shadow-inner gap-3">
                                 <div className="flex items-center justify-center" title={isProcessing ? processMsg : "시스템 정상 대기중"}>
-                                    {isProcessing ? <i className="fas fa-circle-notch fa-spin text-amber-500 text-[12px]"></i> : <div className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></div>}
+                                    {isProcessing ? (
+                                        <i className="fas fa-circle-notch fa-spin text-amber-500 text-[12px]"></i>
+                                    ) : (
+                                        <div className="relative flex h-2 w-2">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="w-px h-3.5 bg-slate-700"></div>
-                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`마스터 DB 상품 수: ${itemCount.toLocaleString()}개`}>
+                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`현재 데이터 건수: ${itemCount.toLocaleString()}건`}>
                                     <SafeIcon name="database" size={10} className="text-slate-500" />
                                     <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount.toLocaleString()}</span>
                                 </div>
                             </div>
+
                             <div className="flex items-center gap-2">
                                 <button onClick={onPull} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 불러오기(Pull)"><SafeIcon name="cloud-download" size={18} /></button>
                                 <button onClick={onPush} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 백업하기(Push)"><SafeIcon name="cloud-upload" size={18} /></button>
@@ -628,7 +640,7 @@
                         <div className="flex flex-col w-full overflow-hidden">
                             <span className="text-[10.5px] font-mono text-indigo-500 mb-0.5 tracking-tight font-bold">{rowCode}</span>
                             <div className="flex items-baseline w-full min-w-0 overflow-hidden mt-0.5">
-                                <span className={`text-[13px] font-extrabold truncate text-slate-800 ${!mItem.품목명 ? 'text-rose-500' : ''}`} title={dName}>{dName}</span>
+                                <span className={`text-[13px] font-extrabold truncate text-slate-800 ${dName === '[미등록]' ? 'text-rose-500' : ''}`} title={dName}>{dName}</span>
                                 {dSpec && <span className="text-[11.5px] font-medium text-slate-400 truncate ml-1.5 shrink-0 max-w-[40%]" title={dSpec}>({dSpec})</span>}
                             </div>
                         </div>
@@ -828,7 +840,9 @@
                     
                     let newManaged = { ...managedItems }; let count = 0;
                     excelData.forEach(row => {
-                        const codeKey = headerCache['품목코드']; const code = row[codeKey];
+                        // 💡 '코드' 또는 '품목코드' 모두 확인
+                        const codeKey = headerCache['품목코드']; 
+                        const code = row[codeKey] || row['코드'] || row['품목코드'];
                         if (!code || String(code).replace(/\s/g, '').includes('출력')) return;
                         
                         if (!newManaged[code]) newManaged[code] = { 코드: code, sources: { estimate: {} }, finalData: {} };
@@ -1029,7 +1043,11 @@
                 if (isEstimateUploaded) {
                     baseList = Object.values(managedItems); 
                 } else {
-                    baseList = Object.values(masterProducts).map(m => managedItems[m.코드] || { 코드: m.코드, sources: {}, finalData: {} });
+                    // 💡 [핵심] m.코드뿐만 아니라 m.품목코드도 검사하여 식별자(Key)를 확보
+                    baseList = Object.values(masterProducts).map(m => {
+                        const code = m['코드'] || m['품목코드'] || 'NO_CODE';
+                        return managedItems[code] || { 코드: code, sources: {}, finalData: {} };
+                    });
 
                     if (selectedCatalog) {
                         baseList = baseList.filter(item => {
