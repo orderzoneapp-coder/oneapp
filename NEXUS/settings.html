@@ -72,24 +72,37 @@
             
             const [visibleMasterCols, setVisibleMasterCols] = useState(() => { 
                 const s = localStorage.getItem('merchVisMaster_v870'); 
-                return s ? JSON.parse(s) : { estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] }; 
+                const p = s ? JSON.parse(s) : null; 
+                return p?.estimate ? p : { estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] }; 
             });
+            
             const [visibleUploadCols, setVisibleUploadCols] = useState(() => { 
                 const s = localStorage.getItem('merchVisUpload_v870'); 
-                return s ? JSON.parse(s) : { estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명'] }; 
+                const p = s ? JSON.parse(s) : null; 
+                return p?.estimate ? p : { estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명'] }; 
             });
+            
             const [mappings, setMappings] = useState(() => { 
                 const s = localStorage.getItem('merchMappings_v870'); 
-                return s ? JSON.parse(s) : { master: { '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격, 규격명, 사이즈, 단량', '출고가': '출고가, 출고, 판매가, 시중가', '입고가': '입고가, 입고, 매입가' }, estimate: { '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격명, 규격, 사이즈, 단량', '구매처': '거래처명, 구매처, 거래처', '견적서': '견적서, 카테고리, 템플릿, 견적분류', '입고가': '입고가, 입고, 매입가', '출고가': '출고가, 출고, 판매가', '입고B': 'B단가, 입고B', '도매A': 'A판매, A판매가, 도매A', '도매B': 'B판매, B판매가, 도매B', '간단설명': '지시사항, 간단설명, 비고' } }; 
+                const p = s ? JSON.parse(s) : null; 
+                return p?.master ? p : { master: { '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격, 규격명, 사이즈, 단량', '출고가': '출고가, 출고, 판매가, 시중가', '입고가': '입고가, 입고, 매입가' }, estimate: { '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격명, 규격, 사이즈, 단량', '구매처': '거래처명, 구매처, 거래처', '견적서': '견적서, 카테고리, 템플릿, 견적분류', '입고가': '입고가, 입고, 매입가', '출고가': '출고가, 출고, 판매가', '입고B': 'B단가, 입고B', '도매A': 'A판매, A판매가, 도매A', '도매B': 'B판매, B판매가, 도매B', '간단설명': '지시사항, 간단설명, 비고' } }; 
             });
+            
             const [masterLinks, setMasterLinks] = useState(() => { 
                 const s = localStorage.getItem('merchMasterLinks_v870'); 
-                return s ? JSON.parse(s) : { master: {}, estimate: { '창고': '창고', '구매처': '구매처', '견적서': '견적서', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B', '간단설명': '간단설명' } }; 
+                const p = s ? JSON.parse(s) : null; 
+                return p?.estimate ? p : { master: {}, estimate: { '창고': '창고', '구매처': '구매처', '견적서': '견적서', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B', '간단설명': '간단설명' } }; 
             });
+            
             const [marginRules, setMarginRules] = useState(() => {
                 const s = localStorage.getItem('merchMarginRules_v878');
-                const def = [ { id: generateUUID(), whCode: '01', unit: 'box, 박스', rate: 10, type: 'divide' }, { id: generateUUID(), whCode: '01', unit: 'ea, 개, 낱개', rate: 15, type: 'divide' }, { id: generateUUID(), whCode: '03, 05', unit: 'box, 박스', rate: 15, type: 'divide' }, { id: generateUUID(), whCode: '03, 05', unit: 'ea, 개, 낱개', rate: 20, type: 'divide' }, { id: generateUUID(), whCode: '*', unit: 'box, 박스', rate: 10, type: 'divide' }, { id: generateUUID(), whCode: '*', unit: 'ea, 개, 낱개', rate: 15, type: 'divide' }, { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' } ];
-                return s ? JSON.parse(s) : def;
+                const def = [ 
+                    { id: generateUUID(), whCode: '01', unit: 'box, 박스', rate: 10, type: 'divide' }, 
+                    { id: generateUUID(), whCode: '01', unit: 'ea, 개, 낱개', rate: 15, type: 'divide' }, 
+                    { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' } 
+                ];
+                if (s) { try { const p = JSON.parse(s); if (p?.length > 0) return p.map(r => ({ ...r, whCode: r.whCode || '*', unit: r.unit || '*' })); } catch(e){} }
+                return def;
             });
 
             const [opsMappings, setOpsMappings] = useState(() => {
@@ -104,19 +117,18 @@
             });
 
             useEffect(() => {
-                localStorage.setItem(STORAGE_KEYS.CLOUD_URL, cloudUrl);
-                localStorage.setItem('merchVisMaster_v870', JSON.stringify(visibleMasterCols));
+                localStorage.setItem(STORAGE_KEYS.CLOUD_URL, cloudUrl); 
+                localStorage.setItem('merchVisMaster_v870', JSON.stringify(visibleMasterCols)); 
                 localStorage.setItem('merchVisUpload_v870', JSON.stringify(visibleUploadCols));
-                localStorage.setItem('merchMappings_v870', JSON.stringify(mappings));
-                localStorage.setItem('merchMasterLinks_v870', JSON.stringify(masterLinks));
+                localStorage.setItem('merchMappings_v870', JSON.stringify(mappings)); 
+                localStorage.setItem('merchMasterLinks_v870', JSON.stringify(masterLinks)); 
                 localStorage.setItem('merchMarginRules_v878', JSON.stringify(marginRules));
                 localStorage.setItem('inventoryMappingsLight', JSON.stringify(opsMappings));
                 localStorage.setItem('inventoryGroupingV79', JSON.stringify(opsGrouping));
                 
-                // 💡 [핵심 추가] 설정이 바뀔 때마다 다른 열려있는 탭(주문, 재고 등)에도 즉시 갱신 신호 전송!
                 localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
             }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules, opsMappings, opsGrouping]);
-
+            
             return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules, opsMappings, setOpsMappings, opsGrouping, setOpsGrouping };
         };
 
@@ -128,7 +140,6 @@
             const [customEstColInput, setCustomEstColInput] = useState('');
             const [isProcessing, setIsProcessing] = useState(false);
             
-            // 💡 위험구역 잠금 텍스트
             const [dangerLock, setDangerLock] = useState('');
 
             const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
@@ -192,7 +203,6 @@
                 showToast(`✅ ${count}개의 상품에서 [${tagName}] 태그를 삭제했습니다.`);
             }, [masterProducts, showToast]);
 
-            // 💡 설정 백업(Export) 
             const handleExportSettings = () => {
                 const keys = ['skuSyncCloudUrl_v6', 'merchVisMaster_v870', 'merchVisUpload_v870', 'merchMappings_v870', 'merchMasterLinks_v870', 'merchMarginRules_v878', 'inventoryMappingsLight', 'inventoryGroupingV79'];
                 const data = {};
@@ -206,7 +216,6 @@
                 showToast("✅ 설정 백업 파일이 다운로드되었습니다.");
             };
 
-            // 💡 설정 복원(Import)
             const handleImportSettings = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
@@ -227,7 +236,6 @@
                 e.target.value = '';
             };
 
-            // 💡 DB 초기화 (위험 구역)
             const handleDataClear = async () => {
                 if (dangerLock !== '데이터를 모두 삭제합니다') return showToast('⚠️ 안전 잠금 해제 문구를 정확히 띄어쓰기하여 입력하세요.');
                 if (!window.confirm("경고: 실무 데이터(마스터, 주문, 구매, 판매, 재고)가 모두 영구 삭제됩니다.\n이 작업은 복구할 수 없습니다. 계속하시겠습니까?")) return;
@@ -247,7 +255,6 @@
                 } catch(e) { showToast("❌ 데이터 삭제 실패"); } finally { setIsProcessing(false); }
             };
 
-            // 💡 설정 공장 초기화 (위험 구역)
             const handleFactoryReset = () => {
                 if (dangerLock !== '데이터를 모두 삭제합니다') return showToast('⚠️ 안전 잠금 해제 문구를 정확히 띄어쓰기하여 입력하세요.');
                 if (!window.confirm("경고: 커스텀된 매핑 규칙과 환경설정이 모두 초기화됩니다.\n진행하시겠습니까?")) return;
@@ -261,13 +268,25 @@
 
             const toggleMasterCol = (tabId, header) => config.setVisibleMasterCols(prev => { const list = prev[tabId] || []; return { ...prev, [tabId]: list.includes(header) ? list.filter(h => h !== header) : [...list, header] }; });
 
+            // 💡 [개선점] 마스터 항목 기반 검증된 컬럼 추가 로직
             const addCustomUploadCol = (type, val) => {
-                if(!val || !val.trim()) return; const cleanVal = val.trim();
-                if ((config.visibleUploadCols[type] || []).includes(cleanVal)) return showToast('⚠️ 이미 추가된 항목입니다.');
+                if(!val || !val.trim()) return; 
+                const cleanVal = val.trim();
+                
+                if ((config.visibleUploadCols[type] || []).includes(cleanVal)) return showToast('⚠️ 이미 화면에 추가된 항목입니다.');
+                
+                // 💡 [핵심] 사용자가 텍스트를 입력하는 대신, 실제 마스터의 필드 목록 중 하나를 선택하는 방식이므로, 
+                // 추가된 항목은 반드시 마스터DB와 1:1로 매핑되는 것이 보장됩니다. (오타 원천 차단)
                 config.setVisibleUploadCols(prev => ({ ...prev, [type]: [...(prev[type] || []), cleanVal] }));
+                
+                // 자동 매핑 설정 (이름이 똑같으므로 감지 키워드도 그 이름 그대로 설정)
                 config.setMappings(prev => ({ ...prev, [type]: { ...prev[type], [cleanVal]: cleanVal } }));
-                config.setMasterLinks(prev => ({ ...prev, [type]: { ...prev[type], [cleanVal]: '' } }));
+                
+                // 마스터 링크 설정 (마스터 항목을 가져온 것이므로 곧바로 자기 이름과 연결)
+                config.setMasterLinks(prev => ({ ...prev, [type]: { ...prev[type], [cleanVal]: cleanVal } }));
+                
                 setCustomEstColInput('');
+                showToast(`✅ [${cleanVal}] 항목이 추가되어 마스터 필드와 자동 연결되었습니다.`);
             };
 
             const addMarginRule = () => config.setMarginRules([...config.marginRules, { id: generateUUID(), whCode: '', unit: '', rate: 10, type: 'divide' }]);
@@ -277,6 +296,12 @@
             const saveAll = () => {
                 showToast("💾 설정 저장은 변경 즉시 백그라운드에서 자동 적용되고 있습니다.");
             };
+
+            // 💡 콤보박스(셀렉트) 구성을 위해 현재 추가 가능한 항목만 필터링
+            const availableUploadHeaders = useMemo(() => {
+                const currentCols = config.visibleUploadCols['estimate'] || [];
+                return MASTER_HEADERS.filter(h => !requiredCoreFields.includes(h) && !currentCols.includes(h));
+            }, [config.visibleUploadCols]);
 
             return (
                 <div className="h-screen w-full flex flex-col font-sans overflow-hidden bg-slate-100 relative select-none">
@@ -308,7 +333,6 @@
                         <div className="flex-1 overflow-y-auto p-10 custom-scrollbar relative bg-slate-50">
                             {activeTab === 'display' && (
                                 <div className="max-w-4xl space-y-6 fade-in mx-auto">
-                                    {/* 🌟 1번 업데이트: 시스템 설정 백업/복원 기능 */}
                                     <div className="bg-emerald-50 p-6 rounded-xl border border-emerald-200 shadow-sm">
                                         <h3 className="text-[15px] font-black text-emerald-900 mb-3 pb-2 border-b border-emerald-200 flex items-center">
                                             <SafeIcon name="download" size={16} className="text-emerald-500 mr-2"/>시스템 설정 백업 및 복원 (Export / Import)
@@ -345,7 +369,6 @@
                                 </div>
                             )}
 
-                            {/* 🌟 2번 업데이트: 위험 구역 (Danger Zone) 전용 탭 */}
                             {activeTab === 'dangerZone' && (
                                 <div className="max-w-4xl space-y-6 fade-in mx-auto">
                                     <div className="bg-white p-8 rounded-xl border-2 border-rose-500 shadow-lg relative overflow-hidden">
@@ -438,7 +461,7 @@
                                                 <h3 className="text-[18px] font-black text-rose-900 flex items-center"><SafeIcon name="calculator" size={20} className="mr-2 text-rose-500"/>동적 단가 계산 및 하이브리드 마진 룰</h3>
                                                 <p className="text-[13px] font-bold text-rose-600 mt-1.5">※ 매입 원가(입고가)에 마진을 곱하거나 나누어, 전사의 기준이 되는 **최종 출고가(시중가)**를 제안하는 공식입니다.</p>
                                             </div>
-                                            <button onClick={config.addMarginRule} className="bg-rose-500 hover:bg-rose-600 text-white px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all shadow-md flex items-center transform hover:scale-105"><SafeIcon name="plus" size={14} className="mr-1.5"/> 룰 추가</button>
+                                            <button onClick={addMarginRule} className="bg-rose-500 hover:bg-rose-600 text-white px-5 py-2.5 rounded-lg text-[13px] font-bold transition-all shadow-md flex items-center transform hover:scale-105"><SafeIcon name="plus" size={14} className="mr-1.5"/> 룰 추가</button>
                                         </div>
                                         <div className="overflow-x-auto">
                                             <table className="w-full text-left text-[13px]">
@@ -569,13 +592,21 @@
                                         <h3 className="text-[15px] font-black mb-4 pb-3 border-b border-slate-100 flex items-center text-slate-800"><span className="bg-emerald-100 text-emerald-700 text-[10px] px-2 py-1 rounded-md mr-3 shadow-sm">작업/입력 영역</span> 엑셀 연동 및 수정 컬럼 설정</h3>
                                         <div className="text-[12px] text-slate-500 font-bold mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200 shadow-inner leading-relaxed flex items-start">
                                             <SafeIcon name="info-circle" size={14} className="mr-2 mt-0.5 shrink-0 text-slate-400"/>
-                                            <p>식별자인 '품목코드'는 엑셀 작업에서 변경할 수 없으므로 제외되었습니다.<br/>마스터에 없는 완전히 새로운 항목명을 우측 하단에서 추가하여 엑셀 매핑에 활용할 수 있습니다.</p>
+                                            <p>식별자인 '품목코드'는 엑셀 작업에서 변경할 수 없으므로 제외되었습니다.<br/>마스터 DB에 실존하는 항목 중에서만 화면에 띄울 컬럼을 선택하여 안전하게 추가할 수 있습니다.</p>
                                         </div>
                                         <div className="flex flex-wrap gap-2.5 mb-6">
                                             {(config.visibleUploadCols['estimate']||[]).filter(h => !requiredCoreFields.includes(h)).map(h => <div key={`u-e-${h}`} className="config-chip active border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-rose-50 hover:border-rose-300 hover:text-rose-600 hover:ring-2 hover:ring-rose-100 transition-all group shadow-sm flex items-center"><span className="font-bold">{h}</span><button onClick={()=>config.setVisibleUploadCols(p=>({...p, estimate:p.estimate.filter(x=>x!==h)}))} className="ml-2 text-emerald-400 group-hover:text-rose-500 flex items-center justify-center w-4 h-4 rounded-full bg-white shadow-sm"><SafeIcon name="x" size={10} /></button></div>)}
                                         </div>
                                         <div className="flex items-center gap-3 max-w-md bg-slate-50 p-2 rounded-lg border border-slate-200">
-                                            <input type="text" value={customEstColInput} onChange={e=>setCustomEstColInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addCustomUploadCol('estimate', customEstColInput)} placeholder="새로운 항목명 입력 (예: 마감시간)" className="flex-1 border border-slate-300 rounded-md px-3 py-2 text-[13px] font-bold outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-200 shadow-inner" />
+                                            {/* 💡 [핵심] 텍스트 입력창에서 셀렉트박스로 교체 (오타 원천 차단) */}
+                                            <select 
+                                                value={customEstColInput} 
+                                                onChange={e => setCustomEstColInput(e.target.value)} 
+                                                className="flex-1 border border-slate-300 rounded-md px-3 py-2.5 text-[13px] font-bold outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-200 shadow-inner bg-white text-slate-700 cursor-pointer"
+                                            >
+                                                <option value="">-- 마스터 항목 선택하여 화면에 추가 --</option>
+                                                {availableUploadHeaders.map(h => <option key={`add-${h}`} value={h}>{h}</option>)}
+                                            </select>
                                             <button onClick={()=>addCustomUploadCol('estimate', customEstColInput)} className="bg-slate-800 hover:bg-black text-white px-5 py-2.5 rounded-md text-[13px] font-bold transition-all shadow-md flex items-center"><SafeIcon name="plus" size={14} className="mr-1.5"/> 추가</button>
                                         </div>
                                     </div>
