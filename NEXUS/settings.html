@@ -332,7 +332,7 @@
                         {/* Main Content */}
                         <div className="flex-1 overflow-y-auto p-10 custom-scrollbar relative bg-slate-50">
                             {activeTab === 'display' && (
-                                <div className="max-w-4xl space-y-6 fade-in mx-auto">
+                                <div className="w-full max-w-[1400px] space-y-6 fade-in mx-auto">
                                     <div className="bg-emerald-50 p-6 rounded-xl border border-emerald-200 shadow-sm">
                                         <h3 className="text-[15px] font-black text-emerald-900 mb-3 pb-2 border-b border-emerald-200 flex items-center">
                                             <SafeIcon name="download" size={16} className="text-emerald-500 mr-2"/>시스템 설정 백업 및 복원 (Export / Import)
@@ -370,7 +370,7 @@
                             )}
 
                             {activeTab === 'dangerZone' && (
-                                <div className="max-w-4xl space-y-6 fade-in mx-auto">
+                                <div className="w-full max-w-[1400px] space-y-6 fade-in mx-auto">
                                     <div className="bg-white p-8 rounded-xl border-2 border-rose-500 shadow-lg relative overflow-hidden">
                                         <div className="absolute top-0 left-0 w-full h-2 bg-rose-500"></div>
                                         <div className="flex items-center mb-6">
@@ -415,7 +415,7 @@
                             )}
 
                             {activeTab === 'tagManager' && (
-                                <div className="max-w-4xl space-y-6 fade-in mx-auto">
+                                <div className="w-full max-w-[1400px] space-y-6 fade-in mx-auto">
                                     <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                                         <h3 className="text-[16px] font-black text-slate-800 mb-4 pb-2 border-b flex items-center"><SafeIcon name="folder-open" size={18} className="text-indigo-500 mr-2"/> 파서 보관함 (카탈로그) 관리</h3>
                                         <div className="text-[13px] text-slate-500 font-bold mb-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
@@ -454,7 +454,7 @@
                             )}
 
                             {activeTab === 'marginRule' && (
-                                <div className="max-w-5xl space-y-6 fade-in mx-auto">
+                                <div className="w-full max-w-[1400px] space-y-6 fade-in mx-auto">
                                     <div className="bg-white p-8 rounded-xl border border-rose-200 shadow-sm">
                                         <div className="flex justify-between items-center mb-6 border-b border-rose-100 pb-4">
                                             <div>
@@ -471,7 +471,8 @@
                                                 <tbody className="divide-y divide-slate-100">
                                                     {config.marginRules.map(rule => {
                                                         const isDefault = rule.id === 'default';
-                                                        const examplePrice = rule.type === 'divide' ? Math.round(10000 / (1 - rule.rate / 100)) : Math.round(10000 * (1 + rule.rate / 100));
+                                                        const rawPrice = rule.type === 'divide' ? (10000 / (1 - rule.rate / 100)) : (10000 * (1 + rule.rate / 100));
+                                                        const examplePrice = Math.round(rawPrice / 100) * 100;
                                                         const exampleFormula = rule.type === 'divide' ? `10k ÷ ${(1 - rule.rate / 100).toFixed(2)}` : `10k × ${(1 + rule.rate / 100).toFixed(2)}`;
                                                         return (
                                                             <tr key={rule.id} className="hover:bg-slate-50 transition-colors group">
@@ -492,7 +493,7 @@
                             )}
 
                             {activeTab === 'inputMap' && (
-                                <div className="max-w-5xl space-y-8 fade-in mx-auto">
+                                <div className="w-full max-w-[1400px] space-y-8 fade-in mx-auto">
                                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                                         <div className="bg-slate-50 p-5 border-b border-slate-200"><h3 className="text-[15px] font-black text-slate-800 flex items-center"><SafeIcon name="file-spreadsheet" size={18} className="text-emerald-500 mr-2"/>시세(견적서) 엑셀 헤더 매핑 규칙</h3><p className="text-[12px] text-slate-500 mt-1.5 font-medium">벤더사마다 다른 견적서 양식을 올릴 때, 엑셀 헤더 이름이 우측의 키워드를 포함하면 시스템 표준 필드로 자동 흡수합니다.</p></div>
                                         <div className="p-2">
@@ -526,7 +527,7 @@
                             )}
 
                             {activeTab === 'opsMap' && (
-                                <div className="max-w-5xl space-y-6 fade-in mx-auto">
+                                <div className="w-full max-w-[1400px] space-y-6 fade-in mx-auto">
                                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                                         <div className="bg-slate-50 p-5 border-b border-slate-200"><h3 className="text-[15px] font-black text-slate-800 flex items-center"><SafeIcon name="layer-group" size={18} className="text-blue-500 mr-2"/>운영 관리(Ops) 엑셀 매핑 설정</h3><p className="text-[12px] text-slate-500 mt-1.5 font-medium">구매, 판매, 재고 마감 등 운영 모듈에서 업로드되는 엑셀의 열을 추적하고 차감 룰을 결정하는 키워드입니다.</p></div>
                                         <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 bg-white">
@@ -575,7 +576,7 @@
                             )}
 
                             {activeTab === 'uiCustom' && (
-                                <div className="max-w-4xl space-y-6 fade-in mx-auto">
+                                <div className="w-full max-w-[1400px] space-y-6 fade-in mx-auto">
                                     <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                                         <h3 className="text-[15px] font-black mb-4 pb-3 border-b border-slate-100 flex items-center text-slate-800"><span className="bg-blue-100 text-blue-700 text-[10px] px-2 py-1 rounded-md mr-3 shadow-sm">마스터(읽기 전용)</span> 작업 화면 노출 컬럼 설정</h3>
                                         <div className="flex flex-wrap gap-2 mb-6 p-4 bg-slate-50 border border-slate-200 rounded-lg shadow-inner">
