@@ -162,13 +162,13 @@
             ];
 
             const tabs = [
-                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'dashboard.html', group: 'common', isReady: true },
-                { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'guide.html', group: 'common', isReady: true },
+                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true },
+                { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide.html', group: 'common', isReady: true },
                 
-                { id: 'item-info', label: '마스터 DB', icon: "database", path: 'master.html', group: 'master', isReady: true },
-                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'item_manager.html', group: 'master', isReady: true },
-                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'pipeline.html', group: 'master', isReady: true },
-                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'parser.html', group: 'master', isReady: true },
+                { id: 'item-info', label: '마스터 DB', icon: "database", path: 'Master.html', group: 'master', isReady: true },
+                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'Item_manager.html', group: 'master', isReady: true },
+                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'Pipeline.html', group: 'master', isReady: true },
+                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'Parser.html', group: 'master', isReady: true },
                 { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: 'partner_db.html', group: 'master', isReady: true },
                 { id: 'partners', label: '거래처 관리', icon: "users", path: 'partners.html', group: 'master', isReady: true },
 
@@ -178,7 +178,7 @@
                 { id: 'inventory', label: '재고 마감', icon: "boxes", path: 'inventory.html', group: 'ops', isReady: true },
                 { id: 'print-center', label: '출력 센터', icon: "printer", path: 'print_center.html', group: 'ops', isReady: true },
 
-                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'report.html', group: 'admin', isReady: true },
+                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'Report.html', group: 'admin', isReady: true },
                 { id: 'cs', label: '정보마당(CS)', icon: "megaphone", path: 'cs.html', group: 'admin', isReady: true }
             ];
 
@@ -187,7 +187,7 @@
             const [selectedGroup, setSelectedGroup] = useState(activeGroup);
 
             const handleGroupClick = (groupId) => setSelectedGroup(prev => prev === groupId ? 'common' : groupId);
-            const handleLogoClick = (e) => { setSelectedGroup('common'); onNavigate(e, 'dashboard.html', true); };
+            const handleLogoClick = (e) => { setSelectedGroup('common'); onNavigate(e, 'Dashboard.html', true); };
 
             return (
                 <div className="flex flex-col shrink-0 z-40 relative w-full shadow-sm bg-[#0B1021]">
@@ -738,14 +738,14 @@
                 });
                 setManagedItems(newManaged);
                 showToast(`✅ ${cartItems.length}개의 템플릿이 시세 관리 큐에 등록되었습니다.`);
-                setTimeout(() => handleNavigate(null, 'index.html'), 1000);
+                setTimeout(() => handleNavigate(null, 'Pipeline.html'), 1000);
             };
 
             // 수기/BOM 단건 전송 시
             const handleSingleRegister = (newItem) => {
                 const newManaged = { ...managedItems, [newItem.코드]: newItem };
                 setManagedItems(newManaged);
-                setTimeout(() => handleNavigate(null, 'index.html'), 1000);
+                setTimeout(() => handleNavigate(null, 'Pipeline.html'), 1000);
             };
 
             return (
