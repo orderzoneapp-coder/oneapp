@@ -94,24 +94,24 @@
 
             // 2-Depth: 소분류 탭 
             const tabs = [
-                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'dashboard.html', group: 'common', isReady: true },
-                { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'guide.html', group: 'common', isReady: true },
+                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'NEXUS/Dashboard.html', group: 'common', isReady: true },
+                { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'NEXUS/Guide.html', group: 'common', isReady: true },
                 
-                { id: 'item-info', label: '마스터 DB', icon: "database", path: 'item_master.html', group: 'master', isReady: true },
-                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'items.html', group: 'master', isReady: true },
-                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'index.html', group: 'master', isReady: true },
-                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'parser.html', group: 'master', isReady: true },
-                { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: 'partner_db.html', group: 'master', isReady: true },
-                { id: 'partners', label: '거래처 관리', icon: "users", path: 'partners.html', group: 'master', isReady: true },
+                { id: 'item-info', label: '마스터 DB', icon: "database", path: 'NEXUS/Master.html', group: 'master', isReady: true },
+                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'NEXUS/Item_manager.html', group: 'master', isReady: true },
+                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'NEXUS/Pipeline.html', group: 'master', isReady: true },
+                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'NEXUS/Parser.html', group: 'master', isReady: true },
+                { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: 'NEXUS/partner_db.html', group: 'master', isReady: true },
+                { id: 'partners', label: '거래처 관리', icon: "users", path: 'NEXUS/partners.html', group: 'master', isReady: true },
 
-                { id: 'orders', label: '주문 관리', icon: "shopping-bag", path: 'orders.html', group: 'ops', isReady: true },
-                { id: 'purchases', label: '구매 관리', icon: "credit-card", path: 'purchases.html', group: 'ops', isReady: true },
-                { id: 'sales', label: '판매 관리', icon: "line-chart", path: 'sales.html', group: 'ops', isReady: true },
-                { id: 'inventory', label: '재고 마감', icon: "boxes", path: 'inventory.html', group: 'ops', isReady: true },
-                { id: 'print-center', label: '출력 센터', icon: "printer", path: 'print_center.html', group: 'ops', isReady: true },
+                { id: 'orders', label: '주문 관리', icon: "shopping-bag", path: 'NEXUS/orders.html', group: 'ops', isReady: true },
+                { id: 'purchases', label: '구매 관리', icon: "credit-card", path: 'NEXUS/purchases.html', group: 'ops', isReady: true },
+                { id: 'sales', label: '판매 관리', icon: "line-chart", path: 'NEXUS/sales.html', group: 'ops', isReady: true },
+                { id: 'inventory', label: '재고 마감', icon: "boxes", path: 'NEXUS/inventory.html', group: 'ops', isReady: true },
+                { id: 'print-center', label: '출력 센터', icon: "printer", path: 'NEXUS/print_center.html', group: 'ops', isReady: true },
 
-                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'report.html', group: 'admin', isReady: true },
-                { id: 'cs', label: '정보마당(CS)', icon: "megaphone", path: 'cs.html', group: 'admin', isReady: true }
+                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'NEXUS/Report.html', group: 'admin', isReady: true },
+                { id: 'cs', label: '정보마당(CS)', icon: "megaphone", path: 'NEXUS/cs.html', group: 'admin', isReady: true }
             ];
 
             const currentTab = tabs.find(t => t.id === activeTab);
@@ -124,7 +124,7 @@
 
             const handleLogoClick = (e) => {
                 setSelectedGroup('common');
-                onNavigate(e, '/NEXUS/Dashboard');
+                onNavigate(e, 'NEXUS/Dashboard.html');
             };
 
             return (
