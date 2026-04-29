@@ -143,7 +143,7 @@
                 }; renderIcon();
             }, [name, size, className]);
             if (!svg) {
-                const faMap = { 'cloud-download': 'fa-cloud-download-alt', 'cloud-upload': 'fa-cloud-upload-alt', 'settings': 'fa-cogs', 'layout-dashboard': 'fa-th-large', 'package-search': 'fa-box-open', 'file-spreadsheet': 'fa-table', 'zap': 'fa-bolt', 'truck': 'fa-truck', 'boxes': 'fa-boxes', 'bar-chart-3': 'fa-chart-bar', 'check-circle-2': 'fa-check-circle', 'x': 'fa-times', 'database': 'fa-database', 'upload': 'fa-upload', 'pie-chart': 'fa-chart-pie', 'shopping-cart': 'fa-shopping-cart', 'users': 'fa-users', 'megaphone': 'fa-bullhorn', 'book-open': 'fa-address-book', 'shopping-bag': 'fa-shopping-bag', 'credit-card': 'fa-credit-card', 'line-chart': 'fa-chart-line', 'printer': 'fa-print', 'search-dollar': 'fa-search-dollar', 'arrow-up': 'fa-arrow-up', 'arrow-down': 'fa-arrow-down', 'star': 'fa-star', 'equals': 'fa-equals', 'list': 'fa-list', 'save': 'fa-save', 'eye-slash': 'fa-eye-slash', 'redo-alt': 'fa-redo-alt', 'search': 'fa-search', 'file-export': 'fa-file-export', 'file-excel': 'fa-file-excel', 'folder-open': 'fa-folder-open', 'chevron-down': 'fa-chevron-down', 'file-invoice': 'fa-file-invoice' };
+                const faMap = { 'cloud-download': 'fa-cloud-download-alt', 'cloud-upload': 'fa-cloud-upload-alt', 'settings': 'fa-cogs', 'layout-dashboard': 'fa-th-large', 'package-search': 'fa-box-open', 'file-spreadsheet': 'fa-table', 'zap': 'fa-bolt', 'truck': 'fa-truck', 'boxes': 'fa-boxes', 'bar-chart-3': 'fa-chart-bar', 'check-circle-2': 'fa-check-circle', 'x': 'fa-times', 'database': 'fa-database', 'upload': 'fa-upload', 'pie-chart': 'fa-chart-pie', 'shopping-cart': 'fa-shopping-cart', 'users': 'fa-users', 'megaphone': 'fa-bullhorn', 'book-open': 'fa-address-book', 'shopping-bag': 'fa-shopping-bag', 'credit-card': 'fa-credit-card', 'line-chart': 'fa-chart-line', 'printer': 'fa-print', 'search-dollar': 'fa-search-dollar', 'arrow-up': 'fa-arrow-up', 'arrow-down': 'fa-arrow-down', 'star': 'fa-star', 'equals': 'fa-equals', 'list': 'fa-list', 'save': 'fa-save', 'eye-slash': 'fa-eye-slash', 'redo-alt': 'fa-redo-alt', 'search': 'fa-search', 'file-export': 'fa-file-export', 'file-excel': 'fa-file-excel', 'folder-open': 'fa-folder-open', 'chevron-down': 'fa-chevron-down', 'file-invoice': 'fa-file-invoice', 'edit': 'fa-edit' };
                 const faName = faMap[name] || `fa-${name}`;
                 return <i className={`fas ${faName} ${className}`} style={{ fontSize: size }} />;
             }
@@ -158,37 +158,28 @@
                 const cloudUrl = localStorage.getItem('skuSyncCloudUrl_v6') || '';
                 let visibleMasterCols = JSON.parse(localStorage.getItem('merchVisMaster_v870') || 'null');
                 if (!visibleMasterCols || !visibleMasterCols.estimate) visibleMasterCols = getInitialVisibleMasterCols();
-                if (visibleMasterCols.estimate.includes('카테고리')) visibleMasterCols.estimate = visibleMasterCols.estimate.map(h => h === '카테고리' ? '견적서' : h);
-
+                
                 let visibleUploadCols = JSON.parse(localStorage.getItem('merchVisUpload_v870') || 'null');
                 if (!visibleUploadCols || !visibleUploadCols.estimate) visibleUploadCols = getInitialVisibleUploadCols();
-                if (visibleUploadCols.estimate.includes('카테고리')) visibleUploadCols.estimate = visibleUploadCols.estimate.map(h => h === '카테고리' ? '견적서' : h);
 
                 let mappings = JSON.parse(localStorage.getItem('merchMappings_v870') || 'null');
                 if (!mappings || !mappings.master) mappings = getInitialMappings();
-                if (!mappings.estimate['창고']) mappings.estimate['창고'] = '창고, 창고코드';
-                if (!mappings.master['창고']) mappings.master['창고'] = '창고, 창고코드';
-                if (mappings.estimate['카테고리'] !== undefined) { mappings.estimate['견적서'] = mappings.estimate['카테고리'] + ', 견적서'; delete mappings.estimate['카테고리']; }
 
                 let masterLinks = JSON.parse(localStorage.getItem('merchMasterLinks_v870') || 'null');
                 if (!masterLinks || !masterLinks.estimate) masterLinks = getInitialMasterLinks();
-                if (masterLinks.estimate['창고'] === undefined) masterLinks.estimate['창고'] = '창고';
-                if (masterLinks.estimate['카테고리'] !== undefined) { masterLinks.estimate['견적서'] = '견적서'; delete masterLinks.estimate['카테고리']; }
 
                 let marginRules = JSON.parse(localStorage.getItem('merchMarginRules_v878') || 'null');
                 if (!marginRules) marginRules = [ { id: generateUUID(), whCode: '01', unit: 'box, 박스', rate: 10, type: 'divide' }, { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' } ];
-                else try { if (marginRules.length > 0) marginRules = marginRules.map(r => ({ ...r, whCode: r.whCode || '*', unit: r.unit || '*' })); } catch(e){}
-
+                
                 return { cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules };
             };
-
             const [config, setConfig] = useState(loadConfig());
             useEffect(() => { const handleStorageChange = () => setConfig(loadConfig()); window.addEventListener('storage', handleStorageChange); return () => window.removeEventListener('storage', handleStorageChange); }, []);
             return config;
         };
 
         // ==========================================
-        // 🧩 3. 통합 글로벌 헤더
+        // 🧩 3. Global Header
         // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [ { id: 'master', label: '정보 관리', icon: 'database' }, { id: 'ops', label: '운영 관리', icon: 'truck' }, { id: 'admin', label: '인사이트', icon: 'bar-chart-3' } ];
@@ -209,7 +200,6 @@
                 { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'Report.html', group: 'admin', isReady: true, shortTag: 'INSIGHT ENGINE' },
                 { id: 'cs', label: '정보 마당', icon: "megaphone", path: 'cs.html', group: 'admin', isReady: true, shortTag: 'NOTICE PORTAL' }
             ];
-
             const currentTab = tabs.find(t => t.id === activeTab);
             const activeGroup = currentTab ? currentTab.group : 'common';
             const [selectedGroup, setSelectedGroup] = useState(activeGroup);
@@ -221,7 +211,7 @@
                 <div className="flex flex-col shrink-0 z-40 relative w-full shadow-sm bg-[#0B1021]">
                     <header className="h-[72px] bg-[#0B1021] text-white flex justify-between px-6 border-b border-slate-800/80 relative z-20">
                         <div className="flex items-center h-full">
-                            <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={handleLogoClick} title="통합 대시보드 및 공통 메뉴로 이동">
+                            <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={handleLogoClick}>
                                 <span className="font-black text-[24px] tracking-wider text-slate-100 mr-4 group-hover:text-indigo-400 transition-colors">ONEAPP</span>
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
                                     <div className="flex items-center"><span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span><span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.1</span></div>
@@ -234,7 +224,7 @@
                         </div>
                         <div className="flex items-center gap-4 h-full">
                             <div className="flex items-center bg-[#151B2B] rounded-lg border border-slate-700/50 h-9 px-3 shadow-inner gap-3">
-                                <div className="flex items-center justify-center">{isProcessing ? <i className="fas fa-circle-notch fa-spin text-amber-500 text-[12px]"></i> : <div className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></div>}</div>
+                                <div className="flex items-center justify-center" title={isProcessing ? processMsg : "시스템 정상 대기중"}>{isProcessing ? <i className="fas fa-circle-notch fa-spin text-amber-500 text-[12px]"></i> : <div className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></div>}</div>
                                 <div className="w-px h-3.5 bg-slate-700"></div>
                                 <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`마스터 DB 기준 상품 수`}><SafeIcon name="database" size={10} className="text-slate-500" /><span className="text-[11px] font-mono font-bold tracking-tight">{itemCount ? itemCount.toLocaleString() : 0}</span></div>
                             </div>
@@ -279,7 +269,7 @@
         };
 
         // ==========================================
-        // 🧩 4. 비즈니스 코어 엔진 (Pricing & Parser)
+        // 🧩 4. Pricing & Parser Engine
         // ==========================================
         const calculatePricesEngine = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
             if (!baseInPrice || baseInPrice <= 0) return { ...currentFinalData, '입고가': 0, '시중가': 0, '출고가': 0, '1입고': 0, '1출고': 0 };
@@ -324,7 +314,6 @@
                 let calc1In = Math.round(((baseInPrice + outsrc) / div1) / 100) * 100;
                 let calc1Out = Math.round(((newFinalData['출고가'] / div1) + extraCost) / 100) * 100; 
 
-                // 💡 엑셀에 이미 소분 단가가 명시되어 들어온 경우 마진 계산기가 덮어쓰지 않고 보존
                 newFinalData['1입고'] = (provided1In > 0 && !forceRecalc) ? provided1In : calc1In;
                 newFinalData['1출고'] = (provided1Out > 0 && !forceRecalc) ? provided1Out : calc1Out;
             }
@@ -836,7 +825,7 @@
                 try {
                     const excelData = await parseExcelRobust(file);
                     if (excelData.length === 0) throw new Error("데이터가 없습니다.");
-                    const curMap = config.mappings['estimate'] || {}; 
+                    const curMap = JSON.parse(localStorage.getItem('merchMappings_v870'))?.estimate || {}; 
                     const headerCache = createHeaderMap(Object.keys(excelData[0]), curMap);
                     
                     const allFields = Array.from(new Set([...Object.keys(curMap), ...MASTER_HEADERS, ...NUMERIC_HEADERS]));
@@ -857,7 +846,7 @@
 
                             if(actualKey && row[actualKey] !== undefined && row[actualKey] !== '') {
                                 const val = row[actualKey];
-                                const isNum = NUMERIC_HEADERS.includes(config.masterLinks['estimate']?.[h]) || NUMERIC_HEADERS.includes(h);
+                                const isNum = NUMERIC_HEADERS.includes(JSON.parse(localStorage.getItem('merchMasterLinks_v870'))?.estimate?.[h]) || NUMERIC_HEADERS.includes(h);
                                 mItem.sources['estimate'][h] = isNum ? parseNum(val) : val;
                                 if (mItem.finalData[h] === undefined) mItem.finalData[h] = isNum ? parseNum(val) : val;
                             }
@@ -865,7 +854,7 @@
                         
                         delete mItem.finalData['출고가'];
                         const pIn = parseNum(mItem.sources['estimate']['입고가'] || masterProducts[code]?.['입고가']);
-                        if (pIn > 0) mItem.finalData = calculatePricesEngine(pIn, masterProducts[code]||{}, mItem.finalData, config.marginRules, false);
+                        if (pIn >= 0) mItem.finalData = calculatePricesEngine(pIn, masterProducts[code]||{}, mItem.finalData, JSON.parse(localStorage.getItem('merchMarginRules_v878') || '[]'), false);
                         count++;
                     });
                     setManagedItems(newManaged); showToast(`✅ ${count}건 데이터 로드 완료`);
@@ -878,14 +867,15 @@
                     currentItem = { ...currentItem, finalData: { ...currentItem.finalData, [field]: value } };
                     if (['입고가', '출고가', '외주비', '노무비'].includes(field) || ['입고가', '출고가'].includes(linkedMasterField)) {
                         const pInRaw = (field === '입고가' || linkedMasterField === '입고가') ? value : (currentItem.finalData['입고가'] ?? currentItem.sources['estimate']?.['입고가'] ?? masterProducts[code]?.['입고가'] ?? 0);
-                        currentItem.finalData = calculatePricesEngine(parseNum(pInRaw), masterProducts[code] || {}, currentItem.finalData, config.marginRules, true);
+                        currentItem.finalData = calculatePricesEngine(parseNum(pInRaw), masterProducts[code] || {}, currentItem.finalData, JSON.parse(localStorage.getItem('merchMarginRules_v878') || '[]'), true);
                     } return { ...prev, [code]: currentItem };
                 });
-            }, [masterProducts, config.marginRules]);
+            }, [masterProducts]);
 
             const handleCommitEstimate = useCallback(async (targetCodes) => {
                 if (targetCodes.length === 0) return;
                 let newMaster = { ...masterProducts }, commitCount = 0, localLogs = []; const nowStr = new Date().toLocaleString('ko-KR');
+                const masterLinksConf = JSON.parse(localStorage.getItem('merchMasterLinks_v870'))?.estimate || {};
 
                 targetCodes.forEach(code => {
                     const item = managedItems[code]; if (!item || !item.코드) return;
@@ -896,7 +886,7 @@
                         Object.keys(item.finalData).forEach(field => {
                             if ((field === '품목명' || field === '규격') && oldItem['품목명']) return;
 
-                            const linked = config.masterLinks['estimate']?.[field] || (MASTER_HEADERS.includes(field) || NUMERIC_HEADERS.includes(field) ? field : null);
+                            const linked = masterLinksConf[field] || (MASTER_HEADERS.includes(field) || NUMERIC_HEADERS.includes(field) ? field : null);
                             if (linked && item.finalData[field] !== undefined && item.finalData[field] !== '' && item.finalData[field] !== '오류') {
                                 const newVal = NUMERIC_HEADERS.includes(linked) ? parseNum(item.finalData[field]) : item.finalData[field];
                                 const oldVal = NUMERIC_HEADERS.includes(linked) ? parseNum(oldItem[linked]) : oldItem[linked];
@@ -918,7 +908,7 @@
 
                 setSelectedRows(new Set()); 
                 showToast(`✅ ${commitCount}건 마스터 반영 완료! 필터를 해제하고 남은 작업을 계속 진행하세요.`);
-            }, [managedItems, masterProducts, config.masterLinks, showToast]);
+            }, [managedItems, masterProducts, showToast]);
 
             const executeExport = useCallback((option, zeroAction = { sale: '0', stock: '999' }) => {
                 if (fullDisplayRows.length === 0) { showToast("⚠️ 내보낼 데이터가 없습니다."); return setShowExportModal(false); }
@@ -952,11 +942,13 @@
                             const dName = getFirstValidStr([source, mItem], ['품목명']), dSpec = getFirstValidStr([source, mItem], ['규격']), dBrand = getFirstValidStr([source, mItem], ['브랜드']), dInfo = getFirstValidStr([source, mItem], ['상품정보', '기본설명', '간단설명']), dSearch = getFirstValidStr([source, mItem], ['검색어등록', '상품태그']), pBPrice = getFirstValidNum([final, source], ['입고B', 'B단가']), pASale = getFirstValidNum([final, source], ['도매A', 'A판매', 'A판매가']), pBSale = getFirstValidNum([final, source], ['도매B', 'B판매', 'B 도매가']), pInstruction = getFirstValidStr([final, source], ['지시사항', '간단설명']);
                             const pRowErp = createRowArr(row.코드, pIn, pOut, pBPrice, pASale, pBSale, pIn, pInstruction); if (pRowErp) erpData.push(pRowErp);
                             
+                            const isZeroPrice = (pIn === 0 && pOut === 0);
                             const priceOutShop = pOut;
-                            const priceMarketShop = pMarketPrice > 0 ? pMarketPrice : priceOutShop;
-                            const priceA = getFirstValidNum([final, source, mItem], ['도매A', 'A판매가', 'A판매', '출고가']);
-                            
-                            const isZeroPrice = (pIn === 0 && pOut === 0), isForSale = isZeroPrice ? zeroAction.sale : (pIn > 0 || pOut > 0 ? '1' : '0'), stockQty = isZeroPrice ? zeroAction.stock : '999';
+                            const priceMarketShop = isZeroPrice ? 0 : (pMarketPrice > 0 ? pMarketPrice : priceOutShop);
+                            const priceA = isZeroPrice ? 0 : getFirstValidNum([final, source, mItem], ['도매A', 'A판매가', 'A판매', '출고가']);
+                            const isForSale = isZeroPrice ? zeroAction.sale : '1';
+                            const stockQty = isZeroPrice ? zeroAction.stock : '999';
+
                             shopData.push([row.코드, dName, dSpec, priceOutShop, priceA, priceMarketShop, 0, 0, 0, 0, 0, 0, dBrand, dInfo, isForSale, stockQty, '', '', '', '', '', dSearch]);
 
                             [1, 2].forEach(type => { 
@@ -974,11 +966,11 @@
                                     const cBrand = subMaster.브랜드 || dBrand;
                                     const cInfo = subMaster.간단설명 || dInfo;
                                     const cSearch = subMaster.검색어등록 || dSearch;
-                                    const cMarketPrice = subMaster.시중가 > 0 ? subMaster.시중가 : cOut;
-                                    const cPriceA = subMaster.도매A > 0 ? subMaster.도매A : cOut;
-                                    
+
                                     const cIsZeroPrice = (cIn === 0 && cOut === 0);
-                                    const cIsForSale = cIsZeroPrice ? zeroAction.sale : (cIn > 0 || cOut > 0 ? '1' : '0');
+                                    const cMarketPrice = cIsZeroPrice ? 0 : (subMaster.시중가 > 0 ? subMaster.시중가 : cOut);
+                                    const cPriceA = cIsZeroPrice ? 0 : (subMaster.도매A > 0 ? subMaster.도매A : cOut);
+                                    const cIsForSale = cIsZeroPrice ? zeroAction.sale : '1';
                                     const cStockQty = cIsZeroPrice ? zeroAction.stock : '999';
 
                                     shopData.push([cCode, cName, cSpec, cOut, cPriceA, cMarketPrice, 0, 0, 0, 0, 0, 0, cBrand, cInfo, cIsForSale, cStockQty, '', '', '', '', '', cSearch]);
@@ -1007,6 +999,7 @@
                 
                 setTimeout(() => {
                     let newManaged = {};
+                    const rulesConf = JSON.parse(localStorage.getItem('merchMarginRules_v878') || '[]');
                     
                     Object.values(masterProducts).forEach(mItem => {
                         let isMatch = false;
@@ -1029,7 +1022,7 @@
                             newManaged[mItem.코드] = {
                                 코드: mItem.코드,
                                 sources: { estimate: {} },
-                                finalData: calculatePricesEngine(parseNum(mItem['입고가']), mItem, {}, config.marginRules, false)
+                                finalData: calculatePricesEngine(parseNum(mItem['입고가']), mItem, {}, rulesConf, false)
                             };
                         }
                     });
@@ -1048,7 +1041,7 @@
                     setIsProcessing(false);
                     setProcessMsg('');
                 }, 100);
-            }, [masterProducts, config.marginRules, showToast]);
+            }, [masterProducts, showToast]);
 
             const handleCatalogChange = useCallback((e) => {
                 const val = e.target.value;
@@ -1199,8 +1192,12 @@
                 setTimeout(() => {
                     try {
                         const activeProfile = 'estimate';
-                        const uploadCols = config.visibleUploadCols[activeProfile] || [];
-                        const masterCols = config.visibleMasterCols[activeProfile] || [];
+                        const visibleUploadColsConf = JSON.parse(localStorage.getItem('merchVisUpload_v870')) || { estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명'] };
+                        const visibleMasterColsConf = JSON.parse(localStorage.getItem('merchVisMaster_v870')) || { estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] };
+                        const masterLinksConf = JSON.parse(localStorage.getItem('merchMasterLinks_v870')) || { estimate: { '창고': '창고', '구매처': '구매처', '견적서': '견적서', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B', '간단설명': '간단설명' } };
+                        
+                        const uploadCols = visibleUploadColsConf[activeProfile] || [];
+                        const masterCols = visibleMasterColsConf[activeProfile] || [];
                         
                         const headers = ['상태/선택', '품목코드', '마스터_품목명', '마스터_규격'];
                         masterCols.forEach(h => headers.push(`[M]${h}`)); uploadCols.forEach(h => headers.push(`[작업]${h}`));
@@ -1212,7 +1209,7 @@
                             const rowData = [status, rowCode || '', mItem.품목명 || '', mItem.규격 || ''];
 
                             masterCols.forEach(h => { const val = mItem[h] !== undefined ? mItem[h] : ''; rowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(val) : val); });
-                            uploadCols.forEach(h => { const val = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.[activeProfile]?.[h] || ''); const isNum = NUMERIC_HEADERS.includes(h) || NUMERIC_HEADERS.includes(config.masterLinks[activeProfile]?.[h]); rowData.push(isNum ? parseNum(val) : val); });
+                            uploadCols.forEach(h => { const val = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.[activeProfile]?.[h] || ''); const isNum = NUMERIC_HEADERS.includes(h) || NUMERIC_HEADERS.includes(masterLinksConf[activeProfile]?.[h]); rowData.push(isNum ? parseNum(val) : val); });
                             aoa.push(rowData);
                         });
 
@@ -1224,9 +1221,25 @@
                         setIsExporting(false);
                     }
                 }, 100);
-            }, [fullDisplayRows, config.visibleUploadCols, config.visibleMasterCols, config.masterLinks, masterProducts, selectedRows, showToast]);
+            }, [fullDisplayRows, masterProducts, selectedRows, showToast]);
 
-            const appState = { fullDisplayRows, visibleMasterCols: config.visibleMasterCols, visibleUploadCols: config.visibleUploadCols, masterProducts, masterLinksEst: config.masterLinks['estimate']||{}, selectedRows, isEstimateUploaded: Object.keys(managedItems).length > 0, globalSearch, selectedCatalog, selectedCategory, isProcessing };
+            const visibleMasterColsConf = JSON.parse(localStorage.getItem('merchVisMaster_v870')) || { estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] };
+            const visibleUploadColsConf = JSON.parse(localStorage.getItem('merchVisUpload_v870')) || { estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명'] };
+            const masterLinksConf = JSON.parse(localStorage.getItem('merchMasterLinks_v870')) || { estimate: { '창고': '창고', '구매처': '구매처', '견적서': '견적서', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B', '간단설명': '간단설명' } };
+
+            const appState = { 
+                fullDisplayRows, 
+                visibleMasterCols: visibleMasterColsConf, 
+                visibleUploadCols: visibleUploadColsConf, 
+                masterProducts, 
+                masterLinksEst: masterLinksConf['estimate']||{}, 
+                selectedRows, 
+                isEstimateUploaded: Object.keys(managedItems).length > 0, 
+                globalSearch, 
+                selectedCatalog, 
+                selectedCategory, 
+                isProcessing 
+            };
             const appActions = { 
                 handleUpdateCell, 
                 setRowSelection: useCallback((code, isSelected) => { setSelectedRows(p => { const n = new Set(p); if (isSelected) n.add(code); else n.delete(code); return n; }); }, []), 
@@ -1358,7 +1371,7 @@
 
                     <IframeSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
                     
-                    {showReviewModal && <ReviewModal onClose={() => setShowReviewModal(false)} onConfirm={handleCommitEstimate} displayRows={fullDisplayRows} masterProducts={masterProducts} visibleUploadCols={config.visibleUploadCols} masterLinksEst={config.masterLinks['estimate']||{}} />}
+                    {showReviewModal && <ReviewModal onClose={() => setShowReviewModal(false)} onConfirm={handleCommitEstimate} displayRows={fullDisplayRows} masterProducts={masterProducts} visibleUploadCols={visibleUploadColsConf} masterLinksEst={masterLinksConf['estimate']||{}} />}
                     {showCategoryModal && <CategorySaveModal onClose={() => setShowCategoryModal(false)} onSave={handleSaveAsCategory} availableCategories={availableCategories} />}
                     {showExportModal && <ExportModal onClose={() => setShowExportModal(false)} executeExport={executeExport} />}
 
