@@ -64,10 +64,11 @@
 
         const parseExcelRobust = (file) => new Promise((resolve, reject) => {
             if (!window.XLSX) return reject(new Error("엑셀 파서 로드 안됨"));
+            const isCSV = file.name.toLowerCase().endsWith('.csv');
             const reader = new FileReader();
             reader.onload = (e) => {
                 try {
-                    const data = new Uint8Array(e.target.result); const wb = window.XLSX.read(data, { type: 'array', cellDates: true });
+                    const wb = isCSV ? window.XLSX.read(e.target.result, { type: 'string', raw: false }) : window.XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
                     const jsonAll = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "", raw: false });
                     if(jsonAll.length === 0) return resolve([]);
                     let headerRowIdx = 0;
@@ -92,7 +93,8 @@
                         if(!isEmpty) { obj['_raw'] = row; parsedData.push(obj); }
                     } resolve(parsedData);
                 } catch(err) { reject(err); }
-            }; reader.readAsArrayBuffer(file);
+            }; 
+            isCSV ? reader.readAsText(file, 'euc-kr') : reader.readAsArrayBuffer(file);
         });
 
         const SafeIcon = React.memo(function SafeIconComponent({ name, size = 18, className = "" }) {
@@ -135,7 +137,6 @@
                 { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }
             ];
 
-            // 💡 파일명 및 대소문자 100% 일치
             const tabs = [
                 { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true, shortTag: 'ONE BOARD' },
                 { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: true, shortTag: 'SYSTEM GUIDE' },
@@ -276,7 +277,7 @@
             );
         };
 
-        const GenesisSetupModal = ({ isOpen, onClose, onApplySetup, showToast }) => {
+        const GenesisSetupModal = ({ isOpen, onClose, onApplySetup, showToast, config }) => {
             const [isProcessingLocal, setIsProcessingLocal] = useState(false);
 
             const handleSetupUpload = async (e) => {
@@ -292,20 +293,38 @@
                     let count = 0;
                     
                     excelData.forEach((row, idx) => {
-                        const code = row['품목코드'] || row['코드'] || row['상품코드'];
+                        // 💡 [수정] 운영 매핑(opsMappings)을 이용하여 유연하게 헤더 찾기
+                        const findKey = (mappingString) => {
+                            if (!mappingString) return null; const keys = mappingString.split(',').map(k => k.trim()); const rowKeys = Object.keys(row);
+                            for (const key of keys) { const matched = rowKeys.find(rk => rk.toLowerCase().replace(/\s/g, '') === key.toLowerCase().replace(/\s/g, '')); if (matched) return matched; } return null;
+                        };
+
+                        const codeKey = findKey(config.opsMappings.code) || '품목코드';
+                        const code = row[codeKey] || row['코드'] || row['상품코드'];
                         if (!code) return;
                         
-                        const qty = parseNum(row['수량'] || row['실사수량'] || row['기초수량'] || row['실사']);
+                        const qtyKey = findKey(config.opsMappings.qty) || '수량';
+                        // 💡 대표님 파일의 '재고' 헤더 추가 및 매핑 유연성 강화
+                        const qty = parseNum(row[qtyKey] || row['재고'] || row['수량'] || row['실사수량'] || row['기초수량'] || row['실사']);
                         if (qty === 0) return; 
 
                         const mItem = masterProducts[code] || {};
                         
-                        const excelPrice = parseNum(row['매입단가'] || row['원가'] || row['단가']);
+                        const priceKey = findKey(config.opsMappings.price) || '매입단가';
+                        // 💡 대표님 파일의 '최종입고' 헤더 추가
+                        const excelPrice = parseNum(row[priceKey] || row['최종입고'] || row['매입단가'] || row['원가'] || row['단가']);
                         const masterPrice = parseNum(mItem['입고가'] || 0);
                         const price = excelPrice > 0 ? excelPrice : masterPrice;
                         
-                        const vendor = row['매입처'] || row['로트'] || row['거래처'] || '기초재고';
+                        const vendorKey = findKey(config.opsMappings.vendor) || '매입처';
+                        // 💡 대표님 파일의 '거래' 헤더 추가
+                        const vendor = row[vendorKey] || row['거래'] || row['매입처'] || row['로트'] || row['거래처'] || '기초재고';
                         
+                        const nameKey = findKey(config.opsMappings.name) || '품명';
+                        const specKey = findKey(config.opsMappings.spec) || '규격';
+                        const rowName = row[nameKey] || row['품명'] || row['품목명'] || row['상품명'];
+                        const rowSpec = row[specKey] || row['규격'];
+
                         const batchKey = `${code}|${price}|${vendor}|all`;
                         
                         const existingIdx = newItems.findIndex(i => i.batchKey === batchKey);
@@ -316,8 +335,8 @@
                             newItems.push({
                                 batchKey, 
                                 코드: code, 
-                                품명: mItem.품목명 || row['품목명'] || '미상', 
-                                규격: mItem.규격 || row['규격'] || '', 
+                                품명: mItem.품목명 || rowName || '미상', 
+                                규격: mItem.규격 || rowSpec || '', 
                                 단가: price, 
                                 거래처: vendor, 
                                 일자: '',
@@ -339,7 +358,7 @@
                         showToast(`✅ ${count}건의 기초 재고 자산이 화면에 세팅되었습니다. 마감을 눌러 확정하세요.`);
                         onClose();
                     } else {
-                        showToast(`⚠️ 수량이 있는 유효한 품목 코드를 찾지 못했습니다.`);
+                        showToast(`⚠️ 수량이 있는 유효한 품목 코드를 찾지 못했습니다. 엑셀의 헤더명을 확인해주세요.`);
                     }
                 } catch(error) { 
                     showToast("❌ 업로드 오류: " + error.message); 
@@ -385,7 +404,7 @@
                                 <div className="text-[13px] text-slate-600 leading-relaxed mb-6 space-y-2">
                                     <p>현재 창고에 있는 상품들의 <strong className="text-slate-800">[품목코드, 수량]</strong>이 적힌 엑셀을 업로드하세요.</p>
                                     <ul className="list-disc pl-5 text-slate-500 font-medium space-y-1">
-                                        <li>엑셀에 <strong className="text-indigo-600">단가(매입단가/원가)</strong>가 적혀있으면 그 가격을 우선 반영합니다.</li>
+                                        <li>엑셀에 <strong className="text-indigo-600">단가(매입단가/원가/최종입고)</strong>가 적혀있으면 그 가격을 우선 반영합니다.</li>
                                         <li>엑셀에 단가가 비어있으면 <strong>마스터 DB의 최근 입고가</strong>를 자동으로 끌어와 채워줍니다.</li>
                                     </ul>
                                 </div>
@@ -500,10 +519,10 @@
                     const adjust = (parseNum(item.로스) || 0) + (parseNum(item.대체입고) || 0) - (parseNum(item.대체출고) || 0);
                     return { '결산일자': snapshot.closingDate, '매입처(Lot)': item.거래처, '상품코드': item.코드, '상품명(규격)': item.품명, '기초수량': item.기초, '입고수량': item.입고, '출고량': item.출고, '기말실사(이월수량)': qty, '로스/조정수량': adjust, '이슈/결과': item.이슈.join(', '), '수기메모': item.메모 || '' };
                 });
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportData1), '재고수불_마감(상세)');
+                const wb = window.XLSX.utils.book_new();
+                window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(exportData1), '재고수불_마감(상세)');
                 try {
-                    const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                    const excelBuffer = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
                     const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a'); a.href = url; a.download = `수불일보_마감기록_${exportFileNameDate}.xlsx`;
@@ -1041,9 +1060,9 @@
                         const qty = item.실사 === '' || item.실사 === null ? 0 : parseNum(item.실사);
                         return { '일자': targetDate, '매입처(Lot)': item.거래처, '상품코드': item.코드, '상품명(규격)': item.품명, '기초수량': item.기초, '입고수량': item.입고, '출고량': item.출고, '기말실사(이월수량)': qty, '매입단가(원가)': parseNum(item.단가)||0, '기말재고액(자산가치)': qty * (parseNum(item.단가)||0), '로스/조정수량': (parseNum(item.로스)||0) + (parseNum(item.대체입고)||0) - (parseNum(item.대체출고)||0), '이슈/결과': item.이슈.join(', '), '수기메모': item.메모 || '' };
                     });
-                    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportData1), '재고수불일보');
+                    const wb = window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(exportData1), '재고수불일보');
                     try {
-                        const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }); const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `DataOps_수불일보_${targetDate.replace(/-/g, '')}.xlsx`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); showToast("✅ 수불일보 데이터가 엑셀로 다운로드되었습니다.");
+                        const excelBuffer = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array' }); const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `DataOps_수불일보_${targetDate.replace(/-/g, '')}.xlsx`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); showToast("✅ 수불일보 데이터가 엑셀로 다운로드되었습니다.");
                     } catch (err) { showToast("❌ 엑셀 파일 생성 중 오류가 발생했습니다."); } finally { setIsProcessing(false); setProcessMsg(''); }
                 }, 500);
             }, [inventoryData, targetDate, showToast]);
@@ -1113,7 +1132,7 @@
                     
                     <IframeSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
                     
-                    <GenesisSetupModal isOpen={showGenesisModal} onClose={() => setShowGenesisModal(false)} onApplySetup={(newItems) => { setInventoryData(newItems); setHasSnapshots(true); }} showToast={showToast} />
+                    <GenesisSetupModal isOpen={showGenesisModal} onClose={() => setShowGenesisModal(false)} onApplySetup={(newItems) => { setInventoryData(newItems); setHasSnapshots(true); }} showToast={showToast} config={config} />
 
                     <div className="px-8 py-5 bg-white border-b border-slate-200 flex flex-col shadow-sm shrink-0 relative z-10 gap-4">
                         <div className="flex items-center justify-between">
