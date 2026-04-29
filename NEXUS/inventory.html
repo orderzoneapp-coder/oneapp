@@ -23,29 +23,21 @@
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
         .fade-in { animation: fadeIn 0.2s ease-out; } 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-        
         @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
         .slide-in-right { animation: slideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-        
         .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
         input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-        
         .table-row-hover { border-bottom: 1px solid #f1f5f9; transition: background-color 0.2s ease; }
         .table-row-hover:last-child { border-bottom: none; }
         .table-row-hover:hover td { background-color: #f8fafc; }
         .table-row-selected td { background-color: #eef2ff; }
-        
         .modal-bounce { animation: modalBounce 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         @keyframes modalBounce { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
         [data-tooltip]:hover::after {
-            content: attr(data-tooltip);
-            position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%) translateY(-4px);
+            content: attr(data-tooltip); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%) translateY(-4px);
             background: rgba(15, 23, 42, 0.95); color: white; padding: 6px 10px; border-radius: 6px;
-            font-size: 11px; font-weight: 500; white-space: nowrap; z-index: 100;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); pointer-events: none;
+            font-size: 11px; font-weight: 500; white-space: nowrap; z-index: 100; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); pointer-events: none;
         }
-        .editable-cell { background-color: rgba(255,255,255,0.7); border: 1px solid transparent; border-radius: 6px; transition: all 0.2s; }
-        .editable-cell:hover, .editable-cell:focus-within { background-color: #fff; border-color: #cbd5e1; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); }
     </style>
 </head>
 <body class="text-slate-800">
@@ -54,16 +46,7 @@
     <script type="text/babel">
         const { useState, useMemo, useEffect, useRef, useCallback, Fragment } = React;
 
-        // ==========================================
-        // 🔑 Global Constants & IDB Utilities
-        // ==========================================
-        const STORAGE_KEYS = { 
-            MASTER_DB: 'merchMaster_v870', 
-            CLOUD_URL: 'skuSyncCloudUrl_v6', 
-            SYNC_TRIGGER: 'merchMaster_sync_trigger', 
-            HISTORY_DB: 'merchHistory_v870',
-            CLOSING_DB: 'merchClosing_v1'
-        };
+        const STORAGE_KEYS = { MASTER_DB: 'merchMaster_v870', CLOUD_URL: 'skuSyncCloudUrl_v6', SYNC_TRIGGER: 'merchMaster_sync_trigger', HISTORY_DB: 'merchHistory_v870', CLOSING_DB: 'merchClosing_v1' };
 
         const generateUUID = () => {
             if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -112,9 +95,6 @@
             }; reader.readAsArrayBuffer(file);
         });
 
-        // ==========================================
-        // 🧩 SafeIcon Component
-        // ==========================================
         const SafeIcon = React.memo(function SafeIconComponent({ name, size = 18, className = "" }) {
             const [svg, setSvg] = useState("");
             useEffect(() => {
@@ -134,9 +114,6 @@
             return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
         });
 
-        // ==========================================
-        // 🧩 Read-only Config Hook
-        // ==========================================
         const useMerchConfig = () => {
             const [cloudUrl] = useState(() => localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || '');
             const [opsMappings] = useState(() => {
@@ -151,9 +128,6 @@
             return { cloudUrl, opsMappings, opsGrouping };
         };
 
-        // ==========================================
-        // 🧩 통합 글로벌 헤더 (v3.0 표준 규격)
-        // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [
                 { id: 'master', label: '정보 관리', icon: 'database' },
@@ -161,25 +135,23 @@
                 { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }
             ];
 
+            // 💡 파일명 및 대소문자 100% 일치
             const tabs = [
-                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true },
-                { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: false },
-                
-                { id: 'item-info', label: '마스터 DB', icon: "database", path: 'Master.html', group: 'master', isReady: true },
-                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'Item_manager.html', group: 'master', isReady: true },
-                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'Pipeline.html', group: 'master', isReady: true },
-                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'Parser.html', group: 'master', isReady: true },
-                { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: 'partner_db.html', group: 'master', isReady: false },
-                { id: 'partners', label: '거래처 관리', icon: "users", path: 'partners.html', group: 'master', isReady: true },
-
-                { id: 'orders', label: '주문 관리', icon: "shopping-bag", path: 'orders.html', group: 'ops', isReady: true },
-                { id: 'purchases', label: '구매 관리', icon: "credit-card", path: 'purchases.html', group: 'ops', isReady: true },
-                { id: 'sales', label: '판매 관리', icon: "line-chart", path: 'sales.html', group: 'ops', isReady: true },
-                { id: 'inventory', label: '재고 마감', icon: "boxes", path: 'inventory.html', group: 'ops', isReady: true },
-                { id: 'print-center', label: '출력 센터', icon: "printer", path: 'print_center.html', group: 'ops', isReady: false },
-
-                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'Report.html', group: 'admin', isReady: true },
-                { id: 'cs', label: '정보마당(CS)', icon: "megaphone", path: 'cs.html', group: 'admin', isReady: false }
+                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true, shortTag: 'ONE BOARD' },
+                { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: true, shortTag: 'SYSTEM GUIDE' },
+                { id: 'item-info', label: '마스터 DB', icon: "database", path: 'Master.html', group: 'master', isReady: true, shortTag: 'GOLDEN RECORD' },
+                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'Item_manager.html', group: 'master', isReady: true, shortTag: 'SKU FORGE' },
+                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'Pipeline.html', group: 'master', isReady: true, shortTag: 'VALUATION HUB' },
+                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'Parser.html', group: 'master', isReady: true, shortTag: 'AI SMART PARSER' },
+                { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: 'partner_db.html', group: 'master', isReady: true, shortTag: 'ENTITY REGISTRY' },
+                { id: 'partners', label: '거래처 관리', icon: "users", path: 'partners.html', group: 'master', isReady: true, shortTag: 'CRM STRATEGY' },
+                { id: 'orders', label: '주문 관리', icon: "shopping-bag", path: 'orders.html', group: 'ops', isReady: true, shortTag: 'ORDER STREAM' },
+                { id: 'purchases', label: '구매 관리', icon: "credit-card", path: 'purchases.html', group: 'ops', isReady: true, shortTag: 'SOURCE & PROCURE' },
+                { id: 'sales', label: '판매 관리', icon: "line-chart", path: 'sales.html', group: 'ops', isReady: true, shortTag: 'REVENUE LEDGER' },
+                { id: 'inventory', label: '재고 마감', icon: "boxes", path: 'inventory.html', group: 'ops', isReady: true, shortTag: 'STOCK LEDGER' },
+                { id: 'print-center', label: '출력 센터', icon: "printer", path: 'print_center.html', group: 'ops', isReady: true, shortTag: 'OUTPUT TERMINAL' },
+                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'Report.html', group: 'admin', isReady: true, shortTag: 'INSIGHT ENGINE' },
+                { id: 'cs', label: '정보 마당', icon: "megaphone", path: 'cs.html', group: 'admin', isReady: true, shortTag: 'NOTICE PORTAL' }
             ];
 
             const currentTab = tabs.find(t => t.id === activeTab);
@@ -201,7 +173,7 @@
                                         <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.0</span>
                                     </div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">
-                                        {currentTab ? currentTab.label : 'WORKSPACE'}
+                                        {currentTab ? currentTab.shortTag : 'WORKSPACE'}
                                     </span>
                                 </div>
                             </div>
@@ -272,9 +244,6 @@
             );
         };
 
-        // ==========================================
-        // 🌟 Iframe 설정 모달
-        // ==========================================
         const IframeSettingsModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
             return (
@@ -307,9 +276,6 @@
             );
         };
 
-        // ==========================================
-        // 🌟 초기 자산화 셋업 모달 (Genesis Setup Modal)
-        // ==========================================
         const GenesisSetupModal = ({ isOpen, onClose, onApplySetup, showToast }) => {
             const [isProcessingLocal, setIsProcessingLocal] = useState(false);
 
@@ -334,7 +300,6 @@
 
                         const mItem = masterProducts[code] || {};
                         
-                        // 하이브리드 단가 적용: 엑셀 단가가 있으면 우선, 없으면 마스터 입고가 적용
                         const excelPrice = parseNum(row['매입단가'] || row['원가'] || row['단가']);
                         const masterPrice = parseNum(mItem['입고가'] || 0);
                         const price = excelPrice > 0 ? excelPrice : masterPrice;
@@ -437,9 +402,6 @@
             );
         };
 
-        // ==========================================
-        // 📋 View Components
-        // ==========================================
         const IssueChip = React.memo(({ msg }) => {
             let shortMsg = msg; let tooltip = msg; let colorClass = "bg-slate-100 text-slate-700 border-slate-200";
 
@@ -675,16 +637,12 @@
             );
         }, (prev, next) => prev.item === next.item && prev.isLinked === next.isLinked && prev.idx === next.idx);
 
-        // ==========================================
-        // 📊 Main App Container
-        // ==========================================
         function App() {
             const config = useMerchConfig();
             const [toastMsg, setToastMsg] = useState('');
             const [isProcessing, setIsProcessing] = useState(false);
             const [processMsg, setProcessMsg] = useState('');
             
-            // 💡 월 단위(targetMonth)에서 일 단위(targetDate)로 100% 교체
             const [targetDate, setTargetDate] = useState(() => new Date().toISOString().slice(0, 10));
             const [isClosedDate, setIsClosedDate] = useState(false);
             const [hasSnapshots, setHasSnapshots] = useState(true); 
@@ -716,40 +674,25 @@
 
             const handleNavigate = useCallback((e, path, isReady = true) => {
                 if (e && e.preventDefault) e.preventDefault();
-                if (!isReady || path === '#') {
-                    showToast(`⚠️ [${path}] 페이지는 아직 준비 중입니다.`);
-                    return;
-                }
+                if (!isReady || path === '#') { showToast(`⚠️ [${path}] 페이지는 아직 준비 중입니다.`); return; }
                 try {
                     const protocol = window.location.protocol;
                     if (protocol === 'about:' || protocol === 'blob:' || protocol === 'data:') {
                         showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
-                    } else {
-                        window.location.href = path;
-                    }
+                    } else { window.location.href = path; }
                 } catch (err) { showToast(`💡 이동 시뮬레이션: [${path}]`); }
             }, [showToast]);
 
             useEffect(() => {
                 const handleMessage = (e) => {
                     if (e.data && e.data.type === 'CLOSE_SETTINGS') {
-                        setShowSettingsModal(false);
-                        loadData();
+                        setShowSettingsModal(false); loadData();
                     }
                 };
                 window.addEventListener('message', handleMessage);
                 return () => window.removeEventListener('message', handleMessage);
             }, []);
 
-            const generateBatchKey = useCallback((code, price, vendor, date) => {
-                let key = code || 'NO_CODE';
-                if (config.opsGrouping.priceMode === 'separate') key += `|${price}`;
-                if (config.opsGrouping.splitByVendor) key += `|${vendor}`;
-                if (config.opsGrouping.splitByDate) key += `|${date}`;
-                return key;
-            }, [config.opsGrouping]);
-
-            // 🌟 Daily 로드 엔진: targetDate 기준 완벽한 기초/입출고 분리
             const loadData = useCallback(async () => {
                 setIsProcessing(true); setProcessMsg("일일 수불 엔진 동기화 및 이월 처리 중...");
                 try {
@@ -762,94 +705,53 @@
                     
                     const currentClosing = closings.find(c => c.closingDate === targetDate);
                     if (currentClosing) {
-                        setIsClosedDate(true);
-                        setInventoryData(currentClosing.snapshotData);
-                        setHistoryLogs(history.filter(h => h.date === targetDate).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp)));
-                        return;
+                        setIsClosedDate(true); setInventoryData(currentClosing.snapshotData); setHistoryLogs(history.filter(h => h.date === targetDate).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp))); return;
                     }
                     
                     setIsClosedDate(false);
-
-                    // 과거 마감 중 가장 가까운 최신 마감본 찾기
                     const pastClosings = closings.filter(c => c.closingDate < targetDate).sort((a,b) => b.closingDate.localeCompare(a.closingDate));
                     const lastClosing = pastClosings.length > 0 ? pastClosings[0] : null;
                     
-                    let pData = {};
-                    let stockPool = {};
-                    let preStock = {}; // 기초 재고를 누적할 임시 객체
+                    let pData = {}; let stockPool = {}; let preStock = {};
 
-                    // 1. 기초 재고 세팅 (가장 최근 마감 스냅샷 기준)
-                    if (lastClosing) {
-                        lastClosing.snapshotData.forEach(item => {
-                            preStock[item.batchKey] = {
-                                qty: item.실사 === null || item.실사 === '' ? item.전산잔량 : item.실사,
-                                ...item
-                            };
-                        });
-                    }
+                    if (lastClosing) { lastClosing.snapshotData.forEach(item => { preStock[item.batchKey] = { qty: item.실사 === null || item.실사 === '' ? item.전산잔량 : item.실사, ...item }; }); }
 
-                    // 2. lastClosing 이후부터 targetDate 전날까지의 preHistory 누적하여 기초 재고 최신화
                     let preHistory = [];
-                    if (lastClosing) {
-                        preHistory = history.filter(h => h.date > lastClosing.closingDate && h.date < targetDate).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
-                    } else {
-                        preHistory = history.filter(h => h.date < targetDate).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
-                    }
+                    if (lastClosing) { preHistory = history.filter(h => h.date > lastClosing.closingDate && h.date < targetDate).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp)); } 
+                    else { preHistory = history.filter(h => h.date < targetDate).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp)); }
 
                     preHistory.forEach(log => {
                         const code = log.code;
                         if (log.type === 'PURCHASE' || log.type === 'PURCHASE_RETURN' || log.type === 'INITIAL_SETUP' || log.type === 'ADJUSTMENT') {
                             const qty = (log.type === 'PURCHASE_RETURN') ? -Number(log.qty) : Number(log.qty);
-                            const price = parseNum(log.price);
-                            const vendor = log.vendor || '미지정';
-                            const date = log.date || ''; 
-                            const batchKey = `${code}|${price}|${vendor}|${date}`; 
+                            const price = parseNum(log.price); const vendor = log.vendor || '미지정'; const date = log.date || ''; const batchKey = `${code}|${price}|${vendor}|${date}`; 
                             
-                            if(!preStock[batchKey]) {
-                                const m = master[code] || {};
-                                preStock[batchKey] = {
-                                    batchKey, 코드: code, 품명: log.name || m.품목명 || '미상', 규격: m.규격 || '', 단가: price, 거래처: vendor, qty: 0
-                                };
-                            }
+                            if(!preStock[batchKey]) { const m = master[code] || {}; preStock[batchKey] = { batchKey, 코드: code, 품명: log.name || m.품목명 || '미상', 규격: m.규격 || '', 단가: price, 거래처: vendor, qty: 0 }; }
                             preStock[batchKey].qty += qty;
                         } else if (log.type === 'DISPATCH' || log.type === 'SALES_RETURN') {
                             const qty = log.type === 'DISPATCH' ? Number(log.qty) : -Number(log.qty);
                             const targetVendor = log.lotVendor || '미지정';
                             
                             let availKeys = Object.keys(preStock).filter(k => preStock[k].코드 === code && preStock[k].qty > 0);
-                            if (config.opsGrouping.splitByVendor && targetVendor !== '미지정') {
-                                const exactMatch = availKeys.filter(k => preStock[k].거래처 === targetVendor);
-                                if(exactMatch.length > 0) availKeys = exactMatch;
-                            }
+                            if (config.opsGrouping.splitByVendor && targetVendor !== '미지정') { const exactMatch = availKeys.filter(k => preStock[k].거래처 === targetVendor); if(exactMatch.length > 0) availKeys = exactMatch; }
                             
                             let remaining = qty;
-                            for (let bk of availKeys) {
-                                if (remaining <= 0) break;
-                                const take = Math.min(preStock[bk].qty, remaining);
-                                preStock[bk].qty -= take;
-                                remaining -= take;
-                            }
-                            if(remaining > 0) {
-                               const anyAvail = Object.keys(preStock).filter(k => preStock[k].코드 === code);
-                               if(anyAvail.length > 0) preStock[anyAvail[0]].qty -= remaining; // 마이너스 로스 감수
-                            }
+                            for (let bk of availKeys) { if (remaining <= 0) break; const take = Math.min(preStock[bk].qty, remaining); preStock[bk].qty -= take; remaining -= take; }
+                            if(remaining > 0) { const anyAvail = Object.keys(preStock).filter(k => preStock[k].코드 === code); if(anyAvail.length > 0) preStock[anyAvail[0]].qty -= remaining; }
                         }
                     });
 
-                    // 계산된 기초재고(preStock)를 pData에 장착
                     Object.values(preStock).forEach(ps => {
-                        if (ps.qty === 0 && !ps.기초) return; // 기존 내역도 없고 0이면 무시
+                        if (ps.qty === 0 && !ps.기초) return;
                         pData[ps.batchKey] = {
                             batchKey: ps.batchKey, 코드: ps.코드, 품명: ps.품명, 규격: ps.규격, 단가: ps.단가, 거래처: ps.거래처,
                             기초: ps.qty, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: ps.qty, 실사: null, 로스: 0,
-                            이슈: [], 메모: '', 출고내역: {}, _orig: { 기초: ps.qty, 입고: 0, 출고: 0, 단가: ps.단가 },
-                            isDummy: !master[ps.코드], 수기확인완료: true
+                            이슈: [], 메모: '', 출고내역: {}, _orig: { 기초: ps.qty, 입고: 0, 출고: 0, 단가: ps.단가 }, isDummy: !master[ps.코드], 수기확인완료: true
                         };
                         if(!stockPool[ps.코드]) stockPool[ps.코드] = { buckets: [] };
                         stockPool[ps.코드].buckets.push({ batchKey: ps.batchKey, 단가: ps.단가, 수량: ps.qty, 거래처: ps.거래처 });
                     });
 
-                    // 3. 당일(targetDate) 히스토리 반영 (당기 입고 / 당기 출고)
                     const currentHistory = history.filter(h => h.date === targetDate).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
                     setHistoryLogs(currentHistory);
 
@@ -857,26 +759,21 @@
                         const code = log.code;
                         if (log.type === 'PURCHASE' || log.type === 'PURCHASE_RETURN' || log.type === 'INITIAL_SETUP') {
                             const qty = log.type === 'PURCHASE' || log.type === 'INITIAL_SETUP' ? Number(log.qty) : -Number(log.qty);
-                            const price = parseNum(log.price);
-                            const vendor = log.vendor || '미지정';
-                            const date = log.date || '';
-                            const batchKey = `${code}|${price}|${vendor}|${date}`; 
+                            const price = parseNum(log.price); const vendor = log.vendor || '미지정'; const date = log.date || ''; const batchKey = `${code}|${price}|${vendor}|${date}`; 
                             
                             if (!pData[batchKey]) {
                                 const m = master[code] || {};
                                 pData[batchKey] = {
                                     batchKey, 코드: log.code, 품명: log.name || m.품목명 || '미상', 규격: m.규격 || '', 단가: price, 거래처: vendor, 일자: log.date,
                                     기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 
-                                    이슈: [], 메모: '', 출고내역: {}, _orig: { 기초: 0, 입고: 0, 출고: 0, 단가: price },
-                                    isDummy: !master[code], 수기확인완료: true
+                                    이슈: [], 메모: '', 출고내역: {}, _orig: { 기초: 0, 입고: 0, 출고: 0, 단가: price }, isDummy: !master[code], 수기확인완료: true
                                 };
                             }
                             pData[batchKey].입고 += qty;
                             
                             if (!stockPool[code]) stockPool[code] = { buckets: [] };
                             let bucket = stockPool[code].buckets.find(b => b.batchKey === batchKey);
-                            if (bucket) bucket.수량 += qty;
-                            else stockPool[code].buckets.push({ batchKey, 단가: price, 수량: qty, 거래처: vendor });
+                            if (bucket) bucket.수량 += qty; else stockPool[code].buckets.push({ batchKey, 단가: price, 수량: qty, 거래처: vendor });
                         } 
                         else if (log.type === 'DISPATCH' || log.type === 'SALES_RETURN') {
                             const qty = log.type === 'DISPATCH' ? Number(log.qty) : -Number(log.qty);
@@ -886,83 +783,39 @@
                             const buckets = stockPool[code].buckets.sort((a,b) => b.수량 - a.수량);
                             let remaining = qty;
                             
-                            // 벤더 우선 차감
                             for(let b of buckets) {
                                 if (remaining <= 0) break;
                                 if (config.opsGrouping.splitByVendor && b.거래처 !== targetVendor) continue;
-                                const pItem = pData[b.batchKey];
-                                const avail = (pItem.기초 + pItem.입고 - pItem.출고);
+                                const pItem = pData[b.batchKey]; const avail = (pItem.기초 + pItem.입고 - pItem.출고);
                                 if (avail > 0) {
-                                    const take = Math.min(avail, remaining);
-                                    pItem.출고 += take;
-                                    b.수량 -= take;
-                                    remaining -= take;
-                                    
-                                    const dispVendor = log.partner || targetVendor;
-                                    if (!pItem.출고내역[dispVendor]) pItem.출고내역[dispVendor] = { qty: 0 };
-                                    pItem.출고내역[dispVendor].qty += take;
+                                    const take = Math.min(avail, remaining); pItem.출고 += take; b.수량 -= take; remaining -= take;
+                                    const dispVendor = log.partner || targetVendor; if (!pItem.출고내역[dispVendor]) pItem.출고내역[dispVendor] = { qty: 0 }; pItem.출고내역[dispVendor].qty += take;
                                 }
                             }
-                            // 남으면 아무 로트에서나 차감
                             for(let b of buckets) {
                                 if (remaining <= 0) break;
-                                const pItem = pData[b.batchKey];
-                                const avail = (pItem.기초 + pItem.입고 - pItem.출고);
+                                const pItem = pData[b.batchKey]; const avail = (pItem.기초 + pItem.입고 - pItem.출고);
                                 if (avail > 0) {
-                                    const take = Math.min(avail, remaining);
-                                    pItem.출고 += take;
-                                    b.수량 -= take;
-                                    remaining -= take;
-
-                                    const dispVendor = log.partner || targetVendor;
-                                    if (!pItem.출고내역[dispVendor]) pItem.출고내역[dispVendor] = { qty: 0 };
-                                    pItem.출고내역[dispVendor].qty += take;
+                                    const take = Math.min(avail, remaining); pItem.출고 += take; b.수량 -= take; remaining -= take;
+                                    const dispVendor = log.partner || targetVendor; if (!pItem.출고내역[dispVendor]) pItem.출고내역[dispVendor] = { qty: 0 }; pItem.출고내역[dispVendor].qty += take;
                                 }
                             }
                             if (remaining > 0 && buckets.length > 0) {
-                                const pItem = pData[buckets[0].batchKey];
-                                pItem.출고 += remaining;
-                                buckets[0].수량 -= remaining;
-
-                                const dispVendor = log.partner || targetVendor;
-                                if (!pItem.출고내역[dispVendor]) pItem.출고내역[dispVendor] = { qty: 0 };
-                                pItem.출고내역[dispVendor].qty += remaining;
+                                const pItem = pData[buckets[0].batchKey]; pItem.출고 += remaining; buckets[0].수량 -= remaining;
+                                const dispVendor = log.partner || targetVendor; if (!pItem.출고내역[dispVendor]) pItem.출고내역[dispVendor] = { qty: 0 }; pItem.출고내역[dispVendor].qty += remaining;
                             }
                         }
                     });
 
-                    const filteredPData = Object.values(pData).filter(item => {
-                        return item.기초 !== 0 || item.입고 !== 0 || item.출고 !== 0;
-                    });
-
-                    filteredPData.forEach(item => {
-                        item.전산잔량 = item.기초 + item.입고 + item.대체입고 - item.출고 - item.대체출고;
-                        item.실사 = item.실사 !== null ? item.실사 : item.전산잔량; 
-                        item.로스 = item.실사 - item.전산잔량;
-                        item._orig = { 기초: item.기초, 입고: item.입고, 출고: item.출고, 단가: item.단가 };
-                    });
-
+                    const filteredPData = Object.values(pData).filter(item => item.기초 !== 0 || item.입고 !== 0 || item.출고 !== 0);
+                    filteredPData.forEach(item => { item.전산잔량 = item.기초 + item.입고 + item.대체입고 - item.출고 - item.대체출고; item.실사 = item.실사 !== null ? item.실사 : item.전산잔량; item.로스 = item.실사 - item.전산잔량; item._orig = { 기초: item.기초, 입고: item.입고, 출고: item.출고, 단가: item.단가 }; });
                     setInventoryData(filteredPData.sort((a,b) => a.품명.localeCompare(b.품명) || a.단가 - b.단가));
-                } catch(e) {
-                    console.error(e);
-                    showToast("❌ 데이터 로드 중 오류 발생");
-                } finally {
-                    setIsProcessing(false); setProcessMsg('');
-                }
+                } catch(e) { showToast("❌ 데이터 로드 중 오류 발생"); } finally { setIsProcessing(false); setProcessMsg(''); }
             }, [targetDate, config.opsGrouping, showToast]);
 
             useEffect(() => { loadData(); }, [loadData]);
+            useEffect(() => { const handleStorageChange = (e) => { if (e.key === STORAGE_KEYS.SYNC_TRIGGER) loadData(); }; window.addEventListener('storage', handleStorageChange); return () => { window.removeEventListener('storage', handleStorageChange); }; }, [loadData]);
 
-            useEffect(() => {
-                const handleStorageChange = (e) => { if (e.key === STORAGE_KEYS.SYNC_TRIGGER) loadData(); };
-                window.addEventListener('storage', handleStorageChange);
-                
-                return () => {
-                    window.removeEventListener('storage', handleStorageChange);
-                };
-            }, [loadData]);
-
-            // 💡 엑셀 헤더 자동 인식 (강화된 로직 적용)
             const handleFileUpload = async (e) => {
                 const file = e.target.files[0]; if (!file) return;
                 setIsProcessing(true); setProcessMsg('실사 엑셀 대조 중...');
@@ -974,65 +827,41 @@
                     
                     excelData.forEach((row, idx) => {
                         const findKey = (mappingString) => {
-                            if (!mappingString) return null;
-                            const keys = mappingString.split(',').map(k => k.trim()); const rowKeys = Object.keys(row);
+                            if (!mappingString) return null; const keys = mappingString.split(',').map(k => k.trim()); const rowKeys = Object.keys(row);
                             for (const key of keys) { const matched = rowKeys.find(rk => rk.toLowerCase().replace(/\s/g, '') === key.toLowerCase().replace(/\s/g, '')); if (matched) return matched; } return null;
                         };
-                        const codeKey = findKey(config.opsMappings.code) || '품목코드';
-                        const code = row[codeKey] || row['코드'] || row['상품코드'];
-                        if (!code) { errors.push({ row: idx + 2, code: '-', reason: '품목코드 또는 상품코드 누락' }); return; }
-                        
-                        const qtyKey = findKey(config.opsMappings.qty) || '실사';
-                        const qtyVal = row[qtyKey] || row['기말실사'] || row['수량'];
+                        const codeKey = findKey(config.opsMappings.code) || '품목코드'; const code = row[codeKey] || row['코드'] || row['상품코드'];
+                        if (!code) { errors.push({ row: idx + 2, code: '-', reason: '품목코드 누락' }); return; }
+                        const qtyKey = findKey(config.opsMappings.qty) || '실사'; const qtyVal = row[qtyKey] || row['기말실사'] || row['수량'];
                         if (qtyVal === undefined || qtyVal === '') { errors.push({ row: idx + 2, code, reason: '실사 수량 누락' }); return; }
-                        
                         actualUpdates[code] = parseNum(qtyVal);
                     });
 
                     setInventoryData(prev => {
-                        let updatedCount = 0; 
-                        let newData = [...prev];
-                        const currentCodes = new Set(newData.map(i => i.코드));
-
+                        let updatedCount = 0; let newData = [...prev]; const currentCodes = new Set(newData.map(i => i.코드));
                         Object.keys(actualUpdates).forEach(code => { 
                             const actual = actualUpdates[code];
                             if (!currentCodes.has(code)) {
-                                if (!master[code]) {
-                                    errors.push({ row: '-', code, reason: '마스터 DB에 존재하지 않는 품목코드' });
-                                } else {
-                                    const m = master[code];
-                                    const price = parseNum(m.입고가);
-                                    const batchKey = `${code}|${price}|기초재고|all`;
-                                    
-                                    const newItem = {
-                                        batchKey, 코드: code, 품명: m.품목명 || '미상', 규격: m.규격 || '', 단가: price, 거래처: '기초재고', 일자: '',
-                                        기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: actual, 로스: actual, 
-                                        이슈: ['🚨신규발생(실사업로드)', '🚨수량변동(실사반영)'], 메모: '', 출고내역: {}, _orig: { 기초: 0, 입고: 0, 출고: 0, 단가: price },
-                                        isDummy: false, 수기확인완료: false
-                                    };
-                                    newData.push(newItem);
-                                    updatedCount++;
+                                if (!master[code]) { errors.push({ row: '-', code, reason: 'DB 존재하지 않는 품목' }); } 
+                                else {
+                                    const m = master[code]; const price = parseNum(m.입고가); const batchKey = `${code}|${price}|기초재고|all`;
+                                    newData.push({ batchKey, 코드: code, 품명: m.품목명 || '미상', 규격: m.규격 || '', 단가: price, 거래처: '기초재고', 일자: '', 기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: actual, 로스: actual, 이슈: ['🚨신규발생(실사업로드)', '🚨수량변동(실사반영)'], 메모: '', 출고내역: {}, _orig: { 기초: 0, 입고: 0, 출고: 0, 단가: price }, isDummy: false, 수기확인완료: false }); updatedCount++;
                                 }
                             } else {
                                 const itemIdx = newData.findIndex(i => i.코드 === code);
                                 if (itemIdx >= 0) {
-                                    const item = newData[itemIdx];
-                                    const newLoss = actual - item.전산잔량;
+                                    const item = newData[itemIdx]; const newLoss = actual - item.전산잔량;
                                     let newIssues = [...item.이슈].filter(msg => !msg.includes('실사조정') && !msg.includes('수량변동'));
                                     if (newLoss !== 0) newIssues.push('🚨수량변동(실사반영)');
-                                    
-                                    newData[itemIdx] = { ...item, 실사: actual, 로스: newLoss, 이슈: newIssues, 수기확인완료: newLoss === 0 };
-                                    updatedCount++;
+                                    newData[itemIdx] = { ...item, 실사: actual, 로스: newLoss, 이슈: newIssues, 수기확인완료: newLoss === 0 }; updatedCount++;
                                 }
                             }
                         });
-                        count = updatedCount; 
-                        return newData.sort((a,b) => a.품명.localeCompare(b.품명) || a.단가 - b.단가);
+                        count = updatedCount; return newData.sort((a,b) => a.품명.localeCompare(b.품명) || a.단가 - b.단가);
                     });
                     
                     if (errors.length > 0) { setUploadErrors(errors); setShowUploadErrorModal(true); }
-                    if(count > 0) showToast(`✅ ${count}건의 실사 수량이 전산잔량과 대조되었습니다.`);
-                    else showToast(`⚠️ 정상적으로 대조된 항목이 없습니다.`);
+                    if(count > 0) showToast(`✅ ${count}건의 실사 수량이 전산잔량과 대조되었습니다.`); else showToast(`⚠️ 정상 대조 항목이 없습니다.`);
                 } catch(error) { showToast("❌ 업로드 오류: " + error.message); } finally { e.target.value = ''; setIsProcessing(false); setProcessMsg(''); }
             };
 
@@ -1048,8 +877,7 @@
                         if (newItem.로스 === 0) newIssues = newIssues.filter(msg => !msg.includes('수량변동') && !msg.includes('과다로스') && !msg.includes('실사 수기조정'));
                         const isBaseChanged = newItem.기초 !== (newItem._orig?.기초 || 0) || newItem.입고 !== (newItem._orig?.입고 || 0) || newItem.출고 !== (newItem._orig?.출고 || 0);
                         if (isBaseChanged) newIssues.push('장부 수기조정');
-                        newItem.이슈 = newIssues.map(msg => msg.replace(/🚨/g, '✅'));
-                        return newItem;
+                        newItem.이슈 = newIssues.map(msg => msg.replace(/🚨/g, '✅')); return newItem;
                     }
                     return item;
                 }));
@@ -1075,73 +903,36 @@
                 setInventoryData(prevP => {
                     return prevP.map(p => {
                         if (p.batchKey === sourceKey) {
-                            const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역)) };
-                            np.출고 -= qtyToMove;
-                            if (np.출고내역[vendorName]) {
-                                np.출고내역[vendorName].qty -= qtyToMove;
-                                if (np.출고내역[vendorName].qty <= 0) delete np.출고내역[vendorName];
-                            }
+                            const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역)) }; np.출고 -= qtyToMove;
+                            if (np.출고내역[vendorName]) { np.출고내역[vendorName].qty -= qtyToMove; if (np.출고내역[vendorName].qty <= 0) delete np.출고내역[vendorName]; }
                             np.전산잔량 = np.기초 + np.입고 + np.대체입고 - np.출고 - np.대체출고;
-                            if (np.실사 !== null && np.실사 !== '') { 
-                                np.실사 = Number(np.실사) + qtyToMove; 
-                                np.로스 = np.실사 - np.전산잔량; 
-                            } else { 
-                                np.실사 = np.전산잔량; np.로스 = 0; 
-                            }
-                            np.이슈 = np.이슈.filter(msg => !msg.includes('수량부족'));
-                            np.수기확인완료 = true;
-                            return np;
+                            if (np.실사 !== null && np.실사 !== '') { np.실사 = Number(np.실사) + qtyToMove; np.로스 = np.실사 - np.전산잔량; } else { np.실사 = np.전산잔량; np.로스 = 0; }
+                            np.이슈 = np.이슈.filter(msg => !msg.includes('수량부족')); np.수기확인완료 = true; return np;
                         }
                         if (p.batchKey === targetKey) {
-                            const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역)), 이슈: [...p.이슈] };
-                            np.출고 += qtyToMove;
-                            if (!np.출고내역[vendorName]) np.출고내역[vendorName] = { qty: 0 };
-                            np.출고내역[vendorName].qty += qtyToMove;
-                            
+                            const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역)), 이슈: [...p.이슈] }; np.출고 += qtyToMove;
+                            if (!np.출고내역[vendorName]) np.출고내역[vendorName] = { qty: 0 }; np.출고내역[vendorName].qty += qtyToMove;
                             np.전산잔량 = np.기초 + np.입고 + np.대체입고 - np.출고 - np.대체출고;
-                            if (np.실사 !== null && np.실사 !== '') { 
-                                np.실사 = Number(np.실사) - qtyToMove; 
-                                np.로스 = np.실사 - np.전산잔량; 
-                            } else { 
-                                np.실사 = np.전산잔량; np.로스 = 0; 
-                            }
-                            
-                            np.이슈 = np.이슈.filter(msg => !msg.includes('수량부족'));
-                            np.수기확인완료 = true;
-                            return np;
+                            if (np.실사 !== null && np.실사 !== '') { np.실사 = Number(np.실사) - qtyToMove; np.로스 = np.실사 - np.전산잔량; } else { np.실사 = np.전산잔량; np.로스 = 0; }
+                            np.이슈 = np.이슈.filter(msg => !msg.includes('수량부족')); np.수기확인완료 = true; return np;
                         }
                         return p;
                     });
-                });
-                
-                showToast(`✅ ${qtyToMove}건의 매출이 성공적으로 이동되었습니다.`);
+                }); showToast(`✅ ${qtyToMove}건의 매출이 성공적으로 이동되었습니다.`);
             }, [showToast]);
 
-            const handleChipDropRequest = useCallback((sourceKey, targetKey, vendor, maxQty, isCtrlPressed) => {
-                if (isCtrlPressed && maxQty > 1) {
-                    setSplitModal({ isOpen: true, payload: { sourceKey, targetKey, vendor, maxQty } });
-                } else {
-                    handleSalesMove(sourceKey, targetKey, vendor, maxQty);
-                }
-            }, [handleSalesMove]);
+            const handleChipDropRequest = useCallback((sourceKey, targetKey, vendor, maxQty, isCtrlPressed) => { if (isCtrlPressed && maxQty > 1) { setSplitModal({ isOpen: true, payload: { sourceKey, targetKey, vendor, maxQty } }); } else { handleSalesMove(sourceKey, targetKey, vendor, maxQty); } }, [handleSalesMove]);
 
             const executeImmediateSubstitution = useCallback((key1, key2, targetIdx) => {
                 setInventoryData(prev => {
-                    const idx1 = prev.findIndex(d => d.batchKey === key1);
-                    const realIdx2 = prev.findIndex(d => d.batchKey === key2);
+                    const idx1 = prev.findIndex(d => d.batchKey === key1); const realIdx2 = prev.findIndex(d => d.batchKey === key2);
                     if (idx1 < 0 || realIdx2 < 0) return prev;
-
-                    const sourceItemOrig = { ...prev[idx1], 이슈: [...prev[idx1].이슈] };
-                    const targetItemOrig = { ...prev[realIdx2], 이슈: [...prev[realIdx2].이슈] };
-
+                    const sourceItemOrig = { ...prev[idx1], 이슈: [...prev[idx1].이슈] }; const targetItemOrig = { ...prev[realIdx2], 이슈: [...prev[realIdx2].이슈] };
                     let sourceItem = { ...sourceItemOrig }; let targetItem = { ...targetItemOrig };
 
-                    if (sourceItem.로스 < 0 && targetItem.로스 > 0) { }
-                    else if (targetItem.로스 < 0 && sourceItem.로스 > 0) { let temp = sourceItem; sourceItem = targetItem; targetItem = temp; }
-                    else { showToast("⚠️ 상계 불가! 로스가 음수(-)와 양수(+)여야 합니다."); return prev; }
+                    if (sourceItem.로스 < 0 && targetItem.로스 > 0) { } else if (targetItem.로스 < 0 && sourceItem.로스 > 0) { let temp = sourceItem; sourceItem = targetItem; targetItem = temp; } else { showToast("⚠️ 상계 불가! 로스가 음수(-)와 양수(+)여야 합니다."); return prev; }
 
                     const moveQty = Math.min(Math.abs(sourceItem.로스), Math.abs(targetItem.로스));
-
                     sourceItem.대체출고 += moveQty; sourceItem.전산잔량 -= moveQty; sourceItem.로스 = sourceItem.실사 - sourceItem.전산잔량;
                     if (sourceItem.로스 === 0) sourceItem.이슈 = sourceItem.이슈.filter(msg => !msg.includes('수량변동') && !msg.includes('실사조정') && !msg.includes('실사 수기조정') && !msg.includes('과다로스'));
                     sourceItem.이슈.push(`🔄 (-${moveQty})`); sourceItem.수기확인완료 = true;
@@ -1152,8 +943,7 @@
 
                     setSubstHistory(h => [...h, { id: Date.now(), sourceKey: sourceItem.batchKey, targetKey: targetItem.batchKey, sourceName: sourceItem.품명, targetName: targetItem.품명, sQty: moveQty, tQty: moveQty, sourceItemPrev: sourceItemOrig, targetItemPrev: targetItemOrig }]);
                     const newData = [...prev]; newData[idx1] = sourceItem; newData[realIdx2] = targetItem;
-                    showToast(`✅ [${sourceItem.품명}] ➔ [${targetItem.품명}] 로스 상계 완료`);
-                    return newData;
+                    showToast(`✅ [${sourceItem.품명}] ➔ [${targetItem.품명}] 로스 상계 완료`); return newData;
                 });
             }, [showToast]);
 
@@ -1196,113 +986,51 @@
 
             const handleClosing = async () => {
                 const hasErrors = inventoryData.some(item => item.이슈.some(msg => msg.includes('🚨')));
-                if (hasErrors) {
-                    return showToast("⚠️ 해결되지 않은 오류(🚨)가 남아있습니다. 스페이스바 상계 또는 사유 메모를 기록하여 모두 승인(✅) 처리 후 마감하세요.");
-                }
-
+                if (hasErrors) return showToast("⚠️ 해결되지 않은 오류(🚨)가 남아있습니다. 스페이스바 상계 또는 사유 메모를 기록하여 모두 승인(✅) 처리 후 마감하세요.");
                 if (!window.confirm(`현재 화면의 수량으로 [${targetDate}] 일자의 수불부를 최종 마감하시겠습니까?\n(해당 일자 마감 스냅샷이 영구 저장됩니다.)`)) return;
 
                 setIsProcessing(true); setProcessMsg("수불부 일일 마감 및 스냅샷 생성 중...");
 
                 try {
                     const master = await getIDB(STORAGE_KEYS.MASTER_DB) || {};
-                    let newMaster = { ...master };
-                    let newLogs = [];
-                    let logIds = []; 
+                    let newMaster = { ...master }; let newLogs = []; let logIds = []; 
                     const nowStr = new Date().toLocaleString('ko-KR');
                     const history = await getIDB(STORAGE_KEYS.HISTORY_DB) || [];
                     const closings = await getIDB(STORAGE_KEYS.CLOSING_DB) || [];
-                    
-                    const isFirstSnapshot = closings.length === 0;
-                    let lossQty = 0;
+                    const isFirstSnapshot = closings.length === 0; let lossQty = 0;
 
                     inventoryData.forEach(item => {
-                        const code = item.코드;
-                        const actualQty = item.실사 === '' || item.실사 === null ? item.전산잔량 : item.실사;
-                        lossQty += Math.abs(item.로스 || 0);
-                        
-                        if (newMaster[code]) {
-                            newMaster[code] = { ...newMaster[code], 재고수량: actualQty };
-                        } else {
-                            newMaster[code] = { 코드: code, 품목명: item.품명, 규격: item.규격, 재고수량: actualQty, 입고가: item.단가 };
-                        }
+                        const code = item.코드; const actualQty = item.실사 === '' || item.실사 === null ? item.전산잔량 : item.실사; lossQty += Math.abs(item.로스 || 0);
+                        if (newMaster[code]) newMaster[code] = { ...newMaster[code], 재고수량: actualQty }; else newMaster[code] = { 코드: code, 품목명: item.품명, 규격: item.규격, 재고수량: actualQty, 입고가: item.단가 };
 
                         if (item.로스 !== 0 || item.이슈.some(i=>i.includes('🔄')) || isFirstSnapshot) {
                             const logId = `${isFirstSnapshot ? 'INIT' : 'ADJ'}-${Date.now()}-${Math.floor(Math.random()*1000)}`;
-                            newLogs.push({
-                                id: logId,
-                                timestamp: nowStr,
-                                date: targetDate, 
-                                type: isFirstSnapshot ? 'INITIAL_SETUP' : 'ADJUSTMENT',
-                                code: code,
-                                name: item.품명,
-                                qty: isFirstSnapshot ? actualQty : item.로스, 
-                                price: item.단가,
-                                oldStock: item.전산잔량,
-                                newStock: actualQty,
-                                partner: isFirstSnapshot ? '초기 자산 셋업' : '시스템 마감(일일 실사)',
-                                memo: item.이슈.join(' ') + ' / ' + item.메모
-                            });
+                            newLogs.push({ id: logId, timestamp: nowStr, date: targetDate, type: isFirstSnapshot ? 'INITIAL_SETUP' : 'ADJUSTMENT', code: code, name: item.품명, qty: isFirstSnapshot ? actualQty : item.로스, price: item.단가, oldStock: item.전산잔량, newStock: actualQty, partner: isFirstSnapshot ? '초기 자산 셋업' : '시스템 마감(일일 실사)', memo: item.이슈.join(' ') + ' / ' + item.메모 });
                             logIds.push(logId);
                         }
                     });
 
-                    const snapshot = {
-                        id: `CLOSE-${targetDate}-${Date.now()}`,
-                        date: new Date().toISOString(),
-                        closingDate: targetDate,
-                        stats: { totalItems: inventoryData.length, lossQty },
-                        snapshotData: inventoryData,
-                        masterBackup: master, 
-                        historyLogIds: logIds 
-                    };
+                    const snapshot = { id: `CLOSE-${targetDate}-${Date.now()}`, date: new Date().toISOString(), closingDate: targetDate, stats: { totalItems: inventoryData.length, lossQty }, snapshotData: inventoryData, masterBackup: master, historyLogIds: logIds };
 
-                    await setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
-                    await setIDB(STORAGE_KEYS.HISTORY_DB, [...history, ...newLogs]);
-                    await setIDB(STORAGE_KEYS.CLOSING_DB, [snapshot, ...closings]);
+                    await setIDB(STORAGE_KEYS.MASTER_DB, newMaster); await setIDB(STORAGE_KEYS.HISTORY_DB, [...history, ...newLogs]); await setIDB(STORAGE_KEYS.CLOSING_DB, [snapshot, ...closings]);
                     localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
 
                     showToast(`🎉 ${targetDate} 일자 마감이 완료되었습니다! (스냅샷 저장됨)`);
                     setTimeout(() => { setShowGenesisModal(false); loadData(); }, 1000); 
-                } catch(e) {
-                    showToast("❌ 마감 처리 중 오류 발생");
-                } finally {
-                    setIsProcessing(false); setProcessMsg('');
-                }
+                } catch(e) { showToast("❌ 마감 처리 중 오류 발생"); } finally { setIsProcessing(false); setProcessMsg(''); }
             };
 
-            const loadClosingHistory = async () => {
-                const data = await getIDB(STORAGE_KEYS.CLOSING_DB) || [];
-                setClosingSnapshots(data);
-                setShowClosingHistory(true);
-            };
+            const loadClosingHistory = async () => { const data = await getIDB(STORAGE_KEYS.CLOSING_DB) || []; setClosingSnapshots(data); setShowClosingHistory(true); };
 
             const handleRollback = async (snapshot) => {
                 if (!window.confirm(`⚠️ 경고: [${snapshot.closingDate}] 일자에 실행된 가장 최근 마감을 취소하고 이전 재고 상태로 되돌리시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
-                
                 setIsProcessing(true); setProcessMsg("마감 상태 롤백 중...");
                 try {
                     if (snapshot.masterBackup) await setIDB(STORAGE_KEYS.MASTER_DB, snapshot.masterBackup);
-                    
-                    if (snapshot.historyLogIds) {
-                        let history = await getIDB(STORAGE_KEYS.HISTORY_DB) || [];
-                        history = history.filter(h => !snapshot.historyLogIds.includes(h.id));
-                        await setIDB(STORAGE_KEYS.HISTORY_DB, history);
-                    }
-                    
-                    let closings = await getIDB(STORAGE_KEYS.CLOSING_DB) || [];
-                    closings = closings.filter(c => c.id !== snapshot.id);
-                    await setIDB(STORAGE_KEYS.CLOSING_DB, closings);
-                    
-                    localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
-                    setShowClosingHistory(false);
-                    showToast(`✅ [${snapshot.closingDate}] 마감이 취소되고 이전 상태로 복구되었습니다.`);
-                    setTimeout(() => loadData(), 1000);
-                } catch(err) {
-                    showToast("❌ 롤백 중 오류가 발생했습니다.");
-                } finally {
-                    setIsProcessing(false); setProcessMsg("");
-                }
+                    if (snapshot.historyLogIds) { let history = await getIDB(STORAGE_KEYS.HISTORY_DB) || []; history = history.filter(h => !snapshot.historyLogIds.includes(h.id)); await setIDB(STORAGE_KEYS.HISTORY_DB, history); }
+                    let closings = await getIDB(STORAGE_KEYS.CLOSING_DB) || []; closings = closings.filter(c => c.id !== snapshot.id); await setIDB(STORAGE_KEYS.CLOSING_DB, closings);
+                    localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); setShowClosingHistory(false); showToast(`✅ [${snapshot.closingDate}] 마감이 취소되고 이전 상태로 복구되었습니다.`); setTimeout(() => loadData(), 1000);
+                } catch(err) { showToast("❌ 롤백 중 오류가 발생했습니다."); } finally { setIsProcessing(false); setProcessMsg(""); }
             };
 
             const handleCombinedExport = useCallback(() => {
@@ -1313,17 +1041,9 @@
                         const qty = item.실사 === '' || item.실사 === null ? 0 : parseNum(item.실사);
                         return { '일자': targetDate, '매입처(Lot)': item.거래처, '상품코드': item.코드, '상품명(규격)': item.품명, '기초수량': item.기초, '입고수량': item.입고, '출고량': item.출고, '기말실사(이월수량)': qty, '매입단가(원가)': parseNum(item.단가)||0, '기말재고액(자산가치)': qty * (parseNum(item.단가)||0), '로스/조정수량': (parseNum(item.로스)||0) + (parseNum(item.대체입고)||0) - (parseNum(item.대체출고)||0), '이슈/결과': item.이슈.join(', '), '수기메모': item.메모 || '' };
                     });
-
-                    const wb = XLSX.utils.book_new();
-                    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportData1), '재고수불일보');
-
+                    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exportData1), '재고수불일보');
                     try {
-                        const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-                        const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a'); a.href = url; a.download = `DataOps_수불일보_${targetDate.replace(/-/g, '')}.xlsx`;
-                        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-                        showToast("✅ 수불일보 데이터가 엑셀로 다운로드되었습니다.");
+                        const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }); const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `DataOps_수불일보_${targetDate.replace(/-/g, '')}.xlsx`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); showToast("✅ 수불일보 데이터가 엑셀로 다운로드되었습니다.");
                     } catch (err) { showToast("❌ 엑셀 파일 생성 중 오류가 발생했습니다."); } finally { setIsProcessing(false); setProcessMsg(''); }
                 }, 500);
             }, [inventoryData, targetDate, showToast]);
@@ -1348,30 +1068,17 @@
 
             const handleIssueJump = useCallback((type, direction = 'next', fromCardClick = false) => {
                 setActiveIssueMode(type);
-                
                 let currIdx = fromCardClick ? -1 : currentIssueIdxRef.current;
                 const condition = (p) => {
                     if (type === 'loss') return p.로스 !== 0 || p.전산잔량 < 0 || p.이슈.some(i => i.includes('🚨'));
-                    if (type === 'manual') return p.이슈.some(i => i.includes('✅') || i.includes('🔄') || i.includes('🚀'));
-                    return false;
+                    if (type === 'manual') return p.이슈.some(i => i.includes('✅') || i.includes('🔄') || i.includes('🚀')); return false;
                 };
-
                 const targetItems = inventoryData.map((p, i) => ({...p, index: i})).filter(condition);
-                if (targetItems.length === 0) {
-                    if(!fromCardClick) showToast("해당하는 항목이 없습니다.");
-                    setActiveIssueMode(null);
-                    return;
-                }
+                if (targetItems.length === 0) { if(!fromCardClick) showToast("해당하는 항목이 없습니다."); setActiveIssueMode(null); return; }
 
                 let targetItem = null;
-                if (direction === 'next') {
-                    targetItem = targetItems.find(p => p.index > currIdx) || targetItems[0];
-                } else {
-                    for (let i = targetItems.length - 1; i >= 0; i--) {
-                        if (targetItems[i].index < currIdx) { targetItem = targetItems[i]; break; }
-                    }
-                    if (!targetItem) targetItem = targetItems[targetItems.length - 1];
-                }
+                if (direction === 'next') { targetItem = targetItems.find(p => p.index > currIdx) || targetItems[0]; } 
+                else { for (let i = targetItems.length - 1; i >= 0; i--) { if (targetItems[i].index < currIdx) { targetItem = targetItems[i]; break; } } if (!targetItem) targetItem = targetItems[targetItems.length - 1]; }
 
                 if (targetItem) {
                     currentIssueIdxRef.current = targetItem.index;
@@ -1381,10 +1088,8 @@
                             const input = document.getElementById(`actual-input-${targetItem.index}`);
                             if (input) { input.focus({ preventScroll: true }); input.select(); }
                             row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            
                             const colorClass = type === 'loss' ? 'bg-orange-50' : 'bg-emerald-50';
-                            row.classList.add(colorClass);
-                            setTimeout(() => row.classList.remove(colorClass), 1500);
+                            row.classList.add(colorClass); setTimeout(() => row.classList.remove(colorClass), 1500);
                         }
                     }, 100);
                 }
@@ -1392,187 +1097,78 @@
 
             useEffect(() => {
                 const handleGlobalKeys = (e) => {
-                    if (e.key === 'Tab' && activeIssueModeRef.current) {
-                        e.preventDefault();
-                        handleIssueJump(activeIssueModeRef.current, e.shiftKey ? 'prev' : 'next');
-                    }
+                    if (e.key === 'Tab' && activeIssueModeRef.current) { e.preventDefault(); handleIssueJump(activeIssueModeRef.current, e.shiftKey ? 'prev' : 'next'); }
                     if (e.key === 'F9') { e.preventDefault(); handleCombinedExport(); }
-                    if (e.key === 'Escape') {
-                        if (activeIssueModeRef.current) { setActiveIssueMode(null); currentIssueIdxRef.current = -1; }
-                        if (linkSourceKey) setLinkSourceKey(null);
-                    }
+                    if (e.key === 'Escape') { if (activeIssueModeRef.current) { setActiveIssueMode(null); currentIssueIdxRef.current = -1; } if (linkSourceKey) setLinkSourceKey(null); }
                 };
-                window.addEventListener('keydown', handleGlobalKeys);
-                return () => window.removeEventListener('keydown', handleGlobalKeys);
+                window.addEventListener('keydown', handleGlobalKeys); return () => window.removeEventListener('keydown', handleGlobalKeys);
             }, [handleIssueJump, handleCombinedExport, linkSourceKey]);
 
             return (
                 <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-slate-100 relative shadow-2xl border-x border-slate-300 select-none">
                     <GlobalHeader 
-                        activeTab="inventory" 
-                        itemCount={inventoryData.length} 
-                        isProcessing={isProcessing} 
-                        processMsg={processMsg}
-                        onOpenSettings={() => setShowSettingsModal(true)}
-                        onNavigate={handleNavigate} 
-                        onPush={handlePush} 
-                        onPull={handlePull} 
+                        activeTab="inventory" itemCount={inventoryData.length} isProcessing={isProcessing} processMsg={processMsg}
+                        onOpenSettings={() => setShowSettingsModal(true)} onNavigate={handleNavigate} onPush={handlePush} onPull={handlePull} 
                     />
                     
                     <IframeSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
                     
-                    <GenesisSetupModal 
-                        isOpen={showGenesisModal} 
-                        onClose={() => setShowGenesisModal(false)} 
-                        onApplySetup={(newItems) => {
-                            setInventoryData(newItems);
-                            setHasSnapshots(true); 
-                        }} 
-                        showToast={showToast}
-                    />
+                    <GenesisSetupModal isOpen={showGenesisModal} onClose={() => setShowGenesisModal(false)} onApplySetup={(newItems) => { setInventoryData(newItems); setHasSnapshots(true); }} showToast={showToast} />
 
                     <div className="px-8 py-5 bg-white border-b border-slate-200 flex flex-col shadow-sm shrink-0 relative z-10 gap-4">
                         <div className="flex items-center justify-between">
-                            <h1 className="text-[18px] font-black text-slate-900 flex items-center">
-                                <SafeIcon name="boxes" size={22} className="mr-2.5 text-indigo-500" /> 일일 수불장 및 실사 조정
-                            </h1>
+                            <h1 className="text-[18px] font-black text-slate-900 flex items-center"><SafeIcon name="boxes" size={22} className="mr-2.5 text-indigo-500" /> 일일 수불장 및 실사 조정</h1>
                             <div className="flex items-center gap-3">
-                                <button onClick={() => setShowGenesisModal(true)} className="h-9 px-3 rounded-md text-[12px] font-bold bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50 transition-colors shadow-sm flex items-center shrink-0" title="과거 엑셀 원장으로 기초 재고를 일괄 세팅합니다.">
-                                    <SafeIcon name="rocket" size={14} className="mr-1.5" /> 초기 자산 셋업
-                                </button>
-                                
+                                <button onClick={() => setShowGenesisModal(true)} className="h-9 px-3 rounded-md text-[12px] font-bold bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50 transition-colors shadow-sm flex items-center shrink-0" title="과거 엑셀 원장으로 기초 재고를 일괄 세팅합니다."><SafeIcon name="rocket" size={14} className="mr-1.5" /> 초기 자산 셋업</button>
                                 <label className={`h-9 px-3 rounded-md text-[12px] font-bold transition-colors shadow-sm flex items-center shrink-0 ${isClosedDate ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50 cursor-pointer'}`}>
-                                    <SafeIcon name="file-excel" size={14} className="mr-1.5 text-emerald-500" /> 실사 엑셀 업로드
-                                    <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} disabled={isProcessing || isClosedDate} />
+                                    <SafeIcon name="file-excel" size={14} className="mr-1.5 text-emerald-500" /> 실사 엑셀 업로드<input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} disabled={isProcessing || isClosedDate} />
                                 </label>
-
                                 <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200 shadow-inner ml-2">
-                                    <SafeIcon name="calendar-alt" size={14} className="text-slate-500 ml-2" />
-                                    <input type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} className="bg-transparent text-[13px] font-black text-indigo-600 outline-none cursor-pointer w-32" />
+                                    <SafeIcon name="calendar-alt" size={14} className="text-slate-500 ml-2" /><input type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} className="bg-transparent text-[13px] font-black text-indigo-600 outline-none cursor-pointer w-32" />
                                 </div>
-                                
-                                <button onClick={handleCombinedExport} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50 transition-colors shadow-sm flex items-center shrink-0">
-                                    <SafeIcon name="file-export" size={14} className="mr-1.5 text-indigo-500" /> 수불일보 다운 (F9)
-                                </button>
-                                <button onClick={loadClosingHistory} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-slate-600 border border-slate-300 hover:bg-slate-50 transition-colors shadow-sm flex items-center shrink-0">
-                                    <SafeIcon name="history" size={14} className="mr-1.5 text-slate-500" /> 마감 이력 관리
-                                </button>
-                                <button onClick={handleClosing} disabled={isProcessing || closingStats.lossCount > 0 || isClosedDate} className={`h-9 px-6 rounded-md text-[13px] font-black shadow-sm transition-all flex items-center ${isClosedDate ? 'bg-slate-200 text-slate-400 border border-slate-200 cursor-not-allowed' : (closingStats.lossCount === 0 && inventoryData.length > 0 ? 'bg-[#0B1021] text-white hover:bg-black hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed')}`}>
-                                    {isClosedDate ? <SafeIcon name="lock" size={14} className="mr-2 inline" /> : <SafeIcon name="save" size={14} className="mr-2 inline" />}
-                                    {isClosedDate ? '마감 완료' : '일자 마감 (Daily Closing)'}
-                                </button>
+                                <button onClick={handleCombinedExport} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50 transition-colors shadow-sm flex items-center shrink-0"><SafeIcon name="file-export" size={14} className="mr-1.5 text-indigo-500" /> 수불일보 다운 (F9)</button>
+                                <button onClick={loadClosingHistory} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-slate-600 border border-slate-300 hover:bg-slate-50 transition-colors shadow-sm flex items-center shrink-0"><SafeIcon name="history" size={14} className="mr-1.5 text-slate-500" /> 마감 이력 관리</button>
+                                <button onClick={handleClosing} disabled={isProcessing || closingStats.lossCount > 0 || isClosedDate} className={`h-9 px-6 rounded-md text-[13px] font-black shadow-sm transition-all flex items-center ${isClosedDate ? 'bg-slate-200 text-slate-400 border border-slate-200 cursor-not-allowed' : (closingStats.lossCount === 0 && inventoryData.length > 0 ? 'bg-[#0B1021] text-white hover:bg-black hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed')}`}>{isClosedDate ? <SafeIcon name="lock" size={14} className="mr-2 inline" /> : <SafeIcon name="save" size={14} className="mr-2 inline" />}{isClosedDate ? '마감 완료' : '일자 마감 (Daily Closing)'}</button>
                                 <div className="w-px h-6 bg-slate-200 mx-1"></div>
-                                <div className="relative">
-                                    <SafeIcon name="search" size={14} className="absolute left-3 top-2.5 text-slate-400" />
-                                    <input type="text" value={searchKw} onChange={e=>setSearchKw(e.target.value)} placeholder="상품명, 코드 검색..." className="w-[220px] bg-slate-50 border border-slate-300 rounded-md pl-9 pr-4 py-1.5 h-9 text-[12px] font-bold outline-none focus:border-indigo-500 shadow-sm transition-shadow" />
-                                </div>
+                                <div className="relative"><SafeIcon name="search" size={14} className="absolute left-3 top-2.5 text-slate-400" /><input type="text" value={searchKw} onChange={e=>setSearchKw(e.target.value)} placeholder="상품명, 코드 검색..." className="w-[220px] bg-slate-50 border border-slate-300 rounded-md pl-9 pr-4 py-1.5 h-9 text-[12px] font-bold outline-none focus:border-indigo-500 shadow-sm transition-shadow" /></div>
                             </div>
                         </div>
                         
                         {inventoryData.length > 0 && (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                                <div 
-                                    onClick={() => {
-                                        if(activeIssueMode !== 'loss') {
-                                            handleIssueJump('loss', 'next', true);
-                                        } else {
-                                            setActiveIssueMode(null);
-                                        }
-                                    }}
-                                    className={`p-4 rounded-xl border-[3px] transition-all flex flex-col justify-between relative overflow-hidden cursor-pointer ${activeIssueMode === 'loss' ? 'bg-orange-50 border-orange-500 shadow-md ring-4 ring-orange-500/20' : (closingStats.lossCount > 0 ? 'bg-orange-50 border-orange-200 hover:border-orange-400 hover:shadow-md' : 'bg-white border-slate-200 hover:border-slate-300')}`}
-                                >
-                                    <div className={`text-xs font-bold mb-1 flex items-center justify-between ${closingStats.lossCount > 0 ? 'text-orange-800' : 'text-slate-600'}`}>
-                                        <span className="flex items-center"><SafeIcon name="balance-scale" size={16} className={`${activeIssueMode === 'loss' || closingStats.lossCount > 0 ? 'text-orange-500' : 'text-slate-400'} mr-2`}/>실사 오차 (로스) 확인</span>
-                                        {closingStats.lossCount > 0 && <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.6)]"></span>}
-                                    </div>
-                                    <div className="flex items-end justify-between mt-2">
-                                        <div>
-                                            <div className={`text-3xl font-black ${activeIssueMode === 'loss' || closingStats.lossCount > 0 ? 'text-orange-900' : 'text-slate-800'}`}>{closingStats.lossCount}<span className="text-sm font-bold text-slate-500 ml-1">건</span></div>
-                                            {closingStats.lossCount > 0 ? <div className="text-[12px] text-orange-600 font-bold mt-1">클릭/Tab키로 추적 (수정요망)</div> : <div className="text-[12px] text-slate-400 font-semibold mt-1">모든 변동 확인됨</div>}
-                                        </div>
-                                    </div>
+                                <div onClick={() => { if(activeIssueMode !== 'loss') { handleIssueJump('loss', 'next', true); } else { setActiveIssueMode(null); } }} className={`p-4 rounded-xl border-[3px] transition-all flex flex-col justify-between relative overflow-hidden cursor-pointer ${activeIssueMode === 'loss' ? 'bg-orange-50 border-orange-500 shadow-md ring-4 ring-orange-500/20' : (closingStats.lossCount > 0 ? 'bg-orange-50 border-orange-200 hover:border-orange-400 hover:shadow-md' : 'bg-white border-slate-200 hover:border-slate-300')}`}>
+                                    <div className={`text-xs font-bold mb-1 flex items-center justify-between ${closingStats.lossCount > 0 ? 'text-orange-800' : 'text-slate-600'}`}><span className="flex items-center"><SafeIcon name="balance-scale" size={16} className={`${activeIssueMode === 'loss' || closingStats.lossCount > 0 ? 'text-orange-500' : 'text-slate-400'} mr-2`}/>실사 오차 (로스) 확인</span>{closingStats.lossCount > 0 && <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.6)]"></span>}</div>
+                                    <div className="flex items-end justify-between mt-2"><div><div className={`text-3xl font-black ${activeIssueMode === 'loss' || closingStats.lossCount > 0 ? 'text-orange-900' : 'text-slate-800'}`}>{closingStats.lossCount}<span className="text-sm font-bold text-slate-500 ml-1">건</span></div>{closingStats.lossCount > 0 ? <div className="text-[12px] text-orange-600 font-bold mt-1">클릭/Tab키로 추적 (수정요망)</div> : <div className="text-[12px] text-slate-400 font-semibold mt-1">모든 변동 확인됨</div>}</div></div>
                                 </div>
-                                <div 
-                                    onClick={() => {
-                                        if(activeIssueMode !== 'manual') {
-                                            handleIssueJump('manual', 'next', true);
-                                        } else {
-                                            setActiveIssueMode(null);
-                                        }
-                                    }}
-                                    className={`p-4 rounded-xl border-[3px] transition-all flex flex-col justify-between relative overflow-hidden cursor-pointer ${activeIssueMode === 'manual' ? 'bg-emerald-50 border-emerald-500 shadow-md ring-4 ring-emerald-500/20' : (closingStats.manualCount > 0 ? 'bg-emerald-50 border-emerald-200 hover:border-emerald-400 hover:shadow-md' : 'bg-white border-slate-200 hover:border-slate-300')}`}
-                                >
-                                    <div className={`text-xs font-bold mb-1 flex items-center justify-between ${closingStats.manualCount > 0 ? 'text-emerald-800' : 'text-slate-600'}`}>
-                                        <span className="flex items-center"><SafeIcon name="exchange-alt" size={16} className={`${activeIssueMode === 'manual' || closingStats.manualCount > 0 ? 'text-emerald-500' : 'text-slate-400'} mr-2`}/>Lot 매칭 및 수기 보정 이력</span>
-                                    </div>
-                                    <div className="flex items-end justify-between mt-2">
-                                        <div>
-                                            <div className={`text-3xl font-black ${activeIssueMode === 'manual' || closingStats.manualCount > 0 ? 'text-emerald-900' : 'text-slate-800'}`}>{closingStats.manualCount}<span className="text-sm font-bold text-slate-500 ml-1">건</span></div>
-                                            <div className="text-[12px] text-emerald-600 font-bold mt-1">확인 및 승인됨</div>
-                                        </div>
-                                        {substHistory.length > 0 && (
-                                            <button onClick={(e) => { e.stopPropagation(); setUndoUi({ state: 'list' }); }} className="px-3 py-1.5 bg-white rounded border border-rose-200 text-rose-600 hover:bg-rose-50 font-bold text-[11px] shadow-sm transition flex items-center">
-                                                <SafeIcon name="undo" size={12} className="mr-1"/> 취소 ({substHistory.length})
-                                            </button>
-                                        )}
-                                    </div>
+                                <div onClick={() => { if(activeIssueMode !== 'manual') { handleIssueJump('manual', 'next', true); } else { setActiveIssueMode(null); } }} className={`p-4 rounded-xl border-[3px] transition-all flex flex-col justify-between relative overflow-hidden cursor-pointer ${activeIssueMode === 'manual' ? 'bg-emerald-50 border-emerald-500 shadow-md ring-4 ring-emerald-500/20' : (closingStats.manualCount > 0 ? 'bg-emerald-50 border-emerald-200 hover:border-emerald-400 hover:shadow-md' : 'bg-white border-slate-200 hover:border-slate-300')}`}>
+                                    <div className={`text-xs font-bold mb-1 flex items-center justify-between ${closingStats.manualCount > 0 ? 'text-emerald-800' : 'text-slate-600'}`}><span className="flex items-center"><SafeIcon name="exchange-alt" size={16} className={`${activeIssueMode === 'manual' || closingStats.manualCount > 0 ? 'text-emerald-500' : 'text-slate-400'} mr-2`}/>Lot 매칭 및 수기 보정 이력</span></div>
+                                    <div className="flex items-end justify-between mt-2"><div><div className={`text-3xl font-black ${activeIssueMode === 'manual' || closingStats.manualCount > 0 ? 'text-emerald-900' : 'text-slate-800'}`}>{closingStats.manualCount}<span className="text-sm font-bold text-slate-500 ml-1">건</span></div><div className="text-[12px] text-emerald-600 font-bold mt-1">확인 및 승인됨</div></div>{substHistory.length > 0 && (<button onClick={(e) => { e.stopPropagation(); setUndoUi({ state: 'list' }); }} className="px-3 py-1.5 bg-white rounded border border-rose-200 text-rose-600 hover:bg-rose-50 font-bold text-[11px] shadow-sm transition flex items-center"><SafeIcon name="undo" size={12} className="mr-1"/> 취소 ({substHistory.length})</button>)}</div>
                                 </div>
                             </div>
                         )}
                     </div>
 
                     <main className="flex-1 overflow-hidden relative flex flex-col bg-slate-50 p-6">
-                        
                         {!hasSnapshots && inventoryData.length === 0 && (
                             <div className="absolute inset-0 z-20 flex flex-col items-center justify-center fade-in">
-                                <div className="bg-white px-12 py-10 rounded-2xl shadow-xl flex flex-col items-center border border-slate-200 max-w-lg text-center">
-                                    <div className="w-20 h-20 rounded-full bg-indigo-50 flex items-center justify-center shadow-inner mb-6">
-                                        <SafeIcon name="rocket" size={40} className="text-indigo-500" />
-                                    </div>
-                                    <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">마감 스냅샷이 없습니다</h2>
-                                    <p className="text-[14px] font-bold text-slate-500 leading-relaxed">
-                                        시스템을 최초로 도입하셨거나 과거 데이터가 없습니다.<br/>
-                                        상단의 <strong className="text-indigo-600">[초기 재고 셋업]</strong> 버튼을 눌러<br/>
-                                        현재 창고의 실물 가치를 시스템에 등록해주세요.
-                                    </p>
-                                </div>
+                                <div className="bg-white px-12 py-10 rounded-2xl shadow-xl flex flex-col items-center border border-slate-200 max-w-lg text-center"><div className="w-20 h-20 rounded-full bg-indigo-50 flex items-center justify-center shadow-inner mb-6"><SafeIcon name="rocket" size={40} className="text-indigo-500" /></div><h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">마감 스냅샷이 없습니다</h2><p className="text-[14px] font-bold text-slate-500 leading-relaxed">시스템을 최초로 도입하셨거나 과거 데이터가 없습니다.<br/>상단의 <strong className="text-indigo-600">[초기 재고 셋업]</strong> 버튼을 눌러<br/>현재 창고의 실물 가치를 시스템에 등록해주세요.</p></div>
                             </div>
                         )}
-                        
                         {isClosedDate && (
                             <div className="absolute inset-0 z-20 bg-slate-900/5 backdrop-blur-[1px] flex items-center justify-center fade-in">
-                                <div className="bg-white/90 px-8 py-4 rounded-2xl shadow-xl flex items-center border border-slate-200">
-                                    <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mr-4 shadow-inner">
-                                        <SafeIcon name="lock" size={24} className="text-slate-500" />
-                                    </div>
-                                    <div>
-                                        <h2 className="text-lg font-black text-slate-800">마감 완료된 일자입니다</h2>
-                                        <p className="text-[13px] font-bold text-slate-500 mt-1">데이터를 조회할 수 있지만, 실사 수정이나 상계는 불가합니다.</p>
-                                    </div>
-                                </div>
+                                <div className="bg-white/90 px-8 py-4 rounded-2xl shadow-xl flex items-center border border-slate-200"><div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mr-4 shadow-inner"><SafeIcon name="lock" size={24} className="text-slate-500" /></div><div><h2 className="text-lg font-black text-slate-800">마감 완료된 일자입니다</h2><p className="text-[13px] font-bold text-slate-500 mt-1">데이터를 조회할 수 있지만, 실사 수정이나 상계는 불가합니다.</p></div></div>
                             </div>
                         )}
-                        
                         <div className={`flex-1 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden relative fade-in ${!hasSnapshots && inventoryData.length === 0 ? 'opacity-0' : 'opacity-100'}`}>
                             <div className="flex-1 overflow-y-auto custom-scrollbar">
                                 <table className="w-full text-left text-[13px] whitespace-nowrap">
                                     <thead className="sticky top-0 bg-white shadow-sm border-b border-slate-200 text-slate-500 font-bold text-[12px] z-10">
                                         <tr>
-                                            <th className="py-3 px-4 w-[280px] border-r border-slate-200">상품정보 (코드/품명)</th>
-                                            <th className="py-3 px-3 text-right w-20 border-r border-slate-200">기초</th>
-                                            <th className="py-3 px-3 text-right w-20 text-blue-600 border-r border-slate-200">당기입고</th>
-                                            <th className="py-3 px-3 text-right w-20 text-rose-600 border-r border-slate-200">당기출고</th>
-                                            <th className="py-3 px-3 text-right w-24 bg-indigo-50/50 text-indigo-700 border-r border-indigo-100">전산잔량</th>
-                                            <th className="py-3 px-4 text-center w-28 bg-indigo-50/50 text-indigo-700 border-r border-indigo-100">실사 수량</th>
-                                            <th className="py-3 px-4 text-right w-24 border-r border-slate-200">오차(로스)</th>
-                                            <th className="py-3 px-4 w-[250px] border-r border-slate-200">이슈 / 메모</th>
-                                            <th className="py-3 px-4 text-center w-16">조정</th>
+                                            <th className="py-3 px-4 w-[280px] border-r border-slate-200">상품정보 (코드/품명)</th><th className="py-3 px-3 text-right w-20 border-r border-slate-200">기초</th><th className="py-3 px-3 text-right w-20 text-blue-600 border-r border-slate-200">당기입고</th><th className="py-3 px-3 text-right w-20 text-rose-600 border-r border-slate-200">당기출고</th><th className="py-3 px-3 text-right w-24 bg-indigo-50/50 text-indigo-700 border-r border-indigo-100">전산잔량</th><th className="py-3 px-4 text-center w-28 bg-indigo-50/50 text-indigo-700 border-r border-indigo-100">실사 수량</th><th className="py-3 px-4 text-right w-24 border-r border-slate-200">오차(로스)</th><th className="py-3 px-4 w-[250px] border-r border-slate-200">이슈 / 메모</th><th className="py-3 px-4 text-center w-16">조정</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-transparent text-slate-700">
-                                        {displayData.length === 0 ? (
-                                            <tr><td colSpan="9" className="py-20 text-center text-slate-400 font-bold"><SafeIcon name="boxes" size={40} className="mb-3 text-slate-200 block mx-auto" />해당 일자에 입출고 또는 재고 기록이 없습니다.</td></tr>
-                                        ) : displayData.map((item, idx) => (
+                                        {displayData.length === 0 ? <tr><td colSpan="9" className="py-20 text-center text-slate-400 font-bold"><SafeIcon name="boxes" size={40} className="mb-3 text-slate-200 block mx-auto" />해당 일자에 입출고 또는 재고 기록이 없습니다.</td></tr> : displayData.map((item, idx) => (
                                             <ProductRow key={item.batchKey} item={item} idx={idx} isLinked={linkSourceKey === item.batchKey} onStockChange={updateActualQty} onSpacebar={handleSpacebarLink} onBaseDataChange={handleBaseDataChange} onOpenMemo={(key, text) => setMemoModal({ isOpen: true, batchKey: key, text })} onShowTimeline={(code, name) => setTimelineModal({ isOpen: true, itemCode: code, itemName: name })} onSalesMove={handleChipDropRequest} />
                                         ))}
                                     </tbody>
@@ -1581,7 +1177,6 @@
                         </div>
 
                         {timelineModal.isOpen && <TimelineModal itemCode={timelineModal.itemCode} itemName={timelineModal.itemName} historyLogs={historyLogs} onClose={() => setTimelineModal({ isOpen: false, itemCode: null, itemName: '' })} />}
-
                         {memoModal.isOpen && (
                             <div className="fixed inset-0 bg-slate-900/60 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
                                 <div className="bg-white w-[400px] rounded-xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 modal-bounce">
@@ -1590,7 +1185,6 @@
                                 </div>
                             </div>
                         )}
-
                         {undoUi.state === 'list' && (
                             <div className="fixed inset-0 z-[200] bg-slate-900 bg-opacity-70 flex items-center justify-center p-4 transition-opacity backdrop-blur-sm">
                                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col modal-bounce border border-slate-200">
@@ -1600,7 +1194,6 @@
                                 </div>
                             </div>
                         )}
-
                         {showUploadErrorModal && (
                             <div className="fixed inset-0 bg-slate-900/60 z-[300] flex justify-center items-center backdrop-blur-sm fade-in">
                                 <div className="bg-white w-[500px] max-h-[80vh] rounded-xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 modal-bounce">
@@ -1610,9 +1203,7 @@
                                 </div>
                             </div>
                         )}
-
                         <SnapshotManagerModal isOpen={showClosingHistory} onClose={() => setShowClosingHistory(false)} showToast={showToast} />
-
                         {splitModal.isOpen && (
                             <div className="fixed inset-0 bg-slate-900/60 z-[400] flex justify-center items-center backdrop-blur-sm fade-in">
                                 <div className="bg-white w-[320px] rounded-xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 modal-bounce">
