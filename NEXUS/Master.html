@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
     <title>ONEAPP NEXES - Master DB [v3.0]</title>
-    <!-- 핵심 라이브러리 CDN 로드 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -24,7 +23,6 @@
         .fade-in { animation: fadeIn 0.3s ease-out; } 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         
-        /* 🌟 Iframe 드로어용 슬라이딩 애니메이션 추가 */
         @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
         .slide-in-right { animation: slideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
 
@@ -75,7 +73,6 @@
 
         const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
 
-        // IndexedDB Wrapper
         const initIDB = () => new Promise((resolve, reject) => {
             const request = indexedDB.open('MerchOpsDB', 1);
             request.onupgradeneeded = (e) => { if (!e.target.result.objectStoreNames.contains('store')) e.target.result.createObjectStore('store'); };
@@ -143,7 +140,7 @@
         };
 
         // ==========================================
-        // 🧩 통합 글로벌 헤더 (v3.0)
+        // 🧩 통합 글로벌 헤더 (v3.0 표준 규격)
         // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [
@@ -153,24 +150,24 @@
             ];
 
             const tabs = [
-                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true },
-                { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: false },
+                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true, shortTag: 'ONE BOARD' },
+                { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: false, shortTag: 'SYSTEM GUIDE' },
                 
-                { id: 'item-info', label: '마스터 DB', icon: "database", path: 'Master.html', group: 'master', isReady: true },
-                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'Item_manager.html', group: 'master', isReady: true },
-                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'Pipeline.html', group: 'master', isReady: true },
-                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'Parser.html', group: 'master', isReady: true },
-                { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: 'partner_db.html', group: 'master', isReady: false },
-                { id: 'partners', label: '거래처 관리', icon: "users", path: 'partners.html', group: 'master', isReady: true },
+                { id: 'item-info', label: '마스터 DB', icon: "database", path: 'Master.html', group: 'master', isReady: true, shortTag: 'GOLDEN RECORD' },
+                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'Item_manager.html', group: 'master', isReady: true, shortTag: 'SKU FORGE' },
+                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'Pipeline.html', group: 'master', isReady: true, shortTag: 'VALUATION HUB' },
+                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'Parser.html', group: 'master', isReady: true, shortTag: 'AI SMART PARSER' },
+                { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: 'partner_db.html', group: 'master', isReady: false, shortTag: 'ENTITY REGISTRY' },
+                { id: 'partners', label: '거래처 관리', icon: "users", path: 'partners.html', group: 'master', isReady: true, shortTag: 'CRM STRATEGY' },
 
-                { id: 'orders', label: '주문 관리', icon: "shopping-bag", path: 'orders.html', group: 'ops', isReady: true },
-                { id: 'purchases', label: '구매 관리', icon: "credit-card", path: 'purchases.html', group: 'ops', isReady: true },
-                { id: 'sales', label: '판매 관리', icon: "line-chart", path: 'sales.html', group: 'ops', isReady: true },
-                { id: 'inventory', label: '재고 마감', icon: "boxes", path: 'inventory.html', group: 'ops', isReady: true },
-                { id: 'print-center', label: '출력 센터', icon: "printer", path: 'print_center.html', group: 'ops', isReady: false },
+                { id: 'orders', label: '주문 관리', icon: "shopping-bag", path: 'orders.html', group: 'ops', isReady: true, shortTag: 'ORDER STREAM' },
+                { id: 'purchases', label: '구매 관리', icon: "credit-card", path: 'purchases.html', group: 'ops', isReady: true, shortTag: 'SOURCE & PROCURE' },
+                { id: 'sales', label: '판매 관리', icon: "line-chart", path: 'sales.html', group: 'ops', isReady: true, shortTag: 'REVENUE LEDGER' },
+                { id: 'inventory', label: '재고 마감', icon: "boxes", path: 'inventory.html', group: 'ops', isReady: true, shortTag: 'STOCK LEDGER' },
+                { id: 'print-center', label: '출력 센터', icon: "printer", path: 'print_center.html', group: 'ops', isReady: false, shortTag: 'OUTPUT TERMINAL' },
 
-                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'Report.html', group: 'admin', isReady: true },
-                { id: 'cs', label: '정보마당(CS)', icon: "megaphone", path: 'cs.html', group: 'admin', isReady: false }
+                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'Report.html', group: 'admin', isReady: true, shortTag: 'INSIGHT ENGINE' },
+                { id: 'cs', label: '정보마당(CS)', icon: "megaphone", path: 'cs.html', group: 'admin', isReady: false, shortTag: 'NOTICE PORTAL' }
             ];
 
             const currentTab = tabs.find(t => t.id === activeTab);
@@ -192,7 +189,7 @@
                                         <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.0</span>
                                     </div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">
-                                        {currentTab ? currentTab.label : 'WORKSPACE'}
+                                        {currentTab ? currentTab.shortTag : 'WORKSPACE'}
                                     </span>
                                 </div>
                             </div>
@@ -264,7 +261,7 @@
         };
 
         // ==========================================
-        // 🌟 Iframe 설정 모달 (경량화)
+        // 🌟 Iframe 설정 모달
         // ==========================================
         const IframeSettingsModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
@@ -433,67 +430,74 @@
                 e.target.value = ''; 
             };
 
+            // 💡 [핵심] V3.0 통합 클라우드 통신 엔진 (Push)
             const handlePush = async () => {
-                if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 웹앱 URL을 입력하세요.");
+                if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
                 if (Object.keys(masterProducts).length === 0) return showToast("⚠️ 클라우드로 보낼 데이터가 없습니다.");
 
-                setIsProcessing(true); setProcessMsg("클라우드 서버로 데이터를 전송 중...");
+                setIsProcessing(true); setProcessMsg("클라우드 서버로 데이터를 동기화 중...");
                 
                 try {
-                    const dataArray = Object.values(masterProducts);
-                    const response = await fetch(config.cloudUrl + '?action=push&sheet=마스터', {
+                    const dict = JSON.parse(localStorage.getItem('parserDict_v870') || '{}');
+                    const rules = JSON.parse(localStorage.getItem('merchMarginRules_v878') || '[]');
+                    
+                    const payload = { 
+                        type: "syncAll", 
+                        data: { 
+                            master: masterProducts,
+                            dict: dict,
+                            rules: rules
+                        } 
+                    };
+                    
+                    const response = await fetch(config.cloudUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify({ data: dataArray, sheet: "마스터" })
+                        body: JSON.stringify(payload)
                     });
                     
                     if (!response.ok) throw new Error('Network error');
                     const result = await response.json();
                     
-                    if (result.error) throw new Error(result.error);
-                    showToast(`✅ ${result.count}건 클라우드 전체 백업 완료!`);
+                    if (result.status !== 'success') throw new Error(result.message);
+                    showToast(`✅ 마스터 및 환경설정 데이터 클라우드 저장 완료!`);
                 } catch (error) {
                     console.error("Push Error:", error);
-                    showToast("❌ 클라우드 백업 실패. URL을 확인하세요.");
+                    showToast("❌ 클라우드 통신 실패. URL이나 권한을 확인하세요.");
                 } finally {
                     setIsProcessing(false); setProcessMsg("");
                 }
             };
 
+            // 💡 [핵심] V3.0 통합 클라우드 통신 엔진 (Pull)
             const handlePull = async () => {
-                if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 웹앱 URL을 입력하세요.");
+                if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
                 setIsProcessing(true); setProcessMsg("클라우드에서 최신 데이터를 수신 중...");
                 
                 try {
-                    const response = await fetch(config.cloudUrl + '?action=pull&sheet=마스터', {
-                        method: 'GET',
-                        cache: 'no-cache'
-                    });
-                    
+                    const response = await fetch(config.cloudUrl, { method: 'GET' });
                     if (!response.ok) throw new Error('Network error');
                     const result = await response.json();
                     
-                    if (result.error) throw new Error(result.error);
-
-                    const fetchedData = result.data || [];
-                    const dataToSave = {};
-                    
-                    fetchedData.forEach(item => {
-                        const code = item['코드'] || item['품목코드'];
-                        if (code) dataToSave[code] = item;
-                    });
-                    
-                    if (Object.keys(dataToSave).length > 0) {
-                        setMasterProducts(dataToSave);
-                        await setIDB(STORAGE_KEYS.MASTER_DB, dataToSave);
-                        localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
-                        showToast(`✅ ${Object.keys(dataToSave).length}건 데이터 동기화 완료`);
+                    if (result.status === 'success' && result.data) {
+                        if (result.data.master && Object.keys(result.data.master).length > 0) {
+                            setMasterProducts(result.data.master);
+                            await setIDB(STORAGE_KEYS.MASTER_DB, result.data.master);
+                            localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
+                            showToast(`✅ ${Object.keys(result.data.master).length}건 마스터 동기화 완료`);
+                        } else {
+                            showToast("⚠️ 클라우드에 수신할 데이터가 없습니다.");
+                        }
+                        
+                        // 부가 설정 데이터가 있으면 같이 수신
+                        if (result.data.dict) localStorage.setItem('parserDict_v870', JSON.stringify(result.data.dict));
+                        if (result.data.rules) localStorage.setItem('merchMarginRules_v878', JSON.stringify(result.data.rules));
                     } else {
-                        showToast("⚠️ 클라우드에 수신할 데이터가 없습니다.");
+                        throw new Error(result.message || "Invalid Data");
                     }
                 } catch (error) {
                     console.error("Pull Error:", error);
-                    showToast("❌ 데이터 수신 실패. URL을 확인하세요.");
+                    showToast("❌ 클라우드 통신 실패. URL이나 권한을 확인하세요.");
                 } finally {
                     setIsProcessing(false); setProcessMsg("");
                 }
@@ -647,7 +651,7 @@
                             <div className="flex items-center gap-4">
                                 {selectedRows.size > 0 && (
                                     <button onClick={handleDeleteSelected} className="h-9 px-4 rounded-lg text-[12px] font-bold bg-rose-50 text-rose-500 border border-rose-200 hover:border-rose-400 hover:bg-rose-100 transition-colors flex items-center justify-center shadow-sm" title="선택한 항목 삭제">
-                                        <SafeIcon name="trash-alt" size={14} className="mr-1.5" /> 선택 삭제 ({selectedRows.size})
+                                        <i className="fas fa-trash-alt mr-1.5"></i> 선택 삭제 ({selectedRows.size})
                                     </button>
                                 )}
                                 <span className="text-[12px] font-bold text-slate-400">
@@ -677,7 +681,7 @@
 
                         {Object.keys(masterProducts).length === 0 ? (
                             <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-10 fade-in bg-white">
-                                <SafeIcon name="database" size={60} className="text-slate-200 mb-5" />
+                                <i className="fas fa-database text-6xl text-slate-200 mb-5"></i>
                                 <h2 className="text-lg font-black text-slate-700 mb-2">마스터 데이터베이스가 비어있습니다.</h2>
                                 <p className="text-[13px] font-medium text-slate-500 mb-6 text-center leading-relaxed">
                                     우측 상단의 <strong>[엑셀 일괄 등록]</strong>을 통해 기존 데이터를 가져오거나,<br/>
@@ -722,7 +726,7 @@
                                     <div className="flex-1 bg-white flex flex-col overflow-hidden relative z-0">
                                         {globalSearch ? (
                                             <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-[12px] font-bold text-amber-800 flex items-center shrink-0">
-                                                <SafeIcon name="search" size={12} className="mr-2 text-amber-500" /> 전체 검색 결과입니다. (카테고리 무시됨)
+                                                <i className="fas fa-search mr-2 text-amber-500"></i> 전체 검색 결과입니다. (카테고리 무시됨)
                                             </div>
                                         ) : (
                                             <div className="px-4 py-2 bg-indigo-50/50 border-b border-indigo-100 text-[12px] font-bold text-indigo-800 flex justify-between items-center shrink-0">
