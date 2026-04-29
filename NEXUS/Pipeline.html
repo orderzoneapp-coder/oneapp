@@ -50,7 +50,7 @@
         // ==========================================
         // 🔑 0. Global Constants
         // ==========================================
-        const STORAGE_KEYS = { MASTER_DB: 'merchMaster_v870', CLOUD_URL: 'skuSyncCloudUrl_v6', SYNC_TRIGGER: 'merchMaster_sync_trigger' };
+        const STORAGE_KEYS = { MASTER_DB: 'merchMaster_v870', CLOUD_URL: 'skuSyncCloudUrl_v6', SYNC_TRIGGER: 'merchMaster_sync_trigger', HISTORY_DB: 'merchHistory_v870' };
 
         const MASTER_HEADERS = [
             "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", 
@@ -236,7 +236,7 @@
         };
 
         // ==========================================
-        // 🧩 3. 통합 글로벌 헤더 (v3.0)
+        // 🧩 3. 통합 글로벌 헤더 (v3.0 Final - 명세서 완벽 일치)
         // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [
@@ -245,10 +245,11 @@
                 { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }
             ];
 
+            // 💡 [절대 수정 금지] 15개 탭 완벽 매핑 데이터
             const tabs = [
                 { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true, shortTag: 'ONE BOARD' },
                 { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: true, shortTag: 'SYSTEM GUIDE' },
-                
+
                 { id: 'item-info', label: '마스터 DB', icon: "database", path: 'Master.html', group: 'master', isReady: true, shortTag: 'GOLDEN RECORD' },
                 { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'Item_manager.html', group: 'master', isReady: true, shortTag: 'SKU FORGE' },
                 { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'Pipeline.html', group: 'master', isReady: true, shortTag: 'VALUATION HUB' },
@@ -267,7 +268,7 @@
             ];
 
             const currentTab = tabs.find(t => t.id === activeTab);
-            const activeGroup = currentTab ? currentTab.group : 'common'; 
+            const activeGroup = currentTab ? currentTab.group : 'common';
             const [selectedGroup, setSelectedGroup] = useState(activeGroup);
 
             const handleGroupClick = (groupId) => setSelectedGroup(prev => prev === groupId ? 'common' : groupId);
@@ -284,12 +285,17 @@
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
                                         <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.0</span>
                                     </div>
-                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">VALUATION HUB</span>
+                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">
+                                        {currentTab ? currentTab.shortTag : 'WORKSPACE'}
+                                    </span>
                                 </div>
                             </div>
+
                             <div className="flex items-end h-full gap-8">
                                 {groups.map(g => (
-                                    <button key={g.id} onClick={() => handleGroupClick(g.id)} className={`pb-[16px] text-[14px] font-bold transition-colors flex items-center gap-1.5 ${selectedGroup === g.id ? 'text-slate-100 border-b-[3px] border-indigo-500 -mb-[2px]' : 'text-slate-500 hover:text-slate-300'}`}>
+                                    <button key={g.id} onClick={() => handleGroupClick(g.id)}
+                                        className={`pb-[16px] text-[14px] font-bold transition-colors flex items-center gap-1.5
+                                        ${selectedGroup === g.id ? 'text-slate-100 border-b-[3px] border-indigo-500 -mb-[2px]' : 'text-slate-500 hover:text-slate-300'}`}>
                                         <SafeIcon name={g.icon} size={15} /> {g.label}
                                     </button>
                                 ))}
@@ -299,14 +305,22 @@
                         <div className="flex items-center gap-4 h-full">
                             <div className="flex items-center bg-[#151B2B] rounded-lg border border-slate-700/50 h-9 px-3 shadow-inner gap-3">
                                 <div className="flex items-center justify-center" title={isProcessing ? processMsg : "시스템 정상 대기중"}>
-                                    {isProcessing ? <i className="fas fa-circle-notch fa-spin text-amber-500 text-[12px]"></i> : <div className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></div>}
+                                    {isProcessing ? (
+                                        <i className="fas fa-circle-notch fa-spin text-amber-500 text-[12px]"></i>
+                                    ) : (
+                                        <div className="relative flex h-2 w-2">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="w-px h-3.5 bg-slate-700"></div>
-                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`마스터 DB 상품 수: ${itemCount.toLocaleString()}개`}>
+                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`마스터 DB 기준 상품 수`}>
                                     <SafeIcon name="database" size={10} className="text-slate-500" />
-                                    <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount.toLocaleString()}</span>
+                                    <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount ? itemCount.toLocaleString() : 0}</span>
                                 </div>
                             </div>
+
                             <div className="flex items-center gap-2">
                                 <button onClick={onPull} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 불러오기(Pull)"><SafeIcon name="cloud-download" size={18} /></button>
                                 <button onClick={onPush} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 백업하기(Push)"><SafeIcon name="cloud-upload" size={18} /></button>
@@ -323,14 +337,14 @@
                                 const isPlaceholder = !tab.isReady;
                                 return (
                                     <a key={tab.id} href={tab.path} onClick={(e) => onNavigate(e, tab.path, tab.isReady)}
-                                       className={`flex items-center gap-2 px-6 py-3 text-[14px] font-bold rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px] 
-                                       ${isActive 
-                                           ? 'bg-white text-indigo-600 border-t-indigo-500 border-x-slate-200 relative z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]' 
-                                           : isPlaceholder 
-                                              ? 'bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5' 
-                                              : 'bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5'
-                                       }`}
-                                       style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '13px' : '10px' }}
+                                        className={`flex items-center gap-2 px-6 py-3 text-[14px] font-bold rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px]
+                                        ${isActive
+                                            ? 'bg-white text-indigo-600 border-t-indigo-500 border-x-slate-200 relative z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]'
+                                            : isPlaceholder
+                                                ? 'bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5'
+                                                : 'bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5'
+                                        }`}
+                                        style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '13px' : '10px' }}
                                     >
                                         <SafeIcon name={tab.icon} size={16} className={isActive ? 'text-indigo-600' : 'opacity-70'} />
                                         {tab.label}
@@ -344,7 +358,7 @@
         };
 
         // ==========================================
-        // 🌟 [신규] Iframe 설정 모달 (경량화)
+        // 🌟 Iframe 설정 모달
         // ==========================================
         const IframeSettingsModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
@@ -443,33 +457,78 @@
         // ==========================================
         const ReviewModal = ({ onClose, onConfirm, displayRows, masterProducts }) => {
             const [filter, setFilter] = useState('all'); 
+            const [vendorFilter, setVendorFilter] = useState('all');
+
             const analysis = useMemo(() => {
-                let up = 0, down = 0, same = 0, newItems = 0; const list = [];
+                let up = 0, down = 0, same = 0, newItems = 0; 
+                const list = [];
+                const vendors = new Set();
+
                 displayRows.forEach(row => {
-                    const mItem = masterProducts[row.코드]; const oldP = mItem ? parseNum(mItem['입고가']) : 0; const newP = parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : row.sources?.['estimate']?.['입고가']);
-                    let status = 'same'; if (!mItem) { status = 'new'; newItems++; } else if (oldP===0||newP===0||oldP===newP) { status = 'same'; same++; } else if (newP>oldP) { status = 'up'; up++; } else { status = 'down'; down++; }
-                    list.push({ 코드: row.코드, 품명: row.finalData?.['품목명']||mItem?.품목명||'', 기존단가: oldP, 새단가: newP, 차액: newP-oldP, 상태: status });
+                    const mItem = masterProducts[row.코드]; 
+                    const oldP = mItem ? parseNum(mItem['입고가']) : 0; 
+                    const newP = parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : row.sources?.['estimate']?.['입고가']);
+                    
+                    const vendor = row.finalData?.['구매처'] || row.sources?.['estimate']?.['구매처'] || mItem?.['구매처'] || '미지정';
+                    vendors.add(vendor);
+
+                    let status = 'same'; 
+                    if (!mItem) { status = 'new'; newItems++; } 
+                    else if (oldP===0||newP===0||oldP===newP) { status = 'same'; same++; } 
+                    else if (newP>oldP) { status = 'up'; up++; } 
+                    else { status = 'down'; down++; }
+
+                    list.push({ 
+                        코드: row.코드, 
+                        품명: row.finalData?.['품목명']||mItem?.품목명||'', 
+                        거래처: vendor,
+                        기존단가: oldP, 
+                        새단가: newP, 
+                        차액: newP-oldP, 
+                        상태: status 
+                    });
                 });
-                return { up, down, same, newItems, total: displayRows.length, list: list.sort((a,b) => Math.abs(b.차액)-Math.abs(a.차액)) };
+
+                list.sort((a, b) => {
+                    if (a.거래처 !== b.거래처) return a.거래처.localeCompare(b.거래처);
+                    return String(a.코드).localeCompare(String(b.코드));
+                });
+
+                return { up, down, same, newItems, total: displayRows.length, list, vendors: Array.from(vendors).sort() };
             }, [displayRows, masterProducts]);
 
-            const filteredList = filter === 'all' ? analysis.list : analysis.list.filter(i => i.상태 === filter);
+            const filteredList = analysis.list.filter(i => {
+                const statusMatch = filter === 'all' || i.상태 === filter;
+                const vendorMatch = vendorFilter === 'all' || i.거래처 === vendorFilter;
+                return statusMatch && vendorMatch;
+            });
 
             return (
                 <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
-                    <div className="bg-white w-[850px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-                        <div className="bg-[#0f172a] p-4 text-white flex justify-between border-b border-slate-700"><h2 className="font-black text-[16px]"><SafeIcon name="search-dollar" className="text-indigo-400 mr-2"/>최종 검토 및 반영</h2><button onClick={onClose}><SafeIcon name="x" className="text-slate-400 hover:text-white" size={20}/></button></div>
-                        <div className="p-6 flex flex-col flex-1 overflow-hidden bg-slate-50">
-                            <div className="grid grid-cols-5 gap-3 mb-4 shrink-0">
-                                {[{id:'all',icon:'list',label:'전체',val:analysis.total,color:'slate'},{id:'up',icon:'arrow-up',label:'인상',val:analysis.up,color:'rose'},{id:'down',icon:'arrow-down',label:'인하',val:analysis.down,color:'blue'},{id:'new',icon:'star',label:'신규',val:analysis.newItems,color:'emerald'},{id:'same',icon:'equals',label:'동결',val:analysis.same,color:'slate'}].map(b => (
-                                    <div key={b.id} onClick={()=>setFilter(b.id)} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all ${filter===b.id?`bg-${b.color}-600 border-${b.color}-600 text-white`:`bg-white hover:bg-slate-50`}`}>
-                                        <div className={`text-[11px] font-bold mb-1 ${filter===b.id?'text-white/80':`text-${b.color}-500`}`}><SafeIcon name={b.icon} size={10} className="mr-1"/>{b.label}</div><div className={`font-black text-xl ${filter===b.id?'text-white':'text-slate-700'}`}>{b.val}</div>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="flex-1 overflow-hidden flex flex-col bg-white border border-slate-200 rounded-xl"><div className="flex-1 overflow-auto custom-scrollbar"><table className="w-full text-left text-xs"><thead className="bg-slate-50 sticky top-0 border-b"><tr><th className="px-4 py-2 w-16 text-center">상태</th><th className="px-4 py-2 w-24">코드</th><th className="px-4 py-2">품목명</th><th className="px-4 py-2 text-right">기존 입고가</th><th className="px-4 py-2 text-right text-indigo-600">새 입고가</th><th className="px-4 py-2 text-right">차액</th></tr></thead><tbody className="divide-y divide-slate-100">{filteredList.map((i,idx)=><tr key={idx} className="hover:bg-slate-50"><td className="px-4 py-2 text-center">{i.상태==='up'&&<span className="bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded text-[10px] font-black">인상</span>}{i.상태==='down'&&<span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[10px] font-black">인하</span>}{i.상태==='new'&&<span className="bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded text-[10px] font-black">신규</span>}{i.상태==='same'&&<span className="text-slate-300">-</span>}</td><td className="px-4 py-2 font-mono text-slate-500">{i.코드}</td><td className="px-4 py-2 font-bold truncate max-w-[200px]">{i.품명}</td><td className="px-4 py-2 text-right text-slate-500">{i.기존단가>0?i.기존단가.toLocaleString():'-'}</td><td className="px-4 py-2 text-right font-black text-indigo-600">{i.새단가>0?i.새단가.toLocaleString():'-'}</td><td className="px-4 py-2 text-right font-bold">{i.차액>0?<span className="text-rose-500">+{i.차액.toLocaleString()}</span>:i.차액<0?<span className="text-blue-500">{i.차액.toLocaleString()}</span>:'-'}</td></tr>)}</tbody></table></div></div>
+                    <div className="bg-white w-[900px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                        <div className="bg-[#0f172a] p-4 text-white flex justify-between border-b border-slate-700">
+                            <h2 className="font-black text-[16px]"><SafeIcon name="check-circle-2" className="text-indigo-400 mr-2"/>단가 변동 확인 및 반영</h2>
+                            <button onClick={onClose}><SafeIcon name="x" className="text-slate-400 hover:text-white" size={20}/></button>
                         </div>
-                        <div className="bg-slate-100 p-4 border-t flex justify-end gap-2 shrink-0"><button onClick={onClose} className="px-5 py-2.5 bg-white border border-slate-300 text-slate-600 font-bold rounded-lg hover:bg-slate-50">닫기 (수정하러 가기)</button><button onClick={()=>{onConfirm(displayRows.map(r=>r.코드)); onClose();}} className="px-6 py-2.5 bg-indigo-600 text-white font-black rounded-lg hover:bg-indigo-700 shadow-sm flex items-center"><SafeIcon name="save" className="mr-1.5" size={14}/> 마스터에 덮어쓰기 (저장)</button></div>
+                        <div className="p-6 flex flex-col flex-1 overflow-hidden bg-slate-50">
+                            <div className="flex justify-between items-center mb-4 shrink-0 gap-4">
+                                <div className="grid grid-cols-5 gap-3 flex-1">
+                                    {[{id:'all',icon:'list',label:'전체',val:analysis.total,color:'slate'},{id:'up',icon:'arrow-up',label:'인상',val:analysis.up,color:'rose'},{id:'down',icon:'arrow-down',label:'인하',val:analysis.down,color:'blue'},{id:'new',icon:'star',label:'신규',val:analysis.newItems,color:'emerald'},{id:'same',icon:'equals',label:'동결',val:analysis.same,color:'slate'}].map(b => (
+                                        <div key={b.id} onClick={()=>setFilter(b.id)} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center justify-center shadow-sm transition-all ${filter===b.id?`bg-${b.color}-600 border-${b.color}-600 text-white`:`bg-white hover:bg-slate-50`}`}>
+                                            <div className={`text-[11px] font-bold mb-1 ${filter===b.id?'text-white/80':`text-${b.color}-500`}`}><SafeIcon name={b.icon} size={10} className="mr-1"/>{b.label}</div><div className={`font-black text-xl ${filter===b.id?'text-white':'text-slate-700'}`}>{b.val}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="w-[180px] shrink-0">
+                                    <select value={vendorFilter} onChange={e => setVendorFilter(e.target.value)} className="w-full appearance-none border border-slate-300 rounded-xl px-3 py-2 text-[13px] font-bold outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 shadow-sm bg-white cursor-pointer">
+                                        <option value="all">전체 거래처</option>
+                                        {analysis.vendors.map(v => <option key={v} value={v}>{v}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="flex-1 overflow-hidden flex flex-col bg-white border border-slate-200 rounded-xl"><div className="flex-1 overflow-auto custom-scrollbar"><table className="w-full text-left text-xs"><thead className="bg-slate-50 sticky top-0 border-b"><tr><th className="px-4 py-2 w-16 text-center">상태</th><th className="px-4 py-2 w-24">코드</th><th className="px-4 py-2 w-28">거래처</th><th className="px-4 py-2">품목명</th><th className="px-4 py-2 text-right">기존 입고가</th><th className="px-4 py-2 text-right text-indigo-600">새 입고가</th><th className="px-4 py-2 text-right">차액</th></tr></thead><tbody className="divide-y divide-slate-100">{filteredList.map((i,idx)=><tr key={idx} className="hover:bg-slate-50"><td className="px-4 py-2 text-center">{i.상태==='up'&&<span className="bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded text-[10px] font-black">인상</span>}{i.상태==='down'&&<span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[10px] font-black">인하</span>}{i.상태==='new'&&<span className="bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded text-[10px] font-black">신규</span>}{i.상태==='same'&&<span className="text-slate-300">-</span>}</td><td className="px-4 py-2 font-mono text-slate-500">{i.코드}</td><td className="px-4 py-2 text-[11px] text-slate-600 truncate max-w-[100px] font-medium">{i.거래처}</td><td className="px-4 py-2 font-bold truncate max-w-[180px]">{i.품명}</td><td className="px-4 py-2 text-right text-slate-500">{i.기존단가>0?i.기존단가.toLocaleString():'-'}</td><td className="px-4 py-2 text-right font-black text-indigo-600">{i.새단가>0?i.새단가.toLocaleString():'-'}</td><td className="px-4 py-2 text-right font-bold">{i.차액>0?<span className="text-rose-500">+{i.차액.toLocaleString()}</span>:i.차액<0?<span className="text-blue-500">{i.차액.toLocaleString()}</span>:'-'}</td></tr>)}</tbody></table></div></div>
+                        </div>
+                        <div className="bg-slate-100 p-4 border-t flex justify-end gap-2 shrink-0"><button onClick={onClose} className="px-5 py-2.5 bg-white border border-slate-300 text-slate-600 font-bold rounded-lg hover:bg-slate-50">닫기 (수정하러 가기)</button><button onClick={()=>{onConfirm(displayRows.map(r=>r.코드)); onClose();}} className="px-6 py-2.5 bg-indigo-600 text-white font-black rounded-lg hover:bg-indigo-700 shadow-sm flex items-center"><SafeIcon name="check-circle-2" className="mr-1.5" size={14}/> 마스터에 반영하기</button></div>
                     </div>
                 </div>
             );
@@ -498,21 +557,55 @@
             );
         };
 
-        const CategorySaveModal = ({ onClose, onSave }) => {
+        const CategorySaveModal = ({ onClose, onSave, availableCategories }) => {
             const [name, setName] = useState('');
+            const isExisting = availableCategories && availableCategories.some(c => c.name === name.trim());
+
             return (
                 <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
-                    <div className="bg-white w-[400px] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                    <div className="bg-white w-[450px] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
                         <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
-                            <h2 className="font-black text-[16px]"><i className="fas fa-save text-blue-400 mr-2"></i>현재 화면 카탈로그로 저장</h2>
+                            <h2 className="font-black text-[16px]"><i className="fas fa-save text-blue-400 mr-2"></i>저장 (병합/추가)</h2>
                             <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>
                         </div>
                         <div className="p-6 flex flex-col gap-4">
                             <div className="text-[13px] text-slate-600 font-bold mb-2">현재 화면에 띄워진 상품 목록을 언제든 엑셀 없이 불러올 수 있도록 카탈로그로 묶어 저장합니다.</div>
-                            <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="저장할 카탈로그 이름을 입력하세요 (예: A업체 주말견적)" className="w-full border border-slate-300 rounded-lg px-4 py-3 text-[13px] font-bold outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200" autoFocus onKeyDown={(e) => e.key === 'Enter' && onSave(name)} />
-                            <div className="flex gap-2 mt-4">
+                            
+                            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                                <label className="text-[12px] font-bold text-slate-500 mb-1.5 block">1. 기존 카탈로그 선택 (오타 방지)</label>
+                                <select 
+                                    onChange={(e) => { if(e.target.value) setName(e.target.value); }} 
+                                    className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-[13px] font-bold outline-none focus:border-indigo-500 shadow-sm mb-4 bg-white text-slate-700 cursor-pointer"
+                                >
+                                    <option value="">-- 기존 카탈로그 목록에서 선택 --</option>
+                                    {availableCategories && availableCategories.map(c => (
+                                        <option key={c.name} value={c.name}>{c.name} ({c.count}건)</option>
+                                    ))}
+                                </select>
+
+                                <label className="text-[12px] font-bold text-slate-500 mb-1.5 block">2. 카탈로그 명칭 (직접 입력 가능)</label>
+                                <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="저장할 카탈로그 이름" className="w-full border border-slate-300 rounded-lg px-4 py-3 text-[13px] font-bold outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 bg-white" autoFocus onKeyDown={(e) => { if(e.key === 'Enter' && name) onSave(name); }} />
+                            </div>
+                            
+                            {isExisting ? (
+                                <div className="text-[12px] font-bold text-indigo-700 bg-indigo-50 p-3 rounded-lg border border-indigo-200 fade-in flex items-start">
+                                    <i className="fas fa-info-circle mr-1.5 mt-0.5"></i>
+                                    <div>
+                                        이미 존재하는 카탈로그입니다.
+                                        <p className="mt-1 text-[11px] text-indigo-600 font-medium leading-relaxed">선택하신 카탈로그에 새로운 상품들이 <strong>병합(추가)</strong>됩니다.<br/>기존 상품의 변동된 단가는 이미 최신으로 업데이트되었습니다.</p>
+                                    </div>
+                                </div>
+                            ) : name.trim() !== '' ? (
+                                <div className="text-[12px] font-bold text-emerald-700 bg-emerald-50 p-3 rounded-lg border border-emerald-200 fade-in flex items-center">
+                                    <i className="fas fa-magic mr-1.5"></i> 완전히 새로운 카탈로그가 생성됩니다.
+                                </div>
+                            ) : null}
+
+                            <div className="flex gap-2 mt-2">
                                 <button onClick={onClose} className="flex-1 bg-slate-100 text-slate-600 font-bold py-3 rounded-xl hover:bg-slate-200 transition-colors">취소</button>
-                                <button onClick={() => onSave(name)} className="flex-1 bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition-colors">저장하기</button>
+                                <button onClick={() => onSave(name)} disabled={!name.trim()} className={`flex-1 font-bold py-3 rounded-xl transition-colors shadow-sm ${name.trim() ? (isExisting ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-blue-600 text-white hover:bg-blue-700') : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>
+                                    {isExisting ? '기존 목록에 병합(추가)' : '새로 저장하기'}
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -522,14 +615,14 @@
 
         const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
             const { selectedRows, globalSearch, selectedCatalog, selectedCategory } = state;
-            const { handleLoadCategory, handleRemoveFromWorkspace, handleExportCurrentView, setShowReviewModal, setGlobalSearch, setSelectedCatalog, handleReset, handleFileUpload } = actions;
+            const { handleCategoryChange, handleRemoveFromWorkspace, handleExportCurrentView, setShowReviewModal, setGlobalSearch, handleCatalogChange, handleReset, handleFileUpload, setShowExportModal } = actions;
 
             return (
                 <div className="px-6 py-3 flex items-center justify-between gap-4 bg-white border-b border-slate-200 z-10 w-full shrink-0">
                     <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 -mb-1">
                         <div className="flex items-center gap-1">
                             <div className="relative">
-                                <select value={selectedCatalog} onChange={(e) => setSelectedCatalog(e.target.value)} className="appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm w-[160px]" title="스마트 파서에서 매핑 완료한 데이터를 불러옵니다.">
+                                <select value={selectedCatalog} onChange={handleCatalogChange} className="appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm w-[160px]" title="스마트 파서에서 매핑 완료한 데이터를 불러옵니다.">
                                     <option value="">파서 보관함</option>
                                     {availableCatalogs.map(tag => <option key={tag.name} value={tag.name}>{tag.name} ({tag.count}건)</option>)}
                                 </select>
@@ -542,7 +635,7 @@
 
                         <div className="flex items-center gap-1">
                             <div className="relative">
-                                <select value={selectedCategory} onChange={(e) => handleLoadCategory(e.target.value)} className="appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm w-[160px]">
+                                <select value={selectedCategory} onChange={handleCategoryChange} className="appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm w-[160px]">
                                     <option value="">카탈로그</option>
                                     {availableCategories.map(cat => <option key={cat.name} value={cat.name}>{cat.name} ({cat.count}건)</option>)}
                                 </select>
@@ -550,7 +643,7 @@
                                 <i className="fas fa-chevron-down absolute right-2.5 top-3 text-blue-400 text-[10px] pointer-events-none"></i>
                             </div>
                             <button onClick={() => actions.setShowCategoryModal(true)} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-blue-600 border border-blue-200 hover:bg-blue-50 transition-colors shadow-sm flex items-center shrink-0" title="현재 화면의 상품들을 묶어서 새로운 카탈로그로 만듭니다.">
-                                <i className="fas fa-save mr-1.5 text-blue-500"></i> 새 저장
+                                <i className="fas fa-save mr-1.5 text-blue-500"></i> 저장
                             </button>
                         </div>
 
@@ -561,8 +654,13 @@
                                 <i className="fas fa-file-excel mr-1.5 text-emerald-500"></i> 견적 엑셀 불러오기
                                 <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e, 'estimate')} accept=".xlsx, .xls, .csv" disabled={state.isProcessing} />
                             </label>
-                            <button onClick={handleExportCurrentView} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50 transition-colors shadow-sm flex items-center shrink-0">
-                                <i className="fas fa-file-export mr-1.5 text-emerald-500"></i> 다운로드
+                            
+                            <button onClick={handleExportCurrentView} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50 transition-colors shadow-sm flex items-center shrink-0" title="현재 화면 그대로 엑셀로 다운로드합니다.">
+                                <i className="fas fa-file-excel mr-1.5 text-emerald-500"></i> 화면 다운로드
+                            </button>
+
+                            <button onClick={() => setShowExportModal(true)} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-amber-600 border border-amber-200 hover:bg-amber-50 transition-colors shadow-sm flex items-center shrink-0" title="ERP/쇼핑몰 양식 출력">
+                                <i className="fas fa-file-export mr-1.5 text-amber-500"></i> 보고서 다운로드
                             </button>
                         </div>
                     </div>
@@ -574,7 +672,7 @@
                             </button>
                         )}
                         <button onClick={() => setShowReviewModal(true)} disabled={state.fullDisplayRows.length === 0} className={`h-9 px-4 rounded-md text-[13px] font-bold shadow-sm transition-colors flex items-center ${state.fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-200'}`}>
-                            <i className="fas fa-check-circle mr-1.5"></i> 변동 검토 및 반영
+                            <i className="fas fa-search-dollar mr-1.5"></i> 프리뷰
                         </button>
 
                         <div className="w-px h-5 bg-slate-200 mx-1"></div>
@@ -583,7 +681,7 @@
                             <i className="fas fa-redo-alt text-[13px]"></i>
                         </button>
                         <div className="relative w-48 sm:w-64 h-9">
-                            <input type="text" placeholder="결과 내 검색 (F3)" value={globalSearch} onChange={e=>setGlobalSearch(e.target.value)} className="w-full h-full pl-3 pr-8 py-1 border border-slate-300 rounded-md text-[12px] outline-none focus:border-blue-400 shadow-sm text-slate-700 font-medium" />
+                            <input id="global-search-input" type="text" placeholder="결과 내 검색 (F3)" value={globalSearch} onChange={e=>setGlobalSearch(e.target.value)} className="w-full h-full pl-3 pr-8 py-1 border border-slate-300 rounded-md text-[12px] outline-none focus:border-blue-400 shadow-sm text-slate-700 font-medium" />
                             <i className="fas fa-search absolute right-3 top-2.5 text-slate-400 text-[13px] pointer-events-none"></i>
                         </div>
                     </div>
@@ -645,7 +743,7 @@
             );
         });
 
-        const MemoizedTableRow = React.memo(({ row, idx, isSel, mItem, isEstimateUploaded, visMasterCols, visUploadCols, masterLinksEst, onToggleSelection, onUpdateCell }) => {
+        const MemoizedTableRow = React.memo(({ row, idx, isSel, mItem, isEstimateUploaded, visMasterCols, visUploadCols, masterLinksEst, onToggleSelection, onMouseDown, onMouseEnter, onUpdateCell }) => {
             const uploadName = row.finalData?.['품목명'] !== undefined ? row.finalData['품목명'] : (row.sources?.['estimate']?.['품목명'] || '');
             const uploadSpec = row.finalData?.['규격'] !== undefined ? row.finalData['규격'] : (row.sources?.['estimate']?.['규격'] || '');
             const dName = uploadName || mItem.품목명 || '[미등록]';
@@ -653,7 +751,7 @@
             const rowCode = row.코드 || '';
 
             return (
-                <tr className={`table-row-hover transition-colors ${isSel ? 'table-row-selected' : ''}`} onClick={() => onToggleSelection(rowCode)}>
+                <tr className={`table-row-hover transition-colors ${isSel ? 'table-row-selected' : ''}`} onMouseDown={(e) => onMouseDown && onMouseDown(e, rowCode, isSel)} onMouseEnter={(e) => onMouseEnter && onMouseEnter(e, rowCode)}>
                     <td className={`sticky z-20 px-4 py-3.5 border-r border-slate-200 min-w-[280px] w-[280px] max-w-[280px] bg-white`} style={{left:0}}>
                         <div className="flex flex-col w-full overflow-hidden">
                             <span className="text-[10.5px] font-mono text-indigo-500 mb-0.5 tracking-tight font-bold">{rowCode}</span>
@@ -712,6 +810,29 @@
             const [scrollTop, setScrollTop] = useState(0);
             const handleScroll = useCallback((e) => setScrollTop(e.target.scrollTop), []);
 
+            const isDragging = useRef(false);
+            const dragSelectMode = useRef(true);
+
+            useEffect(() => {
+                const handleMouseUp = () => { isDragging.current = false; };
+                window.addEventListener('mouseup', handleMouseUp);
+                return () => window.removeEventListener('mouseup', handleMouseUp);
+            }, []);
+
+            const handleMouseDown = useCallback((e, rowCode, isSel) => {
+                const targetTag = e.target.tagName.toLowerCase();
+                if (['input', 'select', 'button', 'i'].includes(targetTag)) return;
+                isDragging.current = true;
+                dragSelectMode.current = !isSel;
+                actions.setRowSelection(rowCode, !isSel);
+            }, [actions]);
+
+            const handleMouseEnter = useCallback((e, rowCode) => {
+                if (isDragging.current) {
+                    actions.setRowSelection(rowCode, dragSelectMode.current);
+                }
+            }, [actions]);
+
             const ROW_HEIGHT = 56; 
             const BUFFER_SIZE = 15; 
             const VIEWPORT_HEIGHT = 800; 
@@ -748,7 +869,7 @@
                                         
                                         {displayRows.map((row, idx) => {
                                             const mItem = masterProducts[row.코드] || {}; const isSel = selectedRows.has(row.코드);
-                                            return <MemoizedTableRow key={row.코드} row={row} idx={idx} isSel={isSel} mItem={mItem} isEstimateUploaded={isEstimateUploaded} visMasterCols={visMaster} visUploadCols={visUpload} masterLinksEst={masterLinksEst} onToggleSelection={actions.toggleRowSelection} onUpdateCell={actions.handleUpdateCell} />;
+                                            return <MemoizedTableRow key={row.코드} row={row} idx={idx} isSel={isSel} mItem={mItem} isEstimateUploaded={isEstimateUploaded} visMasterCols={visMaster} visUploadCols={visUpload} masterLinksEst={masterLinksEst} onToggleSelection={actions.toggleRowSelection} onMouseDown={handleMouseDown} onMouseEnter={handleMouseEnter} onUpdateCell={actions.handleUpdateCell} />;
                                         })}
                                         
                                         {bottomPadding > 0 && <tr style={{ height: `${bottomPadding}px` }}><td colSpan="50" className="p-0 border-0"></td></tr>}
@@ -761,17 +882,14 @@
             );
         };
 
-        // ==========================================
-        // ⚙️ 7. 메인 애플리케이션 (App)
-        // ==========================================
         function App() {
             const config = useMerchConfig();
             
             const [toastMsg, setToastMsg] = useState('');
             const [isProcessing, setIsProcessing] = useState(false); 
             const [processMsg, setProcessMsg] = useState('');
+            const [isExporting, setIsExporting] = useState(false);
             
-            // 🌟 v3.0 추가: 설정 모달 상태
             const [showSettingsModal, setShowSettingsModal] = useState(false);
             const [showReviewModal, setShowReviewModal] = useState(false);
             const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -815,7 +933,6 @@
                 const onSync = (e) => { if(e.key === STORAGE_KEYS.SYNC_TRIGGER) loadMaster(); }; 
                 window.addEventListener('storage', onSync); 
                 
-                // 🌟 Iframe 메시지 수신 (설정창 닫힘 감지)
                 const handleMessage = (e) => {
                     if (e.data && e.data.type === 'CLOSE_SETTINGS') {
                         setShowSettingsModal(false);
@@ -859,7 +976,6 @@
                     
                     let newManaged = { ...managedItems }; let count = 0;
                     excelData.forEach(row => {
-                        // 💡 코드키가 없을경우를 대비한 강력한 폴백
                         const codeKey = headerCache['품목코드']; 
                         const code = row[codeKey] || row['품목코드'] || row['상품코드'] || row['코드'];
                         if (!code || String(code).replace(/\s/g, '').includes('출력')) return;
@@ -911,6 +1027,8 @@
 
                     if (item.finalData) {
                         Object.keys(item.finalData).forEach(field => {
+                            if ((field === '품목명' || field === '규격') && oldItem['품목명']) return;
+
                             const linked = config.masterLinks['estimate']?.[field] || (MASTER_HEADERS.includes(field) ? field : null);
                             if (linked && item.finalData[field] !== undefined && item.finalData[field] !== '' && item.finalData[field] !== '오류') {
                                 const newVal = NUMERIC_HEADERS.includes(linked) ? parseNum(item.finalData[field]) : item.finalData[field];
@@ -941,6 +1059,7 @@
 
             const toggleAllRows = () => { const rows = Object.values(managedItems); if(selectedRows.size === rows.length) setSelectedRows(new Set()); else setSelectedRows(new Set(rows.map(r=>r.코드))); };
             const toggleRowSelection = (code) => { setSelectedRows(p => { const n = new Set(p); if(n.has(code)) n.delete(code); else n.add(code); return n; }); };
+            const setRowSelection = useCallback((code, isSelected) => { setSelectedRows(p => { const n = new Set(p); if (isSelected) n.add(code); else n.delete(code); return n; }); }, []);
             const handleRemoveFromWorkspace = () => {
                 if (selectedRows.size === 0) return showToast('⚠️ 숨길 항목을 선택하세요.');
                 setManagedItems(p=>{const n={...p}; selectedRows.forEach(c => delete n[c]); return n;});
@@ -948,12 +1067,14 @@
                 showToast('✅ 선택한 항목이 화면에서 숨겨졌습니다.');
             };
 
-            const handleLoadCategory = useCallback((categoryName) => {
-                setSelectedCategory(categoryName);
-                if (!categoryName) return;
+            const handleLoadWorkspaceData = useCallback((catalog, category) => {
+                if (!catalog && !category) {
+                    setManagedItems({});
+                    return;
+                }
 
                 setIsProcessing(true);
-                setProcessMsg('파서 데이터 및 카탈로그 병합 중...');
+                setProcessMsg('데이터 로드 및 병합 중...');
                 
                 setTimeout(() => {
                     let newManaged = {};
@@ -961,14 +1082,16 @@
                     Object.values(masterProducts).forEach(mItem => {
                         let isMatch = false;
 
-                        const catStr = mItem['견적서'] || mItem['카테고리'] || '';
-                        if (catStr.split(',').map(c => c.trim()).includes(categoryName)) {
-                            isMatch = true;
+                        if (catalog) {
+                            const catalogStr = mItem['카탈로그'] || '';
+                            if (catalogStr.split(',').map(c => c.trim()).includes(catalog)) {
+                                isMatch = true;
+                            }
                         }
 
-                        if (selectedCatalog) {
-                            const catalogStr = mItem['카탈로그'] || '';
-                            if (catalogStr.split(',').map(c => c.trim()).includes(selectedCatalog)) {
+                        if (category) {
+                            const catStr = mItem['견적서'] || mItem['카테고리'] || '';
+                            if (catStr.split(',').map(c => c.trim()).includes(category)) {
                                 isMatch = true;
                             }
                         }
@@ -985,16 +1108,30 @@
                     setManagedItems(newManaged);
                     setSelectedRows(new Set()); 
                     
-                    if (selectedCatalog) {
-                        showToast(`✅ [${selectedCatalog}] 파서 데이터와 [${categoryName}] 카탈로그가 병합되었습니다. (${Object.keys(newManaged).length}건)`);
+                    if (catalog && category) {
+                        showToast(`✅ [${catalog}] 및 [${category}] 데이터 로드 완료! (${Object.keys(newManaged).length}건)`);
+                    } else if (catalog) {
+                        showToast(`✅ [${catalog}] 파서 데이터 로드 완료! (${Object.keys(newManaged).length}건)`);
                     } else {
-                        showToast(`✅ [${categoryName}] 카탈로그 로드 완료! (${Object.keys(newManaged).length}건)`);
+                        showToast(`✅ [${category}] 카탈로그 로드 완료! (${Object.keys(newManaged).length}건)`);
                     }
                     
                     setIsProcessing(false);
                     setProcessMsg('');
                 }, 100);
-            }, [masterProducts, config.marginRules, selectedCatalog]);
+            }, [masterProducts, config.marginRules, showToast]);
+
+            const handleCatalogChange = useCallback((e) => {
+                const val = e.target.value;
+                setSelectedCatalog(val);
+                handleLoadWorkspaceData(val, selectedCategory);
+            }, [selectedCategory, handleLoadWorkspaceData]);
+
+            const handleCategoryChange = useCallback((e) => {
+                const val = e.target.value;
+                setSelectedCategory(val);
+                handleLoadWorkspaceData(selectedCatalog, val);
+            }, [selectedCatalog, handleLoadWorkspaceData]);
 
             const handleSaveAsCategory = useCallback(async (categoryName) => {
                 if (!categoryName || !categoryName.trim()) return;
@@ -1115,8 +1252,42 @@
                 return baseList;
             }, [managedItems, masterProducts, globalSearch, selectedCatalog, selectedCategory]);
 
+            const handleExportCurrentView = useCallback(() => { 
+                if (fullDisplayRows.length === 0) return showToast("⚠️ 내보낼 데이터가 없습니다.");
+                setIsExporting(true);
+                
+                setTimeout(() => {
+                    try {
+                        const activeProfile = 'estimate';
+                        const uploadCols = config.visibleUploadCols[activeProfile] || [];
+                        const masterCols = config.visibleMasterCols[activeProfile] || [];
+                        
+                        const headers = ['상태/선택', '품목코드', '마스터_품목명', '마스터_규격'];
+                        masterCols.forEach(h => headers.push(`[M]${h}`)); uploadCols.forEach(h => headers.push(`[작업]${h}`));
+
+                        const aoa = [headers];
+                        fullDisplayRows.forEach(row => {
+                            const rowCode = row.코드; const mItem = masterProducts[rowCode] || {};
+                            const isSel = selectedRows.has(row.코드); const status = (isSel ? '선택됨' : '');
+                            const rowData = [status, rowCode || '', mItem.품목명 || '', mItem.규격 || ''];
+
+                            masterCols.forEach(h => { const val = mItem[h] !== undefined ? mItem[h] : ''; rowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(val) : val); });
+                            uploadCols.forEach(h => { const val = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.[activeProfile]?.[h] || ''); const isNum = NUMERIC_HEADERS.includes(h) || NUMERIC_HEADERS.includes(config.masterLinks[activeProfile]?.[h]); rowData.push(isNum ? parseNum(val) : val); });
+                            aoa.push(rowData);
+                        });
+
+                        const wb = window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(aoa), "현재화면_출력"); window.XLSX.writeFile(wb, `화면출력_${new Date().toISOString().slice(0,10)}.xlsx`); showToast("✅ 화면 엑셀 다운로드가 완료되었습니다.");
+                    } catch(e) {
+                        console.error(e);
+                        showToast("❌ 화면 엑셀 다운로드 중 오류가 발생했습니다.");
+                    } finally {
+                        setIsExporting(false);
+                    }
+                }, 100);
+            }, [fullDisplayRows, config.visibleUploadCols, config.visibleMasterCols, config.masterLinks, masterProducts, selectedRows, showToast]);
+
             const appState = { fullDisplayRows, visibleMasterCols: config.visibleMasterCols, visibleUploadCols: config.visibleUploadCols, masterProducts, masterLinksEst: config.masterLinks['estimate']||{}, selectedRows, isEstimateUploaded: Object.keys(managedItems).length > 0, globalSearch, selectedCatalog, selectedCategory, isProcessing };
-            const appActions = { handleUpdateCell, toggleAllRows, toggleRowSelection, handleRemoveFromWorkspace, setShowReviewModal, setShowExportModal, setShowCategoryModal, setGlobalSearch, setSelectedCatalog, handleReset, handleFileUpload, handleLoadCategory, showToast };
+            const appActions = { handleUpdateCell, toggleAllRows, toggleRowSelection, setRowSelection, handleRemoveFromWorkspace, setShowReviewModal, setShowExportModal, setShowCategoryModal, setGlobalSearch, handleCatalogChange, handleCategoryChange, handleReset, handleFileUpload, showToast, handleExportCurrentView };
 
             return (
                 <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-[#f1f5f9] relative shadow-2xl border-x border-slate-300 select-none">
@@ -1131,6 +1302,14 @@
                         onNavigate={handleNavigate}
                     />
                     
+                    {isExporting && (
+                        <div className="fixed inset-0 bg-slate-900/80 z-[9999] flex flex-col justify-center items-center backdrop-blur-sm fade-in">
+                            <i className="fas fa-circle-notch fa-spin text-6xl text-indigo-500 mb-6"></i>
+                            <h2 className="text-2xl font-black text-white mb-2">엑셀 파일을 생성하고 있습니다</h2>
+                            <p className="text-emerald-400 font-bold">데이터가 많을 경우 수 초 정도 소요될 수 있습니다. 잠시만 기다려주세요...</p>
+                        </div>
+                    )}
+
                     <MainToolbar state={appState} actions={appActions} availableCatalogs={availableCatalogs} availableCategories={availableCategories} />
 
                     <main className="flex-1 overflow-hidden bg-slate-50 p-6 flex flex-col">
