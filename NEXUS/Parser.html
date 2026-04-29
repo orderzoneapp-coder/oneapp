@@ -4,10 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - Smart Parser [v3.0]</title>
+    <title>ONEAPP NEXES - AI Smart Parser</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/fuse.js/dist/fuse.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -24,105 +23,33 @@
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
         .fade-in { animation: fadeIn 0.2s ease-out; } 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-        
-        /* 🌟 Iframe 드로어용 슬라이딩 애니메이션 추가 */
-        @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
-        .slide-in-right { animation: slideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-
         .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
-        input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-        
-        .modal-bounce { animation: modalBounce 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-        @keyframes modalBounce { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
     </style>
 </head>
 <body class="text-slate-800">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useMemo, useEffect, useRef, useCallback, Fragment } = React;
+        const { useState, useMemo, useEffect, useCallback } = React;
 
-        // ==========================================
-        // 🔑 1. Global Constants & Utilities
-        // ==========================================
-        const STORAGE_KEYS = { 
-            MASTER_DB: 'merchMaster_v870', 
-            CLOUD_URL: 'skuSyncCloudUrl_v6', 
-            SYNC_TRIGGER: 'merchMaster_sync_trigger', 
-            HISTORY_DB: 'merchHistory_v870',
-            PARSER_DICT: 'parserDict_v870'
-        };
-
-        const generateUUID = () => {
-            if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) { var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); });
-        };
-        
-        const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
-
-        const initIDB = () => new Promise((resolve, reject) => {
-            const request = indexedDB.open('MerchOpsDB', 1);
-            request.onupgradeneeded = (e) => { if (!e.target.result.objectStoreNames.contains('store')) e.target.result.createObjectStore('store'); };
-            request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
-        });
-        const getIDB = async (key) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); };
-        const setIDB = async (key, val) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readwrite'); tx.objectStore('store').put(val, key); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); };
-
-        // ==========================================
-        // 🧩 [아이콘 시스템] SafeIcon
-        // ==========================================
         const SafeIcon = React.memo(function SafeIconComponent({ name, size = 18, className = "" }) {
             const [svg, setSvg] = useState("");
             useEffect(() => {
-                const renderIcon = () => {
-                    if (window.lucide && window.lucide.icons) {
-                        const kebabName = name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
-                        const possibleNames = [
-                            kebabName, name, 
-                            name === 'cloud-download' ? 'download-cloud' : name,
-                            name === 'cloud-upload' ? 'upload-cloud' : name,
-                            name === 'bar-chart-3' ? 'bar-chart' : name
-                        ];
-                        for (const pName of possibleNames) {
-                            if (window.lucide.icons[pName]) {
-                                setSvg(window.lucide.icons[pName].toSvg({ width: size, height: size, class: className, 'stroke-width': 2.5 })); return;
-                            }
-                        }
-                    }
-                }; renderIcon();
+                if (window.lucide && window.lucide.icons) {
+                    const kebabName = name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
+                    const possibleNames = [kebabName, name, name==='cloud-download'?'download-cloud':name, name==='cloud-upload'?'upload-cloud':name, name==='bar-chart-3'?'bar-chart':name];
+                    for (const pName of possibleNames) { if (window.lucide.icons[pName]) { setSvg(window.lucide.icons[pName].toSvg({ width: size, height: size, class: className, 'stroke-width': 2.5 })); return; } }
+                }
             }, [name, size, className]);
 
             if (!svg) {
-                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'database':'fa-database', 'upload':'fa-upload', 'pie-chart':'fa-chart-pie', 'shopping-cart':'fa-shopping-cart', 'users':'fa-users', 'megaphone':'fa-bullhorn', 'book-open':'fa-address-book', 'shopping-bag':'fa-shopping-bag', 'credit-card':'fa-credit-card', 'line-chart':'fa-chart-line', 'printer':'fa-print', 'search':'fa-search', 'plus':'fa-plus', 'trash-alt':'fa-trash-alt', 'edit':'fa-edit', 'save':'fa-save', 'file-excel':'fa-file-excel', 'link':'fa-link', 'ban':'fa-ban', 'layer-group':'fa-layer-group', 'desktop':'fa-desktop', 'sign-in-alt':'fa-sign-in-alt', 'calculator':'fa-calculator', 'tags':'fa-tags', 'broom':'fa-broom', 'info-circle':'fa-info-circle', 'lock':'fa-lock', 'key':'fa-key', 'folder-open':'fa-folder-open', 'file-invoice':'fa-file-invoice', 'history':'fa-history', 'arrow-right':'fa-arrow-right', 'arrow-up':'fa-arrow-up', 'arrow-down':'fa-arrow-down' };
-                const faName = faMap[name] || `fa-${name}`;
-                return <i className={`fas ${faName} ${className}`} style={{ fontSize: size }} />;
+                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'database':'fa-database', 'users':'fa-users', 'shopping-bag':'fa-shopping-bag', 'credit-card':'fa-credit-card', 'line-chart':'fa-chart-line', 'printer':'fa-print', 'pie-chart':'fa-chart-pie', 'megaphone':'fa-bullhorn', 'book-open':'fa-address-book' };
+                return <i className={`fas ${faMap[name] || `fa-${name}`} ${className}`} style={{ fontSize: size }} />;
             }
             return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
         });
 
-        // ==========================================
-        // 🧩 Read-Only 설정 훅 (v3.0 경량화)
-        // ==========================================
-        const useMerchConfig = () => {
-            const loadConfig = () => {
-                const cloudUrl = localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || '';
-                return { cloudUrl };
-            };
-
-            const [config, setConfig] = useState(loadConfig());
-
-            useEffect(() => {
-                const handleStorageChange = () => setConfig(loadConfig());
-                window.addEventListener('storage', handleStorageChange);
-                return () => window.removeEventListener('storage', handleStorageChange);
-            }, []);
-
-            return config;
-        };
-
-        // ==========================================
-        // 🧩 통합 글로벌 헤더 (v3.0)
-        // ==========================================
+        // 💡 [절대 규칙 준수] 100% 원본 GlobalHeader 컴포넌트
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [
                 { id: 'master', label: '정보 관리', icon: 'database' },
@@ -130,10 +57,9 @@
                 { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }
             ];
 
-            // 💡 이미지 캡처 구조(대소문자/확장자)와 완벽하게 일치하는 최종 탭 링크
             const tabs = [
                 { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true, shortTag: 'ONE BOARD' },
-                { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide.html', group: 'common', isReady: true, shortTag: 'SYSTEM GUIDE' },
+                { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: true, shortTag: 'SYSTEM GUIDE' },
                 
                 { id: 'item-info', label: '마스터 DB', icon: "database", path: 'Master.html', group: 'master', isReady: true, shortTag: 'GOLDEN RECORD' },
                 { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'Item_manager.html', group: 'master', isReady: true, shortTag: 'SKU FORGE' },
@@ -149,7 +75,7 @@
                 { id: 'print-center', label: '출력 센터', icon: "printer", path: 'print_center.html', group: 'ops', isReady: true, shortTag: 'OUTPUT TERMINAL' },
 
                 { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'Report.html', group: 'admin', isReady: true, shortTag: 'INSIGHT ENGINE' },
-                { id: 'cs', label: '정보마당(CS)', icon: "megaphone", path: 'cs.html', group: 'admin', isReady: true, shortTag: 'NOTICE PORTAL' }
+                { id: 'cs', label: '정보 마당', icon: "megaphone", path: 'cs.html', group: 'admin', isReady: true, shortTag: 'NOTICE PORTAL' }
             ];
 
             const currentTab = tabs.find(t => t.id === activeTab);
@@ -170,7 +96,9 @@
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
                                         <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.0</span>
                                     </div>
-                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">AI SMART PARSER</span>
+                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">
+                                        {currentTab ? currentTab.shortTag : 'WORKSPACE'}
+                                    </span>
                                 </div>
                             </div>
 
@@ -198,9 +126,9 @@
                                     )}
                                 </div>
                                 <div className="w-px h-3.5 bg-slate-700"></div>
-                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`현재 브라우저 메모리에 다운로드된 마스터 상품 수: ${itemCount.toLocaleString()}개`}>
+                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`마스터 DB 기준 상품 수`}>
                                     <SafeIcon name="database" size={10} className="text-slate-500" />
-                                    <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount.toLocaleString()}</span>
+                                    <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount ? itemCount.toLocaleString() : 0}</span>
                                 </div>
                             </div>
 
@@ -240,675 +168,47 @@
             );
         };
 
-        // ==========================================
-        // 🌟 Iframe 설정 모달 (경량화)
-        // ==========================================
-        const IframeSettingsModal = ({ isOpen, onClose }) => {
-            if (!isOpen) return null;
-            return (
-                <div className="fixed inset-0 z-[500] flex justify-end bg-slate-900/60 backdrop-blur-sm fade-in">
-                    <div className="w-full max-w-[1100px] h-full bg-white shadow-[0_0_40px_rgba(0,0,0,0.3)] flex flex-col slide-in-right border-l border-slate-300 relative overflow-hidden">
-                        <div className="bg-[#0f172a] px-6 py-4 flex justify-between items-center text-white shrink-0 border-b border-slate-700 shadow-md relative z-10">
-                            <div className="flex items-center gap-3">
-                                <SafeIcon name="settings" size={20} className="text-indigo-400"/>
-                                <h2 className="font-black text-[17px] tracking-wide">통합 환경설정 센터</h2>
-                                <span className="bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold border border-indigo-500/30 ml-2">Iframe Overlay</span>
-                            </div>
-                            <div className="flex items-center gap-4">
-                                <span className="text-[12px] text-slate-400 font-medium hidden md:inline-block">설정을 변경하고 창을 닫으면 작업 화면에 즉시 반영됩니다.</span>
-                                <button onClick={onClose} className="text-slate-300 hover:text-white transition-colors bg-slate-800 hover:bg-rose-500 w-8 h-8 rounded-lg flex items-center justify-center shadow-sm border border-slate-700 hover:border-rose-400">
-                                    <SafeIcon name="x" size={18} />
-                                </button>
-                            </div>
-                        </div>
-                        <div className="flex-1 w-full bg-slate-100 relative">
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                <div className="text-slate-300 flex flex-col items-center">
-                                    <i className="fas fa-circle-notch fa-spin text-3xl mb-3"></i>
-                                    <span className="font-bold text-sm">설정 모듈을 불러오는 중입니다...</span>
-                                </div>
-                            </div>
-                            <iframe src="settings.html?mode=iframe" className="absolute inset-0 w-full h-full border-0 bg-white relative z-10" title="Settings Center"></iframe>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        // ==========================================
-        // 🌟 2-Track 검증 및 최종 반영 모달 (ParserReviewModal)
-        // ==========================================
-        const ParserReviewModal = ({ isOpen, onClose, onCommit, items, masterProducts, targetCatalog }) => {
-            const [activeTab, setActiveTab] = useState('manual'); // 'manual' | 'price'
-            
-            // 💡 Track 1: 수동 매핑된 항목 추출 (isManual === true)
-            const manualItems = useMemo(() => items.filter(i => i.status === 'MATCH' && i.isManual), [items]);
-            
-            // 💡 Track 2: 단가 변동이 발생한 항목 추출 (기존 마스터와 비교)
-            const priceChanges = useMemo(() => {
-                const changes = [];
-                items.filter(i => i.status === 'MATCH').forEach(item => {
-                    const mItem = masterProducts[item.matchedCode];
-                    if (mItem) {
-                        const oldPrice = parseNum(mItem['입고가']);
-                        const newPrice = parseNum(item.price);
-                        if (oldPrice !== newPrice && newPrice > 0) {
-                            changes.push({ ...item, oldPrice, newPrice, diff: newPrice - oldPrice, mItemName: mItem['품목명'], mItemSpec: mItem['규격'] });
-                        }
-                    }
-                });
-                return changes.sort((a,b) => Math.abs(b.diff) - Math.abs(a.diff)); // 변동폭 큰 순 정렬
-            }, [items, masterProducts]);
-
-            if (!isOpen) return null;
-
-            return (
-                <div className="fixed inset-0 z-[400] flex justify-center items-center bg-slate-900/80 backdrop-blur-sm fade-in">
-                    <div className="w-[850px] bg-white rounded-2xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden modal-bounce">
-                        <div className="bg-[#0f172a] px-6 py-4 flex justify-between items-center text-white shrink-0 border-b border-slate-700">
-                            <h2 className="font-black text-[16px] flex items-center"><SafeIcon name="check-circle-2" size={18} className="text-emerald-400 mr-2"/>매핑 검토 및 프리뷰 (2-Track Review)</h2>
-                            <button onClick={onClose} className="text-slate-400 hover:text-white"><SafeIcon name="x" size={20} /></button>
-                        </div>
-                        
-                        {/* 탭 네비게이션 */}
-                        <div className="flex border-b border-slate-200 bg-slate-50 shrink-0 px-6 pt-4 gap-2">
-                            <button onClick={() => setActiveTab('manual')} className={`px-6 py-3 text-[14px] font-bold rounded-t-xl transition-colors border-x border-t-[3px] flex items-center ${activeTab === 'manual' ? 'bg-white text-indigo-700 border-t-indigo-500 border-x-slate-200 z-10 relative shadow-[0_-2px_5px_rgba(0,0,0,0.02)]' : 'bg-transparent text-slate-500 border-transparent hover:text-slate-800'}`} style={{ marginBottom: activeTab === 'manual' ? '-1px' : '0' }}>
-                                <SafeIcon name="link" size={16} className={`mr-2 ${activeTab === 'manual' ? 'text-indigo-500' : 'text-slate-400'}`}/> 수동 매핑 검증 <span className={`ml-2 px-2 py-0.5 rounded-full text-[10px] ${manualItems.length > 0 ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-500'}`}>{manualItems.length}</span>
-                            </button>
-                            <button onClick={() => setActiveTab('price')} className={`px-6 py-3 text-[14px] font-bold rounded-t-xl transition-colors border-x border-t-[3px] flex items-center ${activeTab === 'price' ? 'bg-white text-rose-700 border-t-rose-500 border-x-slate-200 z-10 relative shadow-[0_-2px_5px_rgba(0,0,0,0.02)]' : 'bg-transparent text-slate-500 border-transparent hover:text-slate-800'}`} style={{ marginBottom: activeTab === 'price' ? '-1px' : '0' }}>
-                                <SafeIcon name="search-dollar" size={16} className={`mr-2 ${activeTab === 'price' ? 'text-rose-500' : 'text-slate-400'}`}/> 전체 단가 브리핑 <span className={`ml-2 px-2 py-0.5 rounded-full text-[10px] ${priceChanges.length > 0 ? 'bg-rose-100 text-rose-700' : 'bg-slate-200 text-slate-500'}`}>{priceChanges.length}</span>
-                            </button>
-                        </div>
-
-                        {/* 메인 컨텐츠 영역 */}
-                        <div className="flex-1 overflow-y-auto bg-white p-6 custom-scrollbar">
-                            {activeTab === 'manual' && (
-                                <div className="space-y-4 fade-in">
-                                    <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-100">
-                                        <h3 className="text-[13px] font-bold text-indigo-900 mb-1"><i className="fas fa-info-circle mr-1.5"></i>글자(Text) 연결 집중 확인</h3>
-                                        <p className="text-[11px] text-indigo-700">작업자가 수동으로 연결한 항목들이 올바른 마스터 상품에 연결되었는지 확인하세요. 잘못 연결된 경우 '취소' 후 모달을 닫고 다시 매핑하세요.</p>
-                                    </div>
-                                    {manualItems.length === 0 ? (
-                                        <div className="py-12 text-center text-slate-400 font-bold"><SafeIcon name="check" size={32} className="mb-3 text-slate-200 mx-auto block"/>수동으로 연결된 항목이 없습니다.</div>
-                                    ) : (
-                                        <table className="w-full text-left text-[12px] border border-slate-200 rounded-lg overflow-hidden">
-                                            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
-                                                <tr><th className="p-3 w-1/2 border-r border-slate-200">파싱된 원본 텍스트</th><th className="p-3">연결된 마스터 상품</th></tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-100">
-                                                {manualItems.map(item => (
-                                                    <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                                                        <td className="p-3 border-r border-slate-200"><div className="font-bold text-slate-700 truncate max-w-[350px]" title={item.rawName}>{item.rawName}</div></td>
-                                                        <td className="p-3"><div className="flex items-center text-indigo-700 font-bold truncate max-w-[350px]"><SafeIcon name="arrow-right" size={12} className="mr-2 text-indigo-300 shrink-0"/> {item.matchedName}</div></td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    )}
-                                </div>
-                            )}
-
-                            {activeTab === 'price' && (
-                                <div className="space-y-4 fade-in">
-                                    <div className="bg-rose-50 p-4 rounded-lg border border-rose-100">
-                                        <h3 className="text-[13px] font-bold text-rose-900 mb-1"><i className="fas fa-exclamation-triangle mr-1.5"></i>가격(Money) 변동 폭탄 감지</h3>
-                                        <p className="text-[11px] text-rose-700">자동/수동 매핑을 통틀어, 기존 마스터 입고가 대비 가격 변동이 발생한 내역입니다. 변동폭이 지나치게 큰 항목은 매핑 오류일 수 있습니다.</p>
-                                    </div>
-                                    {priceChanges.length === 0 ? (
-                                        <div className="py-12 text-center text-slate-400 font-bold"><SafeIcon name="check" size={32} className="mb-3 text-slate-200 mx-auto block"/>단가 변동이 발생한 항목이 없습니다.</div>
-                                    ) : (
-                                        <table className="w-full text-left text-[12px] border border-slate-200 rounded-lg overflow-hidden">
-                                            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
-                                                <tr><th className="p-3 w-[250px] border-r border-slate-200">연결된 상품명 (마스터 기준)</th><th className="p-3 text-right">기존 단가</th><th className="p-3 text-right text-rose-600">새 단가</th><th className="p-3 text-right w-24">차액</th></tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-100">
-                                                {priceChanges.map(item => (
-                                                    <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                                                        <td className="p-3 border-r border-slate-200">
-                                                            <div className="font-bold text-slate-800 truncate">{item.mItemName} <span className="text-slate-400 font-normal ml-1">({item.mItemSpec})</span></div>
-                                                        </td>
-                                                        <td className="p-3 text-right text-slate-500 line-through decoration-slate-300 font-mono">{item.oldPrice.toLocaleString()}</td>
-                                                        <td className="p-3 text-right font-black text-slate-800 font-mono">{item.newPrice.toLocaleString()}</td>
-                                                        <td className={`p-3 text-right font-black font-mono ${item.diff > 0 ? 'text-rose-500' : 'text-blue-500'}`}>
-                                                            {item.diff > 0 ? '+' : ''}{item.diff.toLocaleString()}
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="bg-slate-100 p-5 border-t border-slate-200 flex justify-between items-center shrink-0">
-                            <span className="text-[12px] font-bold text-slate-500">카탈로그 태그 부여: <span className="text-indigo-600 bg-white px-2 py-0.5 border border-slate-200 rounded shadow-sm">{targetCatalog || '미지정 (단가만 업데이트)'}</span></span>
-                            <div className="flex gap-2">
-                                <button onClick={onClose} className="px-6 py-2.5 bg-white border border-slate-300 text-slate-600 font-bold rounded-lg hover:bg-slate-50 shadow-sm transition-colors text-[13px]">닫기 (돌아가기)</button>
-                                <button onClick={() => { onCommit(items); onClose(); }} className="px-8 py-2.5 bg-[#1A2235] text-white font-black rounded-lg hover:bg-black shadow-md transition-all flex items-center text-[13px] hover:-translate-y-0.5">
-                                    <SafeIcon name="save" size={14} className="mr-2" /> 최종 반영 및 AI 사전 학습
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        // ==========================================
-        // ⚙️ Main App Container (Parser)
-        // ==========================================
         function App() {
-            const config = useMerchConfig();
-            
-            const [toastMsg, setToastMsg] = useState('');
-            const [isProcessing, setIsProcessing] = useState(false);
+            const [isProcessing, setIsProcessing] = useState(false); 
             const [processMsg, setProcessMsg] = useState('');
-            const [showSettingsModal, setShowSettingsModal] = useState(false);
-            const [showReviewModal, setShowReviewModal] = useState(false);
-            
-            const [masterProducts, setMasterProducts] = useState({});
-            const [parserDict, setParserDict] = useState({});
-            const [historyLogs, setHistoryLogs] = useState([]);
-            
-            // 파서 전용 State
-            const [rawText, setRawText] = useState('');
-            const [targetCatalog, setTargetCatalog] = useState('');
-            const [parsedList, setParsedList] = useState([]);
-            const [activeTab, setActiveTab] = useState('MATCH'); // MATCH | SIMILAR | MISMATCH | MISSING
-            
-            // 수동 매핑용 State
-            const [searchKw, setSearchKw] = useState('');
-            const [selectedItemToMap, setSelectedItemToMap] = useState(null); // 방금 수동 매핑을 위해 클릭한 아이템 ID
+            const [toastMsg, setToastMsg] = useState('');
 
             const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
-
             const handleNavigate = useCallback((e, path, isReady = true) => {
                 if (e && e.preventDefault) e.preventDefault();
-                if (!path || path === '#' || !isReady) return showToast("⚠️ 해당 페이지는 현재 준비 중이거나 경로가 올바르지 않습니다.");
+                if (!path || path === '#' || !isReady) { showToast("⚠️ 해당 페이지는 아직 준비 중입니다."); return; }
                 try {
                     const protocol = window.location.protocol;
-                    if (protocol === 'about:' || protocol === 'blob:' || protocol === 'data:') {
-                        showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
-                    } else {
-                        window.location.href = path;
-                    }
+                    if (protocol === 'about:' || protocol === 'blob:' || protocol === 'data:') showToast(`💡 이동 시뮬레이션: [${path}]`);
+                    else window.location.href = path;
                 } catch (err) { showToast(`💡 이동 시뮬레이션: [${path}]`); }
             }, [showToast]);
-
-            const loadData = async () => {
-                const mDB = await getIDB(STORAGE_KEYS.MASTER_DB) || {};
-                setMasterProducts(mDB);
-                const dict = await getIDB(STORAGE_KEYS.PARSER_DICT) || {};
-                setParserDict(dict);
-                const hDB = await getIDB(STORAGE_KEYS.HISTORY_DB) || [];
-                setHistoryLogs(hDB);
-            };
-
-            useEffect(() => { loadData(); }, []);
-
-            useEffect(() => {
-                const handleStorageChange = (e) => { 
-                    if (e.key === STORAGE_KEYS.SYNC_TRIGGER) loadData(); 
-                };
-                window.addEventListener('storage', handleStorageChange);
-                
-                const handleMessage = (e) => {
-                    if (e.data && e.data.type === 'CLOSE_SETTINGS') {
-                        setShowSettingsModal(false);
-                        loadData(); 
-                    }
-                };
-                window.addEventListener('message', handleMessage);
-
-                return () => {
-                    window.removeEventListener('storage', handleStorageChange);
-                    window.removeEventListener('message', handleMessage);
-                };
-            }, []);
-
-            const handlePush = async () => {
-                if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
-                setIsProcessing(true); setProcessMsg("클라우드 백업 중...");
-                setTimeout(() => { showToast("✅ 클라우드 저장 완료"); setIsProcessing(false); setProcessMsg(""); }, 1000);
-            };
-
-            const handlePull = async () => {
-                if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
-                setIsProcessing(true); setProcessMsg("데이터 동기화 중...");
-                setTimeout(() => { showToast("✅ 데이터 수신 완료"); setIsProcessing(false); setProcessMsg(""); }, 1000);
-            };
-
-            // ==========================================
-            // 🧠 파싱 및 시맨틱 매칭 엔진
-            // ==========================================
-            const handleParse = () => {
-                if (!rawText.trim()) return showToast("⚠️ 텍스트를 입력해주세요.");
-                
-                setIsProcessing(true); setProcessMsg("AI 시맨틱 분석 및 매칭 중...");
-                
-                setTimeout(() => {
-                    const lines = rawText.split('\n');
-                    const items = [];
-                    
-                    // 1. Text Parsing (Regex)
-                    lines.forEach(line => {
-                        const trimmed = line.trim();
-                        if (!trimmed) return;
-                        
-                        // 끝에 있는 숫자(단가) 추출 (예: "햇사과 10kg 15,000원" -> 15000)
-                        const priceMatch = trimmed.match(/([\d,]+)\s*(?:원)?\s*$/);
-                        if (priceMatch) {
-                            const price = parseNum(priceMatch[1]);
-                            if (price > 0) {
-                                const nameSpec = trimmed.replace(priceMatch[0], '').trim();
-                                if (nameSpec) {
-                                    items.push({ id: generateUUID(), rawName: nameSpec, price: price, originalLine: trimmed, status: 'PENDING', isManual: false });
-                                }
-                            }
-                        }
-                    });
-
-                    if (items.length === 0) {
-                        setIsProcessing(false);
-                        return showToast("⚠️ 단가를 포함한 유효한 데이터를 찾지 못했습니다.");
-                    }
-
-                    // 2. Dictionary & Fuse.js Matching
-                    const mArr = Object.values(masterProducts);
-                    const fuse = new Fuse(mArr, {
-                        keys: ['품목명', '검색어등록', '소싱태그', '규격'],
-                        includeScore: true,
-                        threshold: 0.5
-                    });
-
-                    const processedItems = items.map(item => {
-                        const cleanRawName = item.rawName.replace(/\s+/g, '');
-                        
-                        // A. Dictionary Exact Match
-                        const dictCode = parserDict[cleanRawName];
-                        if (dictCode && masterProducts[dictCode]) {
-                            return { ...item, matchedCode: dictCode, matchedName: masterProducts[dictCode]['품목명'], matchedSpec: masterProducts[dictCode]['규격'], status: 'MATCH', score: 0 };
-                        }
-
-                        // B. Fuse.js Fuzzy Match
-                        const result = fuse.search(item.rawName);
-                        if (result.length > 0) {
-                            const bestMatch = result[0];
-                            if (bestMatch.score < 0.15) { // 매우 유사
-                                return { ...item, matchedCode: bestMatch.item['코드'] || bestMatch.item['품목코드'], matchedName: bestMatch.item['품목명'], matchedSpec: bestMatch.item['규격'], status: 'MATCH', score: bestMatch.score };
-                            } else if (bestMatch.score < 0.35) { // 유사 (검토 필요)
-                                return { ...item, matchedCode: bestMatch.item['코드'] || bestMatch.item['품목코드'], matchedName: bestMatch.item['품목명'], matchedSpec: bestMatch.item['규격'], status: 'SIMILAR', score: bestMatch.score };
-                            }
-                        }
-
-                        // C. Mismatch
-                        return { ...item, status: 'MISMATCH' };
-                    });
-
-                    // 3. Find Missing Items (누락)
-                    // 만약 targetCatalog가 지정되었다면, 해당 카탈로그에 속한 마스터 상품 중 파싱된 텍스트에 없는 항목을 찾아냄
-                    if (targetCatalog) {
-                        const parsedCodes = new Set(processedItems.filter(i => i.matchedCode).map(i => i.matchedCode));
-                        mArr.forEach(m => {
-                            const tags = (m['카탈로그'] || '') + ',' + (m['소싱태그'] || '');
-                            if (tags.includes(targetCatalog)) {
-                                const code = m['코드'] || m['품목코드'];
-                                if (!parsedCodes.has(code)) {
-                                    processedItems.push({
-                                        id: generateUUID(),
-                                        rawName: '원본 텍스트 없음 (단종/누락)',
-                                        price: parseNum(m['입고가']),
-                                        matchedCode: code,
-                                        matchedName: m['품목명'],
-                                        matchedSpec: m['규격'],
-                                        status: 'MISSING',
-                                        isManual: false
-                                    });
-                                }
-                            }
-                        });
-                    }
-
-                    setParsedList(processedItems);
-                    
-                    // 자동 탭 이동 로직 (UX 극대화)
-                    const hasSimilar = processedItems.some(i => i.status === 'SIMILAR');
-                    const hasMismatch = processedItems.some(i => i.status === 'MISMATCH');
-                    if (hasSimilar) setActiveTab('SIMILAR');
-                    else if (hasMismatch) setActiveTab('MISMATCH');
-                    else setActiveTab('MATCH');
-
-                    setIsProcessing(false); setProcessMsg('');
-                    showToast(`✅ ${processedItems.length}건 파싱 및 분석 완료!`);
-                }, 500); // UI 스레드 차단 방지용 약간의 딜레이
-            };
-
-            // 수동 매핑을 위한 마스터 검색
-            const masterSearchResults = useMemo(() => {
-                if (!searchKw.trim()) return [];
-                const arr = Object.values(masterProducts);
-                const fuse = new Fuse(arr, { keys: ['품목명', '코드', '품목코드'], threshold: 0.3 });
-                return fuse.search(searchKw).map(r => r.item).slice(0, 10);
-            }, [masterProducts, searchKw]);
-
-            const handleManualMatch = (itemId, masterItem) => {
-                setParsedList(prev => prev.map(item => {
-                    if (item.id === itemId) {
-                        return { ...item, matchedCode: masterItem['코드'] || masterItem['품목코드'], matchedName: masterItem['품목명'], matchedSpec: masterItem['규격'], status: 'MATCH', isManual: true };
-                    }
-                    return item;
-                }));
-                setSearchKw(''); setSelectedItemToMap(null);
-                showToast("✅ 수동 매핑 완료. [일치] 탭으로 이동되었습니다.");
-            };
-
-            const handleCancelMatch = (itemId) => {
-                setParsedList(prev => prev.map(item => {
-                    if (item.id === itemId) {
-                        return { ...item, matchedCode: null, matchedName: null, matchedSpec: null, status: 'MISMATCH', isManual: false };
-                    }
-                    return item;
-                }));
-                showToast("❌ 매핑이 취소되었습니다.");
-            };
-
-            const handleCommitFinal = async (itemsToCommit) => {
-                setIsProcessing(true); setProcessMsg("마스터 DB 갱신 및 AI 사전 학습 중...");
-                
-                try {
-                    let newMaster = { ...masterProducts };
-                    let newDict = { ...parserDict };
-                    let newLogs = [];
-                    const nowStr = new Date().toLocaleString('ko-KR');
-                    const dateStr = new Date().toISOString().slice(0, 10);
-                    let commitCount = 0;
-
-                    itemsToCommit.filter(i => i.status === 'MATCH').forEach(item => {
-                        const code = item.matchedCode;
-                        if (code && newMaster[code]) {
-                            const oldPrice = parseNum(newMaster[code]['입고가']);
-                            const newPrice = item.price;
-                            
-                            // 1. 단가 업데이트 (변동이 있을 경우만 로그 기록)
-                            if (oldPrice !== newPrice && newPrice > 0) {
-                                newMaster[code]['입고가'] = newPrice;
-                                newLogs.push({
-                                    id: `PAR-${Date.now()}-${generateUUID().slice(0,8)}`,
-                                    timestamp: nowStr,
-                                    date: dateStr,
-                                    type: 'PARSER_UPDATE',
-                                    code: code,
-                                    name: newMaster[code]['품목명'],
-                                    field: '입고가',
-                                    oldVal: oldPrice,
-                                    newVal: newPrice,
-                                    diff: newPrice - oldPrice,
-                                    catalog: targetCatalog || '텍스트 파싱',
-                                    memo: '스마트 파서 일괄 갱신'
-                                });
-                            }
-
-                            // 2. 카탈로그(소싱태그) 태그 부여
-                            if (targetCatalog) {
-                                const tags = (newMaster[code]['소싱태그'] || '').split(',').map(s => s.trim()).filter(Boolean);
-                                if (!tags.includes(targetCatalog)) {
-                                    tags.push(targetCatalog);
-                                    newMaster[code]['소싱태그'] = tags.join(', ');
-                                }
-                                // 마이그레이션: 기존 카탈로그 필드에도 추가해둠
-                                const catTags = (newMaster[code]['카탈로그'] || '').split(',').map(s => s.trim()).filter(Boolean);
-                                if (!catTags.includes(targetCatalog)) {
-                                    catTags.push(targetCatalog);
-                                    newMaster[code]['카탈로그'] = catTags.join(', ');
-                                }
-                            }
-
-                            // 3. AI 매핑 사전(Dictionary) 학습
-                            // 수동 연결했거나, 완전히 일치하지 않는 경우 학습시킴
-                            if (item.isManual || item.score > 0) {
-                                const cleanRawName = item.rawName.replace(/\s+/g, '');
-                                newDict[cleanRawName] = code;
-                            }
-                            
-                            commitCount++;
-                        }
-                    });
-
-                    // 4. 누락(MISSING) 항목 중 '제외 처리'를 원할 경우 소싱태그에서 삭제 (현재는 UI 상에서 삭제 버튼 구현 전, 추후 고도화)
-
-                    await setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
-                    await setIDB(STORAGE_KEYS.PARSER_DICT, newDict);
-                    if (newLogs.length > 0) {
-                        const existingLogs = await getIDB(STORAGE_KEYS.HISTORY_DB) || [];
-                        await setIDB(STORAGE_KEYS.HISTORY_DB, [...existingLogs, ...newLogs]);
-                        setHistoryLogs([...existingLogs, ...newLogs]);
-                    }
-                    
-                    localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
-                    
-                    setMasterProducts(newMaster);
-                    setParserDict(newDict);
-                    
-                    // 반영 완료 후 작업 큐(parsedList) 정리 (Auto-clear)
-                    setParsedList([]);
-                    setRawText('');
-                    setTargetCatalog('');
-                    
-                    showToast(`🎉 ${commitCount}건의 단가가 갱신되고, AI 사전에 학습되었습니다!`);
-                } catch(err) {
-                    console.error(err);
-                    showToast("❌ 최종 반영 중 오류가 발생했습니다.");
-                } finally {
-                    setIsProcessing(false); setProcessMsg('');
-                }
-            };
-
-            const stats = useMemo(() => {
-                return {
-                    match: parsedList.filter(i => i.status === 'MATCH').length,
-                    similar: parsedList.filter(i => i.status === 'SIMILAR').length,
-                    mismatch: parsedList.filter(i => i.status === 'MISMATCH').length,
-                    missing: parsedList.filter(i => i.status === 'MISSING').length,
-                    total: parsedList.length
-                };
-            }, [parsedList]);
 
             return (
                 <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-[#f1f5f9] relative shadow-2xl border-x border-slate-300 select-none">
                     <GlobalHeader 
                         activeTab="parser" 
-                        itemCount={Object.keys(masterProducts).length} 
+                        itemCount={0} 
                         isProcessing={isProcessing} 
                         processMsg={processMsg}
-                        onOpenSettings={() => setShowSettingsModal(true)}
-                        onPush={handlePush}
-                        onPull={handlePull}
+                        onOpenSettings={() => showToast("환경설정 창 호출됨")}
+                        onPush={() => showToast("클라우드 백업 호출됨")}
+                        onPull={() => showToast("클라우드 수신 호출됨")}
                         onNavigate={handleNavigate}
                     />
-
-                    <main className="flex-1 flex overflow-hidden bg-slate-50 relative p-6 gap-6">
-                        
-                        {/* 🌟 Left: Data Ingest (입력부) */}
-                        <div className="w-[450px] bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col z-10 shrink-0">
-                            <div className="p-5 border-b border-slate-100 bg-[#f8fafc] rounded-t-xl shrink-0">
-                                <h2 className="text-[15px] font-black text-slate-800 flex items-center mb-1"><SafeIcon name="zap" size={18} className="text-indigo-500 mr-2"/>AI Smart Parser</h2>
-                                <p className="text-[11px] text-slate-500 font-medium">카톡이나 메모장의 텍스트를 붙여넣으면 마스터 상품과 자동 연결합니다.</p>
+                    
+                    <main className="flex-1 overflow-hidden flex flex-col p-6 items-center justify-center">
+                        <div className="text-center fade-in">
+                            <div className="w-24 h-24 bg-indigo-100 text-indigo-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
+                                <SafeIcon name="zap" size={40} />
                             </div>
-                            
-                            <div className="p-5 flex-1 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
-                                <div>
-                                    <label className="text-[12px] font-bold text-slate-700 mb-1.5 flex items-center">
-                                        <SafeIcon name="folder-open" size={14} className="mr-1.5 text-slate-400"/> 기준 카탈로그(소싱태그) 입력 <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded ml-2 font-normal">선택사항</span>
-                                    </label>
-                                    <input type="text" value={targetCatalog} onChange={e=>setTargetCatalog(e.target.value)} placeholder="예: 농협_야채, 가락시장, 공산품A" className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100 shadow-sm transition-shadow" />
-                                    <p className="text-[10px] text-slate-400 mt-1.5 leading-tight">입력 시 파싱된 상품에 태그가 자동 부여되며, 이 태그에 속한 기존 상품 중 단가가 없는 **누락(단종)** 품목을 찾아줍니다.</p>
-                                </div>
-
-                                <div className="flex-1 flex flex-col h-full">
-                                    <label className="text-[12px] font-bold text-slate-700 mb-1.5 flex items-center">
-                                        <SafeIcon name="file-invoice" size={14} className="mr-1.5 text-slate-400"/> 원본 텍스트 붙여넣기 (Ctrl+V)
-                                    </label>
-                                    <textarea value={rawText} onChange={e=>setRawText(e.target.value)} placeholder="사과 10kg 15000&#10;감자 1박스 20000&#10;..." className="w-full flex-1 border border-slate-300 rounded-lg p-3 text-[13px] outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100 shadow-inner resize-none font-mono leading-relaxed" />
-                                </div>
-                            </div>
-
-                            <div className="p-5 bg-white border-t border-slate-200 shrink-0">
-                                <button onClick={handleParse} disabled={isProcessing || !rawText.trim()} className={`w-full py-3.5 rounded-lg font-black text-[14px] shadow-md transition-all flex items-center justify-center ${rawText.trim() ? 'bg-indigo-600 text-white hover:bg-indigo-700 hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'}`}>
-                                    <SafeIcon name="zap" size={16} className="mr-2" /> 시맨틱 파싱 및 매핑 시작
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* 🌟 Right: Data Process & Review (처리부) */}
-                        <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden z-10 relative">
-                            {parsedList.length === 0 && !isProcessing && (
-                                <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50/50 z-20 fade-in">
-                                    <div className="w-20 h-20 rounded-full bg-white shadow-sm flex items-center justify-center mb-4">
-                                        <SafeIcon name="check-circle-2" size={40} className="text-slate-300" />
-                                    </div>
-                                    <h3 className="text-lg font-black text-slate-700 mb-2">대기 중인 매핑 작업이 없습니다.</h3>
-                                    <p className="text-[13px] text-slate-500 font-medium">좌측에 텍스트를 붙여넣고 파싱을 시작하세요.</p>
-                                </div>
-                            )}
-
-                            {/* 4-Tabs Header */}
-                            <div className="flex px-2 pt-2 bg-[#0f172a] shrink-0 border-b border-slate-800">
-                                {[
-                                    { id: 'MATCH', label: '자동/수동 일치', icon: 'check-circle-2', color: 'emerald', count: stats.match },
-                                    { id: 'SIMILAR', label: '유사 (확인필요)', icon: 'alert-triangle', color: 'amber', count: stats.similar },
-                                    { id: 'MISMATCH', label: '불일치 (수동매핑)', icon: 'x', color: 'rose', count: stats.mismatch },
-                                    { id: 'MISSING', label: '누락 (단종의심)', icon: 'file-invoice', color: 'slate', count: stats.missing }
-                                ].map(tab => (
-                                    <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 flex flex-col items-center justify-center py-3 px-2 rounded-t-xl font-bold transition-colors border-t-[3px] mx-0.5 relative z-10 ${activeTab === tab.id ? `bg-white text-slate-800 border-${tab.color}-500` : 'bg-transparent text-slate-400 border-transparent hover:bg-slate-800 hover:text-slate-300'}`} style={{ marginBottom: activeTab === tab.id ? '-1px' : '0' }}>
-                                        <div className="flex items-center gap-1.5 text-[13px]">
-                                            <SafeIcon name={tab.icon} size={14} className={activeTab === tab.id ? `text-${tab.color}-500` : ''} /> {tab.label}
-                                        </div>
-                                        <span className={`mt-1.5 text-[15px] font-black ${activeTab === tab.id ? `text-${tab.color}-600` : ''}`}>{tab.count}</span>
-                                    </button>
-                                ))}
-                            </div>
-
-                            {/* List Content */}
-                            <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50/50 p-4">
-                                <div className="space-y-3 fade-in">
-                                    {parsedList.filter(i => i.status === activeTab).length === 0 ? (
-                                        <div className="py-20 text-center text-slate-400 font-bold">해당하는 항목이 없습니다.</div>
-                                    ) : parsedList.filter(i => i.status === activeTab).map(item => (
-                                        <div key={item.id} className={`bg-white border p-4 rounded-xl shadow-sm transition-all hover:shadow-md ${activeTab === 'MATCH' ? 'border-emerald-200 hover:border-emerald-300' : activeTab === 'SIMILAR' ? 'border-amber-200 hover:border-amber-300' : activeTab === 'MISMATCH' ? 'border-rose-200 hover:border-rose-300' : 'border-slate-200 hover:border-slate-300'}`}>
-                                            <div className="flex justify-between items-start mb-2 pb-2 border-b border-slate-100">
-                                                <div className="flex-1 min-w-0 pr-4">
-                                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">파싱된 원본 텍스트</div>
-                                                    <div className="text-[14px] font-black text-slate-800 truncate" title={item.rawName}>{item.rawName}</div>
-                                                </div>
-                                                <div className="text-right shrink-0">
-                                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">인식된 단가</div>
-                                                    <div className="text-[16px] font-black text-indigo-600 font-mono">{item.price.toLocaleString()}<span className="text-[12px] text-slate-500 font-normal ml-0.5">원</span></div>
-                                                </div>
-                                            </div>
-                                            
-                                            <div className="flex items-center justify-between">
-                                                {/* Left: Matched Master Info */}
-                                                <div className="flex-1">
-                                                    {item.status === 'MATCH' ? (
-                                                        <div className="flex items-center">
-                                                            <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mr-2"><SafeIcon name="check" size={12}/></div>
-                                                            <div className="flex flex-col">
-                                                                <span className="text-[13px] font-bold text-emerald-800">{item.matchedName} <span className="font-normal text-emerald-600 ml-1">({item.matchedSpec})</span></span>
-                                                                <span className="text-[10px] text-emerald-500 font-mono">{item.matchedCode} {item.isManual && <span className="bg-emerald-200 text-emerald-800 px-1 py-0.5 rounded ml-1">수동 연결됨</span>}</span>
-                                                            </div>
-                                                        </div>
-                                                    ) : item.status === 'SIMILAR' ? (
-                                                        <div className="flex items-center">
-                                                            <div className="w-6 h-6 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mr-2"><SafeIcon name="info-circle" size={12}/></div>
-                                                            <div className="flex flex-col">
-                                                                <span className="text-[12px] text-amber-600 font-bold mb-0.5">아래 상품이 맞습니까? (유사도 {((1-item.score)*100).toFixed(0)}%)</span>
-                                                                <span className="text-[13px] font-bold text-slate-800">{item.matchedName} <span className="font-normal text-slate-500 ml-1">({item.matchedSpec})</span></span>
-                                                            </div>
-                                                        </div>
-                                                    ) : item.status === 'MISSING' ? (
-                                                        <div className="flex items-center">
-                                                            <div className="w-6 h-6 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center mr-2"><SafeIcon name="ban" size={12}/></div>
-                                                            <div className="flex flex-col">
-                                                                <span className="text-[13px] font-bold text-slate-800 line-through decoration-slate-400">{item.matchedName} <span className="font-normal text-slate-500 ml-1">({item.matchedSpec})</span></span>
-                                                                <span className="text-[10px] text-slate-500">기존 카탈로그에는 있으나, 이번 업로드에는 없습니다.</span>
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="text-[12px] font-bold text-rose-500 flex items-center"><SafeIcon name="x" size={14} className="mr-1.5"/>매칭되는 마스터 상품을 찾지 못했습니다.</div>
-                                                    )}
-                                                </div>
-
-                                                {/* Right: Actions */}
-                                                <div className="shrink-0 flex items-center gap-2">
-                                                    {item.status === 'MATCH' && item.isManual && (
-                                                        <button onClick={() => handleCancelMatch(item.id)} className="px-3 py-1.5 bg-white border border-slate-200 text-rose-500 hover:bg-rose-50 hover:border-rose-300 rounded text-[11px] font-bold transition-colors flex items-center shadow-sm"><SafeIcon name="trash-alt" size={12} className="mr-1.5"/>매핑 취소</button>
-                                                    )}
-                                                    {item.status === 'SIMILAR' && (
-                                                        <>
-                                                            <button onClick={() => handleCancelMatch(item.id)} className="px-4 py-2 bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 rounded text-[12px] font-bold transition-colors shadow-sm">아닙니다</button>
-                                                            <button onClick={() => handleManualMatch(item.id, {코드: item.matchedCode, 품목명: item.matchedName, 규격: item.matchedSpec})} className="px-4 py-2 bg-indigo-600 text-white rounded text-[12px] font-bold hover:bg-indigo-700 transition-colors shadow-sm">예 (연결)</button>
-                                                        </>
-                                                    )}
-                                                    {item.status === 'MISMATCH' && (
-                                                        <button onClick={() => setSelectedItemToMap(item.id)} className="px-4 py-2 bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 rounded text-[12px] font-bold transition-colors shadow-sm flex items-center"><SafeIcon name="search" size={12} className="mr-1.5"/>마스터에서 수동 찾기</button>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {/* 수동 매핑 검색창 전개 */}
-                                            {selectedItemToMap === item.id && (
-                                                <div className="mt-3 pt-3 border-t border-slate-100 bg-slate-50 -mx-4 -mb-4 px-4 pb-4 rounded-b-xl fade-in">
-                                                    <div className="relative mb-2">
-                                                        <input type="text" value={searchKw} onChange={e=>setSearchKw(e.target.value)} placeholder="마스터 품명 검색..." autoFocus className="w-full pl-8 pr-3 py-2 border border-slate-300 rounded-lg text-[12px] outline-none focus:border-indigo-500 shadow-sm" />
-                                                        <SafeIcon name="search" size={12} className="absolute left-3 top-2.5 text-slate-400" />
-                                                    </div>
-                                                    <div className="max-h-40 overflow-y-auto custom-scrollbar space-y-1">
-                                                        {masterSearchResults.length === 0 ? <div className="text-[11px] text-slate-400 text-center py-2">검색 결과가 없습니다.</div> : masterSearchResults.map(m => (
-                                                            <div key={m.코드} onClick={() => handleManualMatch(item.id, m)} className="flex justify-between items-center p-2 bg-white border border-slate-200 rounded hover:border-indigo-400 hover:bg-indigo-50 cursor-pointer transition-colors group">
-                                                                <div className="text-[12px] font-bold text-slate-700 group-hover:text-indigo-700 truncate">{m['품목명']} <span className="text-[10px] text-slate-400">({m['규격']})</span></div>
-                                                                <button className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded group-hover:bg-indigo-600 group-hover:text-white transition-colors">선택</button>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                    <div className="mt-2 text-right">
-                                                        <button onClick={() => {setSelectedItemToMap(null); setSearchKw('');}} className="text-[11px] text-slate-500 hover:text-slate-700 underline font-bold">닫기</button>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="p-5 border-t border-slate-200 bg-white shrink-0 flex justify-between items-center">
-                                <div className="text-[12px] text-slate-500 font-bold">
-                                    <span className="text-emerald-600 mr-1">일치 {stats.match}건</span> | 
-                                    <span className="text-amber-500 mx-1">미확인 {stats.similar}건</span> | 
-                                    <span className="text-rose-500 ml-1">불일치 {stats.mismatch}건</span>
-                                </div>
-                                <button onClick={() => setShowReviewModal(true)} disabled={stats.match === 0 || isProcessing} className={`px-8 py-3 rounded-lg font-black text-[14px] shadow-md transition-all flex items-center ${stats.match > 0 ? 'bg-[#0B1021] text-white hover:bg-black hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'}`}>
-                                    <SafeIcon name="file-invoice" size={16} className="mr-2" /> 매핑 검토 및 프리뷰
-                                </button>
-                            </div>
+                            <h2 className="text-2xl font-black text-slate-800 mb-3">AI Smart Parser (스마트 파서)</h2>
+                            <p className="text-slate-500 font-medium">비정형 텍스트를 시스템 표준으로 변환하는 모듈입니다.<br/>(UI 고도화 작업 진행 중)</p>
                         </div>
                     </main>
 
-                    {/* 🌟 2-Track Review Modal */}
-                    <ParserReviewModal 
-                        isOpen={showReviewModal} 
-                        onClose={() => setShowReviewModal(false)} 
-                        onCommit={handleCommitFinal} 
-                        items={parsedList} 
-                        masterProducts={masterProducts} 
-                        targetCatalog={targetCatalog} 
-                    />
-
-                    {/* 🌟 Iframe Overlay 로 설정 모달 표시 */}
-                    <IframeSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
-                    
                     {toastMsg && (
-                        <div className="fixed bottom-10 right-10 z-[1000] bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in border border-slate-700">
+                        <div className="fixed bottom-10 right-10 z-[100] bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in border border-slate-700">
                             <SafeIcon name="check-circle-2" size={18} className="text-emerald-400" />
                             <span className="text-sm font-bold tracking-tight">{toastMsg}</span>
                         </div>
