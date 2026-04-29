@@ -1084,7 +1084,11 @@
                 await setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
                 localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
 
-                setManagedItems({}); setSelectedRows(new Set()); showToast(`✅ ${commitCount}건 마스터 단가 갱신 완료.`);
+                // 💡 [핵심 수정사항] 부분 반영 시 작업 화면을 강제로 날려버리던 코드를 주석(삭제) 처리합니다.
+                // setManagedItems({}); 
+                
+                setSelectedRows(new Set()); 
+                showToast(`✅ ${commitCount}건 마스터 반영 완료! 필터를 해제하고 남은 작업을 계속 진행하세요.`);
             }, [managedItems, masterProducts, config.masterLinks, showToast]);
 
             // 💡 [핵심 복구] ERP/쇼핑몰 양식 통합 엑셀 보고서 생성 로직 복구
