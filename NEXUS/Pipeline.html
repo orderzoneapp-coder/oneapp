@@ -102,6 +102,65 @@
         const getIDB = async (key) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); };
         const setIDB = async (key, val) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readwrite'); tx.objectStore('store').put(val, key); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); };
 
+        // 💡 [수정됨] CSV 한글 인코딩 처리 및 강건한 파서 
+        const parseExcelRobust = (file) => new Promise((resolve, reject) => {
+            if (!window.XLSX) return reject(new Error("엑셀 파서 로드 안됨"));
+            
+            const isCSV = file.name.toLowerCase().endsWith('.csv');
+            
+            if (isCSV) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const csvText = e.target.result;
+                        const wb = window.XLSX.read(csvText, { type: 'string', raw: false });
+                        processWorkbook(wb, resolve, reject);
+                    } catch(err) { reject(err); }
+                };
+                reader.readAsText(file, 'euc-kr'); 
+            } else {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = new Uint8Array(e.target.result); 
+                        const wb = window.XLSX.read(data, { type: 'array', cellDates: true });
+                        processWorkbook(wb, resolve, reject);
+                    } catch(err) { reject(err); }
+                };
+                reader.readAsArrayBuffer(file);
+            }
+            
+            function processWorkbook(wb, resolve, reject) {
+                try {
+                    const jsonAll = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "", raw: false });
+                    if(jsonAll.length === 0) return resolve([]);
+                    let headerRowIdx = 0;
+                    for (let i = 0; i < Math.min(15, jsonAll.length); i++) {
+                        const rowStr = jsonAll[i].join('').replace(/\s/g, '');
+                        if (rowStr.includes('코드') || rowStr.includes('품명') || rowStr.includes('상품')) { headerRowIdx = i; break; }
+                    }
+                    const headers = jsonAll[headerRowIdx] || [];
+                    let endIdx = jsonAll.length - 1;
+                    while (endIdx > headerRowIdx) {
+                        const rowArr = jsonAll[endIdx]; if (!rowArr || rowArr.length === 0) { endIdx--; continue; }
+                        let filledCount = 0, rawStr = '';
+                        for(let i=0; i<rowArr.length; i++) if(rowArr[i] !== undefined && String(rowArr[i]).trim() !== '') { filledCount++; rawStr += String(rowArr[i]).replace(/\s/g, ''); }
+                        if (rawStr === '') { endIdx--; continue; }
+                        if ((rawStr.includes('출력') || rawStr.includes('합계') || rawStr.includes('총계')) && filledCount <= 4) endIdx--; else break;
+                    }
+                    const parsedData = [];
+                    for (let i = headerRowIdx + 1; i <= endIdx; i++) {
+                        const row = jsonAll[i]; if (!row) continue;
+                        let isEmpty = true; const obj = {}; 
+                        headers.forEach((h, idx) => { if (h) { obj[h] = row[idx]; if(row[idx] !== undefined && String(row[idx]).trim() !== '') isEmpty = false; } }); 
+                        if(!isEmpty) { obj['_raw'] = row; parsedData.push(obj); }
+                    } resolve(parsedData);
+                } catch (e) {
+                    reject(e);
+                }
+            }
+        });
+
         // ==========================================
         // 🧩 1. SafeIcon 컴포넌트
         // ==========================================
@@ -366,11 +425,15 @@
             return newFinalData;
         };
 
+        // 💡 [개선] 완전 일치 1차 검색, 부분 일치 2차 검색
         const createHeaderMap = (actualHeaders, mappingConfig) => {
             const headerMap = {}; if(!mappingConfig) return headerMap;
             Object.keys(mappingConfig).forEach(field => {
                 const keywords = mappingConfig[field].split(',').map(s => s.trim().toLowerCase().replace(/\s/g, '')).filter(Boolean);
-                const matchedKey = actualHeaders.find(h => h && keywords.some(kw => String(h).toLowerCase().replace(/\s/g, '').includes(kw)));
+                let matchedKey = actualHeaders.find(h => h && keywords.some(kw => String(h).toLowerCase().replace(/\s/g, '') === kw));
+                if (!matchedKey) {
+                    matchedKey = actualHeaders.find(h => h && keywords.some(kw => String(h).toLowerCase().replace(/\s/g, '').includes(kw)));
+                }
                 if(matchedKey) headerMap[field] = matchedKey;
             }); return headerMap;
         };
@@ -785,6 +848,7 @@
                 return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
             }, [masterProducts]);
 
+            // 💡 [핵심] 파일 업로드 기능 안정화
             const handleFileUpload = async (e) => {
                 const file = e.target.files[0]; if (!file) return;
                 setIsProcessing(true); setProcessMsg('엑셀 시세표 분석 중...');
@@ -795,7 +859,9 @@
                     
                     let newManaged = { ...managedItems }; let count = 0;
                     excelData.forEach(row => {
-                        const codeKey = headerCache['품목코드']; const code = row[codeKey];
+                        // 💡 코드키가 없을경우를 대비한 강력한 폴백
+                        const codeKey = headerCache['품목코드']; 
+                        const code = row[codeKey] || row['품목코드'] || row['상품코드'] || row['코드'];
                         if (!code || String(code).replace(/\s/g, '').includes('출력')) return;
                         
                         if (!newManaged[code]) newManaged[code] = { 코드: code, sources: { estimate: {} }, finalData: {} };
