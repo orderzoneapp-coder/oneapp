@@ -176,7 +176,7 @@
                             <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={(e) => { setSelectedGroup('common'); onNavigate(e, 'Dashboard.html', true); }}>
                                 <span className="font-black text-[24px] tracking-wider text-slate-100 mr-4 group-hover:text-indigo-400 transition-colors">ONEAPP</span>
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
-                                    <div className="flex items-center"><span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span><span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black">v3.2</span></div>
+                                    <div className="flex items-center"><span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span><span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.2</span></div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">{currentTab ? currentTab.shortTag : 'WORKSPACE'}</span>
                                 </div>
                             </div>
@@ -229,6 +229,7 @@
             );
         };
 
+        // 💡 [복구 완료] 비즈니스 로직(100원 단위 절상 및 엑셀 수동 단가 보존) v3.1 원복
         const calculatePricesEngine = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
             if (!baseInPrice || baseInPrice <= 0) return { ...currentFinalData, '입고가': 0, '시중가': 0, '출고가': 0, '1입고': 0, '1출고': 0 };
             const outsrc = parseNum(currentFinalData?.['외주비'] ?? mItem?.['외주비']);
@@ -258,9 +259,17 @@
 
             const div1 = parseNum(currentFinalData?.['1종연산'] ?? mItem?.['1종연산']);
             const extraCost = parseNum(currentFinalData?.['경비'] ?? mItem?.['경비']);
+            
+            // 💡 [복원] 소분 출고가 100원 단위 반올림 및 엑셀 수동 단가 보존 방어 로직
             if (div1 > 0) {
-                newFinalData['1입고'] = Math.round(((baseInPrice + outsrc) / div1) / 100) * 100;
-                newFinalData['1출고'] = Math.round(((newFinalData['출고가'] / div1) + extraCost) / 10) * 10;
+                const provided1In = parseNum(currentFinalData?.['1입고']);
+                const provided1Out = parseNum(currentFinalData?.['1출고']);
+
+                let calc1In = Math.round(((baseInPrice + outsrc) / div1) / 100) * 100;
+                let calc1Out = Math.round(((newFinalData['출고가'] / div1) + extraCost) / 100) * 100;
+
+                newFinalData['1입고'] = (provided1In > 0 && !forceRecalc) ? provided1In : calc1In;
+                newFinalData['1출고'] = (provided1Out > 0 && !forceRecalc) ? provided1Out : calc1Out;
             }
             return newFinalData;
         };
@@ -320,7 +329,7 @@
                                         </div>
                                     ))}
                                 </div>
-                                <div className="w-[160px] shrink-0"><select value={vendorFilter} onChange={e => setVendorFilter(e.target.value)} className="input-base px-3 py-2 bg-white cursor-pointer"><option value="all">전체 거래처</option>{analysis.vendors.map(v => <option key={v} value={v}>{v}</option>)}</select></div>
+                                <div className="w-[160px] shrink-0"><select value={vendorFilter} onChange={e => setVendorFilter(e.target.value)} className="select-base px-3 py-2 bg-white cursor-pointer"><option value="all">전체 거래처</option>{analysis.vendors.map(v => <option key={v} value={v}>{v}</option>)}</select></div>
                             </div>
                             <div className="flex-1 overflow-hidden flex flex-col bg-white border border-slate-200 rounded-xl">
                                 <div className="flex-1 overflow-auto custom-scrollbar">
@@ -366,9 +375,9 @@
                         <div className="p-6 flex flex-col gap-4">
                             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
                                 <label className="text-[12px] font-bold text-slate-500 mb-1.5 block">1. 기존 카탈로그 선택 (오타 방지)</label>
-                                <select onChange={(e) => { if(e.target.value) setName(e.target.value); }} className="input-base px-3 py-2.5 mb-4 cursor-pointer bg-white"><option value="">-- 기존 목록에서 선택 --</option>{availableCategories?.map(c => <option key={c.name} value={c.name}>{c.name} ({c.count}건)</option>)}</select>
+                                <select onChange={(e) => { if(e.target.value) setName(e.target.value); }} className="select-base px-3 py-2.5 mb-4 cursor-pointer bg-white w-full text-left pl-3"><option value="">-- 기존 목록에서 선택 --</option>{availableCategories?.map(c => <option key={c.name} value={c.name}>{c.name} ({c.count}건)</option>)}</select>
                                 <label className="text-[12px] font-bold text-slate-500 mb-1.5 block">2. 카탈로그 명칭 (직접 입력 가능)</label>
-                                <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="저장할 카탈로그 이름" className="input-base px-4 py-3 bg-white" autoFocus onKeyDown={(e) => { if(e.key === 'Enter' && name) onSave(name); }} />
+                                <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="저장할 카탈로그 이름" className="select-base w-full px-4 py-3 bg-white pl-4" autoFocus onKeyDown={(e) => { if(e.key === 'Enter' && name) onSave(name); }} />
                             </div>
                             {isExisting ? <div className="text-[12px] font-bold text-indigo-700 bg-indigo-50 p-3 rounded-lg border border-indigo-200 flex items-start"><i className="fas fa-info-circle mr-1.5 mt-0.5"></i><div>이미 존재하는 카탈로그입니다.<p className="mt-1 text-[11px] text-indigo-600">선택하신 카탈로그에 새로운 상품들이 <strong>병합(추가)</strong>됩니다.</p></div></div> : name.trim() !== '' ? <div className="text-[12px] font-bold text-emerald-700 bg-emerald-50 p-3 rounded-lg border border-emerald-200 flex items-center"><i className="fas fa-magic mr-1.5"></i> 완전히 새로운 카탈로그가 생성됩니다.</div> : null}
                             <div className="flex gap-2 mt-2">
@@ -418,7 +427,7 @@
                 }
             };
             return (
-                <td className={`td-base bg-white ${getCellWidthClass(linkedMasterField || field)} ${isDiff ? 'bg-amber-50/60' : ''}`}>
+                <td className={`px-2 py-1.5 border-r border-slate-200 bg-white ${getCellWidthClass(linkedMasterField || field)} ${isDiff ? 'bg-amber-50/60' : ''}`}>
                     <input type="text" data-field={field} value={val==="오류"?"":val} placeholder={mVal||''} onChange={e=>setVal(e.target.value)} onFocus={e=>{setIsFocused(true); setTimeout(()=>e.target.select(),0);}} onBlur={onBlur} onKeyDown={handleKeyDown} onClick={e=>e.target.select()} className={`w-full bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-1 focus:ring-indigo-300 rounded px-1.5 py-1.5 text-[13px] outline-none ${isNum?'text-right':'truncate text-center'} ${isDiff?'text-indigo-700 font-bold':'text-slate-700 font-medium'} transition-colors`} />
                 </td>
             );
@@ -434,7 +443,7 @@
                     {!isEstimateUploaded ? (
                         visMasterCols.map(h => {
                             const isNum = NUMERIC_HEADERS.includes(h); const mVal = mItem[h] !== undefined && mItem[h] !== '' ? (isNum ? parseNum(mItem[h]).toLocaleString() : mItem[h]) : '-';
-                            return <td key={`idle-${h}`} className={`td-base bg-slate-50 text-slate-600 ${getCellWidthClass(h)} ${isNum ? 'text-right font-medium' : 'text-center'}`}><div className="truncate w-full">{mVal}</div></td>;
+                            return <td key={`idle-${h}`} className={`px-2 py-1.5 border-r border-slate-200 bg-slate-50 text-slate-600 ${getCellWidthClass(h)} ${isNum ? 'text-right font-medium' : 'text-center'}`}><div className="truncate w-full">{mVal}</div></td>;
                         })
                     ) : (
                         <>
@@ -442,7 +451,7 @@
                                 const isNum = NUMERIC_HEADERS.includes(h); const mVal = mItem[h]; let displayVal = mVal; let isChanged = false;
                                 if (row.finalData && row.finalData[h] !== undefined) { if (isNum && parseNum(row.finalData[h]) !== parseNum(mVal)) { displayVal = row.finalData[h]; isChanged = true; } else if (!isNum && String(row.finalData[h]) !== String(mVal)) { displayVal = row.finalData[h]; isChanged = true; } }
                                 const fmt = displayVal !== undefined && displayVal !== '' ? (isNum ? parseNum(displayVal).toLocaleString() : displayVal) : '-';
-                                return <td key={`pm-${h}`} className={`td-base transition-colors bg-slate-50 ${getCellWidthClass(h)} ${isChanged ? 'text-amber-800 font-bold' : 'text-slate-600'} ${isNum ? 'text-right font-medium' : 'text-center'}`}><div className="truncate w-full">{fmt}</div></td>;
+                                return <td key={`pm-${h}`} className={`px-2 py-1.5 border-r border-slate-200 transition-colors bg-slate-50 ${getCellWidthClass(h)} ${isChanged ? 'text-amber-800 font-bold' : 'text-slate-600'} ${isNum ? 'text-right font-medium' : 'text-center'}`}><div className="truncate w-full">{fmt}</div></td>;
                             })}
                             {visUploadCols.map(h => {
                                 const lk = masterLinksEst[h]; const mVal = lk && rowCode ? mItem[lk] : undefined; const initVal = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.['estimate']?.[h] || '');
@@ -602,7 +611,12 @@
                         const getFirstStr = (objList, keys) => { for (let obj of objList) { if (!obj) continue; for (let k of keys) { if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k]; } } return ''; };
                         const isValidCode = (code) => { if (!code) return false; const s = String(code).trim(); return s !== '' && s !== '0' && s !== '00' && s !== '-' && s.toLowerCase() !== 'undefined' && s.toLowerCase() !== 'null'; };
 
-                        fullDisplayRows.forEach(row => {
+                        // 💡 스마트 출력 타겟: 체크된 항목이 있으면 그것만, 없으면 화면 전체 출력
+                        const exportTargetRows = selectedRows.size > 0 
+                            ? fullDisplayRows.filter(row => selectedRows.has(row.코드)) 
+                            : fullDisplayRows;
+
+                        exportTargetRows.forEach(row => {
                             const mItem = masterProducts[row.코드] || {}, final = row.finalData || {}, source = row.sources?.['estimate'] || {};
                             const pIn = getFirstNum([final, source, mItem], ['입고가', '입고']);
                             const pOut = getFirstNum([final, source, mItem], ['출고가', '출고']);
@@ -611,7 +625,6 @@
                             const dName = getFirstStr([source, mItem], ['품목명']), dSpec = getFirstStr([source, mItem], ['규격']), dBrand = getFirstStr([source, mItem], ['브랜드']), dInfo = getFirstStr([source, mItem], ['상품정보', '기본설명', '간단설명']), dSearch = getFirstStr([source, mItem], ['검색어등록', '상품태그']), pBPrice = getFirstNum([final, source], ['입고B', 'B단가']), pASale = getFirstNum([final, source], ['도매A', 'A판매', 'A판매가']), pBSale = getFirstNum([final, source], ['도매B', 'B판매', 'B 도매가']), pInstruction = getFirstStr([final, source], ['지시사항', '간단설명']);
                             const pRowErp = createRowErp(row.코드, pIn, pOut, pBPrice, pASale, pBSale, pIn, pInstruction); if (pRowErp) erpData.push(pRowErp);
                             
-                            // 💡 [버그 픽스] 시중가 오류 수정
                             const isZeroPrice = (pIn === 0 && pOut === 0);
                             const priceMarketShop = isZeroPrice ? 0 : (pMarketPrice > 0 ? pMarketPrice : pOut);
                             const priceA = isZeroPrice ? 0 : getFirstNum([final, source, mItem], ['도매A', 'A판매가', 'A판매', '출고가']);
@@ -631,7 +644,6 @@
                                     const cName = subMaster.품목명 || getFirstStr([final, source, mItem], [`${type}그룹명`]) || `${dName} (소분)`;
                                     const cSpec = subMaster.규격 || getFirstStr([mItem, source], [`${type}종규격`]) || '';
                                     
-                                    // 💡 [버그 픽스] 소분 코드 시중가 수정
                                     const cIsZeroPrice = (cIn === 0 && cOut === 0);
                                     const cMarketPrice = cIsZeroPrice ? 0 : (subMaster.시중가 > 0 ? subMaster.시중가 : cOut);
                                     const cPriceA = cIsZeroPrice ? 0 : (subMaster.도매A > 0 ? subMaster.도매A : cOut);
@@ -646,7 +658,7 @@
                         showToast(`✅ [${option.title || '통합 보고서'}] 엑셀 다운로드가 완료되었습니다.`);
                     } catch(e) { showToast("❌ 엑셀 파일 생성 중 오류가 발생했습니다."); } finally { setIsExporting(false); }
                 }, 100);
-            }, [fullDisplayRows, masterProducts, showToast]);
+            }, [fullDisplayRows, masterProducts, selectedRows, showToast]);
 
             const handleLoadWorkspaceData = useCallback((catalog, category) => {
                 if (!catalog && !category) return setManagedItems({});
@@ -709,7 +721,13 @@
                         const upCols = config.visibleUploadCols.estimate || [], mCols = config.visibleMasterCols.estimate || [];
                         const headers = ['상태/선택', '품목코드', '마스터_품목명', '마스터_규격', ...mCols.map(h=>`[M]${h}`), ...upCols.map(h=>`[작업]${h}`)];
                         const aoa = [headers];
-                        fullDisplayRows.forEach(row => {
+
+                        // 💡 스마트 출력 타겟: 체크된 항목이 있으면 그것만, 없으면 화면 전체 출력
+                        const exportTargetRows = selectedRows.size > 0 
+                            ? fullDisplayRows.filter(row => selectedRows.has(row.코드)) 
+                            : fullDisplayRows;
+
+                        exportTargetRows.forEach(row => {
                             const mItem = masterProducts[row.코드] || {}; const rowData = [selectedRows.has(row.코드)?'선택됨':'', row.코드||'', mItem.품목명||'', mItem.규격||''];
                             mCols.forEach(h => { const val = mItem[h] !== undefined ? mItem[h] : ''; rowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(val) : val); });
                             upCols.forEach(h => { const val = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.estimate?.[h] || ''); rowData.push(NUMERIC_HEADERS.includes(h)||NUMERIC_HEADERS.includes(config.masterLinks.estimate?.[h]) ? parseNum(val) : val); });
@@ -748,7 +766,7 @@
                             {selectedRows.size > 0 && <button onClick={handleRemoveFromWorkspace} className="toolbar-btn bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100"><i className="fas fa-eye-slash mr-1.5"></i> 숨기기 ({selectedRows.size})</button>}
                             <button onClick={() => setShowReviewModal(true)} disabled={fullDisplayRows.length === 0} className={`toolbar-btn px-4 ${fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed border-slate-200'}`}><i className="fas fa-check-circle mr-1.5"></i> 반영하기</button><div className="w-px h-5 bg-slate-200 mx-1"></div>
                             <button onClick={handleReset} className="toolbar-btn w-9 justify-center text-slate-500 hover:text-slate-800"><i className="fas fa-redo-alt text-[13px]"></i></button>
-                            <div className="relative w-48 sm:w-64 h-9"><input id="global-search-input" type="text" placeholder="결과 내 검색 (F3)" value={globalSearch} onChange={e=>setGlobalSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const target = document.querySelector('tbody tr.table-row-hover input[data-field="입고가"]') || document.querySelector('tbody tr.table-row-hover td:has(input[type="text"]) input'); if (target) { target.focus(); setTimeout(() => target.select(), 0); } } }} className="input-base w-full h-full pl-3 pr-8 py-1" /><i className="fas fa-search absolute right-3 top-2.5 text-slate-400 text-[13px] pointer-events-none"></i></div>
+                            <div className="relative w-48 sm:w-64 h-9"><input id="global-search-input" type="text" placeholder="결과 내 검색 (F3)" value={globalSearch} onChange={e=>setGlobalSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const target = document.querySelector('tbody tr.table-row-hover input[data-field="입고가"]') || document.querySelector('tbody tr.table-row-hover td:has(input[type="text"]) input'); if (target) { target.focus(); setTimeout(() => target.select(), 0); } } }} className="select-base w-full h-full pl-3 pr-8 py-1 !cursor-text" /><i className="fas fa-search absolute right-3 top-2.5 text-slate-400 text-[13px] pointer-events-none"></i></div>
                         </div>
                     </div>
 
