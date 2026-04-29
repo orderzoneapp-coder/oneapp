@@ -648,7 +648,10 @@
                                 if (isValidCode(cCodeRaw)) { 
                                     const cCode = String(cCodeRaw).trim();
                                     const cIn = getFirstNum([final, source, mItem], [`${type}입고`, `${type}구매`]), cOut = getFirstNum([final, source, mItem], [`${type}출고`]); 
-                                    const cRowErp = createRowErp(cCode, cIn, cOut, '', '', '', cIn, ''); if (cRowErp) erpData.push(cRowErp); 
+                                    const cRowErp = createRowErp(cCode, cIn, cOut, '', '', '', cIn, ''); 
+                                    
+                                    // 💡 [수정됨] ERP 업데이트 시트에는 1종(소분)만 적용하고 2종은 제외합니다.
+                                    if (type === 1 && cRowErp) erpData.push(cRowErp); 
 
                                     const subMaster = masterProducts[cCode] || {};
                                     const cName = subMaster.품목명 || getFirstStr([final, source, mItem], [`${type}그룹명`]) || `${dName} (소분)`;
