@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - Dashboard [v3.0]</title>
+    <title>ONEAPP NEXES - Dashboard [v2.0]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -14,47 +14,28 @@
     
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-        body { font-family: 'Pretendard', sans-serif; -webkit-user-select: none; user-select: none; background-color: #f1f5f9; margin: 0; overflow: hidden; }
+        body { font-family: 'Pretendard', sans-serif; -webkit-user-select: none; user-select: none; background-color: #f1f5f9; margin: 0; }
         ::-webkit-scrollbar { width: 6px; height: 6px; } 
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
         .fade-in { animation: fadeIn 0.2s ease-out; } 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-        
-        /* 🌟 Iframe 드로어용 슬라이딩 애니메이션 추가 */
-        @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
-        .slide-in-right { animation: slideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-
         .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
     </style>
 </head>
-<body class="text-slate-800">
+<body class="overflow-hidden text-slate-800">
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useCallback, Fragment } = React;
 
-        // ==========================================
-        // 🔑 Global Constants & Utilities
-        // ==========================================
         const STORAGE_KEYS = {
             MASTER_DB: 'merchMaster_v870',
             CLOUD_URL: 'skuSyncCloudUrl_v6',
             SYNC_TRIGGER: 'merchMaster_sync_trigger'
         };
 
-        const initIDB = () => new Promise((resolve, reject) => {
-            const request = indexedDB.open('MerchOpsDB', 1);
-            request.onupgradeneeded = (e) => { if (!e.target.result.objectStoreNames.contains('store')) e.target.result.createObjectStore('store'); };
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-        const getIDB = async (key) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); };
-
-        // ==========================================
-        // 🧩 [아이콘 시스템] SafeIcon
-        // ==========================================
         const SafeIcon = React.memo(function SafeIconComponent({ name, size = 18, className = "" }) {
             const [svg, setSvg] = useState("");
             useEffect(() => {
@@ -95,63 +76,56 @@
             return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
         });
 
-        // ==========================================
-        // 🧩 Read-Only 설정 훅 (v3.0 경량화)
-        // ==========================================
-        const useMerchConfig = () => {
-            const loadConfig = () => {
-                const cloudUrl = localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || '';
-                return { cloudUrl };
-            };
+        const initIDB = () => new Promise((resolve, reject) => {
+            const request = indexedDB.open('MerchOpsDB', 1);
+            request.onupgradeneeded = (e) => { if (!e.target.result.objectStoreNames.contains('store')) e.target.result.createObjectStore('store'); };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+        const getIDB = async (key) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); };
 
-            const [config, setConfig] = useState(loadConfig());
-
-            useEffect(() => {
-                const handleStorageChange = () => setConfig(loadConfig());
-                window.addEventListener('storage', handleStorageChange);
-                return () => window.removeEventListener('storage', handleStorageChange);
-            }, []);
-
-            return config;
-        };
-
-        // ==========================================
-        // 🧩 통합 글로벌 헤더 (v3.0 표준 규격) - 모든 파일 공통
-        // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
+            // 1-Depth: 대분류 그룹
             const groups = [
                 { id: 'master', label: '정보 관리', icon: 'database' },
                 { id: 'ops', label: '운영 관리', icon: 'truck' },
                 { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }
             ];
 
+            // 2-Depth: 소분류 탭 
             const tabs = [
-                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true },
-                { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: false },
+                { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'dashboard.html', group: 'common', isReady: true },
+                { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'guide.html', group: 'common', isReady: true },
                 
-                { id: 'item-info', label: '마스터 DB', icon: "database", path: 'Master.html', group: 'master', isReady: true },
-                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'Item_manager.html', group: 'master', isReady: true },
-                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'Pipeline.html', group: 'master', isReady: true },
-                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'Parser.html', group: 'master', isReady: true },
-                { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: 'partner_db.html', group: 'master', isReady: false },
+                { id: 'item-info', label: '마스터 DB', icon: "database", path: 'item_master.html', group: 'master', isReady: true },
+                { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'items.html', group: 'master', isReady: true },
+                { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'index.html', group: 'master', isReady: true },
+                { id: 'parser', label: '스마트 파서', icon: "zap", path: 'parser.html', group: 'master', isReady: true },
+                { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: 'partner_db.html', group: 'master', isReady: true },
                 { id: 'partners', label: '거래처 관리', icon: "users", path: 'partners.html', group: 'master', isReady: true },
 
                 { id: 'orders', label: '주문 관리', icon: "shopping-bag", path: 'orders.html', group: 'ops', isReady: true },
                 { id: 'purchases', label: '구매 관리', icon: "credit-card", path: 'purchases.html', group: 'ops', isReady: true },
                 { id: 'sales', label: '판매 관리', icon: "line-chart", path: 'sales.html', group: 'ops', isReady: true },
                 { id: 'inventory', label: '재고 마감', icon: "boxes", path: 'inventory.html', group: 'ops', isReady: true },
-                { id: 'print-center', label: '출력 센터', icon: "printer", path: 'print_center.html', group: 'ops', isReady: false },
+                { id: 'print-center', label: '출력 센터', icon: "printer", path: 'print_center.html', group: 'ops', isReady: true },
 
-                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'Report.html', group: 'admin', isReady: true },
-                { id: 'cs', label: '정보마당(CS)', icon: "megaphone", path: 'cs.html', group: 'admin', isReady: false }
+                { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'report.html', group: 'admin', isReady: true },
+                { id: 'cs', label: '정보마당(CS)', icon: "megaphone", path: 'cs.html', group: 'admin', isReady: true }
             ];
 
             const currentTab = tabs.find(t => t.id === activeTab);
             const activeGroup = currentTab ? currentTab.group : 'common'; 
             const [selectedGroup, setSelectedGroup] = useState(activeGroup);
 
-            const handleGroupClick = (groupId) => setSelectedGroup(prev => prev === groupId ? 'common' : groupId);
-            const handleLogoClick = (e) => { setSelectedGroup('common'); onNavigate(e, 'Dashboard.html', true); };
+            const handleGroupClick = (groupId) => {
+                setSelectedGroup(prev => prev === groupId ? 'common' : groupId);
+            };
+
+            const handleLogoClick = (e) => {
+                setSelectedGroup('common');
+                onNavigate(e, '/NEXUS/Dashboard');
+            };
 
             return (
                 <div className="flex flex-col shrink-0 z-40 relative w-full shadow-sm bg-[#0B1021]">
@@ -162,14 +136,11 @@
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
                                     <div className="flex items-center">
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.0</span>
+                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v2.0</span>
                                     </div>
-                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">
-                                        {currentTab ? currentTab.label : 'WORKSPACE'}
-                                    </span>
+                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">One Board</span>
                                 </div>
                             </div>
-
                             <div className="flex items-end h-full gap-8">
                                 {groups.map(g => (
                                     <button key={g.id} onClick={() => handleGroupClick(g.id)}
@@ -183,7 +154,7 @@
 
                         <div className="flex items-center gap-4 h-full">
                             <div className="flex items-center bg-[#151B2B] rounded-lg border border-slate-700/50 h-9 px-3 shadow-inner gap-3">
-                                <div className="flex items-center justify-center" title={isProcessing ? processMsg : "시스템 정상 대기중"}>
+                                <div className="flex items-center justify-center" title={isProcessing ? processMsg : "클라우드 동기화 켜짐 (가동중)"}>
                                     {isProcessing ? (
                                         <i className="fas fa-circle-notch fa-spin text-amber-500 text-[12px]"></i>
                                     ) : (
@@ -194,8 +165,8 @@
                                     )}
                                 </div>
                                 <div className="w-px h-3.5 bg-slate-700"></div>
-                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`현재 데이터 건수: ${itemCount.toLocaleString()}건`}>
-                                    <SafeIcon name="database" size={10} className="text-slate-500" />
+                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`현재 브라우저 메모리에 다운로드된 마스터 상품 수: ${itemCount.toLocaleString()}개`}>
+                                    <i className="fas fa-database text-[10px] text-slate-500"></i>
                                     <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount.toLocaleString()}</span>
                                 </div>
                             </div>
@@ -204,24 +175,24 @@
                                 <button onClick={onPull} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 불러오기(Pull)"><SafeIcon name="cloud-download" size={18} /></button>
                                 <button onClick={onPush} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 백업하기(Push)"><SafeIcon name="cloud-upload" size={18} /></button>
                                 <div className="w-px h-6 bg-slate-700 mx-1"></div>
-                                <button onClick={onOpenSettings} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-slate-400 hover:text-white shadow-sm" title="통합 환경설정 센터 열기"><SafeIcon name="settings" size={18} /></button>
+                                <button onClick={onOpenSettings} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-slate-400 hover:text-white shadow-sm" title="설정"><SafeIcon name="settings" size={18} /></button>
                             </div>
                         </div>
                     </header>
 
                     {selectedGroup && (
-                        <div className="bg-[#0B1021] px-6 pt-3 flex items-end gap-1 overflow-x-auto custom-scrollbar border-b border-slate-200 fade-in">
+                        <div className="bg-[#0B1021] px-8 pt-4 flex items-end gap-2 overflow-x-auto custom-scrollbar border-b border-slate-200 fade-in">
                             {tabs.filter(t => t.group === selectedGroup).map(tab => {
                                 const isActive = activeTab === tab.id;
-                                const isPlaceholder = !tab.isReady;
+                                const isPlaceholder = tab.path === '#';
                                 return (
-                                    <a key={tab.id} href={tab.path} onClick={(e) => onNavigate(e, tab.path, tab.isReady)}
-                                       className={`flex items-center gap-2 px-6 py-3 text-[14px] font-bold rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px] 
+                                    <a key={tab.id} href={tab.path} onClick={(e) => onNavigate(e, tab.path)}
+                                       className={`flex items-center gap-2 px-6 py-3 text-[14px] font-black rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px] 
                                        ${isActive 
-                                           ? 'bg-white text-indigo-600 border-t-indigo-500 border-x-slate-200 relative z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]' 
+                                           ? 'bg-slate-50 text-indigo-700 border-t-indigo-600 border-x-slate-200 relative z-10 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]' 
                                            : isPlaceholder 
                                               ? 'bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5' 
-                                              : 'bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5'
+                                              : 'bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:bg-[#1E293B] hover:text-slate-200 pb-2.5'
                                        }`}
                                        style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '13px' : '10px' }}
                                     >
@@ -230,50 +201,15 @@
                                     </a>
                                 );
                             })}
+                            {tabs.filter(t => t.group === selectedGroup).length === 0 && (
+                                <div className="px-5 py-2.5 text-[13px] font-bold text-slate-500 pb-4">이 그룹에 할당된 메뉴가 없습니다.</div>
+                            )}
                         </div>
                     )}
                 </div>
             );
         };
 
-        // ==========================================
-        // 🌟 Iframe 설정 모달 (경량화)
-        // ==========================================
-        const IframeSettingsModal = ({ isOpen, onClose }) => {
-            if (!isOpen) return null;
-            return (
-                <div className="fixed inset-0 z-[500] flex justify-end bg-slate-900/60 backdrop-blur-sm fade-in">
-                    <div className="w-full max-w-[1100px] h-full bg-white shadow-[0_0_40px_rgba(0,0,0,0.3)] flex flex-col slide-in-right border-l border-slate-300 relative overflow-hidden">
-                        <div className="bg-[#0f172a] px-6 py-4 flex justify-between items-center text-white shrink-0 border-b border-slate-700 shadow-md relative z-10">
-                            <div className="flex items-center gap-3">
-                                <SafeIcon name="settings" size={20} className="text-indigo-400"/>
-                                <h2 className="font-black text-[17px] tracking-wide">통합 환경설정 센터</h2>
-                                <span className="bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold border border-indigo-500/30 ml-2">Iframe Overlay</span>
-                            </div>
-                            <div className="flex items-center gap-4">
-                                <span className="text-[12px] text-slate-400 font-medium hidden md:inline-block">설정을 변경하고 창을 닫으면 작업 화면에 즉시 반영됩니다.</span>
-                                <button onClick={onClose} className="text-slate-300 hover:text-white transition-colors bg-slate-800 hover:bg-rose-500 w-8 h-8 rounded-lg flex items-center justify-center shadow-sm border border-slate-700 hover:border-rose-400">
-                                    <SafeIcon name="x" size={18} />
-                                </button>
-                            </div>
-                        </div>
-                        <div className="flex-1 w-full bg-slate-100 relative">
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                <div className="text-slate-300 flex flex-col items-center">
-                                    <i className="fas fa-circle-notch fa-spin text-3xl mb-3"></i>
-                                    <span className="font-bold text-sm">설정 모듈을 불러오는 중입니다...</span>
-                                </div>
-                            </div>
-                            <iframe src="settings.html?mode=iframe" className="absolute inset-0 w-full h-full border-0 bg-white relative z-10" title="Settings Center"></iframe>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        // ==========================================
-        // 📊 메인 웰컴 보드 (대시보드)
-        // ==========================================
         const DashboardWelcome = () => {
             return (
                 <div className="h-full flex flex-col items-center justify-center bg-white m-6 rounded-xl border border-slate-200 shadow-sm p-10 fade-in relative overflow-hidden">
@@ -289,24 +225,20 @@
             );
         };
 
-        // ==========================================
-        // ⚙️ Main App Container (Dashboard)
-        // ==========================================
         function App() {
-            const config = useMerchConfig();
-            
             const [isProcessing, setIsProcessing] = useState(false);
             const [processMsg, setProcessMsg] = useState('');
             const [toastMsg, setToastMsg] = useState('');
+            const [showSettings, setShowSettings] = useState(false);
+            const [gasUrl, setGasUrl] = useState(() => localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || '');
             
-            const [showSettingsModal, setShowSettingsModal] = useState(false);
             const [itemCount, setItemCount] = useState(0);
 
             const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
 
-            const handleNavigate = useCallback((e, path, isReady = true) => {
+            const handleNavigate = useCallback((e, path) => {
                 if (e && e.preventDefault) e.preventDefault();
-                if (!isReady || path === '#') { showToast('⚠️ 준비 중인 기능입니다.'); return; }
+                if (path === '#') { showToast('⚠️ 준비 중인 기능입니다.'); return; }
                 try {
                     const protocol = window.location.protocol;
                     if (protocol === 'about:' || protocol === 'blob:' || protocol === 'data:') {
@@ -315,48 +247,25 @@
                 } catch (err) { showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`); }
             }, [showToast]);
 
-            const loadDataCount = useCallback(async () => {
-                try {
-                    const data = await getIDB(STORAGE_KEYS.MASTER_DB);
-                    if (data) setItemCount(Object.keys(data).length);
-                } catch (error) {
-                    console.error(error);
-                }
-            }, []);
-
             useEffect(() => {
-                loadDataCount();
-
-                const handleStorageChange = (e) => {
-                    if (e.key === STORAGE_KEYS.SYNC_TRIGGER) {
-                        loadDataCount();
+                localStorage.setItem(STORAGE_KEYS.CLOUD_URL, gasUrl);
+                try {
+                    const s = localStorage.getItem(STORAGE_KEYS.MASTER_DB);
+                    if(s) {
+                        const parsed = JSON.parse(s);
+                        setItemCount(Object.keys(parsed).length);
                     }
-                };
-                window.addEventListener('storage', handleStorageChange);
-                
-                // 🌟 Iframe 메시지 수신 (설정창 닫힘 감지)
-                const handleMessage = (e) => {
-                    if (e.data && e.data.type === 'CLOSE_SETTINGS') {
-                        setShowSettingsModal(false);
-                        loadDataCount(); 
-                    }
-                };
-                window.addEventListener('message', handleMessage);
-
-                return () => {
-                    window.removeEventListener('storage', handleStorageChange);
-                    window.removeEventListener('message', handleMessage);
-                };
-            }, [loadDataCount]);
+                } catch(e) {}
+            }, [gasUrl]);
 
             const handlePush = async () => {
-                if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
+                if (!gasUrl) return showToast("⚠️ 설정에서 앱스크립트 URL을 입력하세요.");
                 setIsProcessing(true); setProcessMsg("클라우드 백업 중...");
                 setTimeout(() => { showToast("✅ 클라우드 저장 완료"); setIsProcessing(false); setProcessMsg(""); }, 1000);
             };
 
             const handlePull = async () => {
-                if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
+                if (!gasUrl) return showToast("⚠️ 설정에서 앱스크립트 URL을 입력하세요.");
                 setIsProcessing(true); setProcessMsg("데이터 동기화 중...");
                 setTimeout(() => { showToast("✅ 데이터 수신 완료"); setIsProcessing(false); setProcessMsg(""); }, 1000);
             };
@@ -368,7 +277,7 @@
                         itemCount={itemCount} 
                         isProcessing={isProcessing} 
                         processMsg={processMsg}
-                        onOpenSettings={() => setShowSettingsModal(true)}
+                        onOpenSettings={() => setShowSettings(true)}
                         onPush={handlePush}
                         onPull={handlePull}
                         onNavigate={handleNavigate}
@@ -378,15 +287,32 @@
                         <DashboardWelcome />
 
                         {toastMsg && (
-                            <div className="fixed bottom-10 right-10 z-[1000] bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in border border-slate-700">
+                            <div className="fixed bottom-10 right-10 z-[100] bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in border border-slate-700">
                                 <SafeIcon name="check-circle-2" size={18} className="text-emerald-400" />
                                 <span className="text-sm font-bold tracking-tight">{toastMsg}</span>
                             </div>
                         )}
                     </main>
 
-                    {/* 🌟 Iframe Overlay 로 설정 모달 표시 */}
-                    <IframeSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
+                    {showSettings && (
+                        <div className="fixed inset-0 bg-slate-900/60 z-[200] flex justify-center items-center backdrop-blur-sm">
+                            <div className="bg-white w-[450px] rounded-xl shadow-2xl overflow-hidden border border-gray-200 fade-in">
+                                <div className="px-6 py-4 border-b border-gray-200 bg-slate-50 flex justify-between items-center">
+                                    <h2 className="font-black text-slate-800 text-base flex items-center"><SafeIcon name="settings" size={18} className="text-indigo-500 mr-2"/>OneApp Sync Settings</h2>
+                                    <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-slate-600 transition-colors"><SafeIcon name="x" size={20} /></button>
+                                </div>
+                                <div className="p-8 space-y-6">
+                                    <div>
+                                        <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-2">Google Apps Script Webhook URL</label>
+                                        <input type="text" value={gasUrl} onChange={(e)=>setGasUrl(e.target.value)} placeholder="https://script.google.com/..." className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:border-indigo-500 focus:bg-white transition-all font-mono" />
+                                    </div>
+                                </div>
+                                <div className="px-6 py-4 bg-slate-50 border-t border-gray-200 flex justify-end">
+                                    <button onClick={() => setShowSettings(false)} className="px-6 py-2.5 bg-[#1A2235] text-white rounded-lg text-sm font-bold shadow-md hover:bg-black transition-colors">저장 및 닫기</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
