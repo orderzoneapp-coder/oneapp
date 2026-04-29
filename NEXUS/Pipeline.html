@@ -50,12 +50,7 @@
         // ==========================================
         // 🔑 0. Global Constants
         // ==========================================
-        const STORAGE_KEYS = { 
-            MASTER_DB: 'merchMaster_v870', 
-            HISTORY_DB: 'merchHistory_v870',
-            CLOUD_URL: 'skuSyncCloudUrl_v6', 
-            SYNC_TRIGGER: 'merchMaster_sync_trigger' 
-        };
+        const STORAGE_KEYS = { MASTER_DB: 'merchMaster_v870', CLOUD_URL: 'skuSyncCloudUrl_v6', SYNC_TRIGGER: 'merchMaster_sync_trigger', HISTORY_DB: 'merchHistory_v870' };
 
         const MASTER_HEADERS = [
             "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", 
@@ -99,65 +94,6 @@
 
         const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
 
-        // ==========================================
-        // 🧩 4. 비즈니스 코어 엔진 (Pricing & Parser)
-        // ==========================================
-        const calculatePricesEngine = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
-            if (!baseInPrice || baseInPrice <= 0) return { ...currentFinalData, '입고가': 0, '시중가': 0, '출고가': 0, '1입고': 0, '1출고': 0 };
-            
-            const outsrc = parseNum(currentFinalData?.['외주비'] ?? mItem?.['외주비']);
-            const labor = parseNum(currentFinalData?.['노무비'] ?? mItem?.['노무비']);
-            const totalCost = baseInPrice + outsrc + labor;
-            
-            const whCode = String(currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '').trim();
-            const unitStr = String(currentFinalData?.['단위'] ?? mItem?.['단위'] ?? '').trim().toLowerCase();
-            
-            const matchWh = (rWh, tWh) => rWh === '*' || rWh.split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean).some(s => s === tWh || (tWh !== '' && !isNaN(s) && !isNaN(tWh) && Number(s) === Number(tWh)));
-            const matchUnit = (rUnit, tUnit) => rUnit === '*' || rUnit.toLowerCase().split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean).some(s => tUnit === s || tUnit.includes(s));
-            
-            let bestRule = { rate: 10, type: 'divide' }, bestScore = -1;
-            marginRules.forEach(r => {
-                if (matchWh(r.whCode, whCode) && matchUnit(r.unit, unitStr)) {
-                    let score = (r.whCode !== '*' ? 2 : 0) + (r.unit !== '*' ? 1 : 0);
-                    if (score > bestScore) { bestScore = score; bestRule = r; }
-                }
-            });
-
-            let calcOutPrice = bestRule.type === 'divide' ? totalCost / (1 - (Math.min(bestRule.rate, 99.99) / 100)) : totalCost * (1 + (bestRule.rate / 100));
-            calcOutPrice = Math.round(calcOutPrice / 100) * 100;
-            
-            let newFinalData = { ...currentFinalData, '입고가': baseInPrice, '시중가': calcOutPrice };
-            
-            // 💡 [핵심 수정 사항] 출고가 강제 원칙 적용
-            const providedOutPrice = currentFinalData?.['출고가'];
-            
-            if (forceRecalc) {
-                // [규칙 3] 사용자가 화면에서 직접 수정할 때: 강제 재계산 발동 (마진 연산)
-                newFinalData['출고가'] = calcOutPrice;
-            } else {
-                // 엑셀 로드 시 (forceRecalc === false)
-                if (providedOutPrice !== undefined && providedOutPrice !== '') {
-                    // [규칙 1] 엑셀에 적혀있을 때 (0원이든 6000원이든): 엑셀 값 그대로 출력
-                    newFinalData['출고가'] = parseNum(providedOutPrice);
-                } else {
-                    // [규칙 2] 엑셀에 아예 비어있을 때: 마스터 정보 땡겨오거나 임의 계산 금지! 무조건 0원
-                    newFinalData['출고가'] = 0;
-                }
-            }
-
-            // 🌟 1종코드(소분단가) 연산 로직
-            const div1 = parseNum(currentFinalData?.['1종연산'] ?? mItem?.['1종연산']);
-            const extraCost = parseNum(currentFinalData?.['경비'] ?? mItem?.['경비']);
-            
-            if (div1 > 0) {
-                newFinalData['1입고'] = Math.round(((baseInPrice + outsrc) / div1) / 100) * 100;
-                let calc1Out = (newFinalData['출고가'] / div1) + extraCost;
-                newFinalData['1출고'] = Math.round(calc1Out / 10) * 10;
-            }
-
-            return newFinalData;
-        };
-
         const initIDB = () => new Promise((resolve, reject) => {
             const request = indexedDB.open('MerchOpsDB', 1);
             request.onupgradeneeded = (e) => { if (!e.target.result.objectStoreNames.contains('store')) e.target.result.createObjectStore('store'); };
@@ -166,6 +102,7 @@
         const getIDB = async (key) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); };
         const setIDB = async (key, val) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readwrite'); tx.objectStore('store').put(val, key); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); };
 
+        // 💡 [수정됨] CSV 한글 인코딩 처리 및 강건한 파서 
         const parseExcelRobust = (file) => new Promise((resolve, reject) => {
             if (!window.XLSX) return reject(new Error("엑셀 파서 로드 안됨"));
             
@@ -224,18 +161,6 @@
             }
         });
 
-        const createHeaderMap = (actualHeaders, mappingConfig) => {
-            const headerMap = {}; if(!mappingConfig) return headerMap;
-            Object.keys(mappingConfig).forEach(field => {
-                const keywords = mappingConfig[field].split(',').map(s => s.trim().toLowerCase().replace(/\s/g, '')).filter(Boolean);
-                let matchedKey = actualHeaders.find(h => h && keywords.some(kw => String(h).toLowerCase().replace(/\s/g, '') === kw));
-                if (!matchedKey) {
-                    matchedKey = actualHeaders.find(h => h && keywords.some(kw => String(h).toLowerCase().replace(/\s/g, '').includes(kw)));
-                }
-                if(matchedKey) headerMap[field] = matchedKey;
-            }); return headerMap;
-        };
-
         // ==========================================
         // 🧩 1. SafeIcon 컴포넌트
         // ==========================================
@@ -265,29 +190,53 @@
         });
 
         // ==========================================
-        // 🧩 2. Config Hook
+        // 🧩 2. Read-Only 설정 훅 (v3.0 경량화)
         // ==========================================
         const useMerchConfig = () => {
             const loadConfig = () => {
                 const cloudUrl = localStorage.getItem('skuSyncCloudUrl_v6') || '';
-                let visibleMasterCols = JSON.parse(localStorage.getItem('merchVisMaster_v870') || 'null') || getInitialVisibleMasterCols();
-                let visibleUploadCols = JSON.parse(localStorage.getItem('merchVisUpload_v870') || 'null') || getInitialVisibleUploadCols();
-                let mappings = JSON.parse(localStorage.getItem('merchMappings_v870') || 'null') || getInitialMappings();
-                let masterLinks = JSON.parse(localStorage.getItem('merchMasterLinks_v870') || 'null') || getInitialMasterLinks();
-                let marginRules = JSON.parse(localStorage.getItem('merchMarginRules_v878') || 'null') || [ { id: generateUUID(), whCode: '01', unit: 'box, 박스', rate: 10, type: 'divide' }, { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' } ];
+                
+                let visibleMasterCols = JSON.parse(localStorage.getItem('merchVisMaster_v870') || 'null');
+                if (!visibleMasterCols || !visibleMasterCols.estimate) visibleMasterCols = getInitialVisibleMasterCols();
+                if (visibleMasterCols.estimate.includes('카테고리')) visibleMasterCols.estimate = visibleMasterCols.estimate.map(h => h === '카테고리' ? '견적서' : h);
+
+                let visibleUploadCols = JSON.parse(localStorage.getItem('merchVisUpload_v870') || 'null');
+                if (!visibleUploadCols || !visibleUploadCols.estimate) visibleUploadCols = getInitialVisibleUploadCols();
+                if (visibleUploadCols.estimate.includes('카테고리')) visibleUploadCols.estimate = visibleUploadCols.estimate.map(h => h === '카테고리' ? '견적서' : h);
+                // 💡 [수정완료] 설정에서 꺼두면 꺼진 대로 놔두도록 강제 주입(unshift/splice) 코드 완전 삭제
+
+                let mappings = JSON.parse(localStorage.getItem('merchMappings_v870') || 'null');
+                if (!mappings || !mappings.master) mappings = getInitialMappings();
+                if (!mappings.estimate['창고']) mappings.estimate['창고'] = '창고, 창고코드';
+                if (!mappings.master['창고']) mappings.master['창고'] = '창고, 창고코드';
+                if (mappings.estimate['카테고리'] !== undefined) { mappings.estimate['견적서'] = mappings.estimate['카테고리'] + ', 견적서'; delete mappings.estimate['카테고리']; }
+
+                let masterLinks = JSON.parse(localStorage.getItem('merchMasterLinks_v870') || 'null');
+                if (!masterLinks || !masterLinks.estimate) masterLinks = getInitialMasterLinks();
+                if (masterLinks.estimate['창고'] === undefined) masterLinks.estimate['창고'] = '창고';
+                if (masterLinks.estimate['카테고리'] !== undefined) { masterLinks.estimate['견적서'] = '견적서'; delete masterLinks.estimate['카테고리']; }
+
+                let marginRules = JSON.parse(localStorage.getItem('merchMarginRules_v878') || 'null');
+                if (!marginRules) marginRules = [ { id: generateUUID(), whCode: '01', unit: 'box, 박스', rate: 10, type: 'divide' }, { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' } ];
+                else try { if (marginRules.length > 0) marginRules = marginRules.map(r => ({ ...r, whCode: r.whCode || '*', unit: r.unit || '*' })); } catch(e){}
+
                 return { cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules };
             };
+
             const [config, setConfig] = useState(loadConfig());
+
             useEffect(() => {
                 const handleStorageChange = () => setConfig(loadConfig());
                 window.addEventListener('storage', handleStorageChange);
                 return () => window.removeEventListener('storage', handleStorageChange);
             }, []);
+
             return config;
         };
 
         // ==========================================
-        // 🧩 3. Global Header
+        // 🧩 3. 통합 글로벌 헤더 (v3.0 Final - 명세서 완벽 일치)
+        // 🧩 3. 통합 글로벌 헤더 (v3.0 Final)
         // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [
@@ -440,6 +389,65 @@
                     </div>
                 </div>
             );
+        };
+
+        // ==========================================
+        // 🧩 4. 비즈니스 코어 엔진 (Pricing & Parser)
+        // ==========================================
+        const calculatePricesEngine = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
+            if (!baseInPrice || baseInPrice <= 0) return { ...currentFinalData, '입고가': 0, '시중가': 0, '출고가': 0, '1입고': 0, '1출고': 0 };
+
+            const outsrc = parseNum(currentFinalData?.['외주비'] ?? mItem?.['외주비']);
+            const labor = parseNum(currentFinalData?.['노무비'] ?? mItem?.['노무비']);
+            const totalCost = baseInPrice + outsrc + labor;
+
+            const whCode = String(currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '').trim();
+            const unitStr = String(currentFinalData?.['단위'] ?? mItem?.['단위'] ?? '').trim().toLowerCase();
+            
+            const matchWh = (ruleWh, targetWh) => ruleWh === '*' || ruleWh.split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean).some(s => s === targetWh || (targetWh !== '' && !isNaN(s) && !isNaN(targetWh) && Number(s) === Number(targetWh)));
+            const matchUnit = (ruleUnit, targetUnit) => ruleUnit === '*' || ruleUnit.toLowerCase().split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean).some(s => targetUnit === s || targetUnit.includes(s));
+
+            let bestRule = { rate: 10, type: 'divide' }, bestScore = -1;
+            marginRules.forEach(r => {
+                if (matchWh(r.whCode, whCode) && matchUnit(r.unit, unitStr)) {
+                    let score = 0; if (r.whCode !== '*') score += 2; if (r.unit !== '*') score += 1;
+                    if (score > bestScore) { bestScore = score; bestRule = r; }
+                }
+            });
+
+            let calcOutPrice = totalCost;
+            if (bestRule.type === 'divide') {
+                const safeRate = Math.min(bestRule.rate, 99.99); calcOutPrice = totalCost / (1 - (safeRate / 100));
+            } else calcOutPrice = totalCost * (1 + (bestRule.rate / 100));
+            calcOutPrice = Math.round(calcOutPrice / 100) * 100;
+            if (!isFinite(calcOutPrice) || isNaN(calcOutPrice)) calcOutPrice = 0;
+
+            let newFinalData = { ...currentFinalData, '입고가': baseInPrice, '시중가': calcOutPrice };
+            const providedOutPrice = parseNum(currentFinalData?.['출고가']), mIn = parseNum(mItem?.['입고가']), mOut = parseNum(mItem?.['출고가']);
+
+            if (providedOutPrice > 0 && !forceRecalc) newFinalData['출고가'] = providedOutPrice;
+            else if (baseInPrice === mIn && mOut > 0 && !forceRecalc) newFinalData['출고가'] = mOut;
+            else newFinalData['출고가'] = calcOutPrice;
+
+            const div1 = parseNum(currentFinalData?.['1종연산'] ?? mItem?.['1종연산']), extraCost = parseNum(currentFinalData?.['경비'] ?? mItem?.['경비']); 
+            if (div1 > 0) {
+                newFinalData['1입고'] = Math.round(((baseInPrice + outsrc) / div1) / 100) * 100;
+                let calc1Out = Math.round((newFinalData['출고가'] / div1) + extraCost);
+                newFinalData['1출고'] = (!isFinite(calc1Out) || isNaN(calc1Out)) ? 0 : Math.round(calc1Out / 10) * 10; 
+            }
+            return newFinalData;
+        };
+
+        const createHeaderMap = (actualHeaders, mappingConfig) => {
+            const headerMap = {}; if(!mappingConfig) return headerMap;
+            Object.keys(mappingConfig).forEach(field => {
+                const keywords = mappingConfig[field].split(',').map(s => s.trim().toLowerCase().replace(/\s/g, '')).filter(Boolean);
+                let matchedKey = actualHeaders.find(h => h && keywords.some(kw => String(h).toLowerCase().replace(/\s/g, '') === kw));
+                if (!matchedKey) {
+                    matchedKey = actualHeaders.find(h => h && keywords.some(kw => String(h).toLowerCase().replace(/\s/g, '').includes(kw)));
+                }
+                if(matchedKey) headerMap[field] = matchedKey;
+            }); return headerMap;
         };
 
         // ==========================================
@@ -613,7 +621,7 @@
 
         const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
             const { selectedRows, globalSearch, selectedCatalog, selectedCategory } = state;
-            const { handleCategoryChange, handleRemoveFromWorkspace, handleExportCurrentView, setShowReviewModal, setGlobalSearch, handleCatalogChange, handleReset, handleFileUpload, setShowExportModal, setShowCategoryModal } = actions;
+            const { handleCategoryChange, handleRemoveFromWorkspace, handleExportCurrentView, setShowReviewModal, setGlobalSearch, handleCatalogChange, handleReset, handleFileUpload, setShowExportModal } = actions;
 
             return (
                 <div className="px-6 py-3 flex items-center justify-between gap-4 bg-white border-b border-slate-200 z-10 w-full shrink-0">
@@ -640,7 +648,7 @@
                                 <i className="fas fa-file-invoice absolute left-3 top-2.5 text-blue-500 text-[13px] pointer-events-none"></i>
                                 <i className="fas fa-chevron-down absolute right-2.5 top-3 text-blue-400 text-[10px] pointer-events-none"></i>
                             </div>
-                            <button onClick={() => setShowCategoryModal(true)} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-blue-600 border border-blue-200 hover:bg-blue-50 transition-colors shadow-sm flex items-center shrink-0" title="현재 화면의 상품들을 묶어서 새로운 카탈로그로 만듭니다.">
+                            <button onClick={() => actions.setShowCategoryModal(true)} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-blue-600 border border-blue-200 hover:bg-blue-50 transition-colors shadow-sm flex items-center shrink-0" title="현재 화면의 상품들을 묶어서 새로운 카탈로그로 만듭니다.">
                                 <i className="fas fa-save mr-1.5 text-blue-500"></i> 저장
                             </button>
                         </div>
@@ -657,6 +665,7 @@
                                 <i className="fas fa-file-excel mr-1.5 text-emerald-500"></i> 화면 다운로드
                             </button>
 
+                            {/* 💡 [수정됨] 명칭 '보고서 다운로드' -> '보고서' 변경 */}
                             <button onClick={() => setShowExportModal(true)} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-amber-600 border border-amber-200 hover:bg-amber-50 transition-colors shadow-sm flex items-center shrink-0" title="ERP/쇼핑몰 양식 출력">
                                 <i className="fas fa-file-export mr-1.5 text-amber-500"></i> 보고서
                             </button>
@@ -703,10 +712,12 @@
             const onBlur = () => { setIsFocused(false); if(String(val)!==String(initialVal)) onUpdateCell(rowCode, field, linkedMasterField, val); };
             
             const handleKeyDown = (e) => {
-                if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(e.key)) {
+                if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Tab'].includes(e.key)) {
                     if (e.key === 'ArrowLeft' && e.target.selectionStart !== 0) return;
                     if (e.key === 'ArrowRight' && e.target.selectionEnd !== e.target.value.length) return;
-                    if (['ArrowUp', 'ArrowDown', 'Enter'].includes(e.key)) e.preventDefault();
+                    
+                    const isTab = e.key === 'Tab';
+                    if (!isTab) e.preventDefault();
                     
                     e.target.blur();
                     const td = e.target.closest('td'); const tr = td.closest('tr'); const tbody = tr.closest('tbody');
@@ -719,15 +730,30 @@
 
                     if (e.key === 'ArrowUp') nextRowIdx = Math.max(0, rowIdx - 1);
                     if (e.key === 'ArrowDown' || e.key === 'Enter') nextRowIdx = Math.min(trs.length - 1, rowIdx + 1);
-                    if (e.key === 'ArrowLeft') { e.preventDefault(); nextColIdx = Math.max(0, colIdx - 1); }
-                    if (e.key === 'ArrowRight') { e.preventDefault(); nextColIdx = Math.min(tds.length - 1, colIdx + 1); }
+                    if (e.key === 'ArrowLeft') { nextColIdx = Math.max(0, colIdx - 1); }
+                    if (e.key === 'ArrowRight') { nextColIdx = Math.min(tds.length - 1, colIdx + 1); }
+                    if (isTab) {
+                        e.preventDefault();
+                        if (e.shiftKey) {
+                            nextColIdx = colIdx - 1;
+                            if (nextColIdx < 0) { nextColIdx = tds.length - 1; nextRowIdx = Math.max(0, rowIdx - 1); }
+                        } else {
+                            nextColIdx = colIdx + 1;
+                            if (nextColIdx >= tds.length) { nextColIdx = 0; nextRowIdx = Math.min(trs.length - 1, rowIdx + 1); }
+                        }
+                    }
 
-                    if (nextRowIdx !== rowIdx || nextColIdx !== colIdx) {
+                    if (nextRowIdx !== rowIdx || nextColIdx !== colIdx || e.key === 'Enter') {
                         const nextTr = trs[nextRowIdx];
                         if (nextTr) {
                             let nextInput;
-                            if (e.key === 'Enter') nextInput = nextTr.querySelector('input[data-field="입고가"]') || nextTr.querySelector('td:has(input[type="text"]) input');
-                            else { const nextTds = Array.from(nextTr.querySelectorAll('td:has(input[type="text"])')); nextInput = nextTds[nextColIdx]?.querySelector('input'); }
+                            if (e.key === 'Enter') {
+                                // 💡 [업데이트] 엔터 치면 다음 행의 [입고가] 데이터 필드로 최우선 강제 이동
+                                nextInput = nextTr.querySelector('input[data-field="입고가"]') || nextTr.querySelector('td:has(input[type="text"]) input');
+                            } else { 
+                                const nextTds = Array.from(nextTr.querySelectorAll('td:has(input[type="text"])')); 
+                                nextInput = nextTds[nextColIdx]?.querySelector('input'); 
+                            }
                             if (nextInput) { nextInput.focus(); setTimeout(() => nextInput.select(), 0); }
                         }
                     }
@@ -735,8 +761,8 @@
             };
 
             return (
-                <td className={`px-2 py-1.5 border-r border-slate-200 ${getCellWidthClass(linkedMasterField || field)} ${isDiff ? 'bg-amber-50/60' : ''}`}>
-                    <input type="text" data-field={field} value={val==="오류"?"":val} placeholder={mVal||''} onChange={e=>setVal(e.target.value)} onFocus={e=>{setIsFocused(true); setTimeout(()=>e.target.select(),0);}} onBlur={onBlur} onKeyDown={handleKeyDown} onClick={e=>e.target.select()} className={`w-full bg-transparent hover:bg-white focus:bg-white focus:ring-1 focus:ring-blue-300 rounded px-1.5 py-1.5 text-[13px] outline-none ${isNum?'text-right':'truncate text-center'} ${isDiff?'text-indigo-700 font-bold':'text-slate-700 font-medium'} transition-colors`} />
+                <td className={`px-2 py-1.5 border-r border-slate-200 bg-white ${getCellWidthClass(linkedMasterField || field)} ${isDiff ? 'bg-amber-50/60' : ''}`}>
+                    <input type="text" data-field={field} value={val==="오류"?"":val} placeholder={mVal||''} onChange={e=>setVal(e.target.value)} onFocus={e=>{setIsFocused(true); setTimeout(()=>e.target.select(),0);}} onBlur={onBlur} onKeyDown={handleKeyDown} onClick={e=>e.target.select()} className={`w-full bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-1 focus:ring-indigo-300 rounded px-1.5 py-1.5 text-[13px] outline-none ${isNum?'text-right':'truncate text-center'} ${isDiff?'text-indigo-700 font-bold':'text-slate-700 font-medium'} transition-colors`} />
                 </td>
             );
         });
@@ -748,7 +774,7 @@
 
             return (
                 <tr className={`table-row-hover transition-colors ${isSel ? 'table-row-selected' : ''}`} onMouseDown={(e) => onMouseDown && onMouseDown(e, rowCode, isSel)} onMouseEnter={(e) => onMouseEnter && onMouseEnter(e, rowCode)}>
-                    <td className={`sticky z-20 px-4 py-3.5 border-r border-slate-200 min-w-[280px] w-[280px] max-w-[280px] bg-white`} style={{left:0}}>
+                    <td className={`sticky z-20 px-4 py-3.5 border-r border-slate-200 min-w-[280px] w-[280px] max-w-[280px] bg-slate-50`} style={{left:0}}>
                         <div className="flex flex-col w-full overflow-hidden">
                             <span className="text-[10.5px] font-mono text-indigo-500 mb-0.5 tracking-tight font-bold">{rowCode}</span>
                             <div className="flex items-baseline w-full min-w-0 overflow-hidden mt-0.5">
@@ -763,7 +789,7 @@
                             const isNum = NUMERIC_HEADERS.includes(h);
                             const mVal = mItem[h] !== undefined && mItem[h] !== '' ? (isNum ? parseNum(mItem[h]).toLocaleString() : mItem[h]) : '-';
                             return (
-                                <td key={`idle-td-${h}`} className={`px-2 py-1.5 border-r border-slate-200 text-slate-600 ${getCellWidthClass(h)} ${isNum ? 'text-right font-medium' : 'text-center'}`}>
+                                <td key={`idle-td-${h}`} className={`px-2 py-1.5 border-r border-slate-200 bg-slate-50 text-slate-600 ${getCellWidthClass(h)} ${isNum ? 'text-right font-medium' : 'text-center'}`}>
                                     <div className="truncate w-full">{mVal}</div>
                                 </td>
                             );
@@ -782,7 +808,7 @@
                                 }
                                 const formattedVal = displayVal !== undefined && displayVal !== '' ? (isNum ? parseNum(displayVal).toLocaleString() : displayVal) : '-';
                                 return (
-                                    <td key={`pm-d-${h}`} className={`px-2 py-1.5 border-r border-slate-200 transition-colors ${getCellWidthClass(h)} ${isChanged ? 'bg-amber-50 text-amber-800' : 'text-slate-600'} ${isNum ? 'text-right font-medium' : 'text-center'}`}>
+                                    <td key={`pm-d-${h}`} className={`px-2 py-1.5 border-r border-slate-200 transition-colors bg-slate-50 ${getCellWidthClass(h)} ${isChanged ? 'text-amber-800 font-bold' : 'text-slate-600'} ${isNum ? 'text-right font-medium' : 'text-center'}`}>
                                         <div className="truncate w-full">{formattedVal}</div>
                                     </td>
                                 );
@@ -849,11 +875,11 @@
                         <table className="text-left border-collapse text-[13px] whitespace-nowrap relative z-0 w-max bg-white">
                             <thead className="text-[12px] font-bold text-slate-500 bg-white">
                                 <tr>
-                                    <th className="sticky top-0 z-40 bg-white px-4 py-3.5 border-y border-r border-slate-200 shadow-sm min-w-[280px] w-[280px] max-w-[280px]" style={{left:0}}>
+                                    <th className="sticky top-0 z-40 bg-slate-100 px-4 py-3.5 border-y border-r border-slate-200 shadow-sm min-w-[280px] w-[280px] max-w-[280px]" style={{left:0}}>
                                         상품정보 (코드/품명/규격)
                                     </th>
-                                    {visMaster.map(h=><th key={`m-${h}`} className={`sticky top-0 z-30 bg-white px-3 py-3.5 border-y border-r border-slate-200 shadow-sm text-center ${getCellWidthClass(h)}`}>{h}</th>)}
-                                    {visUpload.map(h=><th key={`u-${h}`} className={`sticky top-0 z-30 bg-white px-3 py-3.5 border-y border-r border-slate-200 shadow-sm text-center ${getCellWidthClass(h)}`}>{h}</th>)}
+                                    {visMaster.map(h=><th key={`m-${h}`} className={`sticky top-0 z-30 bg-slate-100 px-3 py-3.5 border-y border-r border-slate-200 shadow-sm text-center ${getCellWidthClass(h)}`}><i className="fas fa-lock text-slate-300 text-[10px] mr-1"></i> {h}</th>)}
+                                    {visUpload.map(h=><th key={`u-${h}`} className={`sticky top-0 z-30 bg-white px-3 py-3.5 border-y border-r border-slate-200 shadow-sm text-center text-indigo-700 ${getCellWidthClass(h)}`}><i className="fas fa-pen text-indigo-300 text-[10px] mr-1"></i> {h}</th>)}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-transparent text-slate-700">
@@ -937,9 +963,23 @@
                 };
                 window.addEventListener('message', handleMessage);
 
+                // 💡 [업데이트] F3 단축키: 바로 검색창 포커스 이동
+                const handleKeyDown = (e) => {
+                    if (e.key === 'F3') {
+                        e.preventDefault();
+                        const searchInput = document.getElementById('global-search-input');
+                        if (searchInput) {
+                            searchInput.focus();
+                            searchInput.select();
+                        }
+                    }
+                };
+                window.addEventListener('keydown', handleKeyDown);
+
                 return () => {
                     window.removeEventListener('storage', onSync); 
                     window.removeEventListener('message', handleMessage);
+                    window.removeEventListener('keydown', handleKeyDown);
                 };
             }, [loadMaster]);
 
@@ -986,20 +1026,14 @@
                                 if (val !== undefined && val !== '') {
                                     const isNum = NUMERIC_HEADERS.includes(config.masterLinks['estimate']?.[h]) || NUMERIC_HEADERS.includes(h);
                                     mItem.sources['estimate'][h] = isNum ? parseNum(val) : val;
-                                    
-                                    // 💡 [수정] 엑셀 데이터 그대로 주입 (0원 등 어떤 값이든 그대로 보존하여 원본 데이터 오염 방지)
-                                    if (mItem.finalData[h] === undefined) {
-                                        mItem.finalData[h] = isNum ? parseNum(val) : val;
-                                    }
+                                    if (mItem.finalData[h] === undefined) mItem.finalData[h] = isNum ? parseNum(val) : val;
                                 }
                             }
                         });
                         
+                        delete mItem.finalData['출고가'];
                         const pIn = parseNum(mItem.sources['estimate']['입고가'] || masterProducts[code]?.['입고가']);
-                        // 엑셀 로드 시에는 forceRecalc를 false로 하여 엑셀값 그대로 노출하도록 함
-                        if (pIn > 0 || mItem.finalData['출고가'] !== undefined) {
-                            mItem.finalData = calculatePricesEngine(pIn, masterProducts[code]||{}, mItem.finalData, config.marginRules, false);
-                        }
+                        if (pIn > 0) mItem.finalData = calculatePricesEngine(pIn, masterProducts[code]||{}, mItem.finalData, config.marginRules, false);
                         count++;
                     });
                     setManagedItems(newManaged); showToast(`✅ ${count}건 데이터 로드 완료`);
@@ -1012,7 +1046,6 @@
                     currentItem = { ...currentItem, finalData: { ...currentItem.finalData, [field]: value } };
                     if (['입고가', '출고가', '외주비', '노무비'].includes(field) || ['입고가', '출고가'].includes(linkedMasterField)) {
                         const pInRaw = (field === '입고가' || linkedMasterField === '입고가') ? value : (currentItem.finalData['입고가'] ?? currentItem.sources['estimate']?.['입고가'] ?? masterProducts[code]?.['입고가'] ?? 0);
-                        // 수동 수정 시에는 forceRecalc를 true로 하여 3번 규칙(마진 연산) 발동
                         currentItem.finalData = calculatePricesEngine(parseNum(pInRaw), masterProducts[code] || {}, currentItem.finalData, config.marginRules, true);
                     } return { ...prev, [code]: currentItem };
                 });
@@ -1054,6 +1087,7 @@
                 setManagedItems({}); setSelectedRows(new Set()); showToast(`✅ ${commitCount}건 마스터 단가 갱신 완료.`);
             }, [managedItems, masterProducts, config.masterLinks, showToast]);
 
+            // 💡 [핵심 복구] ERP/쇼핑몰 양식 통합 엑셀 보고서 생성 로직 복구
             const executeExport = useCallback((option, zeroAction = { sale: '0', stock: '999' }) => {
                 if (fullDisplayRows.length === 0) { showToast("⚠️ 내보낼 데이터가 없습니다."); return setShowExportModal(false); }
                 setShowExportModal(false);
@@ -1172,12 +1206,10 @@
                         }
 
                         if (isMatch) {
-                            // 💡 기존 마스터의 출고가 등 데이터를 강제로 finalData에 넘겨줘서 0원이 되지 않게 보존
-                            const baseData = { 출고가: mItem['출고가'] };
                             newManaged[mItem.코드] = {
                                 코드: mItem.코드,
                                 sources: { estimate: {} },
-                                finalData: calculatePricesEngine(parseNum(mItem['입고가']), mItem, baseData, config.marginRules, false)
+                                finalData: calculatePricesEngine(parseNum(mItem['입고가']), mItem, {}, config.marginRules, false)
                             };
                         }
                     });
@@ -1387,7 +1419,75 @@
                         </div>
                     )}
 
-                    <MainToolbar state={appState} actions={appActions} availableCatalogs={availableCatalogs} availableCategories={availableCategories} />
+                    <div className="px-6 py-3 flex items-center justify-between gap-4 bg-white border-b border-slate-200 z-10 w-full shrink-0">
+                        <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 -mb-1">
+                            <div className="flex items-center gap-1">
+                                <div className="relative">
+                                    <select value={selectedCatalog} onChange={handleCatalogChange} className="appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm w-[160px]" title="스마트 파서에서 매핑 완료한 데이터를 불러옵니다.">
+                                        <option value="">파서 보관함</option>
+                                        {availableCatalogs.map(tag => <option key={tag.name} value={tag.name}>{tag.name} ({tag.count}건)</option>)}
+                                    </select>
+                                    <i className="fas fa-folder-open absolute left-3 top-2.5 text-blue-500 text-[13px] pointer-events-none"></i>
+                                    <i className="fas fa-chevron-down absolute right-2.5 top-3 text-blue-400 text-[10px] pointer-events-none"></i>
+                                </div>
+                            </div>
+
+                            <div className="w-px h-5 bg-slate-200 mx-1 shrink-0"></div>
+
+                            <div className="flex items-center gap-1">
+                                <div className="relative">
+                                    <select value={selectedCategory} onChange={handleCategoryChange} className="appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm w-[160px]">
+                                        <option value="">카탈로그</option>
+                                        {availableCategories.map(cat => <option key={cat.name} value={cat.name}>{cat.name} ({cat.count}건)</option>)}
+                                    </select>
+                                    <i className="fas fa-file-invoice absolute left-3 top-2.5 text-blue-500 text-[13px] pointer-events-none"></i>
+                                    <i className="fas fa-chevron-down absolute right-2.5 top-3 text-blue-400 text-[10px] pointer-events-none"></i>
+                                </div>
+                                <button onClick={() => setShowCategoryModal(true)} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-blue-600 border border-blue-200 hover:bg-blue-50 transition-colors shadow-sm flex items-center shrink-0" title="현재 화면의 상품들을 묶어서 새로운 카탈로그로 만듭니다.">
+                                    <i className="fas fa-save mr-1.5 text-blue-500"></i> 저장
+                                </button>
+                            </div>
+
+                            <div className="w-px h-5 bg-slate-200 mx-1 shrink-0"></div>
+
+                            <div className="flex items-center gap-1">
+                                <label className="cursor-pointer h-9 px-3 rounded-md text-[13px] font-bold bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50 transition-colors shadow-sm flex items-center shrink-0">
+                                    <i className="fas fa-file-excel mr-1.5 text-emerald-500"></i> 견적 엑셀 불러오기
+                                    <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e)} accept=".xlsx, .xls, .csv" disabled={isProcessing} />
+                                </label>
+                                
+                                <button onClick={handleExportCurrentView} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50 transition-colors shadow-sm flex items-center shrink-0" title="현재 화면 그대로 엑셀로 다운로드합니다.">
+                                    <i className="fas fa-file-excel mr-1.5 text-emerald-500"></i> 화면 다운로드
+                                </button>
+
+                                {/* 💡 [수정] 보고서 버튼 복원 및 명칭 변경 */}
+                                <button onClick={() => setShowExportModal(true)} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-amber-600 border border-amber-200 hover:bg-amber-50 transition-colors shadow-sm flex items-center shrink-0" title="ERP/쇼핑몰 양식 출력">
+                                    <i className="fas fa-file-export mr-1.5 text-amber-500"></i> 보고서
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                            {selectedRows.size > 0 && (
+                                <button onClick={handleRemoveFromWorkspace} className="h-9 px-3 rounded-md text-[12px] font-bold bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition-colors shadow-sm flex items-center" title="선택 항목 숨기기">
+                                    <i className="fas fa-eye-slash mr-1.5"></i> 숨기기 ({selectedRows.size})
+                                </button>
+                            )}
+                            <button onClick={() => setShowReviewModal(true)} disabled={fullDisplayRows.length === 0} className={`h-9 px-4 rounded-md text-[13px] font-bold shadow-sm transition-colors flex items-center ${fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-200'}`}>
+                                <i className="fas fa-check-circle mr-1.5"></i> 반영하기
+                            </button>
+
+                            <div className="w-px h-5 bg-slate-200 mx-1"></div>
+
+                            <button onClick={handleReset} className="h-9 w-9 rounded-md flex items-center justify-center text-slate-500 hover:text-slate-800 bg-white border border-slate-300 hover:bg-slate-50 transition-colors shadow-sm" title="화면 초기화">
+                                <i className="fas fa-redo-alt text-[13px]"></i>
+                            </button>
+                            <div className="relative w-48 sm:w-64 h-9">
+                                <input id="global-search-input" type="text" placeholder="결과 내 검색 (F3)" value={globalSearch} onChange={e=>setGlobalSearch(e.target.value)} className="w-full h-full pl-3 pr-8 py-1 border border-slate-300 rounded-md text-[12px] outline-none focus:border-blue-400 shadow-sm text-slate-700 font-medium" />
+                                <i className="fas fa-search absolute right-3 top-2.5 text-slate-400 text-[13px] pointer-events-none"></i>
+                            </div>
+                        </div>
+                    </div>
 
                     <main className="flex-1 overflow-hidden bg-slate-50 p-6 flex flex-col">
                         <ExcelDataGrid state={appState} actions={appActions} />
@@ -1397,7 +1497,7 @@
                     <IframeSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
                     
                     {showReviewModal && <ReviewModal onClose={() => setShowReviewModal(false)} onConfirm={handleCommitEstimate} displayRows={fullDisplayRows} masterProducts={masterProducts} />}
-                    {showCategoryModal && <CategorySaveModal onClose={() => setShowCategoryModal(false)} onSave={handleSaveAsCategory} availableCategories={availableCategories} />}
+                    {showCategoryModal && <CategorySaveModal onClose={() => setShowCategoryModal(false)} onSave={handleSaveAsCategory} />}
                     {showExportModal && <ExportModal onClose={() => setShowExportModal(false)} executeExport={executeExport} />}
 
                     {toastMsg && (
