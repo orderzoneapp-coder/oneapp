@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - Valuation Hub [FINAL v3.1]</title>
+    <title>ONEAPP NEXES - Valuation Hub [v3.2 Optimized]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -13,6 +13,25 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     
+    <!-- 💡 [경량화] Tailwind 클래스 사전 정의로 JSX 코드 복잡도 감소 -->
+    <script>
+        tailwind.config = { theme: { extend: {} } }
+    </script>
+    <style type="text/tailwindcss">
+        @layer components {
+            .btn-top { @apply w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors shadow-sm; }
+            .nav-tab { @apply flex items-center gap-2 px-6 py-3 text-[14px] font-bold rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px]; }
+            .nav-tab-active { @apply bg-white text-indigo-600 border-t-indigo-500 border-x-slate-200 relative z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]; }
+            .nav-tab-inactive { @apply bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5; }
+            .nav-tab-disabled { @apply bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5; }
+            .toolbar-btn { @apply h-9 px-3 rounded-md text-[13px] font-bold bg-white border transition-colors shadow-sm flex items-center shrink-0; }
+            .select-base { @apply appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm; }
+            .modal-overlay { @apply fixed inset-0 z-[100] flex justify-center items-center bg-slate-900/80 backdrop-blur-sm fade-in; }
+            .modal-content { @apply bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden; }
+            .modal-header { @apply bg-[#0f172a] p-4 text-white flex justify-between border-b border-slate-700 shrink-0; }
+            .table-th { @apply sticky top-0 z-30 bg-slate-100 px-3 py-3.5 border-y border-r border-slate-200 shadow-sm text-center; }
+        }
+    </style>
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
         body { font-family: 'Pretendard', sans-serif; -webkit-user-select: none; user-select: none; background-color: #f1f5f9; margin: 0; overflow: hidden; }
@@ -43,82 +62,41 @@
         // ==========================================
         const STORAGE_KEYS = { MASTER_DB: 'merchMaster_v870', CLOUD_URL: 'skuSyncCloudUrl_v6', SYNC_TRIGGER: 'merchMaster_sync_trigger', HISTORY_DB: 'merchHistory_v870' };
 
-        const MASTER_HEADERS = [
-            "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", 
-            "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", 
-            "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", 
-            "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", 
-            "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록", "소싱태그"
-        ];
-
-        const NUMERIC_HEADERS = [
-            "안전재고", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고",
-            "단가H", "단가I", "시중가", "행사가", "1종연산", "2종연산", "외주비", "노무비", "경비",
-            "1구매", "1출고", "2구매", "2출고", "1입고", "2입고", "1입고", "1출고"
-        ];
+        const MASTER_HEADERS = [ "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록", "소싱태그" ];
+        const NUMERIC_HEADERS = [ "안전재고", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "1종연산", "2종연산", "외주비", "노무비", "경비", "1구매", "1출고", "2구매", "2출고", "1입고", "2입고", "1입고", "1출고" ];
 
         const getInitialVisibleMasterCols = () => ({ estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] });
         const getInitialVisibleUploadCols = () => ({ estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명'] });
         const getInitialMappings = () => {
-            const base = { master: {}, estimate: {} };
-            base.master = { '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격, 규격명, 사이즈, 단량', '출고가': '출고가, 출고, 판매가, 시중가', '입고가': '입고가, 입고, 매입가' };
-            base.estimate = { 
-                '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격명, 규격, 사이즈, 단량', '구매처': '거래처명, 구매처, 거래처', 
-                '견적서': '견적서, 카테고리, 템플릿, 견적분류', '입고가': '입고가, 입고, 매입가', '출고가': '출고가, 출고, 판매가',
-                '입고B': 'B단가, 입고B', '도매A': 'A판매, A판매가, 도매A', '도매B': 'B판매, B판매가, 도매B', '간단설명': '지시사항, 간단설명, 비고'
-            };
-            return base;
+            return { master: { '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격, 규격명, 사이즈, 단량', '출고가': '출고가, 출고, 판매가, 시중가', '입고가': '입고가, 입고, 매입가' }, estimate: { '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격명, 규격, 사이즈, 단량', '구매처': '거래처명, 구매처, 거래처', '견적서': '견적서, 카테고리, 템플릿, 견적분류', '입고가': '입고가, 입고, 매입가', '출고가': '출고가, 출고, 판매가', '입고B': 'B단가, 입고B', '도매A': 'A판매, A판매가, 도매A', '도매B': 'B판매, B판매가, 도매B', '간단설명': '지시사항, 간단설명, 비고' } };
         };
-        const getInitialMasterLinks = () => {
-            const base = { master: {}, estimate: {} };
-            base.estimate = { '창고': '창고', '구매처': '구매처', '견적서': '견적서', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B', '간단설명': '간단설명' };
-            return base;
-        };
+        const getInitialMasterLinks = () => ({ estimate: { '창고': '창고', '구매처': '구매처', '견적서': '견적서', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B', '간단설명': '간단설명' } });
 
-        const generateUUID = () => {
-            if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => { var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); });
-        };
-
+        const generateUUID = () => { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID(); return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => { var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); }); };
         const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
 
-        const initIDB = () => new Promise((resolve, reject) => {
-            const request = indexedDB.open('MerchOpsDB', 1);
-            request.onupgradeneeded = (e) => { if (!e.target.result.objectStoreNames.contains('store')) e.target.result.createObjectStore('store'); };
-            request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
-        });
+        const initIDB = () => new Promise((resolve, reject) => { const request = indexedDB.open('MerchOpsDB', 1); request.onupgradeneeded = (e) => { if (!e.target.result.objectStoreNames.contains('store')) e.target.result.createObjectStore('store'); }; request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
         const getIDB = async (key) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); };
         const setIDB = async (key, val) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readwrite'); tx.objectStore('store').put(val, key); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); };
 
         const parseExcelRobust = (file) => new Promise((resolve, reject) => {
             if (!window.XLSX) return reject(new Error("엑셀 파서 로드 안됨"));
             const isCSV = file.name.toLowerCase().endsWith('.csv');
-            if (isCSV) {
-                const reader = new FileReader();
-                reader.onload = (e) => { try { const wb = window.XLSX.read(e.target.result, { type: 'string', raw: false }); processWorkbook(wb, resolve, reject); } catch(err) { reject(err); } };
-                reader.readAsText(file, 'euc-kr'); 
-            } else {
-                const reader = new FileReader();
-                reader.onload = (e) => { try { const data = new Uint8Array(e.target.result); const wb = window.XLSX.read(data, { type: 'array', cellDates: true }); processWorkbook(wb, resolve, reject); } catch(err) { reject(err); } };
-                reader.readAsArrayBuffer(file);
-            }
-            function processWorkbook(wb, resolve, reject) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
                 try {
+                    const wb = isCSV ? window.XLSX.read(e.target.result, { type: 'string', raw: false }) : window.XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
                     const jsonAll = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "", raw: false });
                     if(jsonAll.length === 0) return resolve([]);
                     let headerRowIdx = 0;
-                    for (let i = 0; i < Math.min(15, jsonAll.length); i++) {
-                        const rowStr = jsonAll[i].join('').replace(/\s/g, '');
-                        if (rowStr.includes('코드') || rowStr.includes('품명') || rowStr.includes('상품')) { headerRowIdx = i; break; }
-                    }
+                    for (let i = 0; i < Math.min(15, jsonAll.length); i++) { if (jsonAll[i].join('').replace(/\s/g, '').match(/코드|품명|상품/)) { headerRowIdx = i; break; } }
                     const headers = jsonAll[headerRowIdx] || [];
                     let endIdx = jsonAll.length - 1;
                     while (endIdx > headerRowIdx) {
                         const rowArr = jsonAll[endIdx]; if (!rowArr || rowArr.length === 0) { endIdx--; continue; }
-                        let filledCount = 0, rawStr = '';
-                        for(let i=0; i<rowArr.length; i++) if(rowArr[i] !== undefined && String(rowArr[i]).trim() !== '') { filledCount++; rawStr += String(rowArr[i]).replace(/\s/g, ''); }
+                        let filledCount = 0, rawStr = ''; rowArr.forEach(v => { if(v !== undefined && String(v).trim() !== '') { filledCount++; rawStr += String(v).replace(/\s/g, ''); } });
                         if (rawStr === '') { endIdx--; continue; }
-                        if ((rawStr.includes('출력') || rawStr.includes('합계') || rawStr.includes('총계')) && filledCount <= 4) endIdx--; else break;
+                        if (rawStr.match(/출력|합계|총계/) && filledCount <= 4) endIdx--; else break;
                     }
                     const parsedData = [];
                     for (let i = headerRowIdx + 1; i <= endIdx; i++) {
@@ -127,50 +105,39 @@
                         headers.forEach((h, idx) => { if (h) { obj[h] = row[idx]; if(row[idx] !== undefined && String(row[idx]).trim() !== '') isEmpty = false; } }); 
                         if(!isEmpty) { obj['_raw'] = row; parsedData.push(obj); }
                     } resolve(parsedData);
-                } catch (e) { reject(e); }
-            }
+                } catch (err) { reject(err); }
+            };
+            isCSV ? reader.readAsText(file, 'euc-kr') : reader.readAsArrayBuffer(file);
         });
 
         const SafeIcon = React.memo(function SafeIconComponent({ name, size = 18, className = "" }) {
             const [svg, setSvg] = useState("");
             useEffect(() => {
-                const renderIcon = () => {
-                    if (window.lucide && window.lucide.icons) {
-                        const kebabName = name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
-                        const possibleNames = [kebabName, name, name === 'cloud-download' ? 'download-cloud' : name, name === 'cloud-upload' ? 'upload-cloud' : name, name === 'bar-chart-3' ? 'bar-chart' : name];
-                        for (const pName of possibleNames) { if (window.lucide.icons[pName]) { setSvg(window.lucide.icons[pName].toSvg({ width: size, height: size, class: className, 'stroke-width': 2.5 })); return; } }
+                if (window.lucide && window.lucide.icons) {
+                    const kebab = name.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
+                    for (const pName of [kebab, name, name === 'cloud-download'?'download-cloud':name, name === 'cloud-upload'?'upload-cloud':name, name === 'bar-chart-3'?'bar-chart':name]) {
+                        if (window.lucide.icons[pName]) { setSvg(window.lucide.icons[pName].toSvg({ width: size, height: size, class: className, 'stroke-width': 2.5 })); return; }
                     }
-                }; renderIcon();
+                }
             }, [name, size, className]);
             if (!svg) {
-                const faMap = { 'cloud-download': 'fa-cloud-download-alt', 'cloud-upload': 'fa-cloud-upload-alt', 'settings': 'fa-cogs', 'layout-dashboard': 'fa-th-large', 'package-search': 'fa-box-open', 'file-spreadsheet': 'fa-table', 'zap': 'fa-bolt', 'truck': 'fa-truck', 'boxes': 'fa-boxes', 'bar-chart-3': 'fa-chart-bar', 'check-circle-2': 'fa-check-circle', 'x': 'fa-times', 'database': 'fa-database', 'upload': 'fa-upload', 'pie-chart': 'fa-chart-pie', 'shopping-cart': 'fa-shopping-cart', 'users': 'fa-users', 'megaphone': 'fa-bullhorn', 'book-open': 'fa-address-book', 'shopping-bag': 'fa-shopping-bag', 'credit-card': 'fa-credit-card', 'line-chart': 'fa-chart-line', 'printer': 'fa-print', 'search-dollar': 'fa-search-dollar', 'arrow-up': 'fa-arrow-up', 'arrow-down': 'fa-arrow-down', 'star': 'fa-star', 'equals': 'fa-equals', 'list': 'fa-list', 'save': 'fa-save', 'eye-slash': 'fa-eye-slash', 'redo-alt': 'fa-redo-alt', 'search': 'fa-search', 'file-export': 'fa-file-export', 'file-excel': 'fa-file-excel', 'folder-open': 'fa-folder-open', 'chevron-down': 'fa-chevron-down', 'file-invoice': 'fa-file-invoice', 'edit': 'fa-edit' };
-                const faName = faMap[name] || `fa-${name}`;
-                return <i className={`fas ${faName} ${className}`} style={{ fontSize: size }} />;
+                const faMap = { 'cloud-download': 'fa-cloud-download-alt', 'cloud-upload': 'fa-cloud-upload-alt', 'settings': 'fa-cogs', 'layout-dashboard': 'fa-th-large', 'package-search': 'fa-box-open', 'file-spreadsheet': 'fa-table', 'zap': 'fa-bolt', 'bar-chart-3': 'fa-chart-bar', 'check-circle-2': 'fa-check-circle', 'x': 'fa-times' };
+                return <i className={`fas ${faMap[name] || `fa-${name}`} ${className}`} style={{ fontSize: size }} />;
             }
             return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
         });
 
-        // ==========================================
-        // 🧩 2. Read-Only 설정 훅 
-        // ==========================================
         const useMerchConfig = () => {
             const loadConfig = () => {
                 const cloudUrl = localStorage.getItem('skuSyncCloudUrl_v6') || '';
-                let visibleMasterCols = JSON.parse(localStorage.getItem('merchVisMaster_v870') || 'null');
-                if (!visibleMasterCols || !visibleMasterCols.estimate) visibleMasterCols = getInitialVisibleMasterCols();
-                
-                let visibleUploadCols = JSON.parse(localStorage.getItem('merchVisUpload_v870') || 'null');
-                if (!visibleUploadCols || !visibleUploadCols.estimate) visibleUploadCols = getInitialVisibleUploadCols();
-
-                let mappings = JSON.parse(localStorage.getItem('merchMappings_v870') || 'null');
-                if (!mappings || !mappings.master) mappings = getInitialMappings();
-
-                let masterLinks = JSON.parse(localStorage.getItem('merchMasterLinks_v870') || 'null');
-                if (!masterLinks || !masterLinks.estimate) masterLinks = getInitialMasterLinks();
-
-                let marginRules = JSON.parse(localStorage.getItem('merchMarginRules_v878') || 'null');
-                if (!marginRules) marginRules = [ { id: generateUUID(), whCode: '01', unit: 'box, 박스', rate: 10, type: 'divide' }, { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' } ];
-                
+                let visibleMasterCols = JSON.parse(localStorage.getItem('merchVisMaster_v870')) || getInitialVisibleMasterCols();
+                let visibleUploadCols = JSON.parse(localStorage.getItem('merchVisUpload_v870')) || getInitialVisibleUploadCols();
+                let mappings = JSON.parse(localStorage.getItem('merchMappings_v870')) || getInitialMappings();
+                let masterLinks = JSON.parse(localStorage.getItem('merchMasterLinks_v870')) || getInitialMasterLinks();
+                let marginRules = JSON.parse(localStorage.getItem('merchMarginRules_v878')) || [ { id: generateUUID(), whCode: '01', unit: 'box, 박스', rate: 10, type: 'divide' }, { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' } ];
+                if (visibleMasterCols.estimate?.includes('카테고리')) visibleMasterCols.estimate = visibleMasterCols.estimate.map(h => h === '카테고리' ? '견적서' : h);
+                if (visibleUploadCols.estimate?.includes('카테고리')) visibleUploadCols.estimate = visibleUploadCols.estimate.map(h => h === '카테고리' ? '견적서' : h);
+                if (mappings.estimate?.['카테고리']) { mappings.estimate['견적서'] = mappings.estimate['카테고리'] + ', 견적서'; delete mappings.estimate['카테고리']; }
                 return { cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules };
             };
             const [config, setConfig] = useState(loadConfig());
@@ -178,9 +145,6 @@
             return config;
         };
 
-        // ==========================================
-        // 🧩 3. Global Header
-        // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [ { id: 'master', label: '정보 관리', icon: 'database' }, { id: 'ops', label: '운영 관리', icon: 'truck' }, { id: 'admin', label: '인사이트', icon: 'bar-chart-3' } ];
             const tabs = [
@@ -200,39 +164,37 @@
                 { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'Report.html', group: 'admin', isReady: true, shortTag: 'INSIGHT ENGINE' },
                 { id: 'cs', label: '정보 마당', icon: "megaphone", path: 'cs.html', group: 'admin', isReady: true, shortTag: 'NOTICE PORTAL' }
             ];
+
             const currentTab = tabs.find(t => t.id === activeTab);
             const activeGroup = currentTab ? currentTab.group : 'common';
             const [selectedGroup, setSelectedGroup] = useState(activeGroup);
-
-            const handleGroupClick = (groupId) => setSelectedGroup(prev => prev === groupId ? 'common' : groupId);
-            const handleLogoClick = (e) => { setSelectedGroup('common'); onNavigate(e, 'Dashboard.html', true); };
 
             return (
                 <div className="flex flex-col shrink-0 z-40 relative w-full shadow-sm bg-[#0B1021]">
                     <header className="h-[72px] bg-[#0B1021] text-white flex justify-between px-6 border-b border-slate-800/80 relative z-20">
                         <div className="flex items-center h-full">
-                            <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={handleLogoClick}>
+                            <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={(e) => { setSelectedGroup('common'); onNavigate(e, 'Dashboard.html', true); }}>
                                 <span className="font-black text-[24px] tracking-wider text-slate-100 mr-4 group-hover:text-indigo-400 transition-colors">ONEAPP</span>
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
-                                    <div className="flex items-center"><span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span><span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.1</span></div>
+                                    <div className="flex items-center"><span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span><span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black">v3.2</span></div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">{currentTab ? currentTab.shortTag : 'WORKSPACE'}</span>
                                 </div>
                             </div>
                             <div className="flex items-end h-full gap-8">
-                                {groups.map(g => (<button key={g.id} onClick={() => handleGroupClick(g.id)} className={`pb-[16px] text-[14px] font-bold transition-colors flex items-center gap-1.5 ${selectedGroup === g.id ? 'text-slate-100 border-b-[3px] border-indigo-500 -mb-[2px]' : 'text-slate-500 hover:text-slate-300'}`}><SafeIcon name={g.icon} size={15} /> {g.label}</button>))}
+                                {groups.map(g => (<button key={g.id} onClick={() => setSelectedGroup(prev => prev === g.id ? 'common' : g.id)} className={`pb-[16px] text-[14px] font-bold transition-colors flex items-center gap-1.5 ${selectedGroup === g.id ? 'text-slate-100 border-b-[3px] border-indigo-500 -mb-[2px]' : 'text-slate-500 hover:text-slate-300'}`}><SafeIcon name={g.icon} size={15} /> {g.label}</button>))}
                             </div>
                         </div>
                         <div className="flex items-center gap-4 h-full">
                             <div className="flex items-center bg-[#151B2B] rounded-lg border border-slate-700/50 h-9 px-3 shadow-inner gap-3">
-                                <div className="flex items-center justify-center" title={isProcessing ? processMsg : "시스템 정상 대기중"}>{isProcessing ? <i className="fas fa-circle-notch fa-spin text-amber-500 text-[12px]"></i> : <div className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></div>}</div>
+                                <div className="flex items-center justify-center">{isProcessing ? <i className="fas fa-circle-notch fa-spin text-amber-500 text-[12px]"></i> : <div className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></div>}</div>
                                 <div className="w-px h-3.5 bg-slate-700"></div>
-                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`마스터 DB 기준 상품 수`}><SafeIcon name="database" size={10} className="text-slate-500" /><span className="text-[11px] font-mono font-bold tracking-tight">{itemCount ? itemCount.toLocaleString() : 0}</span></div>
+                                <div className="flex items-center gap-1.5 text-slate-300"><SafeIcon name="database" size={10} className="text-slate-500" /><span className="text-[11px] font-mono font-bold tracking-tight">{itemCount ? itemCount.toLocaleString() : 0}</span></div>
                             </div>
                             <div className="flex items-center gap-2">
-                                <button onClick={onPull} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm"><SafeIcon name="cloud-download" size={18} /></button>
-                                <button onClick={onPush} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm"><SafeIcon name="cloud-upload" size={18} /></button>
+                                <button onClick={onPull} className="btn-top text-indigo-400" title="Pull"><SafeIcon name="cloud-download" size={18} /></button>
+                                <button onClick={onPush} className="btn-top text-indigo-400" title="Push"><SafeIcon name="cloud-upload" size={18} /></button>
                                 <div className="w-px h-6 bg-slate-700 mx-1"></div>
-                                <button onClick={onOpenSettings} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-slate-400 hover:text-white shadow-sm"><SafeIcon name="settings" size={18} /></button>
+                                <button onClick={onOpenSettings} className="btn-top text-slate-400 hover:text-white" title="설정"><SafeIcon name="settings" size={18} /></button>
                             </div>
                         </div>
                     </header>
@@ -240,9 +202,8 @@
                         <div className="bg-[#0B1021] px-6 pt-3 flex items-end gap-1 overflow-x-auto custom-scrollbar border-b border-slate-200 fade-in">
                             {tabs.filter(t => t.group === selectedGroup).map(tab => {
                                 const isActive = activeTab === tab.id;
-                                const isPlaceholder = !tab.isReady;
                                 return (
-                                    <a key={tab.id} href={tab.path} onClick={(e) => onNavigate(e, tab.path, tab.isReady)} className={`flex items-center gap-2 px-6 py-3 text-[14px] font-bold rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px] ${isActive ? 'bg-white text-indigo-600 border-t-indigo-500 border-x-slate-200 relative z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]' : isPlaceholder ? 'bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5' : 'bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5'}`} style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '13px' : '10px' }}>
+                                    <a key={tab.id} href={tab.path} onClick={(e) => onNavigate(e, tab.path, tab.isReady)} className={`nav-tab ${isActive ? 'nav-tab-active' : !tab.isReady ? 'nav-tab-disabled' : 'nav-tab-inactive'}`} style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '13px' : '10px' }}>
                                         <SafeIcon name={tab.icon} size={16} className={isActive ? 'text-indigo-600' : 'opacity-70'} /> {tab.label}
                                     </a>
                                 );
@@ -256,66 +217,50 @@
         const IframeSettingsModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
             return (
-                <div className="fixed inset-0 z-[500] flex justify-end bg-slate-900/60 backdrop-blur-sm fade-in">
+                <div className="modal-overlay justify-end">
                     <div className="w-full max-w-[1100px] h-full bg-white shadow-[0_0_40px_rgba(0,0,0,0.3)] flex flex-col slide-in-right border-l border-slate-300 relative overflow-hidden">
-                        <div className="bg-[#0f172a] px-6 py-4 flex justify-between items-center text-white shrink-0 border-b border-slate-700 shadow-md relative z-10">
+                        <div className="modal-header">
                             <div className="flex items-center gap-3"><SafeIcon name="settings" size={20} className="text-indigo-400"/><h2 className="font-black text-[17px] tracking-wide">통합 환경설정 센터</h2><span className="bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold border border-indigo-500/30 ml-2">Iframe Overlay</span></div>
-                            <div className="flex items-center gap-4"><span className="text-[12px] text-slate-400 font-medium hidden md:inline-block">설정을 변경하고 창을 닫으면 작업 화면에 즉시 반영됩니다.</span><button onClick={onClose} className="text-slate-300 hover:text-white transition-colors bg-slate-800 hover:bg-rose-500 w-8 h-8 rounded-lg flex items-center justify-center shadow-sm border border-slate-700 hover:border-rose-400"><SafeIcon name="x" size={18} /></button></div>
+                            <div className="flex items-center gap-4"><span className="text-[12px] text-slate-400 font-medium hidden md:inline-block">설정을 변경하고 창을 닫으면 작업 화면에 즉시 반영됩니다.</span><button onClick={onClose} className="text-slate-300 hover:text-white transition-colors bg-slate-800 hover:bg-rose-500 w-8 h-8 rounded-lg flex items-center justify-center shadow-sm border border-slate-700"><SafeIcon name="x" size={18} /></button></div>
                         </div>
-                        <div className="flex-1 w-full bg-slate-100 relative"><div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="text-slate-300 flex flex-col items-center"><i className="fas fa-circle-notch fa-spin text-3xl mb-3"></i><span className="font-bold text-sm">설정 모듈을 불러오는 중입니다...</span></div></div><iframe src="settings.html?mode=iframe" className="absolute inset-0 w-full h-full border-0 bg-white relative z-10" title="Settings Center"></iframe></div>
+                        <div className="flex-1 w-full bg-slate-100 relative"><div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="text-slate-300 flex flex-col items-center"><i className="fas fa-circle-notch fa-spin text-3xl mb-3"></i><span className="font-bold text-sm">설정 모듈 로드 중...</span></div></div><iframe src="settings.html?mode=iframe" className="absolute inset-0 w-full h-full border-0 bg-white relative z-10" title="Settings"></iframe></div>
                     </div>
                 </div>
             );
         };
 
-        // ==========================================
-        // 🧩 4. Pricing & Parser Engine
-        // ==========================================
         const calculatePricesEngine = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
             if (!baseInPrice || baseInPrice <= 0) return { ...currentFinalData, '입고가': 0, '시중가': 0, '출고가': 0, '1입고': 0, '1출고': 0 };
-
             const outsrc = parseNum(currentFinalData?.['외주비'] ?? mItem?.['외주비']);
             const labor = parseNum(currentFinalData?.['노무비'] ?? mItem?.['노무비']);
             const totalCost = baseInPrice + outsrc + labor;
-
             const whCode = String(currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '').trim();
             const unitStr = String(currentFinalData?.['단위'] ?? mItem?.['단위'] ?? '').trim().toLowerCase();
+            const matchWh = (rWh, tWh) => rWh === '*' || rWh.split(/[,./|\s]+/).map(s=>s.trim()).filter(Boolean).some(s=>s===tWh||(tWh!==''&&!isNaN(s)&&!isNaN(tWh)&&Number(s)===Number(tWh)));
+            const matchUnit = (rUnit, tUnit) => rUnit === '*' || rUnit.toLowerCase().split(/[,./|\s]+/).map(s=>s.trim()).filter(Boolean).some(s=>tUnit===s||tUnit.includes(s));
             
-            const matchWh = (ruleWh, targetWh) => ruleWh === '*' || ruleWh.split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean).some(s => s === targetWh || (targetWh !== '' && !isNaN(s) && !isNaN(targetWh) && Number(s) === Number(targetWh)));
-            const matchUnit = (ruleUnit, targetUnit) => ruleUnit === '*' || ruleUnit.toLowerCase().split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean).some(s => targetUnit === s || targetUnit.includes(s));
-
             let bestRule = { rate: 10, type: 'divide' }, bestScore = -1;
             marginRules.forEach(r => {
                 if (matchWh(r.whCode, whCode) && matchUnit(r.unit, unitStr)) {
-                    let score = 0; if (r.whCode !== '*') score += 2; if (r.unit !== '*') score += 1;
+                    let score = (r.whCode !== '*' ? 2 : 0) + (r.unit !== '*' ? 1 : 0);
                     if (score > bestScore) { bestScore = score; bestRule = r; }
                 }
             });
 
-            let calcOutPrice = totalCost;
-            if (bestRule.type === 'divide') {
-                const safeRate = Math.min(bestRule.rate, 99.99); calcOutPrice = totalCost / (1 - (safeRate / 100));
-            } else calcOutPrice = totalCost * (1 + (bestRule.rate / 100));
+            let calcOutPrice = bestRule.type === 'divide' ? totalCost / (1 - (Math.min(bestRule.rate, 99.99) / 100)) : totalCost * (1 + (bestRule.rate / 100));
             calcOutPrice = Math.round(calcOutPrice / 100) * 100;
-            if (!isFinite(calcOutPrice) || isNaN(calcOutPrice)) calcOutPrice = 0;
-
             let newFinalData = { ...currentFinalData, '입고가': baseInPrice, '시중가': calcOutPrice };
-            const providedOutPrice = parseNum(currentFinalData?.['출고가']), mIn = parseNum(mItem?.['입고가']), mOut = parseNum(mItem?.['출고가']);
+            
+            const providedOutPrice = currentFinalData?.['출고가'];
+            if (forceRecalc) newFinalData['출고가'] = calcOutPrice;
+            else if (providedOutPrice !== undefined && providedOutPrice !== '') newFinalData['출고가'] = parseNum(providedOutPrice);
+            else newFinalData['출고가'] = 0;
 
-            if (providedOutPrice > 0 && !forceRecalc) newFinalData['출고가'] = providedOutPrice;
-            else if (baseInPrice === mIn && mOut > 0 && !forceRecalc) newFinalData['출고가'] = mOut;
-            else newFinalData['출고가'] = calcOutPrice;
-
-            const div1 = parseNum(currentFinalData?.['1종연산'] ?? mItem?.['1종연산']), extraCost = parseNum(currentFinalData?.['경비'] ?? mItem?.['경비']); 
+            const div1 = parseNum(currentFinalData?.['1종연산'] ?? mItem?.['1종연산']);
+            const extraCost = parseNum(currentFinalData?.['경비'] ?? mItem?.['경비']);
             if (div1 > 0) {
-                const provided1In = parseNum(currentFinalData?.['1입고']);
-                const provided1Out = parseNum(currentFinalData?.['1출고']);
-
-                let calc1In = Math.round(((baseInPrice + outsrc) / div1) / 100) * 100;
-                let calc1Out = Math.round(((newFinalData['출고가'] / div1) + extraCost) / 100) * 100; 
-
-                newFinalData['1입고'] = (provided1In > 0 && !forceRecalc) ? provided1In : calc1In;
-                newFinalData['1출고'] = (provided1Out > 0 && !forceRecalc) ? provided1Out : calc1Out;
+                newFinalData['1입고'] = Math.round(((baseInPrice + outsrc) / div1) / 100) * 100;
+                newFinalData['1출고'] = Math.round(((newFinalData['출고가'] / div1) + extraCost) / 10) * 10;
             }
             return newFinalData;
         };
@@ -323,77 +268,49 @@
         const createHeaderMap = (actualHeaders, mappingConfig) => {
             const headerMap = {}; if(!mappingConfig) return headerMap;
             Object.keys(mappingConfig).forEach(field => {
-                const keywords = mappingConfig[field].split(',').map(s => s.trim().toLowerCase().replace(/\s/g, '')).filter(Boolean);
-                let matchedKey = actualHeaders.find(h => h && keywords.some(kw => String(h).toLowerCase().replace(/\s/g, '') === kw));
-                if (!matchedKey) { matchedKey = actualHeaders.find(h => h && keywords.some(kw => String(h).toLowerCase().replace(/\s/g, '').includes(kw))); }
-                if(matchedKey) headerMap[field] = matchedKey;
+                const kws = mappingConfig[field].split(',').map(s=>s.trim().toLowerCase().replace(/\s/g, '')).filter(Boolean);
+                let matched = actualHeaders.find(h => h && kws.some(k => String(h).toLowerCase().replace(/\s/g, '') === k));
+                if (!matched) matched = actualHeaders.find(h => h && kws.some(k => String(h).toLowerCase().replace(/\s/g, '').includes(k)));
+                if(matched) headerMap[field] = matched;
             }); return headerMap;
         };
 
-        // ==========================================
-        // 🧩 Sub Components: UI Views
-        // ==========================================
         const ReviewModal = ({ onClose, onConfirm, displayRows, masterProducts, visibleUploadCols, masterLinksEst }) => {
-            const [filter, setFilter] = useState('all'); 
-            const [vendorFilter, setVendorFilter] = useState('all');
-
+            const [filter, setFilter] = useState('all'); const [vendorFilter, setVendorFilter] = useState('all');
             const analysis = useMemo(() => {
-                let up = 0, down = 0, changed = 0, same = 0, newItems = 0; 
-                const list = []; const vendors = new Set(); const upCols = visibleUploadCols.estimate || [];
-
+                let up = 0, down = 0, changed = 0, same = 0, newItems = 0; const list = []; const vendors = new Set(); const upCols = visibleUploadCols.estimate || [];
                 displayRows.forEach(row => {
-                    const mItem = masterProducts[row.코드]; 
-                    const oldP = mItem ? parseNum(mItem['입고가']) : 0; 
+                    const mItem = masterProducts[row.코드]; const oldP = mItem ? parseNum(mItem['입고가']) : 0; 
                     const newP = parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : row.sources?.['estimate']?.['입고가']);
-                    
                     const vendor = row.finalData?.['구매처'] || row.sources?.['estimate']?.['구매처'] || mItem?.['구매처'] || '미지정';
                     vendors.add(vendor);
 
                     let status = 'same'; let issues = [];
-
-                    if (!mItem) { 
-                        status = 'new'; newItems++; issues.push({ text: '신규 품목', color: 'text-emerald-500' });
-                    } else {
+                    if (!mItem) { status = 'new'; newItems++; issues.push({ text: '신규 품목', color: 'text-emerald-500' }); } 
+                    else {
                         let priceChanged = false;
                         if (newP > oldP && oldP > 0) { status = 'up'; up++; priceChanged = true; issues.push({ text: `+${(newP-oldP).toLocaleString()}원`, color: 'text-rose-500' }); } 
                         else if (newP < oldP && newP > 0) { status = 'down'; down++; priceChanged = true; issues.push({ text: `${(newP-oldP).toLocaleString()}원`, color: 'text-blue-500' }); }
-
                         let textChanged = false;
                         upCols.forEach(h => {
                             if (['품목코드', '입고가', '출고가'].includes(h)) return;
-                            const mField = masterLinksEst[h] || h; const mVal = mItem[mField];
-                            const uVal = row.finalData?.[h] !== undefined ? row.finalData[h] : row.sources?.['estimate']?.[h];
-                            
-                            if (mVal !== undefined && uVal !== undefined && String(mVal).trim() !== '' && String(uVal).trim() !== '' && String(mVal).trim() !== String(uVal).trim()) {
-                                textChanged = true; issues.push({ text: `[${h}] 다름`, color: 'text-amber-500' });
-                            }
+                            const mVal = mItem[masterLinksEst[h] || h], uVal = row.finalData?.[h] !== undefined ? row.finalData[h] : row.sources?.['estimate']?.[h];
+                            if (mVal !== undefined && uVal !== undefined && String(mVal).trim() !== '' && String(uVal).trim() !== '' && String(mVal).trim() !== String(uVal).trim()) { textChanged = true; issues.push({ text: `[${h}] 다름`, color: 'text-amber-500' }); }
                         });
-
-                        if (!priceChanged) {
-                            if (textChanged) { status = 'changed'; changed++; } else { status = 'same'; same++; }
-                        }
+                        if (!priceChanged) { if (textChanged) { status = 'changed'; changed++; } else { status = 'same'; same++; } }
                     }
-
-                    list.push({ 코드: row.코드, 품명: mItem?.품목명 || row.finalData?.['품목명'] || '', 거래처: vendor, 기존단가: oldP, 새단가: newP, issues: issues, 상태: status });
+                    list.push({ 코드: row.코드, 품명: mItem?.품목명 || row.finalData?.['품목명'] || '', 거래처: vendor, 기존단가: oldP, 새단가: newP, issues, 상태: status });
                 });
-
-                list.sort((a, b) => { if (a.거래처 !== b.거래처) return a.거래처.localeCompare(b.거래처); return String(a.코드).localeCompare(String(b.코드)); });
+                list.sort((a, b) => a.거래처 !== b.거래처 ? a.거래처.localeCompare(b.거래처) : String(a.코드).localeCompare(String(b.코드)));
                 return { up, down, changed, same, newItems, total: displayRows.length, list, vendors: Array.from(vendors).sort() };
             }, [displayRows, masterProducts, visibleUploadCols, masterLinksEst]);
 
-            const filteredList = analysis.list.filter(i => {
-                const statusMatch = filter === 'all' || i.상태 === filter;
-                const vendorMatch = vendorFilter === 'all' || i.거래처 === vendorFilter;
-                return statusMatch && vendorMatch;
-            });
+            const filteredList = analysis.list.filter(i => (filter === 'all' || i.상태 === filter) && (vendorFilter === 'all' || i.거래처 === vendorFilter));
 
             return (
-                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
-                    <div className="bg-white w-[950px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-                        <div className="bg-[#0f172a] p-4 text-white flex justify-between border-b border-slate-700">
-                            <h2 className="font-black text-[16px] flex items-center"><SafeIcon name="check-circle-2" className="text-indigo-400 mr-2"/>단가 및 변동 사항 검토 (프리뷰)</h2>
-                            <button onClick={onClose}><SafeIcon name="x" className="text-slate-400 hover:text-white" size={20}/></button>
-                        </div>
+                <div className="modal-overlay">
+                    <div className="modal-content w-[950px] max-h-[85vh]">
+                        <div className="modal-header"><h2 className="font-black text-[16px] flex items-center"><SafeIcon name="check-circle-2" className="text-indigo-400 mr-2"/>단가 및 변동 사항 검토</h2><button onClick={onClose}><SafeIcon name="x" className="text-slate-400 hover:text-white" size={20}/></button></div>
                         <div className="p-6 flex flex-col flex-1 overflow-hidden bg-slate-50">
                             <div className="flex justify-between items-center mb-4 shrink-0 gap-4">
                                 <div className="grid grid-cols-6 gap-3 flex-1">
@@ -403,112 +320,60 @@
                                         </div>
                                     ))}
                                 </div>
-                                <div className="w-[160px] shrink-0">
-                                    <select value={vendorFilter} onChange={e => setVendorFilter(e.target.value)} className="w-full appearance-none border border-slate-300 rounded-xl px-3 py-2 text-[13px] font-bold outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 shadow-sm bg-white cursor-pointer">
-                                        <option value="all">전체 거래처</option>
-                                        {analysis.vendors.map(v => <option key={v} value={v}>{v}</option>)}
-                                    </select>
-                                </div>
+                                <div className="w-[160px] shrink-0"><select value={vendorFilter} onChange={e => setVendorFilter(e.target.value)} className="input-base px-3 py-2 bg-white cursor-pointer"><option value="all">전체 거래처</option>{analysis.vendors.map(v => <option key={v} value={v}>{v}</option>)}</select></div>
                             </div>
                             <div className="flex-1 overflow-hidden flex flex-col bg-white border border-slate-200 rounded-xl">
                                 <div className="flex-1 overflow-auto custom-scrollbar">
-                                    <table className="w-full text-left text-xs"><thead className="bg-slate-50 sticky top-0 border-b"><tr><th className="px-4 py-2 w-14 text-center">상태</th><th className="px-4 py-2 w-24">코드</th><th className="px-4 py-2 w-28">거래처</th><th className="px-4 py-2">품목명 (마스터 기준)</th><th className="px-4 py-2 text-right">기존 입고가</th><th className="px-4 py-2 text-right text-indigo-600">새 입고가</th><th className="px-4 py-2 text-right">이슈 (차액 및 변동)</th></tr></thead>
+                                    <table className="w-full text-left text-xs"><thead className="bg-slate-50 sticky top-0 border-b"><tr><th className="px-4 py-2 w-14 text-center">상태</th><th className="px-4 py-2 w-24">코드</th><th className="px-4 py-2 w-28">거래처</th><th className="px-4 py-2">품목명 (마스터 기준)</th><th className="px-4 py-2 text-right">기존 입고가</th><th className="px-4 py-2 text-right text-indigo-600">새 입고가</th><th className="px-4 py-2 text-right">이슈 내역</th></tr></thead>
                                     <tbody className="divide-y divide-slate-100">{filteredList.map((i,idx)=><tr key={idx} className="hover:bg-slate-50">
                                         <td className="px-4 py-2 text-center">{i.상태==='up'&&<span className="bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded text-[10px] font-black">인상</span>}{i.상태==='down'&&<span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[10px] font-black">인하</span>}{i.상태==='new'&&<span className="bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded text-[10px] font-black">신규</span>}{i.상태==='changed'&&<span className="bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded text-[10px] font-black">변동</span>}{i.상태==='same'&&<span className="text-slate-300">-</span>}</td>
-                                        <td className="px-4 py-2 font-mono text-slate-500">{i.코드}</td><td className="px-4 py-2 text-[11px] text-slate-600 truncate max-w-[100px] font-medium">{i.거래처}</td><td className="px-4 py-2 font-bold truncate max-w-[180px] text-slate-800">{i.품명}</td><td className="px-4 py-2 text-right text-slate-500">{i.기존단가>0?i.기존단가.toLocaleString():'-'}</td><td className="px-4 py-2 text-right font-black text-indigo-600">{i.새단가>0?i.새단가.toLocaleString():'-'}</td>
-                                        <td className="px-4 py-2 text-right font-bold text-[11px]">
-                                            <div className="flex flex-col items-end gap-0.5">
-                                                {i.issues.length === 0 ? <span className="text-slate-300">-</span> : i.issues.map((iss, jdx) => <span key={jdx} className={iss.color}>{iss.text}</span>)}
-                                            </div>
-                                        </td>
+                                        <td className="px-4 py-2 font-mono text-slate-500">{i.코드}</td><td className="px-4 py-2 text-[11px] text-slate-600 truncate max-w-[100px]">{i.거래처}</td><td className="px-4 py-2 font-bold truncate max-w-[180px] text-slate-800">{i.품명}</td><td className="px-4 py-2 text-right text-slate-500">{i.기존단가>0?i.기존단가.toLocaleString():'-'}</td><td className="px-4 py-2 text-right font-black text-indigo-600">{i.새단가>0?i.새단가.toLocaleString():'-'}</td>
+                                        <td className="px-4 py-2 text-right font-bold text-[11px]"><div className="flex flex-col items-end gap-0.5">{i.issues.length===0 ? <span className="text-slate-300">-</span> : i.issues.map((iss, jdx) => <span key={jdx} className={iss.color}>{iss.text}</span>)}</div></td>
                                     </tr>)}</tbody></table>
                                 </div>
                             </div>
                         </div>
                         <div className="bg-slate-100 p-4 border-t flex justify-between items-center gap-2 shrink-0">
-                            <div className="text-[12px] font-bold text-indigo-600 flex items-center bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 shadow-sm"><i className="fas fa-info-circle mr-1.5"></i> 현재 화면에 필터링된 상품({filteredList.length}건)만 마스터에 반영됩니다.</div>
-                            <div className="flex gap-2">
-                                <button onClick={onClose} className="px-5 py-2.5 bg-white border border-slate-300 text-slate-600 font-bold rounded-lg hover:bg-slate-50">닫기 (수정하러 가기)</button>
-                                <button onClick={()=>{onConfirm(filteredList.map(r=>r.코드)); onClose();}} className="px-6 py-2.5 bg-indigo-600 text-white font-black rounded-lg hover:bg-indigo-700 shadow-sm flex items-center"><SafeIcon name="check-circle-2" className="mr-1.5" size={14}/> 마스터에 반영하기</button>
-                            </div>
+                            <div className="text-[12px] font-bold text-indigo-600 flex items-center bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 shadow-sm"><i className="fas fa-info-circle mr-1.5"></i> 필터링된 상품({filteredList.length}건)만 마스터에 반영됩니다.</div>
+                            <div className="flex gap-2"><button onClick={onClose} className="px-5 py-2.5 bg-white border border-slate-300 text-slate-600 font-bold rounded-lg hover:bg-slate-50">닫기 (수정하러 가기)</button><button onClick={()=>{onConfirm(filteredList.map(r=>r.코드)); onClose();}} className="px-6 py-2.5 bg-indigo-600 text-white font-black rounded-lg hover:bg-indigo-700 shadow-sm flex items-center"><SafeIcon name="check-circle-2" className="mr-1.5" size={14}/> 마스터에 반영하기</button></div>
                         </div>
                     </div>
                 </div>
             );
         };
 
-        const ExportModal = ({ onClose, executeExport }) => {
-            return (
-                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
-                    <div className="bg-white w-[500px] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-                        <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
-                            <h2 className="font-black text-[16px]"><i className="fas fa-file-export text-emerald-400 mr-2"></i>데이터 출력 및 보고서 생성</h2>
-                            <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>
-                        </div>
-                        <div className="p-6 flex flex-col gap-4">
-                            <button onClick={() => { executeExport({title: '통합 엑셀 다운로드'}); onClose(); }} className="w-full flex items-center p-4 bg-white border-2 border-slate-200 rounded-xl hover:border-emerald-500 hover:bg-emerald-50 transition-all group text-left">
-                                <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-500 text-xl mr-4 group-hover:scale-110 transition-transform"><i className="fas fa-file-excel"></i></div>
-                                <div>
-                                    <div className="font-black text-slate-800 text-[14px]">통합 엑셀 다운로드 (ERP & 쇼핑몰)</div>
-                                    <div className="text-slate-500 text-[11px] mt-1">ERP 업데이트 양식과 쇼핑몰 업로드 양식을 각각의 시트로 한 번에 다운로드합니다.</div>
-                                </div>
-                            </button>
-                            <button onClick={onClose} className="w-full mt-2 bg-slate-100 text-slate-600 font-bold py-3 rounded-xl hover:bg-slate-200 transition-colors">취소</button>
-                        </div>
+        const ExportModal = ({ onClose, executeExport }) => (
+            <div className="modal-overlay">
+                <div className="modal-content w-[500px]">
+                    <div className="modal-header"><h2 className="font-black text-[16px]"><i className="fas fa-file-export text-emerald-400 mr-2"></i>데이터 출력 및 보고서 생성</h2><button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button></div>
+                    <div className="p-6 flex flex-col gap-4">
+                        <button onClick={() => { executeExport({title: '통합 엑셀 다운로드'}); onClose(); }} className="w-full flex items-center p-4 bg-white border-2 border-slate-200 rounded-xl hover:border-emerald-500 hover:bg-emerald-50 transition-all group text-left">
+                            <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-500 text-xl mr-4 group-hover:scale-110 transition-transform"><i className="fas fa-file-excel"></i></div>
+                            <div><div className="font-black text-slate-800 text-[14px]">통합 엑셀 다운로드 (ERP & 쇼핑몰)</div><div className="text-slate-500 text-[11px] mt-1">ERP 업데이트 양식과 쇼핑몰 업로드 양식을 각각의 시트로 한 번에 다운로드합니다.</div></div>
+                        </button>
+                        <button onClick={onClose} className="w-full mt-2 bg-slate-100 text-slate-600 font-bold py-3 rounded-xl hover:bg-slate-200 transition-colors">취소</button>
                     </div>
                 </div>
-            );
-        };
+            </div>
+        );
 
         const CategorySaveModal = ({ onClose, onSave, availableCategories }) => {
-            const [name, setName] = useState('');
-            const isExisting = availableCategories && availableCategories.some(c => c.name === name.trim());
-
+            const [name, setName] = useState(''); const isExisting = availableCategories?.some(c => c.name === name.trim());
             return (
-                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
-                    <div className="bg-white w-[450px] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-                        <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
-                            <h2 className="font-black text-[16px]"><i className="fas fa-save text-blue-400 mr-2"></i>저장 (병합/추가)</h2>
-                            <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>
-                        </div>
+                <div className="modal-overlay">
+                    <div className="modal-content w-[450px]">
+                        <div className="modal-header"><h2 className="font-black text-[16px]"><i className="fas fa-save text-blue-400 mr-2"></i>저장 (병합/추가)</h2><button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button></div>
                         <div className="p-6 flex flex-col gap-4">
-                            <div className="text-[13px] text-slate-600 font-bold mb-2">현재 화면에 띄워진 상품 목록을 언제든 엑셀 없이 불러올 수 있도록 카탈로그로 묶어 저장합니다.</div>
-                            
                             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
                                 <label className="text-[12px] font-bold text-slate-500 mb-1.5 block">1. 기존 카탈로그 선택 (오타 방지)</label>
-                                <select 
-                                    onChange={(e) => { if(e.target.value) setName(e.target.value); }} 
-                                    className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-[13px] font-bold outline-none focus:border-indigo-500 shadow-sm mb-4 bg-white text-slate-700 cursor-pointer"
-                                >
-                                    <option value="">-- 기존 카탈로그 목록에서 선택 --</option>
-                                    {availableCategories && availableCategories.map(c => (
-                                        <option key={c.name} value={c.name}>{c.name} ({c.count}건)</option>
-                                    ))}
-                                </select>
-
+                                <select onChange={(e) => { if(e.target.value) setName(e.target.value); }} className="input-base px-3 py-2.5 mb-4 cursor-pointer bg-white"><option value="">-- 기존 목록에서 선택 --</option>{availableCategories?.map(c => <option key={c.name} value={c.name}>{c.name} ({c.count}건)</option>)}</select>
                                 <label className="text-[12px] font-bold text-slate-500 mb-1.5 block">2. 카탈로그 명칭 (직접 입력 가능)</label>
-                                <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="저장할 카탈로그 이름" className="w-full border border-slate-300 rounded-lg px-4 py-3 text-[13px] font-bold outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 bg-white" autoFocus onKeyDown={(e) => { if(e.key === 'Enter' && name) onSave(name); }} />
+                                <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="저장할 카탈로그 이름" className="input-base px-4 py-3 bg-white" autoFocus onKeyDown={(e) => { if(e.key === 'Enter' && name) onSave(name); }} />
                             </div>
-                            
-                            {isExisting ? (
-                                <div className="text-[12px] font-bold text-indigo-700 bg-indigo-50 p-3 rounded-lg border border-indigo-200 fade-in flex items-start">
-                                    <i className="fas fa-info-circle mr-1.5 mt-0.5"></i>
-                                    <div>
-                                        이미 존재하는 카탈로그입니다.
-                                        <p className="mt-1 text-[11px] text-indigo-600 font-medium leading-relaxed">선택하신 카탈로그에 새로운 상품들이 <strong>병합(추가)</strong>됩니다.<br/>기존 상품의 변동된 단가는 이미 최신으로 업데이트되었습니다.</p>
-                                    </div>
-                                </div>
-                            ) : name.trim() !== '' ? (
-                                <div className="text-[12px] font-bold text-emerald-700 bg-emerald-50 p-3 rounded-lg border border-emerald-200 fade-in flex items-center">
-                                    <i className="fas fa-magic mr-1.5"></i> 완전히 새로운 카탈로그가 생성됩니다.
-                                </div>
-                            ) : null}
-
+                            {isExisting ? <div className="text-[12px] font-bold text-indigo-700 bg-indigo-50 p-3 rounded-lg border border-indigo-200 flex items-start"><i className="fas fa-info-circle mr-1.5 mt-0.5"></i><div>이미 존재하는 카탈로그입니다.<p className="mt-1 text-[11px] text-indigo-600">선택하신 카탈로그에 새로운 상품들이 <strong>병합(추가)</strong>됩니다.</p></div></div> : name.trim() !== '' ? <div className="text-[12px] font-bold text-emerald-700 bg-emerald-50 p-3 rounded-lg border border-emerald-200 flex items-center"><i className="fas fa-magic mr-1.5"></i> 완전히 새로운 카탈로그가 생성됩니다.</div> : null}
                             <div className="flex gap-2 mt-2">
                                 <button onClick={onClose} className="flex-1 bg-slate-100 text-slate-600 font-bold py-3 rounded-xl hover:bg-slate-200 transition-colors">취소</button>
-                                <button onClick={() => onSave(name)} disabled={!name.trim()} className={`flex-1 font-bold py-3 rounded-xl transition-colors shadow-sm ${name.trim() ? (isExisting ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-blue-600 text-white hover:bg-blue-700') : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>
-                                    {isExisting ? '기존 목록에 병합(추가)' : '새로 저장하기'}
-                                </button>
+                                <button onClick={() => onSave(name)} disabled={!name.trim()} className={`flex-1 font-bold py-3 rounded-xl transition-colors shadow-sm ${name.trim() ? (isExisting ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-blue-600 text-white hover:bg-blue-700') : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>{isExisting ? '기존 목록에 병합' : '새로 저장하기'}</button>
                             </div>
                         </div>
                     </div>
@@ -516,13 +381,7 @@
             );
         };
 
-        const getCellWidthClass = (headerName) => {
-            if (['출고가', '입고가', '입고B', '도매A', '도매B', '상장가', '단가H', '단가I', '시중가', '행사가'].includes(headerName)) return 'min-w-[90px] w-[90px] max-w-[90px]';
-            if (['간단설명', '지시사항', '비고'].includes(headerName)) return 'min-w-[200px] w-[200px] max-w-[200px]';
-            if (['규격'].includes(headerName)) return 'min-w-[120px] w-[120px] max-w-[120px]';
-            if (['구매처', '거래처명', '거래처'].includes(headerName)) return 'min-w-[120px] w-[120px] max-w-[120px]';
-            return 'min-w-[100px] w-[100px] max-w-[100px]';
-        };
+        const getCellWidthClass = (h) => { if (['출고가','입고가','입고B','도매A','도매B','상장가','단가H','단가I','시중가','행사가'].includes(h)) return 'min-w-[90px] w-[90px] max-w-[90px]'; if (['간단설명','지시사항','비고'].includes(h)) return 'min-w-[200px] w-[200px] max-w-[200px]'; if (h==='규격'||['구매처','거래처명','거래처'].includes(h)) return 'min-w-[120px] w-[120px] max-w-[120px]'; return 'min-w-[100px] w-[100px] max-w-[100px]'; };
 
         const EditableCell = React.memo(({ rowCode, initialVal, field, linkedMasterField, mVal, onUpdateCell }) => {
             const isNum = NUMERIC_HEADERS.includes(linkedMasterField) || NUMERIC_HEADERS.includes(field);
@@ -535,109 +394,59 @@
                 if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Tab'].includes(e.key)) {
                     if (e.key === 'ArrowLeft' && e.target.selectionStart !== 0) return;
                     if (e.key === 'ArrowRight' && e.target.selectionEnd !== e.target.value.length) return;
-                    
-                    const isTab = e.key === 'Tab';
-                    if (!isTab) e.preventDefault();
-                    
+                    if (e.key !== 'Tab') e.preventDefault();
                     e.target.blur();
                     const td = e.target.closest('td'); const tr = td.closest('tr'); const tbody = tr.closest('tbody');
                     const tds = Array.from(tr.querySelectorAll('td:has(input[type="text"])'));
-                    const colIdx = tds.indexOf(td);
-                    const trs = Array.from(tbody.querySelectorAll('tr.table-row-hover'));
+                    const colIdx = tds.indexOf(td); const trs = Array.from(tbody.querySelectorAll('tr.table-row-hover'));
                     const rowIdx = trs.indexOf(tr);
-
-                    let nextRowIdx = rowIdx; let nextColIdx = colIdx;
+                    let nextRowIdx = rowIdx, nextColIdx = colIdx;
 
                     if (e.key === 'ArrowUp') nextRowIdx = Math.max(0, rowIdx - 1);
                     if (e.key === 'ArrowDown' || e.key === 'Enter') nextRowIdx = Math.min(trs.length - 1, rowIdx + 1);
-                    if (e.key === 'ArrowLeft') { nextColIdx = Math.max(0, colIdx - 1); }
-                    if (e.key === 'ArrowRight') { nextColIdx = Math.min(tds.length - 1, colIdx + 1); }
-                    if (isTab) {
-                        e.preventDefault();
-                        if (e.shiftKey) {
-                            nextColIdx = colIdx - 1;
-                            if (nextColIdx < 0) { nextColIdx = tds.length - 1; nextRowIdx = Math.max(0, rowIdx - 1); }
-                        } else {
-                            nextColIdx = colIdx + 1;
-                            if (nextColIdx >= tds.length) { nextColIdx = 0; nextRowIdx = Math.min(trs.length - 1, rowIdx + 1); }
-                        }
-                    }
+                    if (e.key === 'ArrowLeft') nextColIdx = Math.max(0, colIdx - 1);
+                    if (e.key === 'ArrowRight') nextColIdx = Math.min(tds.length - 1, colIdx + 1);
+                    if (e.key === 'Tab') { e.preventDefault(); if (e.shiftKey) { nextColIdx = colIdx - 1; if (nextColIdx < 0) { nextColIdx = tds.length - 1; nextRowIdx = Math.max(0, rowIdx - 1); } } else { nextColIdx = colIdx + 1; if (nextColIdx >= tds.length) { nextColIdx = 0; nextRowIdx = Math.min(trs.length - 1, rowIdx + 1); } } }
 
                     if (nextRowIdx !== rowIdx || nextColIdx !== colIdx || e.key === 'Enter') {
                         const nextTr = trs[nextRowIdx];
                         if (nextTr) {
-                            let nextInput;
-                            if (e.key === 'Enter') {
-                                nextInput = nextTr.querySelector('input[data-field="입고가"]') || nextTr.querySelector('td:has(input[type="text"]) input');
-                            } else { 
-                                const nextTds = Array.from(nextTr.querySelectorAll('td:has(input[type="text"])')); 
-                                nextInput = nextTds[nextColIdx]?.querySelector('input'); 
-                            }
+                            let nextInput = (e.key === 'Enter') ? (nextTr.querySelector('input[data-field="입고가"]') || nextTr.querySelector('td:has(input[type="text"]) input')) : Array.from(nextTr.querySelectorAll('td:has(input[type="text"])'))[nextColIdx]?.querySelector('input');
                             if (nextInput) { nextInput.focus(); setTimeout(() => nextInput.select(), 0); }
                         }
                     }
                 }
             };
-
             return (
-                <td className={`px-2 py-1.5 border-r border-slate-200 bg-white ${getCellWidthClass(linkedMasterField || field)} ${isDiff ? 'bg-amber-50/60' : ''}`}>
+                <td className={`td-base bg-white ${getCellWidthClass(linkedMasterField || field)} ${isDiff ? 'bg-amber-50/60' : ''}`}>
                     <input type="text" data-field={field} value={val==="오류"?"":val} placeholder={mVal||''} onChange={e=>setVal(e.target.value)} onFocus={e=>{setIsFocused(true); setTimeout(()=>e.target.select(),0);}} onBlur={onBlur} onKeyDown={handleKeyDown} onClick={e=>e.target.select()} className={`w-full bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-1 focus:ring-indigo-300 rounded px-1.5 py-1.5 text-[13px] outline-none ${isNum?'text-right':'truncate text-center'} ${isDiff?'text-indigo-700 font-bold':'text-slate-700 font-medium'} transition-colors`} />
                 </td>
             );
         });
 
-        const MemoizedTableRow = React.memo(({ row, idx, isSel, mItem, isEstimateUploaded, visMasterCols, visUploadCols, masterLinksEst, onToggleSelection, onMouseDown, onMouseEnter, onUpdateCell }) => {
-            const dName = mItem.품목명 || '[미등록]';
-            const dSpec = mItem.규격 || '';
-            const rowCode = row.코드 || '';
-
+        const MemoizedTableRow = React.memo(({ row, idx, isSel, mItem, isEstimateUploaded, visMasterCols, visUploadCols, masterLinksEst, onMouseDown, onMouseEnter, onUpdateCell }) => {
+            const dName = mItem.품목명 || '[미등록]'; const dSpec = mItem.규격 || ''; const rowCode = row.코드 || '';
             return (
                 <tr className={`table-row-hover transition-colors ${isSel ? 'table-row-selected' : ''}`} onMouseDown={(e) => onMouseDown && onMouseDown(e, rowCode, isSel)} onMouseEnter={(e) => onMouseEnter && onMouseEnter(e, rowCode)}>
-                    <td className={`sticky z-20 px-4 py-3.5 border-r border-slate-200 min-w-[280px] w-[280px] max-w-[280px] bg-slate-50`} style={{left:0}}>
-                        <div className="flex flex-col w-full overflow-hidden">
-                            <span className="text-[10.5px] font-mono text-indigo-500 mb-0.5 tracking-tight font-bold">{rowCode}</span>
-                            <div className="flex items-baseline w-full min-w-0 overflow-hidden mt-0.5">
-                                <span className={`text-[13px] font-extrabold truncate text-slate-800 ${!mItem.품목명 ? 'text-rose-500' : ''}`} title={dName}>{dName}</span>
-                                {dSpec && <span className="text-[11.5px] font-medium text-slate-400 truncate ml-1.5 shrink-0 max-w-[40%]" title={dSpec}>({dSpec})</span>}
-                            </div>
-                        </div>
+                    <td className="sticky z-20 px-4 py-3.5 border-r border-slate-200 min-w-[280px] w-[280px] max-w-[280px] bg-slate-50" style={{left:0}}>
+                        <div className="flex flex-col w-full overflow-hidden"><span className="text-[10.5px] font-mono text-indigo-500 mb-0.5 tracking-tight font-bold">{rowCode}</span><div className="flex items-baseline w-full min-w-0 overflow-hidden mt-0.5"><span className={`text-[13px] font-extrabold truncate text-slate-800 ${!mItem.품목명 ? 'text-rose-500' : ''}`} title={dName}>{dName}</span>{dSpec && <span className="text-[11.5px] font-medium text-slate-400 truncate ml-1.5 shrink-0 max-w-[40%]" title={dSpec}>({dSpec})</span>}</div></div>
                     </td>
-
                     {!isEstimateUploaded ? (
                         visMasterCols.map(h => {
-                            const isNum = NUMERIC_HEADERS.includes(h);
-                            const mVal = mItem[h] !== undefined && mItem[h] !== '' ? (isNum ? parseNum(mItem[h]).toLocaleString() : mItem[h]) : '-';
-                            return (
-                                <td key={`idle-td-${h}`} className={`px-2 py-1.5 border-r border-slate-200 bg-slate-50 text-slate-600 ${getCellWidthClass(h)} ${isNum ? 'text-right font-medium' : 'text-center'}`}>
-                                    <div className="truncate w-full">{mVal}</div>
-                                </td>
-                            );
+                            const isNum = NUMERIC_HEADERS.includes(h); const mVal = mItem[h] !== undefined && mItem[h] !== '' ? (isNum ? parseNum(mItem[h]).toLocaleString() : mItem[h]) : '-';
+                            return <td key={`idle-${h}`} className={`td-base bg-slate-50 text-slate-600 ${getCellWidthClass(h)} ${isNum ? 'text-right font-medium' : 'text-center'}`}><div className="truncate w-full">{mVal}</div></td>;
                         })
                     ) : (
                         <>
                             {visMasterCols.map(h => {
-                                const isNum = NUMERIC_HEADERS.includes(h);
-                                const mVal = mItem[h];
-                                let displayVal = mVal;
-                                let isChanged = false;
-
-                                if (row.finalData && row.finalData[h] !== undefined) {
-                                    if (isNum && parseNum(row.finalData[h]) !== parseNum(mVal)) { displayVal = row.finalData[h]; isChanged = true; } 
-                                    else if (!isNum && String(row.finalData[h]) !== String(mVal)) { displayVal = row.finalData[h]; isChanged = true; }
-                                }
-                                const formattedVal = displayVal !== undefined && displayVal !== '' ? (isNum ? parseNum(displayVal).toLocaleString() : displayVal) : '-';
-                                return (
-                                    <td key={`pm-d-${h}`} className={`px-2 py-1.5 border-r border-slate-200 transition-colors bg-slate-50 ${getCellWidthClass(h)} ${isChanged ? 'text-amber-800 font-bold' : 'text-slate-600'} ${isNum ? 'text-right font-medium' : 'text-center'}`}>
-                                        <div className="truncate w-full">{formattedVal}</div>
-                                    </td>
-                                );
+                                const isNum = NUMERIC_HEADERS.includes(h); const mVal = mItem[h]; let displayVal = mVal; let isChanged = false;
+                                if (row.finalData && row.finalData[h] !== undefined) { if (isNum && parseNum(row.finalData[h]) !== parseNum(mVal)) { displayVal = row.finalData[h]; isChanged = true; } else if (!isNum && String(row.finalData[h]) !== String(mVal)) { displayVal = row.finalData[h]; isChanged = true; } }
+                                const fmt = displayVal !== undefined && displayVal !== '' ? (isNum ? parseNum(displayVal).toLocaleString() : displayVal) : '-';
+                                return <td key={`pm-${h}`} className={`td-base transition-colors bg-slate-50 ${getCellWidthClass(h)} ${isChanged ? 'text-amber-800 font-bold' : 'text-slate-600'} ${isNum ? 'text-right font-medium' : 'text-center'}`}><div className="truncate w-full">{fmt}</div></td>;
                             })}
-                            
                             {visUploadCols.map(h => {
-                                const linkedMasterField = masterLinksEst[h];
-                                const mVal = linkedMasterField && rowCode ? mItem[linkedMasterField] : undefined;
-                                const initialVal = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.['estimate']?.[h] || '');
-                                return <EditableCell key={`p-u-e-${h}`} rowCode={rowCode} initialVal={initialVal} field={h} linkedMasterField={linkedMasterField} mVal={mVal} onUpdateCell={onUpdateCell} />;
+                                const lk = masterLinksEst[h]; const mVal = lk && rowCode ? mItem[lk] : undefined; const initVal = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.['estimate']?.[h] || '');
+                                return <EditableCell key={`edit-${h}`} rowCode={rowCode} initialVal={initVal} field={h} linkedMasterField={lk} mVal={mVal} onUpdateCell={onUpdateCell} />;
                             })}
                         </>
                     )}
@@ -647,43 +456,16 @@
 
         const ExcelDataGrid = ({ state, actions }) => {
             const { isEstimateUploaded, fullDisplayRows, visibleMasterCols, visibleUploadCols, masterProducts, masterLinksEst, selectedRows } = state;
-            
-            const [scrollTop, setScrollTop] = useState(0);
-            const handleScroll = useCallback((e) => setScrollTop(e.target.scrollTop), []);
+            const [scrollTop, setScrollTop] = useState(0); const handleScroll = useCallback((e) => setScrollTop(e.target.scrollTop), []);
+            const isDragging = useRef(false); const dragSelectMode = useRef(true);
+            useEffect(() => { const hMu = () => { isDragging.current = false; }; window.addEventListener('mouseup', hMu); return () => window.removeEventListener('mouseup', hMu); }, []);
+            const handleMouseDown = useCallback((e, code, isSel) => { if (['input','select','button','i'].includes(e.target.tagName.toLowerCase())) return; isDragging.current = true; dragSelectMode.current = !isSel; actions.setRowSelection(code, !isSel); }, [actions]);
+            const handleMouseEnter = useCallback((e, code) => { if (isDragging.current) actions.setRowSelection(code, dragSelectMode.current); }, [actions]);
 
-            const isDragging = useRef(false);
-            const dragSelectMode = useRef(true);
-
-            useEffect(() => {
-                const handleMouseUp = () => { isDragging.current = false; };
-                window.addEventListener('mouseup', handleMouseUp);
-                return () => window.removeEventListener('mouseup', handleMouseUp);
-            }, []);
-
-            const handleMouseDown = useCallback((e, rowCode, isSel) => {
-                const targetTag = e.target.tagName.toLowerCase();
-                if (['input', 'select', 'button', 'i'].includes(targetTag)) return;
-                isDragging.current = true;
-                dragSelectMode.current = !isSel;
-                actions.setRowSelection(rowCode, !isSel);
-            }, [actions]);
-
-            const handleMouseEnter = useCallback((e, rowCode) => {
-                if (isDragging.current) {
-                    actions.setRowSelection(rowCode, dragSelectMode.current);
-                }
-            }, [actions]);
-
-            const ROW_HEIGHT = 56; 
-            const BUFFER_SIZE = 15; 
-            const VIEWPORT_HEIGHT = 800; 
-
-            const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_SIZE);
-            const endIndex = Math.min(fullDisplayRows.length, Math.floor((scrollTop + VIEWPORT_HEIGHT) / ROW_HEIGHT) + BUFFER_SIZE);
-
-            const displayRows = fullDisplayRows.slice(startIndex, endIndex);
-            const topPadding = startIndex * ROW_HEIGHT;
-            const bottomPadding = Math.max(0, (fullDisplayRows.length - endIndex) * ROW_HEIGHT);
+            const ROW_H = 56; const BUF = 15; const V_H = 800; 
+            const startIdx = Math.max(0, Math.floor(scrollTop / ROW_H) - BUF); const endIdx = Math.min(fullDisplayRows.length, Math.floor((scrollTop + V_H) / ROW_H) + BUF);
+            const displayRows = fullDisplayRows.slice(startIdx, endIdx);
+            const topPad = startIdx * ROW_H; const bottomPad = Math.max(0, (fullDisplayRows.length - endIdx) * ROW_H);
 
             const visMaster = visibleMasterCols.estimate?.filter(h=>!['품목코드','품목명','규격'].includes(h)) || [];
             const visUpload = visibleUploadCols.estimate?.filter(h=>h!=='품목코드') || [];
@@ -691,29 +473,20 @@
             return (
                 <div className="bg-white border border-slate-200 shadow-sm h-full flex flex-col overflow-hidden relative">
                     <div className="flex-1 overflow-auto custom-scrollbar relative" onScroll={handleScroll}>
-                        <table className="text-left border-collapse text-[13px] whitespace-nowrap relative z-0 w-max bg-white">
+                        <table className="text-left border-collapse text-[13px] whitespace-nowrap relative w-max bg-white">
                             <thead className="text-[12px] font-bold text-slate-500 bg-white">
                                 <tr>
-                                    <th className="sticky top-0 z-40 bg-slate-100 px-4 py-3.5 border-y border-r border-slate-200 shadow-sm min-w-[280px] w-[280px] max-w-[280px]" style={{left:0}}>
-                                        상품정보 (코드/품명/규격)
-                                    </th>
-                                    {visMaster.map(h=><th key={`m-${h}`} className={`sticky top-0 z-30 bg-slate-100 px-3 py-3.5 border-y border-r border-slate-200 shadow-sm text-center ${getCellWidthClass(h)}`}><i className="fas fa-lock text-slate-300 text-[10px] mr-1"></i> {h}</th>)}
-                                    {visUpload.map(h=><th key={`u-${h}`} className={`sticky top-0 z-30 bg-white px-3 py-3.5 border-y border-r border-slate-200 shadow-sm text-center text-indigo-700 ${getCellWidthClass(h)}`}><i className="fas fa-pen text-indigo-300 text-[10px] mr-1"></i> {h}</th>)}
+                                    <th className="sticky top-0 z-40 bg-slate-100 px-4 py-3.5 border-y border-r border-slate-200 shadow-sm w-[280px]" style={{left:0}}>상품정보 (코드/품명/규격)</th>
+                                    {visMaster.map(h=><th key={`mh-${h}`} className={`table-th ${getCellWidthClass(h)}`}><i className="fas fa-lock text-slate-300 text-[10px] mr-1"></i> {h}</th>)}
+                                    {visUpload.map(h=><th key={`uh-${h}`} className={`table-th bg-white text-indigo-700 ${getCellWidthClass(h)}`}><i className="fas fa-pen text-indigo-300 text-[10px] mr-1"></i> {h}</th>)}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-transparent text-slate-700">
-                                {fullDisplayRows.length===0 ? (
-                                    <tr><td colSpan="50" className="p-16 text-center text-slate-400 font-bold"><i className="fas fa-file-excel text-5xl mb-4 text-slate-200 block"></i>데이터가 없습니다. 카탈로그를 불러오거나 엑셀을 업로드하세요.</td></tr>
-                                ) : (
+                                {fullDisplayRows.length===0 ? <tr><td colSpan="50" className="p-16 text-center text-slate-400 font-bold"><i className="fas fa-file-excel text-5xl mb-4 text-slate-200 block"></i>데이터가 없습니다.</td></tr> : (
                                     <>
-                                        {topPadding > 0 && <tr style={{ height: `${topPadding}px` }}><td colSpan="50" className="p-0 border-0"></td></tr>}
-                                        
-                                        {displayRows.map((row, idx) => {
-                                            const mItem = masterProducts[row.코드] || {}; const isSel = selectedRows.has(row.코드);
-                                            return <MemoizedTableRow key={row.코드} row={row} idx={idx} isSel={isSel} mItem={mItem} isEstimateUploaded={isEstimateUploaded} visMasterCols={visMaster} visUploadCols={visUpload} masterLinksEst={masterLinksEst} onToggleSelection={actions.toggleRowSelection} onMouseDown={handleMouseDown} onMouseEnter={handleMouseEnter} onUpdateCell={actions.handleUpdateCell} />;
-                                        })}
-                                        
-                                        {bottomPadding > 0 && <tr style={{ height: `${bottomPadding}px` }}><td colSpan="50" className="p-0 border-0"></td></tr>}
+                                        {topPad > 0 && <tr style={{ height: `${topPad}px` }}><td colSpan="50" className="p-0 border-0"></td></tr>}
+                                        {displayRows.map((row, idx) => <MemoizedTableRow key={row.코드} row={row} idx={idx} isSel={selectedRows.has(row.코드)} mItem={masterProducts[row.코드] || {}} isEstimateUploaded={isEstimateUploaded} visMasterCols={visMaster} visUploadCols={visUpload} masterLinksEst={masterLinksEst} onMouseDown={handleMouseDown} onMouseEnter={handleMouseEnter} onUpdateCell={actions.handleUpdateCell} />)}
+                                        {bottomPad > 0 && <tr style={{ height: `${bottomPad}px` }}><td colSpan="50" className="p-0 border-0"></td></tr>}
                                     </>
                                 )}
                             </tbody>
@@ -725,668 +498,271 @@
 
         function App() {
             const config = useMerchConfig();
-            
-            const [toastMsg, setToastMsg] = useState('');
-            const [isProcessing, setIsProcessing] = useState(false); 
-            const [processMsg, setProcessMsg] = useState('');
-            const [isExporting, setIsExporting] = useState(false);
-            
-            const [showSettingsModal, setShowSettingsModal] = useState(false);
-            const [showReviewModal, setShowReviewModal] = useState(false);
-            const [showCategoryModal, setShowCategoryModal] = useState(false);
-            const [showExportModal, setShowExportModal] = useState(false);
-            
-            const [masterProducts, setMasterProducts] = useState({});
-            const [managedItems, setManagedItems] = useState({});
-
-            const [globalSearch, setGlobalSearch] = useState('');
-            const [selectedCatalog, setSelectedCatalog] = useState('');
-            const [selectedCategory, setSelectedCategory] = useState('');
-            const [selectedRows, setSelectedRows] = useState(new Set());
+            const [toastMsg, setToastMsg] = useState(''); const [isProcessing, setIsProcessing] = useState(false); const [processMsg, setProcessMsg] = useState(''); const [isExporting, setIsExporting] = useState(false);
+            const [showSettingsModal, setShowSettingsModal] = useState(false); const [showReviewModal, setShowReviewModal] = useState(false); const [showCategoryModal, setShowCategoryModal] = useState(false); const [showExportModal, setShowExportModal] = useState(false);
+            const [masterProducts, setMasterProducts] = useState({}); const [managedItems, setManagedItems] = useState({});
+            const [globalSearch, setGlobalSearch] = useState(''); const [selectedCatalog, setSelectedCatalog] = useState(''); const [selectedCategory, setSelectedCategory] = useState(''); const [selectedRows, setSelectedRows] = useState(new Set());
 
             const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
             
             const handleNavigate = useCallback((e, path, isReady = true) => {
                 if (e && e.preventDefault) e.preventDefault();
-                if (!path || path === '#' || !isReady) {
-                    showToast("⚠️ 해당 페이지는 현재 준비 중이거나 경로가 올바르지 않습니다.");
-                    return;
-                }
-                try {
-                    const protocol = window.location.protocol;
-                    if (protocol === 'about:' || protocol === 'blob:' || protocol === 'data:') {
-                        showToast(`💡 미리보기 환경: [${path}] 로 이동을 시뮬레이션 합니다.`);
-                    } else {
-                        window.location.href = path;
-                    }
-                } catch (err) {
-                    showToast(`💡 이동 시뮬레이션: [${path}]`);
-                }
+                if (!path || path === '#' || !isReady) return showToast("⚠️ 해당 페이지는 준비 중이거나 경로가 올바르지 않습니다.");
+                try { const protocol = window.location.protocol; if (protocol === 'about:' || protocol === 'blob:' || protocol === 'data:') showToast(`💡 이동 시뮬레이션: [${path}]`); else window.location.href = path; } catch (err) { showToast(`💡 이동 시뮬레이션: [${path}]`); }
             }, [showToast]);
 
-            const loadMaster = useCallback(async () => { 
-                const data = await getIDB(STORAGE_KEYS.MASTER_DB); 
-                if (data) setMasterProducts(data); 
-            }, []);
-
+            const loadMaster = useCallback(async () => { const data = await getIDB(STORAGE_KEYS.MASTER_DB); if (data) setMasterProducts(data); }, []);
             useEffect(() => { 
-                loadMaster(); 
-                const onSync = (e) => { if(e.key === STORAGE_KEYS.SYNC_TRIGGER) loadMaster(); }; 
-                window.addEventListener('storage', onSync); 
-                
-                const handleMessage = (e) => {
-                    if (e.data && e.data.type === 'CLOSE_SETTINGS') {
-                        setShowSettingsModal(false);
-                        loadMaster(); 
-                    }
-                };
-                window.addEventListener('message', handleMessage);
-
-                const handleKeyDown = (e) => {
-                    if (e.key === 'F3') {
-                        e.preventDefault();
-                        const searchInput = document.getElementById('global-search-input');
-                        if (searchInput) {
-                            searchInput.focus();
-                            searchInput.select();
-                        }
-                    }
-                };
-                window.addEventListener('keydown', handleKeyDown);
-
-                return () => {
-                    window.removeEventListener('storage', onSync); 
-                    window.removeEventListener('message', handleMessage);
-                    window.removeEventListener('keydown', handleKeyDown);
-                };
+                loadMaster(); const onSync = (e) => { if(e.key === STORAGE_KEYS.SYNC_TRIGGER) loadMaster(); }; window.addEventListener('storage', onSync); 
+                const handleMessage = (e) => { if (e.data && e.data.type === 'CLOSE_SETTINGS') { setShowSettingsModal(false); loadMaster(); } }; window.addEventListener('message', handleMessage);
+                const handleKeyDown = (e) => { if (e.key === 'F3') { e.preventDefault(); const si = document.getElementById('global-search-input'); if (si) { si.focus(); si.select(); } } }; window.addEventListener('keydown', handleKeyDown);
+                return () => { window.removeEventListener('storage', onSync); window.removeEventListener('message', handleMessage); window.removeEventListener('keydown', handleKeyDown); };
             }, [loadMaster]);
 
-            const availableCatalogs = useMemo(() => {
-                const counts = {};
-                Object.values(masterProducts).forEach(m => {
-                    const tagStr = m['카탈로그'] || '';
-                    tagStr.split(',').forEach(t => { const trimmed = t.trim(); if (trimmed) counts[trimmed] = (counts[trimmed] || 0) + 1; });
-                });
-                return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
-            }, [masterProducts]);
-
-            const availableCategories = useMemo(() => {
-                const counts = {};
-                Object.values(masterProducts).forEach(m => {
-                    const tagStr = m['견적서'] || m['카테고리'] || '';
-                    tagStr.split(',').forEach(t => { const trimmed = t.trim(); if (trimmed) counts[trimmed] = (counts[trimmed] || 0) + 1; });
-                });
-                return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
-            }, [masterProducts]);
+            const availableCatalogs = useMemo(() => { const counts = {}; Object.values(masterProducts).forEach(m => { (m['카탈로그'] || '').split(',').forEach(t => { const tr = t.trim(); if (tr) counts[tr] = (counts[tr] || 0) + 1; }); }); return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] })); }, [masterProducts]);
+            const availableCategories = useMemo(() => { const counts = {}; Object.values(masterProducts).forEach(m => { (m['견적서'] || m['카테고리'] || '').split(',').forEach(t => { const tr = t.trim(); if (tr) counts[tr] = (counts[tr] || 0) + 1; }); }); return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] })); }, [masterProducts]);
 
             const handleFileUpload = async (e) => {
                 const file = e.target.files[0]; if (!file) return;
                 setIsProcessing(true); setProcessMsg('엑셀 시세표 분석 중...');
                 try {
-                    const excelData = await parseExcelRobust(file);
-                    if (excelData.length === 0) throw new Error("데이터가 없습니다.");
-                    const curMap = JSON.parse(localStorage.getItem('merchMappings_v870'))?.estimate || {}; 
-                    const headerCache = createHeaderMap(Object.keys(excelData[0]), curMap);
-                    
+                    const excelData = await parseExcelRobust(file); if (excelData.length === 0) throw new Error("데이터가 없습니다.");
+                    const curMap = config.mappings['estimate'] || {}; const headerCache = createHeaderMap(Object.keys(excelData[0]), curMap);
                     const allFields = Array.from(new Set([...Object.keys(curMap), ...MASTER_HEADERS, ...NUMERIC_HEADERS]));
-                    
                     let newManaged = { ...managedItems }; let count = 0;
                     excelData.forEach(row => {
-                        const codeKey = headerCache['품목코드']; 
-                        const code = row[codeKey] || row['품목코드'] || row['상품코드'] || row['코드'];
+                        const codeKey = headerCache['품목코드']; const code = row[codeKey] || row['품목코드'] || row['상품코드'] || row['코드'];
                         if (!code || String(code).replace(/\s/g, '').includes('출력')) return;
-                        
                         if (!newManaged[code]) newManaged[code] = { 코드: code, sources: { estimate: {} }, finalData: {} };
                         let mItem = newManaged[code];
                         const nameKey = headerCache['품목명']; mItem.sources['estimate']['품목명'] = nameKey ? row[nameKey] : '';
-                        
                         allFields.forEach(h => {
-                            let actualKey = headerCache[h];
-                            if (!actualKey && row[h] !== undefined) actualKey = h; 
-
+                            let actualKey = headerCache[h] || (row[h] !== undefined ? h : null);
                             if(actualKey && row[actualKey] !== undefined && row[actualKey] !== '') {
-                                const val = row[actualKey];
-                                const isNum = NUMERIC_HEADERS.includes(JSON.parse(localStorage.getItem('merchMasterLinks_v870'))?.estimate?.[h]) || NUMERIC_HEADERS.includes(h);
+                                const val = row[actualKey]; const isNum = NUMERIC_HEADERS.includes(config.masterLinks['estimate']?.[h]) || NUMERIC_HEADERS.includes(h);
                                 mItem.sources['estimate'][h] = isNum ? parseNum(val) : val;
                                 if (mItem.finalData[h] === undefined) mItem.finalData[h] = isNum ? parseNum(val) : val;
                             }
                         });
-                        
                         delete mItem.finalData['출고가'];
                         const pIn = parseNum(mItem.sources['estimate']['입고가'] || masterProducts[code]?.['입고가']);
-                        if (pIn >= 0) mItem.finalData = calculatePricesEngine(pIn, masterProducts[code]||{}, mItem.finalData, JSON.parse(localStorage.getItem('merchMarginRules_v878') || '[]'), false);
+                        if (pIn > 0 || mItem.finalData['출고가'] !== undefined) mItem.finalData = calculatePricesEngine(pIn, masterProducts[code]||{}, mItem.finalData, config.marginRules, false);
                         count++;
                     });
                     setManagedItems(newManaged); showToast(`✅ ${count}건 데이터 로드 완료`);
-                } catch(error) { showToast("❌ 업로드 오류: " + error.message); } finally { e.target.value = ''; setIsProcessing(false); setProcessMsg(''); }
+                } catch(err) { showToast("❌ 업로드 오류: " + err.message); } finally { e.target.value = ''; setIsProcessing(false); setProcessMsg(''); }
             };
 
             const handleUpdateCell = useCallback((code, field, linkedMasterField, value) => {
                 setManagedItems(prev => {
-                    let currentItem = prev[code] || { 코드: code, sources: { estimate: {} }, finalData: {} };
-                    currentItem = { ...currentItem, finalData: { ...currentItem.finalData, [field]: value } };
+                    let cur = prev[code] || { 코드: code, sources: { estimate: {} }, finalData: {} };
+                    cur = { ...cur, finalData: { ...cur.finalData, [field]: value } };
                     if (['입고가', '출고가', '외주비', '노무비'].includes(field) || ['입고가', '출고가'].includes(linkedMasterField)) {
-                        const pInRaw = (field === '입고가' || linkedMasterField === '입고가') ? value : (currentItem.finalData['입고가'] ?? currentItem.sources['estimate']?.['입고가'] ?? masterProducts[code]?.['입고가'] ?? 0);
-                        currentItem.finalData = calculatePricesEngine(parseNum(pInRaw), masterProducts[code] || {}, currentItem.finalData, JSON.parse(localStorage.getItem('merchMarginRules_v878') || '[]'), true);
-                    } return { ...prev, [code]: currentItem };
+                        const pInRaw = (field === '입고가' || linkedMasterField === '입고가') ? value : (cur.finalData['입고가'] ?? cur.sources['estimate']?.['입고가'] ?? masterProducts[code]?.['입고가'] ?? 0);
+                        cur.finalData = calculatePricesEngine(parseNum(pInRaw), masterProducts[code] || {}, cur.finalData, config.marginRules, true);
+                    } return { ...prev, [code]: cur };
                 });
-            }, [masterProducts]);
+            }, [masterProducts, config.marginRules]);
 
             const handleCommitEstimate = useCallback(async (targetCodes) => {
                 if (targetCodes.length === 0) return;
                 let newMaster = { ...masterProducts }, commitCount = 0, localLogs = []; const nowStr = new Date().toLocaleString('ko-KR');
-                const masterLinksConf = JSON.parse(localStorage.getItem('merchMasterLinks_v870'))?.estimate || {};
-
                 targetCodes.forEach(code => {
                     const item = managedItems[code]; if (!item || !item.코드) return;
-                    const oldItem = masterProducts[code] || {};
-                    newMaster[item.코드] = { ...(newMaster[item.코드] || { 코드: item.코드 }) };
-
+                    const oldItem = masterProducts[code] || {}; newMaster[item.코드] = { ...(newMaster[item.코드] || { 코드: item.코드 }) };
                     if (item.finalData) {
                         Object.keys(item.finalData).forEach(field => {
                             if ((field === '품목명' || field === '규격') && oldItem['품목명']) return;
-
-                            const linked = masterLinksConf[field] || (MASTER_HEADERS.includes(field) || NUMERIC_HEADERS.includes(field) ? field : null);
+                            const linked = config.masterLinks['estimate']?.[field] || (MASTER_HEADERS.includes(field) || NUMERIC_HEADERS.includes(field) ? field : null);
                             if (linked && item.finalData[field] !== undefined && item.finalData[field] !== '' && item.finalData[field] !== '오류') {
                                 const newVal = NUMERIC_HEADERS.includes(linked) ? parseNum(item.finalData[field]) : item.finalData[field];
                                 const oldVal = NUMERIC_HEADERS.includes(linked) ? parseNum(oldItem[linked]) : oldItem[linked];
-                                if (['입고가', '출고가'].includes(linked) && oldVal > 0 && oldVal !== newVal) {
-                                    localLogs.push({ id: generateUUID(), timestamp: nowStr, code: code, name: oldItem.품목명 || item.sources?.estimate?.품목명 || '', field: linked, oldVal, newVal, diff: newVal - oldVal });
-                                } newMaster[item.코드][linked] = newVal;
+                                if (['입고가', '출고가'].includes(linked) && oldVal > 0 && oldVal !== newVal) localLogs.push({ id: generateUUID(), timestamp: nowStr, code: code, name: oldItem.품목명 || item.sources?.estimate?.품목명 || '', field: linked, oldVal, newVal, diff: newVal - oldVal });
+                                newMaster[item.코드][linked] = newVal;
                             }
                         });
                     } commitCount++;
                 });
-
-                if (localLogs.length > 0) {
-                    const oldLogs = await getIDB(STORAGE_KEYS.HISTORY_DB) || [];
-                    await setIDB(STORAGE_KEYS.HISTORY_DB, [...oldLogs, ...localLogs]);
-                }
-                setMasterProducts(newMaster); 
-                await setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
-                localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
-
-                setSelectedRows(new Set()); 
-                showToast(`✅ ${commitCount}건 마스터 반영 완료! 필터를 해제하고 남은 작업을 계속 진행하세요.`);
-            }, [managedItems, masterProducts, showToast]);
+                if (localLogs.length > 0) { const oldLogs = await getIDB(STORAGE_KEYS.HISTORY_DB) || []; await setIDB(STORAGE_KEYS.HISTORY_DB, [...oldLogs, ...localLogs]); }
+                setMasterProducts(newMaster); await setIDB(STORAGE_KEYS.MASTER_DB, newMaster); localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
+                setSelectedRows(new Set()); showToast(`✅ ${commitCount}건 마스터 반영 완료!`);
+            }, [managedItems, masterProducts, config.masterLinks, showToast]);
 
             const executeExport = useCallback((option, zeroAction = { sale: '0', stock: '999' }) => {
                 if (fullDisplayRows.length === 0) { showToast("⚠️ 내보낼 데이터가 없습니다."); return setShowExportModal(false); }
-                setShowExportModal(false);
-                setIsExporting(true);
-
+                setShowExportModal(false); setIsExporting(true);
                 setTimeout(() => {
                     try {
-                        const wb = window.XLSX.utils.book_new();
-                        let erpData = []; erpData.push(['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '최종(전송)', 'n', '행사', 'n', '1']);
-                        let shopData = []; shopData.push(['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', '도매B', '도매B', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']);
-                        const createRowArr = (code, inPrice, outPrice, bPrice='', aSale='', bSale='', finalPrice='', instruction='') => { if (!code) return null; const outIn = inPrice > 0 ? inPrice : ''; const outOut = outPrice > 0 ? outPrice : ''; const outFinal = finalPrice > 0 ? finalPrice : outIn; return [ code, outIn, '0', outOut, '0', bPrice||'', 'n', aSale||'', 'n', bSale||'', 'n', outFinal, 'n', instruction||'', 'n', (inPrice > 0 || outPrice > 0) ? '1' : '' ]; };
-
-                        const getFirstValidNum = (objList, keys) => {
-                            for (let obj of objList) { if (!obj) continue; for (let k of keys) { if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return parseNum(obj[k]); } } return 0;
-                        };
-
-                        const getFirstValidStr = (objList, keys) => {
-                            for (let obj of objList) { if (!obj) continue; for (let k of keys) { if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k]; } } return '';
-                        };
-                        const isValidSubItemCode = (code) => {
-                            if (!code) return false; const s = String(code).trim(); return s !== '' && s !== '0' && s !== '00' && s !== '-' && s.toLowerCase() !== 'undefined' && s.toLowerCase() !== 'null';
-                        };
+                        const wb = window.XLSX.utils.book_new(); let erpData = [], shopData = [];
+                        erpData.push(['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '최종(전송)', 'n', '행사', 'n', '1']);
+                        shopData.push(['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', '도매B', '도매B', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']);
+                        
+                        const createRowErp = (code, inP, outP, bPrice='', aSale='', bSale='', finalP='', inst='') => { if (!code) return null; return [ code, inP>0?inP:'', '0', outP>0?outP:'', '0', bPrice||'', 'n', aSale||'', 'n', bSale||'', 'n', finalP>0?finalP:(inP>0?inP:''), 'n', inst||'', 'n', (inP>0||outP>0)?'1':'' ]; };
+                        const getFirstNum = (objList, keys) => { for (let obj of objList) { if (!obj) continue; for (let k of keys) { if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return parseNum(obj[k]); } } return 0; };
+                        const getFirstStr = (objList, keys) => { for (let obj of objList) { if (!obj) continue; for (let k of keys) { if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k]; } } return ''; };
+                        const isValidCode = (code) => { if (!code) return false; const s = String(code).trim(); return s !== '' && s !== '0' && s !== '00' && s !== '-' && s.toLowerCase() !== 'undefined' && s.toLowerCase() !== 'null'; };
 
                         fullDisplayRows.forEach(row => {
                             const mItem = masterProducts[row.코드] || {}, final = row.finalData || {}, source = row.sources?.['estimate'] || {};
-                            const pIn = getFirstValidNum([final, source, mItem], ['입고가', '입고']);
-                            const pOut = getFirstValidNum([final, source, mItem], ['출고가', '출고']);
-                            const pMarketPrice = getFirstValidNum([final, mItem], ['시중가']);
+                            const pIn = getFirstNum([final, source, mItem], ['입고가', '입고']);
+                            const pOut = getFirstNum([final, source, mItem], ['출고가', '출고']);
+                            const pMarketPrice = getFirstNum([final, mItem], ['시중가']);
 
-                            const dName = getFirstValidStr([source, mItem], ['품목명']), dSpec = getFirstValidStr([source, mItem], ['규격']), dBrand = getFirstValidStr([source, mItem], ['브랜드']), dInfo = getFirstValidStr([source, mItem], ['상품정보', '기본설명', '간단설명']), dSearch = getFirstValidStr([source, mItem], ['검색어등록', '상품태그']), pBPrice = getFirstValidNum([final, source], ['입고B', 'B단가']), pASale = getFirstValidNum([final, source], ['도매A', 'A판매', 'A판매가']), pBSale = getFirstValidNum([final, source], ['도매B', 'B판매', 'B 도매가']), pInstruction = getFirstValidStr([final, source], ['지시사항', '간단설명']);
-                            const pRowErp = createRowArr(row.코드, pIn, pOut, pBPrice, pASale, pBSale, pIn, pInstruction); if (pRowErp) erpData.push(pRowErp);
+                            const dName = getFirstStr([source, mItem], ['품목명']), dSpec = getFirstStr([source, mItem], ['규격']), dBrand = getFirstStr([source, mItem], ['브랜드']), dInfo = getFirstStr([source, mItem], ['상품정보', '기본설명', '간단설명']), dSearch = getFirstStr([source, mItem], ['검색어등록', '상품태그']), pBPrice = getFirstNum([final, source], ['입고B', 'B단가']), pASale = getFirstNum([final, source], ['도매A', 'A판매', 'A판매가']), pBSale = getFirstNum([final, source], ['도매B', 'B판매', 'B 도매가']), pInstruction = getFirstStr([final, source], ['지시사항', '간단설명']);
+                            const pRowErp = createRowErp(row.코드, pIn, pOut, pBPrice, pASale, pBSale, pIn, pInstruction); if (pRowErp) erpData.push(pRowErp);
                             
+                            // 💡 [버그 픽스] 시중가 오류 수정
                             const isZeroPrice = (pIn === 0 && pOut === 0);
-                            const priceOutShop = pOut;
-                            const priceMarketShop = isZeroPrice ? 0 : (pMarketPrice > 0 ? pMarketPrice : priceOutShop);
-                            const priceA = isZeroPrice ? 0 : getFirstValidNum([final, source, mItem], ['도매A', 'A판매가', 'A판매', '출고가']);
-                            const isForSale = isZeroPrice ? zeroAction.sale : '1';
+                            const priceMarketShop = isZeroPrice ? 0 : (pMarketPrice > 0 ? pMarketPrice : pOut);
+                            const priceA = isZeroPrice ? 0 : getFirstNum([final, source, mItem], ['도매A', 'A판매가', 'A판매', '출고가']);
+                            const isForSale = isZeroPrice ? zeroAction.sale : (pIn > 0 || pOut > 0 ? '1' : '0');
                             const stockQty = isZeroPrice ? zeroAction.stock : '999';
-
-                            shopData.push([row.코드, dName, dSpec, priceOutShop, priceA, priceMarketShop, 0, 0, 0, 0, 0, 0, dBrand, dInfo, isForSale, stockQty, '', '', '', '', '', dSearch]);
+                            
+                            shopData.push([row.코드, dName, dSpec, pOut, priceA, priceMarketShop, 0, 0, 0, 0, 0, 0, dBrand, dInfo, isForSale, stockQty, '', '', '', '', '', dSearch]);
 
                             [1, 2].forEach(type => { 
-                                const cCodeRaw = getFirstValidStr([final, source, mItem], [`${type}종코드`]); 
-                                if (isValidSubItemCode(cCodeRaw)) { 
+                                const cCodeRaw = getFirstStr([final, source, mItem], [`${type}종코드`]); 
+                                if (isValidCode(cCodeRaw)) { 
                                     const cCode = String(cCodeRaw).trim();
-                                    const cIn = getFirstValidNum([final, source, mItem], [`${type}입고`, `${type}구매`]);
-                                    const cOut = getFirstValidNum([final, source, mItem], [`${type}출고`]); 
-                                    const cRowErp = createRowArr(cCode, cIn, cOut, '', '', '', cIn, ''); 
-                                    if (cRowErp) erpData.push(cRowErp); 
+                                    const cIn = getFirstNum([final, source, mItem], [`${type}입고`, `${type}구매`]), cOut = getFirstNum([final, source, mItem], [`${type}출고`]); 
+                                    const cRowErp = createRowErp(cCode, cIn, cOut, '', '', '', cIn, ''); if (cRowErp) erpData.push(cRowErp); 
 
                                     const subMaster = masterProducts[cCode] || {};
-                                    const cName = subMaster.품목명 || getFirstValidStr([final, source, mItem], [`${type}그룹명`]) || `${dName} (소분)`;
-                                    const cSpec = subMaster.규격 || getFirstValidStr([final, source, mItem], [`${type}종규격`]) || '';
-                                    const cBrand = subMaster.브랜드 || dBrand;
-                                    const cInfo = subMaster.간단설명 || dInfo;
-                                    const cSearch = subMaster.검색어등록 || dSearch;
-
+                                    const cName = subMaster.품목명 || getFirstStr([final, source, mItem], [`${type}그룹명`]) || `${dName} (소분)`;
+                                    const cSpec = subMaster.규격 || getFirstStr([mItem, source], [`${type}종규격`]) || '';
+                                    
+                                    // 💡 [버그 픽스] 소분 코드 시중가 수정
                                     const cIsZeroPrice = (cIn === 0 && cOut === 0);
                                     const cMarketPrice = cIsZeroPrice ? 0 : (subMaster.시중가 > 0 ? subMaster.시중가 : cOut);
                                     const cPriceA = cIsZeroPrice ? 0 : (subMaster.도매A > 0 ? subMaster.도매A : cOut);
-                                    const cIsForSale = cIsZeroPrice ? zeroAction.sale : '1';
+                                    const cIsForSale = cIsZeroPrice ? zeroAction.sale : (cIn > 0 || cOut > 0 ? '1' : '0');
                                     const cStockQty = cIsZeroPrice ? zeroAction.stock : '999';
 
-                                    shopData.push([cCode, cName, cSpec, cOut, cPriceA, cMarketPrice, 0, 0, 0, 0, 0, 0, cBrand, cInfo, cIsForSale, cStockQty, '', '', '', '', '', cSearch]);
+                                    shopData.push([cCode, cName, cSpec, cOut, cPriceA, cMarketPrice, 0, 0, 0, 0, 0, 0, subMaster.브랜드||dBrand, subMaster.간단설명||dInfo, cIsForSale, cStockQty, '', '', '', '', '', subMaster.검색어등록||dSearch]);
                                 } 
                             });
                         });
                         window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shopData), "쇼핑몰업로드"); window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), "ERP업데이트"); window.XLSX.writeFile(wb, `보고서출력_${new Date().toISOString().slice(0,10)}.xlsx`);
                         showToast(`✅ [${option.title || '통합 보고서'}] 엑셀 다운로드가 완료되었습니다.`);
-                    } catch(e) {
-                        console.error(e);
-                        showToast("❌ 엑셀 파일 생성 중 오류가 발생했습니다.");
-                    } finally {
-                        setIsExporting(false);
-                    }
+                    } catch(e) { showToast("❌ 엑셀 파일 생성 중 오류가 발생했습니다."); } finally { setIsExporting(false); }
                 }, 100);
             }, [fullDisplayRows, masterProducts, showToast]);
 
             const handleLoadWorkspaceData = useCallback((catalog, category) => {
-                if (!catalog && !category) {
-                    setManagedItems({});
-                    return;
-                }
-
-                setIsProcessing(true);
-                setProcessMsg('데이터 로드 및 병합 중...');
-                
+                if (!catalog && !category) return setManagedItems({});
+                setIsProcessing(true); setProcessMsg('데이터 로드 및 병합 중...');
                 setTimeout(() => {
                     let newManaged = {};
-                    const rulesConf = JSON.parse(localStorage.getItem('merchMarginRules_v878') || '[]');
-                    
                     Object.values(masterProducts).forEach(mItem => {
                         let isMatch = false;
-
-                        if (catalog) {
-                            const catalogStr = mItem['카탈로그'] || '';
-                            if (catalogStr.split(',').map(c => c.trim()).includes(catalog)) {
-                                isMatch = true;
-                            }
-                        }
-
-                        if (category) {
-                            const catStr = mItem['견적서'] || mItem['카테고리'] || '';
-                            if (catStr.split(',').map(c => c.trim()).includes(category)) {
-                                isMatch = true;
-                            }
-                        }
-
-                        if (isMatch) {
-                            newManaged[mItem.코드] = {
-                                코드: mItem.코드,
-                                sources: { estimate: {} },
-                                finalData: calculatePricesEngine(parseNum(mItem['입고가']), mItem, {}, rulesConf, false)
-                            };
-                        }
+                        if (catalog && (mItem['카탈로그'] || '').split(',').map(c=>c.trim()).includes(catalog)) isMatch = true;
+                        if (category && (mItem['견적서'] || mItem['카테고리'] || '').split(',').map(c=>c.trim()).includes(category)) isMatch = true;
+                        if (isMatch) newManaged[mItem.코드] = { 코드: mItem.코드, sources: { estimate: {} }, finalData: calculatePricesEngine(parseNum(mItem['입고가']), mItem, { 출고가: mItem['출고가'] }, config.marginRules, false) };
                     });
-                    
-                    setManagedItems(newManaged);
-                    setSelectedRows(new Set()); 
-                    
-                    if (catalog && category) {
-                        showToast(`✅ [${catalog}] 및 [${category}] 데이터 로드 완료! (${Object.keys(newManaged).length}건)`);
-                    } else if (catalog) {
-                        showToast(`✅ [${catalog}] 파서 데이터 로드 완료! (${Object.keys(newManaged).length}건)`);
-                    } else {
-                        showToast(`✅ [${category}] 카탈로그 로드 완료! (${Object.keys(newManaged).length}건)`);
-                    }
-                    
-                    setIsProcessing(false);
-                    setProcessMsg('');
+                    setManagedItems(newManaged); setSelectedRows(new Set()); 
+                    showToast(`✅ 데이터 로드 완료! (${Object.keys(newManaged).length}건)`); setIsProcessing(false); setProcessMsg('');
                 }, 100);
-            }, [masterProducts, showToast]);
-
-            const handleCatalogChange = useCallback((e) => {
-                const val = e.target.value;
-                setSelectedCatalog(val);
-                handleLoadWorkspaceData(val, selectedCategory);
-            }, [selectedCategory, handleLoadWorkspaceData]);
-
-            const handleCategoryChange = useCallback((e) => {
-                const val = e.target.value;
-                setSelectedCategory(val);
-                handleLoadWorkspaceData(selectedCatalog, val);
-            }, [selectedCatalog, handleLoadWorkspaceData]);
+            }, [masterProducts, config.marginRules, showToast]);
 
             const handleSaveAsCategory = useCallback(async (categoryName) => {
-                if (!categoryName || !categoryName.trim()) return;
-                const rows = Object.values(managedItems);
-                if (rows.length === 0) return showToast("⚠️ 카탈로그로 저장할 상품이 없습니다.");
-
-                setIsProcessing(true);
-                setProcessMsg('카탈로그 저장 중...');
-
-                let newMaster = { ...masterProducts };
-                let count = 0;
-                const safeName = categoryName.trim();
-
+                if (!categoryName?.trim()) return; const rows = Object.values(managedItems); if (rows.length === 0) return showToast("⚠️ 카탈로그로 저장할 상품이 없습니다.");
+                setIsProcessing(true); setProcessMsg('카탈로그 저장 중...');
+                let newMaster = { ...masterProducts }; let count = 0; const safeName = categoryName.trim();
                 rows.forEach(row => {
-                    const code = row.코드;
-                    if (!newMaster[code]) return;
-                    
-                    newMaster[code] = { ...newMaster[code] };
-                    const currentCategories = newMaster[code]['견적서'] || newMaster[code]['카테고리'] || '';
-                    const tags = currentCategories.split(',').map(s => s.trim()).filter(Boolean);
-                    
-                    if (!tags.includes(safeName)) {
-                        tags.push(safeName);
-                        newMaster[code]['견적서'] = tags.join(', ');
-                        delete newMaster[code]['카테고리']; // Migration
-                        count++;
-                    }
+                    if (!newMaster[row.코드]) return; newMaster[row.코드] = { ...newMaster[row.코드] };
+                    const tags = (newMaster[row.코드]['견적서'] || newMaster[row.코드]['카테고리'] || '').split(',').map(s=>s.trim()).filter(Boolean);
+                    if (!tags.includes(safeName)) { tags.push(safeName); newMaster[row.코드]['견적서'] = tags.join(', '); delete newMaster[row.코드]['카테고리']; count++; }
                 });
-
-                setMasterProducts(newMaster);
-                await setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
-                localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
-
-                setShowCategoryModal(false);
-                showToast(`✅ ${count}개 상품이 [${safeName}] 카탈로그에 저장되었습니다.`);
-                setIsProcessing(false);
-                setProcessMsg('');
+                setMasterProducts(newMaster); await setIDB(STORAGE_KEYS.MASTER_DB, newMaster); localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
+                setShowCategoryModal(false); showToast(`✅ ${count}개 상품이 [${safeName}] 카탈로그에 저장되었습니다.`); setIsProcessing(false); setProcessMsg('');
             }, [managedItems, masterProducts, showToast]);
 
-            const handleReset = useCallback(() => {
-                setManagedItems({}); 
-                setSelectedRows(new Set()); 
-                setGlobalSearch(''); 
-                setSelectedCatalog(''); 
-                setSelectedCategory(''); 
-                showToast('작업 화면이 초기화 되었습니다.');
-            }, [showToast]);
-
-            const handlePush = async () => {
-                if (!config.cloudUrl) return showToast("⚠️ 설정에서 앱스크립트 URL을 입력하세요.");
-                setIsProcessing(true); setProcessMsg("클라우드 백업 중...");
-                setTimeout(() => { showToast("✅ 클라우드 저장 완료"); setIsProcessing(false); setProcessMsg(""); }, 1000);
-            };
-
-            const handlePull = async () => {
-                if (!config.cloudUrl) return showToast("⚠️ 설정에서 앱스크립트 URL을 입력하세요.");
-                setIsProcessing(true); setProcessMsg("데이터 동기화 중...");
-                setTimeout(() => { showToast("✅ 데이터 수신 완료"); setIsProcessing(false); setProcessMsg(""); }, 1000);
-            };
-
-            const handleRemoveFromWorkspace = useCallback(() => {
-                if (selectedRows.size === 0) return showToast('⚠️ 숨길 항목을 선택하세요.');
-                setManagedItems(p => {
-                    const n = { ...p };
-                    selectedRows.forEach(c => delete n[c]);
-                    return n;
-                });
-                setSelectedRows(new Set());
-                showToast('✅ 선택한 항목이 화면에서 숨겨졌습니다.');
-            }, [selectedRows, showToast]);
+            const handleReset = useCallback(() => { setManagedItems({}); setSelectedRows(new Set()); setGlobalSearch(''); setSelectedCatalog(''); setSelectedCategory(''); showToast('작업 화면이 초기화 되었습니다.'); }, [showToast]);
+            const handlePush = async () => { if (!config.cloudUrl) return showToast("⚠️ 설정에서 앱스크립트 URL을 입력하세요."); setIsProcessing(true); setProcessMsg("클라우드 백업 중..."); setTimeout(() => { showToast("✅ 클라우드 저장 완료"); setIsProcessing(false); setProcessMsg(""); }, 1000); };
+            const handlePull = async () => { if (!config.cloudUrl) return showToast("⚠️ 설정에서 앱스크립트 URL을 입력하세요."); setIsProcessing(true); setProcessMsg("데이터 동기화 중..."); setTimeout(() => { showToast("✅ 데이터 수신 완료"); setIsProcessing(false); setProcessMsg(""); }, 1000); };
+            const handleRemoveFromWorkspace = useCallback(() => { if (selectedRows.size === 0) return showToast('⚠️ 숨길 항목을 선택하세요.'); setManagedItems(p => { const n = { ...p }; selectedRows.forEach(c => delete n[c]); return n; }); setSelectedRows(new Set()); showToast('✅ 선택한 항목이 숨겨졌습니다.'); }, [selectedRows, showToast]);
 
             const fullDisplayRows = useMemo(() => {
-                let baseList = [];
-                const isEstimateUploaded = Object.keys(managedItems).length > 0;
-                
-                if (isEstimateUploaded) {
-                    baseList = Object.values(managedItems); 
-                } else {
-                    baseList = Object.values(masterProducts).map(m => managedItems[m.코드] || { 코드: m.코드, sources: {}, finalData: {} });
-
-                    if (selectedCatalog) {
-                        baseList = baseList.filter(item => {
-                            const mItem = masterProducts[item.코드] || {};
-                            const tagStr = mItem['카탈로그'] || '';
-                            return tagStr.split(',').map(t => t.trim()).includes(selectedCatalog);
-                        });
-                    }
-
-                    if (selectedCategory) {
-                        baseList = baseList.filter(item => {
-                            const mItem = masterProducts[item.코드] || {};
-                            const tagStr = mItem['견적서'] || mItem['카테고리'] || '';
-                            return tagStr.split(',').map(t => t.trim()).includes(selectedCategory);
-                        });
-                    }
+                let base = Object.keys(managedItems).length > 0 ? Object.values(managedItems) : Object.values(masterProducts).map(m => managedItems[m.코드] || { 코드: m.코드, sources: {}, finalData: {} });
+                if (!Object.keys(managedItems).length) {
+                    if (selectedCatalog) base = base.filter(item => (masterProducts[item.코드]?.['카탈로그'] || '').split(',').map(t=>t.trim()).includes(selectedCatalog));
+                    if (selectedCategory) base = base.filter(item => (masterProducts[item.코드]?.['견적서'] || masterProducts[item.코드]?.['카테고리'] || '').split(',').map(t=>t.trim()).includes(selectedCategory));
                 }
-
                 if (globalSearch) {
-                    const cleanKeyword = globalSearch.toLowerCase().replace(/[()[\]{},./]/g, ' ');
-                    const tokens = cleanKeyword.split(/\s+/).filter(t => t.length > 0);
+                    const tokens = globalSearch.toLowerCase().replace(/[()[\]{},./]/g, ' ').split(/\s+/).filter(Boolean);
                     if (tokens.length > 0) {
-                        baseList = baseList.map(item => {
-                            const mItem = masterProducts[item.코드] || {};
-                            const sourceItem = item.sources?.['estimate'] || {};
-                            const finalItem = item.finalData || {};
-                            const getVal = (key) => String(finalItem[key] !== undefined ? finalItem[key] : (sourceItem[key] !== undefined ? sourceItem[key] : (mItem[key] || ''))).toLowerCase();
-                            
-                            const cName = getVal('품목명'); 
-                            const cSpec = getVal('규격');
-                            const cVendor = getVal('구매처'); 
-                            const cWh = getVal('창고');
-                            const cCode = String(item.코드 || '').toLowerCase();
-                            
-                            let score = 0;
-                            tokens.forEach(token => {
-                                if (cName.includes(token)) score += 10;
-                                else if (cCode.includes(token)) score += 8;
-                                else if (cVendor.includes(token)) score += 6;
-                                else if (cSpec.includes(token)) score += 5;
-                                else if (cWh.includes(token)) score += 4;
-                            });
-                            return { ...item, _searchScore: score };
-                        }).filter(r => r._searchScore > 0);
-                        baseList.sort((a, b) => b._searchScore - a._searchScore);
+                        base = base.map(item => {
+                            const getV = k => String(item.finalData?.[k] ?? item.sources?.estimate?.[k] ?? masterProducts[item.코드]?.[k] ?? '').toLowerCase();
+                            let score = 0; const str = `${getV('품목명')} ${getV('규격')} ${getV('구매처')} ${getV('창고')} ${String(item.코드).toLowerCase()}`;
+                            tokens.forEach(t => { if (str.includes(t)) score += 10; }); return { ...item, _searchScore: score };
+                        }).filter(r => r._searchScore > 0).sort((a, b) => b._searchScore - a._searchScore);
                     }
-                } else {
-                    baseList.sort((a, b) => String(a.코드).localeCompare(String(b.코드)));
-                }
-                return baseList;
+                } else { base.sort((a, b) => String(a.코드).localeCompare(String(b.코드))); }
+                return base;
             }, [managedItems, masterProducts, globalSearch, selectedCatalog, selectedCategory]);
 
             const handleExportCurrentView = useCallback(() => { 
                 if (fullDisplayRows.length === 0) return showToast("⚠️ 내보낼 데이터가 없습니다.");
                 setIsExporting(true);
-                
                 setTimeout(() => {
                     try {
-                        const activeProfile = 'estimate';
-                        const visibleUploadColsConf = JSON.parse(localStorage.getItem('merchVisUpload_v870')) || { estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명'] };
-                        const visibleMasterColsConf = JSON.parse(localStorage.getItem('merchVisMaster_v870')) || { estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] };
-                        const masterLinksConf = JSON.parse(localStorage.getItem('merchMasterLinks_v870')) || { estimate: { '창고': '창고', '구매처': '구매처', '견적서': '견적서', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B', '간단설명': '간단설명' } };
-                        
-                        const uploadCols = visibleUploadColsConf[activeProfile] || [];
-                        const masterCols = visibleMasterColsConf[activeProfile] || [];
-                        
-                        const headers = ['상태/선택', '품목코드', '마스터_품목명', '마스터_규격'];
-                        masterCols.forEach(h => headers.push(`[M]${h}`)); uploadCols.forEach(h => headers.push(`[작업]${h}`));
-
+                        const upCols = config.visibleUploadCols.estimate || [], mCols = config.visibleMasterCols.estimate || [];
+                        const headers = ['상태/선택', '품목코드', '마스터_품목명', '마스터_규격', ...mCols.map(h=>`[M]${h}`), ...upCols.map(h=>`[작업]${h}`)];
                         const aoa = [headers];
                         fullDisplayRows.forEach(row => {
-                            const rowCode = row.코드; const mItem = masterProducts[rowCode] || {};
-                            const isSel = selectedRows.has(row.코드); const status = (isSel ? '선택됨' : '');
-                            const rowData = [status, rowCode || '', mItem.품목명 || '', mItem.규격 || ''];
-
-                            masterCols.forEach(h => { const val = mItem[h] !== undefined ? mItem[h] : ''; rowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(val) : val); });
-                            uploadCols.forEach(h => { const val = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.[activeProfile]?.[h] || ''); const isNum = NUMERIC_HEADERS.includes(h) || NUMERIC_HEADERS.includes(masterLinksConf[activeProfile]?.[h]); rowData.push(isNum ? parseNum(val) : val); });
+                            const mItem = masterProducts[row.코드] || {}; const rowData = [selectedRows.has(row.코드)?'선택됨':'', row.코드||'', mItem.품목명||'', mItem.규격||''];
+                            mCols.forEach(h => { const val = mItem[h] !== undefined ? mItem[h] : ''; rowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(val) : val); });
+                            upCols.forEach(h => { const val = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.estimate?.[h] || ''); rowData.push(NUMERIC_HEADERS.includes(h)||NUMERIC_HEADERS.includes(config.masterLinks.estimate?.[h]) ? parseNum(val) : val); });
                             aoa.push(rowData);
                         });
-
-                        const wb = window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(aoa), "현재화면_출력"); window.XLSX.writeFile(wb, `화면출력_${new Date().toISOString().slice(0,10)}.xlsx`); showToast("✅ 화면 엑셀 다운로드가 완료되었습니다.");
-                    } catch(e) {
-                        console.error(e);
-                        showToast("❌ 화면 엑셀 다운로드 중 오류가 발생했습니다.");
-                    } finally {
-                        setIsExporting(false);
-                    }
+                        const wb = window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(aoa), "현재화면_출력"); window.XLSX.writeFile(wb, `화면출력_${new Date().toISOString().slice(0,10)}.xlsx`); showToast("✅ 다운로드 완료");
+                    } catch(e) { showToast("❌ 오류 발생"); } finally { setIsExporting(false); }
                 }, 100);
-            }, [fullDisplayRows, masterProducts, selectedRows, showToast]);
+            }, [fullDisplayRows, config.visibleUploadCols, config.visibleMasterCols, config.masterLinks, masterProducts, selectedRows, showToast]);
 
-            const visibleMasterColsConf = JSON.parse(localStorage.getItem('merchVisMaster_v870')) || { estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] };
-            const visibleUploadColsConf = JSON.parse(localStorage.getItem('merchVisUpload_v870')) || { estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명'] };
-            const masterLinksConf = JSON.parse(localStorage.getItem('merchMasterLinks_v870')) || { estimate: { '창고': '창고', '구매처': '구매처', '견적서': '견적서', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B', '간단설명': '간단설명' } };
-
-            const appState = { 
-                fullDisplayRows, 
-                visibleMasterCols: visibleMasterColsConf, 
-                visibleUploadCols: visibleUploadColsConf, 
-                masterProducts, 
-                masterLinksEst: masterLinksConf['estimate']||{}, 
-                selectedRows, 
-                isEstimateUploaded: Object.keys(managedItems).length > 0, 
-                globalSearch, 
-                selectedCatalog, 
-                selectedCategory, 
-                isProcessing 
-            };
-            const appActions = { 
-                handleUpdateCell, 
-                setRowSelection: useCallback((code, isSelected) => { setSelectedRows(p => { const n = new Set(p); if (isSelected) n.add(code); else n.delete(code); return n; }); }, []), 
-                handleRemoveFromWorkspace, 
-                setShowReviewModal, 
-                setShowExportModal, 
-                setShowCategoryModal, 
-                setGlobalSearch, 
-                handleCatalogChange, 
-                handleCategoryChange, 
-                handleReset, 
-                handleFileUpload, 
-                showToast, 
-                handleExportCurrentView 
-            };
+            const appState = { fullDisplayRows, visibleMasterCols: config.visibleMasterCols, visibleUploadCols: config.visibleUploadCols, masterProducts, masterLinksEst: config.masterLinks['estimate']||{}, selectedRows, isEstimateUploaded: Object.keys(managedItems).length > 0, globalSearch, selectedCatalog, selectedCategory, isProcessing };
+            const appActions = { handleUpdateCell, setRowSelection: useCallback((c, isSel) => { setSelectedRows(p => { const n = new Set(p); isSel?n.add(c):n.delete(c); return n; }); }, []), handleRemoveFromWorkspace, setShowReviewModal, setShowExportModal, setShowCategoryModal, setGlobalSearch, handleCatalogChange: e => { setSelectedCatalog(e.target.value); handleLoadWorkspaceData(e.target.value, selectedCategory); }, handleCategoryChange: e => { setSelectedCategory(e.target.value); handleLoadWorkspaceData(selectedCatalog, e.target.value); }, handleReset, handleFileUpload, showToast, handleExportCurrentView };
 
             return (
                 <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-[#f1f5f9] relative shadow-2xl border-x border-slate-300 select-none">
-                    <GlobalHeader 
-                        activeTab="pipeline" 
-                        itemCount={Object.keys(masterProducts).length} 
-                        isProcessing={isProcessing} 
-                        processMsg={processMsg}
-                        onOpenSettings={() => setShowSettingsModal(true)}
-                        onPush={handlePush}
-                        onPull={handlePull}
-                        onNavigate={handleNavigate}
-                    />
+                    <GlobalHeader activeTab="pipeline" itemCount={Object.keys(masterProducts).length} isProcessing={isProcessing} processMsg={processMsg} onOpenSettings={() => setShowSettingsModal(true)} onPush={handlePush} onPull={handlePull} onNavigate={handleNavigate} />
                     
                     {isExporting && (
-                        <div className="fixed inset-0 bg-slate-900/80 z-[9999] flex flex-col justify-center items-center backdrop-blur-sm fade-in">
+                        <div className="modal-overlay flex-col">
                             <i className="fas fa-circle-notch fa-spin text-6xl text-indigo-500 mb-6"></i>
                             <h2 className="text-2xl font-black text-white mb-2">엑셀 파일을 생성하고 있습니다</h2>
-                            <p className="text-emerald-400 font-bold">데이터가 많을 경우 수 초 정도 소요될 수 있습니다. 잠시만 기다려주세요...</p>
+                            <p className="text-emerald-400 font-bold">잠시만 기다려주세요...</p>
                         </div>
                     )}
 
                     <div className="px-6 py-3 flex items-center justify-between gap-4 bg-white border-b border-slate-200 z-10 w-full shrink-0">
                         <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 -mb-1">
-                            <div className="flex items-center gap-1">
-                                <div className="relative">
-                                    <select value={selectedCatalog} onChange={handleCatalogChange} className="appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm w-[160px]" title="스마트 파서에서 매핑 완료한 데이터를 불러옵니다.">
-                                        <option value="">파서 보관함</option>
-                                        {availableCatalogs.map(tag => <option key={tag.name} value={tag.name}>{tag.name} ({tag.count}건)</option>)}
-                                    </select>
-                                    <i className="fas fa-folder-open absolute left-3 top-2.5 text-blue-500 text-[13px] pointer-events-none"></i>
-                                    <i className="fas fa-chevron-down absolute right-2.5 top-3 text-blue-400 text-[10px] pointer-events-none"></i>
-                                </div>
-                            </div>
-
-                            <div className="w-px h-5 bg-slate-200 mx-1 shrink-0"></div>
-
-                            <div className="flex items-center gap-1">
-                                <div className="relative">
-                                    <select value={selectedCategory} onChange={handleCategoryChange} className="appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm w-[160px]">
-                                        <option value="">카탈로그</option>
-                                        {availableCategories.map(cat => <option key={cat.name} value={cat.name}>{cat.name} ({cat.count}건)</option>)}
-                                    </select>
-                                    <i className="fas fa-file-invoice absolute left-3 top-2.5 text-blue-500 text-[13px] pointer-events-none"></i>
-                                    <i className="fas fa-chevron-down absolute right-2.5 top-3 text-blue-400 text-[10px] pointer-events-none"></i>
-                                </div>
-                                <button onClick={() => setShowCategoryModal(true)} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-blue-600 border border-blue-200 hover:bg-blue-50 transition-colors shadow-sm flex items-center shrink-0" title="현재 화면의 상품들을 묶어서 새로운 카탈로그로 만듭니다.">
-                                    <i className="fas fa-save mr-1.5 text-blue-500"></i> 저장
-                                </button>
-                            </div>
-
-                            <div className="w-px h-5 bg-slate-200 mx-1 shrink-0"></div>
-
-                            <div className="flex items-center gap-1">
-                                <label className="cursor-pointer h-9 px-3 rounded-md text-[13px] font-bold bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50 transition-colors shadow-sm flex items-center shrink-0">
-                                    <i className="fas fa-file-excel mr-1.5 text-emerald-500"></i> 견적 엑셀 불러오기
-                                    <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e)} accept=".xlsx, .xls, .csv" disabled={isProcessing} />
-                                </label>
-                                
-                                <button onClick={handleExportCurrentView} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50 transition-colors shadow-sm flex items-center shrink-0" title="현재 화면 그대로 엑셀로 다운로드합니다.">
-                                    <i className="fas fa-file-excel mr-1.5 text-emerald-500"></i> 화면 다운로드
-                                </button>
-
-                                <button onClick={() => setShowExportModal(true)} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-amber-600 border border-amber-200 hover:bg-amber-50 transition-colors shadow-sm flex items-center shrink-0" title="ERP/쇼핑몰 양식 출력">
-                                    <i className="fas fa-file-export mr-1.5 text-amber-500"></i> 보고서
-                                </button>
-                            </div>
+                            <div className="relative"><select value={selectedCatalog} onChange={appActions.handleCatalogChange} className="select-base w-[160px]"><option value="">파서 보관함</option>{availableCatalogs.map(tag => <option key={tag.name} value={tag.name}>{tag.name} ({tag.count}건)</option>)}</select><i className="fas fa-folder-open absolute left-3 top-2.5 text-blue-500 text-[13px] pointer-events-none"></i></div><div className="w-px h-5 bg-slate-200 mx-1 shrink-0"></div>
+                            <div className="relative"><select value={selectedCategory} onChange={appActions.handleCategoryChange} className="select-base w-[160px]"><option value="">카탈로그</option>{availableCategories.map(cat => <option key={cat.name} value={cat.name}>{cat.name} ({cat.count}건)</option>)}</select><i className="fas fa-file-invoice absolute left-3 top-2.5 text-blue-500 text-[13px] pointer-events-none"></i></div>
+                            <button onClick={() => setShowCategoryModal(true)} className="toolbar-btn text-blue-600 border-blue-200 hover:bg-blue-50"><i className="fas fa-save mr-1.5 text-blue-500"></i> 저장</button><div className="w-px h-5 bg-slate-200 mx-1 shrink-0"></div>
+                            <label className="toolbar-btn text-emerald-600 border-emerald-200 hover:bg-emerald-50 cursor-pointer"><i className="fas fa-file-excel mr-1.5 text-emerald-500"></i> 견적 엑셀 불러오기<input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e)} accept=".xlsx, .xls, .csv" disabled={isProcessing} /></label>
+                            <button onClick={handleExportCurrentView} className="toolbar-btn text-emerald-600 border-emerald-200 hover:bg-emerald-50"><i className="fas fa-file-excel mr-1.5 text-emerald-500"></i> 화면 다운로드</button>
+                            <button onClick={() => setShowExportModal(true)} className="toolbar-btn text-amber-600 border-amber-200 hover:bg-amber-50"><i className="fas fa-file-export mr-1.5 text-amber-500"></i> 보고서</button>
                         </div>
-
                         <div className="flex items-center gap-2 shrink-0">
-                            {selectedRows.size > 0 && (
-                                <button onClick={handleRemoveFromWorkspace} className="h-9 px-3 rounded-md text-[12px] font-bold bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition-colors shadow-sm flex items-center" title="선택 항목 숨기기">
-                                    <i className="fas fa-eye-slash mr-1.5"></i> 숨기기 ({selectedRows.size})
-                                </button>
-                            )}
-                            <button onClick={() => setShowReviewModal(true)} disabled={fullDisplayRows.length === 0} className={`h-9 px-4 rounded-md text-[13px] font-bold shadow-sm transition-colors flex items-center ${fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-200'}`}>
-                                <i className="fas fa-check-circle mr-1.5"></i> 반영하기
-                            </button>
-
-                            <div className="w-px h-5 bg-slate-200 mx-1"></div>
-
-                            <button onClick={handleReset} className="h-9 w-9 rounded-md flex items-center justify-center text-slate-500 hover:text-slate-800 bg-white border border-slate-300 hover:bg-slate-50 transition-colors shadow-sm" title="화면 초기화">
-                                <i className="fas fa-redo-alt text-[13px]"></i>
-                            </button>
-                            <div className="relative w-48 sm:w-64 h-9">
-                                <input 
-                                    id="global-search-input" 
-                                    type="text" 
-                                    placeholder="결과 내 검색 (F3)" 
-                                    value={globalSearch} 
-                                    onChange={e=>setGlobalSearch(e.target.value)} 
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            e.preventDefault();
-                                            const firstInPriceInput = document.querySelector('tbody tr.table-row-hover input[data-field="입고가"]');
-                                            const fallbackInput = document.querySelector('tbody tr.table-row-hover td:has(input[type="text"]) input');
-                                            const target = firstInPriceInput || fallbackInput;
-                                            if (target) {
-                                                target.focus();
-                                                setTimeout(() => target.select(), 0);
-                                            }
-                                        }
-                                    }}
-                                    className="w-full h-full pl-3 pr-8 py-1 border border-slate-300 rounded-md text-[12px] outline-none focus:border-blue-400 shadow-sm text-slate-700 font-medium" 
-                                />
-                                <i className="fas fa-search absolute right-3 top-2.5 text-slate-400 text-[13px] pointer-events-none"></i>
-                            </div>
+                            {selectedRows.size > 0 && <button onClick={handleRemoveFromWorkspace} className="toolbar-btn bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100"><i className="fas fa-eye-slash mr-1.5"></i> 숨기기 ({selectedRows.size})</button>}
+                            <button onClick={() => setShowReviewModal(true)} disabled={fullDisplayRows.length === 0} className={`toolbar-btn px-4 ${fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed border-slate-200'}`}><i className="fas fa-check-circle mr-1.5"></i> 반영하기</button><div className="w-px h-5 bg-slate-200 mx-1"></div>
+                            <button onClick={handleReset} className="toolbar-btn w-9 justify-center text-slate-500 hover:text-slate-800"><i className="fas fa-redo-alt text-[13px]"></i></button>
+                            <div className="relative w-48 sm:w-64 h-9"><input id="global-search-input" type="text" placeholder="결과 내 검색 (F3)" value={globalSearch} onChange={e=>setGlobalSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const target = document.querySelector('tbody tr.table-row-hover input[data-field="입고가"]') || document.querySelector('tbody tr.table-row-hover td:has(input[type="text"]) input'); if (target) { target.focus(); setTimeout(() => target.select(), 0); } } }} className="input-base w-full h-full pl-3 pr-8 py-1" /><i className="fas fa-search absolute right-3 top-2.5 text-slate-400 text-[13px] pointer-events-none"></i></div>
                         </div>
                     </div>
 
-                    <main className="flex-1 overflow-hidden bg-slate-50 p-6 flex flex-col">
-                        <ExcelDataGrid state={appState} actions={appActions} />
-                    </main>
+                    <main className="flex-1 overflow-hidden bg-slate-50 p-6 flex flex-col"><ExcelDataGrid state={appState} actions={appActions} /></main>
 
                     <IframeSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
-                    
-                    {showReviewModal && <ReviewModal onClose={() => setShowReviewModal(false)} onConfirm={handleCommitEstimate} displayRows={fullDisplayRows} masterProducts={masterProducts} visibleUploadCols={visibleUploadColsConf} masterLinksEst={masterLinksConf['estimate']||{}} />}
+                    {showReviewModal && <ReviewModal onClose={() => setShowReviewModal(false)} onConfirm={handleCommitEstimate} displayRows={fullDisplayRows} masterProducts={masterProducts} visibleUploadCols={config.visibleUploadCols} masterLinksEst={config.masterLinks['estimate']||{}} />}
                     {showCategoryModal && <CategorySaveModal onClose={() => setShowCategoryModal(false)} onSave={handleSaveAsCategory} availableCategories={availableCategories} />}
                     {showExportModal && <ExportModal onClose={() => setShowExportModal(false)} executeExport={executeExport} />}
-
-                    {toastMsg && (
-                        <div className="fixed bottom-10 right-10 z-[100] bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in border border-slate-700 font-bold">
-                            <SafeIcon name="check-circle-2" size={18} className="text-emerald-400" />
-                            <span className="text-sm font-bold tracking-tight">{toastMsg}</span>
-                        </div>
-                    )}
+                    {toastMsg && <div className="fixed bottom-10 right-10 z-[200] bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in border border-slate-700 font-bold"><SafeIcon name="check-circle-2" size={18} className="text-emerald-400" /><span className="text-sm font-bold tracking-tight">{toastMsg}</span></div>}
                 </div>
             );
         }
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
     </script>
 </body>
 </html>
