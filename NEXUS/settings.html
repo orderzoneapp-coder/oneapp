@@ -32,7 +32,7 @@
         const STORAGE_KEYS = { MASTER_DB: 'merchMaster_v870', CLOUD_URL: 'skuSyncCloudUrl_v6', HISTORY_DB: 'merchHistory_v870', CLOSING_DB: 'merchClosing_v1', SYNC_TRIGGER: 'merchMaster_sync_trigger' };
 
         const MASTER_HEADERS = ["창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록", "소싱태그"];
-        const requiredCoreFields = ['품목코드', '품목명', '규격'];
+        const requiredCoreFields = ['품목코드']; // 💡 [수정됨] 품목명, 규격 강제 고정 해제. 식별자인 코드만 필수.
 
         const generateUUID = () => {
             if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
