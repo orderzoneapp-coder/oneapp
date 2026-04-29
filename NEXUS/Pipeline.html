@@ -203,8 +203,7 @@
                 let visibleUploadCols = JSON.parse(localStorage.getItem('merchVisUpload_v870') || 'null');
                 if (!visibleUploadCols || !visibleUploadCols.estimate) visibleUploadCols = getInitialVisibleUploadCols();
                 if (visibleUploadCols.estimate.includes('카테고리')) visibleUploadCols.estimate = visibleUploadCols.estimate.map(h => h === '카테고리' ? '견적서' : h);
-                if (!visibleUploadCols.estimate.includes('품목명')) visibleUploadCols.estimate.unshift('품목명');
-                if (!visibleUploadCols.estimate.includes('규격')) visibleUploadCols.estimate.splice(1, 0, '규격');
+                // 💡 [수정완료] 설정에서 꺼두면 꺼진 대로 놔두도록 강제 주입(unshift/splice) 코드 완전 삭제
 
                 let mappings = JSON.parse(localStorage.getItem('merchMappings_v870') || 'null');
                 if (!mappings || !mappings.master) mappings = getInitialMappings();
@@ -236,6 +235,7 @@
         };
 
         // ==========================================
+        // 🧩 3. 통합 글로벌 헤더 (v3.0 Final - 명세서 완벽 일치)
         // 🧩 3. 통합 글로벌 헤더 (v3.0 Final)
         // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
@@ -751,10 +751,9 @@
         });
 
         const MemoizedTableRow = React.memo(({ row, idx, isSel, mItem, isEstimateUploaded, visMasterCols, visUploadCols, masterLinksEst, onToggleSelection, onMouseDown, onMouseEnter, onUpdateCell }) => {
-            const uploadName = row.finalData?.['품목명'] !== undefined ? row.finalData['품목명'] : (row.sources?.['estimate']?.['품목명'] || '');
-            const uploadSpec = row.finalData?.['규격'] !== undefined ? row.finalData['규격'] : (row.sources?.['estimate']?.['규격'] || '');
-            const dName = uploadName || mItem.품목명 || '[미등록]';
-            const dSpec = uploadSpec || mItem.규격 || '';
+            // 💡 [수정완료] 업로드된 정보 무시, 오직 마스터 DB 기준으로만 좌측 고정 열에 출력
+            const dName = mItem.품목명 || '[미등록]';
+            const dSpec = mItem.규격 || '';
             const rowCode = row.코드 || '';
 
             return (
