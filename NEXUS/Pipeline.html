@@ -24,7 +24,8 @@
             .nav-tab-inactive { @apply bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5; }
             .nav-tab-disabled { @apply bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5; }
             .toolbar-btn { @apply h-9 px-3 rounded-md text-[13px] font-bold bg-white border border-slate-200 hover:bg-slate-50 transition-colors shadow-sm flex items-center shrink-0; }
-            .select-base { @apply appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 px-3 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm; }
+            /* 💡 [버그수정] px-3 을 pl-8 로 원복하여 텍스트-아이콘 겹침 방지 */
+            .select-base { @apply appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm; }
             .modal-overlay { @apply fixed inset-0 flex justify-center items-center bg-slate-900/80 backdrop-blur-sm fade-in; }
             .modal-content { @apply bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden; }
             .modal-header { @apply bg-[#0f172a] p-4 text-white flex justify-between items-center border-b border-slate-700 shrink-0; }
@@ -65,7 +66,7 @@
             navTabInactive: "bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5",
             navTabDisabled: "bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5",
             toolbarBtn: "h-9 px-3 rounded-md text-[13px] font-bold bg-white border border-slate-200 hover:bg-slate-50 transition-colors shadow-sm flex items-center shrink-0",
-            selectBase: "appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 px-3 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm",
+            selectBase: "appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm",
             modalOverlay: "fixed inset-0 flex justify-center items-center bg-slate-900/80 backdrop-blur-sm fade-in",
             modalContent: "bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden",
             modalHeader: "bg-[#0f172a] p-4 text-white flex justify-between items-center border-b border-slate-700 shrink-0",
@@ -225,7 +226,7 @@
                             <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={handleLogoClick} title="통합 대시보드 및 공통 메뉴로 이동">
                                 <span className="font-black text-[24px] tracking-wider text-slate-100 mr-4 group-hover:text-indigo-400 transition-colors">ONEAPP</span>
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
-                                    <div className="flex items-center"><span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span><span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.5</span></div>
+                                    <div className="flex items-center"><span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span><span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.6</span></div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">{currentTab ? currentTab.shortTag : 'WORKSPACE'}</span>
                                 </div>
                             </div>
@@ -1341,11 +1342,11 @@
                     <div className="px-6 py-3 flex items-center gap-3 overflow-x-auto custom-scrollbar bg-white border-b border-slate-200 z-50 w-full shrink-0">
                         <div className="flex items-center gap-1 shrink-0">
                             <div className="relative" ref={catalogRef}>
-                                <button onClick={() => { setCatalogDropdownOpen(!catalogDropdownOpen); setCategoryDropdownOpen(false); }} className={`${TW.selectBase} w-[180px] flex justify-between items-center bg-white text-left`}>
-                                    <span className="truncate pr-4 block">{selectedCatalogs.size > 0 ? `${selectedCatalogs.size}개 카탈로그 선택됨` : '파서 보관함'}</span>
+                                <button onClick={() => { setCatalogDropdownOpen(!catalogDropdownOpen); setCategoryDropdownOpen(false); }} className={`${TW.selectBase} w-[180px] flex justify-between items-center bg-white text-left pl-8`}>
+                                    <span className="truncate pr-2 block">{selectedCatalogs.size > 0 ? `${selectedCatalogs.size}개 선택됨` : '파서 보관함'}</span>
                                     <i className="fas fa-chevron-down text-blue-400 text-[10px]"></i>
                                 </button>
-                                <i className="fas fa-folder-open absolute left-3 top-3 text-blue-500 text-[13px] pointer-events-none"></i>
+                                <i className="fas fa-folder-open absolute left-3 top-2.5 text-blue-500 text-[13px] pointer-events-none"></i>
                                 
                                 {catalogDropdownOpen && (
                                     <div className="absolute top-full left-0 mt-1 w-[250px] max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-xl z-50 p-2 fade-in">
@@ -1365,11 +1366,11 @@
 
                         <div className="flex items-center gap-1 shrink-0">
                             <div className="relative" ref={categoryRef}>
-                                <button onClick={() => { setCategoryDropdownOpen(!categoryDropdownOpen); setCatalogDropdownOpen(false); }} className={`${TW.selectBase} w-[180px] flex justify-between items-center bg-white text-left`}>
-                                    <span className="truncate pr-4 block">{selectedCategories.size > 0 ? `${selectedCategories.size}개 견적서 선택됨` : '카탈로그'}</span>
+                                <button onClick={() => { setCategoryDropdownOpen(!categoryDropdownOpen); setCatalogDropdownOpen(false); }} className={`${TW.selectBase} w-[180px] flex justify-between items-center bg-white text-left pl-8`}>
+                                    <span className="truncate pr-2 block">{selectedCategories.size > 0 ? `${selectedCategories.size}개 선택됨` : '카탈로그'}</span>
                                     <i className="fas fa-chevron-down text-blue-400 text-[10px]"></i>
                                 </button>
-                                <i className="fas fa-file-invoice absolute left-3 top-3 text-blue-500 text-[13px] pointer-events-none"></i>
+                                <i className="fas fa-file-invoice absolute left-3 top-2.5 text-blue-500 text-[13px] pointer-events-none"></i>
                                 
                                 {categoryDropdownOpen && (
                                     <div className="absolute top-full left-0 mt-1 w-[250px] max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-xl z-50 p-2 fade-in">
@@ -1449,7 +1450,7 @@
                                             }
                                         }
                                     }}
-                                    className={`${TW.selectBase} w-full h-full pl-3 pr-8 py-1 !cursor-text`} 
+                                    className={`${TW.selectBase} w-full h-full !pl-3 pr-8 py-1 !cursor-text`} 
                                 />
                                 <i className="fas fa-search absolute right-3 top-2.5 text-slate-400 text-[13px] pointer-events-none"></i>
                             </div>
