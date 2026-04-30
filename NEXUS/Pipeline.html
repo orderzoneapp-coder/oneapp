@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - Valuation Hub [v3.6 Filter Fix]</title>
+    <title>ONEAPP NEXES - Valuation Hub [v3.7 Sequence UI Fix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -24,7 +24,7 @@
             .nav-tab-inactive { @apply bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5; }
             .nav-tab-disabled { @apply bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5; }
             .toolbar-btn { @apply h-9 px-3 rounded-md text-[13px] font-bold bg-white border border-slate-200 hover:bg-slate-50 transition-colors shadow-sm flex items-center shrink-0; }
-            .select-base { @apply appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm; }
+            .select-base { @apply appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 px-3 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm; }
             .modal-overlay { @apply fixed inset-0 flex justify-center items-center bg-slate-900/80 backdrop-blur-sm fade-in; }
             .modal-content { @apply bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden; }
             .modal-header { @apply bg-[#0f172a] p-4 text-white flex justify-between items-center border-b border-slate-700 shrink-0; }
@@ -65,7 +65,7 @@
             navTabInactive: "bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5",
             navTabDisabled: "bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5",
             toolbarBtn: "h-9 px-3 rounded-md text-[13px] font-bold bg-white border border-slate-200 hover:bg-slate-50 transition-colors shadow-sm flex items-center shrink-0",
-            selectBase: "appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm",
+            selectBase: "appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 px-3 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm",
             modalOverlay: "fixed inset-0 flex justify-center items-center bg-slate-900/80 backdrop-blur-sm fade-in",
             modalContent: "bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden",
             modalHeader: "bg-[#0f172a] p-4 text-white flex justify-between items-center border-b border-slate-700 shrink-0",
@@ -225,7 +225,7 @@
                             <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={handleLogoClick} title="통합 대시보드 및 공통 메뉴로 이동">
                                 <span className="font-black text-[24px] tracking-wider text-slate-100 mr-4 group-hover:text-indigo-400 transition-colors">ONEAPP</span>
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
-                                    <div className="flex items-center"><span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span><span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.6</span></div>
+                                    <div className="flex items-center"><span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span><span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.7</span></div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">{currentTab ? currentTab.shortTag : 'WORKSPACE'}</span>
                                 </div>
                             </div>
@@ -344,7 +344,11 @@
                 displayRows.forEach(row => {
                     const mItem = masterProducts[row.코드]; 
                     const oldP = mItem ? parseNum(mItem['입고가']) : 0; 
-                    const newP = parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : row.sources?.['estimate']?.['입고가']);
+                    
+                    // 💡 [수정] 폴백 로직 적용
+                    const newP = parseNum(row.finalData?.['입고가'] !== undefined 
+                        ? row.finalData['입고가'] 
+                        : (row.sources?.['estimate']?.['입고가'] !== undefined && row.sources?.['estimate']?.['입고가'] !== '' ? row.sources['estimate']['입고가'] : oldP));
                     
                     const vendor = row.finalData?.['구매처'] || row.sources?.['estimate']?.['구매처'] || mItem?.['구매처'] || '미지정';
                     vendors.add(vendor);
@@ -361,8 +365,12 @@
                         let textChanged = false;
                         upCols.forEach(h => {
                             if (['품목코드', '입고가', '출고가'].includes(h)) return;
-                            const mField = masterLinksEst[h] || h; const mVal = mItem[mField];
-                            const uVal = row.finalData?.[h] !== undefined ? row.finalData[h] : row.sources?.['estimate']?.[h];
+                            const mField = masterLinksEst[h] || h; 
+                            const mVal = mItem[mField];
+                            // 💡 [수정] 폴백 로직 적용
+                            const uVal = row.finalData?.[h] !== undefined 
+                                ? row.finalData[h] 
+                                : (row.sources?.['estimate']?.[h] !== undefined && row.sources?.['estimate']?.[h] !== '' ? row.sources['estimate'][h] : mVal);
                             
                             if (mVal !== undefined && uVal !== undefined && String(mVal).trim() !== '' && String(uVal).trim() !== '' && String(mVal).trim() !== String(uVal).trim()) {
                                 textChanged = true; issues.push({ text: `[${h}] 다름`, color: 'text-amber-500' });
@@ -622,8 +630,15 @@
                             
                             {visUploadCols.map(h => {
                                 const linkedMasterField = masterLinksEst[h];
-                                const mVal = (linkedMasterField && rowCode && h !== '순번') ? mItem[linkedMasterField] : undefined;
-                                const initialVal = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.['estimate']?.[h] || '');
+                                const mVal = (linkedMasterField && rowCode) ? mItem[linkedMasterField] : undefined;
+                                
+                                // 💡 [수정] initialVal 산출 시 마스터DB 값(mVal)을 폴백으로 최우선 적용!
+                                const initialVal = row.finalData?.[h] !== undefined 
+                                    ? row.finalData[h] 
+                                    : (row.sources?.['estimate']?.[h] !== undefined && row.sources?.['estimate']?.[h] !== ''
+                                        ? row.sources['estimate'][h] 
+                                        : (mVal !== undefined ? mVal : ''));
+
                                 return <EditableCell key={`p-u-e-${h}`} rowCode={rowCode} initialVal={initialVal} field={h} linkedMasterField={linkedMasterField} mVal={mVal} onUpdateCell={onUpdateCell} />;
                             })}
                         </>
@@ -1287,7 +1302,20 @@
                             const rowData = [status, rowCode || '', mItem.품목명 || '', mItem.규격 || ''];
 
                             masterCols.forEach(h => { const val = mItem[h] !== undefined ? mItem[h] : ''; rowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(val) : val); });
-                            uploadCols.forEach(h => { const val = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.[activeProfile]?.[h] || ''); const isNum = NUMERIC_HEADERS.includes(h) || NUMERIC_HEADERS.includes(config.masterLinks[activeProfile]?.[h]); rowData.push(isNum ? parseNum(val) : val); });
+                            
+                            // 💡 [수정] 엑셀 다운로드 시에도 순번이 비어있으면 마스터 DB에서 폴백 적용
+                            uploadCols.forEach(h => { 
+                                const linkedMasterField = config.masterLinks[activeProfile]?.[h];
+                                const mVal = linkedMasterField && rowCode ? mItem[linkedMasterField] : undefined;
+                                const val = row.finalData?.[h] !== undefined 
+                                    ? row.finalData[h] 
+                                    : (row.sources?.[activeProfile]?.[h] !== undefined && row.sources?.[activeProfile]?.[h] !== ''
+                                        ? row.sources[activeProfile][h] 
+                                        : (mVal !== undefined ? mVal : '')); 
+                                
+                                const isNum = NUMERIC_HEADERS.includes(h) || NUMERIC_HEADERS.includes(linkedMasterField); 
+                                rowData.push(isNum && val !== '' ? parseNum(val) : val); 
+                            });
                             aoa.push(rowData);
                         });
 
