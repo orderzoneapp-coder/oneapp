@@ -227,7 +227,7 @@
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
                                     <div className="flex items-center">
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.5</span>
+                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.2</span>
                                     </div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">
                                         {currentTab ? currentTab.shortTag : 'WORKSPACE'}
@@ -669,84 +669,6 @@
             );
         });
 
-        const ExcelDataGrid = ({ state, actions }) => {
-            const { isEstimateUploaded, fullDisplayRows, visibleMasterCols, visibleUploadCols, masterProducts, masterLinksEst, selectedRows } = state;
-            
-            const [scrollTop, setScrollTop] = useState(0);
-            const handleScroll = useCallback((e) => setScrollTop(e.target.scrollTop), []);
-
-            const isDragging = useRef(false);
-            const dragSelectMode = useRef(true);
-
-            useEffect(() => {
-                const handleMouseUp = () => { isDragging.current = false; };
-                window.addEventListener('mouseup', handleMouseUp);
-                return () => window.removeEventListener('mouseup', handleMouseUp);
-            }, []);
-
-            const handleMouseDown = useCallback((e, rowCode, isSel) => {
-                const targetTag = e.target.tagName.toLowerCase();
-                if (['input', 'select', 'button', 'i'].includes(targetTag)) return;
-                isDragging.current = true;
-                dragSelectMode.current = !isSel;
-                actions.setRowSelection(rowCode, !isSel);
-            }, [actions]);
-
-            const handleMouseEnter = useCallback((e, rowCode) => {
-                if (isDragging.current) {
-                    actions.setRowSelection(rowCode, dragSelectMode.current);
-                }
-            }, [actions]);
-
-            const ROW_HEIGHT = 56; 
-            const BUFFER_SIZE = 15; 
-            const VIEWPORT_HEIGHT = 800; 
-
-            const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_SIZE);
-            const endIndex = Math.min(fullDisplayRows.length, Math.floor((scrollTop + VIEWPORT_HEIGHT) / ROW_HEIGHT) + BUFFER_SIZE);
-
-            const displayRows = fullDisplayRows.slice(startIndex, endIndex);
-            const topPadding = startIndex * ROW_HEIGHT;
-            const bottomPadding = Math.max(0, (fullDisplayRows.length - endIndex) * ROW_HEIGHT);
-
-            const visMaster = visibleMasterCols.estimate?.filter(h=>!['품목코드','품목명','규격'].includes(h)) || [];
-            const visUpload = visibleUploadCols.estimate?.filter(h=>h!=='품목코드') || [];
-
-            return (
-                <div className="bg-white border border-slate-200 shadow-sm h-full flex flex-col overflow-hidden relative">
-                    <div className="flex-1 overflow-auto custom-scrollbar relative" onScroll={handleScroll}>
-                        <table className="text-left border-collapse text-[13px] whitespace-nowrap relative z-0 w-max bg-white">
-                            <thead className="text-[12px] font-bold text-slate-50 bg-[#1e293b]">
-                                <tr>
-                                    <th className="sticky top-0 z-40 bg-[#1e293b] px-4 py-3.5 border-y border-r border-slate-700 shadow-sm min-w-[280px] w-[280px] max-w-[280px]" style={{left:0}}>
-                                        상품정보 (코드/품명/규격)
-                                    </th>
-                                    {visMaster.map(h=><th key={`m-${h}`} className={`sticky top-0 z-30 bg-[#334155] px-3 py-3.5 border-y border-r border-slate-600 shadow-sm text-center ${getCellWidthClass(h)}`}><i className="fas fa-lock text-slate-400 text-[10px] mr-1"></i> {h}</th>)}
-                                    {visUpload.map(h=><th key={`u-${h}`} className={`sticky top-0 z-30 bg-[#1e293b] px-3 py-3.5 border-y border-r border-slate-700 shadow-sm text-center text-indigo-300 ${getCellWidthClass(h)}`}><i className="fas fa-pen text-indigo-400 text-[10px] mr-1"></i> {h}</th>)}
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-transparent text-slate-700">
-                                {fullDisplayRows.length===0 ? (
-                                    <tr><td colSpan="50" className="p-16 text-center text-slate-400 font-bold"><i className="fas fa-file-excel text-5xl mb-4 text-slate-200 block"></i>데이터가 없습니다. 카탈로그를 불러오거나 엑셀을 업로드하세요.</td></tr>
-                                ) : (
-                                    <>
-                                        {topPadding > 0 && <tr style={{ height: `${topPadding}px` }}><td colSpan="50" className="p-0 border-0"></td></tr>}
-                                        
-                                        {displayRows.map((row, idx) => {
-                                            const mItem = masterProducts[row.코드] || {}; const isSel = selectedRows.has(row.코드);
-                                            return <MemoizedTableRow key={row.코드} row={row} idx={idx} isSel={isSel} mItem={mItem} isEstimateUploaded={isEstimateUploaded} visMasterCols={visMaster} visUploadCols={visUpload} masterLinksEst={masterLinksEst} onToggleSelection={actions.toggleRowSelection} onMouseDown={handleMouseDown} onMouseEnter={handleMouseEnter} onUpdateCell={actions.handleUpdateCell} />;
-                                        })}
-                                        
-                                        {bottomPadding > 0 && <tr style={{ height: `${bottomPadding}px` }}><td colSpan="50" className="p-0 border-0"></td></tr>}
-                                    </>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            );
-        };
-
         function App() {
             const config = useMerchConfig();
             
@@ -922,6 +844,110 @@
                     return next;
                 });
             };
+
+            const fullDisplayRows = useMemo(() => {
+                let baseList = [];
+                const isEstimateUploaded = Object.keys(managedItems).length > 0;
+                
+                if (isEstimateUploaded) {
+                    baseList = Object.values(managedItems); 
+                } else {
+                    baseList = Object.values(masterProducts).map(m => managedItems[m.코드] || { 코드: m.코드, sources: {}, finalData: {} });
+
+                    if (selectedCatalogs.size > 0) {
+                        baseList = baseList.filter(item => {
+                            const mItem = masterProducts[item.코드] || {};
+                            const tagStr = mItem['카탈로그'] || '';
+                            const tags = tagStr.split(',').map(t => t.trim());
+                            return tags.some(t => selectedCatalogs.has(t));
+                        });
+                    }
+
+                    if (selectedCategories.size > 0) {
+                        baseList = baseList.filter(item => {
+                            const mItem = masterProducts[item.코드] || {};
+                            const tagStr = mItem['견적서'] || mItem['카테고리'] || '';
+                            const tags = tagStr.split(',').map(t => t.trim());
+                            return tags.some(t => selectedCategories.has(t));
+                        });
+                    }
+                }
+
+                if (globalSearch) {
+                    const cleanKeyword = globalSearch.toLowerCase().replace(/[()[\]{},./]/g, ' ');
+                    const tokens = cleanKeyword.split(/\s+/).filter(t => t.length > 0);
+                    if (tokens.length > 0) {
+                        baseList = baseList.map(item => {
+                            const mItem = masterProducts[item.코드] || {};
+                            const sourceItem = item.sources?.['estimate'] || {};
+                            const finalItem = item.finalData || {};
+                            const getVal = (key) => String(finalItem[key] !== undefined ? finalItem[key] : (sourceItem[key] !== undefined ? sourceItem[key] : (mItem[key] || ''))).toLowerCase();
+                            
+                            const cName = getVal('품목명'); 
+                            const cSpec = getVal('규격');
+                            const cVendor = getVal('구매처'); 
+                            const cWh = getVal('창고');
+                            const cCode = String(item.코드 || '').toLowerCase();
+                            
+                            let score = 0;
+                            let isVendorMatched = false;
+
+                            tokens.forEach(token => {
+                                if (cVendor.includes(token)) {
+                                    score += 20; 
+                                    isVendorMatched = true;
+                                }
+                                else if (cName.includes(token)) score += 10;
+                                else if (cCode.includes(token)) score += 8;
+                                else if (cSpec.includes(token)) score += 5;
+                                else if (cWh.includes(token)) score += 4;
+                            });
+                            return { ...item, _searchScore: score, _isVendorMatched: isVendorMatched };
+                        }).filter(r => r._searchScore > 0);
+                        
+                        baseList.sort((a, b) => {
+                            if (a._isVendorMatched && !b._isVendorMatched) return -1;
+                            if (!a._isVendorMatched && b._isVendorMatched) return 1;
+                            
+                            if (a._isVendorMatched && b._isVendorMatched) {
+                                const getSeq = (item) => {
+                                    const m = masterProducts[item.코드] || {};
+                                    const val = item.finalData?.['순번'] !== undefined ? item.finalData['순번'] : (item.sources?.['estimate']?.['순번'] ?? m['순번']);
+                                    return (val === '' || val === undefined || val === null) ? 999999 : Number(val);
+                                };
+                                const seqA = getSeq(a);
+                                const seqB = getSeq(b);
+                                if (seqA !== seqB) return seqA - seqB;
+                            }
+                            
+                            return b._searchScore - a._searchScore;
+                        });
+                    }
+                } else {
+                    if (selectedCatalogs.size > 0 || selectedCategories.size > 0) {
+                        baseList.sort((a, b) => {
+                            const getSeq = (item) => {
+                                const m = masterProducts[item.코드] || {};
+                                const val = item.finalData?.['순번'] !== undefined ? item.finalData['순번'] : (item.sources?.['estimate']?.['순번'] ?? m['순번']);
+                                return (val === '' || val === undefined || val === null) ? 999999 : Number(val);
+                            };
+                            const seqA = getSeq(a);
+                            const seqB = getSeq(b);
+                            
+                            if (seqA !== seqB) return seqA - seqB;
+                            
+                            const vendorA = String(a.finalData?.['구매처'] || masterProducts[a.코드]?.['구매처'] || '');
+                            const vendorB = String(b.finalData?.['구매처'] || masterProducts[b.코드]?.['구매처'] || '');
+                            if (vendorA !== vendorB) return vendorA.localeCompare(vendorB);
+                            
+                            return String(a.코드).localeCompare(String(b.코드));
+                        });
+                    } else {
+                        baseList.sort((a, b) => String(a.코드).localeCompare(String(b.코드)));
+                    }
+                }
+                return baseList;
+            }, [managedItems, masterProducts, globalSearch, selectedCatalogs, selectedCategories]);
 
             const handleFileUpload = async (e) => {
                 const file = e.target.files[0]; if (!file) return;
@@ -1122,6 +1148,40 @@
                 }, 100);
             }, [fullDisplayRows, masterProducts, showToast, selectedRows]);
 
+            const handleExportCurrentView = useCallback(() => { 
+                if (fullDisplayRows.length === 0) return showToast("⚠️ 내보낼 데이터가 없습니다.");
+                setIsExporting(true);
+                
+                setTimeout(() => {
+                    try {
+                        const activeProfile = 'estimate';
+                        const uploadCols = config.visibleUploadCols[activeProfile] || [];
+                        const masterCols = config.visibleMasterCols[activeProfile] || [];
+                        
+                        const headers = ['상태/선택', '품목코드', '마스터_품목명', '마스터_규격'];
+                        masterCols.forEach(h => headers.push(`[M]${h}`)); uploadCols.forEach(h => headers.push(`[작업]${h}`));
+
+                        const aoa = [headers];
+                        fullDisplayRows.forEach(row => {
+                            const rowCode = row.코드; const mItem = masterProducts[rowCode] || {};
+                            const isSel = selectedRows.has(row.코드); const status = (isSel ? '선택됨' : '');
+                            const rowData = [status, rowCode || '', mItem.품목명 || '', mItem.규격 || ''];
+
+                            masterCols.forEach(h => { const val = mItem[h] !== undefined ? mItem[h] : ''; rowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(val) : val); });
+                            uploadCols.forEach(h => { const val = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.[activeProfile]?.[h] || ''); const isNum = NUMERIC_HEADERS.includes(h) || NUMERIC_HEADERS.includes(config.masterLinks[activeProfile]?.[h]); rowData.push(isNum ? parseNum(val) : val); });
+                            aoa.push(rowData);
+                        });
+
+                        const wb = window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(aoa), "현재화면_출력"); window.XLSX.writeFile(wb, `화면출력_${new Date().toISOString().slice(0,10)}.xlsx`); showToast("✅ 화면 엑셀 다운로드가 완료되었습니다.");
+                    } catch(e) {
+                        console.error(e);
+                        showToast("❌ 화면 엑셀 다운로드 중 오류가 발생했습니다.");
+                    } finally {
+                        setIsExporting(false);
+                    }
+                }, 100);
+            }, [fullDisplayRows, config.visibleUploadCols, config.visibleMasterCols, config.masterLinks, masterProducts, selectedRows, showToast]);
+
             const handleSaveAsCategory = useCallback(async (categoryName) => {
                 if (!categoryName || !categoryName.trim()) return;
                 const rows = Object.values(managedItems);
@@ -1192,145 +1252,8 @@
                 showToast('✅ 선택한 항목이 화면에서 숨겨졌습니다.');
             }, [selectedRows, showToast]);
 
-            const fullDisplayRows = useMemo(() => {
-                let baseList = [];
-                const isEstimateUploaded = Object.keys(managedItems).length > 0;
-                
-                if (isEstimateUploaded) {
-                    baseList = Object.values(managedItems); 
-                } else {
-                    baseList = Object.values(masterProducts).map(m => managedItems[m.코드] || { 코드: m.코드, sources: {}, finalData: {} });
-
-                    if (selectedCatalogs.size > 0) {
-                        baseList = baseList.filter(item => {
-                            const mItem = masterProducts[item.코드] || {};
-                            const tagStr = mItem['카탈로그'] || '';
-                            const tags = tagStr.split(',').map(t => t.trim());
-                            return tags.some(t => selectedCatalogs.has(t));
-                        });
-                    }
-
-                    if (selectedCategories.size > 0) {
-                        baseList = baseList.filter(item => {
-                            const mItem = masterProducts[item.코드] || {};
-                            const tagStr = mItem['견적서'] || mItem['카테고리'] || '';
-                            const tags = tagStr.split(',').map(t => t.trim());
-                            return tags.some(t => selectedCategories.has(t));
-                        });
-                    }
-                }
-
-                if (globalSearch) {
-                    const cleanKeyword = globalSearch.toLowerCase().replace(/[()[\]{},./]/g, ' ');
-                    const tokens = cleanKeyword.split(/\s+/).filter(t => t.length > 0);
-                    if (tokens.length > 0) {
-                        baseList = baseList.map(item => {
-                            const mItem = masterProducts[item.코드] || {};
-                            const sourceItem = item.sources?.['estimate'] || {};
-                            const finalItem = item.finalData || {};
-                            const getVal = (key) => String(finalItem[key] !== undefined ? finalItem[key] : (sourceItem[key] !== undefined ? sourceItem[key] : (mItem[key] || ''))).toLowerCase();
-                            
-                            const cName = getVal('품목명'); 
-                            const cSpec = getVal('규격');
-                            const cVendor = getVal('구매처'); 
-                            const cWh = getVal('창고');
-                            const cCode = String(item.코드 || '').toLowerCase();
-                            
-                            let score = 0;
-                            let isVendorMatched = false;
-
-                            tokens.forEach(token => {
-                                if (cVendor.includes(token)) {
-                                    score += 20; 
-                                    isVendorMatched = true;
-                                }
-                                else if (cName.includes(token)) score += 10;
-                                else if (cCode.includes(token)) score += 8;
-                                else if (cSpec.includes(token)) score += 5;
-                                else if (cWh.includes(token)) score += 4;
-                            });
-                            return { ...item, _searchScore: score, _isVendorMatched: isVendorMatched };
-                        }).filter(r => r._searchScore > 0);
-                        
-                        baseList.sort((a, b) => {
-                            if (a._isVendorMatched && !b._isVendorMatched) return -1;
-                            if (!a._isVendorMatched && b._isVendorMatched) return 1;
-                            
-                            if (a._isVendorMatched && b._isVendorMatched) {
-                                const getSeq = (item) => {
-                                    const m = masterProducts[item.코드] || {};
-                                    const val = item.finalData?.['순번'] !== undefined ? item.finalData['순번'] : (item.sources?.['estimate']?.['순번'] ?? m['순번']);
-                                    return (val === '' || val === undefined || val === null) ? 999999 : Number(val);
-                                };
-                                const seqA = getSeq(a);
-                                const seqB = getSeq(b);
-                                if (seqA !== seqB) return seqA - seqB;
-                            }
-                            
-                            return b._searchScore - a._searchScore;
-                        });
-                    }
-                } else {
-                    if (selectedCatalogs.size > 0 || selectedCategories.size > 0) {
-                        baseList.sort((a, b) => {
-                            const getSeq = (item) => {
-                                const m = masterProducts[item.코드] || {};
-                                const val = item.finalData?.['순번'] !== undefined ? item.finalData['순번'] : (item.sources?.['estimate']?.['순번'] ?? m['순번']);
-                                return (val === '' || val === undefined || val === null) ? 999999 : Number(val);
-                            };
-                            const seqA = getSeq(a);
-                            const seqB = getSeq(b);
-                            
-                            if (seqA !== seqB) return seqA - seqB;
-                            
-                            const vendorA = String(a.finalData?.['구매처'] || masterProducts[a.코드]?.['구매처'] || '');
-                            const vendorB = String(b.finalData?.['구매처'] || masterProducts[b.코드]?.['구매처'] || '');
-                            if (vendorA !== vendorB) return vendorA.localeCompare(vendorB);
-                            
-                            return String(a.코드).localeCompare(String(b.코드));
-                        });
-                    } else {
-                        baseList.sort((a, b) => String(a.코드).localeCompare(String(b.코드)));
-                    }
-                }
-                return baseList;
-            }, [managedItems, masterProducts, globalSearch, selectedCatalogs, selectedCategories]);
-
-            const handleExportCurrentView = useCallback(() => { 
-                if (fullDisplayRows.length === 0) return showToast("⚠️ 내보낼 데이터가 없습니다.");
-                setIsExporting(true);
-                
-                setTimeout(() => {
-                    try {
-                        const activeProfile = 'estimate';
-                        const uploadCols = config.visibleUploadCols[activeProfile] || [];
-                        const masterCols = config.visibleMasterCols[activeProfile] || [];
-                        
-                        const headers = ['상태/선택', '품목코드', '마스터_품목명', '마스터_규격'];
-                        masterCols.forEach(h => headers.push(`[M]${h}`)); uploadCols.forEach(h => headers.push(`[작업]${h}`));
-
-                        const aoa = [headers];
-                        fullDisplayRows.forEach(row => {
-                            const rowCode = row.코드; const mItem = masterProducts[rowCode] || {};
-                            const isSel = selectedRows.has(row.코드); const status = (isSel ? '선택됨' : '');
-                            const rowData = [status, rowCode || '', mItem.품목명 || '', mItem.규격 || ''];
-
-                            masterCols.forEach(h => { const val = mItem[h] !== undefined ? mItem[h] : ''; rowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(val) : val); });
-                            uploadCols.forEach(h => { const val = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.[activeProfile]?.[h] || ''); const isNum = NUMERIC_HEADERS.includes(h) || NUMERIC_HEADERS.includes(config.masterLinks[activeProfile]?.[h]); rowData.push(isNum ? parseNum(val) : val); });
-                            aoa.push(rowData);
-                        });
-
-                        const wb = window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(aoa), "현재화면_출력"); window.XLSX.writeFile(wb, `화면출력_${new Date().toISOString().slice(0,10)}.xlsx`); showToast("✅ 화면 엑셀 다운로드가 완료되었습니다.");
-                    } catch(e) {
-                        console.error(e);
-                        showToast("❌ 화면 엑셀 다운로드 중 오류가 발생했습니다.");
-                    } finally {
-                        setIsExporting(false);
-                    }
-                }, 100);
-            }, [fullDisplayRows, config.visibleUploadCols, config.visibleMasterCols, config.masterLinks, masterProducts, selectedRows, showToast]);
-
             const appState = { fullDisplayRows, visibleMasterCols: config.visibleMasterCols, visibleUploadCols: config.visibleUploadCols, masterProducts, masterLinksEst: config.masterLinks['estimate']||{}, selectedRows, isEstimateUploaded: Object.keys(managedItems).length > 0, globalSearch, selectedCatalogs, selectedCategories, isProcessing };
+            
             const appActions = { 
                 handleUpdateCell, 
                 setRowSelection: useCallback((code, isSelected) => { setSelectedRows(p => { const n = new Set(p); if (isSelected) n.add(code); else n.delete(code); return n; }); }, []), 
@@ -1343,6 +1266,84 @@
                 handleFileUpload, 
                 showToast, 
                 handleExportCurrentView 
+            };
+
+            const ExcelDataGrid = ({ state, actions }) => {
+                const { isEstimateUploaded, fullDisplayRows, visibleMasterCols, visibleUploadCols, masterProducts, masterLinksEst, selectedRows } = state;
+                
+                const [scrollTop, setScrollTop] = useState(0);
+                const handleScroll = useCallback((e) => setScrollTop(e.target.scrollTop), []);
+
+                const isDragging = useRef(false);
+                const dragSelectMode = useRef(true);
+
+                useEffect(() => {
+                    const handleMouseUp = () => { isDragging.current = false; };
+                    window.addEventListener('mouseup', handleMouseUp);
+                    return () => window.removeEventListener('mouseup', handleMouseUp);
+                }, []);
+
+                const handleMouseDown = useCallback((e, rowCode, isSel) => {
+                    const targetTag = e.target.tagName.toLowerCase();
+                    if (['input', 'select', 'button', 'i'].includes(targetTag)) return;
+                    isDragging.current = true;
+                    dragSelectMode.current = !isSel;
+                    actions.setRowSelection(rowCode, !isSel);
+                }, [actions]);
+
+                const handleMouseEnter = useCallback((e, rowCode) => {
+                    if (isDragging.current) {
+                        actions.setRowSelection(rowCode, dragSelectMode.current);
+                    }
+                }, [actions]);
+
+                const ROW_HEIGHT = 56; 
+                const BUFFER_SIZE = 15; 
+                const VIEWPORT_HEIGHT = 800; 
+
+                const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_SIZE);
+                const endIndex = Math.min(fullDisplayRows.length, Math.floor((scrollTop + VIEWPORT_HEIGHT) / ROW_HEIGHT) + BUFFER_SIZE);
+
+                const displayRows = fullDisplayRows.slice(startIndex, endIndex);
+                const topPadding = startIndex * ROW_HEIGHT;
+                const bottomPadding = Math.max(0, (fullDisplayRows.length - endIndex) * ROW_HEIGHT);
+
+                const visMaster = visibleMasterCols.estimate?.filter(h=>!['품목코드','품목명','규격'].includes(h)) || [];
+                const visUpload = visibleUploadCols.estimate?.filter(h=>h!=='품목코드') || [];
+
+                return (
+                    <div className="bg-white border border-slate-200 shadow-sm h-full flex flex-col overflow-hidden relative">
+                        <div className="flex-1 overflow-auto custom-scrollbar relative" onScroll={handleScroll}>
+                            <table className="text-left border-collapse text-[13px] whitespace-nowrap relative z-0 w-max bg-white">
+                                <thead className="text-[12px] font-bold text-slate-50 bg-[#1e293b]">
+                                    <tr>
+                                        <th className="sticky top-0 z-40 bg-[#1e293b] px-4 py-3.5 border-y border-r border-slate-700 shadow-sm min-w-[280px] w-[280px] max-w-[280px]" style={{left:0}}>
+                                            상품정보 (코드/품명/규격)
+                                        </th>
+                                        {visMaster.map(h=><th key={`m-${h}`} className={`sticky top-0 z-30 bg-[#334155] px-3 py-3.5 border-y border-r border-slate-600 shadow-sm text-center ${getCellWidthClass(h)}`}><i className="fas fa-lock text-slate-400 text-[10px] mr-1"></i> {h}</th>)}
+                                        {visUpload.map(h=><th key={`u-${h}`} className={`sticky top-0 z-30 bg-[#1e293b] px-3 py-3.5 border-y border-r border-slate-700 shadow-sm text-center text-indigo-300 ${getCellWidthClass(h)}`}><i className="fas fa-pen text-indigo-400 text-[10px] mr-1"></i> {h}</th>)}
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-transparent text-slate-700">
+                                    {fullDisplayRows.length===0 ? (
+                                        <tr><td colSpan="50" className="p-16 text-center text-slate-400 font-bold"><i className="fas fa-file-excel text-5xl mb-4 text-slate-200 block"></i>데이터가 없습니다. 카탈로그를 불러오거나 엑셀을 업로드하세요.</td></tr>
+                                    ) : (
+                                        <>
+                                            {topPadding > 0 && <tr style={{ height: `${topPadding}px` }}><td colSpan="50" className="p-0 border-0"></td></tr>}
+                                            
+                                            {displayRows.map((row, idx) => {
+                                                const mItem = masterProducts[row.코드] || {}; const isSel = selectedRows.has(row.코드);
+                                                return <MemoizedTableRow key={row.코드} row={row} idx={idx} isSel={isSel} mItem={mItem} isEstimateUploaded={isEstimateUploaded} visMasterCols={visMaster} visUploadCols={visUpload} masterLinksEst={masterLinksEst} onToggleSelection={actions.toggleRowSelection} onMouseDown={handleMouseDown} onMouseEnter={handleMouseEnter} onUpdateCell={actions.handleUpdateCell} />;
+                                            })}
+                                            
+                                            {bottomPadding > 0 && <tr style={{ height: `${bottomPadding}px` }}><td colSpan="50" className="p-0 border-0"></td></tr>}
+                                        </>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                );
             };
 
             return (
@@ -1367,11 +1368,11 @@
                     )}
 
                     <div className="px-6 py-3 flex items-center justify-between gap-4 bg-white border-b border-slate-200 z-10 w-full shrink-0">
-                        <div className="flex items-center gap-2 pb-1 -mb-1 flex-wrap w-full">
-                            <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-2 pb-1 -mb-1 overflow-x-auto custom-scrollbar w-full whitespace-nowrap">
+                            <div className="flex items-center gap-1 shrink-0">
                                 <div className="relative" ref={catalogRef}>
                                     <button onClick={() => { setCatalogDropdownOpen(!catalogDropdownOpen); setCategoryDropdownOpen(false); }} className={`${TW.selectBase} w-[180px] flex justify-between items-center bg-white text-left`}>
-                                        <span className="truncate pr-4 block">{selectedCatalogs.size > 0 ? `${selectedCatalogs.size}개 카탈로그 선택됨` : '파서 보관함 선택'}</span>
+                                        <span className="truncate pr-4 pl-6 block">{selectedCatalogs.size > 0 ? `${selectedCatalogs.size}개 선택됨` : '파서 보관함'}</span>
                                         <i className="fas fa-chevron-down text-blue-400 text-[10px]"></i>
                                     </button>
                                     <i className="fas fa-folder-open absolute left-3 top-3 text-blue-500 text-[13px] pointer-events-none"></i>
@@ -1392,10 +1393,10 @@
 
                             <div className="w-px h-5 bg-slate-200 mx-1 shrink-0"></div>
 
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 shrink-0">
                                 <div className="relative" ref={categoryRef}>
                                     <button onClick={() => { setCategoryDropdownOpen(!categoryDropdownOpen); setCatalogDropdownOpen(false); }} className={`${TW.selectBase} w-[180px] flex justify-between items-center bg-white text-left`}>
-                                        <span className="truncate pr-4 block">{selectedCategories.size > 0 ? `${selectedCategories.size}개 견적서 선택됨` : '견적서(카탈로그) 선택'}</span>
+                                        <span className="truncate pr-4 pl-6 block">{selectedCategories.size > 0 ? `${selectedCategories.size}개 선택됨` : '카탈로그'}</span>
                                         <i className="fas fa-chevron-down text-blue-400 text-[10px]"></i>
                                     </button>
                                     <i className="fas fa-file-invoice absolute left-3 top-3 text-blue-500 text-[13px] pointer-events-none"></i>
@@ -1412,26 +1413,32 @@
                                         </div>
                                     )}
                                 </div>
-                                <button onClick={() => setShowCategoryModal(true)} className={`${TW.toolbarBtn} text-blue-600 border-blue-200 hover:bg-blue-50`} title="현재 화면의 상품들을 묶어서 새로운 카탈로그로 만듭니다.">
-                                    <i className="fas fa-save mr-1.5 text-blue-500"></i> 저장
-                                </button>
+                                {fullDisplayRows.length > 0 && (
+                                    <button onClick={() => setShowCategoryModal(true)} className={`${TW.toolbarBtn} text-blue-600 border-blue-200 hover:bg-blue-50`} title="현재 화면의 상품들을 묶어서 새로운 카탈로그로 만듭니다.">
+                                        <i className="fas fa-save mr-1.5 text-blue-500"></i> 저장
+                                    </button>
+                                )}
                             </div>
 
                             <div className="w-px h-5 bg-slate-200 mx-1 shrink-0"></div>
 
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 shrink-0">
                                 <label className={`${TW.toolbarBtn} text-emerald-600 border-emerald-200 hover:bg-emerald-50 cursor-pointer`}>
-                                    <i className="fas fa-file-excel mr-1.5 text-emerald-500"></i> 견적 엑셀 불러오기
+                                    <i className="fas fa-file-import mr-1.5 text-emerald-500"></i> 불러오기
                                     <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e)} accept=".xlsx, .xls, .csv" disabled={isProcessing} />
                                 </label>
                                 
-                                <button onClick={handleExportCurrentView} className={`${TW.toolbarBtn} text-emerald-600 border-emerald-200 hover:bg-emerald-50`} title="현재 화면 그대로 엑셀로 다운로드합니다.">
-                                    <i className="fas fa-file-excel mr-1.5 text-emerald-500"></i> 화면 다운로드
-                                </button>
+                                {fullDisplayRows.length > 0 && (
+                                    <>
+                                        <button onClick={handleExportCurrentView} className={`${TW.toolbarBtn} text-emerald-600 border-emerald-200 hover:bg-emerald-50`} title="현재 화면 그대로 엑셀로 다운로드합니다.">
+                                            <i className="fas fa-file-download mr-1.5 text-emerald-500"></i> 다운로드
+                                        </button>
 
-                                <button onClick={() => setShowExportModal(true)} className={`${TW.toolbarBtn} text-amber-600 border-amber-200 hover:bg-amber-50`} title="ERP/쇼핑몰 양식 출력">
-                                    <i className="fas fa-file-export mr-1.5 text-amber-500"></i> 보고서
-                                </button>
+                                        <button onClick={() => setShowExportModal(true)} className={`${TW.toolbarBtn} text-amber-600 border-amber-200 hover:bg-amber-50`} title="ERP/쇼핑몰 양식 출력">
+                                            <i className="fas fa-file-export mr-1.5 text-amber-500"></i> 보고서
+                                        </button>
+                                    </>
+                                )}
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0 ml-auto">
@@ -1440,9 +1447,11 @@
                                         <i className="fas fa-eye-slash mr-1.5"></i> 숨기기 ({selectedRows.size})
                                     </button>
                                 )}
-                                <button onClick={() => setShowReviewModal(true)} disabled={fullDisplayRows.length === 0} className={`${TW.toolbarBtn} px-4 ${fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed border-slate-200'}`}>
-                                    <i className="fas fa-check-circle mr-1.5"></i> 반영하기
-                                </button>
+                                {fullDisplayRows.length > 0 && (
+                                    <button onClick={() => setShowReviewModal(true)} className={`${TW.toolbarBtn} px-4 bg-slate-800 text-white hover:bg-slate-700`}>
+                                        <i className="fas fa-check-circle mr-1.5"></i> 반영하기
+                                    </button>
+                                )}
 
                                 <div className="w-px h-5 bg-slate-200 mx-1"></div>
 
