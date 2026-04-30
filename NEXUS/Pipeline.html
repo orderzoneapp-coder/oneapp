@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - Valuation Hub [v3.7 Sequence UI Fix]</title>
+    <title>ONEAPP NEXES - Valuation Hub [v3.8 Cloud Sync & Delta]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -56,7 +56,15 @@
     <script type="text/babel">
         const { useState, useMemo, useEffect, useRef, useCallback, Fragment } = React;
 
-        const STORAGE_KEYS = { MASTER_DB: 'merchMaster_v870', CLOUD_URL: 'skuSyncCloudUrl_v6', SYNC_TRIGGER: 'merchMaster_sync_trigger', HISTORY_DB: 'merchHistory_v870' };
+        // [개선] 델타 동기화를 위한 큐(Queue) 스토리지 키 추가
+        const STORAGE_KEYS = { 
+            MASTER_DB: 'merchMaster_v870', 
+            CLOUD_URL: 'skuSyncCloudUrl_v6', 
+            SYNC_TRIGGER: 'merchMaster_sync_trigger', 
+            HISTORY_DB: 'merchHistory_v870',
+            UNSYNCED_MASTER: 'merchUnsyncedMaster_v1', 
+            UNSYNCED_HISTORY: 'merchUnsyncedHistory_v1'
+        };
 
         const TW = {
             btnTop: "w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors shadow-sm",
@@ -148,7 +156,9 @@
 
         const useMerchConfig = () => {
             const loadConfig = () => {
-                const cloudUrl = localStorage.getItem('skuSyncCloudUrl_v6') || '';
+                // [개선] 앱스스크립트 기본 URL 적용 (설정값이 없을 경우)
+                const cloudUrl = localStorage.getItem('skuSyncCloudUrl_v6') || 'https://script.google.com/macros/s/AKfycbyT3YXvGkbSWswoBDxvVV_1m0Xp2it3QmOezFIfQFBNi0TuGViPH_Jz-A8L2sQz80tW/exec';
+                
                 let visibleMasterCols = JSON.parse(localStorage.getItem('merchVisMaster_v870') || 'null');
                 if (!visibleMasterCols || !visibleMasterCols.estimate) visibleMasterCols = getInitialVisibleMasterCols();
                 if (visibleMasterCols.estimate.includes('카테고리')) visibleMasterCols.estimate = visibleMasterCols.estimate.map(h => h === '카테고리' ? '견적서' : h);
@@ -225,7 +235,7 @@
                             <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={handleLogoClick} title="통합 대시보드 및 공통 메뉴로 이동">
                                 <span className="font-black text-[24px] tracking-wider text-slate-100 mr-4 group-hover:text-indigo-400 transition-colors">ONEAPP</span>
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
-                                    <div className="flex items-center"><span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span><span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.7</span></div>
+                                    <div className="flex items-center"><span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span><span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.8</span></div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">{currentTab ? currentTab.shortTag : 'WORKSPACE'}</span>
                                 </div>
                             </div>
@@ -345,7 +355,6 @@
                     const mItem = masterProducts[row.코드]; 
                     const oldP = mItem ? parseNum(mItem['입고가']) : 0; 
                     
-                    // 💡 [수정] 폴백 로직 적용
                     const newP = parseNum(row.finalData?.['입고가'] !== undefined 
                         ? row.finalData['입고가'] 
                         : (row.sources?.['estimate']?.['입고가'] !== undefined && row.sources?.['estimate']?.['입고가'] !== '' ? row.sources['estimate']['입고가'] : oldP));
@@ -367,7 +376,6 @@
                             if (['품목코드', '입고가', '출고가'].includes(h)) return;
                             const mField = masterLinksEst[h] || h; 
                             const mVal = mItem[mField];
-                            // 💡 [수정] 폴백 로직 적용
                             const uVal = row.finalData?.[h] !== undefined 
                                 ? row.finalData[h] 
                                 : (row.sources?.['estimate']?.[h] !== undefined && row.sources?.['estimate']?.[h] !== '' ? row.sources['estimate'][h] : mVal);
@@ -632,7 +640,6 @@
                                 const linkedMasterField = masterLinksEst[h];
                                 const mVal = (linkedMasterField && rowCode) ? mItem[linkedMasterField] : undefined;
                                 
-                                // 💡 [수정] initialVal 산출 시 마스터DB 값(mVal)을 폴백으로 최우선 적용!
                                 const initialVal = row.finalData?.[h] !== undefined 
                                     ? row.finalData[h] 
                                     : (row.sources?.['estimate']?.[h] !== undefined && row.sources?.['estimate']?.[h] !== ''
@@ -785,6 +792,12 @@
             const loadMaster = useCallback(async () => { 
                 const data = await getIDB(STORAGE_KEYS.MASTER_DB); 
                 if (data) setMasterProducts(data); 
+
+                // [개선 3] 로컬 DB 용량 관리 (최근 1000개 이력만 유지)
+                const oldLogs = await getIDB(STORAGE_KEYS.HISTORY_DB);
+                if (oldLogs && oldLogs.length > 1000) {
+                    await setIDB(STORAGE_KEYS.HISTORY_DB, oldLogs.slice(-1000));
+                }
             }, []);
 
             useEffect(() => { 
@@ -990,7 +1003,19 @@
                 if (localLogs.length > 0) {
                     const oldLogs = await getIDB(STORAGE_KEYS.HISTORY_DB) || [];
                     await setIDB(STORAGE_KEYS.HISTORY_DB, [...oldLogs, ...localLogs]);
+
+                    // [개선] 델타 동기화를 위해 미동기화 히스토리 큐에 추가
+                    const unsyncedHist = await getIDB(STORAGE_KEYS.UNSYNCED_HISTORY) || [];
+                    await setIDB(STORAGE_KEYS.UNSYNCED_HISTORY, [...unsyncedHist, ...localLogs]);
                 }
+
+                // [개선] 델타 동기화를 위해 미동기화 마스터 큐에 추가
+                const unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
+                targetCodes.forEach(code => {
+                    if (newMaster[code]) unsyncedMaster[code] = newMaster[code];
+                });
+                await setIDB(STORAGE_KEYS.UNSYNCED_MASTER, unsyncedMaster);
+
                 setMasterProducts(newMaster); 
                 await setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
                 localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
@@ -1119,6 +1144,7 @@
                 let newMaster = { ...masterProducts };
                 let count = 0;
                 const safeName = categoryName.trim();
+                const unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
 
                 rows.forEach(row => {
                     const code = row.코드;
@@ -1132,10 +1158,14 @@
                         tags.push(safeName);
                         newMaster[code]['견적서'] = tags.join(', ');
                         delete newMaster[code]['카테고리']; // Migration
+                        
+                        // [개선] 델타 큐에 변경사항 추가
+                        unsyncedMaster[code] = newMaster[code];
                         count++;
                     }
                 });
 
+                await setIDB(STORAGE_KEYS.UNSYNCED_MASTER, unsyncedMaster);
                 setMasterProducts(newMaster);
                 await setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
                 localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
@@ -1155,16 +1185,77 @@
                 showToast('작업 화면이 초기화 되었습니다.');
             }, [showToast]);
 
+            // [개선] Push 액션을 Delta Sync 방식으로 변경
             const handlePush = async () => {
                 if (!config.cloudUrl) return showToast("⚠️ 설정에서 앱스크립트 URL을 입력하세요.");
+
+                const unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
+                const unsyncedHistory = await getIDB(STORAGE_KEYS.UNSYNCED_HISTORY) || [];
+
+                if (Object.keys(unsyncedMaster).length === 0 && unsyncedHistory.length === 0) {
+                    return showToast("⚠️ 클라우드에 새로 반영할 변경사항이 없습니다.");
+                }
+
                 setIsProcessing(true); setProcessMsg("클라우드 백업 중...");
-                setTimeout(() => { showToast("✅ 클라우드 저장 완료"); setIsProcessing(false); setProcessMsg(""); }, 1000);
+                
+                try {
+                    const response = await fetch(config.cloudUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({
+                            action: 'pushData',
+                            masterDelta: unsyncedMaster,
+                            historyDelta: unsyncedHistory
+                        })
+                    });
+
+                    const result = await response.json();
+                    if (result.status === 'success') {
+                        // 성공적으로 보내면 큐 비우기
+                        await setIDB(STORAGE_KEYS.UNSYNCED_MASTER, {});
+                        await setIDB(STORAGE_KEYS.UNSYNCED_HISTORY, []);
+                        showToast(`✅ 클라우드 동기화 완료 (수정 ${Object.keys(unsyncedMaster).length}건, 이력 ${unsyncedHistory.length}건)`);
+                    } else {
+                        throw new Error(result.message || '서버 응답 오류');
+                    }
+                } catch (err) {
+                    console.error(err);
+                    showToast("❌ 클라우드 백업 실패: " + err.message);
+                } finally {
+                    setIsProcessing(false); setProcessMsg("");
+                }
             };
 
+            // [개선] Pull 액션 
             const handlePull = async () => {
                 if (!config.cloudUrl) return showToast("⚠️ 설정에서 앱스크립트 URL을 입력하세요.");
                 setIsProcessing(true); setProcessMsg("데이터 동기화 중...");
-                setTimeout(() => { showToast("✅ 데이터 수신 완료"); setIsProcessing(false); setProcessMsg(""); }, 1000);
+                
+                try {
+                    const response = await fetch(`${config.cloudUrl}?action=pullData`, {
+                        method: 'GET'
+                    });
+                    
+                    const result = await response.json();
+                    if (result.status === 'success') {
+                        if (result.master) {
+                            setMasterProducts(result.master);
+                            await setIDB(STORAGE_KEYS.MASTER_DB, result.master);
+                        }
+                        if (result.history) {
+                            await setIDB(STORAGE_KEYS.HISTORY_DB, result.history);
+                        }
+                        localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
+                        showToast("✅ 클라우드 데이터 수신 완료");
+                    } else {
+                        throw new Error(result.message || '서버 응답 오류');
+                    }
+                } catch (err) {
+                    console.error(err);
+                    showToast("❌ 데이터 동기화 실패: " + err.message);
+                } finally {
+                    setIsProcessing(false); setProcessMsg("");
+                }
             };
 
             const handleRemoveFromWorkspace = useCallback(() => {
@@ -1303,7 +1394,6 @@
 
                             masterCols.forEach(h => { const val = mItem[h] !== undefined ? mItem[h] : ''; rowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(val) : val); });
                             
-                            // 💡 [수정] 엑셀 다운로드 시에도 순번이 비어있으면 마스터 DB에서 폴백 적용
                             uploadCols.forEach(h => { 
                                 const linkedMasterField = config.masterLinks[activeProfile]?.[h];
                                 const mVal = linkedMasterField && rowCode ? mItem[linkedMasterField] : undefined;
