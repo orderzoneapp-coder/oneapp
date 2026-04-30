@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - Master DB [v3.0]</title>
+    <title>ONEAPP NEXES - Master DB [v3.1 Cloud Sync]</title>
     <!-- 핵심 라이브러리 CDN 로드 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -45,7 +45,11 @@
         const STORAGE_KEYS = {
             MASTER_DB: 'merchMaster_v870',
             CLOUD_URL: 'skuSyncCloudUrl_v6',
-            SYNC_TRIGGER: 'merchMaster_sync_trigger'
+            SYNC_TRIGGER: 'merchMaster_sync_trigger',
+            // [개선] 델타 큐 스토리지 키 공유
+            UNSYNCED_MASTER: 'merchUnsyncedMaster_v1', 
+            UNSYNCED_HISTORY: 'merchUnsyncedHistory_v1',
+            UNSYNCED_DELETES: 'merchUnsyncedDeletes_v1' // 삭제 동기화용 큐 추가
         };
 
         const MASTER_HEADERS = [
@@ -122,7 +126,8 @@
         // ==========================================
         const useMerchConfig = () => {
             const loadConfig = () => {
-                const cloudUrl = localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || '';
+                // [개선] 앱스스크립트 배포 URL 기본값 설정
+                const cloudUrl = localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || 'https://script.google.com/macros/s/AKfycbyT3YXvGkbSWswoBDxvVV_1m0Xp2it3QmOezFIfQFBNi0TuGViPH_Jz-A8L2sQz80tW/exec';
                 
                 let visibleMasterCols = JSON.parse(localStorage.getItem('merchVisMaster_v870') || 'null');
                 if (!visibleMasterCols || !visibleMasterCols.estimate) visibleMasterCols = { estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] };
@@ -189,7 +194,7 @@
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
                                     <div className="flex items-center">
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.0</span>
+                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.1</span>
                                     </div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">GOLDEN RECORD</span>
                                 </div>
@@ -304,7 +309,6 @@
             const config = useMerchConfig();
             const [toastMsg, setToastMsg] = useState("");
 
-            // 💡 환경설정 연동: 화면 노출 컬럼 동적 계산
             const visMasterCols = useMemo(() => {
                 const cols = config.visibleMasterCols['estimate'] || [];
                 return cols.filter(h => !['품목코드', '품목명', '규격'].includes(h));
@@ -352,7 +356,6 @@
                 };
                 window.addEventListener('storage', handleStorageChange);
                 
-                // 🌟 Iframe 메시지 수신 (설정창 닫힘 감지)
                 const handleMessage = (e) => {
                     if (e.data && e.data.type === 'CLOSE_SETTINGS') {
                         setShowSettingsModal(false);
@@ -369,7 +372,7 @@
                 };
             }, []);
 
-            // 💡 엑셀 헤더 자동 인식 (강화된 로직 적용)
+            // 💡 [개선] 엑셀 업로드 시 Delta Sync 큐에 추가
             const handleExcelUpload = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
@@ -414,11 +417,16 @@
                             }
                         }
 
+                        // Delta 큐에 추가 (전체 업로드이므로 전체를 큐에 담음)
+                        const unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
+                        Object.keys(newMaster).forEach(code => unsyncedMaster[code] = newMaster[code]);
+                        await setIDB(STORAGE_KEYS.UNSYNCED_MASTER, unsyncedMaster);
+
                         setMasterProducts(newMaster);
                         await setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
                         localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
                         
-                        showToast(`✅ ${count}건의 마스터 데이터가 로컬에 세팅되었습니다!`);
+                        showToast(`✅ ${count}건의 마스터 데이터가 로컬 및 델타 큐에 세팅되었습니다!`);
                     } catch(err) {
                         console.error(err);
                         showToast("❌ 엑셀 분석 중 오류가 발생했습니다.");
@@ -431,39 +439,58 @@
                 e.target.value = ''; 
             };
 
+            // 💡 [개선] Push 액션을 Delta Sync 방식으로 변경
             const handlePush = async () => {
-                if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 웹앱 URL을 입력하세요.");
-                if (Object.keys(masterProducts).length === 0) return showToast("⚠️ 클라우드로 보낼 데이터가 없습니다.");
+                if (!config.cloudUrl) return showToast("⚠️ 설정에서 앱스크립트 URL을 입력하세요.");
+
+                const unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
+                const unsyncedHistory = await getIDB(STORAGE_KEYS.UNSYNCED_HISTORY) || [];
+                const unsyncedDeletes = await getIDB(STORAGE_KEYS.UNSYNCED_DELETES) || []; // 삭제 목록
+
+                if (Object.keys(unsyncedMaster).length === 0 && unsyncedHistory.length === 0 && unsyncedDeletes.length === 0) {
+                    return showToast("⚠️ 클라우드에 새로 반영할 변경사항이 없습니다.");
+                }
 
                 setIsProcessing(true); setProcessMsg("클라우드 서버로 데이터를 전송 중...");
                 
                 try {
-                    const dataArray = Object.values(masterProducts);
-                    const response = await fetch(config.cloudUrl + '?action=push&sheet=마스터', {
+                    const response = await fetch(config.cloudUrl, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify({ data: dataArray, sheet: "마스터" })
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // CORS 에러 방지용 text/plain
+                        body: JSON.stringify({
+                            action: 'pushData',
+                            masterDelta: unsyncedMaster,
+                            historyDelta: unsyncedHistory,
+                            deletedCodes: unsyncedDeletes // 삭제 요청 추가
+                        })
                     });
-                    
-                    if (!response.ok) throw new Error('Network error');
+
                     const result = await response.json();
-                    
-                    if (result.error) throw new Error(result.error);
-                    showToast(`✅ ${result.count}건 클라우드 전체 백업 완료!`);
-                } catch (error) {
-                    console.error("Push Error:", error);
-                    showToast("❌ 클라우드 백업 실패. URL을 확인하세요.");
+                    if (result.status === 'success') {
+                        // 성공적으로 보내면 큐 비우기
+                        await setIDB(STORAGE_KEYS.UNSYNCED_MASTER, {});
+                        await setIDB(STORAGE_KEYS.UNSYNCED_HISTORY, []);
+                        await setIDB(STORAGE_KEYS.UNSYNCED_DELETES, []);
+                        
+                        showToast(`✅ 클라우드 동기화 완료 (수정 ${Object.keys(unsyncedMaster).length}건, 삭제 ${unsyncedDeletes.length}건, 이력 ${unsyncedHistory.length}건)`);
+                    } else {
+                        throw new Error(result.message || '서버 응답 오류');
+                    }
+                } catch (err) {
+                    console.error("Push Error:", err);
+                    showToast("❌ 클라우드 백업 실패: " + err.message);
                 } finally {
                     setIsProcessing(false); setProcessMsg("");
                 }
             };
 
+            // 💡 [개선] Pull 액션을 Delta Sync 기반에 맞게 변경
             const handlePull = async () => {
-                if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 웹앱 URL을 입력하세요.");
+                if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
                 setIsProcessing(true); setProcessMsg("클라우드에서 최신 데이터를 수신 중...");
                 
                 try {
-                    const response = await fetch(config.cloudUrl + '?action=pull&sheet=마스터', {
+                    const response = await fetch(`${config.cloudUrl}?action=pullData`, {
                         method: 'GET',
                         cache: 'no-cache'
                     });
@@ -471,23 +498,18 @@
                     if (!response.ok) throw new Error('Network error');
                     const result = await response.json();
                     
-                    if (result.error) throw new Error(result.error);
-
-                    const fetchedData = result.data || [];
-                    const dataToSave = {};
-                    
-                    fetchedData.forEach(item => {
-                        const code = item['코드'] || item['품목코드'];
-                        if (code) dataToSave[code] = item;
-                    });
-                    
-                    if (Object.keys(dataToSave).length > 0) {
-                        setMasterProducts(dataToSave);
-                        await setIDB(STORAGE_KEYS.MASTER_DB, dataToSave);
+                    if (result.status === 'success') {
+                        if (result.master) {
+                            setMasterProducts(result.master);
+                            await setIDB(STORAGE_KEYS.MASTER_DB, result.master);
+                        }
+                        if (result.history) {
+                            await setIDB(STORAGE_KEYS.HISTORY_DB, result.history);
+                        }
                         localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
-                        showToast(`✅ ${Object.keys(dataToSave).length}건 데이터 동기화 완료`);
+                        showToast(`✅ 클라우드 수신 완료 (마스터 ${Object.keys(result.master || {}).length}건)`);
                     } else {
-                        showToast("⚠️ 클라우드에 수신할 데이터가 없습니다.");
+                        throw new Error(result.message || '서버 응답 오류');
                     }
                 } catch (error) {
                     console.error("Pull Error:", error);
@@ -497,6 +519,7 @@
                 }
             };
 
+            // 💡 [개선] 마스터 삭제 시 삭제 큐(deletedCodes)에 추가
             const handleDeleteSelected = async () => {
                 if (!window.confirm(`선택하신 ${selectedRows.size}개 상품을 마스터 DB에서 삭제하시겠습니까?`)) return;
 
@@ -505,16 +528,24 @@
                 
                 try {
                     let newMaster = { ...masterProducts };
+                    const unsyncedDeletes = await getIDB(STORAGE_KEYS.UNSYNCED_DELETES) || [];
+                    const unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
+
                     selectedRows.forEach(code => {
                         delete newMaster[code];
+                        unsyncedDeletes.push(code); // 클라우드에 삭제 명령을 보내기 위해 큐에 추가
+                        delete unsyncedMaster[code]; // 추가/수정 큐에 있었다면 제거
                     });
                     
                     setMasterProducts(newMaster);
                     await setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
+                    await setIDB(STORAGE_KEYS.UNSYNCED_DELETES, unsyncedDeletes);
+                    await setIDB(STORAGE_KEYS.UNSYNCED_MASTER, unsyncedMaster);
+                    
                     localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
                     
                     setSelectedRows(new Set());
-                    showToast(`🗑️ ${selectedRows.size}개 상품이 삭제되었습니다.`);
+                    showToast(`🗑️ ${selectedRows.size}개 상품이 삭제되었습니다. (구름을 눌러 반영하세요)`);
                 } catch(err) {
                     console.error(err);
                     showToast("❌ 삭제 중 오류가 발생했습니다.");
