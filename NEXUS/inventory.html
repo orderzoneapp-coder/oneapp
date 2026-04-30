@@ -108,7 +108,7 @@
             }, [name, size, className]);
 
             if (!svg) {
-                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'edit':'fa-edit', 'save':'fa-save', 'link':'fa-link', 'ban':'fa-ban', 'layer-group':'fa-layer-group', 'sitemap':'fa-sitemap', 'bolt':'fa-bolt', 'sort-amount-down':'fa-sort-amount-down', 'info-circle':'fa-info-circle', 'lock':'fa-lock', 'key':'fa-key', 'trash-alt':'fa-trash-alt', 'folder-open':'fa-folder-open', 'file-invoice':'fa-file-invoice', 'broom':'fa-broom', 'undo':'fa-undo', 'exchange-alt':'fa-exchange-alt', 'list':'fa-list', 'check-double':'fa-check-double', 'balance-scale':'fa-balance-scale', 'search-plus':'fa-search-plus', 'file-export':'fa-file-export', 'truck-loading':'fa-truck-loading', 'history':'fa-history', 'exclamation-circle': 'fa-exclamation-circle', 'calendar-alt': 'fa-calendar-alt', 'cut':'fa-cut', 'rocket':'fa-rocket', 'file-excel':'fa-file-excel', 'archive':'fa-archive', 'search':'fa-search' };
+                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'edit':'fa-edit', 'save':'fa-save', 'link':'fa-link', 'ban':'fa-ban', 'layer-group':'fa-layer-group', 'sitemap':'fa-sitemap', 'bolt':'fa-bolt', 'sort-amount-down':'fa-sort-amount-down', 'info-circle':'fa-info-circle', 'lock':'fa-lock', 'key':'fa-key', 'trash-alt':'fa-trash-alt', 'folder-open':'fa-folder-open', 'file-invoice':'fa-file-invoice', 'broom':'fa-broom', 'undo':'fa-undo', 'exchange-alt':'fa-exchange-alt', 'list':'fa-list', 'check-double':'fa-check-double', 'balance-scale':'fa-balance-scale', 'search-plus':'fa-search-plus', 'file-export':'fa-file-export', 'truck-loading':'fa-truck-loading', 'history':'fa-history', 'exclamation-circle': 'fa-exclamation-circle', 'calendar-alt': 'fa-calendar-alt', 'cut':'fa-cut', 'rocket':'fa-rocket', 'file-excel':'fa-file-excel', 'archive':'fa-archive', 'search':'fa-search', 'filter':'fa-filter' };
                 return <i className={`fas ${faMap[name] || `fa-${name}`} ${className}`} style={{ fontSize: size }} />;
             }
             return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
@@ -118,8 +118,37 @@
             const [cloudUrl] = useState(() => localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || '');
             const [opsMappings] = useState(() => {
                 const s = localStorage.getItem('inventoryMappingsLight');
-                const def = { code: '품목코드, 상품코드, 코드, 품번, 바코드, sku', qty: '기말실사(이월수량), 기말실사, 기말/실사, 수량, 재고, 기말잔량(실사반영), 기말잔량(실사), 기말잔량, 수량(합계), 입고수량, 출고수량, 판매수량, 잔량, 실사, 합계, 기말, 판매량, 출고량, 입고량' };
-                return s ? { ...def, ...JSON.parse(s) } : def;
+                const def = { 
+                    code: '품목코드, 상품코드, 코드, 품번, 바코드, sku', 
+                    qty: '재고, 기말실사(이월수량), 기말실사, 기말/실사, 수량, 기말잔량(실사반영), 기말잔량(실사), 기말잔량, 수량(합계), 입고수량, 출고수량, 판매수량, 잔량, 실사, 합계, 기말, 판매량, 출고량, 입고량',
+                    price: '최종입고, 매입단가(원가), 단가, 입고단가, 구매단가, 판매단가, 매입단가, 매입가, 판매가, 공급가액, 공급가, 금액, 원가, 가격, 최종(창고)',
+                    vendor: '거래, 매출처명, 매입처(Lot), 매입처(거래처), 거래처명, 거래처, 매장명, 매장, 고객, 판매처, 공급사, 판매, 청과, 3거래'
+                };
+                
+                if (!s) return def;
+                
+                try {
+                    const parsed = JSON.parse(s);
+                    // 🛡️ [이중 안전장치] 사용자의 낡은 로컬스토리지 값에 필수 키워드가 없으면 강제로 병합(주입)합니다.
+                    const ensureKeyword = (key, keywordsStr) => {
+                        const existing = (parsed[key] || '').split(',').map(k => k.trim());
+                        const required = keywordsStr.split(',').map(k => k.trim());
+                        required.forEach(req => {
+                            if (!existing.includes(req)) existing.push(req);
+                        });
+                        return existing.filter(Boolean).join(', ');
+                    };
+
+                    return {
+                        ...def,
+                        ...parsed,
+                        qty: ensureKeyword('qty', '재고, 실사'),
+                        price: ensureKeyword('price', '최종입고, 단가, 원가, 매입단가'),
+                        vendor: ensureKeyword('vendor', '거래, 거래처, 매입처')
+                    };
+                } catch(e) {
+                    return def;
+                }
             });
             const [opsGrouping] = useState(() => {
                 const s = localStorage.getItem('inventoryGroupingV79');
@@ -135,26 +164,30 @@
                 { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }
             ];
 
+            // 💡 [절대 수정 금지] 15개 탭 완벽 매핑 데이터
             const tabs = [
                 { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true, shortTag: 'ONE BOARD' },
                 { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: true, shortTag: 'SYSTEM GUIDE' },
+
                 { id: 'item-info', label: '마스터 DB', icon: "database", path: 'Master.html', group: 'master', isReady: true, shortTag: 'GOLDEN RECORD' },
                 { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'Item_manager.html', group: 'master', isReady: true, shortTag: 'SKU FORGE' },
                 { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'Pipeline.html', group: 'master', isReady: true, shortTag: 'VALUATION HUB' },
                 { id: 'parser', label: '스마트 파서', icon: "zap", path: 'Parser.html', group: 'master', isReady: true, shortTag: 'AI SMART PARSER' },
                 { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: 'partner_db.html', group: 'master', isReady: true, shortTag: 'ENTITY REGISTRY' },
                 { id: 'partners', label: '거래처 관리', icon: "users", path: 'partners.html', group: 'master', isReady: true, shortTag: 'CRM STRATEGY' },
+
                 { id: 'orders', label: '주문 관리', icon: "shopping-bag", path: 'orders.html', group: 'ops', isReady: true, shortTag: 'ORDER STREAM' },
                 { id: 'purchases', label: '구매 관리', icon: "credit-card", path: 'purchases.html', group: 'ops', isReady: true, shortTag: 'SOURCE & PROCURE' },
                 { id: 'sales', label: '판매 관리', icon: "line-chart", path: 'sales.html', group: 'ops', isReady: true, shortTag: 'REVENUE LEDGER' },
                 { id: 'inventory', label: '재고 마감', icon: "boxes", path: 'inventory.html', group: 'ops', isReady: true, shortTag: 'STOCK LEDGER' },
                 { id: 'print-center', label: '출력 센터', icon: "printer", path: 'print_center.html', group: 'ops', isReady: true, shortTag: 'OUTPUT TERMINAL' },
+
                 { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'Report.html', group: 'admin', isReady: true, shortTag: 'INSIGHT ENGINE' },
                 { id: 'cs', label: '정보 마당', icon: "megaphone", path: 'cs.html', group: 'admin', isReady: true, shortTag: 'NOTICE PORTAL' }
             ];
 
             const currentTab = tabs.find(t => t.id === activeTab);
-            const activeGroup = currentTab ? currentTab.group : 'common'; 
+            const activeGroup = currentTab ? currentTab.group : 'common';
             const [selectedGroup, setSelectedGroup] = useState(activeGroup);
 
             const handleGroupClick = (groupId) => setSelectedGroup(prev => prev === groupId ? 'common' : groupId);
@@ -169,7 +202,7 @@
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
                                     <div className="flex items-center">
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.0</span>
+                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.2</span>
                                     </div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">
                                         {currentTab ? currentTab.shortTag : 'WORKSPACE'}
@@ -201,9 +234,9 @@
                                     )}
                                 </div>
                                 <div className="w-px h-3.5 bg-slate-700"></div>
-                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`현재 데이터 건수: ${itemCount.toLocaleString()}건`}>
+                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`마스터 DB 기준 상품 수`}>
                                     <SafeIcon name="database" size={10} className="text-slate-500" />
-                                    <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount.toLocaleString()}</span>
+                                    <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount ? itemCount.toLocaleString() : 0}</span>
                                 </div>
                             </div>
 
@@ -223,14 +256,14 @@
                                 const isPlaceholder = !tab.isReady;
                                 return (
                                     <a key={tab.id} href={tab.path} onClick={(e) => onNavigate(e, tab.path, tab.isReady)}
-                                       className={`flex items-center gap-2 px-6 py-3 text-[14px] font-bold rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px] 
-                                       ${isActive 
-                                           ? 'bg-white text-indigo-600 border-t-indigo-500 border-x-slate-200 relative z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]' 
-                                           : isPlaceholder 
-                                              ? 'bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5' 
-                                              : 'bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5'
-                                       }`}
-                                       style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '13px' : '10px' }}
+                                        className={`flex items-center gap-2 px-6 py-3 text-[14px] font-bold rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px]
+                                        ${isActive
+                                            ? 'bg-white text-indigo-600 border-t-indigo-500 border-x-slate-200 relative z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]'
+                                            : isPlaceholder
+                                                ? 'bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5'
+                                                : 'bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5'
+                                        }`}
+                                        style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '13px' : '10px' }}
                                     >
                                         <SafeIcon name={tab.icon} size={16} className={isActive ? 'text-indigo-600' : 'opacity-70'} />
                                         {tab.label}
@@ -275,7 +308,7 @@
             );
         };
 
-        const GenesisSetupModal = ({ isOpen, onClose, onApplySetup, showToast }) => {
+        const GenesisSetupModal = ({ isOpen, onClose, onApplySetup, showToast, opsMappings }) => {
             const [isProcessingLocal, setIsProcessingLocal] = useState(false);
 
             const handleSetupUpload = async (e) => {
@@ -291,19 +324,29 @@
                     let count = 0;
                     
                     excelData.forEach((row, idx) => {
-                        const code = row['품목코드'] || row['코드'] || row['상품코드'];
+                        const findKey = (mappingString) => {
+                            if (!mappingString) return null; const keys = mappingString.split(',').map(k => k.trim()); const rowKeys = Object.keys(row);
+                            for (const key of keys) { const matched = rowKeys.find(rk => rk.toLowerCase().replace(/\s/g, '') === key.toLowerCase().replace(/\s/g, '')); if (matched) return matched; } return null;
+                        };
+
+                        const codeKey = findKey(opsMappings.code) || '품목코드';
+                        const code = row[codeKey] || row['코드'] || row['상품코드'];
                         if (!code) return;
                         
-                        const qty = parseNum(row['수량'] || row['실사수량'] || row['기초수량'] || row['실사']);
+                        // 🛡️ [이중 안전장치] 엑셀 키워드를 찾지 못할 경우의 최후 보루(Fallback) 설정
+                        const qtyKey = findKey(opsMappings.qty) || '수량';
+                        const qty = parseNum(row[qtyKey] || row['실사'] || row['재고'] || row['실사수량']);
                         if (qty === 0) return; 
 
                         const mItem = masterProducts[code] || {};
                         
-                        const excelPrice = parseNum(row['매입단가'] || row['원가'] || row['단가']);
+                        const priceKey = findKey(opsMappings.price) || '매입단가';
+                        const excelPrice = parseNum(row[priceKey] || row['단가'] || row['원가'] || row['최종입고']);
                         const masterPrice = parseNum(mItem['입고가'] || 0);
                         const price = excelPrice > 0 ? excelPrice : masterPrice;
                         
-                        const vendor = row['매입처'] || row['로트'] || row['거래처'] || '기초재고';
+                        const vendorKey = findKey(opsMappings.vendor) || '매입처';
+                        const vendor = row[vendorKey] || row['거래처'] || row['거래'] || '기초재고';
                         
                         const batchKey = `${code}|${price}|${vendor}|all`;
                         
@@ -842,7 +885,9 @@
                         };
                         const codeKey = findKey(config.opsMappings.code) || '품목코드'; const code = row[codeKey] || row['코드'] || row['상품코드'];
                         if (!code) { errors.push({ row: idx + 2, code: '-', reason: '품목코드 누락' }); return; }
-                        const qtyKey = findKey(config.opsMappings.qty) || '실사'; const qtyVal = row[qtyKey] || row['기말실사'] || row['수량'];
+                        
+                        // 🛡️ [이중 안전장치] 실사 엑셀 업로드 시에도 Fallback 키워드 추가 (재고)
+                        const qtyKey = findKey(config.opsMappings.qty) || '실사'; const qtyVal = row[qtyKey] || row['기말실사'] || row['수량'] || row['재고'];
                         if (qtyVal === undefined || qtyVal === '') { errors.push({ row: idx + 2, code, reason: '실사 수량 누락' }); return; }
                         actualUpdates[code] = parseNum(qtyVal);
                     });
@@ -1276,9 +1321,16 @@
                         onOpenSettings={() => setShowSettingsModal(true)} onNavigate={handleNavigate} onPush={handlePush} onPull={handlePull} 
                     />
                     
+                    {toastMsg && (
+                        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-[600] bg-slate-800 text-white px-6 py-3 rounded-full shadow-2xl text-[14px] font-bold flex items-center fade-in border border-slate-600">
+                            {toastMsg}
+                        </div>
+                    )}
+                    
                     <IframeSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
                     
-                    <GenesisSetupModal isOpen={showGenesisModal} onClose={() => setShowGenesisModal(false)} onApplySetup={(newItems) => { setInventoryData(newItems); setHasSnapshots(true); }} showToast={showToast} />
+                    {/* 수정: GenesisSetupModal에 opsMappings 프롭스 전달 */}
+                    <GenesisSetupModal isOpen={showGenesisModal} onClose={() => setShowGenesisModal(false)} onApplySetup={(newItems) => { setInventoryData(newItems); setHasSnapshots(true); }} showToast={showToast} opsMappings={config.opsMappings} />
 
                     <div className="px-8 py-4 bg-white border-b border-slate-200 flex flex-col shadow-sm shrink-0 relative z-10 gap-3">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 w-full">
