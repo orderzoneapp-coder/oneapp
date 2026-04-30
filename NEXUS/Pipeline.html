@@ -506,7 +506,7 @@
                             <div className="flex gap-2 mt-2">
                                 <button onClick={onClose} className="flex-1 bg-slate-100 text-slate-600 font-bold py-3 rounded-xl hover:bg-slate-200 transition-colors">취소</button>
                                 <button onClick={() => onSave(name)} disabled={!name.trim()} className={`flex-1 font-bold py-3 rounded-xl transition-colors shadow-sm ${name.trim() ? (isExisting ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-blue-600 text-white hover:bg-blue-700') : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>
-                                    {isExisting ? '기존 목록에 병합' : '새로 저장하기'}
+                                    {isExisting ? '기존 목록에 병합(추가)' : '새로 저장하기'}
                                 </button>
                             </div>
                         </div>
@@ -516,7 +516,7 @@
         };
 
         const getCellWidthClass = (headerName) => {
-            if (headerName === '순번') return 'min-w-[80px] w-[80px] max-w-[80px] text-center';
+            if (headerName === '순번') return 'min-w-[100px] w-[100px] max-w-[100px] text-center';
             if (['출고가', '입고가', '입고B', '도매A', '도매B', '상장가', '단가H', '단가I', '시중가', '행사가'].includes(headerName)) return 'min-w-[90px] w-[90px] max-w-[90px]';
             if (['간단설명', '지시사항', '비고'].includes(headerName)) return 'min-w-[200px] w-[200px] max-w-[200px]';
             if (['규격'].includes(headerName)) return 'min-w-[120px] w-[120px] max-w-[120px]';
@@ -1181,39 +1181,45 @@
                             const cCode = String(item.코드 || '').toLowerCase();
                             
                             let score = 0;
+                            let isVendorMatched = false;
+
                             tokens.forEach(token => {
-                                if (cName.includes(token)) score += 10;
+                                if (cVendor.includes(token)) {
+                                    score += 20; 
+                                    isVendorMatched = true; // 💡 구매처 일치 감지
+                                }
+                                else if (cName.includes(token)) score += 10;
                                 else if (cCode.includes(token)) score += 8;
-                                else if (cVendor.includes(token)) score += 6;
                                 else if (cSpec.includes(token)) score += 5;
                                 else if (cWh.includes(token)) score += 4;
                             });
-                            return { ...item, _searchScore: score };
+                            return { ...item, _searchScore: score, _isVendorMatched: isVendorMatched };
                         }).filter(r => r._searchScore > 0);
-                        baseList.sort((a, b) => b._searchScore - a._searchScore);
+                        
+                        baseList.sort((a, b) => {
+                            // 💡 1. 구매처 매칭된 항목을 최상단으로 그룹화
+                            if (a._isVendorMatched && !b._isVendorMatched) return -1;
+                            if (!a._isVendorMatched && b._isVendorMatched) return 1;
+                            
+                            // 💡 2. 둘 다 구매처 매칭인 경우, '순번' 오름차순으로 정렬
+                            if (a._isVendorMatched && b._isVendorMatched) {
+                                const getSeq = (item) => {
+                                    const m = masterProducts[item.코드] || {};
+                                    const val = item.finalData?.['순번'] !== undefined ? item.finalData['순번'] : (item.sources?.['estimate']?.['순번'] ?? m['순번']);
+                                    return (val === '' || val === undefined || val === null) ? 999999 : Number(val);
+                                };
+                                const seqA = getSeq(a);
+                                const seqB = getSeq(b);
+                                if (seqA !== seqB) return seqA - seqB;
+                            }
+                            
+                            // 💡 3. 그 외의 경우 기존처럼 검색 점수(유사도) 정렬
+                            return b._searchScore - a._searchScore;
+                        });
                     }
                 } else {
-                    if (selectedCatalog || selectedCategory) {
-                        baseList.sort((a, b) => {
-                            const getSeq = (item) => {
-                                const m = masterProducts[item.코드] || {};
-                                const val = item.finalData?.['순번'] !== undefined ? item.finalData['순번'] : (item.sources?.['estimate']?.['순번'] ?? m['순번']);
-                                return (val === '' || val === undefined || val === null) ? 999999 : Number(val);
-                            };
-                            const seqA = getSeq(a);
-                            const seqB = getSeq(b);
-                            
-                            if (seqA !== seqB) return seqA - seqB;
-                            
-                            const vendorA = String(a.finalData?.['구매처'] || masterProducts[a.코드]?.['구매처'] || '');
-                            const vendorB = String(b.finalData?.['구매처'] || masterProducts[b.코드]?.['구매처'] || '');
-                            if (vendorA !== vendorB) return vendorA.localeCompare(vendorB);
-                            
-                            return String(a.코드).localeCompare(String(b.코드));
-                        });
-                    } else {
-                        baseList.sort((a, b) => String(a.코드).localeCompare(String(b.코드)));
-                    }
+                    // 💡 카탈로그/카테고리를 선택하거나 아무 검색어가 없을 때는 무조건 품목코드 순서로 정렬
+                    baseList.sort((a, b) => String(a.코드).localeCompare(String(b.코드)));
                 }
                 return baseList;
             }, [managedItems, masterProducts, globalSearch, selectedCatalog, selectedCategory]);
