@@ -113,6 +113,9 @@
             isCSV ? reader.readAsText(file, 'euc-kr') : reader.readAsArrayBuffer(file);
         });
 
+        // ==========================================
+        // 🧩 1. SafeIcon 컴포넌트
+        // ==========================================
         const SafeIcon = React.memo(function SafeIconComponent({ name, size = 18, className = "" }) {
             const [svg, setSvg] = useState("");
             useEffect(() => {
@@ -132,6 +135,9 @@
             return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
         });
 
+        // ==========================================
+        // 🧩 2. Config Hook
+        // ==========================================
         const useMerchConfig = () => {
             const loadConfig = () => {
                 const cloudUrl = localStorage.getItem('skuSyncCloudUrl_v6') || '';
@@ -151,25 +157,38 @@
             return config;
         };
 
+        // ==========================================
+        // 💡 [절대 수정 금지] 15개 탭 완벽 매핑 데이터 및 100% 원본 GlobalHeader
+        // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
-            const groups = [ { id: 'master', label: '정보 관리', icon: 'database' }, { id: 'ops', label: '운영 관리', icon: 'truck' }, { id: 'admin', label: '인사이트', icon: 'bar-chart-3' } ];
+            const groups = [
+                { id: 'master', label: '정보 관리', icon: 'database' },
+                { id: 'ops', label: '운영 관리', icon: 'truck' },
+                { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }
+            ];
+
+            // 💡 [절대 수정 금지] 15개 탭 완벽 매핑 데이터
             const tabs = [
                 { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true, shortTag: 'ONE BOARD' },
                 { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: true, shortTag: 'SYSTEM GUIDE' },
+
                 { id: 'item-info', label: '마스터 DB', icon: "database", path: 'Master.html', group: 'master', isReady: true, shortTag: 'GOLDEN RECORD' },
                 { id: 'item-manage', label: '상품 관리', icon: "package-search", path: 'Item_manager.html', group: 'master', isReady: true, shortTag: 'SKU FORGE' },
                 { id: 'pipeline', label: '시세 관리', icon: "file-spreadsheet", path: 'Pipeline.html', group: 'master', isReady: true, shortTag: 'VALUATION HUB' },
                 { id: 'parser', label: '스마트 파서', icon: "zap", path: 'Parser.html', group: 'master', isReady: true, shortTag: 'AI SMART PARSER' },
                 { id: 'partner-db', label: '거래처 DB', icon: "book-open", path: 'partner_db.html', group: 'master', isReady: true, shortTag: 'ENTITY REGISTRY' },
                 { id: 'partners', label: '거래처 관리', icon: "users", path: 'partners.html', group: 'master', isReady: true, shortTag: 'CRM STRATEGY' },
+
                 { id: 'orders', label: '주문 관리', icon: "shopping-bag", path: 'orders.html', group: 'ops', isReady: true, shortTag: 'ORDER STREAM' },
                 { id: 'purchases', label: '구매 관리', icon: "credit-card", path: 'purchases.html', group: 'ops', isReady: true, shortTag: 'SOURCE & PROCURE' },
                 { id: 'sales', label: '판매 관리', icon: "line-chart", path: 'sales.html', group: 'ops', isReady: true, shortTag: 'REVENUE LEDGER' },
                 { id: 'inventory', label: '재고 마감', icon: "boxes", path: 'inventory.html', group: 'ops', isReady: true, shortTag: 'STOCK LEDGER' },
                 { id: 'print-center', label: '출력 센터', icon: "printer", path: 'print_center.html', group: 'ops', isReady: true, shortTag: 'OUTPUT TERMINAL' },
+
                 { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'Report.html', group: 'admin', isReady: true, shortTag: 'INSIGHT ENGINE' },
                 { id: 'cs', label: '정보 마당', icon: "megaphone", path: 'cs.html', group: 'admin', isReady: true, shortTag: 'NOTICE PORTAL' }
             ];
+
             const currentTab = tabs.find(t => t.id === activeTab);
             const activeGroup = currentTab ? currentTab.group : 'common';
             const [selectedGroup, setSelectedGroup] = useState(activeGroup);
@@ -181,39 +200,76 @@
                 <div className="flex flex-col shrink-0 z-40 relative w-full shadow-sm bg-[#0B1021]">
                     <header className="h-[72px] bg-[#0B1021] text-white flex justify-between px-6 border-b border-slate-800/80 relative z-20">
                         <div className="flex items-center h-full">
-                            <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={handleLogoClick}>
+                            <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={handleLogoClick} title="통합 대시보드 및 공통 메뉴로 이동">
                                 <span className="font-black text-[24px] tracking-wider text-slate-100 mr-4 group-hover:text-indigo-400 transition-colors">ONEAPP</span>
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
-                                    <div className="flex items-center"><span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span><span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.2</span></div>
-                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">{currentTab ? currentTab.shortTag : 'WORKSPACE'}</span>
+                                    <div className="flex items-center">
+                                        <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
+                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.0</span>
+                                    </div>
+                                    <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">
+                                        {currentTab ? currentTab.shortTag : 'WORKSPACE'}
+                                    </span>
                                 </div>
                             </div>
+
                             <div className="flex items-end h-full gap-8">
-                                {groups.map(g => (<button key={g.id} onClick={() => handleGroupClick(g.id)} className={`pb-[16px] text-[14px] font-bold transition-colors flex items-center gap-1.5 ${selectedGroup === g.id ? 'text-slate-100 border-b-[3px] border-indigo-500 -mb-[2px]' : 'text-slate-500 hover:text-slate-300'}`}><SafeIcon name={g.icon} size={15} /> {g.label}</button>))}
+                                {groups.map(g => (
+                                    <button key={g.id} onClick={() => handleGroupClick(g.id)}
+                                        className={`pb-[16px] text-[14px] font-bold transition-colors flex items-center gap-1.5
+                                        ${selectedGroup === g.id ? 'text-slate-100 border-b-[3px] border-indigo-500 -mb-[2px]' : 'text-slate-500 hover:text-slate-300'}`}>
+                                        <SafeIcon name={g.icon} size={15} /> {g.label}
+                                    </button>
+                                ))}
                             </div>
                         </div>
+
                         <div className="flex items-center gap-4 h-full">
                             <div className="flex items-center bg-[#151B2B] rounded-lg border border-slate-700/50 h-9 px-3 shadow-inner gap-3">
-                                <div className="flex items-center justify-center" title={isProcessing ? processMsg : "시스템 정상 대기중"}>{isProcessing ? <i className="fas fa-circle-notch fa-spin text-amber-500 text-[12px]"></i> : <div className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span></div>}</div>
+                                <div className="flex items-center justify-center" title={isProcessing ? processMsg : "시스템 정상 대기중"}>
+                                    {isProcessing ? (
+                                        <i className="fas fa-circle-notch fa-spin text-amber-500 text-[12px]"></i>
+                                    ) : (
+                                        <div className="relative flex h-2 w-2">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                        </div>
+                                    )}
+                                </div>
                                 <div className="w-px h-3.5 bg-slate-700"></div>
-                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`마스터 DB 기준 상품 수`}><SafeIcon name="database" size={10} className="text-slate-500" /><span className="text-[11px] font-mono font-bold tracking-tight">{itemCount ? itemCount.toLocaleString() : 0}</span></div>
+                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`마스터 DB 기준 상품 수`}>
+                                    <SafeIcon name="database" size={10} className="text-slate-500" />
+                                    <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount ? itemCount.toLocaleString() : 0}</span>
+                                </div>
                             </div>
+
                             <div className="flex items-center gap-2">
-                                <button onClick={onPull} className={`${TW.btnTop} text-indigo-400`} title="데이터 불러오기(Pull)"><SafeIcon name="cloud-download" size={18} /></button>
-                                <button onClick={onPush} className={`${TW.btnTop} text-indigo-400`} title="데이터 백업하기(Push)"><SafeIcon name="cloud-upload" size={18} /></button>
+                                <button onClick={onPull} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 불러오기(Pull)"><SafeIcon name="cloud-download" size={18} /></button>
+                                <button onClick={onPush} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 백업하기(Push)"><SafeIcon name="cloud-upload" size={18} /></button>
                                 <div className="w-px h-6 bg-slate-700 mx-1"></div>
-                                <button onClick={onOpenSettings} className={`${TW.btnTop} text-slate-400 hover:text-white`} title="통합 환경설정 센터 열기"><SafeIcon name="settings" size={18} /></button>
+                                <button onClick={onOpenSettings} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-slate-400 hover:text-white shadow-sm" title="통합 환경설정 센터 열기"><SafeIcon name="settings" size={18} /></button>
                             </div>
                         </div>
                     </header>
+
                     {selectedGroup && (
                         <div className="bg-[#0B1021] px-6 pt-3 flex items-end gap-1 overflow-x-auto custom-scrollbar border-b border-slate-200 fade-in">
                             {tabs.filter(t => t.group === selectedGroup).map(tab => {
                                 const isActive = activeTab === tab.id;
                                 const isPlaceholder = !tab.isReady;
                                 return (
-                                    <a key={tab.id} href={tab.path} onClick={(e) => onNavigate(e, tab.path, tab.isReady)} className={`${TW.navTab} ${isActive ? TW.navTabActive : isPlaceholder ? TW.navTabDisabled : TW.navTabInactive}`} style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '13px' : '10px' }}>
-                                        <SafeIcon name={tab.icon} size={16} className={isActive ? 'text-indigo-600' : 'opacity-70'} /> {tab.label}
+                                    <a key={tab.id} href={tab.path} onClick={(e) => onNavigate(e, tab.path, tab.isReady)}
+                                        className={`flex items-center gap-2 px-6 py-3 text-[14px] font-bold rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px]
+                                        ${isActive
+                                            ? 'bg-white text-indigo-600 border-t-indigo-500 border-x-slate-200 relative z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]'
+                                            : isPlaceholder
+                                                ? 'bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5'
+                                                : 'bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5'
+                                        }`}
+                                        style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '13px' : '10px' }}
+                                    >
+                                        <SafeIcon name={tab.icon} size={16} className={isActive ? 'text-indigo-600' : 'opacity-70'} />
+                                        {tab.label}
                                     </a>
                                 );
                             })}
@@ -223,12 +279,13 @@
             );
         };
 
+        // 🌟 [적용 완료] Iframe 설정 모달 창 와이드 규격 및 완벽 우측 밀착
         const IframeSettingsModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
             return (
-                <div className={`${TW.modalOverlay} z-[500] justify-end`}>
-                    <div className="w-full max-w-[1100px] h-full bg-white shadow-[0_0_40px_rgba(0,0,0,0.3)] flex flex-col slide-in-right border-l border-slate-300 relative overflow-hidden">
-                        <div className={TW.modalHeader}>
+                <div className="fixed inset-0 z-[500] flex justify-end bg-slate-900/80 backdrop-blur-sm fade-in">
+                    <div className="w-[95vw] max-w-[1400px] h-full bg-white shadow-[-10px_0_40px_rgba(0,0,0,0.3)] flex flex-col slide-in-right border-l border-slate-300 relative overflow-hidden">
+                        <div className="bg-[#0f172a] p-4 text-white flex justify-between items-center border-b border-slate-700 shrink-0">
                             <div className="flex items-center gap-3"><SafeIcon name="settings" size={20} className="text-indigo-400"/><h2 className="font-black text-[17px] tracking-wide">통합 환경설정 센터</h2><span className="bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold border border-indigo-500/30 ml-2">Iframe Overlay</span></div>
                             <div className="flex items-center gap-4"><span className="text-[12px] text-slate-400 font-medium hidden md:inline-block">설정을 변경하고 창을 닫으면 작업 화면에 즉시 반영됩니다.</span><button onClick={onClose} className="text-slate-300 hover:text-white transition-colors bg-slate-800 hover:bg-rose-500 w-8 h-8 rounded-lg flex items-center justify-center shadow-sm border border-slate-700 hover:border-rose-400"><SafeIcon name="x" size={18} /></button></div>
                         </div>
@@ -610,16 +667,59 @@
                 setShowExportModal(false); setIsExporting(true);
                 setTimeout(() => {
                     try {
-                        const wb = window.XLSX.utils.book_new(); let erpData = [], shopData = [];
-                        erpData.push(['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '최종(전송)', 'n', '행사', 'n', '1']);
+                        const wb = window.XLSX.utils.book_new(); let shopData = [];
                         shopData.push(['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', '도매B', '도매B', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']);
                         
-                        const createRowErp = (code, inP, outP, bPrice='', aSale='', bSale='', finalP='', inst='') => { if (!code) return null; return [ code, inP>0?inP:'', '0', outP>0?outP:'', '0', bPrice||'', 'n', aSale||'', 'n', bSale||'', 'n', finalP>0?finalP:(inP>0?inP:''), 'n', inst||'', 'n', (inP>0||outP>0)?'1':'' ]; };
                         const getFirstNum = (objList, keys) => { for (let obj of objList) { if (!obj) continue; for (let k of keys) { if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return parseNum(obj[k]); } } return 0; };
                         const getFirstStr = (objList, keys) => { for (let obj of objList) { if (!obj) continue; for (let k of keys) { if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k]; } } return ''; };
                         const isValidCode = (code) => { if (!code) return false; const s = String(code).trim(); return s !== '' && s !== '0' && s !== '00' && s !== '-' && s.toLowerCase() !== 'undefined' && s.toLowerCase() !== 'null'; };
 
+                        const generateDynamicPartialUpdateData = (data, selectedKeys) => {
+                            if (!selectedKeys || selectedKeys.length === 0) return [];
+                            const exportKeysSet = new Set(selectedKeys);
+                            exportKeysSet.add("품목코드");
+                            
+                            const MASTER_ORDER = [
+                                "품목코드", "품목명", "규격", "브랜드", "간단설명", "카탈로그", "견적서",
+                                "입고가", "출고가", "시중가", "도매A", "도매B", "입고B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "행사가",
+                                "외주비단가", "노무비", "경비",
+                                "안전재고", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록", "소싱태그"
+                            ];
+
+                            const sortedKeys = Array.from(exportKeysSet).sort((a, b) => {
+                                let idxA = MASTER_ORDER.indexOf(a); let idxB = MASTER_ORDER.indexOf(b);
+                                idxA = idxA === -1 ? 9999 : idxA; idxB = idxB === -1 ? 9999 : idxB;
+                                if (idxA !== idxB) return idxA - idxB; return a.localeCompare(b);
+                            });
+
+                            const headers = []; const columnDefinitions = [];
+                            sortedKeys.forEach(key => {
+                                if (key === '규격') { headers.push('규격구분'); columnDefinitions.push({ type: 'static', value: '1' }); }
+                                headers.push(key); columnDefinitions.push({ type: 'data', key: key });
+                                if (['입고가', '출고가', '외주비단가'].includes(key)) { headers.push(`${key} VAT포함여부`); columnDefinitions.push({ type: 'vat_01', key: key }); }
+                                if (['입고B', '도매A', '도매B', '최종전송', '최종입고', '시중가', '상장가', '단가H', '단가I', '행사가'].includes(key)) { headers.push(`${key} VAT포함여부`); columnDefinitions.push({ type: 'vat_ny', key: key }); }
+                            });
+
+                            const aoa = [headers];
+                            data.forEach(item => {
+                                const row = [];
+                                columnDefinitions.forEach(colDef => {
+                                    if (colDef.type === 'static') row.push(colDef.value);
+                                    else if (colDef.type === 'data') row.push(item[colDef.key] !== undefined && item[colDef.key] !== null ? item[colDef.key] : '');
+                                    else if (colDef.type === 'vat_01' || colDef.type === 'vat_ny') {
+                                        const isTaxable = item.isTaxable === true; 
+                                        if (colDef.type === 'vat_01') row.push(isTaxable ? '1' : '0');
+                                        else if (colDef.type === 'vat_ny') row.push(isTaxable ? 'y' : 'n');
+                                    }
+                                });
+                                aoa.push(row);
+                            });
+                            return aoa;
+                        };
+
                         const exportTargetRows = selectedRows.size > 0 ? fullDisplayRows.filter(row => selectedRows.has(row.코드)) : fullDisplayRows;
+                        const flatErpData = [];
+                        const activeKeys = Array.from(new Set([...(config.visibleMasterCols.estimate || []), ...(config.visibleUploadCols.estimate || [])]));
 
                         exportTargetRows.forEach(row => {
                             const mItem = masterProducts[row.코드] || {}, final = row.finalData || {}, source = row.sources?.['estimate'] || {};
@@ -628,12 +728,15 @@
                             const pMarketPrice = getFirstNum([final, mItem], ['시중가']);
 
                             const dName = getFirstStr([source, mItem], ['품목명']), dSpec = getFirstStr([source, mItem], ['규격']), dBrand = getFirstStr([source, mItem], ['브랜드']), dInfo = getFirstStr([source, mItem], ['상품정보', '기본설명', '간단설명']), dSearch = getFirstStr([source, mItem], ['검색어등록', '상품태그']);
-                            const pBPrice = getFirstNum([final, source, mItem], ['입고B', 'B단가']);
-                            const pASale = getFirstNum([final, source, mItem], ['도매A', 'A판매', 'A판매가']);
-                            const pBSale = getFirstNum([final, source, mItem], ['도매B', 'B판매', 'B 도매가']);
-                            const pInstruction = getFirstStr([final, source, mItem], ['지시사항', '간단설명']);
                             
-                            const pRowErp = createRowErp(row.코드, pIn, pOut, pBPrice, pASale, pBSale, pIn, pInstruction); if (pRowErp) erpData.push(pRowErp);
+                            let erpItem = { 품목코드: row.코드 };
+                            activeKeys.forEach(k => {
+                                const lk = config.masterLinks.estimate?.[k] || k;
+                                erpItem[k] = NUMERIC_HEADERS.includes(lk) ? getFirstNum([final, source, mItem], [k, lk]) : getFirstStr([final, source, mItem], [k, lk]);
+                            });
+                            erpItem['외주비단가'] = getFirstNum([final, source, mItem], ['외주비단가', '외주비']);
+                            erpItem.isTaxable = false;
+                            flatErpData.push(erpItem);
                             
                             const isZeroPrice = (pIn === 0 && pOut === 0);
                             const priceMarketShop = isZeroPrice ? 0 : (pMarketPrice > 0 ? pMarketPrice : pOut);
@@ -648,12 +751,19 @@
                                 if (isValidCode(cCodeRaw)) { 
                                     const cCode = String(cCodeRaw).trim();
                                     const cIn = getFirstNum([final, source, mItem], [`${type}입고`, `${type}구매`]), cOut = getFirstNum([final, source, mItem], [`${type}출고`]); 
-                                    const cRowErp = createRowErp(cCode, cIn, cOut, '', '', '', cIn, ''); 
                                     
-                                    // 💡 [수정됨] ERP 업데이트 시트에는 1종(소분)만 적용하고 2종은 제외합니다.
-                                    if (type === 1 && cRowErp) erpData.push(cRowErp); 
-
                                     const subMaster = masterProducts[cCode] || {};
+                                    if (type === 1) {
+                                        let cErpItem = { 품목코드: cCode };
+                                        activeKeys.forEach(k => {
+                                            if (['입고가', '구매가'].includes(k)) cErpItem[k] = cIn;
+                                            else if (['출고가'].includes(k)) cErpItem[k] = cOut;
+                                            else cErpItem[k] = subMaster[k] !== undefined ? subMaster[k] : '';
+                                        });
+                                        cErpItem.isTaxable = false;
+                                        flatErpData.push(cErpItem);
+                                    }
+
                                     const cName = subMaster.품목명 || getFirstStr([final, source, mItem], [`${type}그룹명`]) || `${dName} (소분)`;
                                     const cSpec = subMaster.규격 || getFirstStr([mItem, source], [`${type}종규격`]) || '';
                                     
@@ -667,11 +777,16 @@
                                 } 
                             });
                         });
-                        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shopData), "쇼핑몰업로드"); window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), "ERP업데이트"); window.XLSX.writeFile(wb, `보고서출력_${new Date().toISOString().slice(0,10)}.xlsx`);
+                        
+                        const erpData = generateDynamicPartialUpdateData(flatErpData, activeKeys);
+
+                        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shopData), "쇼핑몰업로드"); 
+                        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), "ERP업데이트"); 
+                        window.XLSX.writeFile(wb, `보고서출력_${new Date().toISOString().slice(0,10)}.xlsx`);
                         showToast(`✅ [${option.title || '통합 보고서'}] 엑셀 다운로드가 완료되었습니다.`);
-                    } catch(e) { showToast("❌ 엑셀 파일 생성 중 오류가 발생했습니다."); } finally { setIsExporting(false); }
+                    } catch(e) { showToast("❌ 엑셀 파일 생성 중 오류가 발생했습니다."); console.error(e); } finally { setIsExporting(false); }
                 }, 100);
-            }, [fullDisplayRows, masterProducts, selectedRows, showToast]);
+            }, [fullDisplayRows, masterProducts, selectedRows, config.visibleMasterCols, config.visibleUploadCols, config.masterLinks, showToast]);
 
             const handleLoadWorkspaceData = useCallback((catalog, category) => {
                 if (!catalog && !category) return setManagedItems({});
