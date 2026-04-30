@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - Valuation Hub [v3.3 Architect Fix]</title>
+    <title>ONEAPP NEXES - Valuation Hub [v3.4 Sequence Fix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -56,6 +56,20 @@
     <script type="text/babel">
         const { useState, useMemo, useEffect, useRef, useCallback, Fragment } = React;
 
+        const TW = {
+            btnTop: "w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors shadow-sm",
+            navTab: "flex items-center gap-2 px-6 py-3 text-[14px] font-bold rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px]",
+            navTabActive: "bg-white text-indigo-600 border-t-indigo-500 border-x-slate-200 relative z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]",
+            navTabInactive: "bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5",
+            navTabDisabled: "bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5",
+            toolbarBtn: "h-9 px-3 rounded-md text-[13px] font-bold bg-white border border-slate-200 hover:bg-slate-50 transition-colors shadow-sm flex items-center shrink-0",
+            selectBase: "appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm",
+            modalOverlay: "fixed inset-0 flex justify-center items-center bg-slate-900/80 backdrop-blur-sm fade-in",
+            modalContent: "bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden",
+            modalHeader: "bg-[#0f172a] p-4 text-white flex justify-between items-center border-b border-slate-700 shrink-0",
+            tableTh: "sticky top-0 z-30 bg-slate-100 px-3 py-3.5 border-y border-r border-slate-200 shadow-sm text-center"
+        };
+
         const STORAGE_KEYS = { MASTER_DB: 'merchMaster_v870', CLOUD_URL: 'skuSyncCloudUrl_v6', SYNC_TRIGGER: 'merchMaster_sync_trigger', HISTORY_DB: 'merchHistory_v870' };
 
         const MASTER_HEADERS = [ "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록", "소싱태그", "순번" ];
@@ -66,7 +80,7 @@
         const getInitialMappings = () => {
             return { master: { '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격, 규격명, 사이즈, 단량', '출고가': '출고가, 출고, 판매가, 시중가', '입고가': '입고가, 입고, 매입가' }, estimate: { '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격명, 규격, 사이즈, 단량', '구매처': '거래처명, 구매처, 거래처', '견적서': '견적서, 카테고리, 템플릿, 견적분류', '입고가': '입고가, 입고, 매입가', '출고가': '출고가, 출고, 판매가', '입고B': 'B단가, 입고B', '도매A': 'A판매, A판매가, 도매A', '도매B': 'B판매, B판매가, 도매B', '간단설명': '지시사항, 간단설명, 비고' } };
         };
-        const getInitialMasterLinks = () => ({ estimate: { '창고': '창고', '구매처': '구매처', '견적서': '견적서', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B', '간단설명': '간단설명' } });
+        const getInitialMasterLinks = () => ({ estimate: { '창고': '창고', '구매처': '구매처', '견적서': '견적서', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B', '간단설명': '간단설명', '순번': '순번' } });
 
         const generateUUID = () => { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID(); return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => { var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); }); };
         const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
@@ -182,7 +196,7 @@
                 { id: 'partners', label: '거래처 관리', icon: "users", path: 'partners.html', group: 'master', isReady: true, shortTag: 'CRM STRATEGY' },
                 { id: 'orders', label: '주문 관리', icon: "shopping-bag", path: 'orders.html', group: 'ops', isReady: true, shortTag: 'ORDER STREAM' },
                 { id: 'purchases', label: '구매 관리', icon: "credit-card", path: 'purchases.html', group: 'ops', isReady: true, shortTag: 'SOURCE & PROCURE' },
-                { id: 'sales', label: '판매 관리', icon: "line-chart", path: 'sales.html', group: 'ops', isReady: true, shortTag: 'REVENUE Ledger' },
+                { id: 'sales', label: '판매 관리', icon: "line-chart", path: 'sales.html', group: 'ops', isReady: true, shortTag: 'REVENUE LEDGER' },
                 { id: 'inventory', label: '재고 마감', icon: "boxes", path: 'inventory.html', group: 'ops', isReady: true, shortTag: 'STOCK LEDGER' },
                 { id: 'print-center', label: '출력 센터', icon: "printer", path: 'print_center.html', group: 'ops', isReady: true, shortTag: 'OUTPUT TERMINAL' },
                 { id: 'insight', label: '경영 보고서', icon: "pie-chart", path: 'Report.html', group: 'admin', isReady: true, shortTag: 'INSIGHT ENGINE' },
@@ -200,10 +214,10 @@
                 <div className="flex flex-col shrink-0 z-40 relative w-full shadow-sm bg-[#0B1021]">
                     <header className="h-[72px] bg-[#0B1021] text-white flex justify-between px-6 border-b border-slate-800/80 relative z-20">
                         <div className="flex items-center h-full">
-                            <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={handleLogoClick}>
+                            <div className="flex items-center cursor-pointer group mr-10 h-full" onClick={handleLogoClick} title="통합 대시보드 및 공통 메뉴로 이동">
                                 <span className="font-black text-[24px] tracking-wider text-slate-100 mr-4 group-hover:text-indigo-400 transition-colors">ONEAPP</span>
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
-                                    <div className="flex items-center"><span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span><span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.3</span></div>
+                                    <div className="flex items-center"><span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span><span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.4</span></div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">{currentTab ? currentTab.shortTag : 'WORKSPACE'}</span>
                                 </div>
                             </div>
@@ -218,10 +232,10 @@
                                 <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`마스터 DB 기준 상품 수`}><SafeIcon name="database" size={10} className="text-slate-500" /><span className="text-[11px] font-mono font-bold tracking-tight">{itemCount ? itemCount.toLocaleString() : 0}</span></div>
                             </div>
                             <div className="flex items-center gap-2">
-                                <button onClick={onPull} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm"><SafeIcon name="cloud-download" size={18} /></button>
-                                <button onClick={onPush} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm"><SafeIcon name="cloud-upload" size={18} /></button>
+                                <button onClick={onPull} className={`${TW.btnTop} text-indigo-400`} title="Pull"><SafeIcon name="cloud-download" size={18} /></button>
+                                <button onClick={onPush} className={`${TW.btnTop} text-indigo-400`} title="Push"><SafeIcon name="cloud-upload" size={18} /></button>
                                 <div className="w-px h-6 bg-slate-700 mx-1"></div>
-                                <button onClick={onOpenSettings} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-slate-400 hover:text-white shadow-sm"><SafeIcon name="settings" size={18} /></button>
+                                <button onClick={onOpenSettings} className={`${TW.btnTop} text-slate-400 hover:text-white`} title="설정"><SafeIcon name="settings" size={18} /></button>
                             </div>
                         </div>
                     </header>
@@ -231,7 +245,7 @@
                                 const isActive = activeTab === tab.id;
                                 const isPlaceholder = !tab.isReady;
                                 return (
-                                    <a key={tab.id} href={tab.path} onClick={(e) => onNavigate(e, tab.path, tab.isReady)} className={`flex items-center gap-2 px-6 py-3 text-[14px] font-bold rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px] ${isActive ? 'bg-white text-indigo-600 border-t-indigo-500 border-x-slate-200 relative z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]' : isPlaceholder ? 'bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5' : 'bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5'}`} style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '13px' : '10px' }}>
+                                    <a key={tab.id} href={tab.path} onClick={(e) => onNavigate(e, tab.path, tab.isReady)} className={`${TW.navTab} ${isActive ? TW.navTabActive : !tab.isReady ? TW.navTabDisabled : TW.navTabInactive}`} style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '13px' : '10px' }}>
                                         <SafeIcon name={tab.icon} size={16} className={isActive ? 'text-indigo-600' : 'opacity-70'} /> {tab.label}
                                     </a>
                                 );
@@ -245,13 +259,13 @@
         const IframeSettingsModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
             return (
-                <div className="fixed inset-0 z-[500] flex justify-end bg-slate-900/60 backdrop-blur-sm fade-in">
+                <div className={`${TW.modalOverlay} z-[500] justify-end`}>
                     <div className="w-full max-w-[1100px] h-full bg-white shadow-[0_0_40px_rgba(0,0,0,0.3)] flex flex-col slide-in-right border-l border-slate-300 relative overflow-hidden">
-                        <div className="bg-[#0f172a] px-6 py-4 flex justify-between items-center text-white shrink-0 border-b border-slate-700 shadow-md relative z-10">
+                        <div className={TW.modalHeader}>
                             <div className="flex items-center gap-3"><SafeIcon name="settings" size={20} className="text-indigo-400"/><h2 className="font-black text-[17px] tracking-wide">통합 환경설정 센터</h2><span className="bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold border border-indigo-500/30 ml-2">Iframe Overlay</span></div>
                             <div className="flex items-center gap-4"><span className="text-[12px] text-slate-400 font-medium hidden md:inline-block">설정을 변경하고 창을 닫으면 작업 화면에 즉시 반영됩니다.</span><button onClick={onClose} className="text-slate-300 hover:text-white transition-colors bg-slate-800 hover:bg-rose-500 w-8 h-8 rounded-lg flex items-center justify-center shadow-sm border border-slate-700 hover:border-rose-400"><SafeIcon name="x" size={18} /></button></div>
                         </div>
-                        <div className="flex-1 w-full bg-slate-100 relative"><div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="text-slate-300 flex flex-col items-center"><i className="fas fa-circle-notch fa-spin text-3xl mb-3"></i><span className="font-bold text-sm">설정 모듈을 불러오는 중입니다...</span></div></div><iframe src="settings.html?mode=iframe" className="absolute inset-0 w-full h-full border-0 bg-white relative z-10" title="Settings Center"></iframe></div>
+                        <div className="flex-1 w-full bg-slate-100 relative"><div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="text-slate-300 flex flex-col items-center"><i className="fas fa-circle-notch fa-spin text-3xl mb-3"></i><span className="font-bold text-sm">설정 모듈 로드 중...</span></div></div><iframe src="settings.html?mode=iframe" className="absolute inset-0 w-full h-full border-0 bg-white relative z-10" title="Settings Center"></iframe></div>
                     </div>
                 </div>
             );
@@ -371,9 +385,9 @@
             });
 
             return (
-                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
-                    <div className="bg-white w-[950px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-                        <div className="bg-[#0f172a] p-4 text-white flex justify-between border-b border-slate-700">
+                <div className={`${TW.modalOverlay} z-[100]`}>
+                    <div className={`${TW.modalContent} w-[950px] max-h-[85vh]`}>
+                        <div className={TW.modalHeader}>
                             <h2 className="font-black text-[16px] flex items-center"><SafeIcon name="check-circle-2" className="text-indigo-400 mr-2"/>단가 및 변동 사항 검토 (프리뷰)</h2>
                             <button onClick={onClose}><SafeIcon name="x" className="text-slate-400 hover:text-white" size={20}/></button>
                         </div>
@@ -387,7 +401,7 @@
                                     ))}
                                 </div>
                                 <div className="w-[160px] shrink-0">
-                                    <select value={vendorFilter} onChange={e => setVendorFilter(e.target.value)} className="w-full appearance-none border border-slate-300 rounded-xl px-3 py-2 text-[13px] font-bold outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 shadow-sm bg-white cursor-pointer">
+                                    <select value={vendorFilter} onChange={e => setVendorFilter(e.target.value)} className={`${TW.selectBase} w-full`}>
                                         <option value="all">전체 거래처</option>
                                         {analysis.vendors.map(v => <option key={v} value={v}>{v}</option>)}
                                     </select>
@@ -424,9 +438,9 @@
 
         const ExportModal = ({ onClose, executeExport }) => {
             return (
-                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
-                    <div className="bg-white w-[500px] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-                        <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
+                <div className={`${TW.modalOverlay} z-[100]`}>
+                    <div className={`${TW.modalContent} w-[500px]`}>
+                        <div className={TW.modalHeader}>
                             <h2 className="font-black text-[16px]"><i className="fas fa-file-export text-emerald-400 mr-2"></i>데이터 출력 및 보고서 생성</h2>
                             <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>
                         </div>
@@ -450,9 +464,9 @@
             const isExisting = availableCategories && availableCategories.some(c => c.name === name.trim());
 
             return (
-                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
-                    <div className="bg-white w-[450px] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-                        <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
+                <div className={`${TW.modalOverlay} z-[100]`}>
+                    <div className={`${TW.modalContent} w-[450px]`}>
+                        <div className={TW.modalHeader}>
                             <h2 className="font-black text-[16px]"><i className="fas fa-save text-blue-400 mr-2"></i>저장 (병합/추가)</h2>
                             <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>
                         </div>
@@ -463,16 +477,16 @@
                                 <label className="text-[12px] font-bold text-slate-500 mb-1.5 block">1. 기존 카탈로그 선택 (오타 방지)</label>
                                 <select 
                                     onChange={(e) => { if(e.target.value) setName(e.target.value); }} 
-                                    className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-[13px] font-bold outline-none focus:border-indigo-500 shadow-sm mb-4 bg-white text-slate-700 cursor-pointer"
+                                    className={`${TW.selectBase} w-full text-left pl-3 mb-4`}
                                 >
-                                    <option value="">-- 기존 카탈로그 목록에서 선택 --</option>
+                                    <option value="">-- 기존 목록에서 선택 --</option>
                                     {availableCategories && availableCategories.map(c => (
                                         <option key={c.name} value={c.name}>{c.name} ({c.count}건)</option>
                                     ))}
                                 </select>
 
                                 <label className="text-[12px] font-bold text-slate-500 mb-1.5 block">2. 카탈로그 명칭 (직접 입력 가능)</label>
-                                <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="저장할 카탈로그 이름" className="w-full border border-slate-300 rounded-lg px-4 py-3 text-[13px] font-bold outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 bg-white" autoFocus onKeyDown={(e) => { if(e.key === 'Enter' && name) onSave(name); }} />
+                                <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="저장할 카탈로그 이름" className={`${TW.selectBase} w-full pl-4`} autoFocus onKeyDown={(e) => { if(e.key === 'Enter' && name) onSave(name); }} />
                             </div>
                             
                             {isExisting ? (
@@ -492,7 +506,7 @@
                             <div className="flex gap-2 mt-2">
                                 <button onClick={onClose} className="flex-1 bg-slate-100 text-slate-600 font-bold py-3 rounded-xl hover:bg-slate-200 transition-colors">취소</button>
                                 <button onClick={() => onSave(name)} disabled={!name.trim()} className={`flex-1 font-bold py-3 rounded-xl transition-colors shadow-sm ${name.trim() ? (isExisting ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-blue-600 text-white hover:bg-blue-700') : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>
-                                    {isExisting ? '기존 목록에 병합(추가)' : '새로 저장하기'}
+                                    {isExisting ? '기존 목록에 병합' : '새로 저장하기'}
                                 </button>
                             </div>
                         </div>
@@ -518,10 +532,10 @@
             const onBlur = () => { setIsFocused(false); if(String(val)!==String(initialVal)) onUpdateCell(rowCode, field, linkedMasterField, val); };
             
             const handleKeyDown = (e) => {
-                if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Tab'].includes(e.key)) {
+                if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(e.key)) {
                     if (e.key === 'ArrowLeft' && e.target.selectionStart !== 0) return;
                     if (e.key === 'ArrowRight' && e.target.selectionEnd !== e.target.value.length) return;
-                    if (e.key !== 'Tab') e.preventDefault();
+                    if (['ArrowUp', 'ArrowDown', 'Enter'].includes(e.key)) e.preventDefault();
                     
                     e.target.blur();
                     const td = e.target.closest('td'); const tr = td.closest('tr'); const tbody = tr.closest('tbody');
@@ -534,29 +548,15 @@
 
                     if (e.key === 'ArrowUp') nextRowIdx = Math.max(0, rowIdx - 1);
                     if (e.key === 'ArrowDown' || e.key === 'Enter') nextRowIdx = Math.min(trs.length - 1, rowIdx + 1);
-                    if (e.key === 'ArrowLeft') { nextColIdx = Math.max(0, colIdx - 1); }
-                    if (e.key === 'ArrowRight') { nextColIdx = Math.min(tds.length - 1, colIdx + 1); }
-                    if (e.key === 'Tab') {
-                        e.preventDefault();
-                        if (e.shiftKey) {
-                            nextColIdx = colIdx - 1;
-                            if (nextColIdx < 0) { nextColIdx = tds.length - 1; nextRowIdx = Math.max(0, rowIdx - 1); }
-                        } else {
-                            nextColIdx = colIdx + 1;
-                            if (nextColIdx >= tds.length) { nextColIdx = 0; nextRowIdx = Math.min(trs.length - 1, rowIdx + 1); }
-                        }
-                    }
+                    if (e.key === 'ArrowLeft') { e.preventDefault(); nextColIdx = Math.max(0, colIdx - 1); }
+                    if (e.key === 'ArrowRight') { e.preventDefault(); nextColIdx = Math.min(tds.length - 1, colIdx + 1); }
 
-                    if (nextRowIdx !== rowIdx || nextColIdx !== colIdx || e.key === 'Enter') {
+                    if (nextRowIdx !== rowIdx || nextColIdx !== colIdx) {
                         const nextTr = trs[nextRowIdx];
                         if (nextTr) {
                             let nextInput;
-                            if (e.key === 'Enter') {
-                                nextInput = nextTr.querySelector('input[data-field="입고가"]') || nextTr.querySelector('td:has(input[type="text"]) input');
-                            } else { 
-                                const nextTds = Array.from(nextTr.querySelectorAll('td:has(input[type="text"])')); 
-                                nextInput = nextTds[nextColIdx]?.querySelector('input'); 
-                            }
+                            if (e.key === 'Enter') nextInput = nextTr.querySelector('input[data-field="입고가"]') || nextTr.querySelector('td:has(input[type="text"]) input');
+                            else { const nextTds = Array.from(nextTr.querySelectorAll('td:has(input[type="text"])')); nextInput = nextTds[nextColIdx]?.querySelector('input'); }
                             if (nextInput) { nextInput.focus(); setTimeout(() => nextInput.select(), 0); }
                         }
                     }
@@ -565,7 +565,7 @@
 
             return (
                 <td className={`px-2 py-1.5 border-r border-slate-200 bg-white ${getCellWidthClass(linkedMasterField || field)} ${isDiff ? 'bg-amber-50/60' : ''}`}>
-                    <input type="text" data-field={field} value={val==="오류"?"":val} placeholder={mVal||''} onChange={e=>setVal(e.target.value)} onFocus={e=>{setIsFocused(true); setTimeout(()=>e.target.select(),0);}} onBlur={onBlur} onKeyDown={handleKeyDown} onClick={e=>e.target.select()} className={`w-full bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-1 focus:ring-indigo-300 rounded px-1.5 py-1.5 text-[13px] outline-none ${isNum?'text-right':'truncate text-center'} ${isDiff?'text-indigo-700 font-bold':'text-slate-700 font-medium'} transition-colors`} />
+                    <input type="text" data-field={field} value={val==="오류"?"":val} placeholder={mVal||''} onChange={e=>setVal(e.target.value)} onFocus={e=>{setIsFocused(true); setTimeout(()=>e.target.select(),0);}} onBlur={onBlur} onKeyDown={handleKeyDown} onClick={e=>e.target.select()} className={`w-full bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-1 focus:ring-blue-300 rounded px-1.5 py-1.5 text-[13px] outline-none ${isNum?'text-right':'truncate text-center'} ${isDiff?'text-indigo-700 font-bold':'text-slate-700 font-medium'} transition-colors`} />
                 </td>
             );
         });
@@ -577,7 +577,7 @@
 
             return (
                 <tr className={`table-row-hover transition-colors ${isSel ? 'table-row-selected' : ''}`} onMouseDown={(e) => onMouseDown && onMouseDown(e, rowCode, isSel)} onMouseEnter={(e) => onMouseEnter && onMouseEnter(e, rowCode)}>
-                    <td className={`sticky z-20 px-4 py-3.5 border-r border-slate-200 min-w-[280px] w-[280px] max-w-[280px] bg-slate-50`} style={{left:0}}>
+                    <td className={`sticky z-20 px-4 py-3.5 border-r border-slate-200 min-w-[280px] w-[280px] max-w-[280px] bg-white`} style={{left:0}}>
                         <div className="flex flex-col w-full overflow-hidden">
                             <span className="text-[10.5px] font-mono text-indigo-500 mb-0.5 tracking-tight font-bold">{rowCode}</span>
                             <div className="flex items-baseline w-full min-w-0 overflow-hidden mt-0.5">
@@ -592,7 +592,7 @@
                             const isNum = NUMERIC_HEADERS.includes(h);
                             const mVal = mItem[h] !== undefined && mItem[h] !== '' ? (isNum ? parseNum(mItem[h]).toLocaleString() : mItem[h]) : '-';
                             return (
-                                <td key={`idle-td-${h}`} className={`px-2 py-1.5 border-r border-slate-200 bg-slate-50 text-slate-600 ${getCellWidthClass(h)} ${isNum ? 'text-right font-medium' : 'text-center'}`}>
+                                <td key={`idle-td-${h}`} className={`px-2 py-1.5 border-r border-slate-200 text-slate-600 ${getCellWidthClass(h)} ${isNum ? 'text-right font-medium' : 'text-center'}`}>
                                     <div className="truncate w-full">{mVal}</div>
                                 </td>
                             );
@@ -611,7 +611,7 @@
                                 }
                                 const formattedVal = displayVal !== undefined && displayVal !== '' ? (isNum ? parseNum(displayVal).toLocaleString() : displayVal) : '-';
                                 return (
-                                    <td key={`pm-d-${h}`} className={`px-2 py-1.5 border-r border-slate-200 transition-colors bg-slate-50 ${getCellWidthClass(h)} ${isChanged ? 'text-amber-800 font-bold' : 'text-slate-600'} ${isNum ? 'text-right font-medium' : 'text-center'}`}>
+                                    <td key={`pm-d-${h}`} className={`px-2 py-1.5 border-r border-slate-200 transition-colors ${getCellWidthClass(h)} ${isChanged ? 'bg-amber-50 text-amber-800' : 'text-slate-600'} ${isNum ? 'text-right font-medium' : 'text-center'}`}>
                                         <div className="truncate w-full">{formattedVal}</div>
                                     </td>
                                 );
@@ -619,8 +619,7 @@
                             
                             {visUploadCols.map(h => {
                                 const linkedMasterField = masterLinksEst[h];
-                                // 💡 [수정됨] 순번은 마스터DB에서 가져오지 않도록 차단
-                                const mVal = (linkedMasterField && rowCode && h !== '순번') ? mItem[linkedMasterField] : undefined;
+                                const mVal = (linkedMasterField && rowCode) ? mItem[linkedMasterField] : undefined;
                                 const initialVal = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.['estimate']?.[h] || '');
                                 return <EditableCell key={`p-u-e-${h}`} rowCode={rowCode} initialVal={initialVal} field={h} linkedMasterField={linkedMasterField} mVal={mVal} onUpdateCell={onUpdateCell} />;
                             })}
@@ -679,11 +678,11 @@
                         <table className="text-left border-collapse text-[13px] whitespace-nowrap relative z-0 w-max bg-white">
                             <thead className="text-[12px] font-bold text-slate-500 bg-white">
                                 <tr>
-                                    <th className="sticky top-0 z-40 bg-slate-100 px-4 py-3.5 border-y border-r border-slate-200 shadow-sm min-w-[280px] w-[280px] max-w-[280px]" style={{left:0}}>
+                                    <th className="sticky top-0 z-40 bg-white px-4 py-3.5 border-y border-r border-slate-200 shadow-sm min-w-[280px] w-[280px] max-w-[280px]" style={{left:0}}>
                                         상품정보 (코드/품명/규격)
                                     </th>
-                                    {visMaster.map(h=><th key={`m-${h}`} className={`sticky top-0 z-30 bg-slate-100 px-3 py-3.5 border-y border-r border-slate-200 shadow-sm text-center ${getCellWidthClass(h)}`}><i className="fas fa-lock text-slate-300 text-[10px] mr-1"></i> {h}</th>)}
-                                    {visUpload.map(h=><th key={`u-${h}`} className={`sticky top-0 z-30 bg-white px-3 py-3.5 border-y border-r border-slate-200 shadow-sm text-center text-indigo-700 ${getCellWidthClass(h)}`}><i className="fas fa-pen text-indigo-300 text-[10px] mr-1"></i> {h}</th>)}
+                                    {visMaster.map(h=><th key={`m-${h}`} className={`sticky top-0 z-30 bg-white px-3 py-3.5 border-y border-r border-slate-200 shadow-sm text-center ${getCellWidthClass(h)}`}>{h}</th>)}
+                                    {visUpload.map(h=><th key={`u-${h}`} className={`sticky top-0 z-30 bg-white px-3 py-3.5 border-y border-r border-slate-200 shadow-sm text-center ${getCellWidthClass(h)}`}>{h}</th>)}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-transparent text-slate-700">
@@ -869,10 +868,8 @@
                         Object.keys(item.finalData).forEach(field => {
                             if ((field === '품목명' || field === '규격') && oldItem['품목명']) return;
                             
-                            // 💡 [수정됨] 순번은 마스터DB에 저장되는 것을 강력하게 차단
-                            if (field === '순번') return;
-
                             const linked = config.masterLinks['estimate']?.[field] || (MASTER_HEADERS.includes(field) || NUMERIC_HEADERS.includes(field) ? field : null);
+                            
                             if (linked && item.finalData[field] !== undefined && item.finalData[field] !== '' && item.finalData[field] !== '오류') {
                                 const newVal = NUMERIC_HEADERS.includes(linked) ? parseNum(item.finalData[field]) : item.finalData[field];
                                 const oldVal = NUMERIC_HEADERS.includes(linked) ? parseNum(oldItem[linked]) : oldItem[linked];
@@ -921,7 +918,13 @@
                             return s !== '' && s !== '0' && s !== '00' && s !== '-' && s.toLowerCase() !== 'undefined' && s.toLowerCase() !== 'null';
                         };
 
-                        // 💡 스마트 출력 타겟: 체크된 항목이 있으면 그것만, 없으면 화면 전체 출력
+                        const checkTaxable = (taxStr) => {
+                            if (!taxStr) return true;
+                            const str = String(taxStr).trim();
+                            if (str.includes('면세') || str.includes('비과세') || str === '1' || str.startsWith('1')) return false;
+                            return true;
+                        };
+
                         const exportTargetRows = selectedRows.size > 0 
                             ? fullDisplayRows.filter(row => selectedRows.has(row.코드)) 
                             : fullDisplayRows;
@@ -939,7 +942,14 @@
                             const pBSale = getFirstValidNum([final, source, mItem], ['도매B', 'B판매', 'B 도매가']);
                             const pInstruction = getFirstValidStr([final, source, mItem], ['지시사항', '간단설명']);
                             
-                            const pRowErp = createRowArr(row.코드, pIn, pOut, pBPrice, pASale, pBSale, pIn, pInstruction); if (pRowErp) erpData.push(pRowErp);
+                            const pRowErp = createRowArr(row.코드, pIn, pOut, pBPrice, pASale, pBSale, pIn, pInstruction); 
+                            
+                            if (pRowErp) {
+                                let erpItem = { 품목코드: row.코드, ...pRowErp };
+                                const rawTaxFlag = getFirstValidStr([final, source, mItem], ['비과세']);
+                                erpItem.isTaxable = checkTaxable(rawTaxFlag);
+                                erpData.push(pRowErp); 
+                            }
                             
                             const isZeroPrice = (pIn === 0 && pOut === 0);
                             const priceMarketShop = isZeroPrice ? 0 : (pMarketPrice > 0 ? pMarketPrice : pOut);
@@ -957,8 +967,12 @@
                                     const cOut = getFirstValidNum([final, source, mItem], [`${type}출고`]); 
                                     const cRowErp = createRowArr(cCode, cIn, cOut, '', '', '', cIn, ''); 
                                     
-                                    // 💡 ERP 업데이트 시트에는 1종(소분)만 적용하고 2종은 제외합니다.
-                                    if (type === 1 && cRowErp) erpData.push(cRowErp); 
+                                    if (type === 1 && cRowErp) {
+                                        let cErpItem = { 품목코드: cCode, ...cRowErp };
+                                        const subMaster = masterProducts[cCode] || {};
+                                        cErpItem.isTaxable = checkTaxable(subMaster['비과세']);
+                                        erpData.push(cRowErp); 
+                                    }
 
                                     const subMaster = masterProducts[cCode] || {};
                                     const cName = subMaster.품목명 || getFirstValidStr([final, source, mItem], [`${type}그룹명`]) || `${dName} (소분)`;
@@ -1179,12 +1193,11 @@
                         baseList.sort((a, b) => b._searchScore - a._searchScore);
                     }
                 } else {
-                    // 💡 [업데이트] 거래처(카탈로그/견적서) 선택 시 순번 오름차순, 평소엔 품목코드 오름차순
                     if (selectedCatalog || selectedCategory) {
                         baseList.sort((a, b) => {
                             const getSeq = (item) => {
-                                // 순번은 오직 작업데이터(업로드/수정)에서만 가져옴. 마스터(m)에서는 가져오지 않음!
-                                const val = item.finalData?.['순번'] !== undefined ? item.finalData['순번'] : item.sources?.['estimate']?.['순번'];
+                                const m = masterProducts[item.코드] || {};
+                                const val = item.finalData?.['순번'] !== undefined ? item.finalData['순번'] : (item.sources?.['estimate']?.['순번'] ?? m['순번']);
                                 return (val === '' || val === undefined || val === null) ? 999999 : Number(val);
                             };
                             const seqA = getSeq(a);
@@ -1192,7 +1205,6 @@
                             
                             if (seqA !== seqB) return seqA - seqB;
                             
-                            // If sequence is the same (or both 999999), sort by Vendor name then Code
                             const vendorA = String(a.finalData?.['구매처'] || masterProducts[a.코드]?.['구매처'] || '');
                             const vendorB = String(b.finalData?.['구매처'] || masterProducts[b.코드]?.['구매처'] || '');
                             if (vendorA !== vendorB) return vendorA.localeCompare(vendorB);
@@ -1271,7 +1283,7 @@
                     />
                     
                     {isExporting && (
-                        <div className="fixed inset-0 bg-slate-900/80 z-[9999] flex flex-col justify-center items-center backdrop-blur-sm fade-in">
+                        <div className={`${TW.modalOverlay} flex-col z-[9999]`}>
                             <i className="fas fa-circle-notch fa-spin text-6xl text-indigo-500 mb-6"></i>
                             <h2 className="text-2xl font-black text-white mb-2">엑셀 파일을 생성하고 있습니다</h2>
                             <p className="text-emerald-400 font-bold">데이터가 많을 경우 수 초 정도 소요될 수 있습니다. 잠시만 기다려주세요...</p>
@@ -1282,7 +1294,7 @@
                         <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 -mb-1">
                             <div className="flex items-center gap-1">
                                 <div className="relative">
-                                    <select value={selectedCatalog} onChange={handleCatalogChange} className="appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm w-[160px]" title="스마트 파서에서 매핑 완료한 데이터를 불러옵니다.">
+                                    <select value={selectedCatalog} onChange={handleCatalogChange} className={`${TW.selectBase} w-[160px]`} title="스마트 파서에서 매핑 완료한 데이터를 불러옵니다.">
                                         <option value="">파서 보관함</option>
                                         {availableCatalogs.map(tag => <option key={tag.name} value={tag.name}>{tag.name} ({tag.count}건)</option>)}
                                     </select>
@@ -1295,14 +1307,14 @@
 
                             <div className="flex items-center gap-1">
                                 <div className="relative">
-                                    <select value={selectedCategory} onChange={handleCategoryChange} className="appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm w-[160px]">
+                                    <select value={selectedCategory} onChange={handleCategoryChange} className={`${TW.selectBase} w-[160px]`}>
                                         <option value="">카탈로그</option>
                                         {availableCategories.map(cat => <option key={cat.name} value={cat.name}>{cat.name} ({cat.count}건)</option>)}
                                     </select>
                                     <i className="fas fa-file-invoice absolute left-3 top-2.5 text-blue-500 text-[13px] pointer-events-none"></i>
                                     <i className="fas fa-chevron-down absolute right-2.5 top-3 text-blue-400 text-[10px] pointer-events-none"></i>
                                 </div>
-                                <button onClick={() => setShowCategoryModal(true)} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-blue-600 border border-blue-200 hover:bg-blue-50 transition-colors shadow-sm flex items-center shrink-0" title="현재 화면의 상품들을 묶어서 새로운 카탈로그로 만듭니다.">
+                                <button onClick={() => setShowCategoryModal(true)} className={`${TW.toolbarBtn} text-blue-600 border-blue-200 hover:bg-blue-50`} title="현재 화면의 상품들을 묶어서 새로운 카탈로그로 만듭니다.">
                                     <i className="fas fa-save mr-1.5 text-blue-500"></i> 저장
                                 </button>
                             </div>
@@ -1310,16 +1322,16 @@
                             <div className="w-px h-5 bg-slate-200 mx-1 shrink-0"></div>
 
                             <div className="flex items-center gap-1">
-                                <label className="cursor-pointer h-9 px-3 rounded-md text-[13px] font-bold bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50 transition-colors shadow-sm flex items-center shrink-0">
+                                <label className={`${TW.toolbarBtn} text-emerald-600 border-emerald-200 hover:bg-emerald-50 cursor-pointer`}>
                                     <i className="fas fa-file-excel mr-1.5 text-emerald-500"></i> 견적 엑셀 불러오기
                                     <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e)} accept=".xlsx, .xls, .csv" disabled={isProcessing} />
                                 </label>
                                 
-                                <button onClick={handleExportCurrentView} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-emerald-600 border border-emerald-200 hover:bg-emerald-50 transition-colors shadow-sm flex items-center shrink-0" title="현재 화면 그대로 엑셀로 다운로드합니다.">
+                                <button onClick={handleExportCurrentView} className={`${TW.toolbarBtn} text-emerald-600 border-emerald-200 hover:bg-emerald-50`} title="현재 화면 그대로 엑셀로 다운로드합니다.">
                                     <i className="fas fa-file-excel mr-1.5 text-emerald-500"></i> 화면 다운로드
                                 </button>
 
-                                <button onClick={() => setShowExportModal(true)} className="h-9 px-3 rounded-md text-[13px] font-bold bg-white text-amber-600 border border-amber-200 hover:bg-amber-50 transition-colors shadow-sm flex items-center shrink-0" title="ERP/쇼핑몰 양식 출력">
+                                <button onClick={() => setShowExportModal(true)} className={`${TW.toolbarBtn} text-amber-600 border-amber-200 hover:bg-amber-50`} title="ERP/쇼핑몰 양식 출력">
                                     <i className="fas fa-file-export mr-1.5 text-amber-500"></i> 보고서
                                 </button>
                             </div>
@@ -1327,17 +1339,17 @@
 
                         <div className="flex items-center gap-2 shrink-0">
                             {selectedRows.size > 0 && (
-                                <button onClick={handleRemoveFromWorkspace} className="h-9 px-3 rounded-md text-[12px] font-bold bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition-colors shadow-sm flex items-center" title="선택 항목 숨기기">
+                                <button onClick={handleRemoveFromWorkspace} className={`${TW.toolbarBtn} bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100`} title="선택 항목 숨기기">
                                     <i className="fas fa-eye-slash mr-1.5"></i> 숨기기 ({selectedRows.size})
                                 </button>
                             )}
-                            <button onClick={() => setShowReviewModal(true)} disabled={fullDisplayRows.length === 0} className={`h-9 px-4 rounded-md text-[13px] font-bold shadow-sm transition-colors flex items-center ${fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-200'}`}>
+                            <button onClick={() => setShowReviewModal(true)} disabled={fullDisplayRows.length === 0} className={`${TW.toolbarBtn} px-4 ${fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed border-slate-200'}`}>
                                 <i className="fas fa-check-circle mr-1.5"></i> 반영하기
                             </button>
 
                             <div className="w-px h-5 bg-slate-200 mx-1"></div>
 
-                            <button onClick={handleReset} className="h-9 w-9 rounded-md flex items-center justify-center text-slate-500 hover:text-slate-800 bg-white border border-slate-300 hover:bg-slate-50 transition-colors shadow-sm" title="화면 초기화">
+                            <button onClick={handleReset} className={`${TW.toolbarBtn} w-9 justify-center text-slate-500 hover:text-slate-800`} title="화면 초기화">
                                 <i className="fas fa-redo-alt text-[13px]"></i>
                             </button>
                             <div className="relative w-48 sm:w-64 h-9">
@@ -1359,7 +1371,7 @@
                                             }
                                         }
                                     }}
-                                    className="w-full h-full pl-3 pr-8 py-1 border border-slate-300 rounded-md text-[12px] outline-none focus:border-blue-400 shadow-sm text-slate-700 font-medium" 
+                                    className={`${TW.selectBase} w-full h-full pl-3 pr-8 py-1 !cursor-text`} 
                                 />
                                 <i className="fas fa-search absolute right-3 top-2.5 text-slate-400 text-[13px] pointer-events-none"></i>
                             </div>
