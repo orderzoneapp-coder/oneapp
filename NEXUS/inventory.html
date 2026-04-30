@@ -352,9 +352,11 @@
                         
                         const existingIdx = newItems.findIndex(i => i.batchKey === batchKey);
                         if (existingIdx >= 0) {
+                            newItems[existingIdx].기초 += qty;
+                            newItems[existingIdx].전산잔량 += qty;
                             newItems[existingIdx].실사 += qty;
-                            newItems[existingIdx].로스 += qty;
                         } else {
+                            // 💡 [수정됨] 초기 셋업 시 '로스'로 잡히지 않도록 '기초 재고'로 바로 주입합니다.
                             newItems.push({
                                 batchKey, 
                                 코드: code, 
@@ -363,12 +365,12 @@
                                 단가: price, 
                                 거래처: vendor, 
                                 일자: '',
-                                기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 
-                                실사: qty, 로스: qty, 
+                                기초: qty, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: qty, 
+                                실사: qty, 로스: 0, 
                                 이슈: ['🚀초기셋업'], 
                                 메모: excelPrice > 0 ? '엑셀 단가 적용' : '마스터 단가 적용', 
                                 출고내역: {}, 
-                                _orig: { 기초: 0, 입고: 0, 출고: 0, 단가: price },
+                                _orig: { 기초: qty, 입고: 0, 출고: 0, 단가: price },
                                 isDummy: false, 
                                 수기확인완료: true
                             });
@@ -1262,13 +1264,14 @@
             }, [inventoryData, searchKw, showMinusOnly, showChangedOnly, repackMatchState]);
 
             const closingStats = useMemo(() => {
-                let lossCount = 0; let manualCount = 0; let lossAmount = 0;
+                let lossCount = 0; let manualCount = 0; let lossAmount = 0; let unresolvedCount = 0;
                 inventoryData.forEach(p => {
-                    if (p.로스 !== 0 || p.전산잔량 < 0 || (p.이슈 && p.이슈.some(i => i.includes('🚨')))) lossCount++;
+                    if (p.로스 !== 0 || p.전산잔량 < 0) lossCount++;
+                    if (p.이슈 && p.이슈.some(i => i.includes('🚨'))) unresolvedCount++;
                     if (p.이슈 && p.이슈.some(i => i.includes('✅') || i.includes('🔄') || i.includes('🚀'))) manualCount++;
                     if (p.로스 < 0) lossAmount += (p.로스 * (p.단가 || 0));
                 });
-                return { total: inventoryData.length, lossCount, manualCount, lossAmount };
+                return { total: inventoryData.length, lossCount, manualCount, lossAmount, unresolvedCount };
             }, [inventoryData]);
 
             const handleIssueJump = useCallback((type, direction = 'next', fromCardClick = false) => {
@@ -1394,7 +1397,8 @@
                                     </button>
                                 )}
 
-                                <button onClick={handleClosing} disabled={isProcessing || closingStats.lossCount > 0 || isClosedDate || inventoryData.length === 0} className={`ml-1 px-5 py-1.5 h-8 rounded-lg text-[13px] font-black shadow-sm transition-all flex items-center gap-1.5 ${isClosedDate ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : (closingStats.lossCount === 0 && inventoryData.length > 0 ? 'bg-[#0B1021] text-white hover:bg-black hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed')}`}>
+                                {/* 수정: unresolvedCount(미해결 🚨 에러)가 없을 경우 무조건 마감 버튼 활성화되도록 로직 수정 */}
+                                <button onClick={handleClosing} disabled={isProcessing || closingStats.unresolvedCount > 0 || isClosedDate || inventoryData.length === 0} className={`ml-1 px-5 py-1.5 h-8 rounded-lg text-[13px] font-black shadow-sm transition-all flex items-center gap-1.5 ${isClosedDate ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : (closingStats.unresolvedCount === 0 && inventoryData.length > 0 ? 'bg-[#0B1021] text-white hover:bg-black hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed')}`}>
                                     <SafeIcon name={isClosedDate ? "lock" : "check-circle-2"} size={14} /> 
                                     {isClosedDate ? '마감 완료' : '일자 마감'}
                                 </button>
@@ -1412,13 +1416,18 @@
                         {inventoryData.length > 0 && (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                                 <div onClick={() => { if(activeIssueMode !== 'loss') { handleIssueJump('loss', 'next', true); } else { setActiveIssueMode(null); } }} className={`p-4 rounded-xl border-[3px] transition-all flex flex-col justify-between relative overflow-hidden cursor-pointer ${activeIssueMode === 'loss' ? 'bg-orange-50 border-orange-500 shadow-md ring-4 ring-orange-500/20' : (closingStats.lossCount > 0 ? 'bg-orange-50 border-orange-200 hover:border-orange-400 hover:shadow-md' : 'bg-white border-slate-200 hover:border-slate-300')}`}>
-                                    <div className={`text-xs font-bold mb-1 flex items-center justify-between ${closingStats.lossCount > 0 ? 'text-orange-800' : 'text-slate-600'}`}><span className="flex items-center"><SafeIcon name="balance-scale" size={16} className={`${activeIssueMode === 'loss' || closingStats.lossCount > 0 ? 'text-orange-500' : 'text-slate-400'} mr-2`}/>실사 오차 (로스) 확인</span>{closingStats.lossCount > 0 && <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.6)]"></span>}</div>
+                                    <div className={`text-xs font-bold mb-1 flex items-center justify-between ${closingStats.lossCount > 0 ? 'text-orange-800' : 'text-slate-600'}`}><span className="flex items-center"><SafeIcon name="balance-scale" size={16} className={`${activeIssueMode === 'loss' || closingStats.lossCount > 0 ? 'text-orange-500' : 'text-slate-400'} mr-2`}/>실사 오차 (로스) 확인</span>{closingStats.unresolvedCount > 0 && <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.6)]"></span>}</div>
                                     <div className="flex items-start justify-between mt-2">
                                         <div>
                                             <div className={`text-3xl font-black ${activeIssueMode === 'loss' || closingStats.lossCount > 0 ? 'text-orange-900' : 'text-slate-800'}`}>{closingStats.lossCount}<span className="text-sm font-bold text-slate-500 ml-1">건</span></div>
-                                            {closingStats.lossCount > 0 ? (
+                                            {closingStats.unresolvedCount > 0 ? (
                                                 <div className="flex flex-col mt-1 gap-1.5">
                                                     <span className="text-[12px] text-orange-600 font-bold">클릭/Tab키로 추적 (수정요망)</span>
+                                                    {closingStats.lossAmount < 0 && <span className="text-[11.5px] text-rose-600 font-black bg-rose-50 border border-rose-100 px-2 py-0.5 rounded shadow-sm inline-block w-fit tracking-tight">추정 손실액: {closingStats.lossAmount.toLocaleString()}원</span>}
+                                                </div>
+                                            ) : closingStats.lossCount > 0 ? (
+                                                <div className="flex flex-col mt-1 gap-1.5">
+                                                    <span className="text-[12px] text-slate-500 font-bold">오차 승인 및 보정 완료됨</span>
                                                     {closingStats.lossAmount < 0 && <span className="text-[11.5px] text-rose-600 font-black bg-rose-50 border border-rose-100 px-2 py-0.5 rounded shadow-sm inline-block w-fit tracking-tight">추정 손실액: {closingStats.lossAmount.toLocaleString()}원</span>}
                                                 </div>
                                             ) : (
