@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - Item Manager [v3.0]</title>
+    <title>ONEAPP NEXES - Item Manager [v3.1 Cloud Sync]</title>
     <!-- 핵심 라이브러리 CDN 로드 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -48,7 +48,12 @@
             MASTER_DB: 'merchMaster_v870',
             MANAGED_ITEMS: 'merchPipeline_Managed_v2',
             SYNC_TRIGGER: 'merchMaster_sync_trigger',
-            CLOUD_URL: 'skuSyncCloudUrl_v6'
+            CLOUD_URL: 'skuSyncCloudUrl_v6',
+            HISTORY_DB: 'merchHistory_v870',
+            // [개선] 델타 큐 스토리지 키 통합
+            UNSYNCED_MASTER: 'merchUnsyncedMaster_v1', 
+            UNSYNCED_HISTORY: 'merchUnsyncedHistory_v1',
+            UNSYNCED_DELETES: 'merchUnsyncedDeletes_v1'
         };
 
         const ONEAPP_CATEGORIES = [
@@ -136,7 +141,8 @@
         // ==========================================
         const useMerchConfig = () => {
             const loadConfig = () => {
-                const cloudUrl = localStorage.getItem('skuSyncCloudUrl_v6') || '';
+                // [개선] 앱스스크립트 기본 URL 적용
+                const cloudUrl = localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || 'https://script.google.com/macros/s/AKfycbyT3YXvGkbSWswoBDxvVV_1m0Xp2it3QmOezFIfQFBNi0TuGViPH_Jz-A8L2sQz80tW/exec';
                 return { cloudUrl };
             };
 
@@ -198,7 +204,7 @@
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
                                     <div className="flex items-center">
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.0</span>
+                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.1</span>
                                     </div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">SKU FORGE</span>
                                 </div>
@@ -271,7 +277,7 @@
         };
 
         // ==========================================
-        // 🌟 [신규] Iframe 설정 모달 (경량화)
+        // 🌟 Iframe 설정 모달 
         // ==========================================
         const IframeSettingsModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
@@ -644,22 +650,85 @@
                 }
             }, [showToast]);
 
+            // [개선] Push 로직: Delta Sync 적용 (Master.html 과 동일하게 수정 내용만 전송)
             const handlePush = async () => {
                 if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
-                setIsProcessing(true); setProcessMsg("클라우드 백업 중...");
-                setTimeout(() => {
-                    showToast("✅ 클라우드 저장 완료");
+
+                const unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
+                const unsyncedHistory = await getIDB(STORAGE_KEYS.UNSYNCED_HISTORY) || [];
+                const unsyncedDeletes = await getIDB(STORAGE_KEYS.UNSYNCED_DELETES) || [];
+
+                if (Object.keys(unsyncedMaster).length === 0 && unsyncedHistory.length === 0 && unsyncedDeletes.length === 0) {
+                    return showToast("⚠️ 클라우드에 새로 반영할 변경사항이 없습니다.");
+                }
+
+                setIsProcessing(true); setProcessMsg("클라우드 서버로 데이터를 전송 중...");
+                
+                try {
+                    const response = await fetch(config.cloudUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // CORS 에러 방지용 text/plain
+                        body: JSON.stringify({
+                            action: 'pushData',
+                            masterDelta: unsyncedMaster,
+                            historyDelta: unsyncedHistory,
+                            deletedCodes: unsyncedDeletes
+                        })
+                    });
+
+                    const result = await response.json();
+                    if (result.status === 'success') {
+                        // 성공적으로 보내면 큐 비우기
+                        await setIDB(STORAGE_KEYS.UNSYNCED_MASTER, {});
+                        await setIDB(STORAGE_KEYS.UNSYNCED_HISTORY, []);
+                        await setIDB(STORAGE_KEYS.UNSYNCED_DELETES, []);
+                        showToast(`✅ 클라우드 동기화 완료 (수정 ${Object.keys(unsyncedMaster).length}건, 삭제 ${unsyncedDeletes.length}건, 이력 ${unsyncedHistory.length}건)`);
+                    } else {
+                        throw new Error(result.message || '서버 응답 오류');
+                    }
+                } catch (err) {
+                    console.error("Push Error:", err);
+                    showToast("❌ 클라우드 백업 실패: " + err.message);
+                } finally {
                     setIsProcessing(false); setProcessMsg("");
-                }, 1000);
+                }
             };
 
+            // [개선] Pull 로직: 최신 마스터 데이터 내려받기
             const handlePull = async () => {
                 if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
-                setIsProcessing(true); setProcessMsg("데이터 동기화 중...");
-                setTimeout(() => {
-                    showToast("✅ 데이터 수신 완료");
+                setIsProcessing(true); setProcessMsg("클라우드에서 최신 데이터를 수신 중...");
+                
+                try {
+                    const response = await fetch(`${config.cloudUrl}?action=pullData`, {
+                        method: 'GET',
+                        cache: 'no-cache'
+                    });
+                    
+                    if (!response.ok) throw new Error('Network error');
+                    const result = await response.json();
+                    
+                    if (result.status === 'success') {
+                        if (result.master) {
+                            setMasterProducts(result.master);
+                            await setIDB(STORAGE_KEYS.MASTER_DB, result.master);
+                        }
+                        if (result.history) {
+                            await setIDB(STORAGE_KEYS.HISTORY_DB, result.history);
+                        }
+                        // 수신 성공 시 로컬 트리거 발동 및 리로드
+                        localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
+                        loadMaster();
+                        showToast(`✅ 클라우드 수신 완료 (마스터 ${Object.keys(result.master || {}).length}건)`);
+                    } else {
+                        throw new Error(result.message || '서버 응답 오류');
+                    }
+                } catch (error) {
+                    console.error("Pull Error:", error);
+                    showToast("❌ 데이터 수신 실패. URL을 확인하세요.");
+                } finally {
                     setIsProcessing(false); setProcessMsg("");
-                }, 1000);
+                }
             };
 
             const loadMaster = useCallback(() => {
@@ -682,6 +751,13 @@
                         setMasterCatalogProducts(catalogArr);
                     }
                 }).catch(console.error);
+
+                // [개선] 로컬 DB 용량 관리 (최근 1000개 이력만 유지)
+                getIDB(STORAGE_KEYS.HISTORY_DB).then(oldLogs => {
+                    if (oldLogs && oldLogs.length > 1000) {
+                        setIDB(STORAGE_KEYS.HISTORY_DB, oldLogs.slice(-1000));
+                    }
+                });
             }, []);
 
             useEffect(() => {
@@ -716,7 +792,7 @@
                 }
             }, [managedItems]);
 
-            // 카탈로그에서 다수 항목 전송 시
+            // 카탈로그에서 다수 항목 전송 시 (Pipeline 관리 대기열로 넘김)
             const handleCatalogRegister = (cartItems, activeC1) => {
                 let currentCounter = 1;
                 const newManaged = { ...managedItems };
@@ -741,7 +817,7 @@
                 setTimeout(() => handleNavigate(null, 'Pipeline.html'), 1000);
             };
 
-            // 수기/BOM 단건 전송 시
+            // 수기/BOM 단건 전송 시 (Pipeline 관리 대기열로 넘김)
             const handleSingleRegister = (newItem) => {
                 const newManaged = { ...managedItems, [newItem.코드]: newItem };
                 setManagedItems(newManaged);
