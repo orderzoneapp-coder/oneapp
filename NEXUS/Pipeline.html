@@ -167,7 +167,6 @@
                 { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }
             ];
 
-            // 💡 [절대 수정 금지] 15개 탭 완벽 매핑 데이터
             const tabs = [
                 { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true, shortTag: 'ONE BOARD' },
                 { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: true, shortTag: 'SYSTEM GUIDE' },
@@ -205,7 +204,7 @@
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
                                     <div className="flex items-center">
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.0</span>
+                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.2</span>
                                     </div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">
                                         {currentTab ? currentTab.shortTag : 'WORKSPACE'}
@@ -279,7 +278,6 @@
             );
         };
 
-        // 🌟 [적용 완료] Iframe 설정 모달 창 와이드 규격 및 완벽 우측 밀착
         const IframeSettingsModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
             return (
@@ -295,7 +293,6 @@
             );
         };
 
-        // 💡 [복원 완료] 비즈니스 로직(100원 단위 절상 및 엑셀 수동 단가 보존) v3.1 
         const calculatePricesEngine = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
             if (!baseInPrice || baseInPrice <= 0) return { ...currentFinalData, '입고가': 0, '시중가': 0, '출고가': 0, '1입고': 0, '1출고': 0 };
             const outsrc = parseNum(currentFinalData?.['외주비'] ?? mItem?.['외주비']);
@@ -415,21 +412,6 @@
                 </div>
             );
         };
-
-        const ExportModal = ({ onClose, executeExport }) => (
-            <div className={`${TW.modalOverlay} z-[100]`}>
-                <div className={`${TW.modalContent} w-[500px]`}>
-                    <div className={TW.modalHeader}><h2 className="font-black text-[16px]"><i className="fas fa-file-export text-emerald-400 mr-2"></i>데이터 출력 및 보고서 생성</h2><button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button></div>
-                    <div className="p-6 flex flex-col gap-4">
-                        <button onClick={() => { executeExport({title: '통합 엑셀 다운로드'}); onClose(); }} className="w-full flex items-center p-4 bg-white border-2 border-slate-200 rounded-xl hover:border-emerald-500 hover:bg-emerald-50 transition-all group text-left">
-                            <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-500 text-xl mr-4 group-hover:scale-110 transition-transform"><i className="fas fa-file-excel"></i></div>
-                            <div><div className="font-black text-slate-800 text-[14px]">통합 엑셀 다운로드 (ERP & 쇼핑몰)</div><div className="text-slate-500 text-[11px] mt-1">ERP 업데이트 양식과 쇼핑몰 업로드 양식을 각각의 시트로 한 번에 다운로드합니다.</div></div>
-                        </button>
-                        <button onClick={onClose} className="w-full mt-2 bg-slate-100 text-slate-600 font-bold py-3 rounded-xl hover:bg-slate-200 transition-colors">취소</button>
-                    </div>
-                </div>
-            </div>
-        );
 
         const CategorySaveModal = ({ onClose, onSave, availableCategories }) => {
             const [name, setName] = useState(''); const isExisting = availableCategories?.some(c => c.name === name.trim());
@@ -573,7 +555,7 @@
         function App() {
             const config = useMerchConfig();
             const [toastMsg, setToastMsg] = useState(''); const [isProcessing, setIsProcessing] = useState(false); const [processMsg, setProcessMsg] = useState(''); const [isExporting, setIsExporting] = useState(false);
-            const [showSettingsModal, setShowSettingsModal] = useState(false); const [showReviewModal, setShowReviewModal] = useState(false); const [showCategoryModal, setShowCategoryModal] = useState(false); const [showExportModal, setShowExportModal] = useState(false);
+            const [showSettingsModal, setShowSettingsModal] = useState(false); const [showReviewModal, setShowReviewModal] = useState(false); const [showCategoryModal, setShowCategoryModal] = useState(false);
             const [masterProducts, setMasterProducts] = useState({}); const [managedItems, setManagedItems] = useState({});
             const [globalSearch, setGlobalSearch] = useState(''); const [selectedCatalog, setSelectedCatalog] = useState(''); const [selectedCategory, setSelectedCategory] = useState(''); const [selectedRows, setSelectedRows] = useState(new Set());
 
@@ -662,9 +644,9 @@
                 setSelectedRows(new Set()); showToast(`✅ ${commitCount}건 마스터 반영 완료!`);
             }, [managedItems, masterProducts, config.masterLinks, showToast]);
 
-            const executeExport = useCallback((option, zeroAction = { sale: '0', stock: '999' }) => {
-                if (fullDisplayRows.length === 0) { showToast("⚠️ 내보낼 데이터가 없습니다."); return setShowExportModal(false); }
-                setShowExportModal(false); setIsExporting(true);
+            const executeExport = useCallback((option = {title: '통합 보고서'}, zeroAction = { sale: '0', stock: '999' }) => {
+                if (fullDisplayRows.length === 0) { showToast("⚠️ 내보낼 데이터가 없습니다."); return; }
+                setIsExporting(true);
                 setTimeout(() => {
                     try {
                         const wb = window.XLSX.utils.book_new(); let shopData = [];
@@ -674,16 +656,31 @@
                         const getFirstStr = (objList, keys) => { for (let obj of objList) { if (!obj) continue; for (let k of keys) { if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k]; } } return ''; };
                         const isValidCode = (code) => { if (!code) return false; const s = String(code).trim(); return s !== '' && s !== '0' && s !== '00' && s !== '-' && s.toLowerCase() !== 'undefined' && s.toLowerCase() !== 'null'; };
 
+                        // 💡 [규칙 1,2,3,4 반영] 동적 부분 업데이트 로직 (Dynamic Partial Export)
                         const generateDynamicPartialUpdateData = (data, selectedKeys) => {
                             if (!selectedKeys || selectedKeys.length === 0) return [];
-                            const exportKeysSet = new Set(selectedKeys);
+                            
+                            const exportKeysSet = new Set();
+                            selectedKeys.forEach(k => {
+                                if (k === '품목명') exportKeysSet.add('품목(상품명)');
+                                else if (k === '외주비') exportKeysSet.add('외주비단가');
+                                else exportKeysSet.add(k);
+                            });
+                            // [규칙 1] 무조건 '품목코드' 추가
                             exportKeysSet.add("품목코드");
                             
+                            // [규칙 3] 마스터 순서 정렬 규칙
                             const MASTER_ORDER = [
-                                "품목코드", "품목명", "규격", "브랜드", "간단설명", "카탈로그", "견적서",
-                                "입고가", "출고가", "시중가", "도매A", "도매B", "입고B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "행사가",
+                                "품목코드", "품목(상품명)", "규격구분", "규격", "단위(상품구성)", "품목구분", "세트여부", "재고수량관리",
+                                "부가세율(매출)", "부가세율(매입)", "바코드", "생산공정", "검색(품명2)", "공유여부",
+                                "품목그룹1", "품목그룹2", "품목그룹3", "상품설명", "품질검사유형", "품질검사방법",
+                                "샘플링비율", "당수량(분자)", "당수량(분모)", "안전재고관리-주문서", "안전재고관리-판매",
+                                "안전재고관리-생산불출", "안전재고관리-생산입고", "안전재고관리-창고이동", "안전재고관리-자가사용",
+                                "안전재고관리-불량처리", "안전수량", "C-Portal최소주문수량체크", "C-Portal최소주문수량",
+                                "C-Portal최소주문단위", "조달기간", "최소구매단위", "구매처",
+                                "입고가", "출고가", "입고B", "도매A", "도매B", "최종전송", "최종입고", "시중가", "상장가", "단가H", "단가I", "행사가",
                                 "외주비단가", "노무비", "경비",
-                                "안전재고", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록", "소싱태그"
+                                "비과세", "기본", "연동", "싯가", "단위", "준비기간(일)", "주문마감시간", "검색어등록", "소싱태그", "브랜드", "간단설명", "카탈로그", "견적서"
                             ];
 
                             const sortedKeys = Array.from(exportKeysSet).sort((a, b) => {
@@ -693,9 +690,13 @@
                             });
 
                             const headers = []; const columnDefinitions = [];
+                            
+                            // [규칙 4] 동적 매핑 및 특수 열 자동 생성 (Triggers)
                             sortedKeys.forEach(key => {
                                 if (key === '규격') { headers.push('규격구분'); columnDefinitions.push({ type: 'static', value: '1' }); }
+                                
                                 headers.push(key); columnDefinitions.push({ type: 'data', key: key });
+                                
                                 if (['입고가', '출고가', '외주비단가'].includes(key)) { headers.push(`${key} VAT포함여부`); columnDefinitions.push({ type: 'vat_01', key: key }); }
                                 if (['입고B', '도매A', '도매B', '최종전송', '최종입고', '시중가', '상장가', '단가H', '단가I', '행사가'].includes(key)) { headers.push(`${key} VAT포함여부`); columnDefinitions.push({ type: 'vat_ny', key: key }); }
                             });
@@ -719,7 +720,7 @@
 
                         const exportTargetRows = selectedRows.size > 0 ? fullDisplayRows.filter(row => selectedRows.has(row.코드)) : fullDisplayRows;
                         const flatErpData = [];
-                        const activeKeys = Array.from(new Set([...(config.visibleMasterCols.estimate || []), ...(config.visibleUploadCols.estimate || [])]));
+                        const activeKeys = Array.from(new Set(['품목명', '규격', ...(config.visibleMasterCols.estimate || []), ...(config.visibleUploadCols.estimate || [])]));
 
                         exportTargetRows.forEach(row => {
                             const mItem = masterProducts[row.코드] || {}, final = row.finalData || {}, source = row.sources?.['estimate'] || {};
@@ -732,10 +733,15 @@
                             let erpItem = { 품목코드: row.코드 };
                             activeKeys.forEach(k => {
                                 const lk = config.masterLinks.estimate?.[k] || k;
-                                erpItem[k] = NUMERIC_HEADERS.includes(lk) ? getFirstNum([final, source, mItem], [k, lk]) : getFirstStr([final, source, mItem], [k, lk]);
+                                const val = NUMERIC_HEADERS.includes(lk) ? getFirstNum([final, source, mItem], [k, lk]) : getFirstStr([final, source, mItem], [k, lk]);
+                                
+                                if (k === '품목명') erpItem['품목(상품명)'] = val || dName;
+                                else if (k === '외주비') erpItem['외주비단가'] = val;
+                                else erpItem[k] = val;
                             });
-                            erpItem['외주비단가'] = getFirstNum([final, source, mItem], ['외주비단가', '외주비']);
-                            erpItem.isTaxable = false;
+                            
+                            if(erpItem['외주비단가'] === undefined) erpItem['외주비단가'] = getFirstNum([final, source, mItem], ['외주비단가', '외주비']);
+                            erpItem.isTaxable = false; 
                             flatErpData.push(erpItem);
                             
                             const isZeroPrice = (pIn === 0 && pOut === 0);
@@ -746,26 +752,28 @@
                             
                             shopData.push([row.코드, dName, dSpec, pOut, priceA, priceMarketShop, 0, 0, 0, 0, 0, 0, dBrand, dInfo, isForSale, stockQty, '', '', '', '', '', dSearch]);
 
-                            [1, 2].forEach(type => { 
+                            // 💡 2종 소분 삭제 적용 완료 (1종코드만 처리)
+                            [1].forEach(type => { 
                                 const cCodeRaw = getFirstStr([final, source, mItem], [`${type}종코드`]); 
                                 if (isValidCode(cCodeRaw)) { 
                                     const cCode = String(cCodeRaw).trim();
                                     const cIn = getFirstNum([final, source, mItem], [`${type}입고`, `${type}구매`]), cOut = getFirstNum([final, source, mItem], [`${type}출고`]); 
                                     
                                     const subMaster = masterProducts[cCode] || {};
-                                    if (type === 1) {
-                                        let cErpItem = { 품목코드: cCode };
-                                        activeKeys.forEach(k => {
-                                            if (['입고가', '구매가'].includes(k)) cErpItem[k] = cIn;
-                                            else if (['출고가'].includes(k)) cErpItem[k] = cOut;
-                                            else cErpItem[k] = subMaster[k] !== undefined ? subMaster[k] : '';
-                                        });
-                                        cErpItem.isTaxable = false;
-                                        flatErpData.push(cErpItem);
-                                    }
-
                                     const cName = subMaster.품목명 || getFirstStr([final, source, mItem], [`${type}그룹명`]) || `${dName} (소분)`;
                                     const cSpec = subMaster.규격 || getFirstStr([mItem, source], [`${type}종규격`]) || '';
+
+                                    let cErpItem = { 품목코드: cCode };
+                                    activeKeys.forEach(k => {
+                                        if (k === '품목명') cErpItem['품목(상품명)'] = cName;
+                                        else if (k === '규격') cErpItem['규격'] = cSpec;
+                                        else if (['입고가', '구매가'].includes(k)) cErpItem[k] = cIn;
+                                        else if (['출고가'].includes(k)) cErpItem[k] = cOut;
+                                        else if (k === '외주비') cErpItem['외주비단가'] = subMaster['외주비'] || 0;
+                                        else cErpItem[k] = subMaster[k] !== undefined ? subMaster[k] : '';
+                                    });
+                                    cErpItem.isTaxable = false;
+                                    flatErpData.push(cErpItem);
                                     
                                     const cIsZeroPrice = (cIn === 0 && cOut === 0);
                                     const cMarketPrice = cIsZeroPrice ? 0 : (subMaster.시중가 > 0 ? subMaster.시중가 : cOut);
@@ -864,14 +872,14 @@
             }, [fullDisplayRows, config.visibleUploadCols, config.visibleMasterCols, config.masterLinks, masterProducts, selectedRows, showToast]);
 
             const appState = { fullDisplayRows, visibleMasterCols: config.visibleMasterCols, visibleUploadCols: config.visibleUploadCols, masterProducts, masterLinksEst: config.masterLinks['estimate']||{}, selectedRows, isEstimateUploaded: Object.keys(managedItems).length > 0, globalSearch, selectedCatalog, selectedCategory, isProcessing };
-            const appActions = { handleUpdateCell, setRowSelection: useCallback((c, isSel) => { setSelectedRows(p => { const n = new Set(p); isSel?n.add(c):n.delete(c); return n; }); }, []), handleRemoveFromWorkspace, setShowReviewModal, setShowExportModal, setShowCategoryModal, setGlobalSearch, handleCatalogChange: e => { setSelectedCatalog(e.target.value); handleLoadWorkspaceData(e.target.value, selectedCategory); }, handleCategoryChange: e => { setSelectedCategory(e.target.value); handleLoadWorkspaceData(selectedCatalog, e.target.value); }, handleReset, handleFileUpload, showToast, handleExportCurrentView };
+            const appActions = { handleUpdateCell, executeExport, setRowSelection: useCallback((c, isSel) => { setSelectedRows(p => { const n = new Set(p); isSel?n.add(c):n.delete(c); return n; }); }, []), handleRemoveFromWorkspace, setShowReviewModal, setShowCategoryModal, setGlobalSearch, handleCatalogChange: e => { setSelectedCatalog(e.target.value); handleLoadWorkspaceData(e.target.value, selectedCategory); }, handleCategoryChange: e => { setSelectedCategory(e.target.value); handleLoadWorkspaceData(selectedCatalog, e.target.value); }, handleReset, handleFileUpload, showToast, handleExportCurrentView };
 
             return (
                 <div className="h-screen w-full max-w-[1500px] mx-auto flex flex-col font-sans overflow-hidden bg-[#f1f5f9] relative shadow-2xl border-x border-slate-300 select-none">
                     <GlobalHeader activeTab="pipeline" itemCount={Object.keys(masterProducts).length} isProcessing={isProcessing} processMsg={processMsg} onOpenSettings={() => setShowSettingsModal(true)} onPush={handlePush} onPull={handlePull} onNavigate={handleNavigate} />
                     
                     {isExporting && (
-                        <div className={`${TW.modalOverlay} flex-col`}>
+                        <div className={`${TW.modalOverlay} flex-col z-[9999]`}>
                             <i className="fas fa-circle-notch fa-spin text-6xl text-indigo-500 mb-6"></i>
                             <h2 className="text-2xl font-black text-white mb-2">엑셀 파일을 생성하고 있습니다</h2>
                             <p className="text-emerald-400 font-bold">잠시만 기다려주세요...</p>
@@ -885,7 +893,7 @@
                             <button onClick={() => setShowCategoryModal(true)} className={`${TW.toolbarBtn} text-blue-600 border-blue-200 hover:bg-blue-50`}><i className="fas fa-save mr-1.5 text-blue-500"></i> 저장</button><div className="w-px h-5 bg-slate-200 mx-1 shrink-0"></div>
                             <label className={`${TW.toolbarBtn} text-emerald-600 border-emerald-200 hover:bg-emerald-50 cursor-pointer`}><i className="fas fa-file-excel mr-1.5 text-emerald-500"></i> 견적 엑셀 불러오기<input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e)} accept=".xlsx, .xls, .csv" disabled={isProcessing} /></label>
                             <button onClick={handleExportCurrentView} className={`${TW.toolbarBtn} text-emerald-600 border-emerald-200 hover:bg-emerald-50`}><i className="fas fa-file-excel mr-1.5 text-emerald-500"></i> 화면 다운로드</button>
-                            <button onClick={() => setShowExportModal(true)} className={`${TW.toolbarBtn} text-amber-600 border-amber-200 hover:bg-amber-50`}><i className="fas fa-file-export mr-1.5 text-amber-500"></i> 보고서</button>
+                            <button onClick={() => appActions.executeExport({title: '통합 엑셀 다운로드'})} className={`${TW.toolbarBtn} text-amber-600 border-amber-200 hover:bg-amber-50`}><i className="fas fa-file-export mr-1.5 text-amber-500"></i> 보고서</button>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                             {selectedRows.size > 0 && <button onClick={handleRemoveFromWorkspace} className={`${TW.toolbarBtn} bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100`}><i className="fas fa-eye-slash mr-1.5"></i> 숨기기 ({selectedRows.size})</button>}
@@ -900,7 +908,6 @@
                     <IframeSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
                     {showReviewModal && <ReviewModal onClose={() => setShowReviewModal(false)} onConfirm={handleCommitEstimate} displayRows={fullDisplayRows} masterProducts={masterProducts} visibleUploadCols={config.visibleUploadCols} masterLinksEst={config.masterLinks['estimate']||{}} />}
                     {showCategoryModal && <CategorySaveModal onClose={() => setShowCategoryModal(false)} onSave={handleSaveAsCategory} availableCategories={availableCategories} />}
-                    {showExportModal && <ExportModal onClose={() => setShowExportModal(false)} executeExport={executeExport} />}
                     {toastMsg && <div className="fixed bottom-10 right-10 z-[200] bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 fade-in border border-slate-700 font-bold"><SafeIcon name="check-circle-2" size={18} className="text-emerald-400" /><span className="text-sm font-bold tracking-tight">{toastMsg}</span></div>}
                 </div>
             );
