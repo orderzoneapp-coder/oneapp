@@ -56,14 +56,14 @@
     <script type="text/babel">
         const { useState, useMemo, useEffect, useRef, useCallback, Fragment } = React;
 
+        // [개선] 델타 동기화를 위한 큐(Queue) 스토리지 키 추가
         const STORAGE_KEYS = { 
             MASTER_DB: 'merchMaster_v870', 
             CLOUD_URL: 'skuSyncCloudUrl_v6', 
             SYNC_TRIGGER: 'merchMaster_sync_trigger', 
             HISTORY_DB: 'merchHistory_v870',
             UNSYNCED_MASTER: 'merchUnsyncedMaster_v1', 
-            UNSYNCED_HISTORY: 'merchUnsyncedHistory_v1',
-            UNSYNCED_DELETES: 'merchUnsyncedDeletes_v1'
+            UNSYNCED_HISTORY: 'merchUnsyncedHistory_v1'
         };
 
         const TW = {
@@ -156,7 +156,8 @@
 
         const useMerchConfig = () => {
             const loadConfig = () => {
-                const cloudUrl = localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || 'https://script.google.com/macros/s/AKfycbyT3YXvGkbSWswoBDxvVV_1m0Xp2it3QmOezFIfQFBNi0TuGViPH_Jz-A8L2sQz80tW/exec';
+                // [개선] 앱스스크립트 기본 URL 적용 (설정값이 없을 경우)
+                const cloudUrl = localStorage.getItem('skuSyncCloudUrl_v6') || 'https://script.google.com/macros/s/AKfycbyT3YXvGkbSWswoBDxvVV_1m0Xp2it3QmOezFIfQFBNi0TuGViPH_Jz-A8L2sQz80tW/exec';
                 
                 let visibleMasterCols = JSON.parse(localStorage.getItem('merchVisMaster_v870') || 'null');
                 if (!visibleMasterCols || !visibleMasterCols.estimate) visibleMasterCols = getInitialVisibleMasterCols();
@@ -192,6 +193,9 @@
             return config;
         };
 
+        // ==========================================
+        // 🧩 통합 글로벌 헤더 (v3.2)
+        // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [
                 { id: 'master', label: '정보 관리', icon: 'database' },
@@ -279,7 +283,7 @@
                                 <button onClick={onPull} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 불러오기(Pull)"><SafeIcon name="cloud-download" size={18} /></button>
                                 <button onClick={onPush} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-indigo-400 shadow-sm" title="데이터 백업하기(Push)"><SafeIcon name="cloud-upload" size={18} /></button>
                                 <div className="w-px h-6 bg-slate-700 mx-1"></div>
-                                <button onClick={onOpenSettings} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-slate-400 hover:text-white shadow-sm" title="통합 환경설정 열기"><SafeIcon name="settings" size={18} /></button>
+                                <button onClick={onOpenSettings} className="w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors text-slate-400 hover:text-white shadow-sm" title="통합 환경설정 센터 열기"><SafeIcon name="settings" size={18} /></button>
                             </div>
                         </div>
                     </header>
@@ -311,16 +315,37 @@
             );
         };
 
+        // ==========================================
+        // 🌟 통합 Iframe 환경설정 모달 (우측 슬라이드 픽스)
+        // ==========================================
         const IframeSettingsModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
             return (
-                <div className={`${TW.modalOverlay} z-[500] justify-end`}>
-                    <div className="w-full max-w-[1100px] h-full bg-white shadow-[0_0_40px_rgba(0,0,0,0.3)] flex flex-col slide-in-right border-l border-slate-300 relative overflow-hidden">
-                        <div className={TW.modalHeader}>
-                            <div className="flex items-center gap-3"><SafeIcon name="settings" size={20} className="text-indigo-400"/><h2 className="font-black text-[17px] tracking-wide">통합 환경설정 센터</h2><span className="bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold border border-indigo-500/30 ml-2">Iframe Overlay</span></div>
-                            <div className="flex items-center gap-4"><span className="text-[12px] text-slate-400 font-medium hidden md:inline-block">설정을 변경하고 창을 닫으면 작업 화면에 즉시 반영됩니다.</span><button onClick={onClose} className="text-slate-300 hover:text-white transition-colors bg-slate-800 hover:bg-rose-500 w-8 h-8 rounded-lg flex items-center justify-center shadow-sm border border-slate-700 hover:border-rose-400"><SafeIcon name="x" size={18} /></button></div>
+                <div className="fixed inset-0 z-[500] flex bg-slate-900/60 backdrop-blur-sm fade-in">
+                    {/* 💡 ml-auto 클래스를 추가하여 모달이 중앙이 아닌 우측 끝에 붙도록 고정했습니다. */}
+                    <div className="w-full max-w-[1100px] h-full bg-white shadow-[-10px_0_40px_rgba(0,0,0,0.3)] flex flex-col slide-in-right border-l border-slate-300 relative overflow-hidden ml-auto">
+                        <div className="bg-[#0f172a] px-6 py-4 flex justify-between items-center text-white shrink-0 border-b border-slate-700 shadow-md relative z-10">
+                            <div className="flex items-center gap-3">
+                                <SafeIcon name="settings" size={20} className="text-indigo-400"/>
+                                <h2 className="font-black text-[17px] tracking-wide">통합 환경설정 센터</h2>
+                                <span className="bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold border border-indigo-500/30 ml-2">Iframe Overlay</span>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <span className="text-[12px] text-slate-400 font-medium hidden md:inline-block">설정을 변경하고 창을 닫으면 작업 화면에 즉시 반영됩니다.</span>
+                                <button onClick={onClose} className="text-slate-300 hover:text-white transition-colors bg-slate-800 hover:bg-rose-500 w-8 h-8 rounded-lg flex items-center justify-center shadow-sm border border-slate-700 hover:border-rose-400">
+                                    <SafeIcon name="x" size={18} />
+                                </button>
+                            </div>
                         </div>
-                        <div className="flex-1 w-full bg-slate-100 relative"><div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="text-slate-300 flex flex-col items-center"><i className="fas fa-circle-notch fa-spin text-3xl mb-3"></i><span className="font-bold text-sm">설정 모듈 로드 중...</span></div></div><iframe src="settings.html?mode=iframe" className="absolute inset-0 w-full h-full border-0 bg-white relative z-10" title="Settings Center"></iframe></div>
+                        <div className="flex-1 w-full bg-slate-100 relative">
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <div className="text-slate-300 flex flex-col items-center">
+                                    <i className="fas fa-circle-notch fa-spin text-3xl mb-3"></i>
+                                    <span className="font-bold text-sm">설정 모듈을 불러오는 중입니다...</span>
+                                </div>
+                            </div>
+                            <iframe src="settings.html?mode=iframe" className="absolute inset-0 w-full h-full border-0 bg-white relative z-10" title="Settings Center"></iframe>
+                        </div>
                     </div>
                 </div>
             );
@@ -830,6 +855,7 @@
                 const data = await getIDB(STORAGE_KEYS.MASTER_DB); 
                 if (data) setMasterProducts(data); 
 
+                // [개선 3] 로컬 DB 용량 관리 (최근 1000개 이력만 유지)
                 const oldLogs = await getIDB(STORAGE_KEYS.HISTORY_DB);
                 if (oldLogs && oldLogs.length > 1000) {
                     await setIDB(STORAGE_KEYS.HISTORY_DB, oldLogs.slice(-1000));
@@ -1040,10 +1066,12 @@
                     const oldLogs = await getIDB(STORAGE_KEYS.HISTORY_DB) || [];
                     await setIDB(STORAGE_KEYS.HISTORY_DB, [...oldLogs, ...localLogs]);
 
+                    // [개선] 델타 동기화를 위해 미동기화 히스토리 큐에 추가
                     const unsyncedHist = await getIDB(STORAGE_KEYS.UNSYNCED_HISTORY) || [];
                     await setIDB(STORAGE_KEYS.UNSYNCED_HISTORY, [...unsyncedHist, ...localLogs]);
                 }
 
+                // [개선] 델타 동기화를 위해 미동기화 마스터 큐에 추가
                 const unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
                 targetCodes.forEach(code => {
                     if (newMaster[code]) unsyncedMaster[code] = newMaster[code];
@@ -1193,6 +1221,7 @@
                         newMaster[code]['견적서'] = tags.join(', ');
                         delete newMaster[code]['카테고리']; // Migration
                         
+                        // [개선] 델타 큐에 변경사항 추가
                         unsyncedMaster[code] = newMaster[code];
                         count++;
                     }
@@ -1218,18 +1247,18 @@
                 showToast('작업 화면이 초기화 되었습니다.');
             }, [showToast]);
 
+            // [개선] Push 액션을 Delta Sync 방식으로 변경
             const handlePush = async () => {
                 if (!config.cloudUrl) return showToast("⚠️ 설정에서 앱스크립트 URL을 입력하세요.");
 
                 const unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
                 const unsyncedHistory = await getIDB(STORAGE_KEYS.UNSYNCED_HISTORY) || [];
-                const unsyncedDeletes = await getIDB(STORAGE_KEYS.UNSYNCED_DELETES) || [];
 
-                if (Object.keys(unsyncedMaster).length === 0 && unsyncedHistory.length === 0 && unsyncedDeletes.length === 0) {
+                if (Object.keys(unsyncedMaster).length === 0 && unsyncedHistory.length === 0) {
                     return showToast("⚠️ 클라우드에 새로 반영할 변경사항이 없습니다.");
                 }
 
-                setIsProcessing(true); setProcessMsg("클라우드 서버로 데이터를 전송 중...");
+                setIsProcessing(true); setProcessMsg("클라우드 백업 중...");
                 
                 try {
                     const response = await fetch(config.cloudUrl, {
@@ -1238,41 +1267,38 @@
                         body: JSON.stringify({
                             action: 'pushData',
                             masterDelta: unsyncedMaster,
-                            historyDelta: unsyncedHistory,
-                            deletedCodes: unsyncedDeletes
+                            historyDelta: unsyncedHistory
                         })
                     });
 
                     const result = await response.json();
                     if (result.status === 'success') {
+                        // 성공적으로 보내면 큐 비우기
                         await setIDB(STORAGE_KEYS.UNSYNCED_MASTER, {});
                         await setIDB(STORAGE_KEYS.UNSYNCED_HISTORY, []);
-                        await setIDB(STORAGE_KEYS.UNSYNCED_DELETES, []);
-                        showToast(`✅ 클라우드 동기화 완료 (수정 ${Object.keys(unsyncedMaster).length}건, 삭제 ${unsyncedDeletes.length}건, 이력 ${unsyncedHistory.length}건)`);
+                        showToast(`✅ 클라우드 동기화 완료 (수정 ${Object.keys(unsyncedMaster).length}건, 이력 ${unsyncedHistory.length}건)`);
                     } else {
                         throw new Error(result.message || '서버 응답 오류');
                     }
                 } catch (err) {
-                    console.error("Push Error:", err);
+                    console.error(err);
                     showToast("❌ 클라우드 백업 실패: " + err.message);
                 } finally {
                     setIsProcessing(false); setProcessMsg("");
                 }
             };
 
+            // [개선] Pull 액션 
             const handlePull = async () => {
-                if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
-                setIsProcessing(true); setProcessMsg("클라우드에서 최신 데이터를 수신 중...");
+                if (!config.cloudUrl) return showToast("⚠️ 설정에서 앱스크립트 URL을 입력하세요.");
+                setIsProcessing(true); setProcessMsg("데이터 동기화 중...");
                 
                 try {
                     const response = await fetch(`${config.cloudUrl}?action=pullData`, {
-                        method: 'GET',
-                        cache: 'no-cache'
+                        method: 'GET'
                     });
                     
-                    if (!response.ok) throw new Error('Network error');
                     const result = await response.json();
-                    
                     if (result.status === 'success') {
                         if (result.master) {
                             setMasterProducts(result.master);
@@ -1282,13 +1308,13 @@
                             await setIDB(STORAGE_KEYS.HISTORY_DB, result.history);
                         }
                         localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
-                        showToast(`✅ 클라우드 수신 완료 (마스터 ${Object.keys(result.master || {}).length}건)`);
+                        showToast("✅ 클라우드 데이터 수신 완료");
                     } else {
                         throw new Error(result.message || '서버 응답 오류');
                     }
-                } catch (error) {
-                    console.error("Pull Error:", error);
-                    showToast("❌ 데이터 수신 실패. URL을 확인하세요.");
+                } catch (err) {
+                    console.error(err);
+                    showToast("❌ 데이터 동기화 실패: " + err.message);
                 } finally {
                     setIsProcessing(false); setProcessMsg("");
                 }
