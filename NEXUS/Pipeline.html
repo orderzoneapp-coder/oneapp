@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - Valuation Hub [v3.6 Toolbar UI]</title>
+    <title>ONEAPP NEXES - Valuation Hub [v3.6 Filter Fix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -24,7 +24,6 @@
             .nav-tab-inactive { @apply bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5; }
             .nav-tab-disabled { @apply bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5; }
             .toolbar-btn { @apply h-9 px-3 rounded-md text-[13px] font-bold bg-white border border-slate-200 hover:bg-slate-50 transition-colors shadow-sm flex items-center shrink-0; }
-            /* 💡 [버그수정] px-3 을 pl-8 로 원복하여 텍스트-아이콘 겹침 방지 */
             .select-base { @apply appearance-none bg-white border border-blue-200 text-blue-600 font-bold text-[13px] py-1.5 pl-8 pr-7 rounded-md outline-none focus:border-blue-400 cursor-pointer h-9 shadow-sm; }
             .modal-overlay { @apply fixed inset-0 flex justify-center items-center bg-slate-900/80 backdrop-blur-sm fade-in; }
             .modal-content { @apply bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden; }
@@ -1338,121 +1337,122 @@
                         </div>
                     )}
 
-                    {/* 💡 [수정] 툴바 UI 컴팩트 통합 및 동적 렌더링 적용 */}
-                    <div className="px-6 py-3 flex items-center gap-3 overflow-x-auto custom-scrollbar bg-white border-b border-slate-200 z-50 w-full shrink-0">
-                        <div className="flex items-center gap-1 shrink-0">
-                            <div className="relative" ref={catalogRef}>
-                                <button onClick={() => { setCatalogDropdownOpen(!catalogDropdownOpen); setCategoryDropdownOpen(false); }} className={`${TW.selectBase} w-[180px] flex justify-between items-center bg-white text-left pl-8`}>
-                                    <span className="truncate pr-2 block">{selectedCatalogs.size > 0 ? `${selectedCatalogs.size}개 선택됨` : '파서 보관함'}</span>
-                                    <i className="fas fa-chevron-down text-blue-400 text-[10px]"></i>
-                                </button>
-                                <i className="fas fa-folder-open absolute left-3 top-2.5 text-blue-500 text-[13px] pointer-events-none"></i>
-                                
-                                {catalogDropdownOpen && (
-                                    <div className="absolute top-full left-0 mt-1 w-[250px] max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-xl z-50 p-2 fade-in">
-                                        {availableCatalogs.length === 0 ? <div className="text-xs text-slate-400 p-2 font-bold text-center">항목 없음</div> : availableCatalogs.map(tag => (
-                                            <label key={tag.name} onClick={(e) => { e.preventDefault(); toggleCatalog(tag.name); }} className="flex items-center gap-3 p-2 hover:bg-slate-50 cursor-pointer rounded-lg transition-colors">
-                                                <input type="checkbox" checked={selectedCatalogs.has(tag.name)} readOnly className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 pointer-events-none" />
-                                                <span className="text-[13px] text-slate-700 font-bold truncate flex-1">{tag.name}</span>
-                                                <span className="text-[11px] text-slate-400 font-medium bg-slate-100 px-1.5 py-0.5 rounded">{tag.count}</span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="w-px h-5 bg-slate-200 mx-1 shrink-0"></div>
-
-                        <div className="flex items-center gap-1 shrink-0">
-                            <div className="relative" ref={categoryRef}>
-                                <button onClick={() => { setCategoryDropdownOpen(!categoryDropdownOpen); setCatalogDropdownOpen(false); }} className={`${TW.selectBase} w-[180px] flex justify-between items-center bg-white text-left pl-8`}>
-                                    <span className="truncate pr-2 block">{selectedCategories.size > 0 ? `${selectedCategories.size}개 선택됨` : '카탈로그'}</span>
-                                    <i className="fas fa-chevron-down text-blue-400 text-[10px]"></i>
-                                </button>
-                                <i className="fas fa-file-invoice absolute left-3 top-2.5 text-blue-500 text-[13px] pointer-events-none"></i>
-                                
-                                {categoryDropdownOpen && (
-                                    <div className="absolute top-full left-0 mt-1 w-[250px] max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-xl z-50 p-2 fade-in">
-                                        {availableCategories.length === 0 ? <div className="text-xs text-slate-400 p-2 font-bold text-center">항목 없음</div> : availableCategories.map(tag => (
-                                            <label key={tag.name} onClick={(e) => { e.preventDefault(); toggleCategory(tag.name); }} className="flex items-center gap-3 p-2 hover:bg-slate-50 cursor-pointer rounded-lg transition-colors">
-                                                <input type="checkbox" checked={selectedCategories.has(tag.name)} readOnly className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 pointer-events-none" />
-                                                <span className="text-[13px] text-slate-700 font-bold truncate flex-1">{tag.name}</span>
-                                                <span className="text-[11px] text-slate-400 font-medium bg-slate-100 px-1.5 py-0.5 rounded">{tag.count}</span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                            
-                            {fullDisplayRows.length > 0 && (
-                                <button onClick={() => setShowCategoryModal(true)} className={`${TW.toolbarBtn} text-blue-600 border-blue-200 hover:bg-blue-50`} title="현재 화면의 상품들을 묶어서 새로운 카탈로그로 만듭니다.">
-                                    <i className="fas fa-save mr-1.5 text-blue-500"></i> 저장
-                                </button>
-                            )}
-                        </div>
-
-                        <div className="w-px h-5 bg-slate-200 mx-1 shrink-0"></div>
-
-                        <div className="flex items-center gap-1 shrink-0">
-                            <label className={`${TW.toolbarBtn} text-emerald-600 border-emerald-200 hover:bg-emerald-50 cursor-pointer`}>
-                                <i className="fas fa-file-excel mr-1.5 text-emerald-500"></i> 불러오기
-                                <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e)} accept=".xlsx, .xls, .csv" disabled={isProcessing} />
-                            </label>
-                            
-                            {fullDisplayRows.length > 0 && (
-                                <Fragment>
-                                    <button onClick={handleExportCurrentView} className={`${TW.toolbarBtn} text-emerald-600 border-emerald-200 hover:bg-emerald-50`} title="현재 화면 그대로 엑셀로 다운로드합니다.">
-                                        <i className="fas fa-file-excel mr-1.5 text-emerald-500"></i> 다운로드
+                    <div className="px-6 py-3 flex items-center justify-between gap-4 bg-white border-b border-slate-200 z-50 w-full shrink-0">
+                        <div className="flex items-center gap-2 pb-1 -mb-1 flex-wrap w-full">
+                            <div className="flex items-center gap-1">
+                                <div className="relative" ref={catalogRef}>
+                                    <button onClick={() => { setCatalogDropdownOpen(!catalogDropdownOpen); setCategoryDropdownOpen(false); }} className={`${TW.selectBase} w-[180px] flex justify-between items-center bg-white text-left pl-8`}>
+                                        <span className="truncate pr-2 block">{selectedCatalogs.size > 0 ? `${selectedCatalogs.size}개 선택됨` : '파서 보관함'}</span>
+                                        <i className="fas fa-chevron-down text-blue-400 text-[10px]"></i>
                                     </button>
-
-                                    <button onClick={() => setShowExportModal(true)} className={`${TW.toolbarBtn} text-amber-600 border-amber-200 hover:bg-amber-50`} title="ERP/쇼핑몰 양식 출력">
-                                        <i className="fas fa-file-export mr-1.5 text-amber-500"></i> 보고서
-                                    </button>
-                                </Fragment>
-                            )}
-                        </div>
-
-                        <div className="flex items-center gap-2 shrink-0 ml-auto pl-4">
-                            {selectedRows.size > 0 && (
-                                <button onClick={handleRemoveFromWorkspace} className={`${TW.toolbarBtn} bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100`} title="선택 항목 숨기기">
-                                    <i className="fas fa-eye-slash mr-1.5"></i> 숨기기 ({selectedRows.size})
-                                </button>
-                            )}
-                            
-                            {fullDisplayRows.length > 0 && (
-                                <button onClick={() => setShowReviewModal(true)} className={`${TW.toolbarBtn} px-4 bg-slate-800 text-white hover:bg-slate-700 border-slate-700`}>
-                                    <i className="fas fa-check-circle mr-1.5"></i> 반영하기
-                                </button>
-                            )}
+                                    <i className="fas fa-folder-open absolute left-3 top-2.5 text-blue-500 text-[13px] pointer-events-none"></i>
+                                    
+                                    {catalogDropdownOpen && (
+                                        <div className="absolute top-full left-0 mt-1 w-[250px] max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-xl z-50 p-2 fade-in">
+                                            {availableCatalogs.length === 0 ? <div className="text-xs text-slate-400 p-2 font-bold text-center">항목 없음</div> : availableCatalogs.map(tag => (
+                                                <div key={tag.name} onClick={(e) => { e.stopPropagation(); toggleCatalog(tag.name); }} className="flex items-center gap-3 p-2 hover:bg-slate-50 cursor-pointer rounded-lg transition-colors">
+                                                    <input type="checkbox" checked={selectedCatalogs.has(tag.name)} readOnly className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 pointer-events-none" />
+                                                    <span className="text-[13px] text-slate-700 font-bold truncate flex-1">{tag.name}</span>
+                                                    <span className="text-[11px] text-slate-400 font-medium bg-slate-100 px-1.5 py-0.5 rounded">{tag.count}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
 
                             <div className="w-px h-5 bg-slate-200 mx-1 shrink-0"></div>
 
-                            <button onClick={handleReset} className={`${TW.toolbarBtn} w-9 justify-center text-slate-500 hover:text-slate-800 shrink-0`} title="화면 초기화">
-                                <i className="fas fa-redo-alt text-[13px]"></i>
-                            </button>
-                            <div className="relative w-48 sm:w-64 h-9 shrink-0">
-                                <input 
-                                    id="global-search-input" 
-                                    type="text" 
-                                    placeholder="결과 내 검색 (F3)" 
-                                    value={globalSearch} 
-                                    onChange={e=>setGlobalSearch(e.target.value)} 
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            e.preventDefault();
-                                            const firstInPriceInput = document.querySelector('tbody tr.table-row-hover input[data-field="입고가"]');
-                                            const fallbackInput = document.querySelector('tbody tr.table-row-hover td:has(input[type="text"]) input');
-                                            const target = firstInPriceInput || fallbackInput;
-                                            if (target) {
-                                                target.focus();
-                                                setTimeout(() => target.select(), 0);
+                            <div className="flex items-center gap-1">
+                                <div className="relative" ref={categoryRef}>
+                                    <button onClick={() => { setCategoryDropdownOpen(!categoryDropdownOpen); setCatalogDropdownOpen(false); }} className={`${TW.selectBase} w-[180px] flex justify-between items-center bg-white text-left pl-8`}>
+                                        <span className="truncate pr-2 block">{selectedCategories.size > 0 ? `${selectedCategories.size}개 선택됨` : '카탈로그'}</span>
+                                        <i className="fas fa-chevron-down text-blue-400 text-[10px]"></i>
+                                    </button>
+                                    <i className="fas fa-file-invoice absolute left-3 top-2.5 text-blue-500 text-[13px] pointer-events-none"></i>
+                                    
+                                    {categoryDropdownOpen && (
+                                        <div className="absolute top-full left-0 mt-1 w-[250px] max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-xl z-50 p-2 fade-in">
+                                            {availableCategories.length === 0 ? <div className="text-xs text-slate-400 p-2 font-bold text-center">항목 없음</div> : availableCategories.map(tag => (
+                                                <div key={tag.name} onClick={(e) => { e.stopPropagation(); toggleCategory(tag.name); }} className="flex items-center gap-3 p-2 hover:bg-slate-50 cursor-pointer rounded-lg transition-colors">
+                                                    <input type="checkbox" checked={selectedCategories.has(tag.name)} readOnly className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 pointer-events-none" />
+                                                    <span className="text-[13px] text-slate-700 font-bold truncate flex-1">{tag.name}</span>
+                                                    <span className="text-[11px] text-slate-400 font-medium bg-slate-100 px-1.5 py-0.5 rounded">{tag.count}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                                
+                                {fullDisplayRows.length > 0 && (
+                                    <button onClick={() => setShowCategoryModal(true)} className={`${TW.toolbarBtn} text-blue-600 border-blue-200 hover:bg-blue-50`} title="현재 화면의 상품들을 묶어서 새로운 카탈로그로 만듭니다.">
+                                        <i className="fas fa-save mr-1.5 text-blue-500"></i> 저장
+                                    </button>
+                                )}
+                            </div>
+
+                            <div className="w-px h-5 bg-slate-200 mx-1 shrink-0"></div>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                                <label className={`${TW.toolbarBtn} text-emerald-600 border-emerald-200 hover:bg-emerald-50 cursor-pointer`}>
+                                    <i className="fas fa-file-excel mr-1.5 text-emerald-500"></i> 불러오기
+                                    <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e)} accept=".xlsx, .xls, .csv" disabled={isProcessing} />
+                                </label>
+                                
+                                {fullDisplayRows.length > 0 && (
+                                    <Fragment>
+                                        <button onClick={handleExportCurrentView} className={`${TW.toolbarBtn} text-emerald-600 border-emerald-200 hover:bg-emerald-50`} title="현재 화면 그대로 엑셀로 다운로드합니다.">
+                                            <i className="fas fa-file-excel mr-1.5 text-emerald-500"></i> 다운로드
+                                        </button>
+
+                                        <button onClick={() => setShowExportModal(true)} className={`${TW.toolbarBtn} text-amber-600 border-amber-200 hover:bg-amber-50`} title="ERP/쇼핑몰 양식 출력">
+                                            <i className="fas fa-file-export mr-1.5 text-amber-500"></i> 보고서
+                                        </button>
+                                    </Fragment>
+                                )}
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0 ml-auto pl-4">
+                                {selectedRows.size > 0 && (
+                                    <button onClick={handleRemoveFromWorkspace} className={`${TW.toolbarBtn} bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100`} title="선택 항목 숨기기">
+                                        <i className="fas fa-eye-slash mr-1.5"></i> 숨기기 ({selectedRows.size})
+                                    </button>
+                                )}
+                                
+                                {fullDisplayRows.length > 0 && (
+                                    <button onClick={() => setShowReviewModal(true)} className={`${TW.toolbarBtn} px-4 bg-slate-800 text-white hover:bg-slate-700 border-slate-700`}>
+                                        <i className="fas fa-check-circle mr-1.5"></i> 반영하기
+                                    </button>
+                                )}
+
+                                <div className="w-px h-5 bg-slate-200 mx-1 shrink-0"></div>
+
+                                <button onClick={handleReset} className={`${TW.toolbarBtn} w-9 justify-center text-slate-500 hover:text-slate-800 shrink-0`} title="화면 초기화">
+                                    <i className="fas fa-redo-alt text-[13px]"></i>
+                                </button>
+                                <div className="relative w-48 sm:w-64 h-9 shrink-0">
+                                    <input 
+                                        id="global-search-input" 
+                                        type="text" 
+                                        placeholder="결과 내 검색 (F3)" 
+                                        value={globalSearch} 
+                                        onChange={e=>setGlobalSearch(e.target.value)} 
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                const firstInPriceInput = document.querySelector('tbody tr.table-row-hover input[data-field="입고가"]');
+                                                const fallbackInput = document.querySelector('tbody tr.table-row-hover td:has(input[type="text"]) input');
+                                                const target = firstInPriceInput || fallbackInput;
+                                                if (target) {
+                                                    target.focus();
+                                                    setTimeout(() => target.select(), 0);
+                                                }
                                             }
-                                        }
-                                    }}
-                                    className={`${TW.selectBase} w-full h-full !pl-3 pr-8 py-1 !cursor-text`} 
-                                />
-                                <i className="fas fa-search absolute right-3 top-2.5 text-slate-400 text-[13px] pointer-events-none"></i>
+                                        }}
+                                        className={`${TW.selectBase} w-full h-full !pl-3 pr-8 py-1 !cursor-text`} 
+                                    />
+                                    <i className="fas fa-search absolute right-3 top-2.5 text-slate-400 text-[13px] pointer-events-none"></i>
+                                </div>
                             </div>
                         </div>
                     </div>
