@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - Master DB [v3.0]</title>
+    <title>ONEAPP NEXES - Master DB [v3.3]</title>
     <!-- 핵심 라이브러리 CDN 로드 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -44,14 +44,6 @@
             CLOUD_URL: 'skuSyncCloudUrl_v6',
             SYNC_TRIGGER: 'merchMaster_sync_trigger'
         };
-
-        const MASTER_HEADERS = [
-            "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", 
-            "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", 
-            "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", 
-            "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", 
-            "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록", "상품태그"
-        ];
 
         const NUMERIC_HEADERS = [
             "안전재고", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고",
@@ -103,7 +95,7 @@
         });
 
         // ==========================================
-        // 🧩 [절대 수정 금지] Global Header (v3.0 Final)
+        // 🧩 [절대 수정 금지] Global Header (v3.3 Final)
         // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [
@@ -112,6 +104,7 @@
                 { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }
             ];
 
+            // 💡 [절대 수정 금지] 15개 탭 완벽 매핑 데이터
             const tabs = [
                 { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true, shortTag: 'ONE BOARD' },
                 { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: true, shortTag: 'SYSTEM GUIDE' },
@@ -149,7 +142,7 @@
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
                                     <div className="flex items-center">
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.0</span>
+                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.3</span>
                                     </div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">
                                         {currentTab ? currentTab.shortTag : 'WORKSPACE'}
@@ -203,14 +196,14 @@
                                 const isPlaceholder = !tab.isReady;
                                 return (
                                     <a key={tab.id} href={tab.path} onClick={(e) => onNavigate(e, tab.path, tab.isReady)}
-                                       className={`flex items-center gap-2 px-6 py-3 text-[14px] font-bold rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px]
-                                       ${isActive
-                                           ? 'bg-white text-indigo-600 border-t-indigo-500 border-x-slate-200 relative z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]'
-                                           : isPlaceholder
-                                              ? 'bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5'
-                                              : 'bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5'
-                                       }`}
-                                       style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '13px' : '10px' }}
+                                        className={`flex items-center gap-2 px-6 py-3 text-[14px] font-bold rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px]
+                                        ${isActive
+                                            ? 'bg-white text-indigo-600 border-t-indigo-500 border-x-slate-200 relative z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]'
+                                            : isPlaceholder
+                                                ? 'bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5'
+                                                : 'bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5'
+                                        }`}
+                                        style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '13px' : '10px' }}
                                     >
                                         <SafeIcon name={tab.icon} size={16} className={isActive ? 'text-indigo-600' : 'opacity-70'} />
                                         {tab.label}
@@ -223,14 +216,52 @@
             );
         };
 
+        const IframeSettingsModal = ({ isOpen, onClose }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 z-[500] flex bg-slate-900/60 backdrop-blur-sm fade-in">
+                    <div className="w-full max-w-[1400px] h-full bg-white shadow-[-10px_0_40px_rgba(0,0,0,0.3)] flex flex-col slide-in-right border-l border-slate-300 relative overflow-hidden ml-auto">
+                        <div className="bg-[#0f172a] px-6 py-4 flex justify-between items-center text-white shrink-0 border-b border-slate-700 shadow-md relative z-10">
+                            <div className="flex items-center gap-3">
+                                <SafeIcon name="settings" size={20} className="text-indigo-400"/>
+                                <h2 className="font-black text-[17px] tracking-wide">통합 환경설정 센터</h2>
+                                <span className="bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold border border-indigo-500/30 ml-2">Wide Overlay</span>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <span className="text-[12px] text-slate-400 font-medium hidden md:inline-block">설정을 변경하고 창을 닫으면 작업 화면에 즉시 반영됩니다.</span>
+                                <button onClick={onClose} className="text-slate-300 hover:text-white transition-colors bg-slate-800 hover:bg-rose-500 w-8 h-8 rounded-lg flex items-center justify-center shadow-sm border border-slate-700 hover:border-rose-400">
+                                    <SafeIcon name="x" size={18} />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex-1 w-full bg-slate-100 relative">
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <div className="text-slate-300 flex flex-col items-center">
+                                    <i className="fas fa-circle-notch fa-spin text-3xl mb-3"></i>
+                                    <span className="font-bold text-sm">설정 모듈을 불러오는 중입니다...</span>
+                                </div>
+                            </div>
+                            <iframe src="settings.html?mode=iframe" className="absolute inset-0 w-full h-full border-0 bg-white relative z-10" title="Settings Center"></iframe>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         // ==========================================
-        // 🧩 Read-Only 설정 훅 (v3.0 경량화)
+        // 🧩 Read-Only 설정 훅
         // ==========================================
         const useMerchConfig = () => {
             const loadConfig = () => {
                 const cloudUrl = localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || '';
-                let visibleMasterCols = JSON.parse(localStorage.getItem('merchVisMaster_v870') || 'null');
-                if (!visibleMasterCols || !visibleMasterCols.estimate) visibleMasterCols = { estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] };
+                let visibleMasterColsRaw = localStorage.getItem('merchVisMaster_v870');
+                let visibleMasterCols = { estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] };
+                try {
+                    if (visibleMasterColsRaw) {
+                        const parsed = JSON.parse(visibleMasterColsRaw);
+                        if (parsed && parsed.estimate) visibleMasterCols = parsed;
+                    }
+                } catch(e) { console.warn("Config Load Fail", e); }
                 return { cloudUrl, visibleMasterCols };
             };
             const [config, setConfig] = useState(loadConfig());
@@ -251,7 +282,7 @@
             const [toastMsg, setToastMsg] = useState("");
             
             const visMasterCols = useMemo(() => {
-                const cols = config.visibleMasterCols['estimate'] || [];
+                const cols = config?.visibleMasterCols?.estimate || [];
                 return cols.filter(h => !['품목코드', '품목명', '규격'].includes(h));
             }, [config.visibleMasterCols]);
             
@@ -259,7 +290,6 @@
             const [processMsg, setProcessMsg] = useState('');
             const [showSettingsModal, setShowSettingsModal] = useState(false);
             const [globalSearch, setGlobalSearch] = useState('');
-            const [selectedRows, setSelectedRows] = useState(new Set()); 
 
             const [activeC1, setActiveC1] = useState('');
             const [activeC2, setActiveC2] = useState('');
@@ -302,6 +332,8 @@
                 reader.onload = async (e) => {
                     try {
                         const data = new Uint8Array(e.target.result);
+                        const XLSX = window.XLSX;
+                        if (!XLSX) throw new Error("Excel Library not loaded");
                         const wb = XLSX.read(data, { type: 'array' });
                         const ws = wb.Sheets[wb.SheetNames[0]];
                         const jsonAll = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
@@ -323,7 +355,7 @@
                         setMasterProducts(newMaster);
                         await setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
                         showToast(`✅ ${Object.keys(newMaster).length}건 등록 완료!`);
-                    } catch(err) { showToast("❌ 오류 발생"); } finally { setIsProcessing(false); setProcessMsg(""); }
+                    } catch(err) { showToast("❌ 오류 발생: " + err.message); } finally { setIsProcessing(false); setProcessMsg(""); }
                 };
                 reader.readAsArrayBuffer(file);
                 e.target.value = ''; 
@@ -354,14 +386,6 @@
                     await setIDB(STORAGE_KEYS.MASTER_DB, dataToSave);
                     showToast(`✅ ${result.data.length}건 동기화 완료`);
                 } catch (e) { showToast("❌ 실패"); } finally { setIsProcessing(false); setProcessMsg(""); }
-            };
-
-            const toggleRow = (code) => {
-                setSelectedRows(prev => {
-                    const next = new Set(prev);
-                    if (next.has(code)) next.delete(code); else next.add(code);
-                    return next;
-                });
             };
 
             const c1List = useMemo(() => {
@@ -407,7 +431,10 @@
                 const arr = Object.values(masterProducts);
                 if (globalSearch.trim()) {
                     const kw = globalSearch.toLowerCase().replace(/\s+/g, '');
-                    return arr.filter(item => ((item['코드']||'')+(item['품목명']||'')+(item['규격']||'')).toLowerCase().includes(kw)).slice(0, 500);
+                    return arr.filter(item => {
+                        const target = ((item['코드']||'')+(item['품목명']||'')+(item['규격']||'')).toLowerCase();
+                        return target.includes(kw);
+                    }).slice(0, 500);
                 }
                 if (activeC3) return arr.filter(p => (p['1코드']||'etc') === activeC1 && (p['2코드']||'etc') === activeC2 && (p['3코드']||p['오더즈']||'etc') === activeC3).slice(0, 500);
                 return [];
@@ -434,10 +461,10 @@
                     )}
 
                     <main className="flex-1 flex flex-col overflow-hidden bg-slate-50 border-t border-slate-200">
-                        <div className="px-6 py-3 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 z-10">
+                        <div className="px-6 py-3 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 z-10 shadow-sm">
                             <div className="flex items-center gap-4">
                                 <span className="text-[12px] font-bold text-slate-400">
-                                    총 <strong className="text-indigo-600">{Object.keys(masterProducts).length.toLocaleString()}</strong>건
+                                    총 <strong className="text-indigo-600">{Object.keys(masterProducts).length.toLocaleString()}</strong>건 데이터
                                 </span>
                             </div>
                             <div className="flex items-center gap-2">
@@ -446,28 +473,28 @@
                                     <input type="file" className="hidden" accept=".xlsx" onChange={handleExcelUpload} disabled={isProcessing} />
                                 </label>
                                 <div className="relative w-64 h-9 ml-2">
-                                    <input type="text" placeholder="마스터 DB 검색..." value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)} className="w-full h-full pl-9 pr-4 bg-slate-100 border-none rounded-lg text-[13px] outline-none focus:ring-1 focus:ring-indigo-400 transition-all" />
-                                    <SafeIcon name="search" size={14} className="absolute left-3 top-2.5 text-slate-400" />
+                                    <input type="text" placeholder="마스터 DB 검색..." value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)} className="w-full h-full pl-9 pr-4 bg-slate-100 border-none rounded-lg text-[13px] outline-none focus:ring-1 focus:ring-indigo-400 transition-all shadow-inner" />
+                                    <SafeIcon name="search" size={14} className="absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
                                 </div>
                             </div>
                         </div>
 
                         <div className="flex-1 flex overflow-hidden">
-                            <div className="w-[180px] bg-white border-r border-slate-200 overflow-y-auto py-2 custom-scrollbar">
+                            <div className="w-[180px] bg-white border-r border-slate-200 overflow-y-auto py-2 custom-scrollbar shadow-sm">
                                 {c1List.map(c => (
-                                    <button key={c.code} onClick={() => { setActiveC1(c.code); setActiveC2(''); setActiveC3(''); }} className={`w-full text-left px-5 py-3 text-[12px] font-bold ${activeC1 === c.code ? 'bg-indigo-50 text-indigo-700 border-r-4 border-indigo-600' : 'text-slate-600 hover:bg-slate-50'}`}>
+                                    <button key={c.code} onClick={() => { setActiveC1(c.code); setActiveC2(''); setActiveC3(''); }} className={`w-full text-left px-5 py-3 text-[12px] font-bold transition-all ${activeC1 === c.code ? 'bg-indigo-50 text-indigo-700 border-r-4 border-indigo-600' : 'text-slate-600 hover:bg-slate-50'}`}>
                                         {c.name}
                                     </button>
                                 ))}
                             </div>
                             <div className="w-[180px] bg-slate-50 border-r border-slate-200 overflow-y-auto py-2 custom-scrollbar">
                                 {c2List.map(c => (
-                                    <button key={c.code} onClick={() => { setActiveC2(c.code); setActiveC3(''); }} className={`w-full text-left px-5 py-3 text-[12px] font-bold ${activeC2 === c.code ? 'bg-white text-indigo-700' : 'text-slate-500 hover:bg-white/50'}`}>
+                                    <button key={c.code} onClick={() => { setActiveC2(c.code); setActiveC3(''); }} className={`w-full text-left px-5 py-3 text-[12px] font-bold transition-all ${activeC2 === c.code ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:bg-white/50'}`}>
                                         {c.name}
                                     </button>
                                 ))}
                             </div>
-                            <div className="flex-1 bg-white overflow-auto custom-scrollbar">
+                            <div className="flex-1 bg-white overflow-auto custom-scrollbar relative">
                                 <table className="w-full text-left text-[12px] whitespace-nowrap">
                                     <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200">
                                         <tr>
@@ -478,7 +505,7 @@
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {displayRows.map(row => {
+                                        {displayRows.length > 0 ? displayRows.map(row => {
                                             const code = row['코드'] || row['품목코드'];
                                             return (
                                                 <tr key={code} className="hover:bg-slate-50 transition-colors">
@@ -488,31 +515,21 @@
                                                     {visMasterCols.map(h => <td key={h} className="py-2 px-3 text-slate-500">{row[h] || '-'}</td>)}
                                                 </tr>
                                             );
-                                        })}
+                                        }) : (
+                                            <tr>
+                                                <td colSpan={visMasterCols.length + 3} className="py-20 text-center text-slate-400">데이터가 없습니다. 카테고리를 선택하거나 검색어를 입력하세요.</td>
+                                            </tr>
+                                        )}
                                     </tbody>
                                 </table>
                             </div>
                         </div>
                     </main>
 
-                    {showSettingsModal && (
-                        <div className="fixed inset-0 z-[500] flex justify-end bg-slate-900/60 backdrop-blur-sm fade-in">
-                            <div className="w-full max-w-[1100px] h-full bg-white shadow-2xl flex flex-col slide-in-right">
-                                <div className="bg-[#0f172a] px-6 py-4 flex justify-between items-center text-white shrink-0">
-                                    <div className="flex items-center gap-3">
-                                        <SafeIcon name="settings" size={20} className="text-indigo-400"/>
-                                        <h2 className="font-black text-[17px]">통합 환경설정 센터</h2>
-                                    </div>
-                                    <button onClick={() => setShowSettingsModal(false)} className="hover:bg-rose-500 w-8 h-8 rounded-lg flex items-center justify-center transition-colors">
-                                        <SafeIcon name="x" size={18} />
-                                    </button>
-                                </div>
-                                <div className="flex-1">
-                                    <iframe src="settings.html?mode=iframe" className="w-full h-full border-0" title="Settings Center"></iframe>
-                                </div>
-                            </div>
-                        </div>
-                    )}
+                    <IframeSettingsModal 
+                        isOpen={showSettingsModal} 
+                        onClose={() => setShowSettingsModal(false)} 
+                    />
                 </div>
             );
         }
