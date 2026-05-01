@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Smart Parser [v1.3]</title>
+    <title>ONEAPP MerchOps - Smart Parser [v3.3]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -302,7 +302,7 @@
         };
 
         // ==========================================
-        // 🛠 SafeIcon & Headers
+        // 🛠 SafeIcon & Headers (v3.3 100% 반영본)
         // ==========================================
         const SafeIcon = React.memo(function SafeIconComponent({ name, size = 18, className = "" }) {
             const [svg, setSvg] = useState("");
@@ -342,7 +342,6 @@
             return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
         });
 
-        // 💡 [절대 수정 금지] 15개 탭 완벽 매핑 데이터 적용 GlobalHeader
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [
                 { id: 'master', label: '정보 관리', icon: 'database' },
@@ -388,7 +387,7 @@
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
                                     <div className="flex items-center">
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.2</span>
+                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.3</span>
                                     </div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">
                                         {currentTab ? currentTab.shortTag : 'WORKSPACE'}
@@ -465,13 +464,13 @@
         const IframeSettingsModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
             return (
-                <div className="fixed inset-0 z-[500] flex justify-end bg-slate-900/60 backdrop-blur-sm fade-in">
-                    <div className="w-full max-w-[1100px] h-full bg-white shadow-[0_0_40px_rgba(0,0,0,0.3)] flex flex-col slide-in-right border-l border-slate-300 relative overflow-hidden">
+                <div className="fixed inset-0 z-[500] flex bg-slate-900/60 backdrop-blur-sm fade-in">
+                    <div className="w-full max-w-[1400px] h-full bg-white shadow-[-10px_0_40px_rgba(0,0,0,0.3)] flex flex-col slide-in-right border-l border-slate-300 relative overflow-hidden ml-auto">
                         <div className="bg-[#0f172a] px-6 py-4 flex justify-between items-center text-white shrink-0 border-b border-slate-700 shadow-md relative z-10">
                             <div className="flex items-center gap-3">
                                 <SafeIcon name="settings" size={20} className="text-indigo-400"/>
                                 <h2 className="font-black text-[17px] tracking-wide">통합 환경설정 센터</h2>
-                                <span className="bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold border border-indigo-500/30 ml-2">Iframe Overlay</span>
+                                <span className="bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold border border-indigo-500/30 ml-2">Wide Overlay</span>
                             </div>
                             <div className="flex items-center gap-4">
                                 <span className="text-[12px] text-slate-400 font-medium hidden md:inline-block">설정을 변경하고 창을 닫으면 작업 화면에 즉시 반영됩니다.</span>
@@ -484,7 +483,7 @@
                             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                 <div className="text-slate-300 flex flex-col items-center">
                                     <i className="fas fa-circle-notch fa-spin text-3xl mb-3"></i>
-                                    <span className="font-bold text-sm">설정 모듈 로드 중...</span>
+                                    <span className="font-bold text-sm">설정 모듈을 불러오는 중입니다...</span>
                                 </div>
                             </div>
                             <iframe src="settings.html?mode=iframe" className="absolute inset-0 w-full h-full border-0 bg-white relative z-10" title="Settings Center"></iframe>
@@ -1309,21 +1308,70 @@
             const handlePush = async () => {
                 const cloudUrl = localStorage.getItem('skuSyncCloudUrl_v6');
                 if (!cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
-                appState.setIsProcessing(true); appState.setProcessMsg("클라우드 백업 중...");
-                setTimeout(() => {
-                    showToast("✅ 클라우드 저장 완료");
-                    appState.setIsProcessing(false); appState.setProcessMsg("");
-                }, 1000);
+                
+                appState.setIsProcessing(true); 
+                appState.setProcessMsg("클라우드 백업 중...");
+                
+                try {
+                    let historyDelta = [];
+                    try { historyDelta = JSON.parse(localStorage.getItem(STORAGE_KEYS.HISTORY_DB)) || []; } catch(e){}
+                    
+                    const payload = {
+                        action: 'pushData',
+                        masterDelta: masterProducts,
+                        historyDelta: historyDelta.slice(-200), // 트래픽 최적화를 위해 최근 200건만 전송
+                        parserDict: appState.parserDict,
+                        marginRules: appState.marginRules
+                    };
+
+                    const response = await fetch(cloudUrl, {
+                        method: 'POST',
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    const result = await response.json();
+                    if (result.status === 'success') {
+                        showToast("✅ 클라우드 데이터 백업이 완료되었습니다.");
+                    } else {
+                        throw new Error(result.message);
+                    }
+                } catch(error) {
+                    console.error("Push Error:", error);
+                    showToast("❌ 클라우드 통신 중 오류가 발생했습니다.");
+                } finally {
+                    appState.setIsProcessing(false); 
+                    appState.setProcessMsg("");
+                }
             };
 
             const handlePull = async () => {
                 const cloudUrl = localStorage.getItem('skuSyncCloudUrl_v6');
                 if (!cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
-                appState.setIsProcessing(true); appState.setProcessMsg("데이터 동기화 중...");
-                setTimeout(() => {
-                    showToast("✅ 데이터 수신 완료");
-                    appState.setIsProcessing(false); appState.setProcessMsg("");
-                }, 1000);
+                
+                appState.setIsProcessing(true); 
+                appState.setProcessMsg("데이터 동기화 중...");
+                
+                try {
+                    const response = await fetch(`${cloudUrl}?action=pullData`);
+                    const result = await response.json();
+                    
+                    if (result.status === 'success') {
+                        if (result.master) await appState.saveMaster(result.master);
+                        if (result.parserDict) appState.saveDict(result.parserDict);
+                        if (result.marginRules && result.marginRules.length > 0) {
+                            localStorage.setItem('merchMarginRules_v878', JSON.stringify(result.marginRules));
+                        }
+                        showToast("✅ 데이터 수신 완료! 최신 상태로 동기화되었습니다.");
+                    } else {
+                        throw new Error(result.message || "서버 응답 오류");
+                    }
+                } catch(error) {
+                    console.error("Pull Error:", error);
+                    showToast("❌ 데이터 동기화 중 오류가 발생했습니다.");
+                } finally {
+                    appState.setIsProcessing(false); 
+                    appState.setProcessMsg("");
+                }
             };
 
             const [showSettingsModal, setShowSettingsModal] = useState(false);
