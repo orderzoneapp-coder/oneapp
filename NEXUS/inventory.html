@@ -129,7 +129,6 @@
                 
                 try {
                     const parsed = JSON.parse(s);
-                    // 🛡️ [이중 안전장치] 사용자의 낡은 로컬스토리지 값에 필수 키워드가 없으면 강제로 병합(주입)합니다.
                     const ensureKeyword = (key, keywordsStr) => {
                         const existing = (parsed[key] || '').split(',').map(k => k.trim());
                         const required = keywordsStr.split(',').map(k => k.trim());
@@ -157,6 +156,9 @@
             return { cloudUrl, opsMappings, opsGrouping };
         };
 
+        // ==========================================
+        // 1. 📋 글로벌 헤더 및 설정창 (v3.3 최신판 적용)
+        // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [
                 { id: 'master', label: '정보 관리', icon: 'database' },
@@ -202,7 +204,7 @@
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
                                     <div className="flex items-center">
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.2</span>
+                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.3</span>
                                     </div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">
                                         {currentTab ? currentTab.shortTag : 'WORKSPACE'}
@@ -279,13 +281,13 @@
         const IframeSettingsModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
             return (
-                <div className="fixed inset-0 z-[500] flex justify-end bg-slate-900/60 backdrop-blur-sm fade-in">
-                    <div className="w-full max-w-[1100px] h-full bg-white shadow-[0_0_40px_rgba(0,0,0,0.3)] flex flex-col slide-in-right border-l border-slate-300 relative overflow-hidden">
+                <div className="fixed inset-0 z-[500] flex bg-slate-900/60 backdrop-blur-sm fade-in">
+                    <div className="w-full max-w-[1400px] h-full bg-white shadow-[-10px_0_40px_rgba(0,0,0,0.3)] flex flex-col slide-in-right border-l border-slate-300 relative overflow-hidden ml-auto">
                         <div className="bg-[#0f172a] px-6 py-4 flex justify-between items-center text-white shrink-0 border-b border-slate-700 shadow-md relative z-10">
                             <div className="flex items-center gap-3">
                                 <SafeIcon name="settings" size={20} className="text-indigo-400"/>
                                 <h2 className="font-black text-[17px] tracking-wide">통합 환경설정 센터</h2>
-                                <span className="bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold border border-indigo-500/30 ml-2">Iframe Overlay</span>
+                                <span className="bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold border border-indigo-500/30 ml-2">Wide Overlay</span>
                             </div>
                             <div className="flex items-center gap-4">
                                 <span className="text-[12px] text-slate-400 font-medium hidden md:inline-block">설정을 변경하고 창을 닫으면 작업 화면에 즉시 반영됩니다.</span>
@@ -333,7 +335,6 @@
                         const code = row[codeKey] || row['코드'] || row['상품코드'];
                         if (!code) return;
                         
-                        // 🛡️ [이중 안전장치] 엑셀 키워드를 찾지 못할 경우의 최후 보루(Fallback) 설정
                         const qtyKey = findKey(opsMappings.qty) || '수량';
                         const qty = parseNum(row[qtyKey] || row['실사'] || row['재고'] || row['실사수량']);
                         if (qty === 0) return; 
@@ -352,11 +353,9 @@
                         
                         const existingIdx = newItems.findIndex(i => i.batchKey === batchKey);
                         if (existingIdx >= 0) {
-                            newItems[existingIdx].기초 += qty;
-                            newItems[existingIdx].전산잔량 += qty;
                             newItems[existingIdx].실사 += qty;
+                            newItems[existingIdx].로스 += qty;
                         } else {
-                            // 💡 [수정됨] 초기 셋업 시 '로스'로 잡히지 않도록 '기초 재고'로 바로 주입합니다.
                             newItems.push({
                                 batchKey, 
                                 코드: code, 
@@ -365,12 +364,12 @@
                                 단가: price, 
                                 거래처: vendor, 
                                 일자: '',
-                                기초: qty, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: qty, 
-                                실사: qty, 로스: 0, 
+                                기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 
+                                실사: qty, 로스: qty, 
                                 이슈: ['🚀초기셋업'], 
                                 메모: excelPrice > 0 ? '엑셀 단가 적용' : '마스터 단가 적용', 
                                 출고내역: {}, 
-                                _orig: { 기초: qty, 입고: 0, 출고: 0, 단가: price },
+                                _orig: { 기초: 0, 입고: 0, 출고: 0, 단가: price },
                                 isDummy: false, 
                                 수기확인완료: true
                             });
@@ -642,7 +641,22 @@
                     
                     <td className="py-2 px-3 bg-indigo-50/30 border-r border-indigo-100 relative">
                         {isLinked && <div className="absolute -top-3 right-2 bg-slate-800 text-white text-[9px] px-1.5 py-0.5 rounded shadow animate-bounce">대상 선택</div>}
-                        <input id={`actual-input-${idx}`} type="number" value={item.실사 === null ? '' : item.실사} onChange={(e) => onStockChange(item.batchKey, e.target.value)} onClick={e=>e.target.select()} onFocus={e => e.target.select()} onKeyDown={(e) => { if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); onSpacebar(item.batchKey, idx); } }} placeholder={item.전산잔량} className={`w-full text-center hover:bg-white focus:bg-white border rounded px-2 py-1.5 text-[14px] font-black outline-none transition-colors shadow-sm cursor-pointer ${isNegativeActual ? 'bg-rose-50 border-rose-400 text-rose-700 focus:ring-rose-200' : (item.로스 !== 0 ? 'border-orange-400 text-orange-700 bg-orange-50 focus:ring-orange-200' : 'border-transparent text-slate-800 focus:border-indigo-400 focus:ring-indigo-200 bg-transparent')}`} />
+                        <input id={`actual-input-${idx}`} type="number" value={item.실사 === null ? '' : item.실사} onChange={(e) => onStockChange(item.batchKey, e.target.value)} onClick={e=>e.target.select()} onFocus={e => e.target.select()} onKeyDown={(e) => { 
+                            if (e.key === ' ' || e.code === 'Space') { 
+                                e.preventDefault(); 
+                                onSpacebar(item.batchKey, idx); 
+                            }
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const nextInput = document.getElementById(`actual-input-${idx + 1}`);
+                                if (nextInput) {
+                                    nextInput.focus();
+                                    nextInput.select();
+                                } else {
+                                    e.target.blur(); // 마지막 줄일 경우 포커스 해제
+                                }
+                            }
+                        }} placeholder={item.전산잔량} className={`w-full text-center hover:bg-white focus:bg-white border rounded px-2 py-1.5 text-[14px] font-black outline-none transition-colors shadow-sm cursor-pointer ${isNegativeActual ? 'bg-rose-50 border-rose-400 text-rose-700 focus:ring-rose-200' : (item.로스 !== 0 ? 'border-orange-400 text-orange-700 bg-orange-50 focus:ring-orange-200' : 'border-transparent text-slate-800 focus:border-indigo-400 focus:ring-indigo-200 bg-transparent')}`} />
                     </td>
 
                     <td className={`py-2.5 px-4 text-right font-black border-r border-slate-200 bg-inherit ${item.로스 < 0 ? 'text-rose-600' : item.로스 > 0 ? 'text-blue-600' : 'text-slate-300'}`}>{item.로스 > 0 ? '+' : ''}{item.로스 === 0 ? '-' : item.로스.toLocaleString()}</td>
@@ -699,7 +713,9 @@
             const [searchKw, setSearchKw] = useState('');
             
             const [showMinusOnly, setShowMinusOnly] = useState(false);
-            const [showChangedOnly, setShowChangedOnly] = useState(false);
+            const [changedFilter, setChangedFilter] = useState(0); // 0: off, 1: 1일, 3: 3일, 7: 7일
+            const [recentChangedCodes, setRecentChangedCodes] = useState({ 1: new Set(), 3: new Set(), 7: new Set() });
+            
             const [selectedForRepack, setSelectedForRepack] = useState(new Set());
             const [repackMatchState, setRepackMatchState] = useState({ isMatching: false, matches: [] });
             
@@ -752,6 +768,16 @@
                     setMasterDB(master);
                     const history = await getIDB(STORAGE_KEYS.HISTORY_DB) || [];
                     const closings = await getIDB(STORAGE_KEYS.CLOSING_DB) || [];
+                    
+                    const getPastDateStr = (base, days) => { const d = new Date(base); d.setDate(d.getDate() - (days - 1)); return d.toISOString().slice(0, 10); };
+                    const date3 = getPastDateStr(targetDate, 3); const date7 = getPastDateStr(targetDate, 7);
+                    const cCodes = { 1: new Set(), 3: new Set(), 7: new Set() };
+                    history.forEach(h => {
+                        if (h.date === targetDate) cCodes[1].add(h.code);
+                        if (h.date >= date3 && h.date <= targetDate) cCodes[3].add(h.code);
+                        if (h.date >= date7 && h.date <= targetDate) cCodes[7].add(h.code);
+                    });
+                    setRecentChangedCodes(cCodes);
                     
                     if (closings.length === 0) setHasSnapshots(false);
                     else setHasSnapshots(true);
@@ -888,7 +914,6 @@
                         const codeKey = findKey(config.opsMappings.code) || '품목코드'; const code = row[codeKey] || row['코드'] || row['상품코드'];
                         if (!code) { errors.push({ row: idx + 2, code: '-', reason: '품목코드 누락' }); return; }
                         
-                        // 🛡️ [이중 안전장치] 실사 엑셀 업로드 시에도 Fallback 키워드 추가 (재고)
                         const qtyKey = findKey(config.opsMappings.qty) || '실사'; const qtyVal = row[qtyKey] || row['기말실사'] || row['수량'] || row['재고'];
                         if (qtyVal === undefined || qtyVal === '') { errors.push({ row: idx + 2, code, reason: '실사 수량 누락' }); return; }
                         actualUpdates[code] = parseNum(qtyVal);
@@ -1001,15 +1026,13 @@
                     let parentCode = masterInfo.부모원물;
                     let conversionRate = masterInfo.역산비율; 
                     
-                    // 마스터 DB에 부모원물이 없으면 시스템이 이름과 단가를 기반으로 "스마트 역추적 Fallback" 작동
                     if (!parentCode) {
                         const candidates = tempInventory.filter(i => i.batchKey !== targetKey && i.전산잔량 > 0);
-                        const targetBaseName = targetItem.품명.split(' ')[0]; // 첫 단어 기준
-                        // 단가가 훨씬 비싸고(최소 2배 이상), 이름에 박스/BOX가 있거나 유사한 원물 찾기
+                        const targetBaseName = targetItem.품명.split(' ')[0];
                         const matchedParent = candidates.find(i => i.품명.includes(targetBaseName) && (i.품명.includes('박스') || i.품명.includes('BOX') || i.단가 > targetItem.단가 * 2));
                         if (matchedParent) {
                             parentCode = matchedParent.코드;
-                            conversionRate = 0.1; // 시뮬레이션을 위한 기본 10:1 비율
+                            conversionRate = 0.1;
                         }
                     }
                     
@@ -1253,25 +1276,25 @@
                                });
                 } else if (showMinusOnly) {
                     data = data.filter(i => (i.실사 !== null && i.실사 < 0) || i.전산잔량 < 0 || i.로스 < 0);
-                } else if (showChangedOnly) {
-                    data = data.filter(i => i.입고 !== 0 || i.출고 !== 0 || i.대체입고 !== 0 || i.대체출고 !== 0 || i.로스 !== 0 || (i.이슈 && i.이슈.some(msg => msg.includes('🚀초기셋업'))));
+                } else if (changedFilter > 0) {
+                    const targetCodes = recentChangedCodes[changedFilter];
+                    data = data.filter(i => (targetCodes && targetCodes.has(i.코드)) || i.입고 !== 0 || i.출고 !== 0 || i.대체입고 !== 0 || i.대체출고 !== 0 || i.로스 !== 0 || (i.이슈 && i.이슈.some(msg => msg.includes('🚀초기셋업'))));
                 } else if (searchKw.trim()) {
                     const kw = searchKw.toLowerCase().replace(/\s/g, '');
                     data = data.filter(i => String(i.품명).toLowerCase().replace(/\s/g, '').includes(kw) || String(i.코드).includes(kw));
                 }
                 
                 return data;
-            }, [inventoryData, searchKw, showMinusOnly, showChangedOnly, repackMatchState]);
+            }, [inventoryData, searchKw, showMinusOnly, changedFilter, recentChangedCodes, repackMatchState]);
 
             const closingStats = useMemo(() => {
-                let lossCount = 0; let manualCount = 0; let lossAmount = 0; let unresolvedCount = 0;
+                let lossCount = 0; let manualCount = 0; let lossAmount = 0;
                 inventoryData.forEach(p => {
-                    if (p.로스 !== 0 || p.전산잔량 < 0) lossCount++;
-                    if (p.이슈 && p.이슈.some(i => i.includes('🚨'))) unresolvedCount++;
+                    if (p.로스 !== 0 || p.전산잔량 < 0 || (p.이슈 && p.이슈.some(i => i.includes('🚨')))) lossCount++;
                     if (p.이슈 && p.이슈.some(i => i.includes('✅') || i.includes('🔄') || i.includes('🚀'))) manualCount++;
                     if (p.로스 < 0) lossAmount += (p.로스 * (p.단가 || 0));
                 });
-                return { total: inventoryData.length, lossCount, manualCount, lossAmount, unresolvedCount };
+                return { total: inventoryData.length, lossCount, manualCount, lossAmount };
             }, [inventoryData]);
 
             const handleIssueJump = useCallback((type, direction = 'next', fromCardClick = false) => {
@@ -1332,7 +1355,6 @@
                     
                     <IframeSettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
                     
-                    {/* 수정: GenesisSetupModal에 opsMappings 프롭스 전달 */}
                     <GenesisSetupModal isOpen={showGenesisModal} onClose={() => setShowGenesisModal(false)} onApplySetup={(newItems) => { setInventoryData(newItems); setHasSnapshots(true); }} showToast={showToast} opsMappings={config.opsMappings} />
 
                     <div className="px-8 py-4 bg-white border-b border-slate-200 flex flex-col shadow-sm shrink-0 relative z-10 gap-3">
@@ -1348,12 +1370,15 @@
                                     <Fragment>
                                         <div className="w-px h-5 bg-slate-200 mx-1"></div>
 
-                                        <button onClick={() => { setShowMinusOnly(!showMinusOnly); setShowChangedOnly(false); }} className={`px-2.5 py-1.5 h-8 rounded-lg text-[12px] font-bold transition-colors shadow-sm flex items-center gap-1.5 ${showMinusOnly ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`} title="출고로 인해 마이너스(-)가 된 소분품들을 추적합니다.">
+                                        <button onClick={() => { setShowMinusOnly(!showMinusOnly); setChangedFilter(0); }} className={`px-2.5 py-1.5 h-8 rounded-lg text-[12px] font-bold transition-colors shadow-sm flex items-center gap-1.5 ${showMinusOnly ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`} title="출고로 인해 마이너스(-)가 된 소분품들을 추적합니다.">
                                             <SafeIcon name="filter" size={14} /> {showMinusOnly ? '전체 뷰' : '마이너스 뷰'}
                                         </button>
                                         
-                                        <button onClick={() => { setShowChangedOnly(!showChangedOnly); setShowMinusOnly(false); }} className={`px-2.5 py-1.5 h-8 rounded-lg text-[12px] font-bold transition-colors shadow-sm flex items-center gap-1.5 ${showChangedOnly ? 'bg-amber-500 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`} title="당일에 입고/출고/상계/실사 변경이 발생한 품목만 봅니다.">
-                                            <SafeIcon name="zap" size={14} /> {showChangedOnly ? '전체 뷰' : '변동품만'}
+                                        <button onClick={() => { 
+                                            setShowMinusOnly(false); 
+                                            setChangedFilter(prev => prev === 0 ? 1 : (prev === 1 ? 3 : (prev === 3 ? 7 : 0))); 
+                                        }} className={`px-2.5 py-1.5 h-8 rounded-lg text-[12px] font-bold transition-colors shadow-sm flex items-center gap-1.5 ${changedFilter > 0 ? 'bg-amber-500 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`} title="당일, 최근 3일, 최근 7일 내 입출고/조정 변동이 있는 품목만 봅니다. (클릭 시 기간 변경)">
+                                            <SafeIcon name="zap" size={14} /> {changedFilter === 0 ? '변동품 필터' : (changedFilter === 1 ? '당일 변동품' : (changedFilter === 3 ? '최근 3일 변동' : '최근 7일 변동'))}
                                         </button>
                                     </Fragment>
                                 )}
@@ -1397,8 +1422,7 @@
                                     </button>
                                 )}
 
-                                {/* 수정: unresolvedCount(미해결 🚨 에러)가 없을 경우 무조건 마감 버튼 활성화되도록 로직 수정 */}
-                                <button onClick={handleClosing} disabled={isProcessing || closingStats.unresolvedCount > 0 || isClosedDate || inventoryData.length === 0} className={`ml-1 px-5 py-1.5 h-8 rounded-lg text-[13px] font-black shadow-sm transition-all flex items-center gap-1.5 ${isClosedDate ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : (closingStats.unresolvedCount === 0 && inventoryData.length > 0 ? 'bg-[#0B1021] text-white hover:bg-black hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed')}`}>
+                                <button onClick={handleClosing} disabled={isProcessing || closingStats.lossCount > 0 || isClosedDate || inventoryData.length === 0} className={`ml-1 px-5 py-1.5 h-8 rounded-lg text-[13px] font-black shadow-sm transition-all flex items-center gap-1.5 ${isClosedDate ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : (closingStats.lossCount === 0 && inventoryData.length > 0 ? 'bg-[#0B1021] text-white hover:bg-black hover:-translate-y-0.5' : 'bg-slate-200 text-slate-400 cursor-not-allowed')}`}>
                                     <SafeIcon name={isClosedDate ? "lock" : "check-circle-2"} size={14} /> 
                                     {isClosedDate ? '마감 완료' : '일자 마감'}
                                 </button>
@@ -1416,18 +1440,13 @@
                         {inventoryData.length > 0 && (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                                 <div onClick={() => { if(activeIssueMode !== 'loss') { handleIssueJump('loss', 'next', true); } else { setActiveIssueMode(null); } }} className={`p-4 rounded-xl border-[3px] transition-all flex flex-col justify-between relative overflow-hidden cursor-pointer ${activeIssueMode === 'loss' ? 'bg-orange-50 border-orange-500 shadow-md ring-4 ring-orange-500/20' : (closingStats.lossCount > 0 ? 'bg-orange-50 border-orange-200 hover:border-orange-400 hover:shadow-md' : 'bg-white border-slate-200 hover:border-slate-300')}`}>
-                                    <div className={`text-xs font-bold mb-1 flex items-center justify-between ${closingStats.lossCount > 0 ? 'text-orange-800' : 'text-slate-600'}`}><span className="flex items-center"><SafeIcon name="balance-scale" size={16} className={`${activeIssueMode === 'loss' || closingStats.lossCount > 0 ? 'text-orange-500' : 'text-slate-400'} mr-2`}/>실사 오차 (로스) 확인</span>{closingStats.unresolvedCount > 0 && <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.6)]"></span>}</div>
+                                    <div className={`text-xs font-bold mb-1 flex items-center justify-between ${closingStats.lossCount > 0 ? 'text-orange-800' : 'text-slate-600'}`}><span className="flex items-center"><SafeIcon name="balance-scale" size={16} className={`${activeIssueMode === 'loss' || closingStats.lossCount > 0 ? 'text-orange-500' : 'text-slate-400'} mr-2`}/>실사 오차 (로스) 확인</span>{closingStats.lossCount > 0 && <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.6)]"></span>}</div>
                                     <div className="flex items-start justify-between mt-2">
                                         <div>
                                             <div className={`text-3xl font-black ${activeIssueMode === 'loss' || closingStats.lossCount > 0 ? 'text-orange-900' : 'text-slate-800'}`}>{closingStats.lossCount}<span className="text-sm font-bold text-slate-500 ml-1">건</span></div>
-                                            {closingStats.unresolvedCount > 0 ? (
+                                            {closingStats.lossCount > 0 ? (
                                                 <div className="flex flex-col mt-1 gap-1.5">
                                                     <span className="text-[12px] text-orange-600 font-bold">클릭/Tab키로 추적 (수정요망)</span>
-                                                    {closingStats.lossAmount < 0 && <span className="text-[11.5px] text-rose-600 font-black bg-rose-50 border border-rose-100 px-2 py-0.5 rounded shadow-sm inline-block w-fit tracking-tight">추정 손실액: {closingStats.lossAmount.toLocaleString()}원</span>}
-                                                </div>
-                                            ) : closingStats.lossCount > 0 ? (
-                                                <div className="flex flex-col mt-1 gap-1.5">
-                                                    <span className="text-[12px] text-slate-500 font-bold">오차 승인 및 보정 완료됨</span>
                                                     {closingStats.lossAmount < 0 && <span className="text-[11.5px] text-rose-600 font-black bg-rose-50 border border-rose-100 px-2 py-0.5 rounded shadow-sm inline-block w-fit tracking-tight">추정 손실액: {closingStats.lossAmount.toLocaleString()}원</span>}
                                                 </div>
                                             ) : (
