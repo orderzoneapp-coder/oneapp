@@ -455,16 +455,25 @@
                 e.target.value = ''; 
             };
 
-            // 💡 [개선] 푸시 로직 안정화
+            // 💡 [개선] 푸시 로직 안정화 및 강제 마이그레이션(전체 복사) 기능 추가
             const handlePush = async () => {
                 if (!config.cloudUrl) return showToast("⚠️ 설정에서 앱스크립트 URL을 입력하세요.");
 
-                const unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
+                let unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
                 const unsyncedHistory = await getIDB(STORAGE_KEYS.UNSYNCED_HISTORY) || [];
                 const unsyncedDeletes = await getIDB(STORAGE_KEYS.UNSYNCED_DELETES) || [];
 
                 if (Object.keys(unsyncedMaster).length === 0 && unsyncedHistory.length === 0 && unsyncedDeletes.length === 0) {
-                    return showToast("⚠️ 클라우드에 새로 반영할 변경사항이 없습니다.");
+                    // 💡 [마이그레이션 지원] 대기열이 비어있을 때, 전체 데이터를 강제로 업로드할지 묻습니다.
+                    if (Object.keys(masterProducts).length > 0) {
+                        if (window.confirm("⚠️ 동기화 대기 중인 수정 사항이 없습니다.\n\n현재 화면에 있는 [전체 데이터]를 클라우드에 강제로 복사하시겠습니까?\n(새로운 구글 시트로 데이터를 이전할 때 매우 유용합니다!)")) {
+                            unsyncedMaster = masterProducts; // 전체 데이터를 전송 큐에 덮어씌움
+                        } else {
+                            return;
+                        }
+                    } else {
+                        return showToast("⚠️ 클라우드에 새로 반영할 변경사항이 없습니다.");
+                    }
                 }
 
                 setIsProcessing(true); setProcessMsg("클라우드 서버로 데이터를 전송 중...");
