@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - Master DB [v3.3]</title>
+    <title>ONEAPP NEXES - Master DB [v3.0]</title>
     <!-- 핵심 라이브러리 CDN 로드 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -62,9 +62,6 @@
         const setIDB = async (key, val) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readwrite'); tx.objectStore('store').put(val, key); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); };
         const getIDB = async (key) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); };
 
-        // 💡 하얀 화면(크래시) 방지용 강제 문자열 변환 유틸리티
-        const safeStr = (val, def = '') => (val !== undefined && val !== null && val !== '') ? String(val) : def;
-
         // ==========================================
         // 🧩 [아이콘 시스템] SafeIcon
         // ==========================================
@@ -98,7 +95,7 @@
         });
 
         // ==========================================
-        // 🧩 [절대 수정 금지] Global Header (v3.3 Final)
+        // 🧩 [절대 수정 금지] Global Header (v3.0 Final)
         // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [
@@ -107,7 +104,6 @@
                 { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }
             ];
 
-            // 💡 [절대 수정 금지] 15개 탭 완벽 매핑 데이터
             const tabs = [
                 { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true, shortTag: 'ONE BOARD' },
                 { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: true, shortTag: 'SYSTEM GUIDE' },
@@ -145,7 +141,7 @@
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
                                     <div className="flex items-center">
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.3</span>
+                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.0</span>
                                     </div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">
                                         {currentTab ? currentTab.shortTag : 'WORKSPACE'}
@@ -199,14 +195,14 @@
                                 const isPlaceholder = !tab.isReady;
                                 return (
                                     <a key={tab.id} href={tab.path} onClick={(e) => onNavigate(e, tab.path, tab.isReady)}
-                                        className={`flex items-center gap-2 px-6 py-3 text-[14px] font-bold rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px]
-                                        ${isActive
-                                            ? 'bg-white text-indigo-600 border-t-indigo-500 border-x-slate-200 relative z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]'
-                                            : isPlaceholder
-                                                ? 'bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5'
-                                                : 'bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5'
-                                        }`}
-                                        style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '13px' : '10px' }}
+                                       className={`flex items-center gap-2 px-6 py-3 text-[14px] font-bold rounded-t-xl transition-all whitespace-nowrap border-x border-t-[3px]
+                                       ${isActive
+                                           ? 'bg-white text-indigo-600 border-t-indigo-500 border-x-slate-200 relative z-10 shadow-[0_-4px_10px_rgba(0,0,0,0.1)]'
+                                           : isPlaceholder
+                                              ? 'bg-[#151B2B] text-slate-500 border-t-transparent border-x-transparent cursor-not-allowed opacity-50 pb-2.5'
+                                              : 'bg-[#151B2B] text-slate-400 border-t-transparent border-x-transparent hover:text-slate-200 pb-2.5'
+                                       }`}
+                                       style={{ marginBottom: isActive ? '-1px' : '0', paddingBottom: isActive ? '13px' : '10px' }}
                                     >
                                         <SafeIcon name={tab.icon} size={16} className={isActive ? 'text-indigo-600' : 'opacity-70'} />
                                         {tab.label}
@@ -215,38 +211,6 @@
                             })}
                         </div>
                     )}
-                </div>
-            );
-        };
-
-        const IframeSettingsModal = ({ isOpen, onClose }) => {
-            if (!isOpen) return null;
-            return (
-                <div className="fixed inset-0 z-[500] flex bg-slate-900/60 backdrop-blur-sm fade-in">
-                    <div className="w-full max-w-[1400px] h-full bg-white shadow-[-10px_0_40px_rgba(0,0,0,0.3)] flex flex-col slide-in-right border-l border-slate-300 relative overflow-hidden ml-auto">
-                        <div className="bg-[#0f172a] px-6 py-4 flex justify-between items-center text-white shrink-0 border-b border-slate-700 shadow-md relative z-10">
-                            <div className="flex items-center gap-3">
-                                <SafeIcon name="settings" size={20} className="text-indigo-400"/>
-                                <h2 className="font-black text-[17px] tracking-wide">통합 환경설정 센터</h2>
-                                <span className="bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold border border-indigo-500/30 ml-2">Wide Overlay</span>
-                            </div>
-                            <div className="flex items-center gap-4">
-                                <span className="text-[12px] text-slate-400 font-medium hidden md:inline-block">설정을 변경하고 창을 닫으면 작업 화면에 즉시 반영됩니다.</span>
-                                <button onClick={onClose} className="text-slate-300 hover:text-white transition-colors bg-slate-800 hover:bg-rose-500 w-8 h-8 rounded-lg flex items-center justify-center shadow-sm border border-slate-700 hover:border-rose-400">
-                                    <SafeIcon name="x" size={18} />
-                                </button>
-                            </div>
-                        </div>
-                        <div className="flex-1 w-full bg-slate-100 relative">
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                <div className="text-slate-300 flex flex-col items-center">
-                                    <i className="fas fa-circle-notch fa-spin text-3xl mb-3"></i>
-                                    <span className="font-bold text-sm">설정 모듈을 불러오는 중입니다...</span>
-                                </div>
-                            </div>
-                            <iframe src="settings.html?mode=iframe" className="absolute inset-0 w-full h-full border-0 bg-white relative z-10" title="Settings Center"></iframe>
-                        </div>
-                    </div>
                 </div>
             );
         };
@@ -275,47 +239,6 @@
             }, []);
             return config;
         };
-
-        // ==========================================
-        // 🚨 Error Boundary (하얀 화면 방지 시스템)
-        // ==========================================
-        class ErrorBoundary extends React.Component {
-            constructor(props) {
-                super(props);
-                this.state = { hasError: false, error: null };
-            }
-            static getDerivedStateFromError(error) {
-                return { hasError: true, error };
-            }
-            render() {
-                if (this.state.hasError) {
-                    return (
-                        <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-50 p-6">
-                            <i className="fas fa-exclamation-triangle text-rose-500 text-6xl mb-6"></i>
-                            <h1 className="text-2xl font-black text-slate-800 mb-2">화면 렌더링 오류 발생 (Crash)</h1>
-                            <p className="text-slate-500 mb-6 text-center">
-                                불러온 엑셀 데이터 중 문자(글자)가 아닌 형식(숫자 등)이 섞여있어 화면이 중단되었습니다.<br/>
-                                아래 [초기화] 버튼을 눌러 복구해 주세요.
-                            </p>
-                            <div className="bg-white border border-rose-200 p-4 rounded-lg text-xs font-mono text-rose-600 w-full max-w-2xl overflow-auto mb-8 shadow-sm">
-                                {this.state.error && this.state.error.toString()}
-                            </div>
-                            <button 
-                                onClick={() => { 
-                                    indexedDB.deleteDatabase('MerchOpsDB');
-                                    localStorage.removeItem('merchMaster_v870'); 
-                                    window.location.reload(); 
-                                }} 
-                                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-colors shadow-lg flex items-center gap-2"
-                            >
-                                <i className="fas fa-redo-alt"></i> 로컬 데이터 초기화 및 복구하기
-                            </button>
-                        </div>
-                    );
-                }
-                return this.props.children;
-            }
-        }
 
         // ==========================================
         // 📊 Main App Container
@@ -357,16 +280,11 @@
             }, [showToast]);
 
             useEffect(() => {
-                getIDB(STORAGE_KEYS.MASTER_DB).then(data => { 
-                    if (data && typeof data === 'object') setMasterProducts(data); 
-                }).catch(console.error);
-
+                getIDB(STORAGE_KEYS.MASTER_DB).then(data => { if (data) setMasterProducts(data); }).catch(console.error);
                 const handleMessage = (e) => {
                     if (e.data && e.data.type === 'CLOSE_SETTINGS') {
                         setShowSettingsModal(false);
-                        getIDB(STORAGE_KEYS.MASTER_DB).then(data => { 
-                            if (data && typeof data === 'object') setMasterProducts(data); 
-                        }); 
+                        getIDB(STORAGE_KEYS.MASTER_DB).then(data => { if (data) setMasterProducts(data); }); 
                     }
                 };
                 window.addEventListener('message', handleMessage);
@@ -398,7 +316,7 @@
                             if (!rowArr || rowArr.join('').trim() === '') continue;
                             const rowObj = {};
                             headers.forEach((h, idx) => { if (h) rowObj[h] = rowArr[idx]; });
-                            const code = safeStr(rowObj['코드'] || rowObj['품목코드']);
+                            const code = rowObj['코드'] || rowObj['품목코드'];
                             if (code) newMaster[code] = rowObj;
                         }
                         setMasterProducts(newMaster);
@@ -430,23 +348,18 @@
                     const response = await fetch(config.cloudUrl + '?action=pull&sheet=마스터');
                     const result = await response.json();
                     const dataToSave = {};
-                    result.data.forEach(item => { 
-                        const code = safeStr(item['코드'] || item['품목코드']); 
-                        if (code) dataToSave[code] = item; 
-                    });
+                    result.data.forEach(item => { const code = item['코드'] || item['품목코드']; if (code) dataToSave[code] = item; });
                     setMasterProducts(dataToSave);
                     await setIDB(STORAGE_KEYS.MASTER_DB, dataToSave);
                     showToast(`✅ ${result.data.length}건 동기화 완료`);
                 } catch (e) { showToast("❌ 실패"); } finally { setIsProcessing(false); setProcessMsg(""); }
             };
 
-            // 💡 safeStr을 적용하여 숫자 데이터로 인한 에러 방어 및 카테고리 로직 복구
             const c1List = useMemo(() => {
                 const map = new Map();
-                Object.values(masterProducts || {}).forEach(p => {
-                    if (!p) return;
-                    const code = safeStr(p['1코드'], 'etc');
-                    const name = safeStr(p['1그룹명'], '미분류');
+                Object.values(masterProducts).forEach(p => {
+                    const code = p['1코드'] || 'etc';
+                    const name = p['1그룹명'] || '미분류';
                     if (!map.has(code)) map.set(code, name);
                 });
                 return Array.from(map.entries()).map(([code, name]) => ({ code, name })).sort((a,b) => a.code.localeCompare(b.code));
@@ -455,11 +368,10 @@
             const c2List = useMemo(() => {
                 if (!activeC1) return [];
                 const map = new Map();
-                Object.values(masterProducts || {}).forEach(p => {
-                    if (!p) return;
-                    if (safeStr(p['1코드'], 'etc') === activeC1) {
-                        const code = safeStr(p['2코드'], 'etc');
-                        const name = safeStr(p['2그룹명'], '미분류');
+                Object.values(masterProducts).forEach(p => {
+                    if ((p['1코드'] || 'etc') === activeC1) {
+                        const code = p['2코드'] || 'etc';
+                        const name = p['2그룹명'] || '미분류';
                         if (!map.has(code)) map.set(code, name);
                     }
                 });
@@ -469,11 +381,10 @@
             const c3List = useMemo(() => {
                 if (!activeC1 || !activeC2) return [];
                 const map = new Map();
-                Object.values(masterProducts || {}).forEach(p => {
-                    if (!p) return;
-                    if (safeStr(p['1코드'], 'etc') === activeC1 && safeStr(p['2코드'], 'etc') === activeC2) {
-                        const code = safeStr(p['3코드'] || p['오더즈'], 'etc');
-                        const name = safeStr(p['3그룹명'], '미분류');
+                Object.values(masterProducts).forEach(p => {
+                    if ((p['1코드'] || 'etc') === activeC1 && (p['2코드'] || 'etc') === activeC2) {
+                        const code = p['3코드'] || p['오더즈'] || 'etc';
+                        const name = p['3그룹명'] || '미분류';
                         if (!map.has(code)) map.set(code, { code, name, count: 0 });
                         map.get(code).count++;
                     }
@@ -481,27 +392,18 @@
                 return Array.from(map.values()).sort((a,b) => a.code.localeCompare(b.code));
             }, [masterProducts, activeC1, activeC2]);
 
-            // 💡 [핵심] 하위 카테고리 자동 선택 로직 (이게 없으면 상품이 안 나옴)
-            useEffect(() => { if (c1List.length > 0 && !c1List.find(c => c.code === activeC1)) setActiveC1(c1List[0].code); }, [c1List, activeC1]);
-            useEffect(() => { if (c2List.length > 0 && !c2List.find(c => c.code === activeC2)) setActiveC2(c2List[0].code); else if (c2List.length === 0) setActiveC2(''); }, [c2List, activeC2]);
-            useEffect(() => { if (c3List.length > 0 && !c3List.find(c => c.code === activeC3)) setActiveC3(c3List[0].code); else if (c3List.length === 0) setActiveC3(''); }, [c3List, activeC3]);
+            useEffect(() => { if (c1List.length > 0 && !activeC1) setActiveC1(c1List[0].code); }, [c1List]);
 
             const displayRows = useMemo(() => {
-                const arr = Object.values(masterProducts || {}).filter(p => p);
+                const arr = Object.values(masterProducts);
                 if (globalSearch.trim()) {
                     const kw = globalSearch.toLowerCase().replace(/\s+/g, '');
                     return arr.filter(item => {
-                        const target = (safeStr(item['코드']) + safeStr(item['품목코드']) + safeStr(item['품목명']) + safeStr(item['규격'])).toLowerCase();
+                        const target = ((item['코드']||'')+(item['품목명']||'')+(item['규격']||'')).toLowerCase();
                         return target.includes(kw);
                     }).slice(0, 500);
                 }
-                if (activeC3) {
-                    return arr.filter(p => 
-                        safeStr(p['1코드'], 'etc') === activeC1 && 
-                        safeStr(p['2코드'], 'etc') === activeC2 && 
-                        safeStr(p['3코드'] || p['오더즈'], 'etc') === activeC3
-                    ).slice(0, 500);
-                }
+                if (activeC3) return arr.filter(p => (p['1코드']||'etc') === activeC1 && (p['2코드']||'etc') === activeC2 && (p['3코드']||p['오더즈']||'etc') === activeC3).slice(0, 500);
                 return [];
             }, [masterProducts, globalSearch, activeC1, activeC2, activeC3]);
 
@@ -544,99 +446,77 @@
                             </div>
                         </div>
 
-                        {/* 💡 [복구됨] 3단 카테고리 레이아웃 원본 복구 */}
-                        <div className="flex items-end px-4 pt-3 border-b border-slate-200 bg-slate-200/50 shrink-0 h-[50px]">
-                            <div className="flex overflow-x-auto custom-scrollbar h-full items-end w-full gap-1">
-                                {c1List.map(c1 => (
-                                    <button key={c1.code} onClick={() => { setActiveC1(c1.code); setActiveC2(''); setActiveC3(''); setGlobalSearch(''); }} className={`px-5 py-2.5 text-[13px] font-bold rounded-t-lg transition-colors border-b-[3px] ${activeC1 === c1.code ? 'border-indigo-600 text-indigo-700 bg-white shadow-[0_-2px_5px_rgba(0,0,0,0.02)] z-10' : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-300/50'}`}>
-                                        {c1.name}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
                         <div className="flex-1 flex overflow-hidden">
-                            <div className="w-[180px] bg-white border-r border-slate-200 overflow-y-auto py-2 shrink-0 custom-scrollbar z-10 shadow-[2px_0_10px_rgba(0,0,0,0.02)]">
-                                {c2List.map(c2 => (
-                                    <button key={c2.code} onClick={() => { setActiveC2(c2.code); setActiveC3(''); setGlobalSearch(''); }} className={`w-full text-left px-5 py-3 text-[12px] font-bold transition-all border-l-4 ${activeC2 === c2.code ? 'bg-indigo-50/50 text-indigo-700 border-indigo-600' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}>
-                                        {c2.name}
+                            <div className="w-[180px] bg-white border-r border-slate-200 overflow-y-auto py-2 custom-scrollbar shadow-sm">
+                                {c1List.map(c => (
+                                    <button key={c.code} onClick={() => { setActiveC1(c.code); setActiveC2(''); setActiveC3(''); }} className={`w-full text-left px-5 py-3 text-[12px] font-bold transition-all ${activeC1 === c.code ? 'bg-indigo-50 text-indigo-700 border-r-4 border-indigo-600' : 'text-slate-600 hover:bg-slate-50'}`}>
+                                        {c.name}
                                     </button>
                                 ))}
                             </div>
-
-                            <div className="w-[200px] bg-slate-50 border-r border-slate-200 flex flex-col overflow-hidden shrink-0 z-10">
-                                <div className="px-4 py-3 border-b border-slate-200 bg-white shrink-0">
-                                    <h3 className="text-[12px] font-black text-slate-800">소분류 (3차)</h3>
-                                </div>
-                                <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
-                                    {c3List.map(c3 => (
-                                        <button key={c3.code} onClick={() => { setActiveC3(c3.code); setGlobalSearch(''); }} className={`w-full text-left px-3 py-2 rounded-md text-[12px] font-bold transition-all flex justify-between items-center ${activeC3 === c3.code ? 'bg-white text-indigo-700 border border-indigo-200 shadow-sm' : 'border border-transparent text-slate-600 hover:bg-white hover:border-slate-200'}`}>
-                                            <span className="truncate pr-2">{c3.name}</span>
-                                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${activeC3 === c3.code ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-500'}`}>{c3.count}</span>
-                                        </button>
-                                    ))}
-                                </div>
+                            <div className="w-[180px] bg-slate-50 border-r border-slate-200 overflow-y-auto py-2 custom-scrollbar">
+                                {c2List.map(c => (
+                                    <button key={c.code} onClick={() => { setActiveC2(c.code); setActiveC3(''); }} className={`w-full text-left px-5 py-3 text-[12px] font-bold transition-all ${activeC2 === c.code ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:bg-white/50'}`}>
+                                        {c.name}
+                                    </button>
+                                ))}
                             </div>
-
-                            <div className="flex-1 bg-white flex flex-col overflow-hidden relative z-0">
-                                {globalSearch ? (
-                                    <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-[12px] font-bold text-amber-800 flex items-center shrink-0">
-                                        <i className="fas fa-search mr-2 text-amber-500"></i> 전체 검색 결과입니다.
-                                    </div>
-                                ) : (
-                                    <div className="px-4 py-2 bg-indigo-50/50 border-b border-indigo-100 text-[12px] font-bold text-indigo-800 flex justify-between items-center shrink-0">
-                                        <span>
-                                            {c1List.find(c=>c.code===activeC1)?.name || '선택안됨'} <i className="fas fa-chevron-right mx-1 text-[10px] text-indigo-300"></i> 
-                                            {c2List.find(c=>c.code===activeC2)?.name || '선택안됨'} <i className="fas fa-chevron-right mx-1 text-[10px] text-indigo-300"></i> 
-                                            {c3List.find(c=>c.code===activeC3)?.name || '선택안됨'}
-                                        </span>
-                                        <span className="text-slate-500 font-medium">총 {displayRows.length}건 표시됨</span>
-                                    </div>
-                                )}
-                                <div className="flex-1 overflow-auto custom-scrollbar relative">
-                                    <table className="w-full text-left text-[12px] whitespace-nowrap">
-                                        <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200 shadow-sm">
-                                            <tr>
-                                                <th className="py-2.5 px-4 w-20 text-slate-600">코드</th>
-                                                <th className="py-2.5 px-4 text-slate-600">품목명</th>
-                                                <th className="py-2.5 px-3 text-slate-600">규격</th>
-                                                {visMasterCols.map(h => <th key={h} className="py-2.5 px-3 text-slate-600">{h}</th>)}
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100">
-                                            {displayRows.length > 0 ? displayRows.map((row, idx) => {
-                                                const code = safeStr(row['코드'] || row['품목코드'], `key-${idx}`);
-                                                return (
-                                                    <tr key={code} className="hover:bg-slate-50 transition-colors">
-                                                        <td className="py-2 px-4 font-mono text-slate-400">{safeStr(row['코드'] || row['품목코드'], '-')}</td>
-                                                        <td className="py-2 px-4 font-bold">{safeStr(row['품목명'], '-')}</td>
-                                                        <td className="py-2 px-3 text-slate-500">{safeStr(row['규격'], '-')}</td>
-                                                        {visMasterCols.map(h => <td key={h} className="py-2 px-3 text-slate-500">{safeStr(row[h], '-')}</td>)}
-                                                    </tr>
-                                                );
-                                            }) : (
-                                                <tr>
-                                                    <td colSpan={visMasterCols.length + 3} className="py-20 text-center text-slate-400">해당 카테고리에 데이터가 없거나 검색 결과가 없습니다.</td>
+                            <div className="flex-1 bg-white overflow-auto custom-scrollbar relative">
+                                <table className="w-full text-left text-[12px] whitespace-nowrap">
+                                    <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200">
+                                        <tr>
+                                            <th className="py-2.5 px-4 w-20">코드</th>
+                                            <th className="py-2.5 px-4">품목명</th>
+                                            <th className="py-2.5 px-3">규격</th>
+                                            {visMasterCols.map(h => <th key={h} className="py-2.5 px-3">{h}</th>)}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {displayRows.length > 0 ? displayRows.map(row => {
+                                            const code = row['코드'] || row['품목코드'];
+                                            return (
+                                                <tr key={code} className="hover:bg-slate-50 transition-colors">
+                                                    <td className="py-2 px-4 font-mono text-slate-400">{code}</td>
+                                                    <td className="py-2 px-4 font-bold">{row['품목명']}</td>
+                                                    <td className="py-2 px-3 text-slate-500">{row['규격']}</td>
+                                                    {visMasterCols.map(h => <td key={h} className="py-2 px-3 text-slate-500">{row[h] || '-'}</td>)}
                                                 </tr>
-                                            )}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                            );
+                                        }) : (
+                                            <tr>
+                                                <td colSpan={visMasterCols.length + 3} className="py-20 text-center text-slate-400">데이터가 없습니다. 카테고리를 선택하거나 검색어를 입력하세요.</td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </main>
 
-                    <IframeSettingsModal 
-                        isOpen={showSettingsModal} 
-                        onClose={() => setShowSettingsModal(false)} 
-                    />
+                    {showSettingsModal && (
+                        <div className="fixed inset-0 z-[500] flex justify-end bg-slate-900/60 backdrop-blur-sm fade-in">
+                            <div className="w-full max-w-[1100px] h-full bg-white shadow-2xl flex flex-col slide-in-right">
+                                <div className="bg-[#0f172a] px-6 py-4 flex justify-between items-center text-white shrink-0">
+                                    <div className="flex items-center gap-3">
+                                        <SafeIcon name="settings" size={20} className="text-indigo-400"/>
+                                        <h2 className="font-black text-[17px]">통합 환경설정 센터</h2>
+                                    </div>
+                                    <button onClick={() => setShowSettingsModal(false)} className="hover:bg-rose-500 w-8 h-8 rounded-lg flex items-center justify-center transition-colors">
+                                        <SafeIcon name="x" size={18} />
+                                    </button>
+                                </div>
+                                <div className="flex-1">
+                                    <iframe src="settings.html?mode=iframe" className="w-full h-full border-0" title="Settings Center"></iframe>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        // 💡 전체 앱을 ErrorBoundary로 감싸서 하얀 화면 완전 차단
-        root.render(<ErrorBoundary><App /></ErrorBoundary>);
+        root.render(<App />);
     </script>
 </body>
 </html>
