@@ -56,6 +56,7 @@
     <script type="text/babel">
         const { useState, useMemo, useEffect, useRef, useCallback, Fragment } = React;
 
+        // 💡 [v3.3 표준 1] STORAGE_KEYS 및 데이터 방어 유틸리티 완벽 일치화
         const STORAGE_KEYS = {
             MASTER_DB: 'merchMaster_v870',
             CLOUD_URL: 'skuSyncCloudUrl_v6',
@@ -67,6 +68,7 @@
             UNSYNCED_DELETES: 'merchUnsyncedDeletes_v1'
         };
 
+        // 하얀 화면 방지용 강제 문자열 변환 유틸리티
         const safeStr = (val, def = '') => (val !== undefined && val !== null && val !== '') ? String(val) : def;
 
         const TW = {
@@ -150,7 +152,7 @@
                 }; renderIcon();
             }, [name, size, className]);
             if (!svg) {
-                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'database':'fa-database', 'users':'fa-users', 'shopping-bag':'fa-shopping-bag', 'credit-card':'fa-credit-card', 'line-chart':'fa-chart-line', 'printer':'fa-print', 'pie-chart':'fa-chart-pie', 'megaphone':'fa-bullhorn', 'book-open':'fa-address-book', 'save':'fa-save', 'file-excel':'fa-file-excel', 'file-export':'fa-file-export', 'folder-open':'fa-folder-open', 'chevron-down':'fa-chevron-down', 'search':'fa-search', 'eye-slash':'fa-eye-slash', 'redo-alt':'fa-redo-alt', 'lock':'fa-lock', 'pen':'fa-pen', 'check-circle-2':'fa-check-circle', 'x':'fa-times' };
+                const faMap = { 'cloud-download':'fa-cloud-download-alt', 'cloud-upload':'fa-cloud-upload-alt', 'settings':'fa-cogs', 'layout-dashboard':'fa-th-large', 'package-search':'fa-box-open', 'file-spreadsheet':'fa-table', 'zap':'fa-bolt', 'truck':'fa-truck', 'boxes':'fa-boxes', 'bar-chart-3':'fa-chart-bar', 'database':'fa-database', 'users':'fa-users', 'shopping-bag':'fa-shopping-bag', 'credit-card':'fa-credit-card', 'line-chart':'fa-chart-line', 'printer':'fa-print', 'pie-chart':'fa-chart-pie', 'megaphone':'fa-bullhorn', 'book-open':'fa-address-book', 'save':'fa-save', 'file-excel':'fa-file-excel', 'file-export':'fa-file-export', 'folder-open':'fa-folder-open', 'chevron-down':'fa-chevron-down', 'search':'fa-search', 'eye-slash':'fa-eye-slash', 'redo-alt':'fa-redo-alt', 'lock':'fa-lock', 'pen':'fa-pen', 'check-circle-2':'fa-check-circle', 'x':'fa-times', 'edit':'fa-edit', 'equals':'fa-equals', 'star':'fa-star', 'arrow-up':'fa-arrow-up', 'arrow-down':'fa-arrow-down', 'list':'fa-list' };
                 const faName = faMap[name] || `fa-${name}`;
                 return <i className={`fas ${faName} ${className}`} style={{ fontSize: size }} />;
             }
@@ -195,6 +197,7 @@
             return config;
         };
 
+        // 💡 [v3.3 표준 2] GlobalHeader (v3.3 최신판) 전체 교체
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [
                 { id: 'master', label: '정보 관리', icon: 'database' },
@@ -313,6 +316,7 @@
             );
         };
 
+        // 💡 [v3.3 표준 3] IframeSettingsModal (Wide Overlay) 적용
         const IframeSettingsModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
             return (
@@ -812,7 +816,7 @@
             
             const [masterProducts, setMasterProducts] = useState({});
             
-            // 🔥 작업 내역 영구 보존(로컬스토리지 연동)
+            // 작업 내역 영구 보존(로컬스토리지 연동)
             const [managedItems, setManagedItems] = useState(() => {
                 try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.MANAGED_ITEMS)) || {}; } catch { return {}; }
             });
@@ -1497,7 +1501,6 @@
                 }, 100);
             }, [fullDisplayRows, config.visibleUploadCols, config.visibleMasterCols, config.masterLinks, masterProducts, selectedRows, showToast]);
 
-            // 🔥 액션 함수 추가 연결 (toggleAllRows)
             const toggleAllRows = useCallback(() => {
                 if (selectedRows.size === fullDisplayRows.length && fullDisplayRows.length > 0) setSelectedRows(new Set());
                 else { const next = new Set(); fullDisplayRows.forEach(r => next.add(r.코드 || r.품목코드)); setSelectedRows(next); }
@@ -1516,7 +1519,7 @@
                 handleFileUpload, 
                 showToast, 
                 handleExportCurrentView,
-                toggleAllRows // 🔥 추가됨
+                toggleAllRows
             };
 
             return (
@@ -1680,6 +1683,7 @@
             );
         }
 
+        // 💡 [v3.3 표준 4] ErrorBoundary 방어 코드 및 마운트 변경
         class ErrorBoundary extends React.Component {
             constructor(props) {
                 super(props);
