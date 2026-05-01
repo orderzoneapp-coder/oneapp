@@ -56,15 +56,18 @@
     <script type="text/babel">
         const { useState, useMemo, useEffect, useRef, useCallback, Fragment } = React;
 
-        // [개선] 델타 동기화를 위한 큐(Queue) 스토리지 키 추가
-        const STORAGE_KEYS = { 
-            MASTER_DB: 'merchMaster_v870', 
-            CLOUD_URL: 'skuSyncCloudUrl_v6', 
-            SYNC_TRIGGER: 'merchMaster_sync_trigger', 
+        // 💡 [v3.3 표준] STORAGE_KEYS 및 데이터 방어 유틸리티 완벽 일치화 (+Pipeline 델타 큐 유지)
+        const STORAGE_KEYS = {
+            MASTER_DB: 'merchMaster_v870',
+            CLOUD_URL: 'skuSyncCloudUrl_v6',
+            SYNC_TRIGGER: 'merchMaster_sync_trigger',
             HISTORY_DB: 'merchHistory_v870',
             UNSYNCED_MASTER: 'merchUnsyncedMaster_v1', 
             UNSYNCED_HISTORY: 'merchUnsyncedHistory_v1'
         };
+
+        // 💡 하얀 화면 방지용 강제 문자열 변환 유틸리티
+        const safeStr = (val, def = '') => (val !== undefined && val !== null && val !== '') ? String(val) : def;
 
         const TW = {
             btnTop: "w-10 h-10 rounded-xl bg-[#151B2B] hover:bg-[#1E293B] flex items-center justify-center border border-slate-700 transition-colors shadow-sm",
@@ -156,7 +159,6 @@
 
         const useMerchConfig = () => {
             const loadConfig = () => {
-                // [개선] 앱스스크립트 기본 URL 적용 (설정값이 없을 경우)
                 const cloudUrl = localStorage.getItem('skuSyncCloudUrl_v6') || 'https://script.google.com/macros/s/AKfycbyT3YXvGkbSWswoBDxvVV_1m0Xp2it3QmOezFIfQFBNi0TuGViPH_Jz-A8L2sQz80tW/exec';
                 
                 let visibleMasterCols = JSON.parse(localStorage.getItem('merchVisMaster_v870') || 'null');
@@ -193,9 +195,7 @@
             return config;
         };
 
-        // ==========================================
-        // 🧩 통합 글로벌 헤더 (v3.3)
-        // ==========================================
+        // 💡 [v3.3 표준] GlobalHeader 전체 교체
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [
                 { id: 'master', label: '정보 관리', icon: 'database' },
@@ -203,7 +203,6 @@
                 { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }
             ];
 
-            // 💡 [절대 수정 금지] 15개 탭 완벽 매핑 데이터
             const tabs = [
                 { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true, shortTag: 'ONE BOARD' },
                 { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: true, shortTag: 'SYSTEM GUIDE' },
@@ -273,7 +272,7 @@
                                     )}
                                 </div>
                                 <div className="w-px h-3.5 bg-slate-700"></div>
-                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`마스터 DB 기준 상품 수`}>
+                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`마스터 DB 기준 데이터 수`}>
                                     <SafeIcon name="database" size={10} className="text-slate-500" />
                                     <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount ? itemCount.toLocaleString() : 0}</span>
                                 </div>
@@ -315,9 +314,7 @@
             );
         };
 
-        // ==========================================
-        // 🌟 통합 Iframe 환경설정 모달 (우측 슬라이드 픽스 - Wide Overlay)
-        // ==========================================
+        // 💡 [v3.3 표준] IframeSettingsModal 전체 교체
         const IframeSettingsModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
             return (
@@ -1656,8 +1653,45 @@
             );
         }
 
+        // 💡 [v3.3 표준] ErrorBoundary 추가 및 root.render 래핑
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false, error: null };
+            }
+            static getDerivedStateFromError(error) { return { hasError: true, error }; }
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-50 p-6">
+                            <i className="fas fa-exclamation-triangle text-rose-500 text-6xl mb-6"></i>
+                            <h1 className="text-2xl font-black text-slate-800 mb-2">화면 렌더링 오류 발생 (Crash)</h1>
+                            <p className="text-slate-500 mb-6 text-center">
+                                불러온 데이터 중 잘못된 형식(숫자 등)이 섞여있어 화면이 중단되었습니다.<br/>
+                                아래 [초기화] 버튼을 눌러 복구해 주세요.
+                            </p>
+                            <div className="bg-white border border-rose-200 p-4 rounded-lg text-xs font-mono text-rose-600 w-full max-w-2xl overflow-auto mb-8 shadow-sm">
+                                {this.state.error && this.state.error.toString()}
+                            </div>
+                            <button 
+                                onClick={() => { 
+                                    indexedDB.deleteDatabase('MerchOpsDB');
+                                    localStorage.removeItem('merchMaster_v870'); 
+                                    window.location.reload(); 
+                                }} 
+                                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-colors shadow-lg flex items-center gap-2"
+                            >
+                                <i className="fas fa-redo-alt"></i> 로컬 데이터 초기화 및 복구하기
+                            </button>
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
+        }
+
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        root.render(<ErrorBoundary><App /></ErrorBoundary>);
     </script>
 </body>
 </html>
