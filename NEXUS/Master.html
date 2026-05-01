@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
     <title>ONEAPP NEXES - Master DB [v3.1 Cloud Sync]</title>
-    <!-- 핵심 라이브러리 CDN 로드 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -46,10 +45,9 @@
             MASTER_DB: 'merchMaster_v870',
             CLOUD_URL: 'skuSyncCloudUrl_v6',
             SYNC_TRIGGER: 'merchMaster_sync_trigger',
-            // [개선] 델타 큐 스토리지 키 공유
             UNSYNCED_MASTER: 'merchUnsyncedMaster_v1', 
             UNSYNCED_HISTORY: 'merchUnsyncedHistory_v1',
-            UNSYNCED_DELETES: 'merchUnsyncedDeletes_v1' // 삭제 동기화용 큐 추가
+            UNSYNCED_DELETES: 'merchUnsyncedDeletes_v1'
         };
 
         const MASTER_HEADERS = [
@@ -122,11 +120,10 @@
         });
 
         // ==========================================
-        // 🧩 Read-Only 설정 훅 (v3.0 경량화)
+        // 🧩 Read-Only 설정 훅 
         // ==========================================
         const useMerchConfig = () => {
             const loadConfig = () => {
-                // [개선] 앱스스크립트 배포 URL 기본값 설정
                 const cloudUrl = localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || 'https://script.google.com/macros/s/AKfycbyT3YXvGkbSWswoBDxvVV_1m0Xp2it3QmOezFIfQFBNi0TuGViPH_Jz-A8L2sQz80tW/exec';
                 
                 let visibleMasterCols = JSON.parse(localStorage.getItem('merchVisMaster_v870') || 'null');
@@ -157,7 +154,6 @@
                 { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }
             ];
 
-            // 💡 [절대 수정 금지] 15개 탭 완벽 매핑 데이터
             const tabs = [
                 { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true, shortTag: 'ONE BOARD' },
                 { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: true, shortTag: 'SYSTEM GUIDE' },
@@ -269,9 +265,6 @@
             );
         };
 
-        // ==========================================
-        // 🌟 통합 Iframe 환경설정 모달 (와이드 버전 확장 max-w-[1400px], ml-auto 고정)
-        // ==========================================
         const IframeSettingsModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
             return (
@@ -328,7 +321,7 @@
             const [activeC2, setActiveC2] = useState('');
             const [activeC3, setActiveC3] = useState('');
 
-            const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); }, []);
+            const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3500); }, []);
 
             const handleNavigate = useCallback((e, path, isReady = true) => {
                 if (e && e.preventDefault) e.preventDefault();
@@ -440,6 +433,7 @@
                 e.target.value = ''; 
             };
 
+            // 💡 [개선] 푸시 로직 안정화
             const handlePush = async () => {
                 if (!config.cloudUrl) return showToast("⚠️ 설정에서 앱스크립트 URL을 입력하세요.");
 
@@ -454,7 +448,10 @@
                 setIsProcessing(true); setProcessMsg("클라우드 서버로 데이터를 전송 중...");
                 
                 try {
-                    const response = await fetch(config.cloudUrl, {
+                    let url;
+                    try { url = new URL(config.cloudUrl); } catch(e) { throw new Error("유효하지 않은 앱스스크립트 URL입니다."); }
+
+                    const response = await fetch(url.toString(), {
                         method: 'POST',
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({
@@ -465,7 +462,9 @@
                         })
                     });
 
+                    if (!response.ok) throw new Error(`HTTP ${response.status} 에러 발생`);
                     const result = await response.json();
+                    
                     if (result.status === 'success') {
                         await setIDB(STORAGE_KEYS.UNSYNCED_MASTER, {});
                         await setIDB(STORAGE_KEYS.UNSYNCED_HISTORY, []);
@@ -477,26 +476,39 @@
                     }
                 } catch (err) {
                     console.error("Push Error:", err);
-                    showToast("❌ 클라우드 백업 실패: " + err.message);
+                    showToast(`❌ 백업 실패: 권한(모든사용자) 및 '새 배포' 상태를 확인하세요. [${err.message}]`);
                 } finally {
                     setIsProcessing(false); setProcessMsg("");
                 }
             };
 
+            // 💡 [개선] 풀 로직 에러 핸들링 고도화
             const handlePull = async () => {
                 if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
                 setIsProcessing(true); setProcessMsg("클라우드에서 최신 데이터를 수신 중...");
                 
                 try {
-                    const response = await fetch(`${config.cloudUrl}?action=pullData`, {
+                    let url;
+                    try { 
+                        url = new URL(config.cloudUrl); 
+                    } catch(e) { 
+                        return showToast("⚠️ 유효하지 않은 앱스스크립트 URL 포맷입니다."); 
+                    }
+                    
+                    // 기존 쿼리 파라미터가 파괴되지 않게 안전하게 append
+                    url.searchParams.append('action', 'pullData');
+
+                    const response = await fetch(url.toString(), {
                         method: 'GET',
                         cache: 'no-cache'
                     });
                     
-                    if (!response.ok) throw new Error('Network error');
+                    if (!response.ok) throw new Error(`HTTP ${response.status} 에러 발생`);
                     const result = await response.json();
                     
                     if (result.status === 'success') {
+                        const count = Object.keys(result.master || {}).length;
+                        
                         if (result.master) {
                             setMasterProducts(result.master);
                             await setIDB(STORAGE_KEYS.MASTER_DB, result.master);
@@ -505,13 +517,18 @@
                             await setIDB(STORAGE_KEYS.HISTORY_DB, result.history);
                         }
                         localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
-                        showToast(`✅ 클라우드 수신 완료 (마스터 ${Object.keys(result.master || {}).length}건)`);
+                        
+                        if(count === 0) {
+                             showToast(`✅ 통신 성공! 하지만 시트에 데이터가 0건입니다. (시트 1행 '품목코드' 확인 필요)`);
+                        } else {
+                             showToast(`✅ 클라우드 수신 완료 (마스터 ${count}건 갱신됨)`);
+                        }
                     } else {
                         throw new Error(result.message || '서버 응답 오류');
                     }
                 } catch (error) {
                     console.error("Pull Error:", error);
-                    showToast("❌ 데이터 수신 실패. URL을 확인하세요.");
+                    showToast(`❌ 수신 실패: 권한(모든사용자) 및 '새 배포' 상태를 확인하세요. [${error.message}]`);
                 } finally {
                     setIsProcessing(false); setProcessMsg("");
                 }
