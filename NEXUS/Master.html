@@ -340,9 +340,30 @@
             }, [showToast]);
 
             useEffect(() => {
-                getIDB(STORAGE_KEYS.MASTER_DB).then(data => {
-                    if (data) setMasterProducts(data);
-                }).catch(console.error);
+                const loadInitialData = async () => {
+                    try {
+                        let data = await getIDB(STORAGE_KEYS.MASTER_DB);
+                        
+                        // 💡 [마이그레이션] 새 엔진(IndexedDB)이 비어있을 경우, 기존 localStorage의 데이터를 찾아 안전하게 이사시킵니다.
+                        if (!data || Object.keys(data).length === 0) {
+                            const localDataStr = localStorage.getItem(STORAGE_KEYS.MASTER_DB);
+                            if (localDataStr) {
+                                const localData = JSON.parse(localDataStr);
+                                if (localData && Object.keys(localData).length > 0) {
+                                    data = localData;
+                                    await setIDB(STORAGE_KEYS.MASTER_DB, data);
+                                    // localStorage.removeItem(STORAGE_KEYS.MASTER_DB); // 데이터 완전 이전 후 구창고 용량 비우기 (선택사항)
+                                }
+                            }
+                        }
+                        
+                        if (data) setMasterProducts(data);
+                    } catch (err) {
+                        console.error("초기 데이터 로딩 에러:", err);
+                    }
+                };
+                
+                loadInitialData();
 
                 const handleStorageChange = (e) => {
                     if (e.key === STORAGE_KEYS.SYNC_TRIGGER) {
