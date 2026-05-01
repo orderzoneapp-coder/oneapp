@@ -649,114 +649,69 @@
                 }
             }, [showToast]);
 
-            // [개선] Push 로직: Delta Sync 적용 (Master.html 과 동일하게 수정 내용만 전송)
+            // [수정] 마스터 DB와 100% 동일한 Push 로직으로 교체 (action=push)
             const handlePush = async () => {
                 if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
-
-                const unsyncedMaster = await getIDB('merchUnsyncedMaster_v1') || {};
-                const unsyncedHistory = await getIDB('merchUnsyncedHistory_v1') || [];
-                const unsyncedDeletes = await getIDB('merchUnsyncedDeletes_v1') || [];
-
-                if (Object.keys(unsyncedMaster).length === 0 && unsyncedHistory.length === 0 && unsyncedDeletes.length === 0) {
-                    return showToast("⚠️ 클라우드에 새로 반영할 변경사항이 없습니다.");
-                }
-
-                setIsProcessing(true); setProcessMsg("클라우드 서버로 데이터를 전송 중...");
-                
+                setIsProcessing(true); setProcessMsg("전송 중...");
                 try {
-                    const response = await fetch(config.cloudUrl, {
+                    const response = await fetch(config.cloudUrl + '?action=push&sheet=마스터', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // CORS 에러 방지용 text/plain
-                        body: JSON.stringify({
-                            action: 'pushData',
-                            masterDelta: unsyncedMaster,
-                            historyDelta: unsyncedHistory,
-                            deletedCodes: unsyncedDeletes
-                        })
+                        body: JSON.stringify({ data: Object.values(masterProducts), sheet: "마스터" })
                     });
-
                     const result = await response.json();
-                    if (result.status === 'success') {
-                        // 성공적으로 보내면 큐 비우기
-                        await setIDB('merchUnsyncedMaster_v1', {});
-                        await setIDB('merchUnsyncedHistory_v1', []);
-                        await setIDB('merchUnsyncedDeletes_v1', []);
-                        showToast(`✅ 클라우드 동기화 완료 (수정 ${Object.keys(unsyncedMaster).length}건, 삭제 ${unsyncedDeletes.length}건, 이력 ${unsyncedHistory.length}건)`);
-                    } else {
-                        throw new Error(result.message || '서버 응답 오류');
-                    }
-                } catch (err) {
-                    console.error("Push Error:", err);
-                    showToast("❌ 클라우드 백업 실패: " + err.message);
-                } finally {
-                    setIsProcessing(false); setProcessMsg("");
-                }
+                    showToast(`✅ ${result.count}건 백업 완료!`);
+                } catch (e) { showToast("❌ 실패"); } finally { setIsProcessing(false); setProcessMsg(""); }
             };
 
-            // [개선] Pull 로직: 최신 마스터 데이터 내려받기
+            // [수정] 마스터 DB와 100% 동일한 Pull 로직으로 교체 (action=pull)
             const handlePull = async () => {
                 if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
-                setIsProcessing(true); setProcessMsg("클라우드에서 최신 데이터를 수신 중...");
-                
+                setIsProcessing(true); setProcessMsg("수신 중...");
                 try {
-                    const response = await fetch(`${config.cloudUrl}?action=pullData`, {
-                        method: 'GET',
-                        cache: 'no-cache'
-                    });
-                    
-                    if (!response.ok) throw new Error('Network error');
+                    const response = await fetch(config.cloudUrl + '?action=pull&sheet=마스터');
                     const result = await response.json();
+                    const dataToSave = {};
+                    result.data.forEach(item => { 
+                        const code = safeStr(item['코드'] || item['품목코드']); 
+                        if (code) dataToSave[code] = item; 
+                    });
+                    setMasterProducts(dataToSave);
+                    await setIDB(STORAGE_KEYS.MASTER_DB, dataToSave);
                     
-                    if (result.status === 'success') {
-                        if (result.master) {
-                            setMasterProducts(result.master);
-                            await setIDB(STORAGE_KEYS.MASTER_DB, result.master);
-                        }
-                        if (result.history) {
-                            await setIDB('merchHistory_v870', result.history);
-                        }
-                        // 수신 성공 시 로컬 트리거 발동 및 리로드
-                        localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
-                        loadMaster();
-                        showToast(`✅ 클라우드 수신 완료 (마스터 ${Object.keys(result.master || {}).length}건)`);
-                    } else {
-                        throw new Error(result.message || '서버 응답 오류');
-                    }
-                } catch (error) {
-                    console.error("Pull Error:", error);
-                    showToast("❌ 데이터 수신 실패. URL을 확인하세요.");
-                } finally {
-                    setIsProcessing(false); setProcessMsg("");
-                }
+                    localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
+                    loadMaster();
+                    showToast(`✅ ${result.data.length}건 동기화 완료`);
+                } catch (e) { showToast("❌ 실패"); } finally { setIsProcessing(false); setProcessMsg(""); }
             };
 
             const loadMaster = useCallback(() => {
                 getIDB(STORAGE_KEYS.MASTER_DB).then(data => { 
                     if (data) {
                         setMasterProducts(data); 
-                        const catalogArr = Object.values(data).map(row => ({
-                            id: row['품목코드'] || row['코드'] || `TEMP-${Date.now()}-${Math.floor(Math.random()*1000)}`,
-                            c1Code: String(row['1코드'] || '').trim(),
-                            c1Name: row['1그룹명'] || '기타',
-                            c2Code: String(row['2코드'] || '').trim(),
-                            c2Name: row['2그룹명'] || '기타',
-                            c3Code: String(row['3코드'] || '').trim(),
-                            c3Name: row['3그룹명'] || '기타',
-                            ordersCode: String(row['오더즈'] || '').trim(),
-                            name: row['품목명'] || '',
-                            spec: row['규격'] || '',
-                            basePrice: parseNum(row['입고가'] || row['출고가'] || 0)
-                        })).filter(p => p.name);
+                        const catalogArr = Object.values(data).map(row => {
+                            // [수정] 마스터 DB의 데이터 구조 호환성 보장 (1코드 혹은 분류 필드 자동 파싱)
+                            let c1Name = row['1그룹명'] || row['분류'] || row['카테고리'] || '일반';
+                            let c1Code = row['1코드'] || c1Name;
+                            
+                            return {
+                                id: row['품목코드'] || row['코드'] || `TEMP-${Date.now()}-${Math.floor(Math.random()*1000)}`,
+                                c1Code: String(c1Code).trim(),
+                                c1Name: String(c1Name).trim(),
+                                c2Code: String(row['2코드'] || 'all').trim(),
+                                c2Name: row['2그룹명'] || '전체',
+                                c3Code: String(row['3코드'] || 'all').trim(),
+                                c3Name: row['3그룹명'] || '전체',
+                                ordersCode: String(row['오더즈'] || '').trim(),
+                                erp3Code: String(row['3코드'] || '').trim(),
+                                name: row['품목명'] || row['상품명'] || '',
+                                spec: row['규격'] || '',
+                                basePrice: parseNum(row['입고가'] || row['매입가'] || row['출고가'] || 0)
+                            };
+                        }).filter(p => p.name);
                         setMasterCatalogProducts(catalogArr);
                     }
                 }).catch(console.error);
 
-                // [개선] 로컬 DB 용량 관리 (최근 1000개 이력만 유지)
-                getIDB('merchHistory_v870').then(oldLogs => {
-                    if (oldLogs && oldLogs.length > 1000) {
-                        setIDB('merchHistory_v870', oldLogs.slice(-1000));
-                    }
-                });
             }, []);
 
             useEffect(() => {
