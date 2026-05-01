@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Smart Parser [v3.3]</title>
+    <title>ONEAPP MerchOps - Smart Parser [v3.3 Final]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -281,7 +281,7 @@
                 }
             }
 
-            if (perfectMatches.length === 1) return { code: perfectMatches[0].코드, status: '🟢 완전일치' };
+            if (perfectMatches.length === 1) return { code: perfectMatches[0].코드 || perfectMatches[0].품목코드, status: '🟢 완전일치' };
             if (perfectMatches.length > 1) return { code: '', status: '🟡 중복품목(선택필요)' }; 
 
             if (bestMatch && bestScore >= 0.7) return { code: '', status: '🟡 유사발견' };
@@ -341,7 +341,7 @@
                     'zap': 'fa-bolt', 'truck': 'fa-truck', 'boxes': 'fa-boxes', 'bar-chart-3': 'fa-chart-bar', 
                     'database': 'fa-database', 'sliders-horizontal': 'fa-sliders-h', 'check-circle-2': 'fa-check-circle',
                     'x': 'fa-times', 'pie-chart': 'fa-chart-pie', 'shopping-cart': 'fa-shopping-cart', 'users': 'fa-users', 'megaphone': 'fa-bullhorn',
-                    'book-open': 'fa-address-book', 'shopping-bag': 'fa-shopping-bag', 'credit-card': 'fa-credit-card', 'line-chart': 'fa-chart-line', 'printer': 'fa-print', 'camera': 'fa-camera', 'link':'fa-link', 'folder-open':'fa-folder-open', 'folder-plus':'fa-folder-plus', 'magic':'fa-magic', 'history':'fa-history', 'trash-alt':'fa-trash-alt', 'hand-paper':'fa-hand-paper', 'cogs':'fa-cogs', 'clipboard-check':'fa-clipboard-check', 'search-dollar':'fa-search-dollar', 'arrow-right':'fa-arrow-right', 'arrow-up':'fa-arrow-up', 'arrow-down':'fa-arrow-down', 'star':'fa-star', 'equals':'fa-equals', 'list':'fa-list', 'info-circle':'fa-info-circle', 'save':'fa-save', 'search':'fa-search', 'eraser':'fa-eraser'
+                    'book-open': 'fa-address-book', 'shopping-bag': 'fa-shopping-bag', 'credit-card': 'fa-credit-card', 'line-chart': 'fa-chart-line', 'printer': 'fa-print', 'camera': 'fa-camera', 'link':'fa-link', 'folder-open':'fa-folder-open', 'folder-plus':'fa-folder-plus', 'magic':'fa-magic', 'history':'fa-history', 'trash-alt':'fa-trash-alt', 'hand-paper':'fa-hand-paper', 'cogs':'fa-cogs', 'clipboard-check':'fa-clipboard-check', 'search-dollar':'fa-search-dollar', 'arrow-right':'fa-arrow-right', 'arrow-up':'fa-arrow-up', 'arrow-down':'fa-arrow-down', 'star':'fa-star', 'equals':'fa-equals', 'list':'fa-list', 'info-circle':'fa-info-circle', 'save':'fa-save', 'search':'fa-search', 'eraser':'fa-eraser', 'robot':'fa-robot', 'hand-point-right':'fa-hand-point-right'
                 };
                 const faName = faMap[name] || `fa-${name}`;
                 return <i className={`fas ${faName} ${className}`} style={{ fontSize: size }} />;
@@ -610,7 +610,8 @@
                             const pInNum = rowData['입고가'] ? parseNum(rowData['입고가']) : 0;
                             
                             if (pInNum > 0 && matchResult.code) {
-                                const mItem = masterProducts[matchResult.code] || {};
+                                // 🔥 방어 로직 적용
+                                const mItem = masterProducts[matchResult.code] || masterProducts[rowData.품목코드] || {};
                                 rowData.finalData = calculatePricesEngine(pInNum, mItem, {}, marginRules, true);
                             } else {
                                 rowData.finalData['입고가'] = pInNum;
@@ -657,10 +658,10 @@
                     let unsyncedHistory = await getIDB(STORAGE_KEYS.UNSYNCED_HISTORY) || [];
 
                     toApply.forEach(row => {
-                        const code = row._matchCode;
+                        const code = row._matchCode || row.코드 || row.품목코드; // 🔥 방어 로직 적용
                         newlyProcessed.add(code);
 
-                        const oldItem = newMaster[code] || {};
+                        const oldItem = newMaster[code] || newMaster[row.품목코드] || {};
                         if (!newMaster[code]) newMaster[code] = { 코드: code };
                         else newMaster[code] = { ...newMaster[code] };
                         
@@ -728,7 +729,8 @@
                 const row = parserBuffer.find(r => r._id === targetId); if (!row) return;
 
                 try {
-                    let mItem = masterProducts[masterCode] || { 코드: masterCode };
+                    // 🔥 방어 로직 적용
+                    let mItem = masterProducts[masterCode] || masterProducts[row.품목코드] || { 코드: masterCode };
                     const pInNum = row.finalData?.['입고가'] ? parseNum(row.finalData['입고가']) : parseNum(row['입고가']);
                     let recalculatedFinal = row.finalData || {};
 
@@ -1068,7 +1070,10 @@
                 const list = [];
 
                 targetRows.forEach(row => {
-                    const mItem = masterProducts[row._matchCode] || {};
+                    // 🔥 방어 로직 적용
+                    const rowCode = row._matchCode || row.코드 || row.품목코드;
+                    const mItem = masterProducts[rowCode] || masterProducts[row.품목코드] || {};
+                    
                     const oldP = parseNum(mItem['입고가']);
                     const newP = parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : row['입고가']);
                     
@@ -1306,7 +1311,8 @@
             const handleUpdateMatchedPrice = useCallback((rowId, newVal) => {
                 appState.setParserBuffer(prev => prev.map(r => {
                     if (r._id === rowId) {
-                        const mItem = masterProducts[r._matchCode] || {};
+                        // 🔥 방어 로직 적용
+                        const mItem = masterProducts[r._matchCode] || masterProducts[r.품목코드] || {};
                         const pInRaw = newVal;
                         const recalculatedFinal = calculatePricesEngine(parseNum(pInRaw), mItem, r.finalData || {}, marginRules, true);
                         return { ...r, finalData: recalculatedFinal };
@@ -1503,7 +1509,8 @@
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
                                                 {matchedRows.length === 0 ? <tr><td colSpan="6" className="p-10 text-center text-slate-400">데이터가 없습니다.</td></tr> : matchedRows.map(row => {
-                                                    const mItem = masterProducts[row._matchCode] || {};
+                                                    // 🔥 방어 로직 적용
+                                                    const mItem = masterProducts[row._matchCode] || masterProducts[row.품목코드] || {};
                                                     const mIn = parseNum(mItem['입고가']);
                                                     const pIn = parseNum(row.finalData['입고가']);
                                                     const isDiff = mIn > 0 && mIn !== pIn;
@@ -1555,7 +1562,8 @@
                                                             const isChecked = e.target.checked;
                                                             setSelectedMissingCodes(prev => {
                                                                 if (isChecked) {
-                                                                    return new Set(missingRows.map(r=>r.코드));
+                                                                    // 🔥 방어 로직 적용
+                                                                    return new Set(missingRows.map(r=>r.코드 || r.품목코드));
                                                                 } else {
                                                                     return new Set();
                                                                 }
@@ -1570,19 +1578,20 @@
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
                                                 {missingRows.length === 0 ? <tr><td colSpan="5" className="p-10 text-center text-slate-400 font-bold">누락된 항목이 없습니다. 완벽합니다!</td></tr> : missingRows.map(mItem => {
-                                                    const isSel = selectedMissingCodes.has(mItem.코드);
+                                                    const codeKey = mItem.코드 || mItem.품목코드; // 🔥 방어 로직 적용
+                                                    const isSel = selectedMissingCodes.has(codeKey);
                                                     return (
-                                                        <tr key={`miss-${mItem.코드}`} onClick={() => {
+                                                        <tr key={`miss-${codeKey}`} onClick={() => {
                                                             setSelectedMissingCodes(prev => {
                                                                 const next = new Set(prev);
-                                                                if(next.has(mItem.코드)) next.delete(mItem.코드); else next.add(mItem.코드);
+                                                                if(next.has(codeKey)) next.delete(codeKey); else next.add(codeKey);
                                                                 return next;
                                                             });
                                                         }} className={`cursor-pointer transition-colors ${isSel ? 'bg-rose-50/50' : 'hover:bg-slate-50'}`}>
                                                             <td className="py-2 px-4 text-center">
                                                                 <input type="checkbox" className="rounded text-rose-500 focus:ring-rose-500 pointer-events-none" checked={isSel} readOnly />
                                                             </td>
-                                                            <td className="py-2 px-3 font-mono text-[11px] text-slate-500">{mItem.코드}</td>
+                                                            <td className="py-2 px-3 font-mono text-[11px] text-slate-500">{codeKey}</td>
                                                             <td className="py-2 px-3"><span className="font-bold text-slate-800">{mItem.품목명}</span> <span className="text-[11px] text-slate-400">({mItem.규격})</span></td>
                                                             <td className="py-2 px-3 text-right text-slate-500">{mItem.입고가 ? Number(mItem.입고가).toLocaleString() : '-'}</td>
                                                             <td className="py-2 px-3 text-[11px] text-indigo-500 font-bold max-w-[200px] truncate">{mItem['카탈로그']}</td>
@@ -1627,15 +1636,16 @@
                                                     <thead className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm"><tr><th className="py-2.5 px-3">상품정보 (코드/품명/규격)</th><th className="py-2.5 px-3 text-right w-20">입고가</th><th className="py-2.5 px-3 text-center w-32">동작/작업</th></tr></thead>
                                                     <tbody className="divide-y divide-slate-100">
                                                         {masterSearchResults.map(m => {
+                                                            const mCode = m.코드 || m.품목코드; // 🔥 방어 로직 적용
                                                             const hasTag = currentTag && (m['카탈로그'] || '').split(',').map(s=>s.trim()).includes(currentTag);
                                                             return (
-                                                                <tr key={m.코드} className="hover:bg-indigo-50/50 group transition-colors">
-                                                                    <td className="py-2 px-3"><div className="flex flex-col min-w-0 w-full overflow-hidden"><span className="text-[10px] font-mono text-slate-400">{m.코드}</span><div className="flex items-center gap-1.5 mt-0.5"><span className="text-[12px] font-extrabold text-slate-800 truncate">{m.품목명}</span>{m.규격 && <span className="text-[11px] text-slate-500 shrink-0">({m.규격})</span>}</div></div></td>
+                                                                <tr key={mCode} className="hover:bg-indigo-50/50 group transition-colors">
+                                                                    <td className="py-2 px-3"><div className="flex flex-col min-w-0 w-full overflow-hidden"><span className="text-[10px] font-mono text-slate-400">{mCode}</span><div className="flex items-center gap-1.5 mt-0.5"><span className="text-[12px] font-extrabold text-slate-800 truncate">{m.품목명}</span>{m.규격 && <span className="text-[11px] text-slate-500 shrink-0">({m.규격})</span>}</div></div></td>
                                                                     <td className="py-2 px-3 text-right font-bold text-slate-600">{m.입고가 ? Number(m.입고가).toLocaleString() : '-'}</td>
                                                                     <td className="py-2 px-3 text-center flex gap-1 justify-center items-center h-full">
-                                                                        <button onClick={() => actions.handleConfirmMapping(m.코드)} className="px-2 py-1.5 rounded-lg text-[11px] font-bold shadow-sm bg-indigo-600 text-white hover:bg-indigo-700 transition-colors flex-1" title="우측 항목과 연결하여 카탈로그에 추가합니다."><i className="fas fa-link"></i> 연결</button>
+                                                                        <button onClick={() => actions.handleConfirmMapping(mCode)} className="px-2 py-1.5 rounded-lg text-[11px] font-bold shadow-sm bg-indigo-600 text-white hover:bg-indigo-700 transition-colors flex-1" title="우측 항목과 연결하여 카탈로그에 추가합니다."><i className="fas fa-link"></i> 연결</button>
                                                                         {hasTag && (
-                                                                            <button onClick={() => actions.handleRemoveTagDirect(m.코드)} className="px-2 py-1.5 rounded-lg text-[11px] font-bold shadow-sm bg-rose-100 text-rose-600 hover:bg-rose-200 transition-colors" title="이 상품을 현재 카탈로그에서 즉각 단종(제외)시킵니다."><i className="fas fa-eraser"></i> 단종</button>
+                                                                            <button onClick={() => actions.handleRemoveTagDirect(mCode)} className="px-2 py-1.5 rounded-lg text-[11px] font-bold shadow-sm bg-rose-100 text-rose-600 hover:bg-rose-200 transition-colors" title="이 상품을 현재 카탈로그에서 즉각 단종(제외)시킵니다."><i className="fas fa-eraser"></i> 단종</button>
                                                                         )}
                                                                     </td>
                                                                 </tr>
