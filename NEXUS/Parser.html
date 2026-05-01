@@ -18,13 +18,20 @@
     <script type="text/babel">
         const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
+        // 💡 [v3.3 표준] STORAGE_KEYS 및 데이터 방어 유틸리티 완벽 일치화 (+델타 동기화 큐 추가)
         const STORAGE_KEYS = { 
             MASTER_DB: 'merchMaster_v870', 
             CLOUD_URL: 'skuSyncCloudUrl_v6', 
             SYNC_TRIGGER: 'merchMaster_sync_trigger', 
             HISTORY_DB: 'merchHistory_v870', 
-            CLOSING_DB: 'merchClosing_v1' 
+            CLOSING_DB: 'merchClosing_v1',
+            UNSYNCED_MASTER: 'merchUnsyncedMaster_v1', 
+            UNSYNCED_HISTORY: 'merchUnsyncedHistory_v1',
+            UNSYNCED_DELETES: 'merchUnsyncedDeletes_v1'
         };
+
+        // 💡 하얀 화면 방지용 강제 문자열 변환 유틸리티
+        const safeStr = (val, def = '') => (val !== undefined && val !== null && val !== '') ? String(val) : def;
 
         // ==========================================
         // 🧩 무제한 로컬 스토리지 (IndexedDB) 래퍼
@@ -74,11 +81,11 @@
 
         const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
 
-        const normalizeText = (text) => text ? String(text).replace(/\s+/g, '').toLowerCase() : '';
-        const tokenize = (str) => str ? String(str).replace(/[^\w가-힣]/g, ' ').split(/\s+/).filter(Boolean) : [];
+        const normalizeText = (text) => text ? safeStr(text).replace(/\s+/g, '').toLowerCase() : '';
+        const tokenize = (str) => str ? safeStr(str).replace(/[^\w가-힣]/g, ' ').split(/\s+/).filter(Boolean) : [];
         const extractSpec = (str) => {
             if (!str) return '';
-            const match = String(str).toLowerCase().match(/\d+(?:\.\d+)?(?:kg|g|ml|l|ea|박스|개|포|단|박|캔|병|봉|팩|입|t|입수)/g);
+            const match = safeStr(str).toLowerCase().match(/\d+(?:\.\d+)?(?:kg|g|ml|l|ea|박스|개|포|단|박|캔|병|봉|팩|입|t|입수)/g);
             return match ? match.join('') : '';
         };
 
@@ -109,8 +116,8 @@
             const labor = parseNum(currentFinalData?.['노무비'] ?? mItem?.['노무비']);
             const totalCost = baseInPrice + outsrc + labor;
 
-            const whCode = String(currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '').trim();
-            const unitStr = String(currentFinalData?.['단위'] ?? mItem?.['단위'] ?? '').trim().toLowerCase();
+            const whCode = safeStr(currentFinalData?.['창고'] ?? mItem?.['창고']).trim();
+            const unitStr = safeStr(currentFinalData?.['단위'] ?? mItem?.['단위']).trim().toLowerCase();
             
             const matchWh = (ruleWh, targetWh) => {
                 if (ruleWh === '*') return true;
@@ -172,7 +179,7 @@
         };
 
         const parseTextSemantically = (rawText) => {
-            let lines = rawText.split('\n').map(l => l.trim()).filter(l => l !== '');
+            let lines = safeStr(rawText).split('\n').map(l => l.trim()).filter(l => l !== '');
             const results = []; let currentItem = {};
             const pushItem = () => {
                 if (currentItem.품목명) {
@@ -239,9 +246,9 @@
 
             for (const mCode in mProducts) {
                 const m = mProducts[mCode];
-                const mBrand = String(m.브랜드 || '').trim();
-                const mName = String(m.품목명 || '').trim();
-                const mSpec = String(m.규격 || '').trim();
+                const mBrand = safeStr(m.브랜드).trim();
+                const mName = safeStr(m.품목명).trim();
+                const mSpec = safeStr(m.규격).trim();
 
                 const mFullWithBrand = IngestEngine.normalizeText(mBrand + mName + mSpec);
                 const mFullNoBrand = IngestEngine.normalizeText(mName + mSpec);
@@ -284,11 +291,11 @@
 
         const searchMasterProducts = (productsObj, keyword) => {
             if (!keyword || !keyword.trim()) return [];
-            const cleanKw = keyword.toLowerCase().replace(/[()[\]{},./]/g, ' ');
+            const cleanKw = safeStr(keyword).toLowerCase().replace(/[()[\]{},./]/g, ' ');
             const tokens = cleanKw.split(/\s+/).filter(t => t.length > 0);
             if (tokens.length === 0) return [];
             const results = Object.values(productsObj).map(m => {
-                const mName = String(m.품목명 || '').toLowerCase(); const mSpec = String(m.규격 || '').toLowerCase();
+                const mName = safeStr(m.품목명).toLowerCase(); const mSpec = safeStr(m.규격).toLowerCase();
                 let score = 0, matchCount = 0;
                 tokens.forEach(token => {
                     if (mName.includes(token)) { score += token.length * 10; matchCount++; } 
@@ -302,7 +309,7 @@
         };
 
         // ==========================================
-        // 🛠 SafeIcon & Headers (v3.3 100% 반영본)
+        // 🛠 SafeIcon (v3.3 100% 반영본)
         // ==========================================
         const SafeIcon = React.memo(function SafeIconComponent({ name, size = 18, className = "" }) {
             const [svg, setSvg] = useState("");
@@ -342,6 +349,7 @@
             return <span className="inline-flex shrink-0 items-center justify-center" dangerouslySetInnerHTML={{ __html: svg }} />;
         });
 
+        // 💡 [v3.3 표준] GlobalHeader 전체 교체
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [
                 { id: 'master', label: '정보 관리', icon: 'database' },
@@ -349,7 +357,6 @@
                 { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }
             ];
 
-            // 💡 [절대 수정 금지] 15개 탭 완벽 매핑 데이터
             const tabs = [
                 { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true, shortTag: 'ONE BOARD' },
                 { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: true, shortTag: 'SYSTEM GUIDE' },
@@ -419,7 +426,7 @@
                                     )}
                                 </div>
                                 <div className="w-px h-3.5 bg-slate-700"></div>
-                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`마스터 DB 기준 상품 수`}>
+                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`마스터 DB 기준 데이터 수`}>
                                     <SafeIcon name="database" size={10} className="text-slate-500" />
                                     <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount ? itemCount.toLocaleString() : 0}</span>
                                 </div>
@@ -461,6 +468,7 @@
             );
         };
 
+        // 💡 [v3.3 표준] IframeSettingsModal (Wide Overlay)
         const IframeSettingsModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
             return (
@@ -625,7 +633,7 @@
                         setProcessMsg(''); 
                     }
                 }, 100);
-            }, [masterProducts, parserDict, marginRules]);
+            }, [masterProducts, parserDict, marginRules, currentTag, processedCodes, saveMaster, saveDict, setProcessedCodes, setParserBuffer, setIsProcessing, setProcessMsg, showToast]);
 
             const handleApplyMatched = useCallback(async () => {
                 const toApply = parserBuffer.filter(r => r._apply && r._matchCode);
@@ -643,6 +651,10 @@
                     
                     let localLogs = [];
                     const nowStr = new Date().toLocaleString('ko-KR');
+
+                    // [개선] 델타 동기화 큐 불러오기
+                    let unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
+                    let unsyncedHistory = await getIDB(STORAGE_KEYS.UNSYNCED_HISTORY) || [];
 
                     toApply.forEach(row => {
                         const code = row._matchCode;
@@ -677,16 +689,23 @@
                             const normExtSpec = normalizeText(row['규격']);
                             newDict[`${normExtName}|${normExtSpec}`] = code;
                         }
+                        
+                        // 델타 마스터 큐에 추가
+                        unsyncedMaster[code] = newMaster[code];
                     });
 
                     if (localLogs.length > 0) {
-                        let currentHistory = [];
-                        try { currentHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.HISTORY_DB)) || []; } catch(e){}
+                        let currentHistory = await getIDB(STORAGE_KEYS.HISTORY_DB) || [];
                         const combined = [...localLogs, ...currentHistory].slice(0, 2000);
-                        localStorage.setItem(STORAGE_KEYS.HISTORY_DB, JSON.stringify(combined));
+                        await setIDB(STORAGE_KEYS.HISTORY_DB, combined);
+                        
+                        // 델타 히스토리 큐에 추가
+                        unsyncedHistory = [...unsyncedHistory, ...localLogs];
+                        await setIDB(STORAGE_KEYS.UNSYNCED_HISTORY, unsyncedHistory);
                     }
 
                     await saveMaster(newMaster); 
+                    await setIDB(STORAGE_KEYS.UNSYNCED_MASTER, unsyncedMaster);
                     saveDict(newDict); 
                     
                     setProcessedCodes(newlyProcessed);
@@ -774,6 +793,11 @@
                     const recalculatedFinal = calculatePricesEngine(pInNum, newMaster[newCode], row.finalData || {}, marginRules, false);
                     Object.assign(newMaster[newCode], recalculatedFinal);
 
+                    // 델타 동기화 큐 적용
+                    const unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
+                    unsyncedMaster[newCode] = newMaster[newCode];
+                    await setIDB(STORAGE_KEYS.UNSYNCED_MASTER, unsyncedMaster);
+
                     await saveMaster(newMaster);
 
                     const normExtName = normalizeText(row['품목명']);
@@ -823,14 +847,17 @@
                 try {
                     let newMaster = { ...masterProducts };
                     let count = 0;
+                    const unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
 
                     codesToProcess.forEach(code => {
                         if (newMaster[code]) {
                             newMaster[code]['카탈로그'] = removeTag(newMaster[code]['카탈로그'], currentTag);
+                            unsyncedMaster[code] = newMaster[code];
                             count++;
                         }
                     });
 
+                    await setIDB(STORAGE_KEYS.UNSYNCED_MASTER, unsyncedMaster);
                     await saveMaster(newMaster);
                     setSelectedMissingCodes(new Set()); 
                     showToast(`✅ ${count}개 상품을 '${currentTag}' 카탈로그에서 조용히 제외했습니다.`);
@@ -848,8 +875,11 @@
                 
                 try {
                     let newMaster = { ...masterProducts };
+                    const unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
                     if (newMaster[code]) {
                         newMaster[code]['카탈로그'] = removeTag(newMaster[code]['카탈로그'], currentTag);
+                        unsyncedMaster[code] = newMaster[code];
+                        await setIDB(STORAGE_KEYS.UNSYNCED_MASTER, unsyncedMaster);
                         await saveMaster(newMaster);
                         showToast(`✅ 선택한 상품을 '${currentTag}' 카탈로그에서 단종 처리했습니다.`);
                     }
@@ -1309,29 +1339,39 @@
                 const cloudUrl = localStorage.getItem('skuSyncCloudUrl_v6');
                 if (!cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
                 
+                const unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
+                const unsyncedHistory = await getIDB(STORAGE_KEYS.UNSYNCED_HISTORY) || [];
+                const unsyncedDeletes = await getIDB(STORAGE_KEYS.UNSYNCED_DELETES) || [];
+
+                if (Object.keys(unsyncedMaster).length === 0 && unsyncedHistory.length === 0 && unsyncedDeletes.length === 0) {
+                    return showToast("⚠️ 클라우드에 새로 반영할 변경사항이 없습니다.");
+                }
+
                 appState.setIsProcessing(true); 
                 appState.setProcessMsg("클라우드 백업 중...");
                 
                 try {
-                    let historyDelta = [];
-                    try { historyDelta = JSON.parse(localStorage.getItem(STORAGE_KEYS.HISTORY_DB)) || []; } catch(e){}
-                    
                     const payload = {
                         action: 'pushData',
-                        masterDelta: masterProducts,
-                        historyDelta: historyDelta.slice(-200), // 트래픽 최적화를 위해 최근 200건만 전송
+                        masterDelta: unsyncedMaster,
+                        historyDelta: unsyncedHistory,
+                        deletedCodes: unsyncedDeletes,
                         parserDict: appState.parserDict,
                         marginRules: appState.marginRules
                     };
 
                     const response = await fetch(cloudUrl, {
                         method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify(payload)
                     });
                     
                     const result = await response.json();
                     if (result.status === 'success') {
-                        showToast("✅ 클라우드 데이터 백업이 완료되었습니다.");
+                        await setIDB(STORAGE_KEYS.UNSYNCED_MASTER, {});
+                        await setIDB(STORAGE_KEYS.UNSYNCED_HISTORY, []);
+                        await setIDB(STORAGE_KEYS.UNSYNCED_DELETES, []);
+                        showToast(`✅ 클라우드 데이터 백업이 완료되었습니다. (수정 ${Object.keys(unsyncedMaster).length}건)`);
                     } else {
                         throw new Error(result.message);
                     }
@@ -1358,9 +1398,11 @@
                     if (result.status === 'success') {
                         if (result.master) await appState.saveMaster(result.master);
                         if (result.parserDict) appState.saveDict(result.parserDict);
+                        if (result.history) await setIDB(STORAGE_KEYS.HISTORY_DB, result.history);
                         if (result.marginRules && result.marginRules.length > 0) {
                             localStorage.setItem('merchMarginRules_v878', JSON.stringify(result.marginRules));
                         }
+                        localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
                         showToast("✅ 데이터 수신 완료! 최신 상태로 동기화되었습니다.");
                     } else {
                         throw new Error(result.message || "서버 응답 오류");
@@ -1651,7 +1693,43 @@
             );
         };
 
-        ReactDOM.createRoot(document.getElementById('root')).render(<ParserApp />);
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false, error: null };
+            }
+            static getDerivedStateFromError(error) { return { hasError: true, error }; }
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-50 p-6">
+                            <i className="fas fa-exclamation-triangle text-rose-500 text-6xl mb-6"></i>
+                            <h1 className="text-2xl font-black text-slate-800 mb-2">화면 렌더링 오류 발생 (Crash)</h1>
+                            <p className="text-slate-500 mb-6 text-center">
+                                불러온 데이터 중 잘못된 형식(숫자 등)이 섞여있어 화면이 중단되었습니다.<br/>
+                                아래 [초기화] 버튼을 눌러 복구해 주세요.
+                            </p>
+                            <div className="bg-white border border-rose-200 p-4 rounded-lg text-xs font-mono text-rose-600 w-full max-w-2xl overflow-auto mb-8 shadow-sm">
+                                {this.state.error && this.state.error.toString()}
+                            </div>
+                            <button
+                                onClick={() => {
+                                    indexedDB.deleteDatabase('MerchOpsDB');
+                                    localStorage.removeItem('merchMaster_v870');
+                                    window.location.reload();
+                                }}
+                                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-colors shadow-lg flex items-center gap-2"
+                            >
+                                <i className="fas fa-redo-alt"></i> 로컬 데이터 초기화 및 복구하기
+                            </button>
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<ErrorBoundary><ParserApp /></ErrorBoundary>);
     </script>
 </body>
 </html>
