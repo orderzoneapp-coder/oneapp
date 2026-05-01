@@ -56,17 +56,12 @@
     <script type="text/babel">
         const { useState, useMemo, useEffect, useRef, useCallback, Fragment } = React;
 
-        // 💡 [v3.3 표준] STORAGE_KEYS 및 데이터 방어 유틸리티 완벽 일치화 (+Pipeline 델타 큐 유지)
         const STORAGE_KEYS = {
             MASTER_DB: 'merchMaster_v870',
             CLOUD_URL: 'skuSyncCloudUrl_v6',
-            SYNC_TRIGGER: 'merchMaster_sync_trigger',
-            HISTORY_DB: 'merchHistory_v870',
-            UNSYNCED_MASTER: 'merchUnsyncedMaster_v1', 
-            UNSYNCED_HISTORY: 'merchUnsyncedHistory_v1'
+            SYNC_TRIGGER: 'merchMaster_sync_trigger'
         };
-
-        // 💡 하얀 화면 방지용 강제 문자열 변환 유틸리티
+        // 하얀 화면 방지용 강제 문자열 변환 유틸리티 (추가할 것)
         const safeStr = (val, def = '') => (val !== undefined && val !== null && val !== '') ? String(val) : def;
 
         const TW = {
@@ -195,7 +190,6 @@
             return config;
         };
 
-        // 💡 [v3.3 표준] GlobalHeader 전체 교체
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [
                 { id: 'master', label: '정보 관리', icon: 'database' },
@@ -314,7 +308,6 @@
             );
         };
 
-        // 💡 [v3.3 표준] IframeSettingsModal 전체 교체
         const IframeSettingsModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
             return (
@@ -852,9 +845,9 @@
                 if (data) setMasterProducts(data); 
 
                 // [개선 3] 로컬 DB 용량 관리 (최근 1000개 이력만 유지)
-                const oldLogs = await getIDB(STORAGE_KEYS.HISTORY_DB);
+                const oldLogs = await getIDB('merchHistory_v870');
                 if (oldLogs && oldLogs.length > 1000) {
-                    await setIDB(STORAGE_KEYS.HISTORY_DB, oldLogs.slice(-1000));
+                    await setIDB('merchHistory_v870', oldLogs.slice(-1000));
                 }
             }, []);
 
@@ -1059,20 +1052,20 @@
                 });
 
                 if (localLogs.length > 0) {
-                    const oldLogs = await getIDB(STORAGE_KEYS.HISTORY_DB) || [];
-                    await setIDB(STORAGE_KEYS.HISTORY_DB, [...oldLogs, ...localLogs]);
+                    const oldLogs = await getIDB('merchHistory_v870') || [];
+                    await setIDB('merchHistory_v870', [...oldLogs, ...localLogs]);
 
                     // [개선] 델타 동기화를 위해 미동기화 히스토리 큐에 추가
-                    const unsyncedHist = await getIDB(STORAGE_KEYS.UNSYNCED_HISTORY) || [];
-                    await setIDB(STORAGE_KEYS.UNSYNCED_HISTORY, [...unsyncedHist, ...localLogs]);
+                    const unsyncedHist = await getIDB('merchUnsyncedHistory_v1') || [];
+                    await setIDB('merchUnsyncedHistory_v1', [...unsyncedHist, ...localLogs]);
                 }
 
                 // [개선] 델타 동기화를 위해 미동기화 마스터 큐에 추가
-                const unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
+                const unsyncedMaster = await getIDB('merchUnsyncedMaster_v1') || {};
                 targetCodes.forEach(code => {
                     if (newMaster[code]) unsyncedMaster[code] = newMaster[code];
                 });
-                await setIDB(STORAGE_KEYS.UNSYNCED_MASTER, unsyncedMaster);
+                await setIDB('merchUnsyncedMaster_v1', unsyncedMaster);
 
                 setMasterProducts(newMaster); 
                 await setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
@@ -1202,7 +1195,7 @@
                 let newMaster = { ...masterProducts };
                 let count = 0;
                 const safeName = categoryName.trim();
-                const unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
+                const unsyncedMaster = await getIDB('merchUnsyncedMaster_v1') || {};
 
                 rows.forEach(row => {
                     const code = row.코드;
@@ -1223,7 +1216,7 @@
                     }
                 });
 
-                await setIDB(STORAGE_KEYS.UNSYNCED_MASTER, unsyncedMaster);
+                await setIDB('merchUnsyncedMaster_v1', unsyncedMaster);
                 setMasterProducts(newMaster);
                 await setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
                 localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
@@ -1247,8 +1240,8 @@
             const handlePush = async () => {
                 if (!config.cloudUrl) return showToast("⚠️ 설정에서 앱스크립트 URL을 입력하세요.");
 
-                const unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
-                const unsyncedHistory = await getIDB(STORAGE_KEYS.UNSYNCED_HISTORY) || [];
+                const unsyncedMaster = await getIDB('merchUnsyncedMaster_v1') || {};
+                const unsyncedHistory = await getIDB('merchUnsyncedHistory_v1') || [];
 
                 if (Object.keys(unsyncedMaster).length === 0 && unsyncedHistory.length === 0) {
                     return showToast("⚠️ 클라우드에 새로 반영할 변경사항이 없습니다.");
@@ -1270,8 +1263,8 @@
                     const result = await response.json();
                     if (result.status === 'success') {
                         // 성공적으로 보내면 큐 비우기
-                        await setIDB(STORAGE_KEYS.UNSYNCED_MASTER, {});
-                        await setIDB(STORAGE_KEYS.UNSYNCED_HISTORY, []);
+                        await setIDB('merchUnsyncedMaster_v1', {});
+                        await setIDB('merchUnsyncedHistory_v1', []);
                         showToast(`✅ 클라우드 동기화 완료 (수정 ${Object.keys(unsyncedMaster).length}건, 이력 ${unsyncedHistory.length}건)`);
                     } else {
                         throw new Error(result.message || '서버 응답 오류');
@@ -1301,7 +1294,7 @@
                             await setIDB(STORAGE_KEYS.MASTER_DB, result.master);
                         }
                         if (result.history) {
-                            await setIDB(STORAGE_KEYS.HISTORY_DB, result.history);
+                            await setIDB('merchHistory_v870', result.history);
                         }
                         localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
                         showToast("✅ 클라우드 데이터 수신 완료");
@@ -1653,7 +1646,6 @@
             );
         }
 
-        // 💡 [v3.3 표준] ErrorBoundary 추가 및 root.render 래핑
         class ErrorBoundary extends React.Component {
             constructor(props) {
                 super(props);
@@ -1673,12 +1665,12 @@
                             <div className="bg-white border border-rose-200 p-4 rounded-lg text-xs font-mono text-rose-600 w-full max-w-2xl overflow-auto mb-8 shadow-sm">
                                 {this.state.error && this.state.error.toString()}
                             </div>
-                            <button 
-                                onClick={() => { 
+                            <button
+                                onClick={() => {
                                     indexedDB.deleteDatabase('MerchOpsDB');
-                                    localStorage.removeItem('merchMaster_v870'); 
-                                    window.location.reload(); 
-                                }} 
+                                    localStorage.removeItem('merchMaster_v870');
+                                    window.location.reload();
+                                }}
                                 className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-colors shadow-lg flex items-center gap-2"
                             >
                                 <i className="fas fa-redo-alt"></i> 로컬 데이터 초기화 및 복구하기
