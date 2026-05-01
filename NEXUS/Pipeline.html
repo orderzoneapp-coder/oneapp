@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - Valuation Hub [v3.8 Cloud Sync & Delta]</title>
+    <title>ONEAPP NEXES - Valuation Hub [v3.3 Cloud Sync & Delta]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -56,12 +56,19 @@
     <script type="text/babel">
         const { useState, useMemo, useEffect, useRef, useCallback, Fragment } = React;
 
+        // 💡 [v3.3 표준] STORAGE_KEYS 및 데이터 방어 유틸리티 완벽 일치화
         const STORAGE_KEYS = {
             MASTER_DB: 'merchMaster_v870',
             CLOUD_URL: 'skuSyncCloudUrl_v6',
-            SYNC_TRIGGER: 'merchMaster_sync_trigger'
+            SYNC_TRIGGER: 'merchMaster_sync_trigger',
+            HISTORY_DB: 'merchHistory_v870',
+            MANAGED_ITEMS: 'merchPipeline_Managed_v2',
+            UNSYNCED_MASTER: 'merchUnsyncedMaster_v1', 
+            UNSYNCED_HISTORY: 'merchUnsyncedHistory_v1',
+            UNSYNCED_DELETES: 'merchUnsyncedDeletes_v1'
         };
-        // 하얀 화면 방지용 강제 문자열 변환 유틸리티 (추가할 것)
+
+        // 💡 하얀 화면 방지용 강제 문자열 변환 유틸리티
         const safeStr = (val, def = '') => (val !== undefined && val !== null && val !== '') ? String(val) : def;
 
         const TW = {
@@ -190,6 +197,7 @@
             return config;
         };
 
+        // 💡 [v3.3 표준] GlobalHeader 전체 교체
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [
                 { id: 'master', label: '정보 관리', icon: 'database' },
@@ -403,7 +411,8 @@
                 const list = []; const vendors = new Set(); const upCols = visibleUploadCols.estimate || [];
 
                 displayRows.forEach(row => {
-                    const mItem = masterProducts[row.코드]; 
+                    const rowCode = row.코드 || row.품목코드; // 🔥 방어 로직 적용
+                    const mItem = masterProducts[rowCode] || masterProducts[row.품목코드] || {}; 
                     const oldP = mItem ? parseNum(mItem['입고가']) : 0; 
                     
                     const newP = parseNum(row.finalData?.['입고가'] !== undefined 
@@ -415,7 +424,7 @@
 
                     let status = 'same'; let issues = [];
 
-                    if (!mItem) { 
+                    if (!mItem.품목명 && !mItem.코드) { 
                         status = 'new'; newItems++; issues.push({ text: '신규 품목', color: 'text-emerald-500' });
                     } else {
                         let priceChanged = false;
@@ -441,7 +450,7 @@
                         }
                     }
 
-                    list.push({ 코드: row.코드, 품명: mItem?.품목명 || row.finalData?.['품목명'] || '', 거래처: vendor, 기존단가: oldP, 새단가: newP, issues: issues, 상태: status });
+                    list.push({ 코드: rowCode, 품명: mItem?.품목명 || row.finalData?.['품목명'] || '', 거래처: vendor, 기존단가: oldP, 새단가: newP, issues: issues, 상태: status });
                 });
 
                 list.sort((a, b) => { if (a.거래처 !== b.거래처) return a.거래처.localeCompare(b.거래처); return String(a.코드).localeCompare(String(b.코드)); });
@@ -643,7 +652,7 @@
         const MemoizedTableRow = React.memo(({ row, idx, isSel, mItem, isEstimateUploaded, visMasterCols, visUploadCols, masterLinksEst, onToggleSelection, onMouseDown, onMouseEnter, onUpdateCell }) => {
             const dName = mItem.품목명 || '[미등록]';
             const dSpec = mItem.규격 || '';
-            const rowCode = row.코드 || '';
+            const rowCode = row.코드 || row.품목코드 || ''; // 🔥 방어 로직 적용
 
             return (
                 <tr className={`table-row-hover transition-colors ${isSel ? 'table-row-selected' : ''}`} onMouseDown={(e) => onMouseDown && onMouseDown(e, rowCode, isSel)} onMouseEnter={(e) => onMouseEnter && onMouseEnter(e, rowCode)}>
@@ -769,8 +778,10 @@
                                         {topPadding > 0 && <tr style={{ height: `${topPadding}px` }}><td colSpan="50" className="p-0 border-0"></td></tr>}
                                         
                                         {displayRows.map((row, idx) => {
-                                            const mItem = masterProducts[row.코드] || {}; const isSel = selectedRows.has(row.코드);
-                                            return <MemoizedTableRow key={row.코드} row={row} idx={idx} isSel={isSel} mItem={mItem} isEstimateUploaded={isEstimateUploaded} visMasterCols={visMaster} visUploadCols={visUpload} masterLinksEst={masterLinksEst} onToggleSelection={actions.toggleRowSelection} onMouseDown={handleMouseDown} onMouseEnter={handleMouseEnter} onUpdateCell={actions.handleUpdateCell} />;
+                                            const rowCode = row.코드 || row.품목코드; // 🔥 방어 로직 적용
+                                            const mItem = masterProducts[rowCode] || masterProducts[row.품목코드] || {}; // 🔥 방어 로직 적용
+                                            const isSel = selectedRows.has(rowCode);
+                                            return <MemoizedTableRow key={rowCode} row={{...row, 코드: rowCode}} idx={idx} isSel={isSel} mItem={mItem} isEstimateUploaded={isEstimateUploaded} visMasterCols={visMaster} visUploadCols={visUpload} masterLinksEst={masterLinksEst} onToggleSelection={actions.toggleRowSelection} onMouseDown={handleMouseDown} onMouseEnter={handleMouseEnter} onUpdateCell={actions.handleUpdateCell} />;
                                         })}
                                         
                                         {bottomPadding > 0 && <tr style={{ height: `${bottomPadding}px` }}><td colSpan="50" className="p-0 border-0"></td></tr>}
@@ -844,10 +855,10 @@
                 const data = await getIDB(STORAGE_KEYS.MASTER_DB); 
                 if (data) setMasterProducts(data); 
 
-                // [개선 3] 로컬 DB 용량 관리 (최근 1000개 이력만 유지)
-                const oldLogs = await getIDB('merchHistory_v870');
+                // 로컬 DB 용량 관리 (최근 1000개 이력만 유지)
+                const oldLogs = await getIDB(STORAGE_KEYS.HISTORY_DB);
                 if (oldLogs && oldLogs.length > 1000) {
-                    await setIDB('merchHistory_v870', oldLogs.slice(-1000));
+                    await setIDB(STORAGE_KEYS.HISTORY_DB, oldLogs.slice(-1000));
                 }
             }, []);
 
@@ -1052,20 +1063,18 @@
                 });
 
                 if (localLogs.length > 0) {
-                    const oldLogs = await getIDB('merchHistory_v870') || [];
-                    await setIDB('merchHistory_v870', [...oldLogs, ...localLogs]);
+                    const oldLogs = await getIDB(STORAGE_KEYS.HISTORY_DB) || [];
+                    await setIDB(STORAGE_KEYS.HISTORY_DB, [...oldLogs, ...localLogs]);
 
-                    // [개선] 델타 동기화를 위해 미동기화 히스토리 큐에 추가
-                    const unsyncedHist = await getIDB('merchUnsyncedHistory_v1') || [];
-                    await setIDB('merchUnsyncedHistory_v1', [...unsyncedHist, ...localLogs]);
+                    const unsyncedHist = await getIDB(STORAGE_KEYS.UNSYNCED_HISTORY) || [];
+                    await setIDB(STORAGE_KEYS.UNSYNCED_HISTORY, [...unsyncedHist, ...localLogs]);
                 }
 
-                // [개선] 델타 동기화를 위해 미동기화 마스터 큐에 추가
-                const unsyncedMaster = await getIDB('merchUnsyncedMaster_v1') || {};
+                const unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
                 targetCodes.forEach(code => {
                     if (newMaster[code]) unsyncedMaster[code] = newMaster[code];
                 });
-                await setIDB('merchUnsyncedMaster_v1', unsyncedMaster);
+                await setIDB(STORAGE_KEYS.UNSYNCED_MASTER, unsyncedMaster);
 
                 setMasterProducts(newMaster); 
                 await setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
@@ -1108,11 +1117,12 @@
                         };
 
                         const exportTargetRows = selectedRows.size > 0 
-                            ? fullDisplayRows.filter(row => selectedRows.has(row.코드)) 
+                            ? fullDisplayRows.filter(row => selectedRows.has(row.코드 || row.품목코드)) 
                             : fullDisplayRows;
 
                         exportTargetRows.forEach(row => {
-                            const mItem = masterProducts[row.코드] || {}, final = row.finalData || {}, source = row.sources?.['estimate'] || {};
+                            const rowCode = row.코드 || row.품목코드;
+                            const mItem = masterProducts[rowCode] || masterProducts[row.품목코드] || {}, final = row.finalData || {}, source = row.sources?.['estimate'] || {};
                             const pIn = getFirstValidNum([final, source, mItem], ['입고가', '입고']);
                             const pOut = getFirstValidNum([final, source, mItem], ['출고가', '출고']);
                             const pMarketPrice = getFirstValidNum([final, mItem], ['시중가']);
@@ -1124,10 +1134,10 @@
                             const pBSale = getFirstValidNum([final, source, mItem], ['도매B', 'B판매', 'B 도매가']);
                             const pInstruction = getFirstValidStr([final, source, mItem], ['지시사항', '간단설명']);
                             
-                            const pRowErp = createRowArr(row.코드, pIn, pOut, pBPrice, pASale, pBSale, pIn, pInstruction); 
+                            const pRowErp = createRowArr(rowCode, pIn, pOut, pBPrice, pASale, pBSale, pIn, pInstruction); 
                             
                             if (pRowErp) {
-                                let erpItem = { 품목코드: row.코드, ...pRowErp };
+                                let erpItem = { 품목코드: rowCode, ...pRowErp };
                                 const rawTaxFlag = getFirstValidStr([final, source, mItem], ['비과세']);
                                 erpItem.isTaxable = checkTaxable(rawTaxFlag);
                                 erpData.push(pRowErp); 
@@ -1139,7 +1149,7 @@
                             const isForSale = isZeroPrice ? zeroAction.sale : (pIn > 0 || pOut > 0 ? '1' : '0');
                             const stockQty = isZeroPrice ? zeroAction.stock : '999';
 
-                            shopData.push([row.코드, dName, dSpec, pOut, priceA, priceMarketShop, 0, 0, 0, 0, 0, 0, dBrand, dInfo, isForSale, stockQty, '', '', '', '', '', dSearch]);
+                            shopData.push([rowCode, dName, dSpec, pOut, priceA, priceMarketShop, 0, 0, 0, 0, 0, 0, dBrand, dInfo, isForSale, stockQty, '', '', '', '', '', dSearch]);
 
                             [1, 2].forEach(type => { 
                                 const cCodeRaw = getFirstValidStr([final, source, mItem], [`${type}종코드`]); 
@@ -1195,28 +1205,27 @@
                 let newMaster = { ...masterProducts };
                 let count = 0;
                 const safeName = categoryName.trim();
-                const unsyncedMaster = await getIDB('merchUnsyncedMaster_v1') || {};
+                const unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
 
                 rows.forEach(row => {
-                    const code = row.코드;
-                    if (!newMaster[code]) return;
+                    const rowCode = row.코드 || row.품목코드;
+                    if (!newMaster[rowCode]) return;
                     
-                    newMaster[code] = { ...newMaster[code] };
-                    const currentCategories = newMaster[code]['견적서'] || newMaster[code]['카테고리'] || '';
+                    newMaster[rowCode] = { ...newMaster[rowCode] };
+                    const currentCategories = newMaster[rowCode]['견적서'] || newMaster[rowCode]['카테고리'] || '';
                     const tags = currentCategories.split(',').map(s => s.trim()).filter(Boolean);
                     
                     if (!tags.includes(safeName)) {
                         tags.push(safeName);
-                        newMaster[code]['견적서'] = tags.join(', ');
-                        delete newMaster[code]['카테고리']; // Migration
+                        newMaster[rowCode]['견적서'] = tags.join(', ');
+                        delete newMaster[rowCode]['카테고리']; // Migration
                         
-                        // [개선] 델타 큐에 변경사항 추가
-                        unsyncedMaster[code] = newMaster[code];
+                        unsyncedMaster[rowCode] = newMaster[rowCode];
                         count++;
                     }
                 });
 
-                await setIDB('merchUnsyncedMaster_v1', unsyncedMaster);
+                await setIDB(STORAGE_KEYS.UNSYNCED_MASTER, unsyncedMaster);
                 setMasterProducts(newMaster);
                 await setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
                 localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
@@ -1236,12 +1245,11 @@
                 showToast('작업 화면이 초기화 되었습니다.');
             }, [showToast]);
 
-            // [개선] Push 액션을 Delta Sync 방식으로 변경
             const handlePush = async () => {
                 if (!config.cloudUrl) return showToast("⚠️ 설정에서 앱스크립트 URL을 입력하세요.");
 
-                const unsyncedMaster = await getIDB('merchUnsyncedMaster_v1') || {};
-                const unsyncedHistory = await getIDB('merchUnsyncedHistory_v1') || [];
+                const unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
+                const unsyncedHistory = await getIDB(STORAGE_KEYS.UNSYNCED_HISTORY) || [];
 
                 if (Object.keys(unsyncedMaster).length === 0 && unsyncedHistory.length === 0) {
                     return showToast("⚠️ 클라우드에 새로 반영할 변경사항이 없습니다.");
@@ -1262,9 +1270,8 @@
 
                     const result = await response.json();
                     if (result.status === 'success') {
-                        // 성공적으로 보내면 큐 비우기
-                        await setIDB('merchUnsyncedMaster_v1', {});
-                        await setIDB('merchUnsyncedHistory_v1', []);
+                        await setIDB(STORAGE_KEYS.UNSYNCED_MASTER, {});
+                        await setIDB(STORAGE_KEYS.UNSYNCED_HISTORY, []);
                         showToast(`✅ 클라우드 동기화 완료 (수정 ${Object.keys(unsyncedMaster).length}건, 이력 ${unsyncedHistory.length}건)`);
                     } else {
                         throw new Error(result.message || '서버 응답 오류');
@@ -1277,7 +1284,6 @@
                 }
             };
 
-            // [개선] Pull 액션 
             const handlePull = async () => {
                 if (!config.cloudUrl) return showToast("⚠️ 설정에서 앱스크립트 URL을 입력하세요.");
                 setIsProcessing(true); setProcessMsg("데이터 동기화 중...");
@@ -1294,7 +1300,7 @@
                             await setIDB(STORAGE_KEYS.MASTER_DB, result.master);
                         }
                         if (result.history) {
-                            await setIDB('merchHistory_v870', result.history);
+                            await setIDB(STORAGE_KEYS.HISTORY_DB, result.history);
                         }
                         localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
                         showToast("✅ 클라우드 데이터 수신 완료");
@@ -1327,11 +1333,16 @@
                 if (isEstimateUploaded) {
                     baseList = Object.values(managedItems); 
                 } else {
-                    baseList = Object.values(masterProducts).map(m => managedItems[m.코드] || { 코드: m.코드, sources: {}, finalData: {} });
+                    // 🔥 [미등록] 방어 로직 적용
+                    baseList = Object.values(masterProducts).map(m => {
+                        const rowCode = m.코드 || m.품목코드;
+                        return managedItems[rowCode] || { 코드: rowCode, sources: {}, finalData: {} };
+                    });
 
                     if (selectedCatalogs.size > 0) {
                         baseList = baseList.filter(item => {
-                            const mItem = masterProducts[item.코드] || {};
+                            const rowCode = item.코드 || item.품목코드;
+                            const mItem = masterProducts[rowCode] || masterProducts[item.품목코드] || {};
                             const tagStr = mItem['카탈로그'] || '';
                             const tags = tagStr.split(',').map(t => t.trim());
                             return tags.some(t => selectedCatalogs.has(t));
@@ -1340,7 +1351,8 @@
 
                     if (selectedCategories.size > 0) {
                         baseList = baseList.filter(item => {
-                            const mItem = masterProducts[item.코드] || {};
+                            const rowCode = item.코드 || item.품목코드;
+                            const mItem = masterProducts[rowCode] || masterProducts[item.품목코드] || {};
                             const tagStr = mItem['견적서'] || mItem['카테고리'] || '';
                             const tags = tagStr.split(',').map(t => t.trim());
                             return tags.some(t => selectedCategories.has(t));
@@ -1353,7 +1365,8 @@
                     const tokens = cleanKeyword.split(/\s+/).filter(t => t.length > 0);
                     if (tokens.length > 0) {
                         baseList = baseList.map(item => {
-                            const mItem = masterProducts[item.코드] || {};
+                            const rowCode = item.코드 || item.품목코드;
+                            const mItem = masterProducts[rowCode] || masterProducts[item.품목코드] || {};
                             const sourceItem = item.sources?.['estimate'] || {};
                             const finalItem = item.finalData || {};
                             const getVal = (key) => String(finalItem[key] !== undefined ? finalItem[key] : (sourceItem[key] !== undefined ? sourceItem[key] : (mItem[key] || ''))).toLowerCase();
@@ -1362,7 +1375,7 @@
                             const cSpec = getVal('규격');
                             const cVendor = getVal('구매처'); 
                             const cWh = getVal('창고');
-                            const cCode = String(item.코드 || '').toLowerCase();
+                            const cCode = String(rowCode || '').toLowerCase();
                             
                             let score = 0;
                             let isVendorMatched = false;
@@ -1377,7 +1390,7 @@
                                 else if (cSpec.includes(token)) score += 5;
                                 else if (cWh.includes(token)) score += 4;
                             });
-                            return { ...item, _searchScore: score, _isVendorMatched: isVendorMatched };
+                            return { ...item, _searchScore: score, _isVendorMatched: isVendorMatched, 코드: rowCode };
                         }).filter(r => r._searchScore > 0);
                         
                         baseList.sort((a, b) => {
@@ -1386,7 +1399,8 @@
                             
                             if (a._isVendorMatched && b._isVendorMatched) {
                                 const getSeq = (item) => {
-                                    const m = masterProducts[item.코드] || {};
+                                    const rowCode = item.코드 || item.품목코드;
+                                    const m = masterProducts[rowCode] || masterProducts[item.품목코드] || {};
                                     const val = item.finalData?.['순번'] !== undefined ? item.finalData['순번'] : (item.sources?.['estimate']?.['순번'] ?? m['순번']);
                                     return (val === '' || val === undefined || val === null) ? 999999 : Number(val);
                                 };
@@ -1402,7 +1416,8 @@
                     if (selectedCatalogs.size > 0 || selectedCategories.size > 0) {
                         baseList.sort((a, b) => {
                             const getSeq = (item) => {
-                                const m = masterProducts[item.코드] || {};
+                                const rowCode = item.코드 || item.품목코드;
+                                const m = masterProducts[rowCode] || masterProducts[item.품목코드] || {};
                                 const val = item.finalData?.['순번'] !== undefined ? item.finalData['순번'] : (item.sources?.['estimate']?.['순번'] ?? m['순번']);
                                 return (val === '' || val === undefined || val === null) ? 999999 : Number(val);
                             };
@@ -1411,14 +1426,16 @@
                             
                             if (seqA !== seqB) return seqA - seqB;
                             
-                            const vendorA = String(a.finalData?.['구매처'] || masterProducts[a.코드]?.['구매처'] || '');
-                            const vendorB = String(b.finalData?.['구매처'] || masterProducts[b.코드]?.['구매처'] || '');
+                            const aCode = a.코드 || a.품목코드;
+                            const bCode = b.코드 || b.품목코드;
+                            const vendorA = String(a.finalData?.['구매처'] || masterProducts[aCode]?.['구매처'] || masterProducts[a.품목코드]?.['구매처'] || '');
+                            const vendorB = String(b.finalData?.['구매처'] || masterProducts[bCode]?.['구매처'] || masterProducts[b.품목코드]?.['구매처'] || '');
                             if (vendorA !== vendorB) return vendorA.localeCompare(vendorB);
                             
-                            return String(a.코드).localeCompare(String(b.코드));
+                            return String(aCode).localeCompare(String(bCode));
                         });
                     } else {
-                        baseList.sort((a, b) => String(a.코드).localeCompare(String(b.코드)));
+                        baseList.sort((a, b) => String(a.코드 || a.품목코드).localeCompare(String(b.코드 || b.품목코드)));
                     }
                 }
                 return baseList;
@@ -1439,8 +1456,9 @@
 
                         const aoa = [headers];
                         fullDisplayRows.forEach(row => {
-                            const rowCode = row.코드; const mItem = masterProducts[rowCode] || {};
-                            const isSel = selectedRows.has(row.코드); const status = (isSel ? '선택됨' : '');
+                            const rowCode = row.코드 || row.품목코드;
+                            const mItem = masterProducts[rowCode] || masterProducts[row.품목코드] || {};
+                            const isSel = selectedRows.has(rowCode); const status = (isSel ? '선택됨' : '');
                             const rowData = [status, rowCode || '', mItem.품목명 || '', mItem.규격 || ''];
 
                             masterCols.forEach(h => { const val = mItem[h] !== undefined ? mItem[h] : ''; rowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(val) : val); });
