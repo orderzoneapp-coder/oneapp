@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - Item Manager [v3.1 Cloud Sync]</title>
+    <title>ONEAPP NEXES - Item Manager [v3.3]</title>
     <!-- 핵심 라이브러리 CDN 로드 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -46,15 +46,12 @@
         // ==========================================
         const STORAGE_KEYS = {
             MASTER_DB: 'merchMaster_v870',
-            MANAGED_ITEMS: 'merchPipeline_Managed_v2',
-            SYNC_TRIGGER: 'merchMaster_sync_trigger',
             CLOUD_URL: 'skuSyncCloudUrl_v6',
-            HISTORY_DB: 'merchHistory_v870',
-            // [개선] 델타 큐 스토리지 키 통합
-            UNSYNCED_MASTER: 'merchUnsyncedMaster_v1', 
-            UNSYNCED_HISTORY: 'merchUnsyncedHistory_v1',
-            UNSYNCED_DELETES: 'merchUnsyncedDeletes_v1'
+            SYNC_TRIGGER: 'merchMaster_sync_trigger'
         };
+
+        // 하얀 화면 방지용 강제 문자열 변환 유틸리티 (추가할 것)
+        const safeStr = (val, def = '') => (val !== undefined && val !== null && val !== '') ? String(val) : def;
 
         const ONEAPP_CATEGORIES = [
             { c1Name: '채소.과일', c1Code: '10', c2Name: '무/배추/대파/마늘', c2Code: '1010', c3Name: '무우', erp3Code: '11010', orders3Code: '101010' },
@@ -158,7 +155,7 @@
         };
 
         // ==========================================
-        // 🧩 통합 글로벌 헤더 (v3.3 와이드 설정창)
+        // 🧩 통합 글로벌 헤더 (v3.3 최신판 전체 교체)
         // ==========================================
         const GlobalHeader = ({ activeTab, itemCount, isProcessing, processMsg, onOpenSettings, onPush, onPull, onNavigate }) => {
             const groups = [
@@ -167,7 +164,6 @@
                 { id: 'admin', label: '인사이트', icon: 'bar-chart-3' }
             ];
 
-            // 💡 [절대 수정 금지] 15개 탭 완벽 매핑 데이터
             const tabs = [
                 { id: 'dashboard', label: '통합 대시보드', icon: "layout-dashboard", path: 'Dashboard.html', group: 'common', isReady: true, shortTag: 'ONE BOARD' },
                 { id: 'guide', label: '시스템 가이드', icon: "book-open", path: 'Guide/guide.html', group: 'common', isReady: true, shortTag: 'SYSTEM GUIDE' },
@@ -237,7 +233,7 @@
                                     )}
                                 </div>
                                 <div className="w-px h-3.5 bg-slate-700"></div>
-                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`마스터 DB 기준 상품 수`}>
+                                <div className="flex items-center gap-1.5 text-slate-300 cursor-help" title={`마스터 DB 기준 데이터 수`}>
                                     <SafeIcon name="database" size={10} className="text-slate-500" />
                                     <span className="text-[11px] font-mono font-bold tracking-tight">{itemCount ? itemCount.toLocaleString() : 0}</span>
                                 </div>
@@ -280,13 +276,12 @@
         };
 
         // ==========================================
-        // 🌟 통합 Iframe 환경설정 모달 (와이드 버전 확장)
+        // 🌟 IframeSettingsModal (Wide Overlay) 적용
         // ==========================================
         const IframeSettingsModal = ({ isOpen, onClose }) => {
             if (!isOpen) return null;
             return (
                 <div className="fixed inset-0 z-[500] flex bg-slate-900/60 backdrop-blur-sm fade-in">
-                    {/* 💡 max-w-[1100px]에서 max-w-[1400px]로 와이드 확장 적용, 우측 픽스(ml-auto) 유지 */}
                     <div className="w-full max-w-[1400px] h-full bg-white shadow-[-10px_0_40px_rgba(0,0,0,0.3)] flex flex-col slide-in-right border-l border-slate-300 relative overflow-hidden ml-auto">
                         <div className="bg-[#0f172a] px-6 py-4 flex justify-between items-center text-white shrink-0 border-b border-slate-700 shadow-md relative z-10">
                             <div className="flex items-center gap-3">
@@ -658,9 +653,9 @@
             const handlePush = async () => {
                 if (!config.cloudUrl) return showToast("⚠️ 환경설정에서 앱스크립트 URL을 입력하세요.");
 
-                const unsyncedMaster = await getIDB(STORAGE_KEYS.UNSYNCED_MASTER) || {};
-                const unsyncedHistory = await getIDB(STORAGE_KEYS.UNSYNCED_HISTORY) || [];
-                const unsyncedDeletes = await getIDB(STORAGE_KEYS.UNSYNCED_DELETES) || [];
+                const unsyncedMaster = await getIDB('merchUnsyncedMaster_v1') || {};
+                const unsyncedHistory = await getIDB('merchUnsyncedHistory_v1') || [];
+                const unsyncedDeletes = await getIDB('merchUnsyncedDeletes_v1') || [];
 
                 if (Object.keys(unsyncedMaster).length === 0 && unsyncedHistory.length === 0 && unsyncedDeletes.length === 0) {
                     return showToast("⚠️ 클라우드에 새로 반영할 변경사항이 없습니다.");
@@ -683,9 +678,9 @@
                     const result = await response.json();
                     if (result.status === 'success') {
                         // 성공적으로 보내면 큐 비우기
-                        await setIDB(STORAGE_KEYS.UNSYNCED_MASTER, {});
-                        await setIDB(STORAGE_KEYS.UNSYNCED_HISTORY, []);
-                        await setIDB(STORAGE_KEYS.UNSYNCED_DELETES, []);
+                        await setIDB('merchUnsyncedMaster_v1', {});
+                        await setIDB('merchUnsyncedHistory_v1', []);
+                        await setIDB('merchUnsyncedDeletes_v1', []);
                         showToast(`✅ 클라우드 동기화 완료 (수정 ${Object.keys(unsyncedMaster).length}건, 삭제 ${unsyncedDeletes.length}건, 이력 ${unsyncedHistory.length}건)`);
                     } else {
                         throw new Error(result.message || '서버 응답 오류');
@@ -718,7 +713,7 @@
                             await setIDB(STORAGE_KEYS.MASTER_DB, result.master);
                         }
                         if (result.history) {
-                            await setIDB(STORAGE_KEYS.HISTORY_DB, result.history);
+                            await setIDB('merchHistory_v870', result.history);
                         }
                         // 수신 성공 시 로컬 트리거 발동 및 리로드
                         localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
@@ -757,16 +752,16 @@
                 }).catch(console.error);
 
                 // [개선] 로컬 DB 용량 관리 (최근 1000개 이력만 유지)
-                getIDB(STORAGE_KEYS.HISTORY_DB).then(oldLogs => {
+                getIDB('merchHistory_v870').then(oldLogs => {
                     if (oldLogs && oldLogs.length > 1000) {
-                        setIDB(STORAGE_KEYS.HISTORY_DB, oldLogs.slice(-1000));
+                        setIDB('merchHistory_v870', oldLogs.slice(-1000));
                     }
                 });
             }, []);
 
             useEffect(() => {
                 loadMaster();
-                getIDB(STORAGE_KEYS.MANAGED_ITEMS).then(data => { if (data) setManagedItems(data); }).catch(console.error);
+                getIDB('merchPipeline_Managed_v2').then(data => { if (data) setManagedItems(data); }).catch(console.error);
 
                 const handleStorageChange = (e) => {
                     if (e.key === STORAGE_KEYS.SYNC_TRIGGER) {
@@ -792,7 +787,7 @@
 
             useEffect(() => {
                 if (Object.keys(managedItems).length > 0) {
-                    setIDB(STORAGE_KEYS.MANAGED_ITEMS, managedItems).catch(console.error);
+                    setIDB('merchPipeline_Managed_v2', managedItems).catch(console.error);
                 }
             }, [managedItems]);
 
@@ -874,8 +869,45 @@
             );
         }
 
+        // ErrorBoundary (하얀 화면 방지 로직)
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false, error: null };
+            }
+            static getDerivedStateFromError(error) { return { hasError: true, error }; }
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-50 p-6">
+                            <i className="fas fa-exclamation-triangle text-rose-500 text-6xl mb-6"></i>
+                            <h1 className="text-2xl font-black text-slate-800 mb-2">화면 렌더링 오류 발생 (Crash)</h1>
+                            <p className="text-slate-500 mb-6 text-center">
+                                불러온 데이터 중 잘못된 형식(숫자 등)이 섞여있어 화면이 중단되었습니다.<br/>
+                                아래 [초기화] 버튼을 눌러 복구해 주세요.
+                            </p>
+                            <div className="bg-white border border-rose-200 p-4 rounded-lg text-xs font-mono text-rose-600 w-full max-w-2xl overflow-auto mb-8 shadow-sm">
+                                {this.state.error && this.state.error.toString()}
+                            </div>
+                            <button
+                                onClick={() => {
+                                    indexedDB.deleteDatabase('MerchOpsDB');
+                                    localStorage.removeItem('merchMaster_v870');
+                                    window.location.reload();
+                                }}
+                                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-colors shadow-lg flex items-center gap-2"
+                            >
+                                <i className="fas fa-redo-alt"></i> 로컬 데이터 초기화 및 복구하기
+                            </button>
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
+        }
+
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        root.render(<ErrorBoundary><App /></ErrorBoundary>);
     </script>
 </body>
 </html>
