@@ -209,105 +209,94 @@
             return results;
         };
 
-        const MatchEngine = {
-            findCategoryInfo: (keyword) => {
-                if (!keyword) return null;
-                return ONEAPP_CATEGORIES.find(c => keyword.includes(c.c3Name) || c.c3Name.includes(keyword)) || null;
-            },
-            searchMasterProducts: (productsObj, keyword) => {
-                if (!keyword || !keyword.trim()) return [];
-                const cleanKw = keyword.toLowerCase().replace(/[()[\]{},./]/g, ' ');
-                const tokens = cleanKw.split(/\s+/).filter(t => t.length > 0);
-                if (tokens.length === 0) return [];
-                const results = Object.values(productsObj).map(m => {
-                    const mName = String(m.품목명 || '').toLowerCase(); const mSpec = String(m.규격 || '').toLowerCase();
-                    let score = 0, matchCount = 0;
-                    tokens.forEach(token => {
-                        if (mName.includes(token)) { score += token.length * 10; matchCount++; } 
-                        else if (mSpec.includes(token)) { score += token.length * 5; matchCount++; } 
-                    });
-                    if ((mName + mSpec).replace(/\s+/g, '').includes(cleanKw.replace(/\s+/g, ''))) score += 1000;
-                    return { item: m, score, matchCount };
-                }).filter(r => r.score > 0);
-                results.sort((a, b) => b.score - a.score || b.matchCount - a.matchCount);
-                return results.map(r => r.item);
-            },
+        // 💡 참조 오류를 해결하기 위해 독립 함수로 분리 
+        const searchMasterProducts = (productsObj, keyword) => {
+            if (!keyword || !keyword.trim()) return [];
+            const cleanKw = keyword.toLowerCase().replace(/[()[\]{},./]/g, ' ');
+            const tokens = cleanKw.split(/\s+/).filter(t => t.length > 0);
+            if (tokens.length === 0) return [];
+            const results = Object.values(productsObj).map(m => {
+                const mName = String(m.품목명 || '').toLowerCase(); const mSpec = String(m.규격 || '').toLowerCase();
+                let score = 0, matchCount = 0;
+                tokens.forEach(token => {
+                    if (mName.includes(token)) { score += token.length * 10; matchCount++; } 
+                    else if (mSpec.includes(token)) { score += token.length * 5; matchCount++; } 
+                });
+                if ((mName + mSpec).replace(/\s+/g, '').includes(cleanKw.replace(/\s+/g, ''))) score += 1000;
+                return { item: m, score, matchCount };
+            }).filter(r => r.score > 0);
+            results.sort((a, b) => b.score - a.score || b.matchCount - a.matchCount);
+            return results.map(r => r.item);
+        };
+
+        const runSmartMatch = (extName, extSpec, mProducts, pDict) => {
+            const normExtName = normalizeText(extName);
+            const normExtSpec = normalizeText(extSpec);
+            const extFullText = normalizeText(extName + " " + extSpec);
+            const dictKey = `${normExtName}|${normExtSpec}`;
+
+            // 1. 학습된 사전에 있으면 즉각 일치
+            if (pDict[dictKey]) return { code: pDict[dictKey], status: '🔵 사전학습일치' };
+
+            let bestMatch = null;
+            let bestScore = 0;
             
-            // 💡 [핵심 수정] 브랜드/규격/이름을 엄격하게 분리 및 검증하는 향상된 AI 매칭 엔진
-            runSmartMatch: (extName, extSpec, mProducts, pDict) => {
-                const normExtName = IngestEngine.normalizeText(extName);
-                const normExtSpec = IngestEngine.normalizeText(extSpec);
-                const extFullText = IngestEngine.normalizeText(extName + " " + extSpec);
-                const dictKey = `${normExtName}|${normExtSpec}`;
+            // 외부 텍스트의 구성 토큰 및 규격 숫자 추출
+            const extTokens = tokenize(extName + " " + extSpec);
+            const extSpecNum = extractSpec(extName + " " + extSpec);
 
-                // 1. 학습된 사전에 있으면 즉각 일치
-                if (pDict[dictKey]) return { code: pDict[dictKey], status: '🔵 사전학습일치' };
+            let perfectMatches = [];
 
-                let bestMatch = null;
-                let bestScore = 0;
-                
-                // 외부 텍스트의 구성 토큰 및 규격 숫자 추출
-                const extTokens = IngestEngine.tokenize(extName + " " + extSpec);
-                const extSpecNum = IngestEngine.extractSpec(extName + " " + extSpec);
+            for (const mCode in mProducts) {
+                const m = mProducts[mCode];
+                const mBrand = String(m.브랜드 || '').trim();
+                const mName = String(m.품목명 || '').trim();
+                const mSpec = String(m.규격 || '').trim();
 
-                let perfectMatches = [];
+                const mFullWithBrand = normalizeText(mBrand + mName + mSpec);
+                const mFullNoBrand = normalizeText(mName + mSpec);
+                const mSpecNum = extractSpec(mBrand + " " + mName + " " + mSpec);
 
-                for (const mCode in mProducts) {
-                    const m = mProducts[mCode];
-                    const mBrand = String(m.브랜드 || '').trim();
-                    const mName = String(m.품목명 || '').trim();
-                    const mSpec = String(m.규격 || '').trim();
-
-                    const mFullWithBrand = IngestEngine.normalizeText(mBrand + mName + mSpec);
-                    const mFullNoBrand = IngestEngine.normalizeText(mName + mSpec);
-                    const mSpecNum = IngestEngine.extractSpec(mBrand + " " + mName + " " + mSpec);
-
-                    let isSpecMatch = true;
-                    if (extSpecNum && mSpecNum && extSpecNum !== mSpecNum) {
-                        isSpecMatch = false; // 💡 규격의 숫자나 단위가 명확히 다름
-                    }
-
-                    // 2. [완전 일치 조건] 규격 숫자가 충돌하지 않고 텍스트가 완벽하게 똑같을 때만 허용
-                    if ((extFullText === mFullWithBrand || extFullText === mFullNoBrand) && isSpecMatch) {
-                        perfectMatches.push(m);
-                        continue;
-                    }
-
-                    // 3. [유사도 계산] 브랜드 + 이름 + 규격 토큰 비교
-                    const mTokens = IngestEngine.tokenize(mBrand + " " + mName + " " + mSpec);
-                    const intersection = extTokens.filter(t => mTokens.includes(t));
-                    
-                    let score = intersection.length / Math.max(extTokens.length, mTokens.length);
-
-                    // 💡 [핵심] 규격이 아예 다르면 치명적 페널티 부여 -> 절대 '유사'에 못 뜨게 함 (불일치 강등)
-                    if (!isSpecMatch) {
-                        score = score * 0.1; 
-                    }
-
-                    // 💡 [핵심] 단어가 하나라도 다르면(브랜드 차이 등) 점수가 0.7 밑으로 떨어짐. 
-                    // 단, 순서만 다르면(동원 꽁치 ↔ 꽁치 동원) score는 1.0 이므로 [유사발견]으로 처리됨.
-                    if (score >= 0.7) {
-                        if (score > bestScore) {
-                            bestScore = score;
-                            bestMatch = m;
-                        }
-                    }
+                let isSpecMatch = true;
+                if (extSpecNum && mSpecNum && extSpecNum !== mSpecNum) {
+                    isSpecMatch = false; // 💡 규격의 숫자나 단위가 명확히 다름
                 }
 
-                if (perfectMatches.length === 1) return { code: perfectMatches[0].코드, status: '🟢 완전일치' };
-                if (perfectMatches.length > 1) return { code: '', status: '🟡 중복품목(선택필요)' }; 
+                // 2. [완전 일치 조건] 규격 숫자가 충돌하지 않고 텍스트가 완벽하게 똑같을 때만 허용
+                if ((extFullText === mFullWithBrand || extFullText === mFullNoBrand) && isSpecMatch) {
+                    perfectMatches.push(m);
+                    continue;
+                }
 
-                // 완전 똑같진 않지만 토큰(단어) 일치도가 높고 순서만 다른 경우 유사로 판정
-                if (bestMatch && bestScore >= 0.7) return { code: '', status: '🟡 유사발견' };
+                // 3. [유사도 계산] 브랜드 + 이름 + 규격 토큰 비교
+                const mTokens = tokenize(mBrand + " " + mName + " " + mSpec);
+                const intersection = extTokens.filter(t => mTokens.includes(t));
                 
-                // 규격/브랜드가 다르거나 유사도가 낮으면 불일치
-                return { code: '', status: '🔴 불일치' };
-            },
+                let score = intersection.length / Math.max(extTokens.length, mTokens.length);
 
-            generatePseudoSKU: (orders3Code) => {
-                const seq = String(Math.floor(100 + Math.random() * 900)); // 100~999
-                return `${orders3Code || '999999'}${seq}`;
+                // 💡 [핵심] 규격이 아예 다르면 치명적 페널티 부여 -> 절대 '유사'에 못 뜨게 함 (불일치 강등)
+                if (!isSpecMatch) {
+                    score = score * 0.1; 
+                }
+
+                // 💡 [핵심] 단어가 하나라도 다르면(브랜드 차이 등) 점수가 0.7 밑으로 떨어짐. 
+                // 단, 순서만 다르면(동원 꽁치 ↔ 꽁치 동원) score는 1.0 이므로 [유사발견]으로 처리됨.
+                if (score >= 0.7) {
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestMatch = m;
+                    }
+                }
             }
+
+            if (perfectMatches.length === 1) return { code: perfectMatches[0].코드, status: '🟢 완전일치' };
+            if (perfectMatches.length > 1) return { code: '', status: '🟡 중복품목(선택필요)' }; 
+
+            // 완전 똑같진 않지만 토큰(단어) 일치도가 높고 순서만 다른 경우 유사로 판정
+            if (bestMatch && bestScore >= 0.7) return { code: '', status: '🟡 유사발견' };
+            
+            // 규격/브랜드가 다르거나 유사도가 낮으면 불일치
+            return { code: '', status: '🔴 불일치' };
         };
 
         // ==========================================
@@ -1109,10 +1098,10 @@
                     actions.showToast("⏳ 미반영된 일치 항목을 자동 저장 후 이동합니다...");
                     const success = await actions.handleApplyMatched();
                     if (success) {
-                        setTimeout(() => { window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.2'; }, 800);
+                        setTimeout(() => { window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.4'; }, 800);
                     }
                 } else {
-                    window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.2';
+                    window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.4';
                 }
             };
 
