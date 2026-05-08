@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v1.2]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v1.4]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -178,7 +178,7 @@
                 calcOutPrice = totalCost * (1 + (appliedRule.rate / 100));
             }
             
-            // 일반 출고가(시중가) 100원 단위 반올림
+            // 엔진 코어 로직: 일반 출고가(시중가) 무조건 100원 단위 반올림
             calcOutPrice = Math.round(calcOutPrice / 100) * 100;
             
             if (!isFinite(calcOutPrice) || isNaN(calcOutPrice)) calcOutPrice = 0;
@@ -190,7 +190,7 @@
             const mIn = parseNum(mItem?.['입고가']);
             const mOut = parseNum(mItem?.['출고가']);
 
-            // 엑셀 원본 데이터도 모두 100원 단위로 강제 변환
+            // 엔진 코어 로직: 엑셀에서 그대로 불러온 수기 출고가 역시 100원 단위 반올림 적용
             if (providedOutPrice > 0 && !forceRecalc) {
                 newFinalData['출고가'] = Math.round(providedOutPrice / 100) * 100;
             } else if (baseInPrice === mIn && mOut > 0 && !forceRecalc) {
@@ -205,7 +205,8 @@
                 newFinalData['1입고'] = Math.round(((baseInPrice + outsrc) / div1) / 100) * 100;
                 let calc1Out = Math.round((newFinalData['출고가'] / div1) + extraCost);
                 if (!isFinite(calc1Out) || isNaN(calc1Out)) calc1Out = 0;
-                // 1종 출고가(소분 단가) 100원 단위 반올림 적용
+                
+                // 엔진 코어 로직: 과거 10원 단위였던 1종 출고가(소분 단가)를 100원 단위로 반올림 고정
                 newFinalData['1출고'] = Math.round(calc1Out / 100) * 100; 
             }
             return newFinalData;
@@ -535,6 +536,36 @@
                     ui.showToast(`✅ ${count}건의 상품에서 찌꺼기 데이터를 삭제했습니다. (적용 후 우측 상단 ☁️클라우드 백업을 눌러주세요)`);
                 }
             }, [data.masterProducts]);
+            
+            // ★ 신규 추가: 마스터 데이터 강제 재계산 및 100원 단위 찌꺼기 정돈 기능
+            const handleCleanUpDirtyPrices = useCallback(() => {
+                if(!window.confirm("마스터 DB에 저장된 단가 중 10원 단위(찌꺼기)로 남아있는 모든 항목을 100원 단위로 깔끔하게 반올림 정렬하시겠습니까?")) return;
+                
+                ui.setIsProcessing(true);
+                setTimeout(() => {
+                    let newMaster = { ...data.masterProducts };
+                    let count = 0;
+                    const priceFields = ["출고가", "시중가", "도매A", "도매B", "1출고", "2출고", "상장가", "행사가"];
+                    
+                    for(let code in newMaster) {
+                        let changed = false;
+                        priceFields.forEach(pf => {
+                            if(newMaster[code][pf]) {
+                                const oldVal = parseNum(newMaster[code][pf]);
+                                const newVal = Math.round(oldVal / 100) * 100;
+                                if(oldVal !== newVal) {
+                                    newMaster[code][pf] = newVal;
+                                    changed = true;
+                                }
+                            }
+                        });
+                        if(changed) count++;
+                    }
+                    data.setMasterProducts(newMaster);
+                    ui.showToast(`✅ ${count}개 상품의 단가가 100원 단위로 정돈되었습니다.`);
+                    ui.setIsProcessing(false);
+                }, 100);
+            }, [data.masterProducts]);
 
             const handleFileUpload = useCallback(async (e, expectedType) => { 
                 const files = Array.from(e.target.files); const targetInput = e.target; 
@@ -847,25 +878,15 @@
                         fullDisplayRows.forEach(row => {
                             const mItem = data.masterProducts[row.코드] || {}, final = row.finalData || {}, source = row.sources?.['estimate'] || {};
                             
+                            // 원본 데이터 그대로 출력 (UI 땜질 제거)
                             const pIn = getFirstValidNum([final, source, mItem], ['입고가', '입고']);
-                            // ★ 출력 직전 100원 단위 강제 반올림 (안전망)
-                            const pOutRaw = getFirstValidNum([final, source, mItem], ['출고가', '출고']);
-                            const pOut = pOutRaw > 0 ? Math.round(pOutRaw / 100) * 100 : 0;
-                            
-                            const pMarketPriceRaw = getFirstValidNum([final, mItem], ['시중가']);
-                            const pMarketPrice = pMarketPriceRaw > 0 ? Math.round(pMarketPriceRaw / 100) * 100 : (pOut > 0 ? pOut : 0);
+                            const pOut = getFirstValidNum([final, source, mItem], ['출고가', '출고']);
+                            const pMarketPrice = getFirstValidNum([final, mItem], ['시중가']);
+                            const pBPrice = getFirstValidNum([final, source], ['입고B', 'B단가']);
+                            const pASale = getFirstValidNum([final, source], ['도매A', 'A판매', 'A판매가']);
+                            const pBSale = getFirstValidNum([final, source], ['도매B', 'B판매', 'B 도매가']);
 
                             const dName = getFirstValidStr([source, mItem], ['품목명']), dSpec = getFirstValidStr([source, mItem], ['규격']), dBrand = getFirstValidStr([source, mItem], ['브랜드']), dInfo = getFirstValidStr([source, mItem], ['상품정보', '기본설명', '간단설명']), dSearch = getFirstValidStr([source, mItem], ['검색어등록', '상품태그']);
-                            
-                            const pBPriceRaw = getFirstValidNum([final, source], ['입고B', 'B단가']);
-                            const pBPrice = pBPriceRaw > 0 ? Math.round(pBPriceRaw / 100) * 100 : 0;
-                            
-                            const pASaleRaw = getFirstValidNum([final, source], ['도매A', 'A판매', 'A판매가']);
-                            const pASale = pASaleRaw > 0 ? Math.round(pASaleRaw / 100) * 100 : 0;
-
-                            const pBSaleRaw = getFirstValidNum([final, source], ['도매B', 'B판매', 'B 도매가']);
-                            const pBSale = pBSaleRaw > 0 ? Math.round(pBSaleRaw / 100) * 100 : 0;
-
                             const pInstruction = getFirstValidStr([final, source], ['지시사항', '간단설명']);
                             
                             const pRowErp = createRowArr(row.코드, pIn, pOut, pBPrice, pASale, pBSale, pIn, pInstruction); if (pRowErp) erpData.push(pRowErp);
@@ -883,10 +904,7 @@
                                 if (isValidSubItemCode(cCodeRaw)) { 
                                     const cCode = String(cCodeRaw).trim();
                                     const cIn = getFirstValidNum([final, source, mItem], [`${type}입고`, `${type}구매`]);
-                                    
-                                    // ★ 소분 단가(1출고) 100원 단위 강제 반올림
-                                    const cOutRaw = getFirstValidNum([final, source, mItem], [`${type}출고`]); 
-                                    const cOut = cOutRaw > 0 ? Math.round(cOutRaw / 100) * 100 : 0;
+                                    const cOut = getFirstValidNum([final, source, mItem], [`${type}출고`]); 
                                     
                                     const cRowErp = createRowArr(cCode, cIn, cOut, '', '', '', cIn, ''); 
                                     if (cRowErp) erpData.push(cRowErp); 
@@ -898,11 +916,8 @@
                                     const cInfo = subMaster.간단설명 || dInfo;
                                     const cSearch = subMaster.검색어등록 || dSearch;
                                     
-                                    const cMarketPriceRaw = subMaster.시중가 > 0 ? subMaster.시중가 : cOut;
-                                    const cMarketPrice = cMarketPriceRaw > 0 ? Math.round(cMarketPriceRaw / 100) * 100 : (cOut > 0 ? cOut : 0);
-                                    
-                                    const cPriceARaw = subMaster.도매A > 0 ? subMaster.도매A : cOut;
-                                    const cPriceA = cPriceARaw > 0 ? Math.round(cPriceARaw / 100) * 100 : (cOut > 0 ? cOut : 0);
+                                    const cMarketPrice = subMaster.시중가 > 0 ? subMaster.시중가 : cOut;
+                                    const cPriceA = subMaster.도매A > 0 ? subMaster.도매A : cOut;
                                     
                                     const cIsZeroPrice = (cIn === 0 && cOut === 0);
                                     const cIsForSale = cIsZeroPrice ? zeroAction.sale : (cIn > 0 || cOut > 0 ? '1' : '0');
@@ -942,18 +957,15 @@
                             const isSel = ui.selectedRows.has(row.코드); const status = (isSel ? '선택됨' : '');
                             const rowData = [status, rowCode || '', mItem.품목명 || '', mItem.규격 || ''];
 
-                            // ★ 화면 출력 시에도 100원 단위 적용
+                            // 땜질 코드 제거 (원본 데이터 그대로 출력)
                             masterCols.forEach(h => { 
                                 const val = mItem[h] !== undefined ? mItem[h] : ''; 
-                                const isNum = NUMERIC_HEADERS.includes(h);
-                                const isRound100 = FORCE_ROUND_100_HEADERS.includes(h);
-                                rowData.push(isNum ? (isRound100 ? Math.round(parseNum(val)/100)*100 : parseNum(val)) : val); 
+                                rowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(val) : val); 
                             });
                             uploadCols.forEach(h => { 
                                 const val = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.[activeProfile]?.[h] || ''); 
                                 const isNum = NUMERIC_HEADERS.includes(h) || NUMERIC_HEADERS.includes(config.masterLinks[activeProfile]?.[h]); 
-                                const isRound100 = FORCE_ROUND_100_HEADERS.includes(h) || FORCE_ROUND_100_HEADERS.includes(config.masterLinks[activeProfile]?.[h]);
-                                rowData.push(isNum ? (isRound100 ? Math.round(parseNum(val)/100)*100 : parseNum(val)) : val); 
+                                rowData.push(isNum ? parseNum(val) : val); 
                             });
                             aoa.push(rowData);
                         });
@@ -982,7 +994,7 @@
                 ui.showToast('작업 데이터가 초기화 되었습니다.');
             }, [data.setManagedItems, ui.setSelectedRows, ui.setGlobalSearch, ui.setSelectedCatalog, ui.setSelectedCategory]);
 
-            return { handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadCategory, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleRemoveFromCategory, handleAddToCategory, handleCommitEstimate, executeExport, handleExportCurrentView, toggleAllRows, handleReset };
+            return { handleCloudSync, cleanUpGarbageTags, handleCleanUpDirtyPrices, handleFileUpload, handleLoadCategory, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleRemoveFromCategory, handleAddToCategory, handleCommitEstimate, executeExport, handleExportCurrentView, toggleAllRows, handleReset };
         };
 
         // ==========================================
@@ -991,25 +1003,15 @@
         
         const EditableCell = React.memo(({ rowCode, initialVal, field, linkedMasterField, mVal, onUpdateCell }) => {
             const isNumeric = NUMERIC_HEADERS.includes(linkedMasterField) || NUMERIC_HEADERS.includes(field);
-            const isRound100 = FORCE_ROUND_100_HEADERS.includes(linkedMasterField) || FORCE_ROUND_100_HEADERS.includes(field);
             
-            // ★ 표시용 값 처리
-            let displayVal = initialVal;
-            if (isNumeric && isRound100 && initialVal !== '' && initialVal !== '오류') {
-                displayVal = Math.round(parseNum(initialVal) / 100) * 100;
-            }
-
-            const [localVal, setLocalVal] = useState(displayVal);
+            const [localVal, setLocalVal] = useState(initialVal);
             const [isFocused, setIsFocused] = useState(false);
 
             useEffect(() => {
-                if (!isFocused) setLocalVal(displayVal);
-            }, [displayVal, isFocused]);
+                if (!isFocused) setLocalVal(initialVal);
+            }, [initialVal, isFocused]);
 
-            const mValParsed = mVal !== undefined ? (isRound100 ? Math.round(parseNum(mVal)/100)*100 : parseNum(mVal)) : undefined;
-            const localValParsed = isRound100 ? Math.round(parseNum(localVal)/100)*100 : parseNum(localVal);
-            
-            const isDiff = linkedMasterField && mValParsed !== undefined && localVal !== '' && String(mValParsed) !== String(localValParsed) && isNumeric;
+            const isDiff = linkedMasterField && mVal !== undefined && localVal !== '' && String(mVal) !== String(localVal) && isNumeric;
 
             const commitChange = (v) => {
                 if (String(v) === String(initialVal)) return;
@@ -1071,7 +1073,7 @@
                         data-field={field} 
                         className={`w-full bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-1 rounded px-1.5 py-1 text-[12px] outline-none ${isNumeric ? 'text-right font-bold' : 'truncate text-center'} ${isDiff ? 'text-indigo-700' : ''}`} 
                         value={localVal === "오류" ? "" : localVal} 
-                        placeholder={mValParsed !== undefined ? String(mValParsed) : ''} 
+                        placeholder={mVal || ''} 
                         onChange={(e) => setLocalVal(e.target.value)} 
                         onFocus={(e) => { setIsFocused(true); setTimeout(() => e.target.select(), 0); }} 
                         onBlur={(e) => { setIsFocused(false); commitChange(e.target.value); }}
@@ -1169,7 +1171,7 @@
 
         const MappingCenterModal = ({ onClose, config, actions, availableCatalogs, availableCategories }) => {
             const { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules } = config;
-            const { handleCloudSync, cleanUpGarbageTags, handleDeleteTag, showToast } = actions;
+            const { handleCloudSync, cleanUpGarbageTags, handleCleanUpDirtyPrices, handleDeleteTag, showToast } = actions;
             const [activeTab, setActiveTab] = useState('display');
             const [customEstColInput, setCustomEstColInput] = useState('');
             useEffect(() => { document.body.style.overflow = 'hidden'; return () => document.body.style.overflow = 'auto'; }, []);
@@ -1278,6 +1280,16 @@
                                 )}
                                 {activeTab === 'marginRule' && (
                                     <div className="max-w-4xl space-y-6 fade-in">
+                                        <div className="bg-amber-50 p-5 rounded-xl border border-amber-200 shadow-sm mb-6">
+                                            <h3 className="text-[14px] font-black text-amber-900 mb-3 pb-2 border-b border-amber-200 flex justify-between items-center">
+                                                <span><i className="fas fa-database text-amber-500 mr-2"></i>스토리지 단가 정돈 (100원 단위 강제 정렬)</span>
+                                            </h3>
+                                            <p className="text-[12px] text-amber-800 font-bold mb-3">과거 버전에서 잘못 생성되어 마스터 DB에 영구 저장된 10원 단위 찌꺼기 단가들을 스캔하여, 안전하게 100원 단위로 반올림해 갱신(클린업)합니다.</p>
+                                            <button onClick={handleCleanUpDirtyPrices} className="px-4 py-2 bg-white border border-amber-300 text-amber-700 hover:bg-amber-100 rounded-lg text-[12px] font-bold transition-all shadow-sm">
+                                                <i className="fas fa-magic mr-1.5"></i> 마스터 DB 단가 정돈 실행
+                                            </button>
+                                        </div>
+
                                         <div className="bg-white p-6 rounded-xl border border-rose-200 shadow-sm">
                                             <div className="flex justify-between items-center mb-6">
                                                 <div><h3 className="text-[15px] font-black text-rose-900 flex items-center"><i className="fas fa-calculator mr-2 text-rose-500"></i>동적 단가 계산 및 하이브리드 마진 룰</h3><p className="text-[11px] font-bold text-rose-600 mt-1">※ '창고코드'와 '단위'를 조합한 트리 구조로 우선순위에 따라 마진율이 정밀하게 자동 적용됩니다.</p></div>
@@ -1423,7 +1435,7 @@
                                 if (url.startsWith('blob:') || url.startsWith('about:') || url.startsWith('data:')) {
                                     showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.');
                                 } else {
-                                    window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/vp1.2';
+                                    window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/vp1.3';
                                 }
                             } catch (e) {
                                 showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.');
@@ -1550,10 +1562,7 @@
                     {!isEstimateUploaded ? (
                         visMasterCols.map(h => {
                             const isNum = NUMERIC_HEADERS.includes(h);
-                            const isRound100 = FORCE_ROUND_100_HEADERS.includes(h);
-                            // ★ 화면 표시 시 강제 100원 단위 반영
-                            const mValRaw = mItem[h] !== undefined && mItem[h] !== '' ? parseNum(mItem[h]) : null;
-                            const mVal = mValRaw !== null ? (isNum ? (isRound100 ? Math.round(mValRaw/100)*100 : mValRaw).toLocaleString() : mItem[h]) : '-';
+                            const mVal = mItem[h] !== undefined && mItem[h] !== '' ? (isNum ? parseNum(mItem[h]).toLocaleString() : mItem[h]) : '-';
                             return (
                                 <td key={`idle-td-${h}`} className={`px-2 py-1.5 border-r border-[#edebe3] text-[#6b675e] ${getCellWidthClass(h)} ${isNum ? 'text-right font-bold' : 'text-center'}`}>
                                     <div className="truncate w-full">{mVal}</div>
@@ -1564,21 +1573,15 @@
                         <>
                             {visMasterCols.map(h => {
                                 const isNum = NUMERIC_HEADERS.includes(h);
-                                const isRound100 = FORCE_ROUND_100_HEADERS.includes(h);
-                                const mValRaw = mItem[h] !== undefined && mItem[h] !== '' ? parseNum(mItem[h]) : null;
-                                const mVal = mValRaw !== null ? (isRound100 ? Math.round(mValRaw/100)*100 : mValRaw) : undefined;
-                                
+                                const mVal = mItem[h];
                                 let displayVal = mVal;
                                 let isChanged = false;
 
                                 if (row.finalData && row.finalData[h] !== undefined) {
-                                    const finalValRaw = isNum ? parseNum(row.finalData[h]) : row.finalData[h];
-                                    const finalVal = isNum && isRound100 ? Math.round(finalValRaw/100)*100 : finalValRaw;
-                                    
-                                    if (isNum && finalVal !== mVal) { displayVal = finalVal; isChanged = true; } 
-                                    else if (!isNum && String(finalVal) !== String(mItem[h])) { displayVal = finalVal; isChanged = true; }
+                                    if (isNum && parseNum(row.finalData[h]) !== parseNum(mVal)) { displayVal = row.finalData[h]; isChanged = true; } 
+                                    else if (!isNum && String(row.finalData[h]) !== String(mVal)) { displayVal = row.finalData[h]; isChanged = true; }
                                 }
-                                const formattedVal = displayVal !== undefined && displayVal !== '' ? (isNum ? displayVal.toLocaleString() : displayVal) : '-';
+                                const formattedVal = displayVal !== undefined && displayVal !== '' ? (isNum ? parseNum(displayVal).toLocaleString() : displayVal) : '-';
                                 return (
                                     <td key={`pm-d-${h}`} className={`px-2 py-1.5 border-r border-[#edebe3] transition-colors ${getCellWidthClass(h)} ${isChanged ? 'bg-amber-100/60 text-amber-800' : 'bg-[#faf9f5] text-[#6b675e]'} ${isNum ? 'text-right font-bold' : 'text-center'}`}>
                                         <div className="truncate w-full">{formattedVal}</div>
@@ -1722,7 +1725,7 @@
                     <i className="fas fa-box-open"></i>
                     <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm"><i className="fas fa-check"></i></div>
                 </div>
-                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v1.2]</h2>
+                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v1.4]</h2>
                 <p className="text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold">
                     현재 등록된 <span className="text-indigo-500">마스터 상품 데이터</span>가 없습니다.<br/>
                     견적 작업 및 파서 연동을 위해 전체 상품 DB를 세팅해주세요.
@@ -1745,7 +1748,7 @@
                     <div className="flex-1 bg-slate-50 border border-slate-200 p-8 rounded-xl text-center hover:shadow-lg transition-all duration-300 group hover:-translate-y-1 hover:bg-purple-50 hover:border-purple-200 cursor-pointer relative overflow-hidden" onClick={() => {
                         try {
                             if(window.location.href.startsWith('blob:')) { showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.'); }
-                            else { window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/vp1.2'; }
+                            else { window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/vp1.3'; }
                         } catch(e) { showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.'); }
                     }}>
                         <div className="text-4xl text-purple-500 mb-5 group-hover:scale-110 transition-transform duration-300"><i className="fas fa-magic"></i></div>
@@ -2087,7 +2090,7 @@
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <div className="flex items-center mb-0.5">
                                                     <span className="text-[14px] font-black text-slate-200 leading-none">MerchOps</span>
-                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.2</span>
+                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.4</span>
                                                 </div>
                                                 <span className="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">MAIN WORKSPACE</span>
                                             </div>
