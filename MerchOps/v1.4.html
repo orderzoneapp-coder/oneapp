@@ -70,6 +70,9 @@
             "1구매", "1출고", "2구매", "2출고", "1입고", "2입고"
         ];
 
+        // ★ 강제로 100원 단위 반올림을 적용할 판매가 필드들
+        const FORCE_ROUND_100_HEADERS = ["출고가", "시중가", "도매A", "도매B", "1출고", "2출고", "상장가", "행사가"];
+
         const getInitialVisibleMasterCols = () => ({ estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] });
         const getInitialVisibleUploadCols = () => ({ estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명'] });
         
@@ -843,27 +846,48 @@
                         
                         fullDisplayRows.forEach(row => {
                             const mItem = data.masterProducts[row.코드] || {}, final = row.finalData || {}, source = row.sources?.['estimate'] || {};
+                            
                             const pIn = getFirstValidNum([final, source, mItem], ['입고가', '입고']);
-                            const pOut = getFirstValidNum([final, source, mItem], ['출고가', '출고']);
-                            const pMarketPrice = getFirstValidNum([final, mItem], ['시중가']);
+                            // ★ 출력 직전 100원 단위 강제 반올림 (안전망)
+                            const pOutRaw = getFirstValidNum([final, source, mItem], ['출고가', '출고']);
+                            const pOut = pOutRaw > 0 ? Math.round(pOutRaw / 100) * 100 : 0;
+                            
+                            const pMarketPriceRaw = getFirstValidNum([final, mItem], ['시중가']);
+                            const pMarketPrice = pMarketPriceRaw > 0 ? Math.round(pMarketPriceRaw / 100) * 100 : (pOut > 0 ? pOut : 0);
 
-                            const dName = getFirstValidStr([source, mItem], ['품목명']), dSpec = getFirstValidStr([source, mItem], ['규격']), dBrand = getFirstValidStr([source, mItem], ['브랜드']), dInfo = getFirstValidStr([source, mItem], ['상품정보', '기본설명', '간단설명']), dSearch = getFirstValidStr([source, mItem], ['검색어등록', '상품태그']), pBPrice = getFirstValidNum([final, source], ['입고B', 'B단가']), pASale = getFirstValidNum([final, source], ['도매A', 'A판매', 'A판매가']), pBSale = getFirstValidNum([final, source], ['도매B', 'B판매', 'B 도매가']), pInstruction = getFirstValidStr([final, source], ['지시사항', '간단설명']);
+                            const dName = getFirstValidStr([source, mItem], ['품목명']), dSpec = getFirstValidStr([source, mItem], ['규격']), dBrand = getFirstValidStr([source, mItem], ['브랜드']), dInfo = getFirstValidStr([source, mItem], ['상품정보', '기본설명', '간단설명']), dSearch = getFirstValidStr([source, mItem], ['검색어등록', '상품태그']);
+                            
+                            const pBPriceRaw = getFirstValidNum([final, source], ['입고B', 'B단가']);
+                            const pBPrice = pBPriceRaw > 0 ? Math.round(pBPriceRaw / 100) * 100 : 0;
+                            
+                            const pASaleRaw = getFirstValidNum([final, source], ['도매A', 'A판매', 'A판매가']);
+                            const pASale = pASaleRaw > 0 ? Math.round(pASaleRaw / 100) * 100 : 0;
+
+                            const pBSaleRaw = getFirstValidNum([final, source], ['도매B', 'B판매', 'B 도매가']);
+                            const pBSale = pBSaleRaw > 0 ? Math.round(pBSaleRaw / 100) * 100 : 0;
+
+                            const pInstruction = getFirstValidStr([final, source], ['지시사항', '간단설명']);
+                            
                             const pRowErp = createRowArr(row.코드, pIn, pOut, pBPrice, pASale, pBSale, pIn, pInstruction); if (pRowErp) erpData.push(pRowErp);
                             
                             const priceOutShop = pOut;
                             const priceMarketShop = pMarketPrice > 0 ? pMarketPrice : priceOutShop;
-                            const priceA = getFirstValidNum([final, source, mItem], ['도매A', 'A판매가', 'A판매', '출고가']);
+                            const priceA = pASale > 0 ? pASale : pOut;
                             
                             const isZeroPrice = (pIn === 0 && pOut === 0), isForSale = isZeroPrice ? zeroAction.sale : (pIn > 0 || pOut > 0 ? '1' : '0'), stockQty = isZeroPrice ? zeroAction.stock : '999';
                             shopData.push([row.코드, dName, dSpec, priceOutShop, priceA, priceMarketShop, 0, 0, 0, 0, 0, 0, dBrand, dInfo, isForSale, stockQty, '', '', '', '', '', dSearch]);
 
-                            // ★ 2종코드 제외 완료, 1종코드만 출력
+                            // 1종코드만 출력
                             [1].forEach(type => { 
                                 const cCodeRaw = getFirstValidStr([mItem, source], [`${type}종코드`]); 
                                 if (isValidSubItemCode(cCodeRaw)) { 
                                     const cCode = String(cCodeRaw).trim();
                                     const cIn = getFirstValidNum([final, source, mItem], [`${type}입고`, `${type}구매`]);
-                                    const cOut = getFirstValidNum([final, source, mItem], [`${type}출고`]); 
+                                    
+                                    // ★ 소분 단가(1출고) 100원 단위 강제 반올림
+                                    const cOutRaw = getFirstValidNum([final, source, mItem], [`${type}출고`]); 
+                                    const cOut = cOutRaw > 0 ? Math.round(cOutRaw / 100) * 100 : 0;
+                                    
                                     const cRowErp = createRowArr(cCode, cIn, cOut, '', '', '', cIn, ''); 
                                     if (cRowErp) erpData.push(cRowErp); 
 
@@ -873,8 +897,12 @@
                                     const cBrand = subMaster.브랜드 || dBrand;
                                     const cInfo = subMaster.간단설명 || dInfo;
                                     const cSearch = subMaster.검색어등록 || dSearch;
-                                    const cMarketPrice = subMaster.시중가 > 0 ? subMaster.시중가 : cOut;
-                                    const cPriceA = subMaster.도매A > 0 ? subMaster.도매A : cOut;
+                                    
+                                    const cMarketPriceRaw = subMaster.시중가 > 0 ? subMaster.시중가 : cOut;
+                                    const cMarketPrice = cMarketPriceRaw > 0 ? Math.round(cMarketPriceRaw / 100) * 100 : (cOut > 0 ? cOut : 0);
+                                    
+                                    const cPriceARaw = subMaster.도매A > 0 ? subMaster.도매A : cOut;
+                                    const cPriceA = cPriceARaw > 0 ? Math.round(cPriceARaw / 100) * 100 : (cOut > 0 ? cOut : 0);
                                     
                                     const cIsZeroPrice = (cIn === 0 && cOut === 0);
                                     const cIsForSale = cIsZeroPrice ? zeroAction.sale : (cIn > 0 || cOut > 0 ? '1' : '0');
@@ -914,8 +942,19 @@
                             const isSel = ui.selectedRows.has(row.코드); const status = (isSel ? '선택됨' : '');
                             const rowData = [status, rowCode || '', mItem.품목명 || '', mItem.규격 || ''];
 
-                            masterCols.forEach(h => { const val = mItem[h] !== undefined ? mItem[h] : ''; rowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(val) : val); });
-                            uploadCols.forEach(h => { const val = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.[activeProfile]?.[h] || ''); const isNum = NUMERIC_HEADERS.includes(h) || NUMERIC_HEADERS.includes(config.masterLinks[activeProfile]?.[h]); rowData.push(isNum ? parseNum(val) : val); });
+                            // ★ 화면 출력 시에도 100원 단위 적용
+                            masterCols.forEach(h => { 
+                                const val = mItem[h] !== undefined ? mItem[h] : ''; 
+                                const isNum = NUMERIC_HEADERS.includes(h);
+                                const isRound100 = FORCE_ROUND_100_HEADERS.includes(h);
+                                rowData.push(isNum ? (isRound100 ? Math.round(parseNum(val)/100)*100 : parseNum(val)) : val); 
+                            });
+                            uploadCols.forEach(h => { 
+                                const val = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.[activeProfile]?.[h] || ''); 
+                                const isNum = NUMERIC_HEADERS.includes(h) || NUMERIC_HEADERS.includes(config.masterLinks[activeProfile]?.[h]); 
+                                const isRound100 = FORCE_ROUND_100_HEADERS.includes(h) || FORCE_ROUND_100_HEADERS.includes(config.masterLinks[activeProfile]?.[h]);
+                                rowData.push(isNum ? (isRound100 ? Math.round(parseNum(val)/100)*100 : parseNum(val)) : val); 
+                            });
                             aoa.push(rowData);
                         });
 
@@ -952,14 +991,25 @@
         
         const EditableCell = React.memo(({ rowCode, initialVal, field, linkedMasterField, mVal, onUpdateCell }) => {
             const isNumeric = NUMERIC_HEADERS.includes(linkedMasterField) || NUMERIC_HEADERS.includes(field);
-            const [localVal, setLocalVal] = useState(initialVal);
+            const isRound100 = FORCE_ROUND_100_HEADERS.includes(linkedMasterField) || FORCE_ROUND_100_HEADERS.includes(field);
+            
+            // ★ 표시용 값 처리
+            let displayVal = initialVal;
+            if (isNumeric && isRound100 && initialVal !== '' && initialVal !== '오류') {
+                displayVal = Math.round(parseNum(initialVal) / 100) * 100;
+            }
+
+            const [localVal, setLocalVal] = useState(displayVal);
             const [isFocused, setIsFocused] = useState(false);
 
             useEffect(() => {
-                if (!isFocused) setLocalVal(initialVal);
-            }, [initialVal, isFocused]);
+                if (!isFocused) setLocalVal(displayVal);
+            }, [displayVal, isFocused]);
 
-            const isDiff = linkedMasterField && mVal !== undefined && localVal !== '' && String(mVal) !== String(localVal) && isNumeric;
+            const mValParsed = mVal !== undefined ? (isRound100 ? Math.round(parseNum(mVal)/100)*100 : parseNum(mVal)) : undefined;
+            const localValParsed = isRound100 ? Math.round(parseNum(localVal)/100)*100 : parseNum(localVal);
+            
+            const isDiff = linkedMasterField && mValParsed !== undefined && localVal !== '' && String(mValParsed) !== String(localValParsed) && isNumeric;
 
             const commitChange = (v) => {
                 if (String(v) === String(initialVal)) return;
@@ -1021,7 +1071,7 @@
                         data-field={field} 
                         className={`w-full bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-1 rounded px-1.5 py-1 text-[12px] outline-none ${isNumeric ? 'text-right font-bold' : 'truncate text-center'} ${isDiff ? 'text-indigo-700' : ''}`} 
                         value={localVal === "오류" ? "" : localVal} 
-                        placeholder={mVal || ''} 
+                        placeholder={mValParsed !== undefined ? String(mValParsed) : ''} 
                         onChange={(e) => setLocalVal(e.target.value)} 
                         onFocus={(e) => { setIsFocused(true); setTimeout(() => e.target.select(), 0); }} 
                         onBlur={(e) => { setIsFocused(false); commitChange(e.target.value); }}
@@ -1500,7 +1550,10 @@
                     {!isEstimateUploaded ? (
                         visMasterCols.map(h => {
                             const isNum = NUMERIC_HEADERS.includes(h);
-                            const mVal = mItem[h] !== undefined && mItem[h] !== '' ? (isNum ? parseNum(mItem[h]).toLocaleString() : mItem[h]) : '-';
+                            const isRound100 = FORCE_ROUND_100_HEADERS.includes(h);
+                            // ★ 화면 표시 시 강제 100원 단위 반영
+                            const mValRaw = mItem[h] !== undefined && mItem[h] !== '' ? parseNum(mItem[h]) : null;
+                            const mVal = mValRaw !== null ? (isNum ? (isRound100 ? Math.round(mValRaw/100)*100 : mValRaw).toLocaleString() : mItem[h]) : '-';
                             return (
                                 <td key={`idle-td-${h}`} className={`px-2 py-1.5 border-r border-[#edebe3] text-[#6b675e] ${getCellWidthClass(h)} ${isNum ? 'text-right font-bold' : 'text-center'}`}>
                                     <div className="truncate w-full">{mVal}</div>
@@ -1511,15 +1564,21 @@
                         <>
                             {visMasterCols.map(h => {
                                 const isNum = NUMERIC_HEADERS.includes(h);
-                                const mVal = mItem[h];
+                                const isRound100 = FORCE_ROUND_100_HEADERS.includes(h);
+                                const mValRaw = mItem[h] !== undefined && mItem[h] !== '' ? parseNum(mItem[h]) : null;
+                                const mVal = mValRaw !== null ? (isRound100 ? Math.round(mValRaw/100)*100 : mValRaw) : undefined;
+                                
                                 let displayVal = mVal;
                                 let isChanged = false;
 
                                 if (row.finalData && row.finalData[h] !== undefined) {
-                                    if (isNum && parseNum(row.finalData[h]) !== parseNum(mVal)) { displayVal = row.finalData[h]; isChanged = true; } 
-                                    else if (!isNum && String(row.finalData[h]) !== String(mVal)) { displayVal = row.finalData[h]; isChanged = true; }
+                                    const finalValRaw = isNum ? parseNum(row.finalData[h]) : row.finalData[h];
+                                    const finalVal = isNum && isRound100 ? Math.round(finalValRaw/100)*100 : finalValRaw;
+                                    
+                                    if (isNum && finalVal !== mVal) { displayVal = finalVal; isChanged = true; } 
+                                    else if (!isNum && String(finalVal) !== String(mItem[h])) { displayVal = finalVal; isChanged = true; }
                                 }
-                                const formattedVal = displayVal !== undefined && displayVal !== '' ? (isNum ? parseNum(displayVal).toLocaleString() : displayVal) : '-';
+                                const formattedVal = displayVal !== undefined && displayVal !== '' ? (isNum ? displayVal.toLocaleString() : displayVal) : '-';
                                 return (
                                     <td key={`pm-d-${h}`} className={`px-2 py-1.5 border-r border-[#edebe3] transition-colors ${getCellWidthClass(h)} ${isChanged ? 'bg-amber-100/60 text-amber-800' : 'bg-[#faf9f5] text-[#6b675e]'} ${isNum ? 'text-right font-bold' : 'text-center'}`}>
                                         <div className="truncate w-full">{formattedVal}</div>
