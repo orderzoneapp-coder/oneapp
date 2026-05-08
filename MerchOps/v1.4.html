@@ -174,6 +174,8 @@
             } else {
                 calcOutPrice = totalCost * (1 + (appliedRule.rate / 100));
             }
+            
+            // 일반 출고가(시중가) 100원 단위 반올림
             calcOutPrice = Math.round(calcOutPrice / 100) * 100;
             
             if (!isFinite(calcOutPrice) || isNaN(calcOutPrice)) calcOutPrice = 0;
@@ -185,10 +187,11 @@
             const mIn = parseNum(mItem?.['입고가']);
             const mOut = parseNum(mItem?.['출고가']);
 
+            // 엑셀 원본 데이터도 모두 100원 단위로 강제 변환
             if (providedOutPrice > 0 && !forceRecalc) {
-                newFinalData['출고가'] = providedOutPrice;
+                newFinalData['출고가'] = Math.round(providedOutPrice / 100) * 100;
             } else if (baseInPrice === mIn && mOut > 0 && !forceRecalc) {
-                newFinalData['출고가'] = mOut;
+                newFinalData['출고가'] = Math.round(mOut / 100) * 100;
             } else {
                 newFinalData['출고가'] = calcOutPrice;
             }
@@ -199,7 +202,8 @@
                 newFinalData['1입고'] = Math.round(((baseInPrice + outsrc) / div1) / 100) * 100;
                 let calc1Out = Math.round((newFinalData['출고가'] / div1) + extraCost);
                 if (!isFinite(calc1Out) || isNaN(calc1Out)) calc1Out = 0;
-                newFinalData['1출고'] = Math.round(calc1Out / 10) * 10; 
+                // 1종 출고가(소분 단가) 100원 단위 반올림 적용
+                newFinalData['1출고'] = Math.round(calc1Out / 100) * 100; 
             }
             return newFinalData;
         };
@@ -853,7 +857,7 @@
                             const isZeroPrice = (pIn === 0 && pOut === 0), isForSale = isZeroPrice ? zeroAction.sale : (pIn > 0 || pOut > 0 ? '1' : '0'), stockQty = isZeroPrice ? zeroAction.stock : '999';
                             shopData.push([row.코드, dName, dSpec, priceOutShop, priceA, priceMarketShop, 0, 0, 0, 0, 0, 0, dBrand, dInfo, isForSale, stockQty, '', '', '', '', '', dSearch]);
 
-                            // 수정 사항: [1, 2] -> [1]로 변경하여 1종코드만 출력하도록 수정
+                            // ★ 2종코드 제외 완료, 1종코드만 출력
                             [1].forEach(type => { 
                                 const cCodeRaw = getFirstValidStr([mItem, source], [`${type}종코드`]); 
                                 if (isValidSubItemCode(cCodeRaw)) { 
