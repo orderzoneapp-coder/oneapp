@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Smart Parser [v1.3]</title>
+    <title>ONEAPP MerchOps - Smart Parser [v1.3.2]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -164,7 +164,11 @@
             };
 
             lines.forEach(line => {
-                if (/^전체\s*상품/.test(line) || /^clock$/i.test(line) || /^starLine$/i.test(line) || /^마감$/.test(line) || /^\d{2}월\s*\d{2}일\s*\d{2}:\d{2}\s*마감$/.test(line) || /default-thumbnail/i.test(line) || /^상품이미지$|^이미지\s*준비중$/.test(line) || /마켓보로|통신판매업의\s*중개자|당사자가\s*아닙니다|책임을\s*지지\s*않습니다|판매자가\s*등록한|데이터가\s*없습니다|-\s*끝\s*-/i.test(line)) return;
+                // 💡 [v1.3.2 수정] 월/일 포맷에 얽매이지 않고 '18:00 마감' 등 형태가 불규칙한 마감 텍스트 완벽 차단 (\d{1,2}:\d{2} 마감)
+                if (/^전체\s*상품/.test(line) || /^clock$/i.test(line) || /^starLine$/i.test(line) || /^마감$/.test(line) || /\d{1,2}:\d{2}\s*마감$/.test(line) || /default-thumbnail/i.test(line) || /^상품이미지$|^이미지\s*준비중$/.test(line) || /마켓보로|통신판매업의\s*중개자|당사자가\s*아닙니다|책임을\s*지지\s*않습니다|판매자가\s*등록한|데이터가\s*없습니다|-\s*끝\s*-/i.test(line)) return;
+
+                // 💡 [v1.3.1 추가] 글자가 잘려서 복사된 예외 텍스트(' 상품(N개)', '체 상품(N개)')만 조용히 무시
+                if (/^\s*(체\s*)?상품\s*\([\d,]+\s*개\)/i.test(line)) return;
 
                 const priceMatch = line.match(/(?:^|\s|\/|\|)(\d{1,3}(?:,\d{3})*|\d+)\s*원$/);
                 let extractedPrice = null;
@@ -997,7 +1001,7 @@
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <div className="flex items-center mb-0.5">
                                                     <span className="text-[14px] font-black text-slate-200 leading-none">Smart Parser</span>
-                                                    <span className="ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.3</span>
+                                                    <span className="ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.3.2</span>
                                                 </div>
                                                 <span className="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">TEXT ANALYSIS & DELTA SYNC</span>
                                             </div>
