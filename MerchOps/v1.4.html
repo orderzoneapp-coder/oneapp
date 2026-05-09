@@ -561,6 +561,35 @@
                 }, 100);
             }, [data.masterProducts, ui]);
 
+            // 💡 [NEW] 수동 마진룰 강제 재계산 로직
+            const handleForceRecalc = useCallback(() => {
+                const targetCodes = ui.selectedRows.size > 0 ? Array.from(ui.selectedRows) : fullDisplayRows.map(r => r.코드);
+                if (targetCodes.length === 0) return ui.showToast('⚠️ 적용할 항목이 없습니다.');
+
+                if (!window.confirm(`선택된 ${targetCodes.length}개 상품의 출고가를 '마진룰'에 맞춰 일괄 재계산하시겠습니까?\n(기존 마스터 출고가 및 수동 입력값은 무시되고 마진룰 기준으로 덮어씌워집니다.)`)) return;
+
+                data.setManagedItems(prev => {
+                    const next = { ...prev };
+                    let count = 0;
+                    targetCodes.forEach(code => {
+                        if (next[code]) {
+                            const mItem = data.masterProducts[code] || {};
+                            const baseInPrice = parseNum(next[code].finalData['입고가'] ?? next[code].sources['estimate']?.['입고가'] ?? mItem['입고가']);
+                            if (baseInPrice > 0) {
+                                next[code] = {
+                                    ...next[code],
+                                    finalData: calculatePricesEngine(baseInPrice, mItem, next[code].finalData, config.marginRules, true)
+                                };
+                                count++;
+                            }
+                        }
+                    });
+                    return next;
+                });
+                ui.showToast(`✅ ${targetCodes.length}개 상품에 마진룰이 강제 적용되었습니다.`);
+                ui.setSelectedRows(new Set());
+            }, [ui.selectedRows, fullDisplayRows, data, config.marginRules, ui]);
+
             const handleFileUpload = useCallback(async (e, expectedType) => { 
                 const files = Array.from(e.target.files); const targetInput = e.target; 
                 if (files.length === 0) return; if (!window.XLSX) return ui.setAlertMsg("엑셀 파서 로드 대기중입니다.");
@@ -1002,7 +1031,7 @@
                 ui.showToast('작업 데이터가 초기화 되었습니다.');
             }, [data, ui]);
 
-            return { handleLoadWorkspaces, handleCloudSync, cleanUpGarbageTags, handleCleanUpDirtyPrices, handleFileUpload, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleRemoveFromCategory, handleAddToCategory, handleCommitEstimate, executeExport, handleExportCurrentView, toggleAllRows, handleReset };
+            return { handleLoadWorkspaces, handleCloudSync, cleanUpGarbageTags, handleCleanUpDirtyPrices, handleForceRecalc, handleFileUpload, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleRemoveFromCategory, handleAddToCategory, handleCommitEstimate, executeExport, handleExportCurrentView, toggleAllRows, handleReset };
         };
 
         // ==========================================
@@ -1143,7 +1172,7 @@
                     <input 
                         type="text" 
                         data-field={field} 
-                        className={`w-full bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-1 rounded px-1.5 py-1 text-[12px] outline-none ${isNumeric ? 'text-right font-bold' : 'truncate text-center'} ${isDiff ? 'text-indigo-700' : ''}`} 
+                        className={`w-full bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-1 rounded px-1.5 py-1 text-[12px] outline-none ${isNumeric ? 'text-right font-bold tracking-tight' : 'truncate text-center'} ${isDiff ? 'text-indigo-700' : ''}`} 
                         value={localVal === "오류" ? "" : localVal} 
                         placeholder={mVal || ''} 
                         onChange={(e) => setLocalVal(e.target.value)} 
@@ -1602,9 +1631,14 @@
                         {showActionButtons && (
                             <>
                                 {isEstimateUploaded && (
-                                    <button onClick={handleRemoveFromWorkspace} className={`h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm transition-colors flex items-center ${selectedRows.size > 0 ? 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100' : 'bg-white text-slate-300 border border-slate-200'}`} title="선택한 항목을 현재 화면에서만 임시로 숨깁니다.">
-                                        <i className="fas fa-eye-slash mr-1.5 text-[13px]"></i> 숨기기
-                                    </button>
+                                    <>
+                                        <button onClick={actions.handleForceRecalc} className="h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm transition-colors flex items-center bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100" title="마스터 단가나 기존 입력값을 무시하고 설정된 마진룰로 출고가를 일괄 재계산합니다.">
+                                            <i className="fas fa-calculator mr-1.5 text-[13px]"></i> 마진룰 적용
+                                        </button>
+                                        <button onClick={handleRemoveFromWorkspace} className={`h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm transition-colors flex items-center ${selectedRows.size > 0 ? 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100' : 'bg-white text-slate-300 border border-slate-200'}`} title="선택한 항목을 현재 화면에서만 임시로 숨깁니다.">
+                                            <i className="fas fa-eye-slash mr-1.5 text-[13px]"></i> 숨기기
+                                        </button>
+                                    </>
                                 )}
                                 
                                 <button onClick={() => setShowReviewModal(true)} disabled={state.fullDisplayRows.length === 0} className={`h-9 px-5 rounded-lg text-[12px] font-black shadow-sm transition-colors flex items-center ${state.fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`} title="체크박스 선택 없이 누르면 화면의 전체 항목을 대상으로 검토합니다. (단축키: F8)">
@@ -1662,7 +1696,7 @@
                             <div className="flex flex-col min-w-0 w-full overflow-hidden ml-1">
                                 <span className={`text-[10px] font-mono mb-0.5 truncate block w-full text-indigo-400`}>{row.코드}</span>
                                 <div className="flex items-center w-full min-w-0 overflow-hidden">
-                                    {isFromMasterOnly && <span className="text-[12px] font-black text-indigo-500 mr-1.5 shrink-0">[M]</span>}
+                                    {isFromMasterOnly && <span className="text-[12px] font-black text-indigo-600 mr-1.5 shrink-0" title="엑셀 원본 없이 마스터 DB에서 직접 불러온 데이터입니다.">[M]</span>}
                                     <span className={`text-[13px] font-extrabold truncate block shrink ${!mItem.품목명 ? 'text-rose-500' : 'text-slate-800'}`} title={rawName}>{rawName}</span>
                                     {dSpec && <span className="text-[11px] text-slate-400 truncate block shrink-0 ml-1 max-w-[40%]" title={dSpec}>({dSpec})</span>}
                                 </div>
@@ -1675,7 +1709,7 @@
                             const isNum = NUMERIC_HEADERS.includes(h);
                             const mVal = mItem[h] !== undefined && mItem[h] !== '' ? (isNum ? parseNum(mItem[h]).toLocaleString() : mItem[h]) : '-';
                             return (
-                                <td key={`idle-td-${h}`} className={`px-2 py-1.5 border-r border-[#edebe3] text-[#6b675e] ${getCellWidthClass(h)} ${isNum ? 'text-right font-bold' : 'text-center'}`}>
+                                <td key={`idle-td-${h}`} className={`px-2 py-1.5 border-r border-[#edebe3] text-[#6b675e] ${getCellWidthClass(h)} ${isNum ? 'text-right font-bold tracking-tight' : 'text-center'}`}>
                                     <div className="truncate w-full">{mVal}</div>
                                 </td>
                             );
@@ -1694,7 +1728,7 @@
                                 }
                                 const formattedVal = displayVal !== undefined && displayVal !== '' ? (isNum ? parseNum(displayVal).toLocaleString() : displayVal) : '-';
                                 return (
-                                    <td key={`pm-d-${h}`} className={`px-2 py-1.5 border-r border-[#edebe3] transition-colors ${getCellWidthClass(h)} ${isChanged ? 'bg-amber-100/60 text-amber-800' : 'bg-[#faf9f5] text-[#6b675e]'} ${isNum ? 'text-right font-bold' : 'text-center'}`}>
+                                    <td key={`pm-d-${h}`} className={`px-2 py-1.5 border-r border-[#edebe3] transition-colors ${getCellWidthClass(h)} ${isChanged ? 'bg-amber-100/60 text-amber-800' : 'bg-[#faf9f5] text-[#6b675e]'} ${isNum ? 'text-right font-bold tracking-tight' : 'text-center'}`}>
                                         <div className="truncate w-full">{formattedVal}</div>
                                     </td>
                                 );
