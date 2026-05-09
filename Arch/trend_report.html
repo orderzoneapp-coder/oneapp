@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Trend Report & Dashboard V2.0</title>
+    <title>ONEAPP MerchOps - Trend Report & Dashboard V2.1</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -56,6 +56,15 @@
         };
 
         const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
+
+        // 판매중단 여부 확인 함수
+        const checkIsDiscontinued = (item) => {
+            const status1 = String(item['판매상태'] || '').trim();
+            const status2 = String(item['상태'] || '').trim();
+            if (status1 === '판매중단' || status2 === '판매중단') return true;
+            if (String(item['품목명']).includes('판매중단')) return true;
+            return false;
+        };
 
         const CustomerReportView = ({ data }) => {
             if (!data || !data.title) return (
@@ -157,7 +166,7 @@
                     <div className="flex items-center gap-3">
                         <span className="font-black text-xl tracking-wider text-indigo-400">ONEAPP</span>
                         <div className="flex flex-col ml-1 border-l border-slate-700 pl-4">
-                            <span className="font-bold text-[15px] leading-tight">Trend Report V2.0</span>
+                            <span className="font-bold text-[15px] leading-tight">Trend Report V2.1</span>
                             <span className="text-[10px] text-slate-400 font-mono tracking-widest mt-0.5">ADMIN EARLY WARNING</span>
                         </div>
                     </div>
@@ -261,6 +270,8 @@
             const insights = useMemo(() => {
                 const marginRisks = []; const inversions = []; const volatilityList = [];
                 Object.values(masterProducts).forEach(item => {
+                    if (checkIsDiscontinued(item)) return; // 판매중단 상품 제외
+
                     const inP = parseNum(item['입고가']); const outP = inP === 0 ? 0 : parseNum(item['출고가']);
                     if (inP > 0 && outP > 0) {
                         const margin = ((outP - inP) / outP) * 100;
@@ -278,10 +289,12 @@
                 }, {});
 
                 Object.values(priceChanges).forEach(log => {
+                    const mItem = masterProducts[log.code] || {};
+                    if (checkIsDiscontinued(mItem)) return; // 판매중단 상품 제외
+
                     if (log.oldVal > 0) {
                         const diffRatio = (log.diff / log.oldVal) * 100;
                         if (Math.abs(diffRatio) >= 20) {
-                            const mItem = masterProducts[log.code] || {};
                             volatilityList.push({ ...log, diffRatio, 품목명: log.name, 규격: log.spec, _issueType: 'volatility', ...mItem });
                         }
                     }
@@ -310,6 +323,9 @@
                     const pCode = String(item['품목코드'] || item['코드'] || '');
                     if (showOnlyWorkedCatalog && !workedCodes.has(pCode)) return;
 
+                    const isDiscontinued = checkIsDiscontinued(item);
+                    item._isDiscontinued = isDiscontinued; // UI용 플래그 저장
+
                     let c1Name = item['1그룹명']; let c2Name = item['2그룹명']; let c3Name = item['3그룹명'] || (item['카탈로그'] ? item['카탈로그'].split(',')[0].trim() : '');
                     let c1Code = String(item['1코드'] || (pCode.length >= 2 ? pCode.substring(0, 2) : ''));
                     let c2Code = String(item['2코드'] || (pCode.length >= 4 ? pCode.substring(0, 4) : ''));
@@ -327,10 +343,13 @@
                     const c = hierarchy[c1Code].sub[c2Code].sub[c3Code];
                     c.items.push(item); c.totalItems++;
 
-                    const inP = parseNum(item['입고가']); const outP = parseNum(item['출고가']);
-                    if (inP > 0 && outP > 0) {
-                        const margin = ((outP - inP) / outP) * 100;
-                        c.marginSum += margin; c.validMarginCount++;
+                    // 판매중단이 아닐 때만 마진율 합산
+                    if (!isDiscontinued) {
+                        const inP = parseNum(item['입고가']); const outP = parseNum(item['출고가']);
+                        if (inP > 0 && outP > 0) {
+                            const margin = ((outP - inP) / outP) * 100;
+                            c.marginSum += margin; c.validMarginCount++;
+                        }
                     }
                 });
 
@@ -342,7 +361,7 @@
                 Object.values(priceChanges).forEach(log => {
                     if (log.field === '입고가' || log.field === '입고') {
                         const mItem = masterProducts[log.code];
-                        if (mItem) {
+                        if (mItem && !checkIsDiscontinued(mItem)) { // 중단 상품 제외
                             let c1Code = String(mItem['1코드'] || 'ZZZ99_기타');
                             let c2Code = String(mItem['2코드'] || 'ZZZ9999_기타');
                             let c3Code = String(mItem['오더즈'] || mItem['3코드'] || 'ZZZ999999_기타');
@@ -723,14 +742,19 @@
                                                                     {c3.items.map(item => {
                                                                         const code = item['품목코드'] || item['코드'];
                                                                         const inP = parseNum(item['입고가']); const outP = parseNum(item['출고가']);
-                                                                        const margin = inP > 0 && outP > 0 ? ((outP - inP) / outP) * 100 : 0;
+                                                                        const margin = !item._isDiscontinued && inP > 0 && outP > 0 ? ((outP - inP) / outP) * 100 : 0;
                                                                         const suggestedRound = outP > 0 ? Math.round(outP / 100) * 100 : 0;
                                                                         const roundDelta = suggestedRound - outP;
 
                                                                         return (
                                                                             <tr key={code} className="hover:bg-indigo-50/40 transition-colors">
                                                                                 <td className="py-2.5 px-5 text-[11px] font-mono text-slate-400">{code}</td>
-                                                                                <td className="py-2.5 px-4"><div className="font-bold text-slate-800 text-[13px] truncate">{item['품목명']} <span className="font-normal text-slate-500 text-xs ml-1">({item['규격']})</span></div></td>
+                                                                                <td className="py-2.5 px-4">
+                                                                                    <div className={`font-bold text-[13px] truncate ${item._isDiscontinued ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                                                                                        {item._isDiscontinued && <span className="text-[10px] text-rose-500 mr-1">[중단]</span>}
+                                                                                        {item['품목명']} <span className="font-normal text-slate-500 text-xs ml-1">({item['규격']})</span>
+                                                                                    </div>
+                                                                                </td>
                                                                                 <td className="py-2.5 px-4 text-right text-[12px] font-medium">{inP > 0 ? inP.toLocaleString() : '-'}</td>
                                                                                 <td className="py-2.5 px-4 text-right text-[12px] font-black text-indigo-600">{outP > 0 ? outP.toLocaleString() : '-'}</td>
                                                                                 <td className="py-2.5 px-4 text-right bg-amber-50/10">
@@ -741,7 +765,9 @@
                                                                                         </div>
                                                                                     ) : '-'}
                                                                                 </td>
-                                                                                <td className={`py-2.5 px-5 text-right text-[11px] font-black ${margin < 15 ? 'text-rose-500' : 'text-emerald-600'}`}>{margin.toFixed(1)}%</td>
+                                                                                <td className={`py-2.5 px-5 text-right text-[11px] font-black ${item._isDiscontinued ? 'text-slate-300' : (margin < 15 ? 'text-rose-500' : 'text-emerald-600')}`}>
+                                                                                    {item._isDiscontinued ? '-' : `${margin.toFixed(1)}%`}
+                                                                                </td>
                                                                             </tr>
                                                                         );
                                                                     })}
