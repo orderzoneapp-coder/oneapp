@@ -4,8 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <!-- 타이틀 버전도 수동으로 맞춰주시면 좋습니다 -->
-    <title>ONEAPP MerchOps - Main Workspace [v1.6.7]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v1.6.8]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -17,10 +16,10 @@
     <div id="root"></div>
     <script type="text/babel">
         // ==========================================
-        // 🚀 앱 버전 및 업데이트 일자 관리 (패치 시 여기서 수정하세요)
+        // 🚀 앱 버전 및 업데이트 일자 관리
         // ==========================================
-        const APP_VERSION = "v1.6.7";
-        const LAST_UPDATED = "2026.05.09 16:50";
+        const APP_VERSION = "v1.6.8";
+        const LAST_UPDATED = "2026.05.09 17:30";
 
         const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
@@ -96,7 +95,7 @@
             for(let o of objList) { 
                 if(!o) continue; 
                 for(let k of keys) { 
-                    if(o[k] !== undefined && o[k] !== null && o[k] !== '') return o[k]; 
+                    if(o[k] !== undefined && o[k] !== null && o[k] !== '') return String(o[k]); 
                 } 
             } 
             return ''; 
@@ -120,7 +119,7 @@
             const whCode = String(currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '').trim();
             const unitStr = String(currentFinalData?.['단위'] ?? mItem?.['단위'] ?? '').trim().toLowerCase();
             
-            const matchRule = (rStr, tStr) => rStr === '*' || rStr.toLowerCase().split(/[,./|\s]+/).map(s=>s.trim()).filter(Boolean).some(s => tStr === s || tStr.includes(s) || (!isNaN(s) && !isNaN(tStr) && Number(s)===Number(tStr)));
+            const matchRule = (rStr, tStr) => rStr === '*' || String(rStr).toLowerCase().split(/[,./|\s]+/).map(s=>s.trim()).filter(Boolean).some(s => tStr === s || tStr.includes(s) || (!isNaN(s) && !isNaN(tStr) && Number(s)===Number(tStr)));
             
             let bestRule = null;
             let bestScore = -1;
@@ -261,7 +260,7 @@
                 ];
                 try { 
                     const p = JSON.parse(s); 
-                    if(p && p.length > 1) return p.map(r => ({...r, whCode: r.whCode || '*', unit: r.unit || '*'})); 
+                    if(p && p.length > 1) return p.map(r => ({...r, whCode: String(r.whCode || '*'), unit: String(r.unit || '*')})); 
                 } catch(e) {} 
                 return defs;
             });
@@ -498,8 +497,8 @@
                         const hCache = createHeaderMap(Object.keys(eData[0]), config.mappings[expType || 'master'] || {});
                         
                         eData.forEach(r => {
-                            const c = r[hCache['품목코드'] || '품목코드']; 
-                            if (!c || String(c).replace(/\s/g,'').includes('출력')) return;
+                            const c = String(r[hCache['품목코드'] || '품목코드'] || ''); 
+                            if (!c || c.replace(/\s/g,'').includes('출력')) return;
                             
                             if ((expType || 'master') === 'master') {
                                 if (!nM[c]) nM[c] = { 코드: c };
@@ -564,8 +563,8 @@
                 setTimeout(() => {
                     let nMg = {};
                     Object.values(data.masterProducts).forEach(m => {
-                        const mC = (m['카탈로그']||'').split(',').map(c=>c.trim());
-                        const mE = (m['견적서']||m['카테고리']||'').split(',').map(c=>c.trim());
+                        const mC = String(m['카탈로그']||'').split(',').map(c=>c.trim());
+                        const mE = String(m['견적서']||m['카테고리']||'').split(',').map(c=>c.trim());
                         
                         if ((cats.length && cats.some(c => mC.includes(c))) || (ests.length && ests.some(c => mE.includes(c)))) {
                             nMg[m.코드] = { 
@@ -594,7 +593,6 @@
                 ui.showToast('✅ 임시 제외 완료');
             }, [ui.selectedRows, data, ui]);
 
-            // [NEW FIX] 신규 항목(nM[c]가 없는 항목) 카테고리 묶기 버그 해결
             const handleCategoryOps = useCallback((type, tgtName) => {
                 if (type === 'save' && (!tgtName || !tgtName.trim() || !fullDisplayRows.length)) return;
                 if ((type === 'remove' || type === 'add') && (!ui.selectedRows.size || ui.selectedCategories.length !== 1)) return ui.showToast('⚠️ 대상 선택 확인');
@@ -609,10 +607,10 @@
                     let tgts = type === 'save' ? fullDisplayRows.map(r=>r.코드) : Array.from(ui.selectedRows);
                     
                     tgts.forEach(c => {
-                        // FIX: 신규 상품일 경우 빈 객체를 생성해줌
                         nM[c] = {...(nM[c] || {코드:c})}; 
                         
-                        let ts = (nM[c]['견적서'] || nM[c]['카테고리'] || '').split(',').map(s=>s.trim()).filter(Boolean);
+                        // [FIX] 안전한 문자열 분해 보장
+                        let ts = String(nM[c]['견적서'] || nM[c]['카테고리'] || '').split(',').map(s=>s.trim()).filter(Boolean);
                         
                         if (type === 'remove') { 
                             if(ts.includes(catName)){ 
@@ -646,7 +644,8 @@
                 
                 for(let c in nM) { 
                     if(nM[c][fKey]) { 
-                        let ts = nM[c][fKey].split(',').map(s=>s.trim()).filter(Boolean); 
+                        // [FIX] 안전한 문자열 분해 보장
+                        let ts = String(nM[c][fKey] || '').split(',').map(s=>s.trim()).filter(Boolean); 
                         if(ts.includes(tName)) { 
                             nM[c] = { ...nM[c], [fKey]: ts.filter(t=>t!==tName).join(', ') }; 
                             cnt++; 
@@ -659,7 +658,6 @@
                 ui.showToast(`✅ 삭제 완료 (${cnt}건)`);
             }, [data, ui]);
 
-            // [NEW FIX] 메타데이터(카탈로그/견적서)는 화면에 없더라도 무조건 합침(Merge)
             const handleCommitEstimate = useCallback((codes) => {
                 const tgts = Array.isArray(codes) ? codes : (ui.selectedRows.size ? Array.from(ui.selectedRows) : fullDisplayRows.map(r=>r.코드));
                 if (!tgts.length) return ui.showToast('⚠️ 항목 없음');
@@ -671,7 +669,6 @@
                 
                 const vU = config.visibleUploadCols.estimate || [];
                 const metaFields = ['카탈로그', '견적서'];
-                // 화면 노출 필드와 필수 시스템 필드를 병합
                 const processFields = Array.from(new Set([...vU, ...metaFields]));
                 
                 tgts.forEach(c => {
@@ -689,7 +686,6 @@
                             let rVal = it.finalData?.[f];
                             if (rVal === undefined) rVal = it.sources?.estimate?.[f];
 
-                            // [방어] 메타 필드인데 엑셀에도 없고 화면에도 노출 안됐으면 기존 마스터 건드리지 않음
                             if (!vU.includes(f) && metaFields.includes(f) && rVal === undefined) return;
                             
                             if (rVal === undefined) rVal = ''; 
@@ -701,13 +697,12 @@
                                 
                                 if (oV !== nV) {
                                     if (metaFields.includes(lnk)) {
-                                        // 카탈로그나 견적서는 기존 데이터와 콤마로 이어붙임 (완전 삭제 방지)
                                         if (nV !== '') {
+                                            // [FIX] 안전한 문자열 분해 보장
                                             let existingTags = String(oIt[lnk] || '').split(',').map(s=>s.trim()).filter(Boolean);
-                                            let newTags = String(nV).split(',').map(s=>s.trim()).filter(Boolean);
+                                            let newTags = String(nV || '').split(',').map(s=>s.trim()).filter(Boolean);
                                             nM[c][lnk] = Array.from(new Set([...existingTags, ...newTags])).join(', ');
                                         } else if (vU.includes(f)) {
-                                            // 사용자가 직접 화면에 노출시킨 상태에서 빈칸으로 지워버린 경우는 엎어치기 (WYSIWYG)
                                             nM[c][lnk] = '';
                                         }
                                     } else {
@@ -1500,7 +1495,8 @@
             const extTgs = (k) => { 
                 const c = {}; 
                 Object.values(data.masterProducts).forEach(m => {
-                    (m[k] || '').split(',').forEach(t => {
+                    // [FIX] m[k]가 숫자일 경우 대비 String으로 감쌈
+                    String(m[k] || '').split(',').forEach(t => {
                         const x = t.trim(); 
                         if(x) c[x] = (c[x] || 0) + 1;
                     });
@@ -1515,10 +1511,10 @@
                 let lst = isUp ? Object.values(data.managedItems) : Object.values(data.masterProducts).map(m => data.managedItems[m.코드] || { 코드: m.코드, sources: {}, finalData: {} });
                 
                 if (!isUp && ui.selectedCatalogs.length) {
-                    lst = lst.filter(i => ui.selectedCatalogs.some(c => (data.masterProducts[i.코드]?.['카탈로그'] || '').includes(c)));
+                    lst = lst.filter(i => ui.selectedCatalogs.some(c => String(data.masterProducts[i.코드]?.['카탈로그'] || '').includes(c)));
                 }
                 if (!isUp && ui.selectedCategories.length) {
-                    lst = lst.filter(i => ui.selectedCategories.some(c => (data.masterProducts[i.코드]?.['견적서'] || '').includes(c)));
+                    lst = lst.filter(i => ui.selectedCategories.some(c => String(data.masterProducts[i.코드]?.['견적서'] || '').includes(c)));
                 }
                 
                 if (ui.globalSearch) {
@@ -1545,7 +1541,6 @@
 
             const acts = useMerchActions(config, data, ui, fullRows);
             
-            // 핵심 픽스: 누락되었던 상태 연결고리들(setGlobalSearch, setSelectedRows 등)을 객체에 명확히 전달
             const st = { 
                 config, 
                 data, 
@@ -1608,7 +1603,7 @@
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <div className="flex items-center">
                                                     <span className="text-[14px] font-black text-slate-200">MerchOps</span>
-                                                    <span className="ml-2 bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold">v1.6.7</span>
+                                                    <span className="ml-2 bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold">v1.6.8</span>
                                                 </div>
                                                 <span className="text-[9px] font-extrabold text-slate-400 tracking-widest mt-0.5">MAIN WORKSPACE</span>
                                             </div>
