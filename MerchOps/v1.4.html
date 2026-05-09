@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v1.6]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v1.6.2]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -421,7 +421,6 @@
             const [selectedRows, setSelectedRows] = useState(new Set());
             const [globalSearch, setGlobalSearch] = useState(''); 
             
-            // 💡 다중 선택을 위해 Array 상태로 변경
             const [selectedCatalogs, setSelectedCatalogs] = useState(() => {
                 try {
                     const params = new URLSearchParams(window.location.search);
@@ -630,7 +629,6 @@
                     data.setMasterProducts(newMaster);
                     if (expectedType === 'estimate') { data.setManagedItems(newManaged); }
                     
-                    // 파일 업로드 시 필터 초기화
                     if (expectedType === 'estimate') {
                         ui.setSelectedCatalogs([]);
                         ui.setSelectedCategories([]);
@@ -647,7 +645,6 @@
                 }
             }, [data.masterProducts, data.managedItems, config.mappings, config.masterLinks, config.marginRules, ui, data]);
 
-            // 💡 [핵심] 다중 선택(체크박스) 필터 적용 및 데이터 로드 함수
             const handleLoadWorkspaces = useCallback((catalogs, categories) => {
                 ui.setSelectedCatalogs(catalogs);
                 ui.setSelectedCategories(categories);
@@ -667,14 +664,12 @@
                     Object.values(data.masterProducts).forEach(mItem => {
                         let isMatch = false;
 
-                        // 견적서 매칭 검사
                         const catStr = mItem['견적서'] || mItem['카테고리'] || '';
                         const mCats = catStr.split(',').map(c => c.trim());
                         if (categories.length > 0 && categories.some(c => mCats.includes(c))) {
                             isMatch = true;
                         }
 
-                        // 카탈로그 매칭 검사
                         const catalogStr = mItem['카탈로그'] || '';
                         const mCatalogs = catalogStr.split(',').map(c => c.trim());
                         if (catalogs.length > 0 && catalogs.some(c => mCatalogs.includes(c))) {
@@ -1612,8 +1607,8 @@
                                     </button>
                                 )}
                                 
-                                <button onClick={() => setShowReviewModal(true)} disabled={state.fullDisplayRows.length === 0} className={`h-9 px-5 rounded-lg text-[12px] font-black shadow-sm transition-colors flex items-center ${state.fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`} title="체크박스 선택 없이 누르면 화면의 전체 항목을 대상으로 검토합니다.">
-                                    <i className="fas fa-check-circle mr-1.5 text-[13px]"></i> 완료
+                                <button onClick={() => setShowReviewModal(true)} disabled={state.fullDisplayRows.length === 0} className={`h-9 px-5 rounded-lg text-[12px] font-black shadow-sm transition-colors flex items-center ${state.fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`} title="체크박스 선택 없이 누르면 화면의 전체 항목을 대상으로 검토합니다. (단축키: F8)">
+                                    <i className="fas fa-check-circle mr-1.5 text-[13px]"></i> 완료 (F8)
                                 </button>
                                 
                                 <div className="w-px h-6 bg-slate-300 mx-1"></div>
@@ -1636,8 +1631,10 @@
         const MemoizedTableRow = React.memo(({ row, idx, isSel, bg, mItem, isEstimateUploaded, visMasterCols, visUploadCols, masterLinksEst, onToggleSelection, onUpdateCell }) => {
             const uploadName = row.finalData?.['품목명'] !== undefined ? row.finalData['품목명'] : (row.sources?.['estimate']?.['품목명'] || '');
             const uploadSpec = row.finalData?.['규격'] !== undefined ? row.finalData['규격'] : (row.sources?.['estimate']?.['규격'] || '');
-            const dName = uploadName || mItem.품목명 || '[미등록]';
+            const rawName = uploadName || mItem.품목명 || '[미등록]';
             const dSpec = uploadSpec || mItem.규격 || '';
+            
+            const isFromMasterOnly = isEstimateUploaded && (!row.sources?.['estimate'] || Object.keys(row.sources['estimate']).length === 0);
 
             return (
                 <tr className={`group h-[40px] ${bg}`}>
@@ -1665,7 +1662,8 @@
                             <div className="flex flex-col min-w-0 w-full overflow-hidden ml-1">
                                 <span className={`text-[10px] font-mono mb-0.5 truncate block w-full text-indigo-400`}>{row.코드}</span>
                                 <div className="flex items-center w-full min-w-0 overflow-hidden">
-                                    <span className={`text-[13px] font-extrabold truncate block shrink ${!mItem.품목명 ? 'text-rose-500' : 'text-slate-800'}`} title={dName}>{dName}</span>
+                                    {isFromMasterOnly && <span className="text-[12px] font-black text-indigo-500 mr-1.5 shrink-0">[M]</span>}
+                                    <span className={`text-[13px] font-extrabold truncate block shrink ${!mItem.품목명 ? 'text-rose-500' : 'text-slate-800'}`} title={rawName}>{rawName}</span>
                                     {dSpec && <span className="text-[11px] text-slate-400 truncate block shrink-0 ml-1 max-w-[40%]" title={dSpec}>({dSpec})</span>}
                                 </div>
                             </div>
@@ -1838,7 +1836,7 @@
                     <i className="fas fa-box-open"></i>
                     <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm"><i className="fas fa-check"></i></div>
                 </div>
-                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v1.6]</h2>
+                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v1.6.2]</h2>
                 <p className="text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold">
                     현재 등록된 <span className="text-indigo-500">마스터 상품 데이터</span>가 없습니다.<br/>
                     견적 작업 및 파서 연동을 위해 전체 상품 DB를 세팅해주세요.
@@ -1881,6 +1879,10 @@
                 }
                 return state.fullDisplayRows;
             }, [state.fullDisplayRows, state.selectedRows]);
+
+            useEffect(() => {
+                if (targetRows.length === 0) onClose();
+            }, [targetRows.length, onClose]);
 
             const analysis = useMemo(() => {
                 let up = 0, down = 0, same = 0, newItems = 0;
@@ -1996,7 +1998,7 @@
                         </div>
 
                         <div className="bg-white p-4 border-t border-slate-200 flex justify-between items-center shrink-0">
-                            <div className="text-[11px] text-slate-500 font-bold"><i className="fas fa-info-circle mr-1"></i>수정할 내용이 있다면 닫기를 누르고 뒤쪽 테이블에서 숫자를 수정하세요.</div>
+                            <div className="text-[11px] text-slate-500 font-bold"><i className="fas fa-info-circle mr-1"></i>수정할 내용이 있다면 닫기를 누르고 배경의 메인 테이블에서 항목을 클릭해 직접 수정하세요.</div>
                             <div className="flex gap-2">
                                 <button onClick={onClose} className="px-5 py-2.5 bg-slate-100 border border-slate-200 text-slate-600 font-bold rounded-lg hover:bg-slate-200 transition-colors">닫기 (수정하러 가기)</button>
                                 <button onClick={() => { onConfirm(targetRows.map(r=>r.코드)); onClose(); }} className="px-6 py-2.5 bg-indigo-600 text-white font-black rounded-lg hover:bg-indigo-700 shadow-sm transition-colors flex items-center">
@@ -2042,25 +2044,6 @@
 
             const isEstimateUploaded = Object.keys(data.managedItems).length > 0;
             const isMasterEmpty = Object.keys(data.masterProducts).length === 0;
-
-            useEffect(() => {
-                const handleGlobalKeyDown = (e) => {
-                    if (e.key === 'F9') { 
-                        e.preventDefault(); 
-                        ui.setShowExportModal(true); 
-                    }
-                    if (e.key === 'F3') { 
-                        e.preventDefault(); 
-                        const searchInput = document.getElementById('main-search-input');
-                        if (searchInput) {
-                            searchInput.focus();
-                            searchInput.select();
-                        }
-                    }
-                };
-                window.addEventListener('keydown', handleGlobalKeyDown); 
-                return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-            }, [ui]);
 
             const availableCatalogs = useMemo(() => {
                 const counts = {};
@@ -2147,6 +2130,33 @@
                 return baseList;
             }, [isEstimateUploaded, data.managedItems, data.masterProducts, ui.globalSearch, ui.selectedCatalogs, ui.selectedCategories]);
 
+            const showActionButtons = isEstimateUploaded || ui.selectedCatalogs.length > 0 || ui.selectedCategories.length > 0;
+
+            useEffect(() => {
+                const handleGlobalKeyDown = (e) => {
+                    if (e.key === 'F9') { 
+                        e.preventDefault(); 
+                        ui.setShowExportModal(true); 
+                    }
+                    if (e.key === 'F3') { 
+                        e.preventDefault(); 
+                        const searchInput = document.getElementById('main-search-input');
+                        if (searchInput) {
+                            searchInput.focus();
+                            searchInput.select();
+                        }
+                    }
+                    if (e.key === 'F8') {
+                        e.preventDefault();
+                        if (showActionButtons && fullDisplayRows.length > 0) {
+                            ui.setShowReviewModal(true);
+                        }
+                    }
+                };
+                window.addEventListener('keydown', handleGlobalKeyDown); 
+                return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+            }, [ui, showActionButtons, fullDisplayRows.length]);
+
             const customActions = useMerchActions(config, data, ui, fullDisplayRows);
             
             const appState = {
@@ -2204,7 +2214,7 @@
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <div className="flex items-center mb-0.5">
                                                     <span className="text-[14px] font-black text-slate-200 leading-none">MerchOps</span>
-                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.6</span>
+                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.6.2</span>
                                                 </div>
                                                 <span className="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">MAIN WORKSPACE</span>
                                             </div>
