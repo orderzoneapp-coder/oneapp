@@ -712,21 +712,14 @@
                                         <div className="flex-1 overflow-y-auto custom-scrollbar" onScroll={handleScrollSpy} ref={scrollContainerRef}>
                                             {activeC1 && categoryHierarchy[activeC1] && Object.values(categoryHierarchy[activeC1].sub).sort((a,b) => a.code.localeCompare(b.code)).map(c2 => (
                                                 <div key={c2.code} id={`section-c2-${c2.code}`} className="mb-4">
-                                                    {/* 2Depth Separator */}
-                                                    <div className="bg-[#1A2235] text-white px-5 py-2 sticky top-0 z-20 flex justify-between items-center shadow-md">
-                                                        <span className="font-black text-[13px] tracking-wide"><i className="fas fa-layer-group text-indigo-400 mr-2"></i>{c2.name}</span>
+                                                    {/* 2Depth Separator (연한 색상으로 변경) */}
+                                                    <div className="bg-indigo-50 border-y border-indigo-100 text-indigo-900 px-5 py-2.5 sticky top-0 z-20 flex justify-between items-center shadow-sm">
+                                                        <span className="font-black text-[13px] tracking-wide"><i className="fas fa-layer-group text-indigo-500 mr-2"></i>{c2.name}</span>
                                                     </div>
                                                     
                                                     {Object.values(c2.sub).sort((a,b) => a.code.localeCompare(b.code)).map(c3 => (
                                                         <div key={c3.code} id={`section-c3-${c3.code}`} className="c3-section-wrapper" data-c2code={c2.code} data-c3code={c3.code}>
-                                                            {/* 3Depth Separator (Sticky under 2Depth) */}
-                                                            <div className="bg-slate-200/90 backdrop-blur-sm px-5 py-1.5 border-b border-slate-300 sticky top-[36px] z-10 flex items-center justify-between shadow-sm">
-                                                                <span className="font-bold text-[12px] text-slate-800"><i className="fas fa-folder-open text-indigo-500 mr-2"></i>{c3.name}</span>
-                                                                <div className="flex gap-2">
-                                                                    <span className="text-[10px] text-slate-500 font-bold bg-white px-2 py-0.5 rounded shadow-sm border border-slate-200">총 {c3.totalItems}건</span>
-                                                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded shadow-sm border ${c3.avgMargin < 15 ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-emerald-50 border-emerald-200 text-emerald-600'}`}>평균 마진 {c3.avgMargin.toFixed(1)}%</span>
-                                                                </div>
-                                                            </div>
+                                                            {/* 3Depth Separator 삭제됨 (요청사항 반영) */}
                                                             
                                                             {/* Items Table */}
                                                             <table className="w-full text-left text-sm whitespace-nowrap table-fixed">
