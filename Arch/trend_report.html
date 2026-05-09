@@ -713,13 +713,13 @@
                                             {activeC1 && categoryHierarchy[activeC1] && Object.values(categoryHierarchy[activeC1].sub).sort((a,b) => a.code.localeCompare(b.code)).map(c2 => (
                                                 <div key={c2.code} id={`section-c2-${c2.code}`} className="mb-4">
                                                     {/* 2Depth Separator (연한 색상으로 변경) */}
-                                                    <div className="bg-indigo-50 border-y border-indigo-100 text-indigo-900 px-5 py-2.5 sticky top-0 z-20 flex justify-between items-center shadow-sm">
+                                                    <div className="bg-indigo-50/90 backdrop-blur-sm border-y border-indigo-100 text-indigo-900 px-5 py-2.5 sticky top-0 z-20 flex justify-between items-center shadow-sm">
                                                         <span className="font-black text-[13px] tracking-wide"><i className="fas fa-layer-group text-indigo-500 mr-2"></i>{c2.name}</span>
                                                     </div>
                                                     
                                                     {Object.values(c2.sub).sort((a,b) => a.code.localeCompare(b.code)).map(c3 => (
                                                         <div key={c3.code} id={`section-c3-${c3.code}`} className="c3-section-wrapper" data-c2code={c2.code} data-c3code={c3.code}>
-                                                            {/* 3Depth Separator 삭제됨 (요청사항 반영) */}
+                                                            {/* 3Depth Separator 영역 완전히 삭제됨 (상품명과 중복되므로 제거) */}
                                                             
                                                             {/* Items Table */}
                                                             <table className="w-full text-left text-sm whitespace-nowrap table-fixed">
