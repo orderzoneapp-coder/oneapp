@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v1.5]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v1.6]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -70,7 +70,6 @@
             "1구매", "1출고", "2구매", "2출고", "1입고", "2입고"
         ];
 
-        // ★ 강제로 100원 단위 반올림을 적용할 판매가 필드들
         const FORCE_ROUND_100_HEADERS = ["출고가", "시중가", "도매A", "도매B", "1출고", "2출고", "상장가", "행사가"];
 
         const getInitialVisibleMasterCols = () => ({ estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] });
@@ -127,7 +126,7 @@
         };
 
         // ==========================================
-        // 🧩 2. 핵심 비즈니스 로직 (단가 계산 및 파서)
+        // 🧩 2. 핵심 비즈니스 로직
         // ==========================================
         const calculatePricesEngine = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
             if (!baseInPrice || baseInPrice <= 0) {
@@ -178,7 +177,6 @@
                 calcOutPrice = totalCost * (1 + (appliedRule.rate / 100));
             }
             
-            // 엔진 코어 로직: 일반 출고가(시중가) 무조건 100원 단위 반올림
             calcOutPrice = Math.round(calcOutPrice / 100) * 100;
             
             if (!isFinite(calcOutPrice) || isNaN(calcOutPrice)) calcOutPrice = 0;
@@ -190,7 +188,6 @@
             const mIn = parseNum(mItem?.['입고가']);
             const mOut = parseNum(mItem?.['출고가']);
 
-            // 엔진 코어 로직: 엑셀에서 그대로 불러온 수기 출고가 역시 100원 단위 반올림 적용
             if (providedOutPrice > 0 && !forceRecalc) {
                 newFinalData['출고가'] = Math.round(providedOutPrice / 100) * 100;
             } else if (baseInPrice === mIn && mOut > 0 && !forceRecalc) {
@@ -205,8 +202,6 @@
                 newFinalData['1입고'] = Math.round(((baseInPrice + outsrc) / div1) / 100) * 100;
                 let calc1Out = Math.round((newFinalData['출고가'] / div1) + extraCost);
                 if (!isFinite(calc1Out) || isNaN(calc1Out)) calc1Out = 0;
-                
-                // 엔진 코어 로직: 과거 10원 단위였던 1종 출고가(소분 단가)를 100원 단위로 반올림 고정
                 newFinalData['1출고'] = Math.round(calc1Out / 100) * 100; 
             }
             return newFinalData;
@@ -425,14 +420,15 @@
         const useMerchUI = () => {
             const [selectedRows, setSelectedRows] = useState(new Set());
             const [globalSearch, setGlobalSearch] = useState(''); 
-            const [selectedCatalog, setSelectedCatalog] = useState(() => {
+            
+            // 💡 다중 선택을 위해 Array 상태로 변경
+            const [selectedCatalogs, setSelectedCatalogs] = useState(() => {
                 try {
                     const params = new URLSearchParams(window.location.search);
-                    return params.get('catalog') || '';
-                } catch(e) { return ''; }
+                    return params.get('catalog') ? [params.get('catalog')] : [];
+                } catch(e) { return []; }
             }); 
-            
-            const [selectedCategory, setSelectedCategory] = useState('');
+            const [selectedCategories, setSelectedCategories] = useState([]);
             
             const [showExportModal, setShowExportModal] = useState(false); 
             const [showSettings, setShowSettings] = useState(false);
@@ -461,8 +457,8 @@
 
             return {
                 selectedRows, setSelectedRows, globalSearch, setGlobalSearch, 
-                selectedCatalog, setSelectedCatalog,
-                selectedCategory, setSelectedCategory, 
+                selectedCatalogs, setSelectedCatalogs,
+                selectedCategories, setSelectedCategories, 
                 showExportModal, setShowExportModal, showSettings, setShowSettings, 
                 showReviewModal, setShowReviewModal, 
                 showHistoryModal, setShowHistoryModal, showCategoryModal, setShowCategoryModal,
@@ -537,7 +533,6 @@
                 }
             }, [data.masterProducts]);
             
-            // ★ 강제 100원 단위 정돈
             const handleCleanUpDirtyPrices = useCallback(() => {
                 if(!window.confirm("마스터 DB에 저장된 단가 중 10원 단위(찌꺼기)로 남아있는 모든 항목을 100원 단위로 깔끔하게 반올림 정렬하시겠습니까?")) return;
                 
@@ -576,7 +571,6 @@
 
                 try {
                     let newMaster = { ...data.masterProducts }; 
-                    // 💡 [수정] 견적서/업로드 파일 로딩 시 기존 작업 화면(managedItems)은 완전히 빈 객체로 초기화(덮어쓰기) 됩니다.
                     let newManaged = expectedType === 'estimate' ? {} : { ...data.managedItems }; 
                     let totalCount = 0;
                     
@@ -635,6 +629,13 @@
                     }
                     data.setMasterProducts(newMaster);
                     if (expectedType === 'estimate') { data.setManagedItems(newManaged); }
+                    
+                    // 파일 업로드 시 필터 초기화
+                    if (expectedType === 'estimate') {
+                        ui.setSelectedCatalogs([]);
+                        ui.setSelectedCategories([]);
+                    }
+                    
                     if(totalCount > 0) ui.showToast(`✅ 데이터 로드 완료 (${totalCount}건)`);
                 } catch(error) { 
                     console.error(error);
@@ -646,31 +647,38 @@
                 }
             }, [data.masterProducts, data.managedItems, config.mappings, config.masterLinks, config.marginRules, ui, data]);
 
-            const handleLoadCategory = useCallback((categoryName) => {
-                ui.setSelectedCategory(categoryName);
-                if (!categoryName) return;
+            // 💡 [핵심] 다중 선택(체크박스) 필터 적용 및 데이터 로드 함수
+            const handleLoadWorkspaces = useCallback((catalogs, categories) => {
+                ui.setSelectedCatalogs(catalogs);
+                ui.setSelectedCategories(categories);
+
+                if (catalogs.length === 0 && categories.length === 0) {
+                    data.setManagedItems({});
+                    ui.setSelectedRows(new Set());
+                    return;
+                }
 
                 ui.setIsProcessing(true);
-                ui.setProcessMsg('카탈로그 및 견적서 불러오는 중...');
+                ui.setProcessMsg('데이터 불러오는 중...');
                 
                 setTimeout(() => {
-                    // 💡 [수정] 견적서 로드 시 기존 작업 화면을 비워 덮어쓰기 방식으로 작동하게 함
                     let newManaged = {};
                     
                     Object.values(data.masterProducts).forEach(mItem => {
                         let isMatch = false;
 
+                        // 견적서 매칭 검사
                         const catStr = mItem['견적서'] || mItem['카테고리'] || '';
-                        if (catStr.split(',').map(c => c.trim()).includes(categoryName)) {
+                        const mCats = catStr.split(',').map(c => c.trim());
+                        if (categories.length > 0 && categories.some(c => mCats.includes(c))) {
                             isMatch = true;
                         }
 
-                        // 카탈로그와 견적서를 동시에 선택한 경우 합집합으로 병합
-                        if (ui.selectedCatalog) {
-                            const catalogStr = mItem['카탈로그'] || '';
-                            if (catalogStr.split(',').map(c => c.trim()).includes(ui.selectedCatalog)) {
-                                isMatch = true;
-                            }
+                        // 카탈로그 매칭 검사
+                        const catalogStr = mItem['카탈로그'] || '';
+                        const mCatalogs = catalogStr.split(',').map(c => c.trim());
+                        if (catalogs.length > 0 && catalogs.some(c => mCatalogs.includes(c))) {
+                            isMatch = true;
                         }
 
                         if (isMatch) {
@@ -685,12 +693,7 @@
                     data.setManagedItems(newManaged);
                     ui.setSelectedRows(new Set()); 
                     
-                    if (ui.selectedCatalog) {
-                        ui.showToast(`✅ [${ui.selectedCatalog}] 카탈로그와 [${categoryName}] 견적서가 합집합으로 병합되었습니다. (${Object.keys(newManaged).length}건)`);
-                    } else {
-                        ui.showToast(`✅ [${categoryName}] 견적서 로드 완료! (${Object.keys(newManaged).length}건)`);
-                    }
-                    
+                    ui.showToast(`✅ ${Object.keys(newManaged).length}건 데이터 로드 완료!`);
                     ui.setIsProcessing(false);
                     ui.setProcessMsg('');
                 }, 100);
@@ -768,17 +771,22 @@
                 
                 data.setMasterProducts(newMaster);
                 
-                if (type === 'catalog' && ui.selectedCatalog === tagName) ui.setSelectedCatalog('');
-                if (type === 'category' && ui.selectedCategory === tagName) ui.setSelectedCategory('');
+                if (type === 'catalog' && ui.selectedCatalogs.includes(tagName)) {
+                    ui.setSelectedCatalogs(prev => prev.filter(c => c !== tagName));
+                }
+                if (type === 'category' && ui.selectedCategories.includes(tagName)) {
+                    ui.setSelectedCategories(prev => prev.filter(c => c !== tagName));
+                }
 
                 ui.showToast(`✅ ${count}개의 상품에서 [${tagName}] 태그를 삭제했습니다.`);
             }, [data, ui]);
 
             const handleRemoveFromCategory = useCallback(() => {
                 if (ui.selectedRows.size === 0) return ui.showToast('⚠️ 제외할 항목을 먼저 체크해주세요.');
-                if (!ui.selectedCategory) return;
-
-                if(!window.confirm(`선택한 ${ui.selectedRows.size}개 상품을 [${ui.selectedCategory}] 견적서에서 영구적으로 제외하시겠습니까?`)) return;
+                if (ui.selectedCategories.length !== 1) return ui.showToast('⚠️ 제외할 대상 견적서를 1개만 단일 선택해주세요.');
+                
+                const targetCategory = ui.selectedCategories[0];
+                if(!window.confirm(`선택한 ${ui.selectedRows.size}개 상품을 [${targetCategory}] 견적서에서 영구적으로 제외하시겠습니까?`)) return;
 
                 let newMaster = { ...data.masterProducts };
                 let count = 0;
@@ -787,8 +795,8 @@
                     if (newMaster[code]) {
                         newMaster[code] = { ...newMaster[code] };
                         let tags = (newMaster[code]['견적서'] || '').split(',').map(s => s.trim()).filter(Boolean);
-                        if (tags.includes(ui.selectedCategory)) {
-                            tags = tags.filter(t => t !== ui.selectedCategory);
+                        if (tags.includes(targetCategory)) {
+                            tags = tags.filter(t => t !== targetCategory);
                             newMaster[code]['견적서'] = tags.join(', ');
                             count++;
                         }
@@ -797,12 +805,14 @@
 
                 data.setMasterProducts(newMaster);
                 ui.setSelectedRows(new Set());
-                ui.showToast(`✅ ${count}개 상품이 [${ui.selectedCategory}] 견적서에서 영구 제외되었습니다.`);
-            }, [ui.selectedRows, ui.selectedCategory, data, ui]);
+                ui.showToast(`✅ ${count}개 상품이 [${targetCategory}] 견적서에서 영구 제외되었습니다.`);
+            }, [ui.selectedRows, ui.selectedCategories, data, ui]);
 
             const handleAddToCategory = useCallback(() => {
                 if (ui.selectedRows.size === 0) return ui.showToast('⚠️ 추가할 항목을 먼저 체크해주세요.');
-                if (!ui.selectedCategory) return;
+                if (ui.selectedCategories.length !== 1) return ui.showToast('⚠️ 추가할 대상 견적서를 1개만 단일 선택해주세요.');
+                
+                const targetCategory = ui.selectedCategories[0];
 
                 let newMaster = { ...data.masterProducts };
                 let count = 0;
@@ -811,8 +821,8 @@
                     if (newMaster[code]) {
                         newMaster[code] = { ...newMaster[code] };
                         let tags = (newMaster[code]['견적서'] || '').split(',').map(s => s.trim()).filter(Boolean);
-                        if (!tags.includes(ui.selectedCategory)) {
-                            tags.push(ui.selectedCategory);
+                        if (!tags.includes(targetCategory)) {
+                            tags.push(targetCategory);
                             newMaster[code]['견적서'] = tags.join(', ');
                             count++;
                         }
@@ -821,8 +831,8 @@
 
                 data.setMasterProducts(newMaster);
                 ui.setSelectedRows(new Set());
-                ui.showToast(`✅ ${count}개 상품이 [${ui.selectedCategory}] 견적서에 새로 추가되었습니다.`);
-            }, [ui.selectedRows, ui.selectedCategory, data, ui]);
+                ui.showToast(`✅ ${count}개 상품이 [${targetCategory}] 견적서에 새로 추가되었습니다.`);
+            }, [ui.selectedRows, ui.selectedCategories, data, ui]);
 
             const handleCommitEstimate = useCallback((specificCodes) => {
                 const targetCodes = Array.isArray(specificCodes) ? specificCodes : (ui.selectedRows.size > 0 ? Array.from(ui.selectedRows) : fullDisplayRows.map(r => r.코드));
@@ -992,17 +1002,81 @@
                 data.setManagedItems({}); 
                 ui.setSelectedRows(new Set()); 
                 ui.setGlobalSearch(''); 
-                ui.setSelectedCatalog(''); 
-                ui.setSelectedCategory(''); 
+                ui.setSelectedCatalogs([]); 
+                ui.setSelectedCategories([]); 
                 ui.showToast('작업 데이터가 초기화 되었습니다.');
             }, [data, ui]);
 
-            return { handleCloudSync, cleanUpGarbageTags, handleCleanUpDirtyPrices, handleFileUpload, handleLoadCategory, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleRemoveFromCategory, handleAddToCategory, handleCommitEstimate, executeExport, handleExportCurrentView, toggleAllRows, handleReset };
+            return { handleLoadWorkspaces, handleCloudSync, cleanUpGarbageTags, handleCleanUpDirtyPrices, handleFileUpload, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleRemoveFromCategory, handleAddToCategory, handleCommitEstimate, executeExport, handleExportCurrentView, toggleAllRows, handleReset };
         };
 
         // ==========================================
         // 🧩 5. UI 컴포넌트들
         // ==========================================
+
+        // 💡 [NEW] 다중 선택 커스텀 드롭다운
+        const MultiSelectDropdown = ({ title, icon, colorTheme, options, selectedValues, onChange }) => {
+            const [isOpen, setIsOpen] = useState(false);
+            const dropdownRef = useRef(null);
+
+            useEffect(() => {
+                const handleClickOutside = (e) => {
+                    if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setIsOpen(false);
+                };
+                if (isOpen) document.addEventListener('mousedown', handleClickOutside);
+                return () => document.removeEventListener('mousedown', handleClickOutside);
+            }, [isOpen]);
+
+            const handleToggle = (val) => {
+                if (selectedValues.includes(val)) onChange(selectedValues.filter(v => v !== val));
+                else onChange([...selectedValues, val]);
+            };
+
+            const isAllSelected = selectedValues.length === 0;
+
+            const handleToggleAll = () => {
+                onChange([]);
+                setIsOpen(false);
+            };
+
+            const colorClasses = {
+                indigo: 'border-indigo-200 text-indigo-700 hover:bg-indigo-50 focus:border-indigo-400 focus:ring-indigo-200 text-indigo-400',
+                blue: 'border-blue-200 text-blue-700 hover:bg-blue-50 focus:border-blue-400 focus:ring-blue-200 text-blue-400'
+            };
+            const cTheme = colorClasses[colorTheme] || colorClasses.blue;
+
+            let displayTitle = `${title} (전체)`;
+            if (selectedValues.length > 0) {
+                displayTitle = selectedValues.length === 1 ? selectedValues[0] : `${selectedValues[0]} 외 ${selectedValues.length - 1}건`;
+            }
+
+            return (
+                <div className="relative" ref={dropdownRef}>
+                    <button onClick={() => setIsOpen(!isOpen)} className={`bg-white border font-bold text-[12px] py-1 pl-8 pr-7 rounded-lg shadow-sm outline-none w-[160px] cursor-pointer h-8 flex items-center justify-between text-left ${cTheme}`}>
+                        <i className={`fas ${icon} absolute left-3 top-2.5 text-[11px] pointer-events-none opacity-80`}></i>
+                        <span className="truncate w-full text-center">{displayTitle}</span>
+                        <i className={`fas fa-chevron-down absolute right-3 top-3 text-[9px] pointer-events-none opacity-80`}></i>
+                    </button>
+                    {isOpen && (
+                        <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-slate-200 rounded-lg shadow-xl z-50 py-1 max-h-[300px] overflow-y-auto custom-scrollbar">
+                            <label className="flex items-center px-3 py-2.5 hover:bg-slate-50 cursor-pointer border-b border-slate-100">
+                                <input type="checkbox" checked={isAllSelected} onChange={handleToggleAll} className={`mr-2 rounded border-slate-300 ${colorTheme === 'indigo' ? 'text-indigo-600 focus:ring-indigo-500' : 'text-blue-600 focus:ring-blue-500'}`} />
+                                <span className="text-[13px] font-black text-slate-700">{title} 전체 해제</span>
+                            </label>
+                            {options.map(opt => (
+                                <label key={opt.name} className="flex items-center px-3 py-2 hover:bg-slate-50 cursor-pointer">
+                                    <input type="checkbox" checked={selectedValues.includes(opt.name)} onChange={() => handleToggle(opt.name)} className={`mr-2 rounded border-slate-300 ${colorTheme === 'indigo' ? 'text-indigo-600 focus:ring-indigo-500' : 'text-blue-600 focus:ring-blue-500'}`} />
+                                    <span className="text-[12px] font-bold text-slate-700 truncate w-full flex justify-between">
+                                        <span className="truncate">{opt.name}</span>
+                                        <span className={`${colorTheme === 'indigo' ? 'text-indigo-400' : 'text-blue-400'} font-normal ml-1 shrink-0`}>({opt.count})</span>
+                                    </span>
+                                </label>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+        };
         
         const EditableCell = React.memo(({ rowCode, initialVal, field, linkedMasterField, mVal, onUpdateCell }) => {
             const isNumeric = NUMERIC_HEADERS.includes(linkedMasterField) || NUMERIC_HEADERS.includes(field);
@@ -1087,8 +1161,7 @@
             );
         });
 
-        // 💡 [v1.5 수정] 직관적인 상태창 컴포넌트
-        const SystemConsole = ({ itemCount, isProcessing, processMsg, estimateCount, selectedCatalog, selectedCategory, isEstimateUploaded }) => {
+        const SystemConsole = ({ itemCount, isProcessing, processMsg, estimateCount, selectedCatalogs, selectedCategories, isEstimateUploaded }) => {
             const [time, setTime] = useState(new Date());
             useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
             const timeStr = `${time.getFullYear()}.${String(time.getMonth()+1).padStart(2,'0')}.${String(time.getDate()).padStart(2,'0')} ${String(time.getHours()).padStart(2,'0')}:${String(time.getMinutes()).padStart(2,'0')}`;
@@ -1114,30 +1187,38 @@
             }
 
             let filterNames = [];
-            if (selectedCatalog) filterNames.push(`📂${selectedCatalog}`);
-            if (selectedCategory) filterNames.push(`📄${selectedCategory}`);
-            if (!selectedCatalog && !selectedCategory && isEstimateUploaded) filterNames.push(`📄새로운 엑셀 견적서`);
+            if (selectedCatalogs.length > 0) {
+                const catStr = selectedCatalogs.length > 1 ? `${selectedCatalogs[0]} 외 ${selectedCatalogs.length - 1}건` : selectedCatalogs[0];
+                filterNames.push(`📂 ${catStr}`);
+            }
+            if (selectedCategories.length > 0) {
+                const estStr = selectedCategories.length > 1 ? `${selectedCategories[0]} 외 ${selectedCategories.length - 1}건` : selectedCategories[0];
+                filterNames.push(`📄 ${estStr}`);
+            }
+            if (selectedCatalogs.length === 0 && selectedCategories.length === 0 && isEstimateUploaded) {
+                filterNames.push(`📄 새로운 엑셀 작업`);
+            }
 
             if (filterNames.length > 0) {
                 return (
-                    <div className="w-full bg-blue-600 text-white px-4 py-1.5 rounded-md text-[12px] font-bold flex items-center justify-between shadow-inner max-w-md xl:max-w-xl mx-4">
+                    <div className="w-full bg-blue-600 text-white px-4 py-1.5 rounded-md text-[13px] font-bold flex items-center justify-between shadow-inner max-w-md xl:max-w-xl mx-4 transition-all">
                         <div className="flex items-center truncate">
-                            <span className="truncate">{filterNames.join(' + ')}</span>
-                            <span className="ml-2 bg-blue-800 px-1.5 py-0.5 rounded text-[10px]">총 {estimateCount}건의 상품</span>
+                            <span className="truncate tracking-wide">{filterNames.join(' ＋ ')}</span>
+                            <span className="ml-3 bg-blue-800 px-2 py-0.5 rounded text-[11px]">총 {estimateCount}건의 상품</span>
                         </div>
-                        <span className="text-[10px] text-blue-200 font-normal shrink-0 ml-3"><i className="far fa-clock mr-1"></i>{timeStr}</span>
+                        <span className="text-[11px] text-blue-200 font-normal shrink-0 ml-3"><i className="far fa-clock mr-1.5"></i>{timeStr}</span>
                     </div>
                 );
             }
 
             return (
-                <div className="w-full bg-slate-600 text-white px-4 py-1.5 rounded-md text-[12px] font-bold flex items-center justify-between shadow-inner max-w-md xl:max-w-xl mx-4">
+                <div className="w-full bg-slate-600 text-white px-4 py-1.5 rounded-md text-[13px] font-bold flex items-center justify-between shadow-inner max-w-md xl:max-w-xl mx-4 transition-all">
                     <div className="flex items-center truncate">
                         <i className="fas fa-database mr-2 opacity-80"></i>
                         <span className="truncate">전체 마스터 DB 대기중</span>
-                        <span className="ml-2 bg-slate-700 px-1.5 py-0.5 rounded text-[10px]">총 {itemCount}건</span>
+                        <span className="ml-3 bg-slate-700 px-2 py-0.5 rounded text-[11px]">총 {itemCount}건의 상품</span>
                     </div>
-                    <span className="text-[10px] text-slate-300 font-normal shrink-0 ml-3"><i className="far fa-clock mr-1"></i>{timeStr}</span>
+                    <span className="text-[11px] text-slate-300 font-normal shrink-0 ml-3"><i className="far fa-clock mr-1.5"></i>{timeStr}</span>
                 </div>
             );
         };
@@ -1444,26 +1525,24 @@
         };
 
         const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
-            const { isEstimateUploaded, selectedRows, globalSearch, selectedCatalog, selectedCategory } = state;
-            const { handleCommitEstimate, handleRemoveFromWorkspace, handleRemoveFromCategory, handleAddToCategory, handleExportCurrentView, setShowReviewModal, setShowExportModal, setGlobalSearch, setSelectedCatalog, handleReset, handleFileUpload, handleLoadCategory, showToast } = actions;
+            const { isEstimateUploaded, selectedRows, globalSearch, selectedCatalogs, selectedCategories } = state;
+            const { handleLoadWorkspaces, handleRemoveFromWorkspace, handleRemoveFromCategory, handleAddToCategory, handleExportCurrentView, setShowReviewModal, setShowExportModal, setGlobalSearch, handleReset, handleFileUpload, showToast } = actions;
 
-            const showActionButtons = isEstimateUploaded || selectedCatalog !== '' || selectedCategory !== '';
+            const showActionButtons = isEstimateUploaded || selectedCatalogs.length > 0 || selectedCategories.length > 0;
 
             return (
                 <div className="px-6 pt-4 pb-3 flex items-center justify-between gap-4 overflow-x-auto custom-scrollbar w-full">
                     
-                    {/* 그룹 1: 카탈로그 관리 (필터 & 스마트파서로 만들기) */}
+                    {/* 그룹 1: 카탈로그 관리 (다중 선택 콤보박스) */}
                     <div className="flex items-center gap-1.5 bg-indigo-50/50 p-1.5 rounded-xl shrink-0 border border-indigo-100">
-                        <div className="relative">
-                            <select value={selectedCatalog} onChange={(e) => setSelectedCatalog(e.target.value)} className="appearance-none bg-white border border-indigo-200 text-indigo-700 font-bold text-[12px] py-1 pl-8 pr-7 rounded-lg shadow-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 w-[150px] cursor-pointer h-8">
-                                <option value="">카탈로그(파서)</option>
-                                {availableCatalogs.map(tag => (
-                                    <option key={tag.name} value={tag.name}>{tag.name} ({tag.count}건)</option>
-                                ))}
-                            </select>
-                            <i className="fas fa-folder-open absolute left-3 top-2 text-indigo-400 text-[11px] pointer-events-none"></i>
-                            <i className="fas fa-chevron-down absolute right-3 top-2.5 text-indigo-400 text-[9px] pointer-events-none"></i>
-                        </div>
+                        <MultiSelectDropdown 
+                            title="카탈로그" 
+                            icon="fa-folder-open" 
+                            colorTheme="indigo"
+                            options={availableCatalogs} 
+                            selectedValues={selectedCatalogs} 
+                            onChange={(newVals) => handleLoadWorkspaces(newVals, selectedCategories)} 
+                        />
                         <div className="w-px h-5 bg-indigo-200 mx-0.5"></div>
                         <button onClick={() => {
                             try {
@@ -1481,30 +1560,28 @@
                         </button>
                     </div>
                     
-                    {/* 그룹 2: 견적서 관리 */}
+                    {/* 그룹 2: 견적서 관리 (다중 선택 콤보박스) */}
                     <div className="flex items-center gap-1.5 bg-blue-50/50 p-1.5 rounded-xl shrink-0 border border-blue-100">
-                        <div className="relative">
-                            <select value={selectedCategory} onChange={(e) => handleLoadCategory(e.target.value)} className="appearance-none bg-white border border-blue-200 text-blue-700 font-bold text-[12px] py-1 pl-8 pr-7 rounded-lg shadow-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 w-[150px] cursor-pointer h-8">
-                                <option value="">견적서</option>
-                                {availableCategories.map(cat => (
-                                    <option key={cat.name} value={cat.name}>{cat.name} ({cat.count}건)</option>
-                                ))}
-                            </select>
-                            <i className="fas fa-file-invoice absolute left-3 top-2 text-blue-400 text-[11px] pointer-events-none"></i>
-                            <i className="fas fa-chevron-down absolute right-3 top-2.5 text-blue-400 text-[9px] pointer-events-none"></i>
-                        </div>
+                        <MultiSelectDropdown 
+                            title="견적서" 
+                            icon="fa-file-invoice" 
+                            colorTheme="blue"
+                            options={availableCategories} 
+                            selectedValues={selectedCategories} 
+                            onChange={(newVals) => handleLoadWorkspaces(selectedCatalogs, newVals)} 
+                        />
                         <div className="w-px h-5 bg-blue-200 mx-0.5"></div>
                         
                         <button onClick={() => actions.setShowCategoryModal(true)} className="h-8 px-2.5 rounded-lg text-[11px] font-bold bg-white text-blue-600 shadow-sm hover:bg-blue-50 transition-colors flex items-center border border-blue-200" title="현재 화면의 상품들을 묶어서 새로운 견적서로 저장합니다.">
                             <i className="fas fa-save mr-1.5"></i> 새 저장
                         </button>
 
-                        {selectedCategory && (
+                        {selectedCategories.length > 0 && (
                             <>
-                                <button onClick={handleAddToCategory} className="h-8 px-2.5 rounded-lg text-[11px] font-bold bg-white text-emerald-600 shadow-sm hover:bg-emerald-50 transition-colors flex items-center border border-emerald-200" title="우측 검색창에서 고른 상품을 현재 견적서에 추가합니다.">
+                                <button onClick={handleAddToCategory} className="h-8 px-2.5 rounded-lg text-[11px] font-bold bg-white text-emerald-600 shadow-sm hover:bg-emerald-50 transition-colors flex items-center border border-emerald-200" title="우측 검색창에서 고른 상품을 현재 단일 선택된 견적서에 추가합니다.">
                                     <i className="fas fa-plus-circle mr-1.5 text-[12px]"></i> 추가
                                 </button>
-                                <button onClick={handleRemoveFromCategory} className={`h-8 px-2.5 rounded-lg text-[11px] font-bold shadow-sm transition-colors flex items-center ${selectedRows.size > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100' : 'bg-white text-slate-300 border border-slate-200'}`} title="선택한 상품을 현재 견적서에서 영구적으로 지웁니다.">
+                                <button onClick={handleRemoveFromCategory} className={`h-8 px-2.5 rounded-lg text-[11px] font-bold shadow-sm transition-colors flex items-center ${selectedRows.size > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100' : 'bg-white text-slate-300 border border-slate-200'}`} title="선택한 상품을 현재 단일 선택된 견적서에서 영구적으로 지웁니다.">
                                     <i className="fas fa-trash-alt mr-1.5 text-[12px]"></i> 제외
                                 </button>
                             </>
@@ -1761,7 +1838,7 @@
                     <i className="fas fa-box-open"></i>
                     <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm"><i className="fas fa-check"></i></div>
                 </div>
-                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v1.5]</h2>
+                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v1.6]</h2>
                 <p className="text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold">
                     현재 등록된 <span className="text-indigo-500">마스터 상품 데이터</span>가 없습니다.<br/>
                     견적 작업 및 파서 연동을 위해 전체 상품 DB를 세팅해주세요.
@@ -1965,7 +2042,6 @@
 
             const isEstimateUploaded = Object.keys(data.managedItems).length > 0;
             const isMasterEmpty = Object.keys(data.masterProducts).length === 0;
-            const showActionButtons = isEstimateUploaded || ui.selectedCatalog !== '' || ui.selectedCategory !== '';
 
             useEffect(() => {
                 const handleGlobalKeyDown = (e) => {
@@ -2018,19 +2094,21 @@
                 } else {
                     baseList = Object.values(data.masterProducts).map(m => data.managedItems[m.코드] || { 코드: m.코드, sources: {}, finalData: {} });
 
-                    if (ui.selectedCatalog) {
+                    if (ui.selectedCatalogs.length > 0) {
                         baseList = baseList.filter(item => {
                             const mItem = data.masterProducts[item.코드] || {};
                             const tagStr = mItem['카탈로그'] || '';
-                            return tagStr.split(',').map(t => t.trim()).includes(ui.selectedCatalog);
+                            const mCats = tagStr.split(',').map(t => t.trim());
+                            return ui.selectedCatalogs.some(c => mCats.includes(c));
                         });
                     }
 
-                    if (ui.selectedCategory) {
+                    if (ui.selectedCategories.length > 0) {
                         baseList = baseList.filter(item => {
                             const mItem = data.masterProducts[item.코드] || {};
                             const tagStr = mItem['견적서'] || mItem['카테고리'] || '';
-                            return tagStr.split(',').map(t => t.trim()).includes(ui.selectedCategory);
+                            const mCats = tagStr.split(',').map(t => t.trim());
+                            return ui.selectedCategories.some(c => mCats.includes(c));
                         });
                     }
                 }
@@ -2067,19 +2145,19 @@
                     baseList.sort((a, b) => String(a.코드).localeCompare(String(b.코드)));
                 }
                 return baseList;
-            }, [isEstimateUploaded, data.managedItems, data.masterProducts, ui.globalSearch, ui.selectedCatalog, ui.selectedCategory]);
+            }, [isEstimateUploaded, data.managedItems, data.masterProducts, ui.globalSearch, ui.selectedCatalogs, ui.selectedCategories]);
 
             const customActions = useMerchActions(config, data, ui, fullDisplayRows);
             
             const appState = {
                 config, data,
-                isEstimateUploaded, selectedRows: ui.selectedRows, globalSearch: ui.globalSearch, selectedCatalog: ui.selectedCatalog, selectedCategory: ui.selectedCategory, isProcessing: ui.isProcessing, processMsg: ui.processMsg,
+                isEstimateUploaded, selectedRows: ui.selectedRows, globalSearch: ui.globalSearch, selectedCatalogs: ui.selectedCatalogs, selectedCategories: ui.selectedCategories, isProcessing: ui.isProcessing, processMsg: ui.processMsg,
                 visibleMasterCols: config.visibleMasterCols, visibleUploadCols: config.visibleUploadCols, masterProducts: data.masterProducts, fullDisplayRows
             };
             
             const appActions = {
                 setShowReviewModal: ui.setShowReviewModal, setShowExportModal: ui.setShowExportModal, setShowCategoryModal: ui.setShowCategoryModal,
-                setSelectedRows: ui.setSelectedRows, setGlobalSearch: ui.setGlobalSearch, setSelectedCatalog: ui.setSelectedCatalog, setShowHistoryModal: ui.setShowHistoryModal, showToast: ui.showToast,
+                setSelectedRows: ui.setSelectedRows, setGlobalSearch: ui.setGlobalSearch, setSelectedCatalogs: ui.setSelectedCatalogs, setSelectedCategories: ui.setSelectedCategories, setShowHistoryModal: ui.setShowHistoryModal, showToast: ui.showToast,
                 ...customActions
             };
 
@@ -2126,23 +2204,23 @@
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <div className="flex items-center mb-0.5">
                                                     <span className="text-[14px] font-black text-slate-200 leading-none">MerchOps</span>
-                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.5</span>
+                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.6</span>
                                                 </div>
                                                 <span className="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">MAIN WORKSPACE</span>
                                             </div>
                                         </div>
                                         
-                                        <SystemConsole itemCount={Object.keys(data.masterProducts).length} isProcessing={ui.isProcessing} processMsg={ui.processMsg} estimateCount={Object.keys(data.managedItems).length} selectedCatalog={ui.selectedCatalog} selectedCategory={ui.selectedCategory} isEstimateUploaded={isEstimateUploaded} />
+                                        <SystemConsole itemCount={Object.keys(data.masterProducts).length} isProcessing={ui.isProcessing} processMsg={ui.processMsg} estimateCount={fullDisplayRows.length} selectedCatalogs={ui.selectedCatalogs} selectedCategories={ui.selectedCategories} isEstimateUploaded={isEstimateUploaded} />
                                         
                                         <nav className="flex gap-1.5 text-[14px] shrink-0 items-center">
-                                            {showActionButtons && (
+                                            {isEstimateUploaded || ui.selectedCatalogs.length > 0 || ui.selectedCategories.length > 0 ? (
                                                 <>
                                                     <button onClick={() => ui.setShowExportModal(true)} className="h-8 px-2.5 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-amber-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-amber-200 hover:border-amber-500/50 font-bold text-[11px]" title="ERP/쇼핑몰 양식 출력">
                                                         <i className="fas fa-file-export mr-1.5 text-[12px]"></i> 보고서
                                                     </button>
                                                     <div className="w-px h-4 bg-slate-700 mx-0.5"></div>
                                                 </>
-                                            )}
+                                            ) : null}
 
                                             <a href="https://oneapp.orderz.co.kr/MerchOps/guide" className={`h-8 px-2.5 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-emerald-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-300 hover:border-emerald-500/50 font-bold text-[11px] tracking-wider uppercase ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="MerchOps 사용 가이드">
                                                 GUIDE
