@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v1.4]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v1.5]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -537,7 +537,7 @@
                 }
             }, [data.masterProducts]);
             
-            // ★ 신규 추가: 마스터 데이터 강제 재계산 및 100원 단위 찌꺼기 정돈 기능
+            // ★ 강제 100원 단위 정돈
             const handleCleanUpDirtyPrices = useCallback(() => {
                 if(!window.confirm("마스터 DB에 저장된 단가 중 10원 단위(찌꺼기)로 남아있는 모든 항목을 100원 단위로 깔끔하게 반올림 정렬하시겠습니까?")) return;
                 
@@ -565,7 +565,7 @@
                     ui.showToast(`✅ ${count}개 상품의 단가가 100원 단위로 정돈되었습니다.`);
                     ui.setIsProcessing(false);
                 }, 100);
-            }, [data.masterProducts]);
+            }, [data.masterProducts, ui]);
 
             const handleFileUpload = useCallback(async (e, expectedType) => { 
                 const files = Array.from(e.target.files); const targetInput = e.target; 
@@ -576,6 +576,7 @@
 
                 try {
                     let newMaster = { ...data.masterProducts }; 
+                    // 💡 [수정] 견적서/업로드 파일 로딩 시 기존 작업 화면(managedItems)은 완전히 빈 객체로 초기화(덮어쓰기) 됩니다.
                     let newManaged = expectedType === 'estimate' ? {} : { ...data.managedItems }; 
                     let totalCount = 0;
                     
@@ -643,16 +644,17 @@
                     ui.setIsProcessing(false); 
                     ui.setProcessMsg(''); 
                 }
-            }, [data.masterProducts, data.managedItems, config.mappings, config.masterLinks, config.marginRules]);
+            }, [data.masterProducts, data.managedItems, config.mappings, config.masterLinks, config.marginRules, ui, data]);
 
             const handleLoadCategory = useCallback((categoryName) => {
                 ui.setSelectedCategory(categoryName);
                 if (!categoryName) return;
 
                 ui.setIsProcessing(true);
-                ui.setProcessMsg('카탈로그 및 견적서 병합 중...');
+                ui.setProcessMsg('카탈로그 및 견적서 불러오는 중...');
                 
                 setTimeout(() => {
+                    // 💡 [수정] 견적서 로드 시 기존 작업 화면을 비워 덮어쓰기 방식으로 작동하게 함
                     let newManaged = {};
                     
                     Object.values(data.masterProducts).forEach(mItem => {
@@ -663,6 +665,7 @@
                             isMatch = true;
                         }
 
+                        // 카탈로그와 견적서를 동시에 선택한 경우 합집합으로 병합
                         if (ui.selectedCatalog) {
                             const catalogStr = mItem['카탈로그'] || '';
                             if (catalogStr.split(',').map(c => c.trim()).includes(ui.selectedCatalog)) {
@@ -691,7 +694,7 @@
                     ui.setIsProcessing(false);
                     ui.setProcessMsg('');
                 }, 100);
-            }, [data.masterProducts, config.marginRules, data.setManagedItems, ui]);
+            }, [data.masterProducts, config.marginRules, data, ui]);
 
             const handleRemoveFromWorkspace = useCallback(() => {
                 if (ui.selectedRows.size === 0) return ui.showToast('⚠️ 화면에서 제외(빼기)할 항목을 먼저 체크해주세요.');
@@ -705,7 +708,7 @@
                 });
                 ui.setSelectedRows(new Set());
                 ui.showToast('✅ 선택한 항목이 현재 작업 화면에서만 임시로 제외되었습니다. (마스터 DB에는 영향 없음)');
-            }, [ui.selectedRows, data.setManagedItems, ui]);
+            }, [ui.selectedRows, data, ui]);
 
             const handleSaveAsCategory = useCallback((categoryName) => {
                 if (!categoryName || !categoryName.trim()) return;
@@ -795,7 +798,7 @@
                 data.setMasterProducts(newMaster);
                 ui.setSelectedRows(new Set());
                 ui.showToast(`✅ ${count}개 상품이 [${ui.selectedCategory}] 견적서에서 영구 제외되었습니다.`);
-            }, [ui.selectedRows, ui.selectedCategory, data.masterProducts, ui]);
+            }, [ui.selectedRows, ui.selectedCategory, data, ui]);
 
             const handleAddToCategory = useCallback(() => {
                 if (ui.selectedRows.size === 0) return ui.showToast('⚠️ 추가할 항목을 먼저 체크해주세요.');
@@ -819,7 +822,7 @@
                 data.setMasterProducts(newMaster);
                 ui.setSelectedRows(new Set());
                 ui.showToast(`✅ ${count}개 상품이 [${ui.selectedCategory}] 견적서에 새로 추가되었습니다.`);
-            }, [ui.selectedRows, ui.selectedCategory, data.masterProducts, ui]);
+            }, [ui.selectedRows, ui.selectedCategory, data, ui]);
 
             const handleCommitEstimate = useCallback((specificCodes) => {
                 const targetCodes = Array.isArray(specificCodes) ? specificCodes : (ui.selectedRows.size > 0 ? Array.from(ui.selectedRows) : fullDisplayRows.map(r => r.코드));
@@ -863,7 +866,7 @@
                 }
 
                 data.setMasterProducts(newMaster); ui.setSelectedRows(new Set()); ui.showToast(`✅ ${commitCount}건 마스터 업데이트 완료.`);
-            }, [ui.selectedRows, data.masterProducts, data.managedItems, config.masterLinks, config.cloudUrl, fullDisplayRows]);
+            }, [ui.selectedRows, data, config.masterLinks, config.cloudUrl, fullDisplayRows, ui]);
 
             const executeExport = useCallback((option, zeroAction = { sale: '0', stock: '999' }) => {
                 if (fullDisplayRows.length === 0) { ui.setAlertMsg("내보낼 데이터가 없습니다."); return ui.setShowExportModal(false); }
@@ -936,7 +939,7 @@
                         ui.setIsExporting(false);
                     }
                 }, 100);
-            }, [fullDisplayRows, data.masterProducts, ui]);
+            }, [fullDisplayRows, data, ui]);
 
             const handleExportCurrentView = useCallback(() => { 
                 if (fullDisplayRows.length === 0) return ui.showToast("⚠️ 내보낼 데이터가 없습니다.");
@@ -978,12 +981,12 @@
                         ui.setIsExporting(false);
                     }
                 }, 100);
-            }, [fullDisplayRows, config.visibleUploadCols, config.visibleMasterCols, config.masterLinks, data.masterProducts, ui.selectedRows, ui]);
+            }, [fullDisplayRows, config, data.masterProducts, ui]);
 
             const toggleAllRows = useCallback(() => {
                 if (ui.selectedRows.size === fullDisplayRows.length && fullDisplayRows.length > 0) ui.setSelectedRows(new Set());
                 else { const next = new Set(); fullDisplayRows.forEach(r => next.add(r.코드)); ui.setSelectedRows(next); }
-            }, [fullDisplayRows, ui.selectedRows, ui.setSelectedRows]);
+            }, [fullDisplayRows, ui]);
 
             const handleReset = useCallback(() => {
                 data.setManagedItems({}); 
@@ -992,7 +995,7 @@
                 ui.setSelectedCatalog(''); 
                 ui.setSelectedCategory(''); 
                 ui.showToast('작업 데이터가 초기화 되었습니다.');
-            }, [data.setManagedItems, ui.setSelectedRows, ui.setGlobalSearch, ui.setSelectedCatalog, ui.setSelectedCategory]);
+            }, [data, ui]);
 
             return { handleCloudSync, cleanUpGarbageTags, handleCleanUpDirtyPrices, handleFileUpload, handleLoadCategory, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleRemoveFromCategory, handleAddToCategory, handleCommitEstimate, executeExport, handleExportCurrentView, toggleAllRows, handleReset };
         };
@@ -1084,24 +1087,57 @@
             );
         });
 
-        const SystemConsole = ({ itemCount, isProcessing, processMsg, estimateCount, selectedCatalog, selectedCategory }) => {
+        // 💡 [v1.5 수정] 직관적인 상태창 컴포넌트
+        const SystemConsole = ({ itemCount, isProcessing, processMsg, estimateCount, selectedCatalog, selectedCategory, isEstimateUploaded }) => {
             const [time, setTime] = useState(new Date());
             useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
             const timeStr = `${time.getFullYear()}.${String(time.getMonth()+1).padStart(2,'0')}.${String(time.getDate()).padStart(2,'0')} ${String(time.getHours()).padStart(2,'0')}:${String(time.getMinutes()).padStart(2,'0')}`;
             
-            let statusText = ''; let statusColor = 'text-emerald-400'; let bgColor = 'bg-emerald-400';
-            if (isProcessing) { statusText = `> ${processMsg}`; statusColor = 'text-amber-400'; bgColor = 'bg-amber-400'; } 
-            else if (itemCount === 0) { statusText = `> 시스템 대기중: 마스터 DB를 업로드하거나 클라우드에서 불러오세요.`; statusColor = 'text-rose-400'; bgColor = 'bg-rose-400'; }
-            else if (selectedCatalog || selectedCategory) { statusText = `> 뷰 필터 활성 [${selectedCatalog || selectedCategory}] (${timeStr})`; statusColor = 'text-indigo-300'; bgColor = 'bg-indigo-300'; }
-            else if (estimateCount > 0) { statusText = `> DB: ${itemCount}건 / 작업중: ${estimateCount}건 (${timeStr})`; statusColor = 'text-[#818cf8]'; bgColor = 'bg-[#818cf8]'; } 
-            else { statusText = `> DB: ${itemCount}건 로드됨 (${timeStr})`; }
+            if (isProcessing) {
+                return (
+                    <div className="bg-amber-400 rounded-md border border-amber-500 px-4 py-1.5 flex flex-1 max-w-md xl:max-w-xl mx-4 items-center overflow-hidden shadow-inner text-amber-900">
+                        <div className="flex items-center truncate w-full font-bold text-[12px]">
+                            <i className="fas fa-spinner fa-spin mr-2"></i><span className="truncate">{processMsg}</span>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (itemCount === 0) {
+                return (
+                    <div className="bg-slate-700 rounded-md border border-slate-600 px-4 py-1.5 flex flex-1 max-w-md xl:max-w-xl mx-4 items-center overflow-hidden shadow-inner text-slate-300">
+                        <div className="flex items-center truncate w-full font-bold text-[12px]">
+                            <span className="truncate">마스터 DB를 업로드하거나 클라우드에서 불러오세요.</span>
+                        </div>
+                    </div>
+                );
+            }
+
+            let filterNames = [];
+            if (selectedCatalog) filterNames.push(`📂${selectedCatalog}`);
+            if (selectedCategory) filterNames.push(`📄${selectedCategory}`);
+            if (!selectedCatalog && !selectedCategory && isEstimateUploaded) filterNames.push(`📄새로운 엑셀 견적서`);
+
+            if (filterNames.length > 0) {
+                return (
+                    <div className="w-full bg-blue-600 text-white px-4 py-1.5 rounded-md text-[12px] font-bold flex items-center justify-between shadow-inner max-w-md xl:max-w-xl mx-4">
+                        <div className="flex items-center truncate">
+                            <span className="truncate">{filterNames.join(' + ')}</span>
+                            <span className="ml-2 bg-blue-800 px-1.5 py-0.5 rounded text-[10px]">총 {estimateCount}건의 상품</span>
+                        </div>
+                        <span className="text-[10px] text-blue-200 font-normal shrink-0 ml-3"><i className="far fa-clock mr-1"></i>{timeStr}</span>
+                    </div>
+                );
+            }
 
             return (
-                <div className="bg-black/40 rounded-md border border-slate-700/50 px-4 py-1.5 flex flex-1 max-w-md xl:max-w-xl mx-4 items-center overflow-hidden shadow-inner">
-                    <div className="flex items-center truncate w-full">
-                        <span className={`text-[12px] font-mono ${statusColor} flex items-center`}>{isProcessing && <i className="fas fa-spinner fa-spin mr-2"></i>}{statusText}</span>
-                        <span className={`w-1.5 h-3.5 ${bgColor} ml-1.5 animate-[pulse_1s_infinite]`}></span>
+                <div className="w-full bg-slate-600 text-white px-4 py-1.5 rounded-md text-[12px] font-bold flex items-center justify-between shadow-inner max-w-md xl:max-w-xl mx-4">
+                    <div className="flex items-center truncate">
+                        <i className="fas fa-database mr-2 opacity-80"></i>
+                        <span className="truncate">전체 마스터 DB 대기중</span>
+                        <span className="ml-2 bg-slate-700 px-1.5 py-0.5 rounded text-[10px]">총 {itemCount}건</span>
                     </div>
+                    <span className="text-[10px] text-slate-300 font-normal shrink-0 ml-3"><i className="far fa-clock mr-1"></i>{timeStr}</span>
                 </div>
             );
         };
@@ -1416,7 +1452,7 @@
             return (
                 <div className="px-6 pt-4 pb-3 flex items-center justify-between gap-4 overflow-x-auto custom-scrollbar w-full">
                     
-                    {/* 그룹 1: 카탈로그 관리 (필터 & 스마트파서로 만들기) - UI 통일감 적용 */}
+                    {/* 그룹 1: 카탈로그 관리 (필터 & 스마트파서로 만들기) */}
                     <div className="flex items-center gap-1.5 bg-indigo-50/50 p-1.5 rounded-xl shrink-0 border border-indigo-100">
                         <div className="relative">
                             <select value={selectedCatalog} onChange={(e) => setSelectedCatalog(e.target.value)} className="appearance-none bg-white border border-indigo-200 text-indigo-700 font-bold text-[12px] py-1 pl-8 pr-7 rounded-lg shadow-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 w-[150px] cursor-pointer h-8">
@@ -1445,7 +1481,7 @@
                         </button>
                     </div>
                     
-                    {/* 그룹 2: 견적서 관리 (불러오기 & 새저장 & 직관적인 추가/제외) */}
+                    {/* 그룹 2: 견적서 관리 */}
                     <div className="flex items-center gap-1.5 bg-blue-50/50 p-1.5 rounded-xl shrink-0 border border-blue-100">
                         <div className="relative">
                             <select value={selectedCategory} onChange={(e) => handleLoadCategory(e.target.value)} className="appearance-none bg-white border border-blue-200 text-blue-700 font-bold text-[12px] py-1 pl-8 pr-7 rounded-lg shadow-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 w-[150px] cursor-pointer h-8">
@@ -1475,7 +1511,7 @@
                         )}
                     </div>
 
-                    {/* 그룹 3: 엑셀 I/O (불러오기 & 다운로드) */}
+                    {/* 그룹 3: 엑셀 I/O */}
                     <div className="flex items-center gap-1.5 bg-emerald-50/50 p-1.5 rounded-xl shrink-0 border border-emerald-100">
                         <label className="cursor-pointer h-8 px-3 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center bg-white text-emerald-700 shadow-sm hover:bg-emerald-50 border border-emerald-200" title="엑셀 견적서를 업로드합니다.">
                             <i className="fas fa-file-excel mr-1.5 text-[13px]"></i> 불러오기
@@ -1725,7 +1761,7 @@
                     <i className="fas fa-box-open"></i>
                     <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm"><i className="fas fa-check"></i></div>
                 </div>
-                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v1.4]</h2>
+                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v1.5]</h2>
                 <p className="text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold">
                     현재 등록된 <span className="text-indigo-500">마스터 상품 데이터</span>가 없습니다.<br/>
                     견적 작업 및 파서 연동을 위해 전체 상품 DB를 세팅해주세요.
@@ -1807,8 +1843,8 @@
             }, [analysis.list, filter]);
 
             return (
-                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
-                    <div className="bg-white w-[850px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in" onClick={onClose}>
+                    <div className="bg-white w-[850px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
                         <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
                             <h2 className="font-black text-[16px]"><i className="fas fa-search-dollar text-indigo-400 mr-2"></i>작업 완료 및 저장 전 프리뷰</h2>
                             <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>
@@ -1898,8 +1934,8 @@
 
         const ExportModal = ({ onClose, executeExport }) => {
             return (
-                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
-                    <div className="bg-white w-[500px] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in" onClick={onClose}>
+                    <div className="bg-white w-[500px] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
                         <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
                             <h2 className="font-black text-[16px]"><i className="fas fa-file-export text-amber-400 mr-2"></i>데이터 출력 및 보고서 생성</h2>
                             <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>
@@ -2090,13 +2126,13 @@
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <div className="flex items-center mb-0.5">
                                                     <span className="text-[14px] font-black text-slate-200 leading-none">MerchOps</span>
-                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.4</span>
+                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.5</span>
                                                 </div>
                                                 <span className="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">MAIN WORKSPACE</span>
                                             </div>
                                         </div>
                                         
-                                        <SystemConsole itemCount={Object.keys(data.masterProducts).length} isProcessing={ui.isProcessing} processMsg={ui.processMsg} estimateCount={Object.keys(data.managedItems).length} selectedCatalog={ui.selectedCatalog} selectedCategory={ui.selectedCategory} />
+                                        <SystemConsole itemCount={Object.keys(data.masterProducts).length} isProcessing={ui.isProcessing} processMsg={ui.processMsg} estimateCount={Object.keys(data.managedItems).length} selectedCatalog={ui.selectedCatalog} selectedCategory={ui.selectedCategory} isEstimateUploaded={isEstimateUploaded} />
                                         
                                         <nav className="flex gap-1.5 text-[14px] shrink-0 items-center">
                                             {showActionButtons && (
@@ -2124,6 +2160,7 @@
                                     </div>
                                 </div>
                             </div>
+                            
                             <MainToolbar state={appState} actions={appActions} availableCatalogs={availableCatalogs} availableCategories={availableCategories} />
                         </div>
 
