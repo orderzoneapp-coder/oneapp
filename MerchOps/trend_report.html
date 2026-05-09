@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Trend Report & Dashboard V1.6</title>
+    <title>ONEAPP MerchOps - Trend Report & Dashboard V1.9</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -157,7 +157,7 @@
         };
 
         // ==========================================
-        // 🧩 Layout Components (V1.6 Style)
+        // 🧩 Layout Components
         // ==========================================
         const TopHeader = ({ itemCount, isProcessing }) => {
             const now = new Date();
@@ -171,8 +171,8 @@
                     <div className="flex items-center gap-3">
                         <span className="font-black text-xl tracking-wider text-indigo-400">ONEAPP</span>
                         <div className="flex flex-col ml-1 border-l border-slate-700 pl-4">
-                            <span className="font-bold text-[15px] leading-tight">Trend Report</span>
-                            <span className="text-[10px] text-slate-400 font-mono tracking-widest mt-0.5">DASHBOARD & NOTICE</span>
+                            <span className="font-bold text-[15px] leading-tight">Trend Report V1.9</span>
+                            <span className="text-[10px] text-slate-400 font-mono tracking-widest mt-0.5">ADMIN EARLY WARNING</span>
                         </div>
                     </div>
 
@@ -185,8 +185,7 @@
                     </div>
 
                     <div className="flex items-center gap-2">
-                        {/* 💡 [수정] 불필요한 스마트 파서 링크 제거, 오직 메인으로만 이동 */}
-                        <a href="https://oneapp.orderz.co.kr/MerchOps/v1.2" className="h-10 px-4 rounded-lg bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#374151] transition-all shadow-sm text-xs font-bold text-slate-300 hover:text-white" title="머치옵스 메인으로 이동">
+                        <a href="https://oneapp.orderz.co.kr/MerchOps/v1.4" className="h-10 px-4 rounded-lg bg-[#111827] hover:bg-[#1f2937] flex items-center justify-center border border-[#374151] transition-all shadow-sm text-xs font-bold text-slate-300 hover:text-white" title="머치옵스 메인으로 이동">
                             <i className="fas fa-desktop mr-2 text-emerald-400"></i>머치옵스 메인
                         </a>
                     </div>
@@ -213,8 +212,8 @@
             return (
                 <div className="px-6 pt-5 bg-slate-50 border-b border-gray-200 flex items-end justify-between shrink-0 relative z-10">
                     <div className="flex gap-1">
-                        <TabButton id="dashboard" label="통합 대시보드" icon="fa-chart-line" />
-                        <TabButton id="category" label="카테고리별 분석" icon="fa-sitemap" />
+                        <TabButton id="dashboard" label="통합 의사결정 보드" icon="fa-chart-pie" />
+                        <TabButton id="category" label="계층형 시황 분석" icon="fa-sitemap" />
                         <TabButton id="editor" label="고객 안내장(레터) 발행" icon="fa-envelope-open-text" />
                     </div>
                 </div>
@@ -244,6 +243,10 @@
             });
 
             const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+            // 대시보드 (분할 뷰) 상태 관리
+            const [activeIssueCard, setActiveIssueCard] = useState('margin'); // 'margin', 'inversion', 'volatility'
+            const [selectedIssueItem, setSelectedIssueItem] = useState(null);
 
             const showToast = (msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(""), 3000); };
 
@@ -280,33 +283,57 @@
                 if (!isLoading && !isCustomerMode) localStorage.setItem('merchReportDraft_v1', JSON.stringify(editorDraft));
             }, [editorDraft, isLoading, isCustomerMode]);
 
-            // 💡 [핵심] 통합 인사이트 계산
+            // 💡 [핵심] 통합 인사이트 계산 (의사결정 보드 분할 뷰 용)
             const insights = useMemo(() => {
-                const marginRisks = Object.values(masterProducts).filter(item => {
-                    const inP = parseNum(item['입고가']); const outP = parseNum(item['출고가']);
-                    if (inP <= 0 || outP <= 0) return false;
-                    const margin = ((outP - inP) / outP) * 100;
-                    item._margin = margin;
-                    return margin < 15;
-                }).sort((a, b) => a._margin - b._margin).slice(0, 30);
+                const marginRisks = [];
+                const inversions = [];
+                const volatilityList = [];
 
-                const priceChanges = historyLogs.filter(log => log.field === '입고가' || log.field === '입고').reduce((acc, log) => {
-                    if (!acc[log.code] || new Date(log.timestamp) > new Date(acc[log.code].timestamp)) {
+                Object.values(masterProducts).forEach(item => {
+                    const inP = parseNum(item['입고가']);
+                    const outP = inP === 0 ? 0 : parseNum(item['출고가']);
+                    
+                    if (inP > 0 && outP > 0) {
+                        const margin = ((outP - inP) / outP) * 100;
+                        item._margin = margin;
+                        
+                        if (margin < 15 && margin >= 0) marginRisks.push({...item, _issueType: 'margin'});
+                        if (margin < 0) inversions.push({...item, _issueType: 'inversion'});
+                    }
+                });
+
+                marginRisks.sort((a, b) => a._margin - b._margin);
+                inversions.sort((a, b) => a._margin - b._margin);
+
+                const priceChanges = historyLogs.reduce((acc, log) => {
+                    if ((log.field === '입고가' || log.field === '입고') && (!acc[log.code] || new Date(log.timestamp) > new Date(acc[log.code].timestamp))) {
                         acc[log.code] = log; 
                     }
                     return acc;
                 }, {});
 
-                const volatilityList = Object.values(priceChanges)
-                    .filter(log => Math.abs(log.diff) > 0)
-                    .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
-                    .slice(0, 15);
+                Object.values(priceChanges).forEach(log => {
+                    if (log.oldVal > 0) {
+                        const diffRatio = (log.diff / log.oldVal) * 100;
+                        if (Math.abs(diffRatio) >= 20) {
+                            const mItem = masterProducts[log.code] || {};
+                            volatilityList.push({ ...log, diffRatio, 품목명: log.name, 규격: log.spec, _issueType: 'volatility', ...mItem });
+                        }
+                    }
+                });
+                volatilityList.sort((a, b) => Math.abs(b.diffRatio) - Math.abs(a.diffRatio));
 
-                const upCount = Object.values(priceChanges).filter(log => log.diff > 0).length;
-                const downCount = Object.values(priceChanges).filter(log => log.diff < 0).length;
-
-                return { marginRisks, volatilityList, changeStats: { total: Object.keys(priceChanges).length, up: upCount, down: downCount } };
+                return { margin: marginRisks.slice(0, 30), inversion: inversions, volatility: volatilityList.slice(0, 15) };
             }, [masterProducts, historyLogs]);
+
+            // 이슈 카드가 바뀔 때마다 첫 번째 아이템 자동 선택
+            useEffect(() => {
+                if (insights[activeIssueCard] && insights[activeIssueCard].length > 0) {
+                    setSelectedIssueItem(insights[activeIssueCard][0]);
+                } else {
+                    setSelectedIssueItem(null);
+                }
+            }, [activeIssueCard, insights]);
 
             // 💡 [NEW] 1/2/3 Depth 카테고리 계층 구조 생성 엔진 (코드 기준 정렬 + '기타' 분류 특수 처리)
             const categoryHierarchy = useMemo(() => {
@@ -356,35 +383,38 @@
                 }, {});
 
                 Object.values(priceChanges).forEach(log => {
-                    const mItem = masterProducts[log.code];
-                    if (mItem) {
-                        let c1Name = mItem['1그룹명'];
-                        let c2Name = mItem['2그룹명'];
-                        let c3Name = mItem['3그룹명'] || (mItem['카탈로그'] ? mItem['카탈로그'].split(',')[0].trim() : '');
+                    if (log.field === '입고가' || log.field === '입고') {
+                        const mItem = masterProducts[log.code];
+                        if (mItem) {
+                            let c1Name = mItem['1그룹명'];
+                            let c2Name = mItem['2그룹명'];
+                            let c3Name = mItem['3그룹명'] || (mItem['카탈로그'] ? mItem['카탈로그'].split(',')[0].trim() : '');
 
-                        const pCode = String(mItem['품목코드'] || mItem['코드'] || '');
-                        let c1Code = String(mItem['1코드'] || (pCode.length >= 2 ? pCode.substring(0, 2) : ''));
-                        let c2Code = String(mItem['2코드'] || (pCode.length >= 4 ? pCode.substring(0, 4) : ''));
-                        let c3Code = String(mItem['오더즈'] || mItem['3코드'] || (pCode.length >= 6 ? pCode.substring(0, 6) : ''));
+                            const pCode = String(mItem['품목코드'] || mItem['코드'] || '');
+                            let c1Code = String(mItem['1코드'] || (pCode.length >= 2 ? pCode.substring(0, 2) : ''));
+                            let c2Code = String(mItem['2코드'] || (pCode.length >= 4 ? pCode.substring(0, 4) : ''));
+                            let c3Code = String(mItem['오더즈'] || mItem['3코드'] || (pCode.length >= 6 ? pCode.substring(0, 6) : ''));
 
-                        if (!c1Name || !c1Code) c1Code = 'ZZZ99_기타';
-                        if (!c2Name || !c2Code) c2Code = 'ZZZ9999_기타';
-                        if (!c3Name || !c3Code) c3Code = 'ZZZ999999_기타';
-                        
-                        if (hierarchy[c1Code] && hierarchy[c1Code].sub[c2Code] && hierarchy[c1Code].sub[c2Code].sub[c3Code]) {
-                            const c = hierarchy[c1Code].sub[c2Code].sub[c3Code];
-                            if (log.diff > 0) c.upCount++;
-                            if (log.diff < 0) c.downCount++;
+                            if (!c1Name || !c1Code) c1Code = 'ZZZ99_기타';
+                            if (!c2Name || !c2Code) c2Code = 'ZZZ9999_기타';
+                            if (!c3Name || !c3Code) c3Code = 'ZZZ999999_기타';
+                            
+                            if (hierarchy[c1Code] && hierarchy[c1Code].sub[c2Code] && hierarchy[c1Code].sub[c2Code].sub[c3Code]) {
+                                const c = hierarchy[c1Code].sub[c2Code].sub[c3Code];
+                                if (log.diff > 0) c.upCount++;
+                                if (log.diff < 0) c.downCount++;
+                            }
                         }
                     }
                 });
 
-                // 평균 마진율 계산
+                // 평균 마진율 계산 및 아이템 코드순 정렬
                 Object.keys(hierarchy).forEach(c1 => {
                     Object.keys(hierarchy[c1].sub).forEach(c2 => {
                         Object.keys(hierarchy[c1].sub[c2].sub).forEach(c3 => {
                             const c = hierarchy[c1].sub[c2].sub[c3];
                             c.avgMargin = c.validMarginCount > 0 ? (c.marginSum / c.validMarginCount) : 0;
+                            c.items.sort((a,b) => String(a['품목코드']||a['코드']).localeCompare(String(b['품목코드']||b['코드'])));
                         });
                     });
                 });
@@ -427,7 +457,7 @@
 
             // 에디터 핸들러
             const handleLoadRecentChanges = () => {
-                if(insights.changeStats.total === 0) return showToast("⚠️ 최근 변동된 히스토리 내역이 없습니다.");
+                const totalChanges = insights.margin.length + insights.inversion.length + insights.volatility.length; // Approximate check
                 const newCats = {};
                 historyLogs.forEach(log => {
                     if ((log.field === '입고가' || log.field === '입고') && Math.abs(log.diff) > 0) {
@@ -446,7 +476,7 @@
 
                 Object.keys(newCats).forEach(k => { newCats[k].items.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff)); });
                 setEditorDraft(prev => ({ ...prev, categories: newCats }));
-                showToast(`✅ 최근 변경된 ${insights.changeStats.total}건의 내역을 불러왔습니다.`);
+                showToast(`✅ 최근 변경된 데이터를 성공적으로 불러왔습니다.`);
             };
 
             const handlePublish = () => {
@@ -487,6 +517,78 @@
                 }
             };
 
+            // 상세 뷰포트 렌더러 (대시보드 분할뷰)
+            const renderIssueDetail = (item, type) => {
+                if (!item) return <div className="h-full flex items-center justify-center text-slate-400 font-bold">선택된 항목이 없습니다.</div>;
+
+                const inP = parseNum(item['입고가'] || item.newVal);
+                const outP = parseNum(item['출고가']);
+                const currentMargin = inP > 0 && outP > 0 ? ((outP - inP) / outP) * 100 : 0;
+                
+                let title = "";
+                let desc = "";
+                let graphMax = Math.max(inP, outP) * 1.2; // 그래프 최대값
+                
+                if (type === 'margin') {
+                    title = "저마진 위험 구간 진입";
+                    const targetPrice = Math.round((inP / (1 - 0.15)) / 10) * 10; // 15% 마진을 위한 목표 출고가
+                    desc = `현재 출고가(${outP.toLocaleString()}원)로는 순수익 마진이 ${currentMargin.toFixed(1)}%에 불과합니다. 원자재값 상승분이 반영되지 않았습니다. 최소 마진율 15% 방어를 위해 출고가를 최소 ${targetPrice.toLocaleString()}원 이상으로 조정할 것을 권장합니다.`;
+                } else if (type === 'inversion') {
+                    title = "가격 역전 (팔수록 손해)";
+                    desc = `입고가(${inP.toLocaleString()}원)가 출고가(${outP.toLocaleString()}원)를 초과했습니다! 현재 판매될 때마다 ${Math.abs(outP - inP).toLocaleString()}원의 확정 손실이 발생합니다. 즉각적인 판매 중지 또는 출고가 인상이 시급합니다.`;
+                } else if (type === 'volatility') {
+                    title = `입고가 단기 급변 (${item.diffRatio > 0 ? '+' : ''}${item.diffRatio.toFixed(1)}%)`;
+                    desc = `최근 매입처(카탈로그)에서 입고가가 ${item.oldVal?.toLocaleString()}원에서 ${item.newVal?.toLocaleString()}원으로 급격히 변동되었습니다. 도매 단가 변동이 일시적인지 구조적인지 파악한 후 소매 출고가 연동 여부를 결정해야 합니다.`;
+                    graphMax = Math.max(item.oldVal, item.newVal, outP) * 1.2;
+                }
+
+                return (
+                    <div className="p-6 h-full flex flex-col fade-in">
+                        <div className="mb-6 pb-4 border-b border-gray-200">
+                            <span className={`px-2.5 py-1 rounded-md text-[11px] font-black mb-3 inline-block 
+                                ${type === 'margin' ? 'bg-amber-100 text-amber-700' : type === 'inversion' ? 'bg-rose-100 text-rose-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                                {title}
+                            </span>
+                            <h2 className="text-2xl font-black text-slate-800">{item['품목명'] || item.name}</h2>
+                            <p className="text-sm font-bold text-slate-400 mt-1">물류코드: {item['코드'] || item['품목코드']} | 규격: {item['규격'] || item.spec}</p>
+                        </div>
+
+                        <div className="bg-slate-50 p-5 rounded-xl border border-gray-200 mb-6 shadow-inner">
+                            <p className="text-[14px] leading-relaxed font-bold text-slate-700 break-keep">{desc}</p>
+                        </div>
+
+                        {/* 시각화 그래프 영역 */}
+                        <div className="flex-1 flex flex-col justify-end pb-4">
+                            <h3 className="text-[12px] font-black text-slate-500 mb-4"><i className="fas fa-chart-bar mr-2"></i>단가 밸런스 비교</h3>
+                            <div className="relative h-32 flex items-end gap-8 px-4">
+                                {/* 기준선 */}
+                                <div className="absolute bottom-0 left-0 w-full border-b-2 border-slate-300"></div>
+                                
+                                {type === 'volatility' && (
+                                    <div className="relative flex flex-col items-center w-24 group">
+                                        <div className="text-[11px] font-bold text-slate-400 mb-2">이전 입고가</div>
+                                        <div className="w-full bg-slate-300 rounded-t-sm transition-all" style={{ height: `${(item.oldVal / graphMax) * 100}%` }}></div>
+                                        <div className="mt-2 text-[13px] font-black text-slate-600">{item.oldVal?.toLocaleString()}</div>
+                                    </div>
+                                )}
+
+                                <div className="relative flex flex-col items-center w-24 group">
+                                    <div className="text-[11px] font-bold text-slate-400 mb-2">{type === 'volatility' ? '현재 입고가' : '입고(매입)가'}</div>
+                                    <div className={`w-full rounded-t-sm transition-all ${type === 'inversion' ? 'bg-rose-400' : 'bg-slate-400'}`} style={{ height: `${(inP / graphMax) * 100}%` }}></div>
+                                    <div className="mt-2 text-[13px] font-black text-slate-800">{inP.toLocaleString()}</div>
+                                </div>
+
+                                <div className="relative flex flex-col items-center w-24 group">
+                                    <div className="text-[11px] font-bold text-slate-400 mb-2">현재 출고가</div>
+                                    <div className="w-full bg-indigo-500 rounded-t-sm transition-all shadow-[0_0_10px_rgba(99,102,241,0.3)]" style={{ height: `${(outP / graphMax) * 100}%` }}></div>
+                                    <div className="mt-2 text-[13px] font-black text-indigo-600">{outP.toLocaleString()}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
             // ----------------------------------------------------
             if (isCustomerMode) {
                 return isLoading ? <div className="h-screen flex items-center justify-center text-slate-500 font-bold">로딩중...</div> : <CustomerReportView data={publishedReport} />;
@@ -506,84 +608,88 @@
 
                     <div className="flex-1 flex flex-col overflow-hidden bg-slate-50 border-t border-slate-200">
                         
-                        {/* ================= TAB 1: 통합 대시보드 ================= */}
+                        {/* ================= TAB 1: 통합 의사결정 보드 (분할 뷰 적용) ================= */}
                         {activeTab === 'dashboard' && (
-                            <div className="h-full flex flex-col overflow-y-auto custom-scrollbar p-6 fade-in space-y-6">
-                                {/* 요약 카드 */}
-                                <div className="grid grid-cols-3 gap-5">
-                                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col">
-                                        <span className="text-[12px] font-bold text-slate-500 mb-2">마스터 등록 상품 (Total)</span>
-                                        <span className="text-3xl font-black text-slate-800">{Object.keys(masterProducts).length.toLocaleString()} <span className="text-sm font-bold text-slate-400">건</span></span>
-                                    </div>
-                                    <div className="bg-white p-6 rounded-xl border border-rose-200 shadow-sm flex flex-col">
-                                        <span className="text-[12px] font-bold text-rose-500 mb-2"><i className="fas fa-exclamation-triangle mr-1"></i> 마진 15% 미만 위험 상품</span>
-                                        <span className="text-3xl font-black text-rose-600">{insights.marginRisks.length.toLocaleString()} <span className="text-sm font-bold text-rose-400">건</span></span>
-                                    </div>
-                                    <div className="bg-white p-6 rounded-xl border border-indigo-200 shadow-sm flex flex-col">
-                                        <span className="text-[12px] font-bold text-indigo-500 mb-2"><i className="fas fa-history mr-1"></i> 누적된 단가 변경 이력</span>
-                                        <div className="flex items-end gap-3">
-                                            <span className="text-3xl font-black text-indigo-600">{insights.changeStats.total.toLocaleString()} <span className="text-sm font-bold text-indigo-400">건</span></span>
-                                            <span className="text-xs font-bold text-slate-500 mb-1">(인상 {insights.changeStats.up} / 인하 {insights.changeStats.down})</span>
-                                        </div>
-                                    </div>
+                            <div className="h-full flex flex-col p-6 space-y-4 fade-in">
+                                {/* 상단: 액션 카드뷰 */}
+                                <div className="grid grid-cols-3 gap-5 shrink-0">
+                                    <button 
+                                        onClick={() => setActiveIssueCard('margin')}
+                                        className={`text-left p-6 rounded-xl border-2 transition-all shadow-sm flex flex-col relative overflow-hidden group
+                                            ${activeIssueCard === 'margin' ? 'bg-white border-amber-400 ring-4 ring-amber-100' : 'bg-white border-gray-200 hover:border-amber-300'}`}
+                                    >
+                                        <div className={`absolute top-0 right-0 p-4 transition-opacity ${activeIssueCard === 'margin' ? 'opacity-20 text-amber-500' : 'opacity-5 text-slate-400'}`}><i className="fas fa-bell text-6xl"></i></div>
+                                        <span className={`text-[12px] font-bold mb-2 relative z-10 ${activeIssueCard === 'margin' ? 'text-amber-600' : 'text-slate-500'}`}>저마진 경보 (15% 미만)</span>
+                                        <span className={`text-3xl font-black relative z-10 ${activeIssueCard === 'margin' ? 'text-amber-500' : 'text-slate-700'}`}>{insights.margin.length} <span className="text-sm font-bold opacity-70">건</span></span>
+                                    </button>
+                                    
+                                    <button 
+                                        onClick={() => setActiveIssueCard('inversion')}
+                                        className={`text-left p-6 rounded-xl border-2 transition-all shadow-sm flex flex-col relative overflow-hidden group
+                                            ${activeIssueCard === 'inversion' ? 'bg-white border-rose-500 ring-4 ring-rose-100' : 'bg-white border-gray-200 hover:border-rose-300'}`}
+                                    >
+                                        <div className={`absolute top-0 right-0 p-4 transition-opacity ${activeIssueCard === 'inversion' ? 'opacity-20 text-rose-500' : 'opacity-5 text-slate-400'}`}><i className="fas fa-radiation-alt text-6xl"></i></div>
+                                        <span className={`text-[12px] font-bold mb-2 relative z-10 ${activeIssueCard === 'inversion' ? 'text-rose-600' : 'text-slate-500'}`}>가격 역전 (출고가 &lt; 입고가)</span>
+                                        <span className={`text-3xl font-black relative z-10 ${activeIssueCard === 'inversion' ? 'text-rose-600' : 'text-slate-700'}`}>{insights.inversion.length} <span className="text-sm font-bold opacity-70">건</span></span>
+                                    </button>
+                                    
+                                    <button 
+                                        onClick={() => setActiveIssueCard('volatility')}
+                                        className={`text-left p-6 rounded-xl border-2 transition-all shadow-sm flex flex-col relative overflow-hidden group
+                                            ${activeIssueCard === 'volatility' ? 'bg-white border-indigo-500 ring-4 ring-indigo-100' : 'bg-white border-gray-200 hover:border-indigo-300'}`}
+                                    >
+                                        <div className={`absolute top-0 right-0 p-4 transition-opacity ${activeIssueCard === 'volatility' ? 'opacity-10 text-indigo-500' : 'opacity-5 text-slate-400'}`}><i className="fas fa-bolt text-6xl"></i></div>
+                                        <span className={`text-[12px] font-bold mb-2 relative z-10 ${activeIssueCard === 'volatility' ? 'text-indigo-600' : 'text-slate-500'}`}>시세 급변 지표 (±20% 초과)</span>
+                                        <span className={`text-3xl font-black relative z-10 ${activeIssueCard === 'volatility' ? 'text-indigo-600' : 'text-slate-700'}`}>{insights.volatility.length} <span className="text-sm font-bold opacity-70">건</span></span>
+                                    </button>
                                 </div>
 
-                                {/* 인사이트 테이블 영역 */}
-                                <div className="grid grid-cols-2 gap-6 flex-1 min-h-[400px]">
-                                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
-                                        <div className="bg-slate-50 p-4 border-b border-gray-200 flex justify-between items-center shrink-0">
-                                            <h3 className="text-[14px] font-black text-rose-700"><i className="fas fa-siren-on text-rose-500 mr-2"></i>🚨 역마진 위험 상품 (Top 30)</h3>
-                                            <span className="text-[11px] font-bold text-slate-500">마진율 15% 미만 타겟</span>
+                                {/* 하단: 분할 뷰 (리스트 + 상세 정보) */}
+                                <div className="flex-1 flex gap-4 overflow-hidden fade-in min-h-[400px]">
+                                    {/* 좌측: 리스트 형 */}
+                                    <div className="w-[400px] bg-white rounded-xl border border-gray-200 flex flex-col overflow-hidden shadow-sm shrink-0">
+                                        <div className="bg-slate-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                                            <span className="text-[13px] font-black text-slate-800">이슈 대상 목록</span>
+                                            <span className="text-[11px] bg-white border border-gray-200 px-2 py-0.5 rounded-full font-bold text-slate-500">{insights[activeIssueCard].length}건</span>
                                         </div>
-                                        <div className="flex-1 overflow-auto custom-scrollbar">
-                                            <table className="w-full text-left text-[12px] whitespace-nowrap">
-                                                <thead className="bg-white sticky top-0 border-b border-slate-200 z-10 shadow-sm text-slate-500">
-                                                    <tr><th className="px-4 py-2.5">품목명 (규격)</th><th className="px-3 py-2.5 text-right">원가(입고)</th><th className="px-3 py-2.5 text-right text-indigo-600">출고가</th><th className="px-4 py-2.5 text-right text-rose-600 w-16">마진율</th></tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100 text-slate-700">
-                                                    {insights.marginRisks.length === 0 ? <tr><td colSpan="4" className="p-10 text-center font-bold text-emerald-500">위험 상품이 없습니다!</td></tr> : insights.marginRisks.map(item => (
-                                                        <tr key={item.코드} className="hover:bg-slate-50">
-                                                            <td className="px-4 py-2"><div className="font-bold text-slate-800 truncate max-w-[180px]">{item.품목명} <span className="text-slate-400 font-normal">({item.규격})</span></div></td>
-                                                            <td className="px-3 py-2 text-right">{item.입고가?.toLocaleString()}</td>
-                                                            <td className="px-3 py-2 text-right font-black text-indigo-600">{item.출고가?.toLocaleString()}</td>
-                                                            <td className="px-4 py-2 text-right font-black text-rose-600">{item._margin.toFixed(1)}%</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
+                                        <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
+                                            {insights[activeIssueCard].length === 0 ? (
+                                                <div className="text-center py-10 text-slate-400 font-bold text-sm">해당되는 항목이 없습니다.</div>
+                                            ) : (
+                                                <div className="flex flex-col gap-1">
+                                                    {insights[activeIssueCard].map(item => {
+                                                        const code = item['코드'] || item['품목코드'];
+                                                        const isSelected = selectedIssueItem && (selectedIssueItem['코드'] || selectedIssueItem['품목코드']) === code;
+                                                        return (
+                                                            <button 
+                                                                key={code}
+                                                                onClick={() => setSelectedIssueItem(item)}
+                                                                className={`text-left p-3 rounded-lg border transition-all
+                                                                    ${isSelected 
+                                                                        ? 'bg-slate-800 border-slate-800 text-white shadow-md' 
+                                                                        : 'bg-white border-gray-100 text-slate-700 hover:bg-slate-50 hover:border-gray-300'}`}
+                                                            >
+                                                                <div className="font-bold text-[13px] truncate">{item['품목명'] || item.name}</div>
+                                                                <div className={`text-[11px] mt-1 ${isSelected ? 'text-slate-300' : 'text-slate-400'}`}>
+                                                                    {activeIssueCard === 'volatility' ? `변동폭: ${item.diffRatio > 0 ? '+' : ''}${item.diffRatio.toFixed(1)}%` : `마진: ${item._margin.toFixed(1)}%`}
+                                                                </div>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 
-                                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
-                                        <div className="bg-slate-50 p-4 border-b border-gray-200 flex justify-between items-center shrink-0">
-                                            <h3 className="text-[14px] font-black text-slate-800"><i className="fas fa-fire text-amber-500 mr-2"></i>🔥 최근 입고가 급등락 (Top 15)</h3>
-                                        </div>
-                                        <div className="flex-1 overflow-auto custom-scrollbar">
-                                            <table className="w-full text-left text-[12px] whitespace-nowrap">
-                                                <thead className="bg-white sticky top-0 border-b border-slate-200 z-10 shadow-sm text-slate-500">
-                                                    <tr><th className="px-4 py-2.5">품목명 (규격)</th><th className="px-3 py-2.5">출처(카탈로그)</th><th className="px-3 py-2.5 text-right">이전 단가</th><th className="px-4 py-2.5 text-right w-20">차액</th></tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100 text-slate-700">
-                                                    {insights.volatilityList.length === 0 ? <tr><td colSpan="4" className="p-10 text-center font-bold text-slate-400">변동 이력이 없습니다.</td></tr> : insights.volatilityList.map(log => {
-                                                        const isUp = log.diff > 0;
-                                                        return (
-                                                            <tr key={log.id} className="hover:bg-slate-50">
-                                                                <td className="px-4 py-2"><div className="font-bold text-slate-800 truncate max-w-[150px]">{log.name} <span className="text-slate-400 font-normal">({log.spec})</span></div></td>
-                                                                <td className="px-3 py-2 text-[11px] text-slate-400 truncate max-w-[80px]">{log.catalog}</td>
-                                                                <td className="px-3 py-2 text-right">{log.oldVal?.toLocaleString()}</td>
-                                                                <td className={`px-4 py-2 text-right font-black ${isUp ? 'text-rose-500' : 'text-blue-500'}`}>{isUp ? '▲' : '▼'} {Math.abs(log.diff).toLocaleString()}</td>
-                                                            </tr>
-                                                        );
-                                                    })}
-                                                </tbody>
-                                            </table>
-                                        </div>
+                                    {/* 우측: 그래픽 & 상세 형 */}
+                                    <div className="flex-1 bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                                        {renderIssueDetail(selectedIssueItem, activeIssueCard)}
                                     </div>
                                 </div>
                             </div>
                         )}
 
-                        {/* ================= TAB 2: 카테고리별 분석 (1,2,3 그룹 네비게이션) ================= */}
+                        {/* ================= TAB 2: 계층형 시황 분석 (V1.6 레이아웃 + V1.7 라운딩 제안) ================= */}
                         {activeTab === 'category' && (
                             <div className="h-full flex flex-col bg-slate-50 fade-in">
                                 {/* 1Depth Categories (Top Row) */}
@@ -597,9 +703,9 @@
                                                 <button 
                                                     key={c1.code} onClick={() => setActiveC1(c1.code)} 
                                                     className={`px-5 py-2.5 text-[13px] font-bold rounded-t-lg transition-colors border-b-[3px]
-                                                    ${isActive 
-                                                        ? (isEtc ? 'border-slate-500 text-slate-700 bg-white shadow-[0_-2px_5px_rgba(0,0,0,0.02)]' : 'border-indigo-600 text-indigo-700 bg-white shadow-[0_-2px_5px_rgba(0,0,0,0.02)]') 
-                                                        : (isEtc ? 'border-transparent text-slate-400 hover:text-slate-500 hover:bg-slate-200/30' : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-200/50')}`}
+                                                        ${isActive 
+                                                            ? (isEtc ? 'border-slate-500 text-slate-700 bg-white shadow-[0_-2px_5px_rgba(0,0,0,0.02)]' : 'border-indigo-600 text-indigo-700 bg-white shadow-[0_-2px_5px_rgba(0,0,0,0.02)]') 
+                                                            : (isEtc ? 'border-transparent text-slate-400 hover:text-slate-500 hover:bg-slate-200/30' : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-200/50')}`}
                                                 >
                                                     {c1.name}
                                                 </button>
@@ -663,7 +769,7 @@
                                         </div>
                                     </div>
 
-                                    {/* Right Pane: Selected 3Depth Details */}
+                                    {/* Right Pane: Selected 3Depth Details (Table) */}
                                     <div className="flex-1 bg-white flex flex-col overflow-hidden z-0">
                                         {activeC3 && c3List.find(c => c.code === activeC3) ? (() => {
                                             const catData = c3List.find(c => c.code === activeC3);
@@ -699,25 +805,40 @@
                                                         <table className="w-full text-left text-sm whitespace-nowrap">
                                                             <thead className="bg-slate-50 border-b border-gray-200 sticky top-0 z-10 shadow-sm">
                                                                 <tr>
-                                                                    <th className="py-3 px-5 font-bold text-slate-500 text-[11px] w-[100px]">품목코드</th>
+                                                                    <th className="py-3 px-5 font-bold text-slate-500 text-[11px] w-[100px]">물류코드</th>
                                                                     <th className="py-3 px-4 font-bold text-slate-500 text-[11px]">품목명 (규격)</th>
                                                                     <th className="py-3 px-4 font-bold text-slate-500 text-[11px] text-right w-24">입고가</th>
                                                                     <th className="py-3 px-4 font-bold text-slate-500 text-[11px] text-right w-24 text-indigo-600">출고가</th>
+                                                                    <th className="py-3 px-4 font-bold text-amber-600 text-[11px] text-right bg-amber-50/30">권장 라운딩단가</th>
                                                                     <th className="py-3 px-5 font-bold text-slate-500 text-[11px] text-right w-20">마진율</th>
                                                                 </tr>
                                                             </thead>
                                                             <tbody className="divide-y divide-gray-100 text-slate-700 bg-white">
                                                                 {catData.items.map(item => {
+                                                                    const code = item['품목코드'] || item['코드'];
                                                                     const inP = parseNum(item['입고가']); const outP = parseNum(item['출고가']);
                                                                     const margin = inP > 0 && outP > 0 ? ((outP - inP) / outP) * 100 : 0;
+                                                                    
+                                                                    // V1.7 기능: 가격 라운드 제안 (100원 단위 반올림 - 심리적 저항선 피팅)
+                                                                    const suggestedRound = outP > 0 ? Math.round(outP / 100) * 100 : 0;
+                                                                    const roundDelta = suggestedRound - outP;
+
                                                                     return (
-                                                                        <tr key={item.코드} className="hover:bg-indigo-50/40 transition-colors">
-                                                                            <td className="py-2.5 px-5 text-xs font-mono text-slate-400">{item.코드}</td>
+                                                                        <tr key={code} className="hover:bg-indigo-50/40 transition-colors">
+                                                                            <td className="py-2.5 px-5 text-xs font-mono text-slate-400">{code}</td>
                                                                             <td className="py-2.5 px-4">
-                                                                                <div className="font-bold text-slate-800 text-[13px]">{item.품목명} <span className="font-normal text-slate-500 text-xs ml-1">({item.규격})</span></div>
+                                                                                <div className="font-bold text-slate-800 text-[13px]">{item['품목명']} <span className="font-normal text-slate-500 text-xs ml-1">({item['규격']})</span></div>
                                                                             </td>
                                                                             <td className="py-2.5 px-4 text-right text-[13px] font-medium">{inP > 0 ? inP.toLocaleString() : '-'}</td>
                                                                             <td className="py-2.5 px-4 text-right text-[13px] font-black text-indigo-600">{outP > 0 ? outP.toLocaleString() : '-'}</td>
+                                                                            <td className="py-2.5 px-4 text-right bg-amber-50/10">
+                                                                                {outP > 0 ? (
+                                                                                    <div className="flex flex-col items-end">
+                                                                                        <span className="text-[13px] font-black text-amber-600">{suggestedRound.toLocaleString()}원</span>
+                                                                                        {roundDelta !== 0 && <span className={`text-[10px] ${roundDelta > 0 ? 'text-emerald-500' : 'text-rose-500'}`}>({roundDelta > 0 ? '+' : ''}{roundDelta})</span>}
+                                                                                    </div>
+                                                                                ) : '-'}
+                                                                            </td>
                                                                             <td className={`py-2.5 px-5 text-right text-xs font-black ${margin < 15 ? 'text-rose-500' : 'text-emerald-600'}`}>{margin.toFixed(1)}%</td>
                                                                         </tr>
                                                                     );
@@ -820,7 +941,7 @@
                                         </div>
                                     </div>
                                     
-                                    {/* 3. 공유/다운로드 액션 패널 (발행 데이터가 있을 때만 노출) */}
+                                    {/* 3. 공유/다운로드 액션 패널 */}
                                     {publishedReport && (
                                         <div className="mt-6 bg-indigo-50/50 border border-indigo-100 rounded-xl p-6 shadow-sm flex items-center justify-between">
                                             <div>
