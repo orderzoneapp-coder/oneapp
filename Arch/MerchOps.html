@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v1.6.2]</title>
+    <!-- 타이틀 버전도 수동으로 맞춰주시면 좋습니다 -->
+    <title>ONEAPP MerchOps - Main Workspace [v1.6.5]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -15,6 +16,12 @@
 <body>
     <div id="root"></div>
     <script type="text/babel">
+        // ==========================================
+        // 🚀 앱 버전 및 업데이트 일자 관리 (패치 시 여기서 수정하세요)
+        // ==========================================
+        const APP_VERSION = "v1.6.5";
+        const LAST_UPDATED = "2026.05.09 15:10";
+
         const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
         // ==========================================
@@ -506,6 +513,7 @@
                             } else {
                                 if (!nMg[c]) nMg[c] = { 코드: c, sources: {estimate:{}}, finalData: {} };
                                 let m = nMg[c]; 
+                                
                                 ['품목명','규격','구매처'].forEach(k => {
                                     m.sources.estimate[k] = hCache[k] ? r[hCache[k]] : '';
                                 });
@@ -513,7 +521,7 @@
                                 Object.keys(config.mappings.estimate).forEach(h => {
                                     if (!['품목코드','품목명','규격','구매처'].includes(h) && hCache[h]) {
                                         const v = r[hCache[h]];
-                                        if (v !== undefined && v !== '') { 
+                                        if (v !== undefined) { 
                                             const iNum = NUMERIC_HEADERS.includes(config.masterLinks.estimate?.[h]) || NUMERIC_HEADERS.includes(h); 
                                             m.sources.estimate[h] = iNum ? parseNum(v) : v; 
                                             if (m.finalData[h] === undefined) m.finalData[h] = m.sources.estimate[h]; 
@@ -542,6 +550,7 @@
                 }
             }, [data, config, ui]);
 
+            // [NEW] 카탈로그 불러올 때, UI 표시를 위해 마스터 DB 데이터를 1차적으로 셋팅해줌
             const handleLoadWorkspaces = useCallback((cats, ests) => {
                 ui.setSelectedCatalogs(cats); 
                 ui.setSelectedCategories(ests);
@@ -562,7 +571,8 @@
                         if ((cats.length && cats.some(c => mC.includes(c))) || (ests.length && ests.some(c => mE.includes(c)))) {
                             nMg[m.코드] = { 
                                 코드: m.코드, 
-                                sources: { estimate: {} }, 
+                                _isMasterLoad: true, // DB에서 직접 불러왔다는 식별자 (UI 배지용)
+                                sources: { estimate: { ...m } }, // 마스터 정보를 셋팅해 UI에 뿌려줌 (비우면 마스터도 비워짐)
                                 finalData: calculatePricesEngine(parseNum(m['입고가']), m, {}, config.marginRules, false) 
                             };
                         }
@@ -649,6 +659,7 @@
                 ui.showToast(`✅ 삭제 완료 (${cnt}건)`);
             }, [data, ui]);
 
+            // [NEW] WYSIWYG 업데이트: 화면에 노출된 항목(visibleUploadCols) 기준으로 무조건 덮어쓰기
             const handleCommitEstimate = useCallback((codes) => {
                 const tgts = Array.isArray(codes) ? codes : (ui.selectedRows.size ? Array.from(ui.selectedRows) : fullDisplayRows.map(r=>r.코드));
                 if (!tgts.length) return ui.showToast('⚠️ 항목 없음');
@@ -658,6 +669,9 @@
                 let lLogs = [];
                 const now = new Date().toLocaleString('ko-KR');
                 
+                // 화면에 노출된 항목만 업데이트 대상으로 삼음 (핵심 로직)
+                const vU = config.visibleUploadCols.estimate || [];
+                
                 tgts.forEach(c => {
                     const it = data.managedItems[c];
                     const oIt = data.masterProducts[c] || {}; 
@@ -665,20 +679,30 @@
                     
                     nM[c] = { ...(nM[c] || {코드:c}) };
                     
-                    if (it.finalData) {
-                        Object.keys(it.finalData).forEach(f => {
-                            const lnk = config.masterLinks.estimate?.[f] || (MASTER_HEADERS.includes(f)?f:null);
-                            if (lnk && it.finalData[f] !== undefined && it.finalData[f] !== '' && it.finalData[f] !== '오류') {
-                                const nV = NUMERIC_HEADERS.includes(lnk) ? parseNum(it.finalData[f]) : it.finalData[f];
-                                const oV = NUMERIC_HEADERS.includes(lnk) ? parseNum(oIt[lnk]) : oIt[lnk];
+                    vU.forEach(f => {
+                        if (f === '품목코드') return; // 식별자 제외
+                        const lnk = config.masterLinks.estimate?.[f] || (MASTER_HEADERS.includes(f) ? f : null);
+                        
+                        if (lnk) {
+                            // 1순위: UI 최종 데이터, 2순위: 엑셀 소스, 3순위: 노출은 되었으나 비어있으면 '' (마스터도 지워짐)
+                            let rVal = it.finalData?.[f];
+                            if (rVal === undefined) rVal = it.sources?.estimate?.[f];
+                            if (rVal === undefined) rVal = ''; 
+
+                            if (rVal !== '오류') {
+                                const isNum = NUMERIC_HEADERS.includes(lnk);
+                                const nV = isNum ? parseNum(rVal) : rVal;
+                                const oV = isNum ? parseNum(oIt[lnk]) : (oIt[lnk] || '');
                                 
-                                if (['입고가','출고가'].includes(lnk) && oV > 0 && oV !== nV) {
-                                    lLogs.push({id: generateUUID(), timestamp: now, code: c, name: oIt.품목명 || it.sources?.estimate?.품목명 || '', spec: oIt.규격 || it.sources?.estimate?.규격 || '', field: lnk, oldVal: oV, newVal: nV, diff: nV-oV});
+                                if (oV !== nV) {
+                                    if (['입고가','출고가'].includes(lnk) && oV > 0) {
+                                        lLogs.push({id: generateUUID(), timestamp: now, code: c, name: oIt.품목명 || it.sources?.estimate?.품목명 || '', spec: oIt.규격 || it.sources?.estimate?.규격 || '', field: lnk, oldVal: oV, newVal: nV, diff: nV-oV});
+                                    }
+                                    nM[c][lnk] = nV; // 기존 값을 새 값(빈칸 포함)으로 덮어씀
                                 }
-                                nM[c][lnk] = nV;
                             }
-                        });
-                    }
+                        }
+                    });
                     cnt++;
                 });
                 
@@ -891,7 +915,7 @@
                         data-field={field} 
                         className={`w-full bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-1 rounded px-1.5 py-1 text-[12px] outline-none ${isNum ? 'text-right font-bold tracking-tight' : 'truncate text-center'} ${isDiff ? 'text-indigo-700' : ''}`} 
                         value={val === "오류" ? "" : val} 
-                        placeholder={mVal || ''} 
+                        placeholder="" 
                         onChange={e => setVal(e.target.value)} 
                         onFocus={e => { setFoc(true); setTimeout(() => e.target.select(), 0); }} 
                         onBlur={e => { setFoc(false); if(String(e.target.value) !== String(initialVal)) onUpdate(rowCode, field, lnkF, e.target.value); }} 
@@ -1287,7 +1311,7 @@
                             <div className="flex flex-col min-w-0 w-full ml-1">
                                 <span className="text-[10px] font-mono mb-0.5 truncate text-indigo-400">{r.코드}</span>
                                 <div className="flex items-center w-full min-w-0">
-                                    {(isUp && !Object.keys(r.sources?.estimate || {}).length) && <span className="text-[12px] font-black text-indigo-600 mr-1.5" title="마스터 직접 호출">[M]</span>}
+                                    {(isUp && r._isMasterLoad) && <span className="text-[12px] font-black text-indigo-600 mr-1.5" title="마스터 직접 호출">[M]</span>}
                                     <span className={`text-[13px] font-extrabold truncate ${!mItem.품목명 ? 'text-rose-500' : 'text-slate-800'}`}>{uN || mItem.품목명 || '[미등록]'}</span>
                                     {(uS || mItem.규격) && <span className="text-[11px] text-slate-400 truncate ml-1 max-w-[40%]">({uS || mItem.규격})</span>}
                                 </div>
@@ -1475,7 +1499,6 @@
 
             const acts = useMerchActions(config, data, ui, fullRows);
             
-            // 핵심 픽스: 누락되었던 상태 연결고리들(setGlobalSearch, setSelectedRows 등)을 객체에 명확히 전달
             const st = { 
                 config, 
                 data, 
@@ -1538,7 +1561,7 @@
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <div className="flex items-center">
                                                     <span className="text-[14px] font-black text-slate-200">MerchOps</span>
-                                                    <span className="ml-2 bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold">v1.6.2</span>
+                                                    <span className="ml-2 bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold">v1.6.5</span>
                                                 </div>
                                                 <span className="text-[9px] font-extrabold text-slate-400 tracking-widest mt-0.5">MAIN WORKSPACE</span>
                                             </div>
@@ -1547,6 +1570,10 @@
                                         <SystemConsole total={Object.keys(data.masterProducts).length} proc={ui.process} est={fullRows.length} cats={ui.selectedCatalogs} ctg={ui.selectedCategories} isUp={isUp} />
                                         
                                         <nav className="flex gap-1.5 text-[14px] shrink-0 items-center">
+                                            <button onClick={() => window.location.reload(true)} className="h-8 px-2.5 rounded bg-[#0f172a] border border-slate-700 hover:bg-[#1e293b] font-bold text-[13px] text-slate-300" title="화면 강제 새로고침 (업데이트 확인용)">
+                                                <i className="fas fa-sync-alt"></i>
+                                            </button>
+                                            <div className="w-px h-4 bg-slate-700 mx-0.5"></div>
                                             {(isUp || ui.selectedCatalogs.length > 0 || ui.selectedCategories.length > 0) && (
                                                 <>
                                                     <button onClick={() => ui.toggleModal('export', true)} className="h-8 px-2.5 rounded bg-[#0f172a] border border-slate-700 hover:bg-[#1e293b] text-amber-300 font-bold text-[11px]"><i className="fas fa-file-export mr-1.5"></i>보고서</button>
