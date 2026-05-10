@@ -221,13 +221,30 @@
         const createHeaderMap = (actualHeaders, mappingConfig) => {
             const headerMap = {};
             if(!mappingConfig) return headerMap;
+            
             Object.keys(mappingConfig).forEach(field => {
                 const keywords = String(mappingConfig[field]).split(',').map(s => s.trim().toLowerCase().replace(/\s/g, '')).filter(Boolean);
-                const matchedKey = actualHeaders.find(h => {
+                
+                // 1단계: 완전 일치 (Exact Match) 우선 확인 (예: 1코드 오매칭 방지)
+                let matchedKey = actualHeaders.find(h => {
                     if(!h) return false;
                     const cleanH = String(h).toLowerCase().replace(/\s/g, '');
-                    return keywords.some(kw => cleanH.includes(kw));
+                    return keywords.includes(cleanH);
                 });
+
+                // 2단계: 완전 일치 항목이 없으면 포함(Includes) 조건으로 찾기
+                if (!matchedKey) {
+                    matchedKey = actualHeaders.find(h => {
+                        if(!h) return false;
+                        const cleanH = String(h).toLowerCase().replace(/\s/g, '');
+                        return keywords.some(kw => {
+                            // '코드'라는 단일 키워드가 포함될 때 '1코드', '2코드', '1종코드' 등에 오작동하는 것 방어
+                            if (kw === '코드' && (cleanH.includes('1') || cleanH.includes('2') || cleanH.includes('3') || cleanH.includes('종'))) return false;
+                            return cleanH.includes(kw);
+                        });
+                    });
+                }
+                
                 if(matchedKey) headerMap[field] = matchedKey;
             });
             return headerMap;
@@ -236,24 +253,34 @@
         const parseExcelRobust = (file) => {
             return new Promise((resolve, reject) => {
                 if (!window.XLSX) return reject(new Error("엑셀 파서가 로드되지 않았습니다."));
-                const reader = new FileReader();
-                reader.onload = (e) => {
+                
+                // 데이터 파싱 코어를 분리 (EUC-KR / UTF-8 분기 처리를 위함)
+                const processData = (data, type) => {
                     try {
-                        const data = new Uint8Array(e.target.result);
-                        const wb = window.XLSX.read(data, { type: 'array', cellDates: true });
+                        const wb = window.XLSX.read(data, { type: type, cellDates: true });
                         const ws = wb.Sheets[wb.SheetNames[0]];
                         const jsonAll = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
                         
-                        if(jsonAll.length === 0) return resolve([]);
+                        if(jsonAll.length === 0) return [];
 
-                        let headerRowIdx = 0;
-                        const maxSearch = Math.min(15, jsonAll.length);
+                        let headerRowIdx = -1;
+                        const maxSearch = Math.min(25, jsonAll.length);
                         for (let i = 0; i < maxSearch; i++) {
-                            const rowStr = jsonAll[i].join('').replace(/\s/g, '');
-                            if (rowStr.includes('코드') || rowStr.includes('품명') || rowStr.includes('상품') || rowStr.includes('1코드')) { 
+                            const rowArr = jsonAll[i] || [];
+                            const rowStr = rowArr.join('').replace(/\s/g, '');
+                            
+                            // 헤더 감지 조건 엄격화 ('코드' 키워드가 있을 경우 품명, 규격 등이 함께 있는지 확인)
+                            if (
+                                rowStr.includes('품목코드') || rowStr.includes('상품코드') || rowStr.includes('바코드') ||
+                                (rowStr.includes('코드') && (rowStr.includes('품명') || rowStr.includes('상품명') || rowStr.includes('규격'))) ||
+                                (rowStr.includes('품명') && (rowStr.includes('규격') || rowStr.includes('단가')))
+                            ) { 
                                 headerRowIdx = i; break; 
                             }
                         }
+                        
+                        if (headerRowIdx === -1) return null; // 실패 (인코딩 깨짐 또는 헤더 없음)
+
                         const headers = jsonAll[headerRowIdx] || [];
                         let endIdx = jsonAll.length - 1;
                         
@@ -283,12 +310,43 @@
                             }); 
                             if(!isEmpty) parsedData.push(obj);
                         }
-                        resolve(parsedData);
+                        return parsedData;
                     } catch(err) {
-                        reject(err);
+                        return null;
                     }
                 };
-                reader.readAsArrayBuffer(file);
+
+                const isCSV = file.name.toLowerCase().endsWith('.csv');
+                
+                if (isCSV) {
+                    // CSV 파일은 ERP 다운로드 시 주로 EUC-KR (ANSI) 이므로 텍스트로 먼저 읽어 한글 깨짐 방어
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const text = e.target.result;
+                        // 깨진 글자가 감지되면 UTF-8 일 가능성이 높음
+                        if (text.includes('')) {
+                            const utf8Reader = new FileReader();
+                            utf8Reader.onload = (e2) => {
+                                const result = processData(e2.target.result, 'string');
+                                resolve(result !== null ? result : []);
+                            };
+                            utf8Reader.readAsText(file, 'utf-8');
+                        } else {
+                            const result = processData(text, 'string');
+                            resolve(result !== null ? result : []);
+                        }
+                    };
+                    reader.readAsText(file, 'euc-kr');
+                } else {
+                    // 일반 엑셀 파일 (.xlsx, .xls)
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const data = new Uint8Array(e.target.result);
+                        const result = processData(data, 'array');
+                        resolve(result !== null ? result : []);
+                    };
+                    reader.readAsArrayBuffer(file);
+                }
             });
         };
 
@@ -558,7 +616,11 @@
                     for (const file of files) {
                         let mapKey = expectedType || 'master';
                         const excelData = await parseExcelRobust(file);
-                        if (excelData.length === 0) continue;
+                        
+                        if (!excelData || excelData.length === 0) {
+                            ui.showToast(`⚠️ [${file.name}] 인식할 수 있는 데이터가 없거나 형식이 맞지 않습니다.`);
+                            continue;
+                        }
 
                         const actualHeaders = Object.keys(excelData[0]);
                         const curMap = config.mappings[mapKey] || {};
@@ -566,9 +628,17 @@
                         
                         excelData.forEach(row => {
                             const codeKey = headerCache['품목코드'] || '품목코드'; 
+                            const nameKey = headerCache['품목명'] || '품목명';
                             const code = row[codeKey];
-                            if (!code || String(code).replace(/\s/g, '').includes('출력')) return;
+                            const name = row[nameKey];
                             
+                            const cleanCode = String(code || '').replace(/\s/g, '');
+                            const cleanName = String(name || '').replace(/\s/g, '');
+
+                            // 엑셀 쓰레기 데이터 및 예시 데이터 노출 차단 방어막
+                            if (!cleanCode || cleanCode.includes('출력') || cleanCode === '코드' || cleanCode === '품목코드' || cleanCode === '상품코드' || cleanCode.includes('예시')) return;
+                            if (cleanName.includes('테스트상품') || cleanName.includes('샘플상품') || cleanCode.toLowerCase().includes('test')) return;
+
                             if (mapKey === 'master') {
                                 if (!newMaster[code]) newMaster[code] = { 코드: code };
                                 MASTER_HEADERS.forEach(h => {
@@ -582,7 +652,7 @@
                                 
                                 mItem = { ...mItem, _tags: new Set([...(mItem._tags || []), `excel:업로드`]) };
                                 
-                                const nameKey = headerCache['품목명']; const specKey = headerCache['규격']; const vendorKey = headerCache['구매처'];
+                                const specKey = headerCache['규격']; const vendorKey = headerCache['구매처'];
                                 mItem.sources[mapKey]['품목명'] = nameKey ? row[nameKey] : '';
                                 mItem.sources[mapKey]['규격'] = specKey ? row[specKey] : '';
                                 mItem.sources[mapKey]['구매처'] = vendorKey ? row[vendorKey] : '';
@@ -622,7 +692,7 @@
                     if(totalCount > 0) ui.showToast(`✅ 데이터 로드 완료 (${totalCount}건)`);
                 } catch(error) { 
                     console.error(error);
-                    ui.setAlertMsg("❌ 파싱 오류 발생. 엑셀 파일을 확인하세요."); 
+                    ui.setAlertMsg("❌ 파싱 오류 발생. 엑셀 파일 형식을 확인하세요."); 
                 } finally { 
                     if (targetInput) targetInput.value = ''; 
                     ui.setIsProcessing(false); 
@@ -633,7 +703,7 @@
             const handleLoadFilter = useCallback((type, name) => {
                 if (!name) return;
                 
-                // [수정] 전체 카탈로그 로드 로직 추가
+                // 전체 카탈로그 로드 로직
                 if (type === 'catalog' && name === 'all_catalogs') {
                     if (ui.activeTags.some(t => t.type === 'catalog' && t.name === '모든 카탈로그')) return ui.showToast('⚠️ 이미 모든 카탈로그가 추가되어 있습니다.');
                     ui.setIsProcessing(true);
@@ -2061,7 +2131,7 @@
                     } else if (e.key === 'F9') {
                         e.preventDefault();
                         if (isInput) document.activeElement.blur();
-                        if (!appState.isProcessing) appActions.setShowExportModal(true); // 💡 수정: 단축키 누르면 모달을 열도록 통합
+                        if (!appState.isProcessing) appActions.setShowExportModal(true); 
                     } else if (e.key === 'F10') {
                         e.preventDefault();
                         if (isInput) document.activeElement.blur();
