@@ -840,21 +840,37 @@
                 ui.showToast(`✅ ${commitCount}건 마스터 업데이트 완료.`);
             }, [ui.selectedRows, data.masterProducts, data.managedItems, data.setMasterProducts, data.addHistoryLogs, config.masterLinks, config.cloudUrl, ui]);
 
-            const executeExport = useCallback((option, zeroAction = { sale: '0', stock: '999' }) => {
+            const handleExportAllSheets = useCallback((zeroAction = { sale: '0', stock: '999' }) => {
                 if (fullDisplayRows.length === 0) { ui.setAlertMsg("내보낼 데이터가 없습니다."); return ui.setShowExportModal(false); }
-                ui.showToast(`⏳ [${option.title}] 엑셀 조립 중입니다...`);
+                ui.showToast(`⏳ [통합 엑셀] 3개 양식 조립 중...`);
                 setTimeout(() => {
                     try {
-                        const wb = window.XLSX.utils.book_new(); let erpData = []; erpData.push(['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '최종(전송)', 'n', '행사', 'n', '1']); let shopData = []; shopData.push(['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', '도매B', '도매B', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']);
+                        const wb = window.XLSX.utils.book_new(); 
+                        
+                        // 1. ERP & 쇼핑몰 데이터 준비
+                        let erpData = []; erpData.push(['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '최종(전송)', 'n', '행사', 'n', '1']); 
+                        let shopData = []; shopData.push(['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', '도매B', '도매B', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']);
                         const createRowArr = (code, inPrice, outPrice, bPrice='', aSale='', bSale='', finalPrice='', instruction='') => { if (!code) return null; const outIn = inPrice > 0 ? inPrice : ''; const outOut = outPrice > 0 ? outPrice : ''; const outFinal = finalPrice > 0 ? finalPrice : outIn; return [ code, outIn, '0', outOut, '0', bPrice||'', 'n', aSale||'', 'n', bSale||'', 'n', outFinal, 'n', instruction||'', 'n', (inPrice > 0 || outPrice > 0) ? '1' : '' ]; };
                         
+                        // 2. 현재 화면(뷰) 데이터 준비
+                        const activeProfile = 'estimate';
+                        const uploadCols = config.visibleUploadCols[activeProfile] || [];
+                        const masterCols = config.visibleMasterCols['estimate'] || [];
+                        const viewHeaders = ['상태/선택', '품목코드', '마스터_품목명', '마스터_규격'];
+                        masterCols.forEach(h => viewHeaders.push(`[M]${h}`)); uploadCols.forEach(h => viewHeaders.push(`[작업]${h}`));
+                        const viewData = [viewHeaders];
+
                         fullDisplayRows.forEach(row => {
-                            const mItem = data.masterProducts[row.코드] || {}, final = row.finalData || {}, source = row.sources?.['estimate'] || {};
+                            const rowCode = row.코드; 
+                            const mItem = data.masterProducts[rowCode] || {};
+                            const final = row.finalData || {};
+                            const source = row.sources?.['estimate'] || {};
+
                             const pIn = getFirstValidNum([final, source, mItem], ['입고가', '입고']);
                             const pOut = getFirstValidNum([final, source, mItem], ['출고가', '출고']);
                             const pMarketPrice = getFirstValidNum([final, mItem], ['시중가']);
 
-                            const dName = getFirstValidStr([source, mItem], ['품목명']), dSpec = getFirstValidStr([source, mItem], ['규격']), dBrand = getFirstValidStr([source, mItem], ['브랜드']), dInfo = getFirstValidStr([source, mItem], ['상품정보', '기본설명', '간단설명']), dSearch = getFirstValidStr([source, mItem], ['검색어등록', '상품태그']), pBPrice = getFirstValidNum([final, source], ['입고B', 'B단가']), pASale = getFirstValidNum([final, source], ['도매A', 'A판매', 'A판매가']), pBSale = getFirstValidNum([final, source], ['도매B', 'B판매', 'B 도매가']), pInstruction = getFirstValidStr([final, source], ['지시사항', '간단설명']);
+                            const dName = getFirstValidStr([source, mItem], ['품목명']); const dSpec = getFirstValidStr([source, mItem], ['규격']); const dBrand = getFirstValidStr([source, mItem], ['브랜드']); const dInfo = getFirstValidStr([source, mItem], ['상품정보', '기본설명', '간단설명']); const dSearch = getFirstValidStr([source, mItem], ['검색어등록', '상품태그']); const pBPrice = getFirstValidNum([final, source], ['입고B', 'B단가']); const pASale = getFirstValidNum([final, source], ['도매A', 'A판매', 'A판매가']); const pBSale = getFirstValidNum([final, source], ['도매B', 'B판매', 'B 도매가']); const pInstruction = getFirstValidStr([final, source], ['지시사항', '간단설명']);
                             const pRowErp = createRowArr(row.코드, pIn, pOut, pBPrice, pASale, pBSale, pIn, pInstruction); if (pRowErp) erpData.push(pRowErp);
                             
                             const priceOutShop = pOut;
@@ -864,7 +880,6 @@
                             const isZeroPrice = (pIn === 0 && pOut === 0), isForSale = isZeroPrice ? zeroAction.sale : (pIn > 0 || pOut > 0 ? '1' : '0'), stockQty = isZeroPrice ? zeroAction.stock : '999';
                             shopData.push([row.코드, dName, dSpec, priceOutShop, priceA, priceMarketShop, 0, 0, 0, 0, 0, 0, dBrand, dInfo, isForSale, stockQty, '', '', '', '', '', dSearch]);
 
-                            // 💡 [개선됨] 1종 연산만 사용
                             [1].forEach(type => { 
                                 const cCodeRaw = getFirstValidStr([mItem, source], [`${type}종코드`]); 
                                 if (isValidSubItemCode(cCodeRaw)) { 
@@ -890,47 +905,27 @@
                                     shopData.push([cCode, cName, cSpec, cOut, cPriceA, cMarketPrice, 0, 0, 0, 0, 0, 0, cBrand, cInfo, cIsForSale, cStockQty, '', '', '', '', '', cSearch]);
                                 } 
                             });
+
+                            const isSel = ui.selectedRows.has(rowCode); const status = (isSel ? '선택됨' : '');
+                            const viewRowData = [status, rowCode || '', mItem.품목명 || '', mItem.규격 || ''];
+                            masterCols.forEach(h => { const val = mItem[h] !== undefined ? mItem[h] : ''; viewRowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(val) : val); });
+                            uploadCols.forEach(h => { const val = final[h] !== undefined ? final[h] : (source[h] || ''); const isNum = NUMERIC_HEADERS.includes(h) || NUMERIC_HEADERS.includes(config.masterLinks[activeProfile]?.[h]); viewRowData.push(isNum ? parseNum(val) : val); });
+                            viewData.push(viewRowData);
                         });
-                        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shopData), "쇼핑몰업로드"); window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), "ERP업데이트"); window.XLSX.writeFile(wb, `보고서출력_${new Date().toISOString().slice(0,10)}.xlsx`);
-                        ui.showToast(`✅ [${option.title}] 엑셀 다운로드가 완료되었습니다.`);
+
+                        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shopData), "쇼핑몰업로드"); 
+                        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), "ERP업데이트"); 
+                        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(viewData), "화면엑셀변환"); 
+                        
+                        window.XLSX.writeFile(wb, `통합보고서_${new Date().toISOString().slice(0,10)}.xlsx`); 
+                        ui.showToast("✅ 3개 시트가 통합된 엑셀 다운로드가 완료되었습니다.");
+                        if (ui.setShowExportModal) ui.setShowExportModal(false);
                     } catch(e) {
                         console.error(e);
                         ui.showToast("❌ 엑셀 파일 생성 중 오류가 발생했습니다.");
                     }
                 }, 500);
-            }, [fullDisplayRows, data.masterProducts, ui]);
-
-            const handleExportCurrentView = useCallback(() => { 
-                if (fullDisplayRows.length === 0) return ui.showToast("⚠️ 내보낼 데이터가 없습니다.");
-                ui.showToast("⏳ 현재 화면 엑셀 변환 중...");
-                
-                setTimeout(() => {
-                    try {
-                        const activeProfile = 'estimate';
-                        const uploadCols = config.visibleUploadCols[activeProfile] || [];
-                        const masterCols = config.visibleMasterCols['estimate'] || [];
-                        
-                        const headers = ['상태/선택', '품목코드', '마스터_품목명', '마스터_규격'];
-                        masterCols.forEach(h => headers.push(`[M]${h}`)); uploadCols.forEach(h => headers.push(`[작업]${h}`));
-
-                        const aoa = [headers];
-                        fullDisplayRows.forEach(row => {
-                            const rowCode = row.코드; const mItem = data.masterProducts[rowCode] || {};
-                            const isSel = ui.selectedRows.has(row.코드); const status = (isSel ? '선택됨' : '');
-                            const rowData = [status, rowCode || '', mItem.품목명 || '', mItem.규격 || ''];
-
-                            masterCols.forEach(h => { const val = mItem[h] !== undefined ? mItem[h] : ''; rowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(val) : val); });
-                            uploadCols.forEach(h => { const val = row.finalData?.[h] !== undefined ? row.finalData[h] : (row.sources?.[activeProfile]?.[h] || ''); const isNum = NUMERIC_HEADERS.includes(h) || NUMERIC_HEADERS.includes(config.masterLinks[activeProfile]?.[h]); rowData.push(isNum ? parseNum(val) : val); });
-                            aoa.push(rowData);
-                        });
-
-                        const wb = window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(aoa), "현재화면_출력"); window.XLSX.writeFile(wb, `화면출력_${new Date().toISOString().slice(0,10)}.xlsx`); ui.showToast("✅ 화면 엑셀 다운로드가 완료되었습니다.");
-                    } catch(e) {
-                        console.error(e);
-                        ui.showToast("❌ 화면 엑셀 다운로드 중 오류가 발생했습니다.");
-                    }
-                }, 300);
-            }, [fullDisplayRows, config.visibleUploadCols, config.visibleMasterCols, config.masterLinks, data.masterProducts, ui.selectedRows, ui]);
+            }, [fullDisplayRows, config.visibleUploadCols, config.visibleMasterCols, config.masterLinks, data.masterProducts, ui]);
 
             const handleImageExport = useCallback(() => {
                 if (fullDisplayRows.length === 0) return ui.showToast("⚠️ 내보낼 데이터가 없습니다.");
@@ -1010,8 +1005,8 @@
             }, [data.setManagedItems, ui.setSelectedRows, ui.setGlobalSearch, ui.setActiveTags, ui.showToast]);
 
             return useMemo(() => ({
-                handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleCommitEstimate, executeExport, handleExportCurrentView, handleImageExport, toggleAllRows, handleReset
-            }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleCommitEstimate, executeExport, handleExportCurrentView, handleImageExport, toggleAllRows, handleReset]);
+                handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleCommitEstimate, handleExportAllSheets, handleImageExport, toggleAllRows, handleReset
+            }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleCommitEstimate, handleExportAllSheets, handleImageExport, toggleAllRows, handleReset]);
         };
 
 
@@ -1088,6 +1083,39 @@
             );
         });
 
+        const EditablePriceCell = React.memo(({ rowId, initialVal, onUpdate }) => {
+            const [localVal, setLocalVal] = useState(initialVal);
+            const [isFocused, setIsFocused] = useState(false);
+
+            useEffect(() => {
+                if (!isFocused) setLocalVal(initialVal);
+            }, [initialVal, isFocused]);
+
+            const commitChange = (v) => {
+                if (String(v) !== String(initialVal)) onUpdate(rowId, v);
+            };
+
+            const handleKeyDown = (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.target.blur();
+                }
+            };
+
+            return (
+                <input 
+                    type="text" 
+                    className="w-full bg-transparent text-right outline-none hover:bg-slate-50 focus:bg-white focus:ring-1 rounded px-1.5 py-1 text-[12px] font-bold text-indigo-700 transition-colors" 
+                    value={localVal === "오류" ? "" : localVal} 
+                    onChange={(e) => setLocalVal(e.target.value)} 
+                    onFocus={() => setIsFocused(true)}
+                    onBlur={(e) => { setIsFocused(false); commitChange(e.target.value); }}
+                    onKeyDown={handleKeyDown}
+                    onClick={(e) => e.target.select()} 
+                />
+            );
+        });
+
         const SystemConsole = ({ itemCount, isProcessing, processMsg, estimateCount, activeTags }) => {
             const [time, setTime] = useState(new Date());
             useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
@@ -1098,10 +1126,9 @@
                     {isProcessing ? (
                         <div className="text-amber-400 flex items-center"><i className="fas fa-spinner fa-spin mr-2"></i> > {processMsg}</div>
                     ) : activeTags.length > 0 ? (
-                        <>
-                            <div className="text-indigo-300 truncate">> sys.workspace_active: {activeTags.map(t=>`[${t.name}]`).join(' + ')} 병합 완료.</div>
-                            <div className="text-[#818cf8] flex items-center">> total_working: {estimateCount} items... <span className="w-1.5 h-3 bg-[#818cf8] ml-1 animate-pulse"></span></div>
-                        </>
+                        <div className="text-indigo-300 flex items-center truncate">
+                            > {activeTags.map(t=>`[${t.name}]`).join(' + ')} 병합됨 ({estimateCount}건 작업중) <span className="w-1.5 h-3 bg-indigo-300 ml-1.5 animate-pulse"></span>
+                        </div>
                     ) : (
                         <div className="text-emerald-400 flex items-center">> DB: {itemCount.toLocaleString()}건 로드됨 ({timeStr}) <span className="w-1.5 h-3 bg-emerald-400 ml-1 animate-pulse"></span></div>
                     )}
@@ -1394,7 +1421,7 @@
 
         const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
             const { activeTags, isEstimateUploaded, selectedRows, globalSearch } = state;
-            const { handleCommitEstimate, handleRemoveFromWorkspace, handleExportCurrentView, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleImageExport, showToast } = actions;
+            const { handleCommitEstimate, handleRemoveFromWorkspace, handleExportAllSheets, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleImageExport, showToast } = actions;
 
             const showActionButtons = activeTags.length > 0;
 
@@ -1456,7 +1483,7 @@
                                 <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e, 'estimate')} accept=".xlsx, .xls, .csv" disabled={state.isProcessing} />
                             </label>
                             
-                            <button onClick={handleExportCurrentView} className="h-8 px-3 rounded-lg text-[11px] font-bold bg-white text-emerald-700 shadow-sm hover:bg-emerald-50 transition-colors flex items-center border border-emerald-200" title="현재 화면 그대로 엑셀로 다운로드합니다. (단축키: F9)">
+                            <button onClick={actions.handleExportAllSheets} className="h-8 px-3 rounded-lg text-[11px] font-bold bg-white text-emerald-700 shadow-sm hover:bg-emerald-50 transition-colors flex items-center border border-emerald-200" title="통합 엑셀 다운로드 (단축키: F9)">
                                 <i className="fas fa-file-download mr-1.5 text-[13px]"></i> 다운로드 <span className="ml-1 text-[9px] text-emerald-400">F9</span>
                             </button>
 
@@ -1750,8 +1777,8 @@
             }, [targetRows, data.masterProducts]);
 
             return (
-                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
-                    <div className="bg-white w-[850px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in" onClick={onClose}>
+                    <div className="bg-white w-[850px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
                         <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
                             <h2 className="font-black text-[16px]"><i className="fas fa-search-dollar text-indigo-400 mr-2"></i>작업 완료 및 저장 전 프리뷰</h2>
                             <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>
@@ -1835,18 +1862,18 @@
 
         const ExportModal = ({ onClose, executeExport }) => {
             return (
-                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
-                    <div className="bg-white w-[500px] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in" onClick={onClose}>
+                    <div className="bg-white w-[500px] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
                         <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
                             <h2 className="font-black text-[16px]"><i className="fas fa-file-export text-amber-400 mr-2"></i>데이터 출력 및 보고서 생성</h2>
                             <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>
                         </div>
                         <div className="p-6 flex flex-col gap-4">
-                            <button onClick={() => { executeExport({title: '통합 엑셀 다운로드'}); onClose(); }} className="w-full flex items-center p-4 bg-white border-2 border-slate-200 rounded-xl hover:border-indigo-500 hover:bg-indigo-50 transition-all group text-left">
+                            <button onClick={executeExport} className="w-full flex items-center p-4 bg-white border-2 border-slate-200 rounded-xl hover:border-indigo-500 hover:bg-indigo-50 transition-all group text-left">
                                 <div className="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-500 text-xl mr-4 group-hover:scale-110 transition-transform"><i className="fas fa-file-excel"></i></div>
                                 <div>
-                                    <div className="font-black text-slate-800 text-[14px]">통합 엑셀 다운로드 (ERP & 쇼핑몰)</div>
-                                    <div className="text-slate-500 text-[11px] mt-1">ERP 업데이트 양식과 쇼핑몰 업로드 양식을 각각의 시트로 한 번에 다운로드합니다.</div>
+                                    <div className="font-black text-slate-800 text-[14px]">통합 엑셀 다운로드 (3개 시트)</div>
+                                    <div className="text-slate-500 text-[11px] mt-1">시트1: 쇼핑몰업로드 / 시트2: ERP업데이트 / 시트3: 화면엑셀변환 양식을 한 번에 생성합니다.</div>
                                 </div>
                             </button>
                             <button onClick={onClose} className="w-full mt-2 bg-slate-100 text-slate-600 font-bold py-3 rounded-xl hover:bg-slate-200 transition-colors">취소</button>
@@ -1974,7 +2001,7 @@
                     } else if (e.key === 'F9') {
                         e.preventDefault();
                         if (isInput) document.activeElement.blur();
-                        if (!appState.isProcessing) appActions.handleExportCurrentView();
+                        if (!appState.isProcessing) appActions.handleExportAllSheets();
                     } else if (e.key === 'F10') {
                         e.preventDefault();
                         if (isInput) document.activeElement.blur();
@@ -2021,7 +2048,7 @@
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <div className="flex items-center mb-0.5">
                                                     <span className="text-[14px] font-black text-slate-200 leading-none">MerchOps</span>
-                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.4.1</span>
+                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.4.1 최적화</span>
                                                 </div>
                                                 <span className="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">MAIN WORKSPACE</span>
                                             </div>
@@ -2060,7 +2087,7 @@
                     {ui.showCategoryModal && <CategorySaveModal onClose={() => ui.setShowCategoryModal(false)} onSave={customActions.handleSaveAsCategory} />}
                     {ui.showSettings && <MappingCenterModal onClose={() => ui.setShowSettings(false)} config={config} actions={{...customActions, showToast: ui.showToast}} availableCatalogs={availableCatalogs} availableCategories={availableCategories} />}
                     {ui.showReviewModal && <ReviewModal onClose={() => ui.setShowReviewModal(false)} onConfirm={customActions.handleCommitEstimate} state={appState} data={data} />}
-                    {ui.showExportModal && <ExportModal onClose={() => ui.setShowExportModal(false)} executeExport={customActions.executeExport} />}
+                    {ui.showExportModal && <ExportModal onClose={() => ui.setShowExportModal(false)} executeExport={customActions.handleExportAllSheets} />}
                 </div>
             );
         }
