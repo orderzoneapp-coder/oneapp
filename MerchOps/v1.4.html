@@ -546,7 +546,8 @@
                             data: { 
                                 master: data.masterProducts,
                                 dict: dict,
-                                rules: config.marginRules
+                                rules: config.marginRules,
+                                history: data.historyLogs // [추가] 히스토리 데이터 포함
                             } 
                         };
                         const res = await fetch(config.cloudUrl, { 
@@ -567,6 +568,13 @@
                             }
                             if (result.data.dict && Object.keys(result.data.dict).length > 0) localStorage.setItem('parserDict_v870', JSON.stringify(result.data.dict));
                             if (result.data.rules && result.data.rules.length > 0) config.setMarginRules(result.data.rules);
+                            
+                            // [추가] 히스토리 데이터 복구 로직
+                            if (result.data.history && Array.isArray(result.data.history)) {
+                                data.setHistoryLogs(result.data.history);
+                                localStorage.setItem('merchHistory_v870', JSON.stringify(result.data.history));
+                            }
+                            
                             ui.showToast('✅ 클라우드 최신 데이터 불러오기(Pull) 성공');
                         } else {
                             throw new Error("Invalid Data");
@@ -577,7 +585,7 @@
                 } finally {
                     ui.setIsProcessing(false);
                 }
-            }, [config.cloudUrl, data.masterProducts, data.setMasterProducts, config.marginRules, config.setMarginRules, ui]);
+            }, [config.cloudUrl, data.masterProducts, data.setMasterProducts, config.marginRules, config.setMarginRules, data.historyLogs, data.setHistoryLogs, ui]);
 
             const cleanUpGarbageTags = useCallback(() => {
                 if(window.confirm("마스터 DB에 남아있는 불필요한 엑셀 검색어 찌꺼기를 모두 삭제하여 용량을 최적화하시겠습니까?\n(오직 시스템에서 관리하는 속성만 안전하게 남습니다.)")) {
@@ -867,13 +875,22 @@
                         }
                     });
 
+                    // [추가] 견적서 그룹 저장 내역을 히스토리에 기록
+                    if (count > 0) {
+                        const localLogs = [{
+                            id: generateUUID(), timestamp: new Date().toLocaleString('ko-KR'), code: 'SYSTEM', name: `[견적서 그룹 생성] ${safeName}`, spec: '', field: '견적서', oldVal: '-', newVal: `${count}개 상품 추가됨`, diff: 0
+                        }];
+                        data.addHistoryLogs(localLogs);
+                        if (config.cloudUrl) fetch(config.cloudUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ type: 'saveHistory', data: localLogs }) }).catch(()=>{});
+                    }
+
                     data.setMasterProducts(newMaster);
                     ui.setShowCategoryModal(false);
                     ui.showToast(`✅ ${count}개 상품이 [${safeName}] 견적서에 추가/저장되었습니다.`);
                     ui.setIsProcessing(false);
                     ui.setProcessMsg('');
                 }, 100);
-            }, [fullDisplayRows, data.masterProducts, data.setMasterProducts, ui]);
+            }, [fullDisplayRows, data.masterProducts, data.setMasterProducts, data.addHistoryLogs, config.cloudUrl, ui]);
 
             const handleDeleteTag = useCallback((type, tagName) => {
                 if (!tagName) return;
@@ -895,6 +912,15 @@
                     }
                 }
                 
+                // [추가] 카탈로그/견적서 삭제 내역을 히스토리에 기록
+                if (count > 0) {
+                    const localLogs = [{
+                        id: generateUUID(), timestamp: new Date().toLocaleString('ko-KR'), code: 'SYSTEM', name: `[${fieldKey} 그룹 삭제] ${tagName}`, spec: '', field: fieldKey, oldVal: `${count}개 상품 포함`, newVal: '삭제됨', diff: 0
+                    }];
+                    data.addHistoryLogs(localLogs);
+                    if (config.cloudUrl) fetch(config.cloudUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ type: 'saveHistory', data: localLogs }) }).catch(()=>{});
+                }
+                
                 data.setMasterProducts(newMaster);
                 
                 if (ui.activeTags.some(t => t.type === type && t.name === tagName)) {
@@ -902,7 +928,7 @@
                 }
 
                 ui.showToast(`✅ ${count}개의 상품에서 [${tagName}] 태그를 삭제했습니다.`);
-            }, [data.masterProducts, data.setMasterProducts, ui, handleRemoveFilter]);
+            }, [data.masterProducts, data.setMasterProducts, data.addHistoryLogs, config.cloudUrl, ui, handleRemoveFilter]);
 
             const handleCommitEstimate = useCallback(() => {
                 if (ui.selectedRows.size === 0) return ui.showToast('⚠️ 반영할 항목을 선택해주세요.');
@@ -924,11 +950,19 @@
                                 const newVal = NUMERIC_HEADERS.includes(linked) ? parseNum(item.finalData[field]) : item.finalData[field];
                                 const oldVal = NUMERIC_HEADERS.includes(linked) ? parseNum(oldItem[linked]) : (oldItem[linked] || '');
                                 
-                                if (['입고가', '출고가'].includes(linked) && oldVal > 0 && oldVal !== newVal) {
-                                    localLogs.push({
-                                        id: generateUUID(), timestamp: nowStr, code: code, name: oldItem.품목명 || item.sources?.estimate?.품목명 || '', spec: oldItem.규격 || item.sources?.estimate?.규격 || '', 
-                                        field: linked, oldVal: oldVal, newVal: newVal, diff: newVal - oldVal
-                                    });
+                                // [수정] 단가 뿐만 아니라 카탈로그/견적서 글자 변경 내역도 히스토리에 기록
+                                if (oldVal !== newVal) {
+                                    if (['입고가', '출고가'].includes(linked) && oldVal > 0) {
+                                        localLogs.push({
+                                            id: generateUUID(), timestamp: nowStr, code: code, name: oldItem.품목명 || item.sources?.estimate?.품목명 || '', spec: oldItem.규격 || item.sources?.estimate?.규격 || '', 
+                                            field: linked, oldVal: oldVal, newVal: newVal, diff: newVal - oldVal
+                                        });
+                                    } else if (['카탈로그', '견적서'].includes(linked)) {
+                                        localLogs.push({
+                                            id: generateUUID(), timestamp: nowStr, code: code, name: oldItem.품목명 || item.sources?.estimate?.품목명 || '', spec: oldItem.규격 || item.sources?.estimate?.규격 || '', 
+                                            field: linked, oldVal: oldVal || '없음', newVal: newVal || '삭제됨', diff: 0
+                                        });
+                                    }
                                 }
                                 newMaster[item.코드][linked] = newVal;
                             }
