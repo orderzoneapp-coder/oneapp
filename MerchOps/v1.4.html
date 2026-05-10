@@ -643,10 +643,8 @@
                                 if (!newMaster[code]) newMaster[code] = { 코드: code };
                                 MASTER_HEADERS.forEach(h => {
                                     const actualKey = headerCache[h] || h;
-                                    // [수정] 엑셀 헤더에 존재하는 열인 경우에만 덮어쓰기 진행
                                     if (actualHeaders.includes(actualKey)) {
                                         const val = row[actualKey];
-                                        // 값이 있으면 업데이트, 값이 지워져서 빈칸이면 기존 마스터 데이터도 삭제(빈칸/0 처리)
                                         if (val !== undefined && val !== null && String(val).trim() !== '') {
                                             newMaster[code][h] = NUMERIC_HEADERS.includes(h) ? parseNum(val) : val;
                                         } else {
@@ -669,13 +667,14 @@
                                 Object.keys(curMap).forEach(h => {
                                     if (!['품목코드', '품목명', '규격', '구매처'].includes(h)) {
                                         const actualKey = headerCache[h];
-                                        if(actualKey) {
+                                        // [수정] 엑셀에 헤더가 존재하는 열이라면, 값이 비어있어도 파싱하여 삭제(빈칸) 처리되도록 반영
+                                        if (actualHeaders.includes(actualKey)) {
                                             const val = row[actualKey];
-                                            if (val !== undefined && val !== '') {
-                                                const isNumeric = NUMERIC_HEADERS.includes(config.masterLinks[mapKey]?.[h]) || NUMERIC_HEADERS.includes(h);
-                                                mItem.sources[mapKey][h] = isNumeric ? parseNum(val) : val;
-                                                if (mItem.finalData[h] === undefined) mItem.finalData[h] = isNumeric ? parseNum(val) : val;
-                                            }
+                                            const safeVal = (val !== undefined && val !== null) ? val : '';
+                                            const isNumeric = NUMERIC_HEADERS.includes(config.masterLinks[mapKey]?.[h]) || NUMERIC_HEADERS.includes(h);
+                                            
+                                            mItem.sources[mapKey][h] = isNumeric ? parseNum(safeVal) : safeVal;
+                                            if (mItem.finalData[h] === undefined) mItem.finalData[h] = isNumeric ? parseNum(safeVal) : safeVal;
                                         }
                                     }
                                 });
@@ -932,9 +931,10 @@
                     if (item.finalData) {
                         Object.keys(item.finalData).forEach(field => {
                             const linked = config.masterLinks['estimate']?.[field] || (MASTER_HEADERS.includes(field) ? field : null);
-                            if (linked && item.finalData[field] !== undefined && item.finalData[field] !== '' && item.finalData[field] !== '오류') {
+                            // [수정] finalData[field] !== '' 조건을 제거하여, 빈칸이나 0값도 마스터에 덮어쓰도록(삭제되도록) 허용
+                            if (linked && item.finalData[field] !== undefined && item.finalData[field] !== '오류') {
                                 const newVal = NUMERIC_HEADERS.includes(linked) ? parseNum(item.finalData[field]) : item.finalData[field];
-                                const oldVal = NUMERIC_HEADERS.includes(linked) ? parseNum(oldItem[linked]) : oldItem[linked];
+                                const oldVal = NUMERIC_HEADERS.includes(linked) ? parseNum(oldItem[linked]) : (oldItem[linked] || '');
                                 
                                 if (['입고가', '출고가'].includes(linked) && oldVal > 0 && oldVal !== newVal) {
                                     localLogs.push({
