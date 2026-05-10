@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v1.4.2 최적화]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v1.4.1 최적화]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -62,19 +62,7 @@
             return new Promise((resolve, reject) => {
                 const tx = db.transaction(storeName, 'readwrite');
                 const store = tx.objectStore(storeName);
-                
-                // 💡 [버그 수정] keyPath('코드')가 없는 찌꺼기 데이터가 섞여 들어와
-                // 전체 저장이 취소(Rollback)되는 치명적 에러를 방어합니다.
-                items.forEach(item => {
-                    if (storeName === 'master_products') {
-                        if (item && item.코드 !== undefined && item.코드 !== null && String(item.코드).trim() !== '') {
-                            store.put(item);
-                        }
-                    } else {
-                        store.put(item);
-                    }
-                });
-                
+                items.forEach(item => store.put(item));
                 tx.oncomplete = () => resolve();
                 tx.onerror = () => reject(tx.error);
             });
@@ -171,22 +159,25 @@
             const whCode = String(currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '').trim();
             const unitStr = String(currentFinalData?.['단위'] ?? mItem?.['단위'] ?? '').trim().toLowerCase();
             
+            // 💡 [버그수정] ruleWh, targetWh 값이 숫자형일 때 문자열 메서드(.split 등) 호출 에러 방지
             const matchWh = (ruleWh, targetWh) => {
                 if (ruleWh === '*') return true;
-                const targets = ruleWh.split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean);
+                const targets = String(ruleWh).split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean);
                 return targets.some(s => s === targetWh || (targetWh !== '' && !isNaN(s) && !isNaN(targetWh) && Number(s) === Number(targetWh)));
             };
             
+            // 💡 [버그수정] ruleUnit 문자열 강제 변환
             const matchUnit = (ruleUnit, targetUnit) => {
                 if (ruleUnit === '*') return true;
-                const targets = ruleUnit.toLowerCase().split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean);
+                const targets = String(ruleUnit).toLowerCase().split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean);
                 return targets.some(s => targetUnit === s || targetUnit.includes(s));
             };
 
             let bestRule = null;
             let bestScore = -1;
 
-            marginRules.forEach(r => {
+            const safeMarginRules = Array.isArray(marginRules) ? marginRules : [];
+            safeMarginRules.forEach(r => {
                 if (matchWh(r.whCode, whCode) && matchUnit(r.unit, unitStr)) {
                     let score = 0;
                     if (r.whCode !== '*') score += 2;
@@ -234,7 +225,7 @@
             const headerMap = {};
             if(!mappingConfig) return headerMap;
             Object.keys(mappingConfig).forEach(field => {
-                const keywords = mappingConfig[field].split(',').map(s => s.trim().toLowerCase().replace(/\s/g, '')).filter(Boolean);
+                const keywords = String(mappingConfig[field]).split(',').map(s => s.trim().toLowerCase().replace(/\s/g, '')).filter(Boolean);
                 const matchedKey = actualHeaders.find(h => {
                     if(!h) return false;
                     const cleanH = String(h).toLowerCase().replace(/\s/g, '');
@@ -308,7 +299,7 @@
         // 🧩 3. 커스텀 훅 (State Architecture)
         // ==========================================
         const useMerchConfig = () => {
-            const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v870') || 'https://script.google.com/macros/s/AKfycbz7qZ5eM-U_qyaoP5amDfMqhZ-IXMjoBDWGu3qWI1D0JTYGINB64yYaLRLrkqWpHa88-w/exec');
+            const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v870') || 'https://script.google.com/macros/s/AKfycbyC8pzKJ6IDIqZXeYlGb5v2byNIxZZP2LCkm4j_LrMKLghfLSX7ogJrCegCqXHoH89pMQ/exec');
             
             const [visibleMasterCols, setVisibleMasterCols] = useState(() => { 
                 const s = localStorage.getItem('merchVisMaster_v870'); 
@@ -371,7 +362,7 @@
                 if (s) {
                     try {
                         const parsed = JSON.parse(s);
-                        if (parsed && parsed.length > 1) {
+                        if (parsed && Array.isArray(parsed) && parsed.length > 0) {
                             return parsed.map(r => ({ ...r, whCode: r.whCode || '*', unit: r.unit || '*' }));
                         }
                     } catch(e) {}
@@ -403,13 +394,14 @@
                         items.forEach(i => dict[i.코드] = i);
                         setMasterProducts(dict);
                     } else {
-                        // 하위 호환성 유지
                         getIDB('merchMaster_v870').then(data => {
                             if (data) {
                                 setMasterProducts(data);
                                 const requestIdle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
                                 requestIdle(async () => {
-                                    await bulkPutIDB('master_products', Object.values(data));
+                                    // 💡 [버그수정] 마이그레이션 시 undefined 코드 방어
+                                    const safeData = Object.values(data).filter(item => item && item.코드);
+                                    await bulkPutIDB('master_products', safeData);
                                 });
                             }
                         }).catch(console.error);
@@ -443,7 +435,8 @@
                 try { 
                     const requestIdle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
                     requestIdle(async () => {
-                        await bulkPutIDB('master_products', Object.values(data));
+                        const safeData = Object.values(data).filter(item => item && item.코드);
+                        await bulkPutIDB('master_products', safeData);
                         localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
                     });
                 } catch(e) {
@@ -591,7 +584,6 @@
                                 let mItem = newManaged[code];
                                 if (!mItem.sources[mapKey]) mItem.sources[mapKey] = {};
                                 
-                                // 불변성 유지 업데이트
                                 mItem = { ...mItem, _tags: new Set([...(mItem._tags || []), `excel:업로드`]) };
                                 
                                 const nameKey = headerCache['품목명']; const specKey = headerCache['규격']; const vendorKey = headerCache['구매처'];
@@ -642,7 +634,7 @@
                 }
             }, [data.masterProducts, data.managedItems, config.mappings, config.masterLinks, config.marginRules, ui]);
 
-            // 💡 [버그 수정] 함수형 업데이트 및 에러 방어(Try-Catch-Finally) 적용
+            // 💡 [버그수정] 무한 루프 방어를 위해 안전한 String 형변환 및 try-catch 추가
             const handleLoadFilter = useCallback((type, name) => {
                 if (!name) return;
                 if (ui.activeTags.some(t => t.type === type && t.name === name)) return ui.showToast('⚠️ 이미 화면에 추가된 항목입니다.');
@@ -653,51 +645,50 @@
                 setTimeout(() => {
                     try {
                         ui.setActiveTags(prev => [...prev, {type, name}]);
+                        let newManaged = { ...data.managedItems };
+                        let addedCount = 0;
                         
-                        data.setManagedItems(prevManaged => {
-                            let newManaged = { ...prevManaged };
-                            let addedCount = 0;
-                            
-                            Object.values(data.masterProducts).forEach(mItem => {
-                                let isMatch = false;
-                                const catStr = type === 'category' ? (mItem['견적서'] || mItem['카테고리'] || '') : (mItem['카탈로그'] || '');
-                                if (catStr.split(',').map(c => c.trim()).includes(name)) {
-                                    isMatch = true;
-                                }
+                        const safeMarginRules = Array.isArray(config.marginRules) ? config.marginRules : [];
 
-                                if (isMatch) {
-                                    if (!newManaged[mItem.코드]) {
-                                        newManaged[mItem.코드] = {
-                                            코드: mItem.코드,
-                                            sources: { estimate: {} },
-                                            finalData: calculatePricesEngine(parseNum(mItem['입고가']), mItem, {}, config.marginRules, false),
-                                            _tags: new Set([`${type}:${name}`])
-                                        };
-                                        addedCount++;
-                                    } else {
-                                        // 💡 상태 불변성 완벽 유지
-                                        newManaged[mItem.코드] = {
-                                            ...newManaged[mItem.코드],
-                                            _tags: new Set([...(newManaged[mItem.코드]._tags || []), `${type}:${name}`])
-                                        };
-                                    }
-                                }
-                            });
+                        Object.values(data.masterProducts).forEach(mItem => {
+                            let isMatch = false;
+                            const catStr = type === 'category' ? (mItem['견적서'] || mItem['카테고리'] || '') : (mItem['카탈로그'] || '');
                             
-                            setTimeout(() => ui.showToast(`✅ [${name}] 병합 완료! (신규 ${addedCount}건 추가됨)`), 10);
-                            return newManaged;
+                            // 💡 에러 원인 차단: 엑셀 숫자 데이터를 강제로 문자열로 변경
+                            if (String(catStr).split(',').map(c => c.trim()).includes(name)) {
+                                isMatch = true;
+                            }
+
+                            if (isMatch) {
+                                if (!newManaged[mItem.코드]) {
+                                    newManaged[mItem.코드] = {
+                                        코드: mItem.코드,
+                                        sources: { estimate: {} },
+                                        finalData: calculatePricesEngine(parseNum(mItem['입고가']), mItem, {}, safeMarginRules, false),
+                                        _tags: new Set([`${type}:${name}`])
+                                    };
+                                    addedCount++;
+                                } else {
+                                    newManaged[mItem.코드] = {
+                                        ...newManaged[mItem.코드],
+                                        _tags: new Set([...(newManaged[mItem.코드]._tags || []), `${type}:${name}`])
+                                    };
+                                }
+                            }
                         });
                         
+                        data.setManagedItems(newManaged);
                         ui.setSelectedRows(new Set()); 
-                    } catch (err) {
-                        console.error("병합 중 에러 발생:", err);
-                        ui.showToast("❌ 병합 처리 중 에러가 발생했습니다.");
+                        ui.showToast(`✅ [${name}] 병합 완료! (신규 ${addedCount}건 추가됨)`);
+                    } catch (error) {
+                        console.error("병합 중 오류 발생:", error);
+                        ui.showToast("❌ 데이터 병합 중 오류가 발생했습니다.");
                     } finally {
                         ui.setIsProcessing(false);
                         ui.setProcessMsg('');
                     }
                 }, 100);
-            }, [data.masterProducts, config.marginRules, ui]);
+            }, [data.masterProducts, data.managedItems, data.setManagedItems, config.marginRules, ui]);
 
             const handleRemoveFilter = useCallback((type, name) => {
                 ui.setActiveTags(prev => prev.filter(t => !(t.type === type && t.name === name)));
@@ -759,7 +750,7 @@
                         
                         newMaster[code] = { ...newMaster[code] };
                         const currentCategories = newMaster[code]['견적서'] || newMaster[code]['카테고리'] || '';
-                        const tags = currentCategories.split(',').map(s => s.trim()).filter(Boolean);
+                        const tags = String(currentCategories).split(',').map(s => s.trim()).filter(Boolean); // 💡 안전 변환
                         
                         if (!tags.includes(safeName)) {
                             tags.push(safeName);
@@ -788,7 +779,7 @@
 
                 for (let code in newMaster) {
                     if (newMaster[code][fieldKey]) {
-                        const tags = newMaster[code][fieldKey].split(',').map(s => s.trim()).filter(Boolean);
+                        const tags = String(newMaster[code][fieldKey]).split(',').map(s => s.trim()).filter(Boolean); // 💡 안전 변환
                         if (tags.includes(tagName)) {
                             newMaster[code] = { ...newMaster[code] };
                             newMaster[code][fieldKey] = tags.filter(t => t !== tagName).join(', ');
@@ -873,6 +864,7 @@
                             const isZeroPrice = (pIn === 0 && pOut === 0), isForSale = isZeroPrice ? zeroAction.sale : (pIn > 0 || pOut > 0 ? '1' : '0'), stockQty = isZeroPrice ? zeroAction.stock : '999';
                             shopData.push([row.코드, dName, dSpec, priceOutShop, priceA, priceMarketShop, 0, 0, 0, 0, 0, 0, dBrand, dInfo, isForSale, stockQty, '', '', '', '', '', dSearch]);
 
+                            // 💡 [개선됨] 1종 연산만 사용
                             [1].forEach(type => { 
                                 const cCodeRaw = getFirstValidStr([mItem, source], [`${type}종코드`]); 
                                 if (isValidSubItemCode(cCodeRaw)) { 
@@ -974,7 +966,7 @@
                             const displayPrice = pOut > 0 ? pOut : pIn;
                             const prevPrice = pOut > 0 ? oldOut : oldIn;
 
-                            const catStr = mItem['견적서'] || mItem['카탈로그'] || '일반 상품목록';
+                            const catStr = mItem['견적서'] || mItem['카테고리'] || '일반 상품목록';
                             const mainCat = catStr.split(',')[0].trim();
 
                             if(!grouped[mainCat]) grouped[mainCat] = [];
@@ -1429,7 +1421,7 @@
                                     if (url.startsWith('blob:') || url.startsWith('about:') || url.startsWith('data:')) {
                                         showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.');
                                     } else {
-                                        window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/vp1.3.html';
+                                        window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/vp1.1.html';
                                     }
                                 } catch (e) {
                                     showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.');
@@ -1879,7 +1871,7 @@
                 const counts = {};
                 Object.values(data.masterProducts).forEach(m => {
                     const tagStr = m['카탈로그'] || '';
-                    tagStr.split(',').forEach(t => {
+                    String(tagStr).split(',').forEach(t => { // 💡 에러 방어 적용
                         const trimmed = t.trim();
                         if (trimmed) counts[trimmed] = (counts[trimmed] || 0) + 1;
                     });
@@ -1891,7 +1883,7 @@
                 const counts = {};
                 Object.values(data.masterProducts).forEach(m => {
                     const tagStr = m['견적서'] || m['카테고리'] || '';
-                    tagStr.split(',').forEach(t => {
+                    String(tagStr).split(',').forEach(t => { // 💡 에러 방어 적용
                         const trimmed = t.trim();
                         if (trimmed) counts[trimmed] = (counts[trimmed] || 0) + 1;
                     });
@@ -1944,7 +1936,6 @@
 
             const customActions = useMerchActions(config, data, ui, fullDisplayRows);
             
-            // 💡 [개선됨] 앱 전체 상태와 액션을 완벽하게 메모이제이션하여 렌더링 누수 차단
             const appState = useMemo(() => ({
                 config, data,
                 activeTags: ui.activeTags, isEstimateUploaded, selectedRows: ui.selectedRows, globalSearch: ui.globalSearch, isProcessing: ui.isProcessing, processMsg: ui.processMsg,
