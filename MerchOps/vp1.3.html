@@ -464,7 +464,8 @@
                             newMaster[code]['카탈로그'] = addTag(newMaster[code]['카탈로그'], currentTag);
                         }
 
-                        if (row['품목명']) {
+                        // 💡 [수정] 수동으로 연결(매핑)한 항목만 사전에 등록하도록 조건 추가
+                        if (row['품목명'] && row._matchStatus.includes('수동일치')) {
                             const normExtName = normalizeText(row['품목명']);
                             const normExtSpec = normalizeText(row['규격']);
                             newDict[`${normExtName}|${normExtSpec}`] = code;
@@ -1380,6 +1381,7 @@
                     </div>
                     {showInputModal && <SmartParserInputModal onClose={() => setShowInputModal(false)} executeParser={actions.executeParser} showToast={showToast} availableTags={availableTags} />}
                     {showReviewModal && <ParserReviewModal onClose={() => setShowReviewModal(false)} onConfirm={actions.handleApplyMatched} state={appState} actions={actions} />}
+                    {showErpModal && <ErpCodeInputModal onClose={() => setShowErpModal(false)} onSubmit={actions.handleCreateNewMasterItem} targetItem={parserBuffer.find(r => r._id === targetId)} />}
                 </div>
             );
         };
