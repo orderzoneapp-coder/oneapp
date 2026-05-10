@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Smart Parser [v1.3.4]</title>
+    <title>ONEAPP MerchOps - Smart Parser [v1.3.6 최적화]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -19,7 +19,7 @@
         const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
         // ==========================================
-        // 🧩 무제한 로컬 스토리지 (IndexedDB) 래퍼
+        // 🧩 [수정됨] 무제한 로컬 스토리지 (IndexedDB) 버전을 2로 올려 메인과 동기화
         // ==========================================
         const initIDB = () => {
             return new Promise((resolve, reject) => {
@@ -27,7 +27,9 @@
                 request.onupgradeneeded = (e) => {
                     const db = e.target.result;
                     if (!db.objectStoreNames.contains('store')) db.createObjectStore('store');
-                    if (!db.objectStoreNames.contains('master_products')) db.createObjectStore('master_products', { keyPath: '코드' });
+                    if (!db.objectStoreNames.contains('master_products')) {
+                        db.createObjectStore('master_products', { keyPath: '코드' });
+                    }
                 };
                 request.onsuccess = () => resolve(request.result);
                 request.onerror = () => reject(request.error);
@@ -98,14 +100,14 @@
 
         const addTag = (oldTags, newTag) => {
             if (!newTag) return oldTags || '';
-            const tags = (oldTags || '').split(',').map(s => s.trim()).filter(Boolean);
+            const tags = String(oldTags || '').split(',').map(s => s.trim()).filter(Boolean);
             if (!tags.includes(newTag)) tags.push(newTag);
             return tags.join(', ');
         };
 
         const removeTag = (oldTags, tagToRemove) => {
             if (!tagToRemove) return oldTags || '';
-            const tags = (oldTags || '').split(',').map(s => s.trim()).filter(Boolean);
+            const tags = String(oldTags || '').split(',').map(s => s.trim()).filter(Boolean);
             return tags.filter(t => t !== tagToRemove).join(', ');
         };
 
@@ -120,22 +122,24 @@
             const whCode = String(currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '').trim();
             const unitStr = String(currentFinalData?.['단위'] ?? mItem?.['단위'] ?? '').trim().toLowerCase();
             
+            // 💡 [수정됨] TypeError(ruleWh.split is not a function) 방어 로직 추가
             const matchWh = (ruleWh, targetWh) => {
                 if (ruleWh === '*') return true;
-                const targets = ruleWh.split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean);
+                const targets = String(ruleWh).split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean);
                 return targets.some(s => s === targetWh || (targetWh !== '' && !isNaN(s) && !isNaN(targetWh) && Number(s) === Number(targetWh)));
             };
             
             const matchUnit = (ruleUnit, targetUnit) => {
                 if (ruleUnit === '*') return true;
-                const targets = ruleUnit.toLowerCase().split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean);
+                const targets = String(ruleUnit).toLowerCase().split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean);
                 return targets.some(s => targetUnit === s || targetUnit.includes(s));
             };
 
             let bestRule = null;
             let bestScore = -1;
 
-            marginRules.forEach(r => {
+            const safeMarginRules = Array.isArray(marginRules) ? marginRules : [];
+            safeMarginRules.forEach(r => {
                 if (matchWh(r.whCode, whCode) && matchUnit(r.unit, unitStr)) {
                     let score = 0;
                     if (r.whCode !== '*') score += 2;
@@ -326,7 +330,8 @@
                                 setMasterProducts(data);
                                 const requestIdle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
                                 requestIdle(async () => {
-                                    await bulkPutIDB('master_products', Object.values(data));
+                                    const safeData = Object.values(data).filter(item => item && item.코드);
+                                    await bulkPutIDB('master_products', safeData);
                                 });
                             }
                         }).catch(console.error);
@@ -355,7 +360,8 @@
                 try {
                     const requestIdle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
                     requestIdle(async () => {
-                        await bulkPutIDB('master_products', Object.values(data));
+                        const safeData = Object.values(data).filter(item => item && item.코드);
+                        await bulkPutIDB('master_products', safeData);
                         localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
                     });
                 } catch(e) { console.error("IndexedDB 저장 실패", e); }
@@ -373,7 +379,6 @@
             const [showInputModal, setShowInputModal] = useState(true); 
             const [showReviewModal, setShowReviewModal] = useState(false);
             const [showErpModal, setShowErpModal] = useState(false);
-            const [showSettingsModal, setShowSettingsModal] = useState(false); // 센터 모달 표시 상태 추가
 
             const [toastMsg, setToastMsg] = useState('');
             const [isProcessing, setIsProcessing] = useState(false);
@@ -391,7 +396,6 @@
                 parserBuffer, setParserBuffer, currentTag, setCurrentTag,
                 activeTab, setActiveTab, showInputModal, setShowInputModal,
                 showReviewModal, setShowReviewModal, showErpModal, setShowErpModal,
-                showSettingsModal, setShowSettingsModal,
                 toastMsg, showToast, isProcessing, setIsProcessing, processMsg, setProcessMsg,
                 globalSearch, setGlobalSearch, targetId, setTargetId,
                 selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes
@@ -568,7 +572,6 @@
                     setParserBuffer(nextBuffer);
                     setTargetId(null); 
                     setGlobalSearch(''); 
-                    // 💡 [수정유지] 탭 이동(setActiveTab) 방지
                     showToast(`✅ 수동 연결 완료! (일치 탭에 대기 중입니다)`);
                 } catch(error) {
                     console.error(error);
@@ -635,7 +638,6 @@
                     setParserBuffer(nextBuffer);
                     setTargetId(null);
                     setGlobalSearch('');
-                    // 💡 [수정유지] 탭 이동 방지
                     setShowErpModal(false);
 
                     showToast(`✅ [${newCode}] 신규 마스터 등록 및 매핑이 완료되었습니다!`);
@@ -698,11 +700,11 @@
                 }
             }, [masterProducts, currentTag, saveMaster, showToast]);
 
-            return { 
+            return useMemo(() => ({ 
                 executeParser, handleApplyMatched, handleConfirmMapping, handleCancelMapping, 
                 handleCreateNewMasterItem, handleIgnoreParsedItem, handleRemoveMissingTags, handleRemoveTagDirect,
                 openErpModal: () => setShowErpModal(true)
-            };
+            }), [executeParser, handleApplyMatched, handleConfirmMapping, handleCancelMapping, handleCreateNewMasterItem, handleIgnoreParsedItem, handleRemoveMissingTags, handleRemoveTagDirect, setShowErpModal]);
         };
 
         // ============================================================================
@@ -713,9 +715,8 @@
             if (!targetItem) return null;
 
             return (
-                // 💡 [수정] 모달 바깥쪽 클릭 시 닫히는 기능 제거 (입력 내용 유실 방지)
-                <div className="fixed inset-0 bg-slate-900/60 z-[300] flex justify-center items-center backdrop-blur-sm fade-in">
-                    <div className="bg-white w-[420px] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-gray-200">
+                <div className="fixed inset-0 bg-slate-900/60 z-[300] flex justify-center items-center backdrop-blur-sm fade-in" onClick={onClose}>
+                    <div className="bg-white w-[420px] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-gray-200" onClick={(e) => e.stopPropagation()}>
                         <div className="px-5 py-4 border-b border-gray-200 flex justify-between items-center bg-slate-50">
                             <h2 className="font-bold text-slate-800 text-[15px]"><i className="fas fa-barcode text-indigo-500 mr-2"></i>ERP 코드로 신규 등록</h2>
                             <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><i className="fas fa-times"></i></button>
@@ -796,9 +797,8 @@
             };
 
             return (
-                // 💡 [수정] 모달 바깥쪽 클릭 방지 (onClick 래퍼 제거)
-                <div className="fixed inset-0 bg-slate-900/80 z-[200] flex justify-center items-center backdrop-blur-sm fade-in">
-                    <div className="bg-white w-[800px] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                <div className="fixed inset-0 bg-slate-900/80 z-[200] flex justify-center items-center backdrop-blur-sm fade-in" onClick={onClose}>
+                    <div className="bg-white w-[800px] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
                         <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
                             <h2 className="font-black text-[16px]"><i className="fas fa-magic text-indigo-400 mr-2"></i>스마트 텍스트 파서 & 델타 동기화</h2>
                             {onClose && <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>}
@@ -863,7 +863,6 @@
             const [updateText, setUpdateText] = useState(true); 
             
             const { parserBuffer, masterProducts } = state;
-            const { handleCancelMapping } = actions;
 
             const targetRows = useMemo(() => {
                 return parserBuffer.filter(r => r._apply && r._matchCode);
@@ -909,9 +908,8 @@
             }, [analysis.priceList, priceFilter]);
 
             return (
-                // 💡 [수정] 모달 바깥쪽 클릭 닫기(onClick 래퍼) 제거
-                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
-                    <div className="bg-white w-[900px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in" onClick={onClose}>
+                    <div className="bg-white w-[900px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
                         <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
                             <h2 className="font-black text-[16px]"><i className="fas fa-clipboard-check text-indigo-400 mr-2"></i>작업 완료 및 투트랙(매핑/단가) 검증</h2>
                             <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>
@@ -1061,10 +1059,9 @@
         };
 
         const MappingCenterModal = ({ onClose }) => {
-            // 💡 [NEW] 센터용 모달 컴포넌트 추가
             return (
-                <div className="fixed inset-0 bg-slate-900/80 z-[300] flex justify-center items-center backdrop-blur-sm fade-in">
-                    <div className="bg-white w-[500px] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                <div className="fixed inset-0 bg-slate-900/80 z-[300] flex justify-center items-center backdrop-blur-sm fade-in" onClick={onClose}>
+                    <div className="bg-white w-[500px] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
                         <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
                             <h2 className="font-black text-[16px]"><i className="fas fa-cogs text-indigo-400 mr-2"></i>시스템 환경설정</h2>
                         </div>
@@ -1100,7 +1097,7 @@
                 const counts = {};
                 Object.values(masterProducts).forEach(m => {
                     const tagStr = m['카탈로그'] || '';
-                    tagStr.split(',').forEach(t => {
+                    String(tagStr).split(',').forEach(t => { 
                         const trimmed = t.trim();
                         if (trimmed) counts[trimmed] = (counts[trimmed] || 0) + 1;
                     });
@@ -1124,7 +1121,7 @@
                 const missing = [];
                 for (const code in masterProducts) {
                     const mItem = masterProducts[code];
-                    const tags = (mItem['카탈로그'] || '').split(',').map(s => s.trim());
+                    const tags = String(mItem['카탈로그'] || '').split(',').map(s => s.trim());
                     if (tags.includes(currentTag) && !matchedCodes.has(String(code)) && !processedStr.has(String(code))) {
                         missing.push(mItem);
                     }
@@ -1146,7 +1143,6 @@
                     actions.showToast("⏳ 미반영된 일치 항목을 자동 저장 후 이동합니다...");
                     const success = await actions.handleApplyMatched();
                     if (success) {
-                        // 💡 [수정] 메인으로 이동하는 URL (v1.4.1 기준)
                         setTimeout(() => { window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.4.1.html'; }, 800);
                     }
                 } else {
@@ -1165,6 +1161,16 @@
                     return r;
                 }));
             }, [masterProducts, appState]);
+
+            const memoizedState = useMemo(() => ({
+                masterProducts, parserBuffer, currentTag, activeTab, 
+                targetId, globalSearch, missingRows, selectedMissingCodes, 
+                isProcessing, processMsg
+            }), [masterProducts, parserBuffer, currentTag, activeTab, targetId, globalSearch, missingRows, selectedMissingCodes, isProcessing, processMsg]);
+
+            const memoizedActions = useMemo(() => ({
+                ...actions, setShowReviewModal, setShowInputModal, setActiveTab, setGlobalSearch
+            }), [actions, setShowReviewModal, setShowInputModal, setActiveTab, setGlobalSearch]);
 
             return (
                 <div className="h-screen w-full bg-slate-100 flex justify-center overflow-hidden font-sans">
@@ -1188,7 +1194,7 @@
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <div className="flex items-center mb-0.5">
                                                     <span className="text-[14px] font-black text-slate-200 leading-none">Smart Parser</span>
-                                                    <span className="ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.3.4</span>
+                                                    <span className="ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.3.6 최적화</span>
                                                 </div>
                                                 <span className="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">TEXT ANALYSIS & DELTA SYNC</span>
                                             </div>
@@ -1209,7 +1215,6 @@
                                         </div>
                                         
                                         <nav className="flex gap-1.5 text-[14px] shrink-0 items-center">
-                                            {/* 💡 [NEW] 상단 우측 버튼들도 v1.4.1 메인으로 연결되도록 설정 */}
                                             <a href="https://oneapp.orderz.co.kr/MerchOps/guide" target="_blank" rel="noopener noreferrer" className={`h-8 px-2.5 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-emerald-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-300 hover:border-emerald-500/50 font-bold text-[11px] tracking-wider uppercase ${isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="MerchOps 사용 가이드">
                                                 GUIDE
                                             </a>
@@ -1227,8 +1232,7 @@
                                 </div>
                             </div>
                             
-                            <div className="px-6 pt-4 pb-3 flex items-center justify-between gap-4 overflow-x-auto custom-scrollbar w-full">
-                                
+                            <div className="px-6 py-3 flex items-center justify-between gap-4 w-full">
                                 <div className="flex gap-1.5 shrink-0 bg-slate-100/80 p-1.5 rounded-xl border border-slate-200">
                                     <button onClick={()=>setActiveTab('matched')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black transition-all ${activeTab==='matched' ? 'bg-white text-emerald-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>🟢 일치 ({matchedRows.length})</button>
                                     <button onClick={()=>setActiveTab('similar')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black transition-all ${activeTab==='similar' ? 'bg-white text-amber-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>🟡 유사 ({combinedSimilarRows.length})</button>
@@ -1465,7 +1469,7 @@
                         </div>
                     </div>
                     {showInputModal && <SmartParserInputModal onClose={() => setShowInputModal(false)} executeParser={actions.executeParser} showToast={showToast} availableTags={availableTags} />}
-                    {showReviewModal && <ParserReviewModal onClose={() => setShowReviewModal(false)} onConfirm={actions.handleApplyMatched} state={appState} actions={actions} />}
+                    {showReviewModal && <ParserReviewModal onClose={() => setShowReviewModal(false)} onConfirm={actions.handleApplyMatched} state={memoizedState} actions={memoizedActions} />}
                     {showErpModal && <ErpCodeInputModal onClose={() => setShowErpModal(false)} onSubmit={actions.handleCreateNewMasterItem} targetItem={parserBuffer.find(r => r._id === targetId)} />}
                     {showSettingsModal && <MappingCenterModal onClose={() => setShowSettingsModal(false)} />}
                 </div>
