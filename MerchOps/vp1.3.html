@@ -1067,7 +1067,7 @@
                         </div>
                         <div className="p-6 flex flex-col items-center justify-center gap-6 h-[300px]">
                             <p className="text-slate-500 font-bold text-center">환경설정 센터는 메인 워크스페이스에서 지원합니다.<br/>아래 버튼을 눌러 메인 화면으로 이동하세요.</p>
-                            <button onClick={() => window.location.href='https://oneapp.orderz.co.kr/MerchOps/v1.4.1.html'} className="px-6 py-3 bg-indigo-600 text-white font-black rounded-xl hover:bg-indigo-700 shadow-sm transition-colors flex items-center">
+                            <button onClick={() => window.location.href='https://oneapp.orderz.co.kr/MerchOps/v1.4'} className="px-6 py-3 bg-indigo-600 text-white font-black rounded-xl hover:bg-indigo-700 shadow-sm transition-colors flex items-center">
                                 <i className="fas fa-home mr-2 text-[14px]"></i> 메인으로 이동하기
                             </button>
                             <button onClick={onClose} className="text-slate-400 font-bold hover:text-slate-600 transition-colors mt-2 text-[12px]">닫기</button>
@@ -1143,10 +1143,10 @@
                     actions.showToast("⏳ 미반영된 일치 항목을 자동 저장 후 이동합니다...");
                     const success = await actions.handleApplyMatched();
                     if (success) {
-                        setTimeout(() => { window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.4.1.html'; }, 800);
+                        setTimeout(() => { window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.4'; }, 800);
                     }
                 } else {
-                    window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.4.1.html';
+                    window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.4';
                 }
             };
 
