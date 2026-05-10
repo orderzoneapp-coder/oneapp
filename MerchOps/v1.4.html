@@ -225,20 +225,17 @@
             Object.keys(mappingConfig).forEach(field => {
                 const keywords = String(mappingConfig[field]).split(',').map(s => s.trim().toLowerCase().replace(/\s/g, '')).filter(Boolean);
                 
-                // 1단계: 완전 일치 (Exact Match) 우선 확인 (예: 1코드 오매칭 방지)
                 let matchedKey = actualHeaders.find(h => {
                     if(!h) return false;
                     const cleanH = String(h).toLowerCase().replace(/\s/g, '');
                     return keywords.includes(cleanH);
                 });
 
-                // 2단계: 완전 일치 항목이 없으면 포함(Includes) 조건으로 찾기
                 if (!matchedKey) {
                     matchedKey = actualHeaders.find(h => {
                         if(!h) return false;
                         const cleanH = String(h).toLowerCase().replace(/\s/g, '');
                         return keywords.some(kw => {
-                            // '코드'라는 단일 키워드가 포함될 때 '1코드', '2코드', '1종코드' 등에 오작동하는 것 방어
                             if (kw === '코드' && (cleanH.includes('1') || cleanH.includes('2') || cleanH.includes('3') || cleanH.includes('종'))) return false;
                             return cleanH.includes(kw);
                         });
@@ -254,7 +251,6 @@
             return new Promise((resolve, reject) => {
                 if (!window.XLSX) return reject(new Error("엑셀 파서가 로드되지 않았습니다."));
                 
-                // 데이터 파싱 코어를 분리 (EUC-KR / UTF-8 분기 처리를 위함)
                 const processData = (data, type) => {
                     try {
                         const wb = window.XLSX.read(data, { type: type, cellDates: true });
@@ -269,7 +265,6 @@
                             const rowArr = jsonAll[i] || [];
                             const rowStr = rowArr.join('').replace(/\s/g, '');
                             
-                            // 헤더 감지 조건 엄격화 ('코드' 키워드가 있을 경우 품명, 규격 등이 함께 있는지 확인)
                             if (
                                 rowStr.includes('품목코드') || rowStr.includes('상품코드') || rowStr.includes('바코드') ||
                                 (rowStr.includes('코드') && (rowStr.includes('품명') || rowStr.includes('상품명') || rowStr.includes('규격'))) ||
@@ -279,7 +274,7 @@
                             }
                         }
                         
-                        if (headerRowIdx === -1) return null; // 실패 (인코딩 깨짐 또는 헤더 없음)
+                        if (headerRowIdx === -1) return null; 
 
                         const headers = jsonAll[headerRowIdx] || [];
                         let endIdx = jsonAll.length - 1;
@@ -319,11 +314,9 @@
                 const isCSV = file.name.toLowerCase().endsWith('.csv');
                 
                 if (isCSV) {
-                    // CSV 파일은 ERP 다운로드 시 주로 EUC-KR (ANSI) 이므로 텍스트로 먼저 읽어 한글 깨짐 방어
                     const reader = new FileReader();
                     reader.onload = (e) => {
                         const text = e.target.result;
-                        // 깨진 글자가 감지되면 UTF-8 일 가능성이 높음
                         if (text.includes('')) {
                             const utf8Reader = new FileReader();
                             utf8Reader.onload = (e2) => {
@@ -338,7 +331,6 @@
                     };
                     reader.readAsText(file, 'euc-kr');
                 } else {
-                    // 일반 엑셀 파일 (.xlsx, .xls)
                     const reader = new FileReader();
                     reader.onload = (e) => {
                         const data = new Uint8Array(e.target.result);
@@ -635,7 +627,6 @@
                             const cleanCode = String(code || '').replace(/\s/g, '');
                             const cleanName = String(name || '').replace(/\s/g, '');
 
-                            // 엑셀 쓰레기 데이터 및 예시 데이터 노출 차단 방어막
                             if (!cleanCode || cleanCode.includes('출력') || cleanCode === '코드' || cleanCode === '품목코드' || cleanCode === '상품코드' || cleanCode.includes('예시')) return;
                             if (cleanName.includes('테스트상품') || cleanName.includes('샘플상품') || cleanCode.toLowerCase().includes('test')) return;
 
@@ -667,7 +658,6 @@
                                 Object.keys(curMap).forEach(h => {
                                     if (!['품목코드', '품목명', '규격', '구매처'].includes(h)) {
                                         const actualKey = headerCache[h];
-                                        // [수정] 엑셀에 헤더가 존재하는 열이라면, 값이 비어있어도 파싱하여 삭제(빈칸) 처리되도록 반영
                                         if (actualHeaders.includes(actualKey)) {
                                             const val = row[actualKey];
                                             const safeVal = (val !== undefined && val !== null) ? val : '';
@@ -711,7 +701,6 @@
             const handleLoadFilter = useCallback((type, name) => {
                 if (!name) return;
                 
-                // 전체 카탈로그 로드 로직
                 if (type === 'catalog' && name === 'all_catalogs') {
                     if (ui.activeTags.some(t => t.type === 'catalog' && t.name === '모든 카탈로그')) return ui.showToast('⚠️ 이미 모든 카탈로그가 추가되어 있습니다.');
                     ui.setIsProcessing(true);
@@ -931,7 +920,6 @@
                     if (item.finalData) {
                         Object.keys(item.finalData).forEach(field => {
                             const linked = config.masterLinks['estimate']?.[field] || (MASTER_HEADERS.includes(field) ? field : null);
-                            // [수정] finalData[field] !== '' 조건을 제거하여, 빈칸이나 0값도 마스터에 덮어쓰도록(삭제되도록) 허용
                             if (linked && item.finalData[field] !== undefined && item.finalData[field] !== '오류') {
                                 const newVal = NUMERIC_HEADERS.includes(linked) ? parseNum(item.finalData[field]) : item.finalData[field];
                                 const oldVal = NUMERIC_HEADERS.includes(linked) ? parseNum(oldItem[linked]) : (oldItem[linked] || '');
@@ -967,12 +955,10 @@
                     try {
                         const wb = window.XLSX.utils.book_new(); 
                         
-                        // 1. ERP & 쇼핑몰 데이터 준비
                         let erpData = []; erpData.push(['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '최종(전송)', 'n', '행사', 'n', '1']); 
                         let shopData = []; shopData.push(['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', '도매B', '도매B', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']);
                         const createRowArr = (code, inPrice, outPrice, bPrice='', aSale='', bSale='', finalPrice='', instruction='') => { if (!code) return null; const outIn = inPrice > 0 ? inPrice : ''; const outOut = outPrice > 0 ? outPrice : ''; const outFinal = finalPrice > 0 ? finalPrice : outIn; return [ code, outIn, '0', outOut, '0', bPrice||'', 'n', aSale||'', 'n', bSale||'', 'n', outFinal, 'n', instruction||'', 'n', (inPrice > 0 || outPrice > 0) ? '1' : '' ]; };
                         
-                        // 2. 현재 화면(뷰) 데이터 준비
                         const activeProfile = 'estimate';
                         const uploadCols = config.visibleUploadCols[activeProfile] || [];
                         const masterCols = config.visibleMasterCols['estimate'] || [];
@@ -1124,7 +1110,6 @@
                 ui.showToast('작업 데이터가 초기화 되었습니다.');
             }, [data.setManagedItems, ui.setSelectedRows, ui.setGlobalSearch, ui.setActiveTags, ui.showToast]);
 
-            // [추가] 마진룰 강제 재계산 덮어쓰기 로직
             const handleForceApplyMarginRules = useCallback(() => {
                 if (fullDisplayRows.length === 0) return ui.showToast('⚠️ 화면에 적용할 상품이 없습니다.');
 
@@ -1154,7 +1139,6 @@
                                 const currentItem = next[code];
                                 const baseInPrice = parseNum(currentItem.finalData?.['입고가'] ?? currentItem.sources?.['estimate']?.['입고가'] ?? mItem['입고가']);
                                 
-                                // forceRecalc = true 로 넘겨 기존 출고가 무시
                                 currentItem.finalData = calculatePricesEngine(baseInPrice, mItem, currentItem.finalData, safeMarginRules, true);
                                 count++;
                             }
@@ -1178,7 +1162,11 @@
         // ==========================================
         const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, data }) => {
             const isNumeric = NUMERIC_HEADERS.includes(linkedMasterField) || NUMERIC_HEADERS.includes(field);
-            const initialVal = row.finalData?.[field] !== undefined ? row.finalData[field] : (row.sources?.['estimate']?.[field] || '');
+            
+            // [수정] 엑셀에 없었거나 빈칸이더라도 마스터에 기존 값이 있으면 꽉 채워서 보여주도록 (초기값 폴백 기능 강화)
+            const sourceVal = row.sources?.['estimate']?.[field];
+            const initialVal = row.finalData?.[field] !== undefined ? row.finalData[field] : (sourceVal !== undefined ? sourceVal : (mVal !== undefined ? mVal : ''));
+            
             const [localVal, setLocalVal] = useState(initialVal);
 
             useEffect(() => {
@@ -1564,7 +1552,6 @@
                             <div className="relative">
                                 <select value="" onChange={(e) => actions.handleLoadFilter('catalog', e.target.value)} className="appearance-none bg-white border border-indigo-200 text-indigo-700 font-bold text-[12px] py-1 pl-8 pr-7 rounded-lg shadow-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 w-[150px] cursor-pointer h-8">
                                     <option value="" disabled>카탈로그(파서) 추가</option>
-                                    {/* [추가] 전체 카탈로그 옵션 */}
                                     <option value="all_catalogs" className="font-black text-indigo-700 bg-indigo-50">🌟 전체 카탈로그 불러오기</option>
                                     {availableCatalogs.map(tag => (
                                         <option key={tag.name} value={tag.name}>{tag.name} ({tag.count}건)</option>
@@ -1621,7 +1608,6 @@
 
                             <div className="w-px h-5 bg-emerald-200 mx-0.5"></div>
 
-                            {/* [수정] 찰칵 버튼 미니멀하게 변경 */}
                             <button onClick={handleImageExport} className="h-8 px-2.5 rounded-lg bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 transition-colors flex items-center border border-emerald-700" title="카카오톡 공유용 이미지 단가표 생성기 띄우기 (단축키: F10)">
                                 <i className="fas fa-camera text-[14px]"></i> <span className="ml-1 text-[9px] text-emerald-200 font-bold tracking-wider">F10</span>
                             </button>
@@ -1633,14 +1619,12 @@
                             {/* 1. 작업 버튼 (F7, F8 연동) */}
                             {showActionButtons && (
                                 <>
-                                    {/* [수정] 빼기 버튼 선택 시에만 노출 */}
                                     {isEstimateUploaded && selectedRows.size > 0 && (
                                         <button onClick={handleRemoveFromWorkspace} className="h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm transition-colors flex items-center bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100" title="선택한 항목을 현재 작업 화면(견적서)에서만 임시로 뺍니다.">
                                             <i className="fas fa-minus-circle mr-1.5 text-[14px]"></i> 빼기
                                         </button>
                                     )}
 
-                                    {/* [추가] 마진룰 덮어쓰기 (강제적용) 버튼 */}
                                     <button onClick={handleForceApplyMarginRules} className="h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm transition-colors flex items-center bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100" title="화면의 모든 상품(또는 선택된 상품)에 현재 마진 룰을 강제로 다시 적용합니다.">
                                         <i className="fas fa-magic mr-1.5 text-[13px]"></i> 룰 적용
                                     </button>
