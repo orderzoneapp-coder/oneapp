@@ -642,8 +642,17 @@
                             if (mapKey === 'master') {
                                 if (!newMaster[code]) newMaster[code] = { 코드: code };
                                 MASTER_HEADERS.forEach(h => {
-                                    const actualKey = headerCache[h] || h; const val = row[actualKey];
-                                    if (val !== undefined && val !== '') newMaster[code][h] = NUMERIC_HEADERS.includes(h) ? parseNum(val) : val;
+                                    const actualKey = headerCache[h] || h;
+                                    // [수정] 엑셀 헤더에 존재하는 열인 경우에만 덮어쓰기 진행
+                                    if (actualHeaders.includes(actualKey)) {
+                                        const val = row[actualKey];
+                                        // 값이 있으면 업데이트, 값이 지워져서 빈칸이면 기존 마스터 데이터도 삭제(빈칸/0 처리)
+                                        if (val !== undefined && val !== null && String(val).trim() !== '') {
+                                            newMaster[code][h] = NUMERIC_HEADERS.includes(h) ? parseNum(val) : val;
+                                        } else {
+                                            newMaster[code][h] = NUMERIC_HEADERS.includes(h) ? 0 : '';
+                                        }
+                                    }
                                 });
                             } else {
                                 if (!newManaged[code]) { newManaged[code] = { 코드: code, sources: {}, finalData: {}, _tags: new Set() }; }
