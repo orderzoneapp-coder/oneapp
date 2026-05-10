@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Smart Parser [v1.3.5]</title>
+    <title>ONEAPP MerchOps - Smart Parser [v1.3.4]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -23,10 +23,11 @@
         // ==========================================
         const initIDB = () => {
             return new Promise((resolve, reject) => {
-                const request = indexedDB.open('MerchOpsDB', 1);
+                const request = indexedDB.open('MerchOpsDB', 2);
                 request.onupgradeneeded = (e) => {
                     const db = e.target.result;
                     if (!db.objectStoreNames.contains('store')) db.createObjectStore('store');
+                    if (!db.objectStoreNames.contains('master_products')) db.createObjectStore('master_products', { keyPath: '코드' });
                 };
                 request.onsuccess = () => resolve(request.result);
                 request.onerror = () => reject(request.error);
@@ -48,6 +49,27 @@
             return new Promise((resolve, reject) => {
                 const tx = db.transaction('store', 'readonly');
                 const req = tx.objectStore('store').get(key);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(tx.error);
+            });
+        };
+
+        const bulkPutIDB = async (storeName, items) => {
+            const db = await initIDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readwrite');
+                const store = tx.objectStore(storeName);
+                items.forEach(item => store.put(item));
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        };
+
+        const getAllIDB = async (storeName) => {
+            const db = await initIDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readonly');
+                const req = tx.objectStore(storeName).getAll();
                 req.onsuccess = () => resolve(req.result);
                 req.onerror = () => reject(tx.error);
             });
@@ -293,16 +315,34 @@
             const [marginRules, setMarginRules] = useState(() => { try { return JSON.parse(localStorage.getItem('merchMarginRules_v878')) || [{ id: 'default', whCode: '*', unit: '*', rate: 10, type: 'divide' }]; } catch(e) { return [{ id: 'default', whCode: '*', unit: '*', rate: 10, type: 'divide' }]; } });
 
             useEffect(() => {
-                getIDB('merchMaster_v870').then(data => {
-                    if (data) setMasterProducts(data);
+                getAllIDB('master_products').then(items => {
+                    if (items && items.length > 0) {
+                        const dict = {};
+                        items.forEach(i => dict[i.코드] = i);
+                        setMasterProducts(dict);
+                    } else {
+                        getIDB('merchMaster_v870').then(data => {
+                            if (data) {
+                                setMasterProducts(data);
+                                const requestIdle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
+                                requestIdle(async () => {
+                                    await bulkPutIDB('master_products', Object.values(data));
+                                });
+                            }
+                        }).catch(console.error);
+                    }
                 }).catch(console.error);
             }, []);
 
             useEffect(() => {
                 const handleStorageChange = (e) => {
                     if (e.key === 'merchMaster_sync_trigger') {
-                        getIDB('merchMaster_v870').then(data => {
-                            if (data) setMasterProducts(data);
+                        getAllIDB('master_products').then(items => {
+                            if (items && items.length > 0) {
+                                const dict = {};
+                                items.forEach(i => dict[i.코드] = i);
+                                setMasterProducts(dict);
+                            }
                         }).catch(console.error);
                     }
                 };
@@ -313,11 +353,12 @@
             const saveMaster = async (data) => {
                 setMasterProducts(data);
                 try {
-                    await setIDB('merchMaster_v870', data);
-                    localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
-                } catch(e) {
-                    console.error("IndexedDB 저장 실패", e);
-                }
+                    const requestIdle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
+                    requestIdle(async () => {
+                        await bulkPutIDB('master_products', Object.values(data));
+                        localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+                    });
+                } catch(e) { console.error("IndexedDB 저장 실패", e); }
             };
 
             const saveDict = (data) => {
@@ -332,6 +373,7 @@
             const [showInputModal, setShowInputModal] = useState(true); 
             const [showReviewModal, setShowReviewModal] = useState(false);
             const [showErpModal, setShowErpModal] = useState(false);
+            const [showSettingsModal, setShowSettingsModal] = useState(false); // 센터 모달 표시 상태 추가
 
             const [toastMsg, setToastMsg] = useState('');
             const [isProcessing, setIsProcessing] = useState(false);
@@ -349,6 +391,7 @@
                 parserBuffer, setParserBuffer, currentTag, setCurrentTag,
                 activeTab, setActiveTab, showInputModal, setShowInputModal,
                 showReviewModal, setShowReviewModal, showErpModal, setShowErpModal,
+                showSettingsModal, setShowSettingsModal,
                 toastMsg, showToast, isProcessing, setIsProcessing, processMsg, setProcessMsg,
                 globalSearch, setGlobalSearch, targetId, setTargetId,
                 selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes
@@ -420,7 +463,7 @@
                 }, 100);
             }, [masterProducts, parserDict, marginRules]);
 
-            const handleApplyMatched = useCallback(async (updateMasterInfo = false) => {
+            const handleApplyMatched = useCallback(async (updateTextData = true) => {
                 const toApply = parserBuffer.filter(r => r._apply && r._matchCode);
                 if (toApply.length === 0) {
                     showToast("⚠️ 적용할 항목이 없습니다.");
@@ -444,13 +487,6 @@
                         if (!newMaster[code]) newMaster[code] = { 코드: code };
                         else newMaster[code] = { ...newMaster[code] };
                         
-                        // [추가됨] 마스터 정보 파싱된 데이터로 업데이트 체크된 경우
-                        if (updateMasterInfo === true) {
-                            if (row['품목명']) newMaster[code]['품목명'] = row['품목명'];
-                            if (row['규격']) newMaster[code]['규격'] = row['규격'];
-                            if (row['단위']) newMaster[code]['단위'] = row['단위'];
-                        }
-
                         const pInNum = parseNum(row.finalData?.['입고가'] || row['입고가']);
                         if (pInNum > 0) {
                             const oldP = parseNum(oldItem['입고가']);
@@ -469,6 +505,12 @@
 
                         if (currentTag) {
                             newMaster[code]['카탈로그'] = addTag(newMaster[code]['카탈로그'], currentTag);
+                        }
+
+                        if (updateTextData) {
+                            newMaster[code]['품목명'] = row['품목명'] || newMaster[code]['품목명'];
+                            newMaster[code]['규격'] = row['규격'] || newMaster[code]['규격'];
+                            newMaster[code]['단위'] = row['단위'] || newMaster[code]['단위'];
                         }
 
                         if (row['품목명'] && row._matchStatus.includes('수동일치')) {
@@ -492,7 +534,7 @@
                     const appliedIds = new Set(toApply.map(r => r._id));
                     setParserBuffer(prev => prev.filter(r => !appliedIds.has(r._id)));
 
-                    showToast(`✅ ${toApply.length}건 최종 반영 완료! (마스터 갱신 및 AI 학습됨)`);
+                    showToast(`✅ ${toApply.length}건 최종 반영 완료!`);
                     return true;
                 } catch (error) {
                     console.error(error);
@@ -503,7 +545,7 @@
                 }
             }, [parserBuffer, masterProducts, parserDict, marginRules, currentTag, processedCodes, saveMaster, saveDict, setProcessedCodes, setParserBuffer, setIsProcessing, setProcessMsg, showToast]);
 
-            const handleConfirmMapping = useCallback(async (masterCode, nextItem = null) => { 
+            const handleConfirmMapping = useCallback(async (masterCode) => { 
                 if (!targetId) return showToast("⚠️ 먼저 왼쪽에서 매핑할 타겟 상품을 선택하세요.");
                 const row = parserBuffer.find(r => r._id === targetId); if (!row) return;
 
@@ -524,22 +566,15 @@
                     });
 
                     setParserBuffer(nextBuffer);
-                    
-                    // [수정됨] 다음 항목이 존재하면 현재 탭 유지 및 다음 항목 자동 선택
-                    if (nextItem) {
-                        setTargetId(nextItem._id);
-                        setGlobalSearch(nextItem['품목명'].replace(/[()[\]{},./]/g, ' ').replace(/\s+/g, ' ').trim());
-                        showToast(`✅ 매핑 완료! 다음 상품으로 자동 선택됩니다.`);
-                    } else {
-                        setTargetId(null); setGlobalSearch(''); 
-                        setActiveTab('matched');
-                        showToast(`✅ 수동 연결 대기 완료! (일치 탭으로 이동되었습니다)`);
-                    }
+                    setTargetId(null); 
+                    setGlobalSearch(''); 
+                    // 💡 [수정유지] 탭 이동(setActiveTab) 방지
+                    showToast(`✅ 수동 연결 완료! (일치 탭에 대기 중입니다)`);
                 } catch(error) {
                     console.error(error);
                     showToast("❌ 수동 매핑 처리 중 오류가 발생했습니다.");
                 }
-            }, [targetId, parserBuffer, masterProducts, marginRules, setParserBuffer, setTargetId, setGlobalSearch, setActiveTab, showToast]);
+            }, [targetId, parserBuffer, masterProducts, marginRules, setParserBuffer, setTargetId, setGlobalSearch, showToast]);
 
             const handleCancelMapping = useCallback((rowId) => {
                 setParserBuffer(prev => prev.map(r => {
@@ -550,7 +585,7 @@
                 }));
             }, [setParserBuffer]);
 
-            const handleCreateNewMasterItem = useCallback(async (erpCode, nextItem = null) => {
+            const handleCreateNewMasterItem = useCallback(async (erpCode) => {
                 if (!targetId) return showToast("⚠️ 먼저 추가할 파싱 항목을 선택하세요.");
                 const row = parserBuffer.find(r => r._id === targetId);
                 if (!row) return;
@@ -598,26 +633,19 @@
                     });
                     
                     setParserBuffer(nextBuffer);
+                    setTargetId(null);
+                    setGlobalSearch('');
+                    // 💡 [수정유지] 탭 이동 방지
                     setShowErpModal(false);
 
-                    // [수정됨] 다음 항목이 존재하면 현재 탭 유지 및 다음 항목 자동 선택
-                    if (nextItem) {
-                        setTargetId(nextItem._id);
-                        setGlobalSearch(nextItem['품목명'].replace(/[()[\]{},./]/g, ' ').replace(/\s+/g, ' ').trim());
-                        showToast(`✅ [${newCode}] 신규 마스터 등록 완료! 다음 상품으로 자동 선택됩니다.`);
-                    } else {
-                        setTargetId(null);
-                        setGlobalSearch('');
-                        setActiveTab('matched');
-                        showToast(`✅ [${newCode}] 신규 마스터 등록 및 매핑이 완료되었습니다!`);
-                    }
+                    showToast(`✅ [${newCode}] 신규 마스터 등록 및 매핑이 완료되었습니다!`);
                 } catch(error) {
                     console.error(error);
                     showToast("❌ 신규 등록 처리 중 오류가 발생했습니다.");
                 } finally {
                     setIsProcessing(false); setProcessMsg('');
                 }
-            }, [targetId, parserBuffer, masterProducts, currentTag, marginRules, parserDict, processedCodes, saveMaster, saveDict, setProcessedCodes, setParserBuffer, setTargetId, setGlobalSearch, setActiveTab, setShowErpModal, setIsProcessing, setProcessMsg, showToast]);
+            }, [targetId, parserBuffer, masterProducts, currentTag, marginRules, parserDict, processedCodes, saveMaster, saveDict, setProcessedCodes, setParserBuffer, setTargetId, setGlobalSearch, setShowErpModal, setIsProcessing, setProcessMsg, showToast]);
 
             const handleIgnoreParsedItem = useCallback((id) => {
                 setParserBuffer(prev => prev.filter(r => r._id !== id));
@@ -685,8 +713,9 @@
             if (!targetItem) return null;
 
             return (
-                <div className="fixed inset-0 bg-slate-900/60 z-[300] flex justify-center items-center backdrop-blur-sm fade-in" onClick={onClose}>
-                    <div className="bg-white w-[420px] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-gray-200" onClick={(e) => e.stopPropagation()}>
+                // 💡 [수정] 모달 바깥쪽 클릭 시 닫히는 기능 제거 (입력 내용 유실 방지)
+                <div className="fixed inset-0 bg-slate-900/60 z-[300] flex justify-center items-center backdrop-blur-sm fade-in">
+                    <div className="bg-white w-[420px] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-gray-200">
                         <div className="px-5 py-4 border-b border-gray-200 flex justify-between items-center bg-slate-50">
                             <h2 className="font-bold text-slate-800 text-[15px]"><i className="fas fa-barcode text-indigo-500 mr-2"></i>ERP 코드로 신규 등록</h2>
                             <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><i className="fas fa-times"></i></button>
@@ -767,8 +796,9 @@
             };
 
             return (
-                <div className="fixed inset-0 bg-slate-900/80 z-[200] flex justify-center items-center backdrop-blur-sm fade-in" onClick={onClose ? onClose : undefined}>
-                    <div className="bg-white w-[800px] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                // 💡 [수정] 모달 바깥쪽 클릭 방지 (onClick 래퍼 제거)
+                <div className="fixed inset-0 bg-slate-900/80 z-[200] flex justify-center items-center backdrop-blur-sm fade-in">
+                    <div className="bg-white w-[800px] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
                         <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
                             <h2 className="font-black text-[16px]"><i className="fas fa-magic text-indigo-400 mr-2"></i>스마트 텍스트 파서 & 델타 동기화</h2>
                             {onClose && <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>}
@@ -829,7 +859,9 @@
         const ParserReviewModal = ({ onClose, onConfirm, state, actions }) => {
             const [viewMode, setViewMode] = useState('mapping'); // 'mapping' | 'price'
             const [priceFilter, setPriceFilter] = useState('all'); // 'all', 'up', 'down', 'same'
-            const [updateMasterInfo, setUpdateMasterInfo] = useState(true); // [추가됨] 마스터 정보 업데이트 여부 (기본 true)
+            
+            const [updateText, setUpdateText] = useState(true); 
+            
             const { parserBuffer, masterProducts } = state;
             const { handleCancelMapping } = actions;
 
@@ -877,8 +909,9 @@
             }, [analysis.priceList, priceFilter]);
 
             return (
-                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in" onClick={onClose}>
-                    <div className="bg-white w-[900px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                // 💡 [수정] 모달 바깥쪽 클릭 닫기(onClick 래퍼) 제거
+                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in">
+                    <div className="bg-white w-[900px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
                         <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
                             <h2 className="font-black text-[16px]"><i className="fas fa-clipboard-check text-indigo-400 mr-2"></i>작업 완료 및 투트랙(매핑/단가) 검증</h2>
                             <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>
@@ -1007,18 +1040,17 @@
                             )}
                         </div>
 
-                        {/* [수정됨] 마스터 정보 업데이트 체크박스 영역 */}
                         <div className="bg-white p-4 border-t border-slate-200 flex justify-between items-center shrink-0">
-                            <div className="flex flex-col gap-1.5">
+                            <div className="flex flex-col gap-1">
                                 <div className="text-[11px] text-slate-500 font-bold"><i className="fas fa-lightbulb text-amber-500 mr-1"></i>두 가지 탭을 모두 확인하여 매핑 오류와 단가를 점검한 후 최종 반영하세요.</div>
-                                <label className="flex items-center gap-2 cursor-pointer w-max bg-indigo-50 px-2.5 py-1.5 rounded-md border border-indigo-100">
-                                    <input type="checkbox" className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-indigo-300" checked={updateMasterInfo} onChange={e => setUpdateMasterInfo(e.target.checked)} />
-                                    <span className="text-[12px] font-black text-indigo-800">파싱된 텍스트(품명/규격)로 마스터 상품 정보 업데이트 적용</span>
+                                <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 text-[12px] font-bold mt-1 select-none">
+                                    <input type="checkbox" className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" checked={updateText} onChange={e => setUpdateText(e.target.checked)} />
+                                    마스터 상품명 및 규격을 파싱된 텍스트로 자동 덮어쓰기
                                 </label>
                             </div>
                             <div className="flex gap-2">
                                 <button onClick={onClose} className="px-5 py-2.5 bg-slate-100 border border-slate-200 text-slate-600 font-bold rounded-lg hover:bg-slate-200 transition-colors">닫기 (수정하러 가기)</button>
-                                <button onClick={() => { onConfirm(updateMasterInfo); onClose(); }} className="px-6 py-2.5 bg-indigo-600 text-white font-black rounded-lg hover:bg-indigo-700 shadow-sm transition-colors flex items-center">
+                                <button onClick={() => { onConfirm(updateText); onClose(); }} className="px-6 py-2.5 bg-indigo-600 text-white font-black rounded-lg hover:bg-indigo-700 shadow-sm transition-colors flex items-center">
                                     <i className="fas fa-save mr-1.5 text-[14px]"></i> 최종 반영 및 AI 사전 등록
                                 </button>
                             </div>
@@ -1027,6 +1059,26 @@
                 </div>
             );
         };
+
+        const MappingCenterModal = ({ onClose }) => {
+            // 💡 [NEW] 센터용 모달 컴포넌트 추가
+            return (
+                <div className="fixed inset-0 bg-slate-900/80 z-[300] flex justify-center items-center backdrop-blur-sm fade-in">
+                    <div className="bg-white w-[500px] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                        <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
+                            <h2 className="font-black text-[16px]"><i className="fas fa-cogs text-indigo-400 mr-2"></i>시스템 환경설정</h2>
+                        </div>
+                        <div className="p-6 flex flex-col items-center justify-center gap-6 h-[300px]">
+                            <p className="text-slate-500 font-bold text-center">환경설정 센터는 메인 워크스페이스에서 지원합니다.<br/>아래 버튼을 눌러 메인 화면으로 이동하세요.</p>
+                            <button onClick={() => window.location.href='https://oneapp.orderz.co.kr/MerchOps/v1.4.1.html'} className="px-6 py-3 bg-indigo-600 text-white font-black rounded-xl hover:bg-indigo-700 shadow-sm transition-colors flex items-center">
+                                <i className="fas fa-home mr-2 text-[14px]"></i> 메인으로 이동하기
+                            </button>
+                            <button onClick={onClose} className="text-slate-400 font-bold hover:text-slate-600 transition-colors mt-2 text-[12px]">닫기</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
 
         // ============================================================================
         // 🚀 6. APP (메인 렌더링 조립부)
@@ -1038,7 +1090,7 @@
             const { 
                 masterProducts, parserBuffer, currentTag, activeTab, setActiveTab,
                 showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, 
-                showErpModal, setShowErpModal,
+                showErpModal, setShowErpModal, showSettingsModal, setShowSettingsModal,
                 toastMsg, showToast, isProcessing, processMsg,
                 globalSearch, setGlobalSearch, targetId, setTargetId,
                 selectedMissingCodes, setSelectedMissingCodes, processedCodes
@@ -1092,12 +1144,13 @@
                 const toApply = appState.parserBuffer.filter(r => r._apply && r._matchCode);
                 if (toApply.length > 0) {
                     actions.showToast("⏳ 미반영된 일치 항목을 자동 저장 후 이동합니다...");
-                    const success = await actions.handleApplyMatched(false); // 이동 시에는 기본 동작 유지
+                    const success = await actions.handleApplyMatched();
                     if (success) {
-                        setTimeout(() => { window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.4'; }, 800);
+                        // 💡 [수정] 메인으로 이동하는 URL (v1.4.1 기준)
+                        setTimeout(() => { window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.4.1.html'; }, 800);
                     }
                 } else {
-                    window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.4';
+                    window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/v1.4.1.html';
                 }
             };
 
@@ -1135,7 +1188,7 @@
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <div className="flex items-center mb-0.5">
                                                     <span className="text-[14px] font-black text-slate-200 leading-none">Smart Parser</span>
-                                                    <span className="ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.3.2</span>
+                                                    <span className="ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.3.4</span>
                                                 </div>
                                                 <span className="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">TEXT ANALYSIS & DELTA SYNC</span>
                                             </div>
@@ -1156,14 +1209,16 @@
                                         </div>
                                         
                                         <nav className="flex gap-1.5 text-[14px] shrink-0 items-center">
+                                            {/* 💡 [NEW] 상단 우측 버튼들도 v1.4.1 메인으로 연결되도록 설정 */}
                                             <a href="https://oneapp.orderz.co.kr/MerchOps/guide" target="_blank" rel="noopener noreferrer" className={`h-8 px-2.5 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-emerald-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-300 hover:border-emerald-500/50 font-bold text-[11px] tracking-wider uppercase ${isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="MerchOps 사용 가이드">
                                                 GUIDE
                                             </a>
-                                            <a href="https://oneapp.orderz.co.kr/MerchOps/trend_report" target="_blank" rel="noopener noreferrer" className={`h-8 px-2.5 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-blue-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-blue-300 hover:border-blue-500/50 font-bold text-[11px] tracking-wider uppercase ${isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="트렌드 리포트">
+                                            <a href="https://oneapp.orderz.co.kr/MerchOps/trend_report.html" target="_blank" rel="noopener noreferrer" className={`h-8 px-2.5 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-blue-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-blue-300 hover:border-blue-500/50 font-bold text-[11px] tracking-wider uppercase ${isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="트렌드 리포트">
                                                 REPORT
                                             </a>
                                             <div className="w-px h-4 bg-slate-700 mx-0.5"></div>
-                                            {/* [수정됨] 메인 주소 확인됨 */}
+                                            <button onClick={() => setShowSettingsModal(true)} className={`w-8 h-8 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-slate-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500 ${isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="환경설정 (메인으로 이동)"><i className="fas fa-cogs opacity-80 text-[13px]"></i></button>
+                                            <div className="w-px h-4 bg-slate-700 mx-0.5"></div>
                                             <button onClick={safeGoToMain} className="h-8 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-slate-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500 font-bold text-[11px]">
                                                 <i className="fas fa-home mr-1.5 text-indigo-400 text-[12px]"></i> 메인으로
                                             </button>
@@ -1358,12 +1413,7 @@
                                                                     <td className="py-2 px-3"><div className="flex flex-col min-w-0 w-full overflow-hidden"><span className="text-[10px] font-mono text-slate-400">{m.코드}</span><div className="flex items-center gap-1.5 mt-0.5"><span className="text-[12px] font-extrabold text-slate-800 truncate">{m.품목명}</span>{m.규격 && <span className="text-[11px] text-slate-500 shrink-0">({m.규격})</span>}</div></div></td>
                                                                     <td className="py-2 px-3 text-right font-bold text-slate-600">{m.입고가 ? Number(m.입고가).toLocaleString() : '-'}</td>
                                                                     <td className="py-2 px-3 text-center flex gap-1 justify-center items-center h-full">
-                                                                        {/* [수정됨] 연결 클릭 시 다음 대상 자동 선택 정보 전달 */}
-                                                                        <button onClick={() => {
-                                                                            const currentIndex = displayUnmatchedRows.findIndex(r => r._id === targetId);
-                                                                            const nextItem = displayUnmatchedRows[currentIndex + 1] || null;
-                                                                            actions.handleConfirmMapping(m.코드, nextItem);
-                                                                        }} className="px-2 py-1.5 rounded-lg text-[11px] font-bold shadow-sm bg-indigo-600 text-white hover:bg-indigo-700 transition-colors flex-1" title="우측 항목과 연결하여 카탈로그에 추가합니다."><i className="fas fa-link"></i> 연결</button>
+                                                                        <button onClick={() => actions.handleConfirmMapping(m.코드)} className="px-2 py-1.5 rounded-lg text-[11px] font-bold shadow-sm bg-indigo-600 text-white hover:bg-indigo-700 transition-colors flex-1" title="우측 항목과 연결하여 카탈로그에 추가합니다."><i className="fas fa-link"></i> 연결</button>
                                                                         {hasTag && (
                                                                             <button onClick={() => actions.handleRemoveTagDirect(m.코드)} className="px-2 py-1.5 rounded-lg text-[11px] font-bold shadow-sm bg-rose-100 text-rose-600 hover:bg-rose-200 transition-colors" title="이 상품을 현재 카탈로그에서 즉각 단종(제외)시킵니다."><i className="fas fa-eraser"></i> 단종</button>
                                                                         )}
@@ -1416,15 +1466,8 @@
                     </div>
                     {showInputModal && <SmartParserInputModal onClose={() => setShowInputModal(false)} executeParser={actions.executeParser} showToast={showToast} availableTags={availableTags} />}
                     {showReviewModal && <ParserReviewModal onClose={() => setShowReviewModal(false)} onConfirm={actions.handleApplyMatched} state={appState} actions={actions} />}
-                    {showErpModal && <ErpCodeInputModal 
-                        onClose={() => setShowErpModal(false)} 
-                        onSubmit={(code) => {
-                            const currentIndex = displayUnmatchedRows.findIndex(r => r._id === targetId);
-                            const nextItem = displayUnmatchedRows[currentIndex + 1] || null;
-                            actions.handleCreateNewMasterItem(code, nextItem);
-                        }} 
-                        targetItem={parserBuffer.find(r => r._id === targetId)} 
-                    />}
+                    {showErpModal && <ErpCodeInputModal onClose={() => setShowErpModal(false)} onSubmit={actions.handleCreateNewMasterItem} targetItem={parserBuffer.find(r => r._id === targetId)} />}
+                    {showSettingsModal && <MappingCenterModal onClose={() => setShowSettingsModal(false)} />}
                 </div>
             );
         };
