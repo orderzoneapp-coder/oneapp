@@ -62,7 +62,19 @@
             return new Promise((resolve, reject) => {
                 const tx = db.transaction(storeName, 'readwrite');
                 const store = tx.objectStore(storeName);
-                items.forEach(item => store.put(item));
+                
+                // 💡 [버그 수정] keyPath('코드')가 없는 찌꺼기 데이터가 섞여 들어와
+                // 전체 저장이 취소(Rollback)되는 치명적 에러를 방어합니다.
+                items.forEach(item => {
+                    if (storeName === 'master_products') {
+                        if (item && item.코드 !== undefined && item.코드 !== null && String(item.코드).trim() !== '') {
+                            store.put(item);
+                        }
+                    } else {
+                        store.put(item);
+                    }
+                });
+                
                 tx.oncomplete = () => resolve();
                 tx.onerror = () => reject(tx.error);
             });
@@ -385,18 +397,16 @@
             const [historyLogs, setHistoryLogs] = useState([]);
 
             useEffect(() => {
-                // 💡 [개선됨] IndexedDB에서 대용량 데이터를 빠르고 안전하게 로드
                 getAllIDB('master_products').then(items => {
                     if (items && items.length > 0) {
                         const dict = {};
                         items.forEach(i => dict[i.코드] = i);
                         setMasterProducts(dict);
                     } else {
-                        // 하위 호환성 유지: 기존 v1 방식 스토리지에서 복구 및 마이그레이션
+                        // 하위 호환성 유지
                         getIDB('merchMaster_v870').then(data => {
                             if (data) {
                                 setMasterProducts(data);
-                                // 백그라운드에서 신규 구조로 마이그레이션 처리
                                 const requestIdle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
                                 requestIdle(async () => {
                                     await bulkPutIDB('master_products', Object.values(data));
@@ -431,7 +441,6 @@
             const saveMasterToLocal = useCallback(async (data) => { 
                 setMasterProducts(data);
                 try { 
-                    // 💡 [개선됨] 브라우저 UI 블로킹 방지를 위한 백그라운드 비동기 저장
                     const requestIdle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
                     requestIdle(async () => {
                         await bulkPutIDB('master_products', Object.values(data));
@@ -582,7 +591,7 @@
                                 let mItem = newManaged[code];
                                 if (!mItem.sources[mapKey]) mItem.sources[mapKey] = {};
                                 
-                                // 💡 [개선됨] 불변성 유지
+                                // 불변성 유지 업데이트
                                 mItem = { ...mItem, _tags: new Set([...(mItem._tags || []), `excel:업로드`]) };
                                 
                                 const nameKey = headerCache['품목명']; const specKey = headerCache['규격']; const vendorKey = headerCache['구매처'];
@@ -633,6 +642,7 @@
                 }
             }, [data.masterProducts, data.managedItems, config.mappings, config.masterLinks, config.marginRules, ui]);
 
+            // 💡 [버그 수정] 함수형 업데이트 및 에러 방어(Try-Catch-Finally) 적용
             const handleLoadFilter = useCallback((type, name) => {
                 if (!name) return;
                 if (ui.activeTags.some(t => t.type === type && t.name === name)) return ui.showToast('⚠️ 이미 화면에 추가된 항목입니다.');
@@ -641,43 +651,53 @@
                 ui.setProcessMsg(`[${name}] 데이터 병합 중...`);
                 
                 setTimeout(() => {
-                    ui.setActiveTags(prev => [...prev, {type, name}]);
-                    let newManaged = { ...data.managedItems };
-                    let addedCount = 0;
-                    
-                    Object.values(data.masterProducts).forEach(mItem => {
-                        let isMatch = false;
-                        const catStr = type === 'category' ? (mItem['견적서'] || mItem['카테고리'] || '') : (mItem['카탈로그'] || '');
-                        if (catStr.split(',').map(c => c.trim()).includes(name)) {
-                            isMatch = true;
-                        }
+                    try {
+                        ui.setActiveTags(prev => [...prev, {type, name}]);
+                        
+                        data.setManagedItems(prevManaged => {
+                            let newManaged = { ...prevManaged };
+                            let addedCount = 0;
+                            
+                            Object.values(data.masterProducts).forEach(mItem => {
+                                let isMatch = false;
+                                const catStr = type === 'category' ? (mItem['견적서'] || mItem['카테고리'] || '') : (mItem['카탈로그'] || '');
+                                if (catStr.split(',').map(c => c.trim()).includes(name)) {
+                                    isMatch = true;
+                                }
 
-                        if (isMatch) {
-                            if (!newManaged[mItem.코드]) {
-                                newManaged[mItem.코드] = {
-                                    코드: mItem.코드,
-                                    sources: { estimate: {} },
-                                    finalData: calculatePricesEngine(parseNum(mItem['입고가']), mItem, {}, config.marginRules, false),
-                                    _tags: new Set([`${type}:${name}`])
-                                };
-                                addedCount++;
-                            } else {
-                                // 💡 [개선됨] 상태 불변성 완벽 유지
-                                newManaged[mItem.코드] = {
-                                    ...newManaged[mItem.코드],
-                                    _tags: new Set([...(newManaged[mItem.코드]._tags || []), `${type}:${name}`])
-                                };
-                            }
-                        }
-                    });
-                    
-                    data.setManagedItems(newManaged);
-                    ui.setSelectedRows(new Set()); 
-                    ui.showToast(`✅ [${name}] 병합 완료! (신규 ${addedCount}건 추가됨)`);
-                    ui.setIsProcessing(false);
-                    ui.setProcessMsg('');
+                                if (isMatch) {
+                                    if (!newManaged[mItem.코드]) {
+                                        newManaged[mItem.코드] = {
+                                            코드: mItem.코드,
+                                            sources: { estimate: {} },
+                                            finalData: calculatePricesEngine(parseNum(mItem['입고가']), mItem, {}, config.marginRules, false),
+                                            _tags: new Set([`${type}:${name}`])
+                                        };
+                                        addedCount++;
+                                    } else {
+                                        // 💡 상태 불변성 완벽 유지
+                                        newManaged[mItem.코드] = {
+                                            ...newManaged[mItem.코드],
+                                            _tags: new Set([...(newManaged[mItem.코드]._tags || []), `${type}:${name}`])
+                                        };
+                                    }
+                                }
+                            });
+                            
+                            setTimeout(() => ui.showToast(`✅ [${name}] 병합 완료! (신규 ${addedCount}건 추가됨)`), 10);
+                            return newManaged;
+                        });
+                        
+                        ui.setSelectedRows(new Set()); 
+                    } catch (err) {
+                        console.error("병합 중 에러 발생:", err);
+                        ui.showToast("❌ 병합 처리 중 에러가 발생했습니다.");
+                    } finally {
+                        ui.setIsProcessing(false);
+                        ui.setProcessMsg('');
+                    }
                 }, 100);
-            }, [data.masterProducts, data.managedItems, data.setManagedItems, config.marginRules, ui]);
+            }, [data.masterProducts, config.marginRules, ui]);
 
             const handleRemoveFilter = useCallback((type, name) => {
                 ui.setActiveTags(prev => prev.filter(t => !(t.type === type && t.name === name)));
@@ -689,7 +709,6 @@
                     Object.keys(newManaged).forEach(key => {
                         const item = newManaged[key];
                         if (item._tags && item._tags.has(`${type}:${name}`)) {
-                            // 💡 [개선됨] 상태 불변성 완벽 유지
                             const newTags = new Set(item._tags);
                             newTags.delete(`${type}:${name}`);
                             
@@ -971,7 +990,6 @@
                             items: grouped[title]
                         }));
 
-                        // 💡 [개선됨] LocalStorage (5MB 제한) 대신 IndexedDB를 사용하여 데이터 전달 안정성 확보
                         await setIDB('ONEAPP_IMAGE_DATA_TEMP', JSON.stringify(exportData));
                         
                         window.open('image_generator.html', '_blank');
@@ -999,7 +1017,6 @@
                 ui.showToast('작업 데이터가 초기화 되었습니다.');
             }, [data.setManagedItems, ui.setSelectedRows, ui.setGlobalSearch, ui.setActiveTags, ui.showToast]);
 
-            // 💡 [개선됨] useMemo를 활용하여 actions 객체의 메모이제이션 유지 (리렌더링 방지)
             return useMemo(() => ({
                 handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleCommitEstimate, executeExport, handleExportCurrentView, handleImageExport, toggleAllRows, handleReset
             }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleCommitEstimate, executeExport, handleExportCurrentView, handleImageExport, toggleAllRows, handleReset]);
@@ -1412,7 +1429,7 @@
                                     if (url.startsWith('blob:') || url.startsWith('about:') || url.startsWith('data:')) {
                                         showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.');
                                     } else {
-                                        window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/vp1.1.html';
+                                        window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/vp1.3.html';
                                     }
                                 } catch (e) {
                                     showToast('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.');
@@ -1692,7 +1709,7 @@
                     <div className="flex-1 bg-slate-50 border border-slate-200 p-8 rounded-xl text-center hover:shadow-lg transition-all duration-300 group hover:-translate-y-1 hover:bg-purple-50 hover:border-purple-200 cursor-pointer relative overflow-hidden" onClick={() => {
                         try {
                             if(window.location.href.startsWith('blob:')) { alert('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.'); }
-                            else { window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/vp1.1.html'; }
+                            else { window.location.href = 'https://oneapp.orderz.co.kr/MerchOps/vp1.3.html'; }
                         } catch(e) { alert('⚠️ 미리보기 환경에서는 우측 탭을 눌러 이동하세요.'); }
                     }}>
                         <div className="text-4xl text-purple-500 mb-5 group-hover:scale-110 transition-transform duration-300"><i className="fas fa-magic"></i></div>
