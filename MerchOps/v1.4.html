@@ -563,18 +563,24 @@
                         if (!res.ok) throw new Error("Network Error");
                         const result = await res.json();
                         if (result.status === 'success' && result.data) { 
+                            let masterCount = 0;
+                            let historyCount = 0;
+
                             if (result.data.master && Object.keys(result.data.master).length > 0) {
+                                masterCount = Object.keys(result.data.master).length;
                                 data.setMasterProducts(result.data.master);
                             }
                             if (result.data.dict && Object.keys(result.data.dict).length > 0) localStorage.setItem('parserDict_v870', JSON.stringify(result.data.dict));
                             if (result.data.rules && result.data.rules.length > 0) config.setMarginRules(result.data.rules);
                             
                             if (result.data.history && Array.isArray(result.data.history)) {
+                                historyCount = result.data.history.length;
                                 data.setHistoryLogs(result.data.history);
                                 localStorage.setItem('merchHistory_v870', JSON.stringify(result.data.history));
                             }
                             
-                            ui.showToast('✅ 클라우드 최신 데이터 불러오기(Pull) 성공');
+                            // [수정] 불러오기 완료 시 상품 개수와 히스토리 개수를 동적으로 표시합니다.
+                            ui.showToast(`✅ 데이터 불러오기 성공! (상품: ${masterCount.toLocaleString()}건, 히스토리: ${historyCount.toLocaleString()}건)`);
                         } else {
                             throw new Error("Invalid Data");
                         }
