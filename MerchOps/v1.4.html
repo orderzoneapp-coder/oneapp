@@ -547,7 +547,7 @@
                                 master: data.masterProducts,
                                 dict: dict,
                                 rules: config.marginRules,
-                                history: data.historyLogs // [추가] 히스토리 데이터 포함
+                                history: data.historyLogs
                             } 
                         };
                         const res = await fetch(config.cloudUrl, { 
@@ -569,7 +569,6 @@
                             if (result.data.dict && Object.keys(result.data.dict).length > 0) localStorage.setItem('parserDict_v870', JSON.stringify(result.data.dict));
                             if (result.data.rules && result.data.rules.length > 0) config.setMarginRules(result.data.rules);
                             
-                            // [추가] 히스토리 데이터 복구 로직
                             if (result.data.history && Array.isArray(result.data.history)) {
                                 data.setHistoryLogs(result.data.history);
                                 localStorage.setItem('merchHistory_v870', JSON.stringify(result.data.history));
@@ -875,7 +874,6 @@
                         }
                     });
 
-                    // [추가] 견적서 그룹 저장 내역을 히스토리에 기록
                     if (count > 0) {
                         const localLogs = [{
                             id: generateUUID(), timestamp: new Date().toLocaleString('ko-KR'), code: 'SYSTEM', name: `[견적서 그룹 생성] ${safeName}`, spec: '', field: '견적서', oldVal: '-', newVal: `${count}개 상품 추가됨`, diff: 0
@@ -912,7 +910,6 @@
                     }
                 }
                 
-                // [추가] 카탈로그/견적서 삭제 내역을 히스토리에 기록
                 if (count > 0) {
                     const localLogs = [{
                         id: generateUUID(), timestamp: new Date().toLocaleString('ko-KR'), code: 'SYSTEM', name: `[${fieldKey} 그룹 삭제] ${tagName}`, spec: '', field: fieldKey, oldVal: `${count}개 상품 포함`, newVal: '삭제됨', diff: 0
@@ -950,7 +947,6 @@
                                 const newVal = NUMERIC_HEADERS.includes(linked) ? parseNum(item.finalData[field]) : item.finalData[field];
                                 const oldVal = NUMERIC_HEADERS.includes(linked) ? parseNum(oldItem[linked]) : (oldItem[linked] || '');
                                 
-                                // [수정] 단가 뿐만 아니라 카탈로그/견적서 글자 변경 내역도 히스토리에 기록
                                 if (oldVal !== newVal) {
                                     if (['입고가', '출고가'].includes(linked) && oldVal > 0) {
                                         localLogs.push({
@@ -1196,11 +1192,8 @@
         // ==========================================
         const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, data }) => {
             const isNumeric = NUMERIC_HEADERS.includes(linkedMasterField) || NUMERIC_HEADERS.includes(field);
-            
-            // [수정] 엑셀에 없었거나 빈칸이더라도 마스터에 기존 값이 있으면 꽉 채워서 보여주도록 (초기값 폴백 기능 강화)
             const sourceVal = row.sources?.['estimate']?.[field];
             const initialVal = row.finalData?.[field] !== undefined ? row.finalData[field] : (sourceVal !== undefined ? sourceVal : (mVal !== undefined ? mVal : ''));
-            
             const [localVal, setLocalVal] = useState(initialVal);
 
             useEffect(() => {
@@ -2040,6 +2033,57 @@
             );
         };
 
+        // [추가] 클라우드에서 동기화된 히스토리를 앱 안에서 바로 볼 수 있는 창
+        const HistoryModal = ({ onClose, logs }) => {
+            return (
+                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in" onClick={onClose}>
+                    <div className="bg-white w-[850px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                        <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
+                            <h2 className="font-black text-[16px]"><i className="fas fa-history text-indigo-400 mr-2"></i>최근 작업 및 동기화 내역</h2>
+                            <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>
+                        </div>
+                        <div className="flex-1 overflow-auto bg-slate-50 p-6 custom-scrollbar">
+                            {logs && logs.length > 0 ? (
+                                <table className="w-full text-left text-[12px] whitespace-nowrap bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+                                    <thead className="bg-slate-100 border-b border-slate-200 sticky top-0 shadow-sm z-10">
+                                        <tr className="text-slate-600 font-bold">
+                                            <th className="px-4 py-3 text-center">작업일시</th>
+                                            <th className="px-4 py-3">구분/코드</th>
+                                            <th className="px-4 py-3">품명 (내용)</th>
+                                            <th className="px-4 py-3 text-center">변경항목</th>
+                                            <th className="px-4 py-3 text-right">기존값</th>
+                                            <th className="px-4 py-3 text-right">변경값</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {logs.map((log, i) => (
+                                            <tr key={i} className="hover:bg-slate-50 transition-colors text-slate-700">
+                                                <td className="px-4 py-2 text-center text-slate-500 font-mono text-[11px]">{log.timestamp}</td>
+                                                <td className="px-4 py-2 font-bold text-[11px]">{log.code === 'SYSTEM' ? <span className="text-indigo-500">시스템 연산</span> : <span className="font-mono text-slate-500">{log.code}</span>}</td>
+                                                <td className="px-4 py-2 font-bold truncate max-w-[250px]">{log.name}</td>
+                                                <td className="px-4 py-2 text-center"><span className="bg-slate-100 px-2 py-0.5 rounded text-[11px] font-black border border-slate-200">{log.field}</span></td>
+                                                <td className="px-4 py-2 text-right text-slate-400 line-through">{log.oldVal}</td>
+                                                <td className="px-4 py-2 text-right font-black text-indigo-600">{log.newVal}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <div className="text-center py-20 text-slate-400 font-bold">
+                                    <i className="fas fa-folder-open text-4xl mb-4 block"></i>
+                                    기록된 최신 작업 내역이 없습니다.
+                                </div>
+                            )}
+                        </div>
+                        <div className="bg-white p-4 border-t border-slate-200 flex justify-between items-center shrink-0">
+                            <div className="text-[11px] text-slate-500 font-bold"><i className="fas fa-info-circle mr-1"></i>이 목록은 클라우드 동기화 시 다른 PC에서도 똑같이 조회됩니다.</div>
+                            <button onClick={onClose} className="px-6 py-2.5 bg-slate-100 border border-slate-300 text-slate-700 hover:bg-slate-200 rounded-lg text-[13px] font-bold transition-all shadow-sm">닫기</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         // ==========================================
         // ⚙️ 7. 메인 애플리케이션 (Main Entry)
         // ==========================================
@@ -2225,6 +2269,9 @@
                                             <button onClick={() => customActions.handleCloudSync('download')} className={`w-8 h-8 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-slate-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="클라우드 데이터 불러오기"><i className="fas fa-cloud-download-alt text-[13px]"></i></button>
                                             <button onClick={() => customActions.handleCloudSync('upload')} className={`w-8 h-8 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-slate-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="클라우드에 데이터 백업"><i className="fas fa-cloud-upload-alt text-[13px]"></i></button>
                                             <div className="w-px h-4 bg-slate-700 mx-0.5"></div>
+                                            
+                                            {/* [추가] 앱 안에서 최신 히스토리 보는 버튼 */}
+                                            <button onClick={() => ui.setShowHistoryModal(true)} className={`w-8 h-8 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-amber-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-amber-400 hover:border-amber-500/50 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="작업 히스토리 보기"><i className="fas fa-history text-[13px]"></i></button>
                                             <button onClick={() => ui.setShowSettings(true)} className={`w-8 h-8 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-slate-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="환경설정"><i className="fas fa-cogs opacity-80 text-[13px]"></i></button>
                                         </nav>
                                     </div>
@@ -2245,6 +2292,9 @@
                     {ui.showSettings && <MappingCenterModal onClose={() => ui.setShowSettings(false)} config={config} actions={{...customActions, showToast: ui.showToast}} availableCatalogs={availableCatalogs} availableCategories={availableCategories} />}
                     {ui.showReviewModal && <ReviewModal onClose={() => ui.setShowReviewModal(false)} onConfirm={customActions.handleCommitEstimate} state={appState} data={data} />}
                     {ui.showExportModal && <ExportModal onClose={() => ui.setShowExportModal(false)} executeExport={customActions.handleExportAllSheets} />}
+                    
+                    {/* [추가] 히스토리 조회 창 렌더링 */}
+                    {ui.showHistoryModal && <HistoryModal onClose={() => ui.setShowHistoryModal(false)} logs={data.historyLogs} />}
                 </div>
             );
         };
