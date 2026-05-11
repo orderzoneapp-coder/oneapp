@@ -1785,12 +1785,13 @@
                             {visibleMasterCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map((h, i, arr) => {
                                 const isNum = NUMERIC_HEADERS.includes(h);
                                 const mVal = mItem[h];
-                                let displayVal = mVal;
+                                let displayVal = mVal; // 💡 마스터 값 고정
                                 let isChanged = false;
 
                                 if (row.finalData && row.finalData[h] !== undefined) {
-                                    if (isNum && parseNum(row.finalData[h]) !== parseNum(mVal)) { displayVal = row.finalData[h]; isChanged = true; } 
-                                    else if (!isNum && String(row.finalData[h]) !== String(mVal)) { displayVal = row.finalData[h]; isChanged = true; }
+                                    // 💡 버그 수정: 값이 다를 경우 배경색 플래그(isChanged)만 true로 바꾸고, 화면의 텍스트(displayVal)는 원본을 유지합니다.
+                                    if (isNum && parseNum(row.finalData[h]) !== parseNum(mVal)) { isChanged = true; } 
+                                    else if (!isNum && String(row.finalData[h]) !== String(mVal)) { isChanged = true; }
                                 }
                                 const formattedVal = displayVal !== undefined && displayVal !== '' ? (isNum ? parseNum(displayVal).toLocaleString() : displayVal) : '-';
                                 
