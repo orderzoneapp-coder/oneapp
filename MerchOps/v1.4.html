@@ -94,6 +94,8 @@
             "1구매", "1출고", "2구매", "2출고", "1입고", "2입고"
         ];
 
+        const HIGHLIGHT_COLS = ['입고가', '도매A', '행사가', '출고가']; // 💡 강조할 주요 컬럼 지정
+
         const getInitialVisibleMasterCols = () => ({ estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] });
         const getInitialVisibleUploadCols = () => ({ estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명'] });
         
@@ -547,7 +549,13 @@
                                 master: data.masterProducts,
                                 dict: dict,
                                 rules: config.marginRules,
-                                history: data.historyLogs
+                                history: data.historyLogs,
+                                appConfig: {
+                                    mappings: config.mappings,
+                                    masterLinks: config.masterLinks,
+                                    visibleUploadCols: config.visibleUploadCols,
+                                    visibleMasterCols: config.visibleMasterCols
+                                }
                             } 
                         };
                         const res = await fetch(config.cloudUrl, { 
@@ -563,24 +571,25 @@
                         if (!res.ok) throw new Error("Network Error");
                         const result = await res.json();
                         if (result.status === 'success' && result.data) { 
-                            let masterCount = 0;
-                            let historyCount = 0;
-
                             if (result.data.master && Object.keys(result.data.master).length > 0) {
-                                masterCount = Object.keys(result.data.master).length;
                                 data.setMasterProducts(result.data.master);
                             }
                             if (result.data.dict && Object.keys(result.data.dict).length > 0) localStorage.setItem('parserDict_v870', JSON.stringify(result.data.dict));
                             if (result.data.rules && result.data.rules.length > 0) config.setMarginRules(result.data.rules);
                             
                             if (result.data.history && Array.isArray(result.data.history)) {
-                                historyCount = result.data.history.length;
                                 data.setHistoryLogs(result.data.history);
                                 localStorage.setItem('merchHistory_v870', JSON.stringify(result.data.history));
                             }
                             
-                            // [수정] 불러오기 완료 시 상품 개수와 히스토리 개수를 동적으로 표시합니다.
-                            ui.showToast(`✅ 데이터 불러오기 성공! (상품: ${masterCount.toLocaleString()}건, 히스토리: ${historyCount.toLocaleString()}건)`);
+                            if (result.data.appConfig) {
+                                if (result.data.appConfig.mappings) config.setMappings(result.data.appConfig.mappings);
+                                if (result.data.appConfig.masterLinks) config.setMasterLinks(result.data.appConfig.masterLinks);
+                                if (result.data.appConfig.visibleUploadCols) config.setVisibleUploadCols(result.data.appConfig.visibleUploadCols);
+                                if (result.data.appConfig.visibleMasterCols) config.setVisibleMasterCols(result.data.appConfig.visibleMasterCols);
+                            }
+
+                            ui.showToast('✅ 클라우드 최신 데이터 불러오기(Pull) 성공');
                         } else {
                             throw new Error("Invalid Data");
                         }
@@ -1192,81 +1201,9 @@
             }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleCommitEstimate, handleExportAllSheets, handleImageExport, toggleAllRows, handleReset, handleForceApplyMarginRules]);
         };
 
-
         // ==========================================
         // 🧩 5. UI 컴포넌트들
         // ==========================================
-        const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, data }) => {
-            const isNumeric = NUMERIC_HEADERS.includes(linkedMasterField) || NUMERIC_HEADERS.includes(field);
-            const sourceVal = row.sources?.['estimate']?.[field];
-            const initialVal = row.finalData?.[field] !== undefined ? row.finalData[field] : (sourceVal !== undefined ? sourceVal : (mVal !== undefined ? mVal : ''));
-            const [localVal, setLocalVal] = useState(initialVal);
-
-            useEffect(() => {
-                setLocalVal(initialVal);
-            }, [initialVal]);
-
-            const isDiff = linkedMasterField && mVal !== undefined && localVal !== '' && String(mVal) !== String(localVal) && isNumeric;
-
-            const commitChange = (v) => {
-                if (String(v) === String(initialVal)) return;
-                data.setManagedItems(prev => {
-                    const code = row.코드;
-                    let currentItem = prev[code] || { 코드: code, sources: { estimate: {} }, finalData: {} };
-                    currentItem = { ...currentItem, finalData: { ...currentItem.finalData, [field]: v } };
-                    
-                    if (['입고가', '출고가', '외주비', '노무비'].includes(field) || ['입고가', '출고가'].includes(linkedMasterField)) {
-                        const pInRaw = (field === '입고가' || linkedMasterField === '입고가') ? v : (currentItem.finalData['입고가'] ?? currentItem.sources['estimate']?.['입고가'] ?? data.masterProducts[code]?.['입고가'] ?? 0);
-                        currentItem.finalData = calculatePricesEngine(parseNum(pInRaw), data.masterProducts[code] || {}, currentItem.finalData, config.marginRules, true);
-                    }
-                    return { ...prev, [code]: currentItem };
-                });
-            };
-
-            const handleKeyDown = (e) => {
-                if (['ArrowUp', 'ArrowDown', 'Enter'].includes(e.key)) {
-                    e.preventDefault();
-                    e.target.blur();
-                    
-                    const td = e.target.closest('td');
-                    const tr = td.closest('tr');
-                    const tbody = tr.closest('tbody');
-                    const tds = Array.from(tr.children);
-                    const colIdx = tds.indexOf(td);
-                    const trs = Array.from(tbody.children);
-                    const rowIdx = trs.indexOf(tr);
-
-                    let nextRowIdx = rowIdx;
-                    if (e.key === 'ArrowUp') nextRowIdx = Math.max(0, rowIdx - 1);
-                    if (e.key === 'ArrowDown' || e.key === 'Enter') nextRowIdx = Math.min(trs.length - 1, rowIdx + 1);
-
-                    if (nextRowIdx !== rowIdx) {
-                        const nextTr = trs[nextRowIdx];
-                        const nextInput = nextTr.children[colIdx]?.querySelector('input');
-                        if (nextInput) {
-                            nextInput.focus();
-                            nextInput.select();
-                        }
-                    }
-                }
-            };
-
-            return (
-                <td className={`px-1 py-1 border-r border-slate-200 ${getCellWidthClass(linkedMasterField || field)} ${isDiff ? 'bg-amber-50/30' : 'bg-white'}`}>
-                    <input 
-                        type="text" 
-                        className={`w-full bg-transparent hover:bg-slate-50 focus:bg-white focus:ring-1 rounded px-1.5 py-1 text-[12px] outline-none ${isNumeric ? 'text-right font-bold' : 'truncate text-center'} ${isDiff ? 'text-indigo-700' : ''}`} 
-                        value={localVal === "오류" ? "" : localVal} 
-                        placeholder={mVal || ''} 
-                        onChange={(e) => setLocalVal(e.target.value)} 
-                        onBlur={(e) => commitChange(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        onClick={(e) => e.target.select()} 
-                    />
-                </td>
-            );
-        });
-
         const SystemConsole = ({ itemCount, isProcessing, processMsg, estimateCount, activeTags }) => {
             const [time, setTime] = useState(new Date());
             useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
@@ -1399,7 +1336,7 @@
                                         <div className="bg-indigo-50 p-5 rounded-xl border border-indigo-100 shadow-sm">
                                             <h3 className="text-[14px] font-black text-indigo-900 mb-4 pb-2 border-b border-indigo-200 flex justify-between items-center"><span><i className="fas fa-link text-indigo-500 mr-2"></i>클라우드 동기화 URL 셋팅</span></h3>
                                             <input type="text" value={cloudUrl} onChange={e=>setCloudUrl(e.target.value)} placeholder="Google Apps Script 웹앱 URL 입력..." className="w-full border border-indigo-200 rounded px-3 py-2 text-[12px] outline-none focus:border-indigo-500 bg-white shadow-sm" />
-                                            <p className="text-[11px] text-indigo-500 mt-2 font-bold">※ URL 입력 후 상단의 구름 아이콘을 누르면 데이터 백업 및 수신이 진행됩니다.</p>
+                                            <p className="text-[11px] text-indigo-500 mt-2 font-bold">※ URL 입력 후 상단의 구름 아이콘을 누르면 데이터 백업 및 수신이 진행됩니다. (현재 설정 내용도 함께 클라우드에 백업됩니다)</p>
                                             
                                             <div className="mt-4 pt-4 border-t border-indigo-200/50 flex flex-col gap-2">
                                                 <div className="text-[12px] font-black text-indigo-900 mb-1"><i className="fas fa-database mr-1.5"></i>수동 백업 및 복구 (앱스크립트 연동)</div>
@@ -1563,7 +1500,15 @@
                                     window.location.reload();
                                 }
                             }} className="text-[13px] font-bold text-slate-500 hover:text-rose-500 transition-colors"><i className="fas fa-undo mr-1"></i>앱 전체 초기화</button>
-                            <div className="flex gap-2"><button onClick={onClose} className="px-6 py-2.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-[13px] font-bold transition-all shadow-sm">닫기</button></div>
+                            <div className="flex gap-2">
+                                <button onClick={onClose} className="px-5 py-2.5 bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 rounded-lg text-[13px] font-bold transition-all shadow-sm">취소</button>
+                                <button onClick={() => {
+                                    showToast('✅ 환경설정이 기기에 안전하게 저장되었습니다.');
+                                    onClose();
+                                }} className="px-6 py-2.5 bg-indigo-600 text-white font-black hover:bg-indigo-700 rounded-lg text-[13px] transition-all shadow-sm flex items-center">
+                                    <i className="fas fa-save mr-1.5"></i>저장 및 닫기
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1708,6 +1653,90 @@
             );
         });
 
+        const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, data, isSel }) => {
+            const isNumeric = NUMERIC_HEADERS.includes(linkedMasterField) || NUMERIC_HEADERS.includes(field);
+            const sourceVal = row.sources?.['estimate']?.[field];
+            const initialVal = row.finalData?.[field] !== undefined ? row.finalData[field] : (sourceVal !== undefined ? sourceVal : (mVal !== undefined ? mVal : ''));
+            const [localVal, setLocalVal] = useState(initialVal);
+
+            useEffect(() => {
+                setLocalVal(initialVal);
+            }, [initialVal]);
+
+            const isDiff = linkedMasterField && mVal !== undefined && localVal !== '' && String(mVal) !== String(localVal) && isNumeric;
+            const isHighlightCol = HIGHLIGHT_COLS.includes(field);
+            const diffAmount = isDiff ? parseNum(localVal) - parseNum(mVal) : 0; // 💡 단가 차액 계산
+
+            let baseBg = 'bg-white';
+            if (isHighlightCol) baseBg = 'bg-orange-50/40';
+            if (isDiff) baseBg = 'bg-amber-100/50';
+
+            const commitChange = (v) => {
+                if (String(v) === String(initialVal)) return;
+                data.setManagedItems(prev => {
+                    const code = row.코드;
+                    let currentItem = prev[code] || { 코드: code, sources: { estimate: {} }, finalData: {} };
+                    currentItem = { ...currentItem, finalData: { ...currentItem.finalData, [field]: v } };
+                    
+                    if (['입고가', '출고가', '외주비', '노무비'].includes(field) || ['입고가', '출고가'].includes(linkedMasterField)) {
+                        const pInRaw = (field === '입고가' || linkedMasterField === '입고가') ? v : (currentItem.finalData['입고가'] ?? currentItem.sources['estimate']?.['입고가'] ?? data.masterProducts[code]?.['입고가'] ?? 0);
+                        currentItem.finalData = calculatePricesEngine(parseNum(pInRaw), data.masterProducts[code] || {}, currentItem.finalData, config.marginRules, true);
+                    }
+                    return { ...prev, [code]: currentItem };
+                });
+            };
+
+            const handleKeyDown = (e) => {
+                if (['ArrowUp', 'ArrowDown', 'Enter'].includes(e.key)) {
+                    e.preventDefault();
+                    e.target.blur();
+                    
+                    const td = e.target.closest('td');
+                    const tr = td.closest('tr');
+                    const tbody = tr.closest('tbody');
+                    const tds = Array.from(tr.children);
+                    const colIdx = tds.indexOf(td);
+                    const trs = Array.from(tbody.children);
+                    const rowIdx = trs.indexOf(tr);
+
+                    let nextRowIdx = rowIdx;
+                    if (e.key === 'ArrowUp') nextRowIdx = Math.max(0, rowIdx - 1);
+                    if (e.key === 'ArrowDown' || e.key === 'Enter') nextRowIdx = Math.min(trs.length - 1, rowIdx + 1);
+
+                    if (nextRowIdx !== rowIdx) {
+                        const nextTr = trs[nextRowIdx];
+                        const nextInput = nextTr.children[colIdx]?.querySelector('input');
+                        if (nextInput) {
+                            nextInput.focus();
+                            nextInput.select();
+                        }
+                    }
+                }
+            };
+
+            return (
+                <td className={`px-1 py-1 border-r border-slate-200 ${getCellWidthClass(linkedMasterField || field)} ${baseBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-100/60'} transition-colors relative`}>
+                    <div className="flex flex-col justify-center h-full">
+                        <input 
+                            type="text" 
+                            className={`w-full bg-transparent hover:bg-white/60 focus:bg-white focus:ring-1 rounded px-1.5 outline-none ${isNumeric ? 'text-right font-bold' : 'truncate text-center'} ${isDiff ? 'text-indigo-700' : ''} ${diffAmount !== 0 ? 'text-[11px] pb-0' : 'text-[12px] py-1'}`} 
+                            value={localVal === "오류" ? "" : localVal} 
+                            placeholder={mVal || ''} 
+                            onChange={(e) => setLocalVal(e.target.value)} 
+                            onBlur={(e) => commitChange(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            onClick={(e) => e.target.select()} 
+                        />
+                        {isDiff && diffAmount !== 0 && (
+                            <div className={`text-[10px] font-black text-right pr-1.5 leading-none mt-0.5 ${diffAmount > 0 ? 'text-rose-500' : 'text-blue-500'}`}>
+                                {diffAmount > 0 ? '▲' : '▼'} {Math.abs(diffAmount).toLocaleString()}
+                            </div>
+                        )}
+                    </div>
+                </td>
+            );
+        });
+
         const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, bg, mItem }) => {
             const { isEstimateUploaded, visibleMasterCols, visibleUploadCols, config, data } = state;
             const { setSelectedRows } = actions;
@@ -1719,8 +1748,8 @@
             const dSpec = uploadSpec || mItem.규격 || '';
 
             return (
-                <tr className={`group ${bg}`}>
-                    <td className={`sticky z-20 px-3 py-2 border-r border-[#edebe3] transition-colors min-w-[280px] w-[280px] max-w-[280px] ${isSel ? 'bg-indigo-50/50' : 'bg-[#faf9f5] group-hover:bg-[#f0ece1]'}`} style={{left: 0}}>
+                <tr className={`group border-b border-[#edebe3] transition-all hover:shadow-[0_0_8px_rgba(59,130,246,0.15)] relative z-0 hover:z-10`}>
+                    <td className={`sticky z-20 px-3 py-2 border-r border-[#edebe3] transition-colors min-w-[280px] w-[280px] max-w-[280px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : 'bg-[#faf9f5] group-hover:!bg-blue-100/60 border-l-4 border-l-transparent group-hover:!border-l-blue-400'}`} style={{left: 0}}>
                         <div className="flex gap-2 items-center w-full min-w-0">
                             {isEstimateUploaded && (
                                 <input type="checkbox" className={`w-4 h-4 rounded border-slate-300 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500`} checked={isSel} onChange={() => {const n = new Set(state.selectedRows); n.has(row.코드)?n.delete(row.코드):n.add(row.코드); setSelectedRows(n);}} />
@@ -1740,14 +1769,14 @@
                             const isNum = NUMERIC_HEADERS.includes(h);
                             const mVal = mItem[h] !== undefined && mItem[h] !== '' ? (isNum ? parseNum(mItem[h]).toLocaleString() : mItem[h]) : '-';
                             return (
-                                <td key={`idle-td-${h}`} className={`px-2 py-1.5 border-r border-[#edebe3] text-[#6b675e] ${getCellWidthClass(h)} ${isNum ? 'text-right font-bold' : 'text-center'}`}>
+                                <td key={`idle-td-${h}`} className={`px-2 py-1.5 border-r border-[#edebe3] text-[#6b675e] ${getCellWidthClass(h)} ${isNum ? 'text-right font-bold' : 'text-center'} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-100/60'}`}>
                                     <div className="truncate w-full">{mVal}</div>
                                 </td>
                             );
                         })
                     ) : (
                         <>
-                            {visibleMasterCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map(h => {
+                            {visibleMasterCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map((h, i, arr) => {
                                 const isNum = NUMERIC_HEADERS.includes(h);
                                 const mVal = mItem[h];
                                 let displayVal = mVal;
@@ -1758,8 +1787,12 @@
                                     else if (!isNum && String(row.finalData[h]) !== String(mVal)) { displayVal = row.finalData[h]; isChanged = true; }
                                 }
                                 const formattedVal = displayVal !== undefined && displayVal !== '' ? (isNum ? parseNum(displayVal).toLocaleString() : displayVal) : '-';
+                                
+                                const isLastMaster = i === arr.length - 1;
+                                const borderClass = isLastMaster ? 'border-r-[3px] border-indigo-300' : 'border-r border-[#edebe3]';
+
                                 return (
-                                    <td key={`pm-d-${h}`} className={`px-2 py-1.5 border-r border-[#edebe3] transition-colors ${getCellWidthClass(h)} ${isChanged ? 'bg-amber-100/60 text-amber-800' : 'bg-[#faf9f5] text-[#6b675e]'} ${isNum ? 'text-right font-bold' : 'text-center'}`}>
+                                    <td key={`pm-d-${h}`} className={`px-2 py-1.5 ${borderClass} transition-colors ${getCellWidthClass(h)} ${isChanged ? 'bg-amber-100/60 text-amber-800' : 'bg-[#faf9f5] text-[#6b675e]'} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-100/60'} ${isNum ? 'text-right font-bold' : 'text-center'}`}>
                                         <div className="truncate w-full">{formattedVal}</div>
                                     </td>
                                 );
@@ -1768,7 +1801,7 @@
                             {visibleUploadCols['estimate']?.filter(h => h !== '품목코드').map(h => {
                                 const linkedMasterField = config.masterLinks['estimate']?.[h];
                                 const mVal = linkedMasterField && row.코드 ? mItem[linkedMasterField] : undefined;
-                                return <EditableCell key={`p-u-e-${h}`} row={row} field={h} linkedMasterField={linkedMasterField} mVal={mVal} config={config} data={data} />;
+                                return <EditableCell key={`p-u-e-${h}`} row={row} field={h} linkedMasterField={linkedMasterField} mVal={mVal} config={config} data={data} isSel={isSel} />;
                             })}
                         </>
                     )}
@@ -1817,14 +1850,24 @@
                                         ))
                                     ) : (
                                         <>
-                                            {visibleMasterCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map(h => (
-                                                <th key={`pm-${h}`} className={`sticky top-0 z-30 bg-[#eff6ff] px-2 py-3 border-r border-b border-blue-100 text-center text-blue-800 ${getCellWidthClass(h)}`}>
-                                                    <div className="text-[9px] mb-0.5">마스터 대조</div>[M] {h}
-                                                </th>
-                                            ))}
-                                            {visibleUploadCols['estimate']?.filter(h => h !== '품목코드').map(h => (
-                                                <th key={`pu-e-${h}`} className={`sticky top-0 z-30 bg-white px-2 py-3 border-r border-b border-slate-200 text-center text-slate-600 ${getCellWidthClass(h)}`}>{h}</th>
-                                            ))}
+                                            {visibleMasterCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map((h, i, arr) => {
+                                                const isLastMaster = i === arr.length - 1;
+                                                const borderClass = isLastMaster ? 'border-r-[3px] border-indigo-300' : 'border-r border-blue-100';
+                                                return (
+                                                    <th key={`pm-${h}`} className={`sticky top-0 z-30 bg-[#eff6ff] px-2 py-3 ${borderClass} border-b text-center text-blue-800 ${getCellWidthClass(h)}`}>
+                                                        <div className="text-[9px] mb-0.5 opacity-70">마스터 대조</div>[M] {h}
+                                                    </th>
+                                                );
+                                            })}
+                                            {visibleUploadCols['estimate']?.filter(h => h !== '품목코드').map(h => {
+                                                const isHighlight = HIGHLIGHT_COLS.includes(h);
+                                                const bgClass = isHighlight ? 'bg-orange-50 text-orange-800 font-black' : 'bg-white text-slate-600';
+                                                return (
+                                                    <th key={`pu-e-${h}`} className={`sticky top-0 z-30 ${bgClass} px-2 py-3 border-r border-b border-slate-200 text-center ${getCellWidthClass(h)}`}>
+                                                        {h} {isHighlight && <i className="fas fa-bolt text-orange-400 ml-1 text-[10px]" title="주요 단가 항목"></i>}
+                                                    </th>
+                                                );
+                                            })}
                                         </>
                                     )}
                                 </tr>
@@ -2039,7 +2082,6 @@
             );
         };
 
-        // [추가] 클라우드에서 동기화된 히스토리를 앱 안에서 바로 볼 수 있는 창
         const HistoryModal = ({ onClose, logs }) => {
             return (
                 <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in" onClick={onClose}>
@@ -2090,9 +2132,6 @@
             );
         };
 
-        // ==========================================
-        // ⚙️ 7. 메인 애플리케이션 (Main Entry)
-        // ==========================================
         const App = () => {
             const config = useMerchConfig();
             const data = useMerchData();
@@ -2105,7 +2144,7 @@
                 const counts = {};
                 Object.values(data.masterProducts).forEach(m => {
                     const tagStr = m['카탈로그'] || '';
-                    String(tagStr).split(',').forEach(t => { // 💡 에러 방어 적용
+                    String(tagStr).split(',').forEach(t => {
                         const trimmed = t.trim();
                         if (trimmed) counts[trimmed] = (counts[trimmed] || 0) + 1;
                     });
@@ -2117,7 +2156,7 @@
                 const counts = {};
                 Object.values(data.masterProducts).forEach(m => {
                     const tagStr = m['견적서'] || m['카테고리'] || '';
-                    String(tagStr).split(',').forEach(t => { // 💡 에러 방어 적용
+                    String(tagStr).split(',').forEach(t => {
                         const trimmed = t.trim();
                         if (trimmed) counts[trimmed] = (counts[trimmed] || 0) + 1;
                     });
@@ -2182,7 +2221,6 @@
                 ...customActions
             }), [ui.setShowReviewModal, ui.setShowExportModal, ui.setShowCategoryModal, ui.setSelectedRows, ui.setGlobalSearch, ui.setShowHistoryModal, ui.showToast, customActions]);
 
-            // 글로벌 단축키 바인딩
             useEffect(() => {
                 const handleGlobalKeyDown = (e) => {
                     const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
@@ -2298,8 +2336,6 @@
                     {ui.showSettings && <MappingCenterModal onClose={() => ui.setShowSettings(false)} config={config} actions={{...customActions, showToast: ui.showToast}} availableCatalogs={availableCatalogs} availableCategories={availableCategories} />}
                     {ui.showReviewModal && <ReviewModal onClose={() => ui.setShowReviewModal(false)} onConfirm={customActions.handleCommitEstimate} state={appState} data={data} />}
                     {ui.showExportModal && <ExportModal onClose={() => ui.setShowExportModal(false)} executeExport={customActions.handleExportAllSheets} />}
-                    
-                    {/* [추가] 히스토리 조회 창 렌더링 */}
                     {ui.showHistoryModal && <HistoryModal onClose={() => ui.setShowHistoryModal(false)} logs={data.historyLogs} />}
                 </div>
             );
