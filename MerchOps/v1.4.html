@@ -589,7 +589,13 @@
                                 if (result.data.appConfig.visibleMasterCols) config.setVisibleMasterCols(result.data.appConfig.visibleMasterCols);
                             }
 
-                            ui.showToast('✅ 클라우드 최신 데이터 불러오기(Pull) 성공');
+                            // 💡 [기능 2] 동기화 직후엔 변경사항 없음 상태
+                            ui.setHasUnsavedChanges(false);
+                            
+                            // 💡 [수정] 데이터 개수 카운트 기능 복구
+                            const masterCount = result.data.master ? Object.keys(result.data.master).length : 0;
+                            const historyCount = result.data.history ? result.data.history.length : 0;
+                            ui.showToast(`✅ 데이터 불러오기 성공! (상품: ${masterCount.toLocaleString()}건, 히스토리: ${historyCount.toLocaleString()}건)`);
                         } else {
                             throw new Error("Invalid Data");
                         }
