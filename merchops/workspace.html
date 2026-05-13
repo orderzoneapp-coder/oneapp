@@ -1,1 +1,318 @@
+<!DOCTYPE html>
+<html lang="ko" translate="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NEXUS - Valuation Hub (시세 관리) V1.94</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', sans-serif; background-color: #000000; color: #c9d1d9; margin: 0; overflow: hidden; user-select: none; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; } 
+        ::-webkit-scrollbar-track { background: #0d1117; }
+        ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+        .term-bg { background-color: #010409; }
+        .term-panel { background-color: #0d1117; border: 1px solid #30363d; }
+        .term-border { border-color: #30363d; }
+        .term-input { background-color: #010409; border: 1px solid #30363d; color: #c9d1d9; }
+        .term-input:focus { border-color: #58a6ff; outline: none; }
+        .data-row:hover { background-color: #161b22; }
+        input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+    </style>
+</head>
+<body class="term-bg text-sm h-screen flex flex-col">
+    <div id="root" class="h-full flex flex-col"></div>
 
+    <script type="text/babel">
+        const { useState, useMemo, useEffect, useCallback } = React;
+
+        // 🔒 보안 스크립트 (수정: React Hook 외부에서 순수 JS로 즉시 실행)
+        window.addEventListener('keydown', (e) => {
+            if (e.keyCode === 123 || (e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74 || e.keyCode === 67)) || (e.ctrlKey && e.keyCode === 85)) {
+                e.preventDefault(); return false;
+            }
+        });
+        window.addEventListener('contextmenu', e => e.preventDefault());
+
+        const CORE_KEYS = { BASE_CATALOG: 'oneapp_base_catalog', PENDING_QUEUE: 'oneapp_pending_queue', CYCLE_LOG: 'oneapp_workspace_cycle_log', SETTINGS: 'oneapp_global_settings', SYNC_TRIGGER: 'merchMaster_sync_trigger' };
+        const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
+
+        const initIDB = () => new Promise((resolve) => {
+            const req = indexedDB.open('OneAppMerchDB_V2', 2);
+            req.onupgradeneeded = (e) => { if (!e.target.result.objectStoreNames.contains('store')) e.target.result.createObjectStore('store'); };
+            req.onsuccess = () => resolve(req.result);
+        });
+
+        const getIDB = async (key) => {
+            const db = await initIDB();
+            return new Promise((resolve) => {
+                const req = db.transaction('store', 'readonly').objectStore('store').get(key);
+                req.onsuccess = () => resolve(req.result);
+            });
+        };
+
+        const setIDB = async (key, val) => {
+            const db = await initIDB();
+            return new Promise((resolve) => {
+                const tx = db.transaction('store', 'readwrite');
+                tx.objectStore('store').put(val, key);
+                tx.oncomplete = () => resolve();
+            });
+        };
+
+        const parseExcel = (file) => new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const wb = window.XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+                resolve(window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" }));
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        const GlobalHeader = ({ activeTab, pendingCount }) => {
+            const NAV_MENU = [
+                { id: 'master', name: '마스터 DB', icon: 'fas fa-server', url: '/merchops/master.html' },
+                { id: 'manager', name: '상품 관리', icon: 'fas fa-tasks', url: '/merchops/manager.html' },
+                { id: 'workspace', name: '시세 관리', icon: 'fas fa-edit', url: '/merchops/workspace.html' },
+                { id: 'parser', name: '스마트 파서', icon: 'fas fa-bolt', url: '/merchops/parser.html' },
+                { id: 'insights', name: '인사이트', icon: 'fas fa-chart-line', url: '/merchops/insights.html' },
+                { id: 'publish', name: '대외 발행', icon: 'fas fa-share-square', url: '/merchops/publish.html' },
+                { id: 'settings', name: '환경 설정', icon: 'fas fa-cog', url: '/merchops/settings.html' }
+            ];
+
+            return (
+                <div className="flex flex-col shrink-0 z-40 w-full term-bg border-b term-border">
+                    <header className="h-[60px] flex justify-between items-center px-6">
+                        <div className="flex items-center gap-6 h-full">
+                            <a href="/merchops/workspace.html" className="font-black text-[20px] tracking-wider text-white hover:text-indigo-400 transition-colors">
+                                NEXUS<span className="text-indigo-500">.IO</span>
+                            </a>
+                            <div className="flex items-end h-full gap-1 ml-4 pt-2">
+                                {NAV_MENU.map(menu => {
+                                    const isActive = activeTab === menu.id;
+                                    const isManager = menu.id === 'manager';
+                                    return (
+                                        <a key={menu.id} href={menu.url}
+                                            className={`relative flex items-center gap-2 px-5 py-3 text-[13px] font-bold rounded-t-lg transition-colors border-x border-t ${isActive ? 'term-panel border-b-transparent text-white z-10' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
+                                            style={{ marginBottom: isActive ? '-1px' : '0' }}
+                                        >
+                                            <i className={`${menu.icon} ${isActive ? 'text-indigo-400' : ''}`}></i> {menu.name}
+                                            {isManager && pendingCount > 0 && <span className="ml-1.5 flex h-5 min-w-[20px] px-1.5 items-center justify-center rounded-full bg-rose-600 text-white text-[10px] font-black shadow-sm animate-pulse">{pendingCount}</span>}
+                                        </a>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </header>
+                </div>
+            );
+        };
+
+        function WorkspaceApp() {
+            const [baseCatalog, setBaseCatalog] = useState({});
+            const [pendingCount, setPendingCount] = useState(0);
+            const [workspaceItems, setWorkspaceItems] = useState([]);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [toastMsg, setToastMsg] = useState('');
+
+            const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 4000); }, []);
+
+            const loadData = useCallback(async () => {
+                setBaseCatalog(await getIDB(CORE_KEYS.BASE_CATALOG) || {});
+                setPendingCount(Object.keys(await getIDB(CORE_KEYS.PENDING_QUEUE) || {}).length);
+            }, []);
+
+            useEffect(() => {
+                loadData();
+                window.addEventListener('storage', (e) => { if (e.key === CORE_KEYS.SYNC_TRIGGER) loadData(); });
+                return () => window.removeEventListener('storage', loadData);
+            }, [loadData]);
+
+            useEffect(() => {
+                const handleKeyDown = (e) => { if (e.key === 'F8') { e.preventDefault(); document.getElementById('btn-apply')?.click(); } };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, []);
+
+            const handleFileUpload = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                try {
+                    const data = await parseExcel(file);
+                    const items = data.map(row => ({
+                        code: String(row['품목코드'] || row['상품코드'] || row['코드'] || ''),
+                        name: String(row['품목명'] || ''),
+                        spec: String(row['규격'] || ''),
+                        inPrice: parseNum(row['입고가'] || row['매입가'] || row['단가'])
+                    })).filter(item => item.code);
+                    setWorkspaceItems(items);
+                    showToast(`✅ ${items.length}건 엑셀 로드 완료`);
+                } catch(err) { showToast("❌ 엑셀 로드 실패"); }
+                e.target.value = '';
+            };
+
+            const handleApplySettingsRules = async () => {
+                if (workspaceItems.length === 0) return;
+                const settings = await getIDB(CORE_KEYS.SETTINGS) || {};
+                const rules = settings.marginRules || [];
+                if (rules.length === 0) { showToast('⚠️ 등록된 마진 룰이 없습니다.'); return; }
+
+                let appliedCount = 0, skippedCount = 0;
+                const updated = workspaceItems.map(item => {
+                    if (item.inPrice > 0) {
+                        const mItem = baseCatalog[item.code] || {};
+                        const itemWarehouse = mItem['창고'] || '';
+                        const itemCategory = mItem['1그룹명'] || '';
+                        const itemUnit = mItem['단위'] || '';
+                        let matchedMultiplier = null;
+
+                        for (const rule of rules) {
+                            const isConditionMatch = rule.condition === '전체' || itemWarehouse.includes(rule.condition) || itemCategory.includes(rule.condition);
+                            const isUnitMatch = rule.unit === '전체' || itemUnit.includes(rule.unit);
+                            if (isConditionMatch && isUnitMatch) { matchedMultiplier = rule.multiplier; break; }
+                        }
+                        if (matchedMultiplier !== null && matchedMultiplier >= 1.0) {
+                            appliedCount++;
+                            return { ...item, inPrice: Math.round((item.inPrice * matchedMultiplier) / 10) * 10 };
+                        } else skippedCount++;
+                    }
+                    return item;
+                });
+                setWorkspaceItems(updated);
+                showToast(`⚙️ 룰 적용 완료 (적용: ${appliedCount}건 / 미해당: ${skippedCount}건)`);
+            };
+
+            const handleApplyDelta = async () => {
+                if (workspaceItems.length === 0) return;
+                const master = await getIDB(CORE_KEYS.BASE_CATALOG) || {};
+                const queue = await getIDB(CORE_KEYS.PENDING_QUEUE) || {};
+                const cycleLog = await getIDB(CORE_KEYS.CYCLE_LOG) || {};
+                let conflictCount = 0, hasUpdates = false;
+
+                workspaceItems.forEach(item => {
+                    const mItem = master[item.code];
+                    const mPrice = mItem ? parseNum(mItem['입고가']) : 0;
+                    const priceChanged = item.inPrice > 0 && item.inPrice !== mPrice;
+                    const textChanged = mItem && ((item.name && item.name !== mItem.품목명) || (item.spec && item.spec !== mItem.규격));
+                    if (priceChanged && cycleLog[item.code]) conflictCount++;
+                    if (priceChanged || textChanged || !mItem) hasUpdates = true;
+                });
+
+                if (!hasUpdates) { showToast("⚠️ 변경점 없음"); return; }
+                if (conflictCount > 0 && !window.confirm(`⚠️ ${conflictCount}건 중복 변경 이력 존재. 덮어쓰시겠습니까?`)) return;
+
+                workspaceItems.forEach(item => {
+                    const mItem = master[item.code];
+                    const mPrice = mItem ? parseNum(mItem['입고가']) : 0;
+                    const isNewItem = !mItem;
+
+                    if (!isNewItem && item.inPrice > 0 && item.inPrice !== mPrice) {
+                        master[item.code] = { ...mItem, 코드: item.code, 입고가: item.inPrice };
+                        cycleLog[item.code] = true;
+                    }
+                    if (isNewItem || (mItem && ((item.name && item.name !== mItem.품목명) || (item.spec && item.spec !== mItem.규격)))) {
+                        if (!queue[item.code]) queue[item.code] = { 코드: item.code, finalData: {} };
+                        if (isNewItem) queue[item.code].isNewItem = true;
+                        queue[item.code].finalData = { ...queue[item.code].finalData, 품목명: item.name, 규격: item.spec, 입고가: isNewItem ? item.inPrice : (queue[item.code].finalData.입고가 || item.inPrice) };
+                    }
+                });
+
+                await setIDB(CORE_KEYS.BASE_CATALOG, master);
+                await setIDB(CORE_KEYS.PENDING_QUEUE, queue);
+                await setIDB(CORE_KEYS.CYCLE_LOG, cycleLog);
+                localStorage.setItem(CORE_KEYS.SYNC_TRIGGER, Date.now().toString());
+
+                setWorkspaceItems([]); setSearchTerm('');
+                showToast(`🚀 전송 및 자동 분류 완료 (F8)`);
+                loadData(); // 뱃지 즉시 갱신
+            };
+
+            const filteredItems = useMemo(() => {
+                if (!searchTerm) return workspaceItems;
+                return workspaceItems.filter(item => item.name.includes(searchTerm) || item.code.includes(searchTerm) || item.spec.includes(searchTerm));
+            }, [workspaceItems, searchTerm]);
+
+            return (
+                <div className="flex-1 flex flex-col h-full w-full">
+                    <GlobalHeader activeTab="workspace" pendingCount={pendingCount} />
+                    <div className="flex-1 flex flex-col p-6 max-w-[1400px] mx-auto w-full gap-4 overflow-hidden">
+                        <div className="flex justify-between items-end pb-4 border-b term-border shrink-0">
+                            <div>
+                                <h1 className="text-xl font-black text-white mb-1">VALUATION WORKSPACE</h1>
+                                <p className="text-xs text-gray-500">환경설정 룰을 적용하면 창고/단위 조건에 맞춰 단가가 동적으로 계산됩니다.</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <label className="cursor-pointer px-4 py-2 term-panel term-border text-xs font-bold hover:bg-[#21262d] transition-colors">
+                                    <i className="fas fa-folder-open text-[#58a6ff] mr-2"></i> 엑셀 로드
+                                    <input type="file" className="hidden" accept=".xlsx" onChange={handleFileUpload} />
+                                </label>
+                                <button onClick={handleApplySettingsRules} disabled={workspaceItems.length === 0} className="px-4 py-2 term-panel term-border text-xs font-bold hover:bg-[#21262d] text-[#d2a8ff] transition-colors disabled:opacity-50">
+                                    <i className="fas fa-bolt text-amber-500 mr-2"></i> 조건부 룰 적용
+                                </button>
+                                <button id="btn-apply" onClick={handleApplyDelta} disabled={workspaceItems.length === 0} className="px-5 py-2 bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-bold transition-colors disabled:bg-[#30363d] disabled:text-gray-500">
+                                    <i className="fas fa-paper-plane mr-2"></i> 전송 (F8)
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="shrink-0 flex items-center">
+                            <div className="relative w-full max-w-md">
+                                <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs"></i>
+                                <input type="text" placeholder="현재 엑셀 내 품명, 규격, 코드 검색..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full term-input pl-9 pr-3 py-2 text-xs font-mono rounded"/>
+                            </div>
+                            <div className="ml-4 text-xs text-gray-500">총 {workspaceItems.length}건 중 <span className="text-white font-bold">{filteredItems.length}</span>건 표시됨</div>
+                        </div>
+
+                        <div className="flex-1 term-panel rounded flex flex-col overflow-hidden">
+                            <div className="flex-1 overflow-auto custom-scrollbar">
+                                <table className="w-full text-left text-xs whitespace-nowrap">
+                                    <thead className="term-bg sticky top-0 border-b term-border text-gray-400 z-10">
+                                        <tr>
+                                            <th className="py-2.5 px-4 w-32">상품코드</th>
+                                            <th className="py-2.5 px-4">상태 및 품명</th>
+                                            <th className="py-2.5 px-4 text-right w-32">마스터 속성</th>
+                                            <th className="py-2.5 px-4 text-right w-32">마스터 입고가</th>
+                                            <th className="py-2.5 px-4 text-right w-32 text-[#58a6ff]">작업 단가</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-[#21262d]">
+                                        {filteredItems.length === 0 ? <tr><td colSpan="5" className="py-20 text-center term-text-muted"><i className="fas fa-table text-4xl mb-3 opacity-30 block"></i>엑셀을 업로드하세요.</td></tr> : (
+                                            filteredItems.map(item => {
+                                                const mItem = baseCatalog[item.code];
+                                                const isNew = !mItem;
+                                                const isTxtChanged = mItem && ((item.name && item.name !== mItem.품목명) || (item.spec && item.spec !== mItem.규격));
+                                                return (
+                                                    <tr key={item.code} className="data-row">
+                                                        <td className="py-1.5 px-4 font-mono text-[#8b949e]">{item.code}</td>
+                                                        <td className="py-1.5 px-4">
+                                                            {isNew && <span className="mr-2 text-[9px] bg-rose-900 text-rose-300 px-1 py-0.5 rounded font-bold">신규</span>}
+                                                            {isTxtChanged && <span className="mr-2 text-[9px] bg-purple-900 text-purple-300 px-1 py-0.5 rounded font-bold">텍스트</span>}
+                                                            <span className={isTxtChanged || isNew ? 'text-white' : 'text-gray-400'}>{item.name} <span className="text-[10px] text-gray-600">({item.spec})</span></span>
+                                                        </td>
+                                                        <td className="py-1.5 px-4 text-right text-gray-500 font-mono text-[10px]">{mItem ? `${mItem['창고']||'-'} / ${mItem['단위']||'-'}` : '-'}</td>
+                                                        <td className="py-1.5 px-4 text-right text-gray-600 font-mono">{mItem ? parseNum(mItem['입고가']).toLocaleString() : '-'}</td>
+                                                        <td className="py-1 px-4 text-right border-l term-border">
+                                                            <input type="number" value={item.inPrice || ''} onChange={(e) => setWorkspaceItems(prev => prev.map(i => i.code === item.code ? { ...i, inPrice: parseNum(e.target.value) } : i))} className="term-input w-full text-right px-2 py-1 font-mono text-[#3fb950] font-bold" />
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        {toastMsg && <div className="fixed bottom-6 right-6 term-panel text-white px-4 py-2 rounded text-xs border term-border z-50 shadow-xl">{toastMsg.replace(/✅|❌|⚠️|🚀|⚙️/g, '')}</div>}
+                    </div>
+                </div>
+            );
+        }
+        ReactDOM.createRoot(document.getElementById('root')).render(<WorkspaceApp />);
+    </script>
+</body>
+</html>
