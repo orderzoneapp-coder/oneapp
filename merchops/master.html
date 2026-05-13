@@ -271,7 +271,7 @@
                 }, 100);
             };
 
-            // 📂 엑셀 업로드 (추가된 기능)
+            // 📂 엑셀 업로드 (수정된 기능: CSV EUC-KR 및 스마트 헤더 감지 적용)
             const handleImportExcel = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
@@ -281,49 +281,116 @@
                     return;
                 }
 
-                showToast('⏳ 엑셀 파일을 읽어오는 중입니다...');
-                const reader = new FileReader();
-                reader.onload = async (evt) => {
-                    try {
-                        const data = new Uint8Array(evt.target.result);
-                        const wb = window.XLSX.read(data, { type: 'array' });
-                        const wsname = wb.SheetNames[0];
-                        const ws = wb.Sheets[wsname];
-                        const jsonData = window.XLSX.utils.sheet_to_json(ws, { defval: "" });
+                showToast('⏳ 엑셀/CSV 파일을 읽고 분석하는 중입니다...');
+                const isCSV = file.name.toLowerCase().endsWith('.csv');
 
-                        if (jsonData.length === 0) {
-                            showToast('⚠️ 데이터가 비어있습니다.');
-                            return;
-                        }
-
-                        let newMaster = { ...baseCatalog };
-                        let updatedCount = 0;
-
-                        jsonData.forEach(row => {
-                            const code = row['품목코드'] || row['코드'];
-                            if (code) {
-                                if (!newMaster[code]) newMaster[code] = { 코드: code };
-                                MASTER_HEADERS.forEach(h => {
-                                    if (h !== '품목코드' && h !== '코드' && row[h] !== undefined && row[h] !== "") {
-                                        newMaster[code][h] = row[h];
-                                    }
-                                });
-                                updatedCount++;
-                            }
-                        });
-
-                        setBaseCatalog(newMaster);
-                        await setIDB(CORE_KEYS.BASE_CATALOG, newMaster);
-                        localStorage.setItem(CORE_KEYS.SYNC_TRIGGER, Date.now().toString());
-                        
-                        showToast(`✅ 엑셀 업로드 완료: ${updatedCount}건 업데이트됨`);
-                    } catch (error) {
-                        showToast('❌ 엑셀 처리 중 오류가 발생했습니다.');
-                        console.error(error);
+                const processWorkbookData = async (parsedData) => {
+                    if (!parsedData || parsedData.length === 0) {
+                        showToast('⚠️ 인식할 수 있는 데이터가 없거나 형식이 맞지 않습니다.');
+                        e.target.value = '';
+                        return;
                     }
-                    e.target.value = ''; // 입력란 초기화
+
+                    let newMaster = { ...baseCatalog };
+                    let updatedCount = 0;
+
+                    parsedData.forEach(row => {
+                        // 헤더명 유연성 처리 (다양한 헤더 대응)
+                        const code = row['품목코드'] || row['상품코드'] || row['코드'] || row['바코드'];
+                        if (code) {
+                            const cleanCode = String(code).trim();
+                            if (!cleanCode) return;
+                            
+                            if (!newMaster[cleanCode]) newMaster[cleanCode] = { 코드: cleanCode };
+                            MASTER_HEADERS.forEach(h => {
+                                if (h !== '품목코드' && h !== '코드' && row[h] !== undefined && row[h] !== "") {
+                                    // 숫자형 데이터 변환 (콤마 제거 후 숫자 저장)
+                                    const val = row[h];
+                                    if (['출고가', '입고가', '입고B', '도매A', '도매B', '상장가', '최종전송', '최종입고', '시중가', '안전재고', '순번'].includes(h)) {
+                                        newMaster[cleanCode][h] = Number(String(val).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0;
+                                    } else {
+                                        newMaster[cleanCode][h] = val;
+                                    }
+                                }
+                            });
+                            
+                            // 품목명 기본값 세팅 보정
+                            if (row['품목명'] || row['상품명'] || row['품명']) {
+                                newMaster[cleanCode]['품목명'] = row['품목명'] || row['상품명'] || row['품명'];
+                            }
+                            updatedCount++;
+                        }
+                    });
+
+                    setBaseCatalog(newMaster);
+                    await setIDB(CORE_KEYS.BASE_CATALOG, newMaster);
+                    localStorage.setItem(CORE_KEYS.SYNC_TRIGGER, Date.now().toString());
+                    
+                    showToast(`✅ 업로드 완료: ${updatedCount}건의 상품 정보가 갱신되었습니다.`);
+                    e.target.value = '';
                 };
-                reader.readAsArrayBuffer(file);
+
+                const parseData = (data, type) => {
+                    try {
+                        const wb = window.XLSX.read(data, { type: type, cellDates: true });
+                        const ws = wb.Sheets[wb.SheetNames[0]];
+                        const jsonAll = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
+                        
+                        if(jsonAll.length === 0) return null;
+
+                        let headerRowIdx = -1;
+                        const maxSearch = Math.min(25, jsonAll.length); // 위에서부터 최대 25줄 탐색
+                        for (let i = 0; i < maxSearch; i++) {
+                            const rowArr = jsonAll[i] || [];
+                            const rowStr = rowArr.join('').replace(/\s/g, '');
+                            if (rowStr.includes('품목코드') || rowStr.includes('상품코드') || rowStr.includes('바코드') || (rowStr.includes('코드') && (rowStr.includes('품명') || rowStr.includes('상품명')))) { 
+                                headerRowIdx = i; break; 
+                            }
+                        }
+                        
+                        // 명확한 헤더를 찾지 못했다면 첫 번째 줄을 헤더로 간주
+                        if (headerRowIdx === -1) headerRowIdx = 0; 
+
+                        const headers = jsonAll[headerRowIdx] || [];
+                        const parsedData = [];
+                        for (let i = headerRowIdx + 1; i < jsonAll.length; i++) {
+                            const row = jsonAll[i];
+                            if (!row || row.length === 0) continue;
+                            const obj = {}; 
+                            let isEmpty = true;
+                            headers.forEach((h, idx) => { 
+                                if (h && typeof h === 'string') {
+                                    const cleanH = h.trim();
+                                    obj[cleanH] = row[idx];
+                                    if(row[idx] !== undefined && String(row[idx]).trim() !== '') isEmpty = false;
+                                }
+                            }); 
+                            if(!isEmpty) parsedData.push(obj);
+                        }
+                        return parsedData;
+                    } catch(err) {
+                        return null;
+                    }
+                };
+
+                // CSV와 엑셀의 파일 읽기 방식 분기
+                if (isCSV) {
+                    const reader = new FileReader();
+                    reader.onload = (evt) => {
+                        const text = evt.target.result;
+                        const parsed = parseData(text, 'string');
+                        processWorkbookData(parsed);
+                    };
+                    reader.readAsText(file, 'euc-kr'); // 한글 윈도우 CSV 깨짐 방지
+                } else {
+                    const reader = new FileReader();
+                    reader.onload = (evt) => {
+                        const data = new Uint8Array(evt.target.result);
+                        const parsed = parseData(data, 'array');
+                        processWorkbookData(parsed);
+                    };
+                    reader.readAsArrayBuffer(file);
+                }
             };
 
             // ✏️ 인라인 에디팅 (마스터 직접 수정)
