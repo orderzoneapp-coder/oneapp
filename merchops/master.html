@@ -10,7 +10,6 @@
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- 엑셀 다운로드를 위한 SheetJS 라이브러리 추가 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
@@ -44,13 +43,51 @@
         .sticky-col-2 { position: sticky; left: 140px; z-index: 15; background-color: #0d1117 !important; box-shadow: 2px 0 10px rgba(0,0,0,0.5); border-right: 2px solid #30363d; }
         .excel-th.sticky-col-1, .excel-th.sticky-col-2 { z-index: 30; background-color: #161b22 !important; }
 
-        /* Swipe Buttons */
-        .nav-btn { background: rgba(22, 27, 34, 0.6); border: 1px solid #30363d; backdrop-filter: blur(4px); transition: all 0.2s; }
-        .nav-btn:hover { background: rgba(48, 54, 61, 0.9); transform: scale(1.1); color: white; }
+        /* 🔥 New Premium Edge Navigation Button */
+        .edge-nav-btn {
+            position: fixed;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 60px;
+            height: 240px;
+            background: rgba(13, 17, 23, 0.85);
+            border: 1px solid #30363d;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            color: #8b949e;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            z-index: 50;
+            transition: background-color 0.2s, color 0.2s;
+        }
+        .edge-nav-btn.right {
+            right: 0;
+            border-right: none;
+            border-radius: 16px 0 0 16px;
+        }
+        .edge-nav-btn:hover {
+            background: rgba(33, 38, 45, 0.95);
+            color: #58a6ff;
+        }
+        .edge-nav-btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.8;
+            color: #58a6ff;
+        }
+        .edge-nav-text {
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            font-size: 13px;
+            font-weight: 800;
+            letter-spacing: 2px;
+        }
     </style>
 </head>
 <body class="term-bg text-sm h-screen flex flex-col">
-    <div id="root" class="h-full flex flex-col w-full"></div>
+    <div id="root" class="h-full flex flex-col w-full overflow-hidden"></div>
 
     <script type="text/babel">
         const { useState, useMemo, useEffect, useCallback, Fragment } = React;
@@ -79,7 +116,6 @@
             "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록", "소싱태그", "순번"
         ];
 
-        // 🚨 V3 DB로 연결
         const initIDB = () => new Promise((resolve) => {
             const req = indexedDB.open('OneAppMerchDB_V3', 1);
             req.onupgradeneeded = (e) => { 
@@ -133,7 +169,6 @@
                                 })}
                             </div>
                         </div>
-                        {/* 환경 설정 열기 버튼 */}
                         <button onClick={() => window.location.href = 'settings.html'} className="px-4 py-2 bg-[#161b22] hover:bg-[#21262d] text-white font-bold rounded text-xs transition-colors border term-border">
                             <i className="fas fa-sliders-h text-[#58a6ff] mr-2"></i>환경 설정
                         </button>
@@ -142,7 +177,6 @@
             );
         };
 
-        // ⌨️ 인라인 에디팅 컴포넌트
         const EditableCell = React.memo(({ code, field, value, onSave, isFixed }) => {
             const [localVal, setLocalVal] = useState(value || '');
             const [isEditing, setIsEditing] = useState(false);
@@ -181,6 +215,9 @@
             const [toastMsg, setToastMsg] = useState('');
             const [isSyncing, setIsSyncing] = useState(false);
             const [cloudUrl, setCloudUrl] = useState('');
+            
+            // Navigation State
+            const [isNavigating, setIsNavigating] = useState(false);
 
             // 🗂️ 2단 카테고리 상태
             const [activeC1, setActiveC1] = useState('');
@@ -205,18 +242,287 @@
                 return () => window.removeEventListener('storage', handleStorage);
             }, [loadData]);
 
-            const handleSwipe = (direction, url) => {
-                showToast(`ℹ️ [화면 전환] ${direction} 앱으로 이동합니다.`);
-                setTimeout(() => { window.location.href = url; }, 500);
+            // 🔥 수정된 우측 앱 이동 로직 (먹통 방지 및 로딩 효과 적용)
+            const handleNavigate = (url) => {
+                if (isNavigating) return;
+                setIsNavigating(true);
+                // 100ms 정도 딜레이를 주어 스피너가 먼저 돌게 한 후 페이지 이동 처리
+                setTimeout(() => { window.location.href = url; }, 100);
+            };
+
+            const callCloudAPI = async (action, data = null) => {
+                if (!cloudUrl) { showToast('❌ 환경설정에서 앱스 스크립트 URL을 먼저 등록해주세요.'); return null; }
+                setIsSyncing(true);
+                try {
+                    const response = await fetch(cloudUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ action, userId: "nexus_admin", role: "MASTER", data })
+                    });
+                    const result = await response.json();
+                    if (result.status === 'error') throw new Error(result.message);
+                    return result.data;
+                } catch (error) {
+                    showToast(`🚨 통신 오류: ${error.message}`); return null;
+                } finally {
+                    setIsSyncing(false);
+                }
+            };
+
+            const handlePullMaster = async () => {
+                showToast('📥 클라우드에서 최신 데이터를 확인합니다...');
+                const result = await callCloudAPI('PULL_MASTER');
+                if (result) {
+                    await setIDB(CORE_KEYS.BASE_CATALOG, result.master);
+                    setBaseCatalog(result.master);
+                    showToast('✅ 클라우드 데이터 수신 완료 및 마스터 업데이트 완료');
+                }
+            };
+
+            const handlePushCloud = async () => {
+                if (pendingCount > 0) {
+                    showToast(`⚠️ 배포 차단됨: [상품 관리] 탭에 승인 대기 중인 ${pendingCount}건의 데이터가 남아있습니다. 먼저 확정(승인)해주세요.`);
+                    return;
+                }
+                if (window.confirm('현재 로컬 마스터 데이터(스냅샷)를 본사 클라우드 서버로 배포(Push)하시겠습니까?')) {
+                    const catalogArray = Object.values(baseCatalog);
+                    showToast('📤 클라우드로 데이터를 전송 중입니다...');
+                    const result = await callCloudAPI('PUSH_MERCHOPS_DELTA', catalogArray);
+                    if (result) showToast(`☁️ 클라우드 서버 동기화 완료: ${result.message || '성공'}`);
+                }
+            };
+
+            const handleExportExcel = () => {
+                if (!window.XLSX) {
+                    showToast('❌ 엑셀 라이브러리가 로드되지 않았습니다.');
+                    return;
+                }
+                if (displayRows.length === 0) {
+                    showToast('⚠️ 내보낼 데이터가 없습니다.');
+                    return;
+                }
+                
+                showToast('⏳ 엑셀 파일을 생성 중입니다...');
+                setTimeout(() => {
+                    try {
+                        const exportData = displayRows.map(item => {
+                            const row = {};
+                            MASTER_HEADERS.forEach(h => {
+                                if (h === '품목코드') {
+                                    row[h] = item['코드'] || item['품목코드'] || '';
+                                } else {
+                                    row[h] = item[h] || '';
+                                }
+                            });
+                            return row;
+                        });
+
+                        const ws = window.XLSX.utils.json_to_sheet(exportData, { header: MASTER_HEADERS });
+                        const wb = window.XLSX.utils.book_new();
+                        window.XLSX.utils.book_append_sheet(wb, ws, "MasterDB");
+                        window.XLSX.writeFile(wb, `MasterDB_Export_${new Date().toISOString().slice(0,10)}.xlsx`);
+                        showToast('✅ 엑셀 다운로드가 완료되었습니다.');
+                    } catch (error) {
+                        showToast('❌ 엑셀 생성 중 오류가 발생했습니다.');
+                        console.error(error);
+                    }
+                }, 100);
+            };
+
+            const handleImportExcel = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                if (!window.XLSX) {
+                    showToast('❌ 엑셀 라이브러리가 로드되지 않았습니다.');
+                    return;
+                }
+
+                showToast('⏳ 엑셀/CSV 파일을 읽고 분석하는 중입니다...');
+                const isCSV = file.name.toLowerCase().endsWith('.csv');
+
+                const processWorkbookData = async (parsedData) => {
+                    if (!parsedData || parsedData.length === 0) {
+                        showToast('⚠️ 인식할 수 있는 데이터가 없거나 형식이 맞지 않습니다.');
+                        e.target.value = '';
+                        return;
+                    }
+
+                    let newMaster = { ...baseCatalog };
+                    let updatedCount = 0;
+
+                    parsedData.forEach(row => {
+                        const code = row['품목코드'] || row['상품코드'] || row['코드'] || row['바코드'];
+                        if (code) {
+                            const cleanCode = String(code).trim();
+                            if (!cleanCode) return;
+                            
+                            if (!newMaster[cleanCode]) newMaster[cleanCode] = { 코드: cleanCode };
+                            MASTER_HEADERS.forEach(h => {
+                                if (h !== '품목코드' && h !== '코드' && row[h] !== undefined && row[h] !== "") {
+                                    const val = row[h];
+                                    if (['출고가', '입고가', '입고B', '도매A', '도매B', '상장가', '최종전송', '최종입고', '시중가', '안전재고', '순번'].includes(h)) {
+                                        newMaster[cleanCode][h] = Number(String(val).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0;
+                                    } else {
+                                        newMaster[cleanCode][h] = val;
+                                    }
+                                }
+                            });
+                            
+                            if (row['품목명'] || row['상품명'] || row['품명']) {
+                                newMaster[cleanCode]['품목명'] = row['품목명'] || row['상품명'] || row['품명'];
+                            }
+                            updatedCount++;
+                        }
+                    });
+
+                    setBaseCatalog(newMaster);
+                    await setIDB(CORE_KEYS.BASE_CATALOG, newMaster);
+                    localStorage.setItem(CORE_KEYS.SYNC_TRIGGER, Date.now().toString());
+                    
+                    showToast(`✅ 업로드 완료: ${updatedCount}건의 상품 정보가 갱신되었습니다.`);
+                    e.target.value = '';
+                };
+
+                const parseData = (data, type) => {
+                    try {
+                        const wb = window.XLSX.read(data, { type: type, cellDates: true });
+                        const ws = wb.Sheets[wb.SheetNames[0]];
+                        const jsonAll = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
+                        
+                        if(jsonAll.length === 0) return null;
+
+                        let headerRowIdx = -1;
+                        const maxSearch = Math.min(25, jsonAll.length);
+                        for (let i = 0; i < maxSearch; i++) {
+                            const rowArr = jsonAll[i] || [];
+                            const rowStr = rowArr.join('').replace(/\s/g, '');
+                            if (rowStr.includes('품목코드') || rowStr.includes('상품코드') || rowStr.includes('바코드') || (rowStr.includes('코드') && (rowStr.includes('품명') || rowStr.includes('상품명')))) { 
+                                headerRowIdx = i; break; 
+                            }
+                        }
+                        
+                        if (headerRowIdx === -1) headerRowIdx = 0; 
+
+                        const headers = jsonAll[headerRowIdx] || [];
+                        const parsedData = [];
+                        for (let i = headerRowIdx + 1; i < jsonAll.length; i++) {
+                            const row = jsonAll[i];
+                            if (!row || row.length === 0) continue;
+                            const obj = {}; 
+                            let isEmpty = true;
+                            headers.forEach((h, idx) => { 
+                                if (h && typeof h === 'string') {
+                                    const cleanH = h.trim();
+                                    obj[cleanH] = row[idx];
+                                    if(row[idx] !== undefined && String(row[idx]).trim() !== '') isEmpty = false;
+                                }
+                            }); 
+                            if(!isEmpty) parsedData.push(obj);
+                        }
+                        return parsedData;
+                    } catch(err) {
+                        return null;
+                    }
+                };
+
+                if (isCSV) {
+                    const reader = new FileReader();
+                    reader.onload = (evt) => {
+                        const text = evt.target.result;
+                        const parsed = parseData(text, 'string');
+                        processWorkbookData(parsed);
+                    };
+                    reader.readAsText(file, 'euc-kr');
+                } else {
+                    const reader = new FileReader();
+                    reader.onload = (evt) => {
+                        const data = new Uint8Array(evt.target.result);
+                        const parsed = parseData(data, 'array');
+                        processWorkbookData(parsed);
+                    };
+                    reader.readAsArrayBuffer(file);
+                }
+            };
+
+            const handleCellSave = useCallback(async (code, field, newValue) => {
+                try {
+                    let newMaster = { ...baseCatalog };
+                    if (!newMaster[code]) newMaster[code] = { 코드: code };
+                    newMaster[code][field] = newValue;
+                    
+                    setBaseCatalog(newMaster);
+                    await setIDB(CORE_KEYS.BASE_CATALOG, newMaster);
+                    
+                    localStorage.setItem(CORE_KEYS.SYNC_TRIGGER, Date.now().toString());
+                } catch(e) { showToast("❌ 저장 중 오류 발생"); }
+            }, [baseCatalog, showToast]);
+
+            const c1List = useMemo(() => {
+                const set = new Set();
+                Object.values(baseCatalog).filter(Boolean).forEach(p => { if (p['1그룹명']) set.add(p['1그룹명']); });
+                return Array.from(set).sort();
+            }, [baseCatalog]);
+
+            const c2List = useMemo(() => {
+                if (!activeC1) return [];
+                const set = new Set();
+                Object.values(baseCatalog).filter(Boolean).forEach(p => { if (p['1그룹명'] === activeC1 && p['2그룹명']) set.add(p['2그룹명']); });
+                return Array.from(set).sort();
+            }, [baseCatalog, activeC1]);
+
+            useEffect(() => { if (c1List.length > 0 && !c1List.includes(activeC1)) setActiveC1(c1List[0]); }, [c1List, activeC1]);
+            useEffect(() => { if (c2List.length > 0 && !c2List.includes(activeC2)) setActiveC2(c2List[0]); else if (c2List.length === 0) setActiveC2(''); }, [c2List, activeC2]);
+
+            const displayRows = useMemo(() => {
+                const arr = Object.values(baseCatalog).filter(Boolean);
+                if (searchTerm.trim()) {
+                    const kw = searchTerm.toLowerCase().replace(/\s+/g, '');
+                    return arr.filter(item => (String(item.코드 || '') + String(item.품목명 || '') + String(item.규격 || '')).toLowerCase().includes(kw)); 
+                }
+                return arr.filter(p => p['1그룹명'] === activeC1 && p['2그룹명'] === activeC2);
+            }, [baseCatalog, searchTerm, activeC1, activeC2]);
+
+            // 🏎️ 가상 스크롤 엔진 (음수 계산 방어코드 적용)
+            const [scrollTop, setScrollTop] = useState(0);
+            const handleScroll = useCallback((e) => setScrollTop(Math.max(0, e.target.scrollTop)), []);
+            
+            const ROW_HEIGHT = 40;
+            const BUFFER_SIZE = 15;
+            // 뷰포트 높이가 비정상적으로 작아져 음수가 되는 현상 완벽 차단
+            const VIEWPORT_HEIGHT = Math.max(400, window.innerHeight - 250);
+
+            const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_SIZE);
+            const endIndex = Math.max(startIndex, Math.min(displayRows.length, Math.floor((scrollTop + VIEWPORT_HEIGHT) / ROW_HEIGHT) + (BUFFER_SIZE * 2)));
+
+            const virtualRows = displayRows.slice(startIndex, endIndex);
+            const topPadding = startIndex * ROW_HEIGHT;
+            const bottomPadding = Math.max(0, (displayRows.length - endIndex) * ROW_HEIGHT);
+
+            const getColWidth = (h) => {
+                if (h === '품목코드' || h === '코드') return 'w-[140px] min-w-[140px] max-w-[140px]';
+                if (h === '품목명') return 'w-[300px] min-w-[300px] max-w-[300px]';
+                if (['간단설명', '카탈로그', '견적서'].includes(h)) return 'w-[200px] min-w-[200px]';
+                return 'w-[120px] min-w-[120px]';
             };
 
             return (
                 <div className="relative w-full h-full flex justify-center overflow-hidden">
                     
-                    {/* Swipe Navigation Buttons: 마스터 DB는 좌측 끝이므로 우측(상품 관리) 버튼만 유지 */}
-                    <button onClick={() => handleSwipe('상품 관리', 'manager.html')} className="nav-btn fixed right-4 top-1/2 -translate-y-1/2 z-40 p-4 rounded-full text-gray-500 group">
-                        <i className="fas fa-chevron-right text-xl"></i>
-                        <span className="absolute right-14 top-1/2 -translate-y-1/2 text-xs font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">상품 관리로 이동</span>
+                    {/* 🔥 새롭게 적용된 우측 고정 대형 이동 버튼 */}
+                    <button 
+                        onClick={() => handleNavigate('manager.html')} 
+                        disabled={isNavigating}
+                        className="edge-nav-btn right group"
+                    >
+                        {isNavigating ? (
+                            <i className="fas fa-circle-notch fa-spin text-2xl"></i>
+                        ) : (
+                            <Fragment>
+                                <i className="fas fa-chevron-right text-xl"></i>
+                                <span className="edge-nav-text">상품 관리</span>
+                            </Fragment>
+                        )}
                     </button>
 
                     <div className="w-full max-w-[1400px] h-full flex flex-col border-x term-border bg-[#010409] relative shadow-2xl">
@@ -229,7 +535,7 @@
                                     <h1 className="text-xl font-black text-white mb-1"><i className="fas fa-server text-[#e3b341] mr-2"></i>MASTER_DB <span className="text-[10px] bg-[#21262d] px-2 py-0.5 rounded ml-2">DIRECT EDITOR</span></h1>
                                     <p className="text-xs text-gray-500 font-mono">전사 메타데이터(48열)를 직접 수정하고 클라우드로 배포하는 최종 관제탑입니다.</p>
                                 </div>
-                                <div className="flex gap-2">
+                                <div className="flex gap-2 mr-10"> {/* 우측 버튼 가려짐 방지 여백 */}
                                     <label className="cursor-pointer px-5 py-2.5 text-[13px] font-bold rounded term-panel border term-border hover:bg-[#21262d] text-[#c9d1d9] transition-colors shadow-sm flex items-center">
                                         <i className="fas fa-file-upload text-[#a371f7] mr-2"></i> 
                                         업로드
@@ -251,7 +557,7 @@
                             </div>
 
                             {/* 🔎 2단 카테고리 네비게이션 및 검색 */}
-                            <div className="flex items-center justify-between bg-[#010409] p-3 rounded-lg border term-border shrink-0">
+                            <div className="flex items-center justify-between bg-[#010409] p-3 rounded-lg border term-border shrink-0 mr-10">
                                 <div className="flex flex-col gap-2 w-full max-w-[800px]">
                                     {/* 1차 분류 탭 */}
                                     <div className="flex gap-1 overflow-x-auto custom-scrollbar pb-1">
@@ -333,7 +639,7 @@
                                 </div>
                                 
                                 {/* 하단 인포 바 */}
-                                <div className="bg-[#010409] border-t border-[#30363d] px-4 py-2 text-[10px] font-bold text-gray-500 flex justify-between shrink-0">
+                                <div className="bg-[#010409] border-t border-[#30363d] px-4 py-2 text-[10px] font-bold text-gray-500 flex justify-between shrink-0 pr-16">
                                     <span><i className="fas fa-info-circle mr-1"></i>[품목명] 등 모든 속성은 클릭하여 직접 수정할 수 있으며, 즉시 로컬 스냅샷에 저장됩니다. (결재 대기열 거치지 않음)</span>
                                     {pendingCount > 0 && <span className="text-[#f85149] animate-pulse"><i className="fas fa-lock mr-1"></i>배포 차단 활성화: 상품 관리 탭을 확인하세요.</span>}
                                 </div>
@@ -343,9 +649,9 @@
 
                     {/* Toast Notification */}
                     {toastMsg && (
-                        <div className="fixed bottom-6 right-6 term-panel text-white px-5 py-3 rounded-lg shadow-2xl flex items-center gap-3 fade-in text-[13px] font-bold z-50 border term-border">
+                        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 term-panel text-white px-5 py-3 rounded-full shadow-2xl flex items-center gap-3 fade-in text-[13px] font-bold z-50 border term-border">
                             <i className={toastMsg.includes('🚨') || toastMsg.includes('❌') || toastMsg.includes('⚠️') ? "fas fa-exclamation-triangle text-[#f85149]" : "fas fa-check-circle text-[#3fb950]"}></i>
-                            {toastMsg.replace(/🚨|❌|⚠️|☁️|✅|📥|📤|⏳|ℹ️/g, '')}
+                            {toastMsg.replace(/🚨|❌|⚠️|☁️|✅|📥|📤|⏳|ℹ️|🚀/g, '')}
                         </div>
                     )}
                 </div>
