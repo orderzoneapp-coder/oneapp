@@ -1,1 +1,230 @@
+<!DOCTYPE html>
+<html lang="ko" translate="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NEXUS - Master DB [v1.94]</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', sans-serif; background-color: #000000; color: #c9d1d9; margin: 0; overflow: hidden; user-select: none; }
+        .term-bg { background-color: #010409; }
+        .term-panel { background-color: #0d1117; border: 1px solid #30363d; }
+        .term-border { border-color: #30363d; }
+        .data-row { transition: background-color 0.1s; border-bottom: 1px solid #21262d; }
+        .data-row:hover { background-color: #161b22; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; } 
+        ::-webkit-scrollbar-track { background: #0d1117; }
+        ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+        .spin-anim { animation: spin 1s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="term-bg text-sm h-screen flex flex-col">
+    <div id="root" class="h-full flex flex-col"></div>
 
+    <script type="text/babel">
+        const { useState, useMemo, useEffect, useCallback } = React;
+
+        // 🔒 보안 스크립트 (수정: React Hook 외부에서 순수 JS로 즉시 실행)
+        window.addEventListener('keydown', (e) => {
+            if (e.keyCode === 123 || (e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74 || e.keyCode === 67)) || (e.ctrlKey && e.keyCode === 85)) {
+                e.preventDefault(); return false;
+            }
+        });
+        window.addEventListener('contextmenu', e => e.preventDefault());
+
+        const CORE_KEYS = { BASE_CATALOG: 'oneapp_base_catalog', PENDING_QUEUE: 'oneapp_pending_queue', SETTINGS: 'oneapp_global_settings', SYNC_TRIGGER: 'merchMaster_sync_trigger' };
+
+        const initIDB = () => new Promise((resolve) => {
+            const req = indexedDB.open('OneAppMerchDB_V2', 2);
+            req.onupgradeneeded = (e) => { if (!e.target.result.objectStoreNames.contains('store')) e.target.result.createObjectStore('store'); };
+            req.onsuccess = () => resolve(req.result);
+        });
+
+        const getIDB = async (key) => {
+            const db = await initIDB();
+            return new Promise((resolve) => {
+                const req = db.transaction('store', 'readonly').objectStore('store').get(key);
+                req.onsuccess = () => resolve(req.result);
+            });
+        };
+
+        const GlobalHeader = ({ activeTab, pendingCount }) => {
+            const NAV_MENU = [
+                { id: 'master', name: '마스터 DB', icon: 'fas fa-server', url: '/merchops/master.html' },
+                { id: 'manager', name: '상품 관리', icon: 'fas fa-tasks', url: '/merchops/manager.html' },
+                { id: 'workspace', name: '시세 관리', icon: 'fas fa-edit', url: '/merchops/workspace.html' },
+                { id: 'parser', name: '스마트 파서', icon: 'fas fa-bolt', url: '/merchops/parser.html' },
+                { id: 'insights', name: '인사이트', icon: 'fas fa-chart-line', url: '/merchops/insights.html' },
+                { id: 'publish', name: '대외 발행', icon: 'fas fa-share-square', url: '/merchops/publish.html' },
+                { id: 'settings', name: '환경 설정', icon: 'fas fa-cog', url: '/merchops/settings.html' }
+            ];
+
+            return (
+                <div className="flex flex-col shrink-0 z-40 w-full term-bg border-b term-border">
+                    <header className="h-[60px] flex justify-between items-center px-6">
+                        <div className="flex items-center gap-6 h-full">
+                            <a href="/merchops/master.html" className="font-black text-[20px] tracking-wider text-white hover:text-indigo-400 transition-colors">
+                                NEXUS<span className="text-indigo-500">.IO</span>
+                            </a>
+                            <div className="flex items-end h-full gap-1 ml-4 pt-2">
+                                {NAV_MENU.map(menu => {
+                                    const isActive = activeTab === menu.id;
+                                    const isManager = menu.id === 'manager';
+                                    return (
+                                        <a key={menu.id} href={menu.url}
+                                            className={`relative flex items-center gap-2 px-5 py-3 text-[13px] font-bold rounded-t-lg transition-colors border-x border-t ${isActive ? 'term-panel border-b-transparent text-white z-10' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
+                                            style={{ marginBottom: isActive ? '-1px' : '0' }}
+                                        >
+                                            <i className={`${menu.icon} ${isActive ? 'text-indigo-400' : ''}`}></i> {menu.name}
+                                            {isManager && pendingCount > 0 && <span className="ml-1.5 flex h-5 min-w-[20px] px-1.5 items-center justify-center rounded-full bg-rose-600 text-white text-[10px] font-black shadow-sm animate-pulse">{pendingCount}</span>}
+                                        </a>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </header>
+                </div>
+            );
+        };
+
+        function MasterApp() {
+            const [baseCatalog, setBaseCatalog] = useState({});
+            const [pendingCount, setPendingCount] = useState(0);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [toastMsg, setToastMsg] = useState('');
+            const [isSyncing, setIsSyncing] = useState(false);
+            const [cloudUrl, setCloudUrl] = useState('');
+
+            const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 4000); }, []);
+
+            const loadData = useCallback(async () => {
+                setBaseCatalog(await getIDB(CORE_KEYS.BASE_CATALOG) || {});
+                setPendingCount(Object.keys(await getIDB(CORE_KEYS.PENDING_QUEUE) || {}).length);
+                const settings = await getIDB(CORE_KEYS.SETTINGS) || {};
+                if (settings.appScriptUrl) setCloudUrl(settings.appScriptUrl);
+            }, []);
+
+            useEffect(() => {
+                loadData();
+                const handleStorage = (e) => { if (e.key === CORE_KEYS.SYNC_TRIGGER) loadData(); };
+                window.addEventListener('storage', handleStorage);
+                return () => window.removeEventListener('storage', handleStorage);
+            }, [loadData]);
+
+            const callCloudAPI = async (action, data = null) => {
+                if (!cloudUrl) { showToast('❌ 환경설정에서 앱스 스크립트 URL을 먼저 등록해주세요.'); return null; }
+                setIsSyncing(true);
+                try {
+                    const response = await fetch(cloudUrl, {
+                        method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ action: action, userId: "beta_user", role: "MASTER", data: data })
+                    });
+                    const result = await response.json();
+                    if (result.status === 'error') throw new Error(result.message);
+                    return result.data;
+                } catch (error) { showToast(`🚨 통신 오류: ${error.message}`); return null; } finally { setIsSyncing(false); }
+            };
+
+            const handlePullMaster = async () => {
+                showToast('📥 클라우드에서 최신 마스터 데이터를 수신합니다...');
+                const result = await callCloudAPI('PULL_MASTER');
+                if (result) showToast('✅ 클라우드 데이터 수신 및 로컬 동기화 완료');
+            };
+
+            const handlePushDelta = async () => {
+                if (pendingCount > 0) { showToast(`⚠️ 클라우드 배포 차단: 상품 관리 탭에 대기 중인 ${pendingCount}건의 데이터를 확정해 주세요.`); return; }
+                if (window.confirm('현재 로컬 마스터 데이터를 본사 클라우드 서버로 배포(Push)하시겠습니까?')) {
+                    showToast('📤 클라우드로 데이터를 전송 중입니다...');
+                    const result = await callCloudAPI('PUSH_MERCHOPS_DELTA', Object.values(baseCatalog));
+                    if (result) showToast(`☁️ 클라우드 서버 동기화 완료: ${result.message || '성공'}`);
+                }
+            };
+
+            const catalogList = useMemo(() => Object.values(baseCatalog), [baseCatalog]);
+            const filteredList = useMemo(() => {
+                if (!searchTerm) return catalogList;
+                const lowerTerm = searchTerm.toLowerCase();
+                return catalogList.filter(item => (item.코드 && item.코드.toLowerCase().includes(lowerTerm)) || (item.품목명 && item.품목명.toLowerCase().includes(lowerTerm)));
+            }, [catalogList, searchTerm]);
+
+            return (
+                <div className="flex-1 flex flex-col h-full w-full">
+                    <GlobalHeader activeTab="master" pendingCount={pendingCount} />
+                    <div className="flex-1 flex flex-col p-6 max-w-[1600px] mx-auto w-full gap-4 overflow-hidden">
+                        <div className="flex justify-between items-end pb-4 border-b term-border shrink-0">
+                            <div>
+                                <h1 className="text-xl font-black text-white mb-1"><i className="fas fa-server text-indigo-500 mr-2"></i>MASTER_DB <span className="text-[10px] bg-[#21262d] px-2 py-0.5 rounded ml-2">SYNC-READY</span></h1>
+                                <p className="text-xs text-gray-500">클라우드 서버와 데이터를 송수신하는 중앙 관제탑입니다.</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={handlePullMaster} disabled={isSyncing} className="px-5 py-2 text-xs font-bold rounded bg-[#21262d] border term-border hover:bg-[#30363d] text-[#c9d1d9] transition-colors disabled:opacity-50">
+                                    {isSyncing ? <i className="fas fa-spinner spin-anim mr-2"></i> : <i className="fas fa-cloud-download-alt text-[#d2a8ff] mr-2"></i>} 데이터 수신 (Pull)
+                                </button>
+                                <button onClick={handlePushDelta} disabled={isSyncing} className={`px-5 py-2 text-xs font-bold rounded transition-colors border ${pendingCount > 0 ? 'bg-transparent border-[#f85149] text-[#f85149] hover:bg-[rgba(248,81,73,0.1)]' : 'bg-[#1f6feb] border-[#388bfd] hover:bg-[#388bfd] text-white disabled:opacity-50'}`}>
+                                    {isSyncing ? <i className="fas fa-spinner spin-anim mr-2"></i> : <i className="fas fa-cloud-upload-alt mr-2"></i>} 클라우드 배포 (Push)
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-between items-center shrink-0">
+                            <div className="relative w-96">
+                                <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs"></i>
+                                <input type="text" placeholder="품목명 또는 마스터 코드 검색..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-[#010409] border border-[#30363d] text-[#c9d1d9] pl-9 pr-3 py-2 text-xs font-mono rounded focus:border-[#58a6ff] outline-none"/>
+                            </div>
+                            <div className="flex gap-4 text-xs font-mono text-gray-500">
+                                <div>총 마스터 품목: <span className="text-white font-bold">{catalogList.length.toLocaleString()}</span>건</div>
+                                {pendingCount > 0 && <div className="text-[#f85149] font-bold animate-pulse">대기열 잔여: {pendingCount}건 (배포 차단됨)</div>}
+                            </div>
+                        </div>
+
+                        <div className="flex-1 term-panel rounded flex flex-col overflow-hidden">
+                            <div className="flex-1 overflow-auto">
+                                <table className="w-full text-left text-xs whitespace-nowrap">
+                                    <thead className="term-bg sticky top-0 border-b term-border text-gray-400">
+                                        <tr>
+                                            <th className="py-2.5 px-4 w-32">상품코드</th>
+                                            <th className="py-2.5 px-4 w-24">1차 분류</th>
+                                            <th className="py-2.5 px-4">품명</th>
+                                            <th className="py-2.5 px-4 w-32">규격</th>
+                                            <th className="py-2.5 px-4 text-right w-32">입고가(마스터)</th>
+                                            <th className="py-2.5 px-4 text-right w-32">시중가(출고가)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-[#21262d]">
+                                        {filteredList.length === 0 ? <tr><td colSpan="6" className="py-10 text-center text-gray-600">데이터가 없습니다.</td></tr> : (
+                                            filteredList.map((item, idx) => (
+                                                <tr key={item.코드 || idx} className="data-row">
+                                                    <td className="py-2 px-4 font-mono text-[#8b949e]">{item.코드}</td>
+                                                    <td className="py-2 px-4 text-gray-500">{item['1그룹명'] || '-'}</td>
+                                                    <td className="py-2 px-4 font-bold text-[#c9d1d9]">{item.품목명}</td>
+                                                    <td className="py-2 px-4 text-gray-500">{item.규격}</td>
+                                                    <td className="py-2 px-4 text-right font-mono text-[#58a6ff] font-bold">{item.입고가 ? Number(item.입고가).toLocaleString() : '-'}</td>
+                                                    <td className="py-2 px-4 text-right font-mono text-[#3fb950] font-bold">{item.시중가 ? Number(item.시중가).toLocaleString() : '-'}</td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {toastMsg && (
+                            <div className="fixed bottom-6 right-6 term-panel text-white px-4 py-3 rounded text-xs font-bold border term-border shadow-2xl flex items-center gap-2">
+                                <i className={toastMsg.includes('🚨') || toastMsg.includes('❌') || toastMsg.includes('⚠️') ? "fas fa-exclamation-triangle text-[#f85149]" : "fas fa-info-circle text-[#58a6ff]"}></i>
+                                {toastMsg.replace(/🚨|❌|⚠️|☁️|✅|📥|📤/g, '')}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+        ReactDOM.createRoot(document.getElementById('root')).render(<MasterApp />);
+    </script>
+</body>
+</html>
