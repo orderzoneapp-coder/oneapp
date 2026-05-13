@@ -84,13 +84,29 @@
             font-weight: 800;
             letter-spacing: 2px;
         }
+
+        /* Custom Scrollbar for Sidebar */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #30363d;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #484f58;
+        }
     </style>
 </head>
 <body class="term-bg text-sm h-screen flex flex-col">
     <div id="root" class="h-full flex flex-col w-full overflow-hidden"></div>
 
     <script type="text/babel">
-        const { useState, useMemo, useEffect, useCallback, Fragment } = React;
+        const { useState, useMemo, useEffect, useCallback, Fragment, useRef } = React;
 
         // [보안] 순수 JS F12 및 우클릭 원천 차단
         window.addEventListener('keydown', (e) => {
@@ -232,15 +248,18 @@
             const [isSyncing, setIsSyncing] = useState(false);
             const [cloudUrl, setCloudUrl] = useState('');
             
-            // Modal & Navigation State
-            const [confirmDialog, setConfirmDialog] = useState(null);
+            // Navigation State
             const [isNavigating, setIsNavigating] = useState(false);
 
-            // 2단 카테고리 상태
+            // Modal State
+            const [confirmDialog, setConfirmDialog] = useState(null);
+
+            // Category State
             const [activeC1, setActiveC1] = useState('');
             const [activeC2, setActiveC2] = useState('');
             
-            const tableContainerRef = React.useRef(null); // 스크롤 점프를 위한 Ref
+            // Refs for Scroll Spy
+            const tableContainerRef = useRef(null);
 
             const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 4000); }, []);
 
@@ -302,7 +321,6 @@
                     return;
                 }
                 
-                // alert/confirm 대신 커스텀 모달 사용
                 setConfirmDialog({
                     title: '클라우드 배포',
                     message: '현재 로컬 마스터 데이터(스냅샷)를 본사 클라우드 서버로 배포(Push)하시겠습니까?',
@@ -454,9 +472,8 @@
             }, [baseCatalog, activeC1]);
 
             useEffect(() => { if (c1List.length > 0 && !c1List.includes(activeC1)) setActiveC1(c1List[0]); }, [c1List, activeC1]);
-            // (참고) Scroll Spy 기능과 충돌 방지를 위해 C2 리스트 자동 선택 코드는 제외함
             
-            // 사이드바 스크롤 동기화: 메인 테이블 스크롤로 activeC2가 변경되면 사이드바 메뉴 위치도 자동 이동
+            // Scroll Sync for C2 Sidebar
             useEffect(() => {
                 if (!searchTerm && activeC2) {
                     const btn = document.getElementById(`c2-btn-${activeC2}`);
@@ -471,12 +488,12 @@
                     const kw = searchTerm.toLowerCase().replace(/\s+/g, '');
                     filtered = arr.filter(item => (String(item.코드 || '') + String(item.품목명 || '') + String(item.규격 || '')).toLowerCase().includes(kw)); 
                 } else {
-                    // 선택된 1단(대분류) 전체 상품 노출
+                    // Show ALL items for selected C1 (ignoring activeC2 filter to allow continuous scrolling)
                     filtered = arr.filter(p => p['1그룹명'] === activeC1);
                 }
                 
                 return filtered.sort((a, b) => {
-                    // 검색 중이 아닐 때 중분류(C2) 순서대로 우선 정렬하여 그룹화
+                    // Group by C2 when not searching
                     if (!searchTerm) {
                         let idxA = c2List.indexOf(a['2그룹명']);
                         let idxB = c2List.indexOf(b['2그룹명']);
@@ -495,13 +512,14 @@
             const BUFFER_SIZE = 15;
 
             const [scrollTop, setScrollTop] = useState(0);
+            
             const handleScroll = useCallback((e) => {
                 const top = Math.max(0, e.target.scrollTop);
                 setScrollTop(top);
 
-                // 검색 중이 아닐 때만 카테고리 스크롤 추적
+                // Scroll Spy: Update activeC2 based on scroll position
                 if (!searchTerm && displayRows.length > 0) {
-                    // 화면 최상단에서 약 2~3번째 줄(행) 위치를 기준으로 현재 C2를 인식
+                    // Check item near top of viewport (offset slightly to handle headers)
                     const refIndex = Math.max(0, Math.min(Math.floor((top + (ROW_HEIGHT * 2)) / ROW_HEIGHT), displayRows.length - 1));
                     const targetItem = displayRows[refIndex];
                     if (targetItem && targetItem['2그룹명'] && targetItem['2그룹명'] !== activeC2) {
@@ -514,7 +532,7 @@
                 setActiveC2(c2);
                 if (searchTerm) setSearchTerm('');
                 
-                // 선택한 C2로 시작하는 첫 번째 상품의 인덱스 검색
+                // Find first item of selected C2 and jump
                 const targetIndex = displayRows.findIndex(item => item['2그룹명'] === c2);
                 if (targetIndex !== -1 && tableContainerRef.current) {
                     const scrollPos = targetIndex * ROW_HEIGHT;
@@ -523,7 +541,7 @@
                 }
             }, [displayRows, searchTerm]);
 
-            const VIEWPORT_HEIGHT = Math.max(400, window.innerHeight - 200);
+            const VIEWPORT_HEIGHT = Math.max(400, window.innerHeight - 250);
             const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_SIZE);
             const endIndex = Math.max(startIndex, Math.min(displayRows.length, Math.floor((scrollTop + VIEWPORT_HEIGHT) / ROW_HEIGHT) + (BUFFER_SIZE * 2)));
             const virtualRows = displayRows.slice(startIndex, endIndex);
@@ -543,127 +561,135 @@
                         {isNavigating ? <i className="fas fa-circle-notch fa-spin text-2xl"></i> : <Fragment><i className="fas fa-chevron-right text-xl"></i><span className="edge-nav-text">상품 관리</span></Fragment>}
                     </button>
 
-                    <div className="w-full max-w-[1400px] h-full flex flex-col border-x term-border bg-[#010409] relative shadow-2xl overflow-hidden">
+                    <div className="w-full max-w-[1500px] h-full flex flex-col border-x term-border bg-[#010409] relative shadow-2xl overflow-hidden">
                         <GlobalHeader activeTab="master" pendingCount={pendingCount} />
                         
                         <div className="flex-1 flex flex-col w-full h-full overflow-hidden fade-in relative">
-                            {/* Top Header / Actions Area */}
-                            <div className="flex justify-between items-end p-6 pb-4 border-b term-border shrink-0 bg-[#010409] z-10 shadow-sm">
+                            
+                            {/* 1. 최상단 헤더 (타이틀 + 주요 액션 버튼) */}
+                            <div className="flex items-center justify-between p-4 border-b term-border shrink-0 bg-[#0d1117] z-10 shadow-sm gap-6">
                                 <div>
-                                    <h1 className="text-xl font-black text-white mb-1"><i className="fas fa-server text-[#e3b341] mr-2"></i>MASTER_DB <span className="text-[10px] bg-[#21262d] px-2 py-0.5 rounded ml-2 text-[#58a6ff]">v4.0</span></h1>
-                                    <p className="text-xs text-gray-500 font-mono">대분류별 전체 상품 노출 및 좌측 스크롤 연동 탐색으로 작업 속도를 극대화합니다.</p>
+                                    <h1 className="text-xl font-black text-white flex items-center mb-1">
+                                        <i className="fas fa-server text-[#e3b341] mr-2"></i>
+                                        MASTER_DB 
+                                        <span className="text-[10px] bg-[#21262d] px-2 py-0.5 rounded ml-2 text-[#58a6ff]">v4.0</span>
+                                    </h1>
                                 </div>
-                                <div className="flex gap-2 pr-10">
-                                    <label className="cursor-pointer px-4 py-2.5 text-[12px] font-bold rounded term-panel border term-border hover:bg-[#21262d] text-[#c9d1d9] transition-colors shadow-sm flex items-center">
+                                <div className="flex gap-2">
+                                    <label className="cursor-pointer px-4 py-2 text-[12px] font-bold rounded term-panel border term-border hover:bg-[#21262d] text-[#c9d1d9] transition-colors shadow-sm flex items-center">
                                         <i className="fas fa-file-upload text-[#a371f7] mr-2"></i> 업로드
                                         <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleImportExcel} />
                                     </label>
-                                    <button onClick={handleExportExcel} className="px-4 py-2.5 text-[12px] font-bold rounded term-panel border term-border hover:bg-[#21262d] text-[#c9d1d9] transition-colors shadow-sm flex items-center">
+                                    <button onClick={handleExportExcel} className="px-4 py-2 text-[12px] font-bold rounded term-panel border term-border hover:bg-[#21262d] text-[#c9d1d9] transition-colors shadow-sm flex items-center">
                                         <i className="fas fa-file-download text-[#3fb950] mr-2"></i> 다운로드
                                     </button>
-                                    <button onClick={handlePullMaster} disabled={isSyncing} className="px-4 py-2.5 text-[12px] font-bold rounded term-panel border term-border hover:bg-[#21262d] text-[#c9d1d9] transition-colors disabled:opacity-50 shadow-sm flex items-center">
+                                    <button onClick={handlePullMaster} disabled={isSyncing} className="px-4 py-2 text-[12px] font-bold rounded term-panel border term-border hover:bg-[#21262d] text-[#c9d1d9] transition-colors disabled:opacity-50 shadow-sm flex items-center">
                                         {isSyncing ? <i className="fas fa-spinner spin-anim mr-2"></i> : <i className="fas fa-cloud-download-alt text-[#58a6ff] mr-2"></i>} 수신 (Pull)
                                     </button>
-                                    <button onClick={handlePushCloud} disabled={isSyncing} className={`px-5 py-2.5 text-[12px] font-black rounded transition-colors border flex items-center shadow-md ${pendingCount > 0 ? 'bg-transparent border-[#f85149] text-[#f85149] hover:bg-[rgba(248,81,73,0.1)]' : 'bg-[#e3b341] hover:bg-yellow-500 text-black border-transparent shadow-[0_0_10px_rgba(227,179,65,0.3)] disabled:opacity-50'}`}>
+                                    <button onClick={handlePushCloud} disabled={isSyncing} className={`px-5 py-2 text-[12px] font-black rounded transition-colors border flex items-center shadow-md ${pendingCount > 0 ? 'bg-transparent border-[#f85149] text-[#f85149] hover:bg-[rgba(248,81,73,0.1)]' : 'bg-[#e3b341] hover:bg-yellow-500 text-black border-transparent shadow-[0_0_10px_rgba(227,179,65,0.3)] disabled:opacity-50'}`}>
                                         {isSyncing ? <i className="fas fa-spinner spin-anim mr-2"></i> : <i className="fas fa-cloud-upload-alt mr-2"></i>} 배포 (Push)
                                     </button>
                                 </div>
                             </div>
 
-                            {/* Main Body (Left Sidebar + Right Grid) */}
-                            <div className="flex-1 flex overflow-hidden w-full relative">
+                            {/* 2. 통합 툴바: 대분류(C1) 탭 + 검색창 (가로 배치) */}
+                            <div className="flex justify-between items-center bg-[#161b22] px-4 py-3 border-b term-border shrink-0 z-10 shadow-sm h-[60px]">
+                                {/* 좌측: 대분류(C1) 가로 탭 */}
+                                <div className="flex gap-2 overflow-x-auto custom-scrollbar flex-1 items-center">
+                                    {c1List.map(c1 => (
+                                        <button key={c1} onClick={() => { 
+                                            setActiveC1(c1); setSearchTerm(''); 
+                                            if(tableContainerRef.current) { tableContainerRef.current.scrollTop = 0; setScrollTop(0); }
+                                        }} className={`px-5 py-2 text-[13px] font-bold rounded transition-all border shrink-0 ${activeC1 === c1 && !searchTerm ? 'border-[#58a6ff] text-[#58a6ff] bg-[rgba(88,166,255,0.1)] shadow-[0_0_10px_rgba(88,166,255,0.2)]' : 'border-[#30363d] text-gray-400 bg-[#0d1117] hover:text-gray-200 hover:bg-[#21262d]'}`}>
+                                            {c1}
+                                        </button>
+                                    ))}
+                                </div>
                                 
-                                {/* Left Sidebar Navigation */}
+                                {/* 우측: 검색창 및 건수 */}
+                                <div className="flex items-center gap-4 shrink-0 ml-6 pl-6 border-l border-[#30363d]">
+                                    <div className="text-[11px] font-mono text-gray-500 w-[100px] text-right">
+                                        조회됨: <span className="text-[#58a6ff] font-bold text-[12px]">{displayRows.length.toLocaleString()}</span>
+                                    </div>
+                                    <div className="relative w-[300px]">
+                                        <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-[11px]"></i>
+                                        <input type="text" placeholder="코드, 품명 등 전체 검색..." value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setScrollTop(0); if(tableContainerRef.current) tableContainerRef.current.scrollTop = 0; }} className="w-full bg-[#0d1117] border border-[#30363d] text-white pl-8 pr-3 py-2 text-[12px] font-mono rounded outline-none focus:border-[#58a6ff] focus:bg-[#010409] transition-all shadow-inner"/>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 3. 하단 메인 영역 (좌측 세로 C2 사이드바 + 우측 데이터 테이블) */}
+                            <div className="flex-1 flex overflow-hidden w-full relative bg-[#010409]">
+                                
+                                {/* 좌측: 중분류(C2) 세로 사이드바 */}
                                 <div className="w-[240px] shrink-0 flex flex-col border-r term-border bg-[#0d1117] z-20 shadow-[2px_0_10px_rgba(0,0,0,0.5)]">
-                                    <div className="p-3 border-b border-[#30363d] bg-[#010409]">
-                                        <div className="relative w-full">
-                                            <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-[11px]"></i>
-                                            <input type="text" placeholder="코드, 품명 등 검색..." value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setScrollTop(0); if(tableContainerRef.current) tableContainerRef.current.scrollTop = 0; }} className="w-full bg-[#161b22] border border-[#30363d] text-white pl-8 pr-3 py-1.5 text-[12px] font-mono rounded outline-none focus:border-[#58a6ff] focus:bg-[#0d1117] transition-all"/>
-                                        </div>
-                                        <div className="mt-2 text-[10px] font-mono text-gray-500 text-right pr-1">
-                                            <span className="text-[#58a6ff] font-bold text-[11px]">{displayRows.length.toLocaleString()}</span> 건 데이터
-                                        </div>
+                                    <div className="p-3 border-b border-[#30363d] bg-[#161b22] text-[11px] font-bold text-gray-400 flex items-center justify-between">
+                                        <span><i className="fas fa-list-ul mr-2"></i>중분류 목록</span>
+                                        <span className="text-gray-600 font-mono">{activeC1}</span>
                                     </div>
-
-                                    {/* C1 Tabs (Horizontal Scroll) */}
-                                    <div className="flex overflow-x-auto custom-scrollbar border-b border-[#30363d] bg-[#0d1117] shrink-0">
-                                        {c1List.map(c1 => (
-                                            <button key={c1} onClick={() => { 
-                                                setActiveC1(c1); setSearchTerm(''); 
-                                                if(tableContainerRef.current) { tableContainerRef.current.scrollTop = 0; setScrollTop(0); }
-                                            }} className={`flex-1 min-w-max px-4 py-3 text-[13px] font-bold border-b-2 transition-all ${activeC1 === c1 && !searchTerm ? 'border-[#58a6ff] text-[#58a6ff] bg-[#161b22]' : 'border-transparent text-gray-500 hover:text-gray-300 hover:bg-[#161b22]'}`}>
-                                                {c1}
-                                            </button>
-                                        ))}
-                                    </div>
-
-                                    {/* C2 List (Vertical Scroll Spy Menu) */}
-                                    <div className="flex-1 overflow-y-auto custom-scrollbar py-2 px-1">
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar py-2 px-2 flex flex-col gap-1">
                                         {!searchTerm ? (
                                             c2List.map(c2 => (
-                                                <button key={c2} id={`c2-btn-${c2}`} onClick={() => handleJumpToC2(c2)} className={`w-full text-left px-4 py-2.5 my-0.5 rounded text-[13px] font-bold transition-all relative ${activeC2 === c2 ? 'text-[#58a6ff] bg-[#161b22]' : 'text-gray-400 hover:text-gray-200 hover:bg-[#21262d]'}`}>
-                                                    {/* Active Indicator Line */}
-                                                    {activeC2 === c2 && <div className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-full bg-[#58a6ff] shadow-[0_0_8px_#58a6ff]"></div>}
+                                                <button key={c2} id={`c2-btn-${c2}`} onClick={() => handleJumpToC2(c2)} className={`w-full text-left px-4 py-3 rounded-md text-[13px] font-bold transition-all relative shrink-0 ${activeC2 === c2 ? 'text-[#58a6ff] bg-[#161b22] shadow-[inset_2px_0_0_#58a6ff]' : 'text-gray-400 hover:text-gray-200 hover:bg-[#21262d]'}`}>
                                                     {c2}
                                                 </button>
                                             ))
                                         ) : (
-                                            <div className="p-6 text-center text-gray-500 text-xs font-mono">
-                                                <i className="fas fa-filter block text-xl mb-2 opacity-50"></i>
-                                                검색 결과 표시 중<br/>(카테고리 비활성)
+                                            <div className="p-6 text-center text-gray-500 text-xs font-mono mt-10">
+                                                <i className="fas fa-filter block text-2xl mb-3 opacity-30"></i>
+                                                검색 결과 표시 중<br/>
+                                                <span className="text-[10px] mt-2 block opacity-70">(카테고리 비활성화됨)</span>
                                             </div>
                                         )}
                                     </div>
                                 </div>
 
-                                {/* Right Main Table Area */}
-                                <div className="flex-1 flex flex-col overflow-hidden bg-[#010409] pr-10">
-                                    <div className="flex-1 term-panel border-t-0 border-r-0 term-border flex flex-col overflow-hidden relative">
-                                        <div className="flex-1 overflow-auto custom-scrollbar" ref={tableContainerRef} onScroll={handleScroll}>
-                                            <table className="excel-table">
-                                                <thead>
-                                                    <tr>
-                                                        <th className={`excel-th sticky-col-1 ${getColWidth('품목코드')}`}>품목코드 <i className="fas fa-lock ml-1 text-gray-600"></i></th>
-                                                        <th className={`excel-th sticky-col-2 ${getColWidth('품목명')}`}>품목명</th>
-                                                        {MASTER_HEADERS.filter(h => h !== '품목코드' && h !== '코드' && h !== '품목명').map(header => (
-                                                            <th key={header} className={`excel-th ${getColWidth(header)}`}>{header}</th>
-                                                        ))}
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-[#21262d]">
-                                                    {displayRows.length === 0 ? (
-                                                        <tr><td colSpan={MASTER_HEADERS.length} className="py-20 text-center text-gray-600 font-bold"><i className="fas fa-database text-4xl mb-3 block opacity-20"></i>데이터가 없습니다.</td></tr>
-                                                    ) : (
-                                                        <Fragment>
-                                                            {topPadding > 0 && <tr style={{ height: `${topPadding}px` }}><td colSpan={MASTER_HEADERS.length}></td></tr>}
-                                                            {virtualRows.map((item, idx) => {
-                                                                const code = safeStr(item['코드'] || item['품목코드'], `key-${idx}`);
-                                                                return (
-                                                                    <tr key={code} className="excel-tr h-[40px]">
-                                                                        <td className={`sticky-col-1 excel-td ${getColWidth('품목코드')}`}>
-                                                                            <EditableCell code={code} field="코드" value={code} isFixed={true} onSave={()=>{}} />
+                                {/* 우측: 데이터 테이블 영역 */}
+                                <div className="flex-1 flex flex-col overflow-hidden relative">
+                                    <div className="flex-1 overflow-auto custom-scrollbar" ref={tableContainerRef} onScroll={handleScroll}>
+                                        <table className="excel-table">
+                                            <thead>
+                                                <tr>
+                                                    <th className={`excel-th sticky-col-1 ${getColWidth('품목코드')}`}>품목코드 <i className="fas fa-lock ml-1 text-gray-600"></i></th>
+                                                    <th className={`excel-th sticky-col-2 ${getColWidth('품목명')}`}>품목명</th>
+                                                    {MASTER_HEADERS.filter(h => h !== '품목코드' && h !== '코드' && h !== '품목명').map(header => (
+                                                        <th key={header} className={`excel-th ${getColWidth(header)}`}>{header}</th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-[#21262d]">
+                                                {displayRows.length === 0 ? (
+                                                    <tr><td colSpan={MASTER_HEADERS.length} className="py-20 text-center text-gray-600 font-bold"><i className="fas fa-database text-4xl mb-3 block opacity-20"></i>데이터가 없습니다.</td></tr>
+                                                ) : (
+                                                    <Fragment>
+                                                        {topPadding > 0 && <tr style={{ height: `${topPadding}px` }}><td colSpan={MASTER_HEADERS.length}></td></tr>}
+                                                        {virtualRows.map((item, idx) => {
+                                                            const code = safeStr(item['코드'] || item['품목코드'], `key-${idx}`);
+                                                            return (
+                                                                <tr key={code} className="excel-tr h-[40px]">
+                                                                    <td className={`sticky-col-1 excel-td ${getColWidth('품목코드')}`}>
+                                                                        <EditableCell code={code} field="코드" value={code} isFixed={true} onSave={()=>{}} />
+                                                                    </td>
+                                                                    <td className={`sticky-col-2 excel-td border-r border-[#30363d] ${getColWidth('품목명')}`}>
+                                                                        <EditableCell code={code} field="품목명" value={item['품목명']} onSave={handleCellSave} />
+                                                                    </td>
+                                                                    {MASTER_HEADERS.filter(h => h !== '품목코드' && h !== '코드' && h !== '품목명').map(h => (
+                                                                        <td key={`${code}-${h}`} className={`excel-td ${getColWidth(h)}`}>
+                                                                            <EditableCell code={code} field={h} value={item[h]} onSave={handleCellSave} />
                                                                         </td>
-                                                                        <td className={`sticky-col-2 excel-td border-r border-[#30363d] ${getColWidth('품목명')}`}>
-                                                                            <EditableCell code={code} field="품목명" value={item['품목명']} onSave={handleCellSave} />
-                                                                        </td>
-                                                                        {MASTER_HEADERS.filter(h => h !== '품목코드' && h !== '코드' && h !== '품목명').map(h => (
-                                                                            <td key={`${code}-${h}`} className={`excel-td ${getColWidth(h)}`}>
-                                                                                <EditableCell code={code} field={h} value={item[h]} onSave={handleCellSave} />
-                                                                            </td>
-                                                                        ))}
-                                                                    </tr>
-                                                                );
-                                                            })}
-                                                            {bottomPadding > 0 && <tr style={{ height: `${bottomPadding}px` }}><td colSpan={MASTER_HEADERS.length}></td></tr>}
-                                                        </Fragment>
-                                                    )}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                        <div className="bg-[#010409] border-t border-[#30363d] px-4 py-2 text-[10px] font-bold text-gray-500 flex justify-between shrink-0">
-                                            <span><i className="fas fa-info-circle mr-1"></i>[품목명] 등 모든 속성은 직접 수정할 수 있으며, 데이터 스크롤 시 좌측 메뉴 항목이 동기화됩니다.</span>
-                                            {pendingCount > 0 && <span className="text-[#f85149] animate-pulse"><i className="fas fa-lock mr-1"></i>배포 차단 활성화: 상품 관리 탭을 확인하세요.</span>}
-                                        </div>
+                                                                    ))}
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                        {bottomPadding > 0 && <tr style={{ height: `${bottomPadding}px` }}><td colSpan={MASTER_HEADERS.length}></td></tr>}
+                                                    </Fragment>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div className="bg-[#010409] border-t border-[#30363d] px-4 py-2 text-[10px] font-bold text-gray-500 flex justify-between shrink-0 pr-10">
+                                        <span><i className="fas fa-info-circle mr-1"></i>[품목명] 등 모든 속성은 직접 수정할 수 있으며, 데이터 스크롤 시 좌측 메뉴 항목이 동기화됩니다.</span>
+                                        {pendingCount > 0 && <span className="text-[#f85149] animate-pulse"><i className="fas fa-lock mr-1"></i>배포 차단 활성화: 상품 관리 탭을 확인하세요.</span>}
                                     </div>
                                 </div>
                             </div>
