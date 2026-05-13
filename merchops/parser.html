@@ -3,34 +3,46 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NEXUS - Smart Parser [v1.94]</title>
+    <meta name="google" content="notranslate">
+    <title>NEXUS - Smart Parser [v1.95]</title>
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-        body { font-family: 'Pretendard', sans-serif; background-color: #000000; color: #c9d1d9; margin: 0; overflow: hidden; user-select: none; }
-        .term-bg { background-color: #010409; }
-        .term-panel { background-color: #0d1117; border: 1px solid #30363d; }
-        .term-border { border-color: #30363d; }
-        .term-input { background-color: #010409; border: 1px solid #30363d; color: #c9d1d9; font-family: monospace; }
-        .term-input:focus { border-color: #58a6ff; outline: none; }
-        .data-row:hover { background-color: #161b22; }
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+        body { font-family: 'Pretendard', sans-serif; -webkit-user-select: none; user-select: none; background-color: #000000; margin: 0; overflow: hidden; }
+        input, textarea, select { user-select: auto; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; } 
+        ::-webkit-scrollbar-track { background: #010409; }
+        ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
         .fade-in { animation: fadeIn 0.2s ease-out; } 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* System.IO Dark Aesthetic overrides */
+        .system-io-bg { background-color: #010409; }
+        .system-io-panel { background-color: #0d1117; border: 1px solid #30363d; }
+        .system-io-text { color: #c9d1d9; }
+        .system-io-header { background-color: #010409; border-bottom: 1px solid #30363d; }
+        .system-io-border { border-color: #30363d; }
+        .system-io-hover:hover { background-color: #21262d; }
+        .term-input { background-color: #010409; border: 1px solid #30363d; color: #c9d1d9; font-family: monospace; }
+        .term-input:focus { border-color: #58a6ff; outline: none; box-shadow: 0 0 0 1px rgba(88,166,255,0.3); }
+
+        .data-row { transition: background-color 0.1s; border-bottom: 1px solid #21262d; }
+        .data-row:hover { background-color: #161b22; }
     </style>
 </head>
-<body class="term-bg h-screen flex flex-col">
-    <div id="root" class="h-full flex flex-col"></div>
+<body class="system-io-bg system-io-text text-sm h-screen flex flex-col">
+    <div id="root" class="h-full w-full flex flex-col"></div>
 
     <script type="text/babel">
         const { useState, useMemo, useEffect, useCallback } = React;
 
-        // 🔒 보안 스크립트 (수정: React Hook 외부에서 순수 JS로 즉시 실행)
+        // 🔒 [보안] F12 및 우클릭 원천 차단
         window.addEventListener('keydown', (e) => {
             if (e.keyCode === 123 || (e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74 || e.keyCode === 67)) || (e.ctrlKey && e.keyCode === 85)) {
                 e.preventDefault(); return false;
@@ -38,7 +50,13 @@
         });
         window.addEventListener('contextmenu', e => e.preventDefault());
 
-        const CORE_KEYS = { BASE_CATALOG: 'oneapp_base_catalog', PENDING_QUEUE: 'oneapp_pending_queue', CYCLE_LOG: 'oneapp_workspace_cycle_log', SYNC_TRIGGER: 'merchMaster_sync_trigger' };
+        const CORE_KEYS = {
+            BASE_CATALOG: 'oneapp_base_catalog',
+            PENDING_QUEUE: 'oneapp_pending_queue',
+            SETTINGS: 'oneapp_global_settings',
+            SYNC_TRIGGER: 'merchMaster_sync_trigger'
+        };
+
         const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
 
         const initIDB = () => new Promise((resolve) => {
@@ -64,152 +82,309 @@
             });
         };
 
-        const GlobalHeader = ({ activeTab, pendingCount }) => {
-            const NAV_MENU = [
-                { id: 'master', name: '마스터 DB', icon: 'fas fa-server', url: '/merchops/master.html' },
-                { id: 'manager', name: '상품 관리', icon: 'fas fa-tasks', url: '/merchops/manager.html' },
-                { id: 'workspace', name: '시세 관리', icon: 'fas fa-edit', url: '/merchops/workspace.html' },
-                { id: 'parser', name: '스마트 파서', icon: 'fas fa-bolt', url: '/merchops/parser.html' },
-                { id: 'insights', name: '인사이트', icon: 'fas fa-chart-line', url: '/merchops/insights.html' },
-                { id: 'publish', name: '대외 발행', icon: 'fas fa-share-square', url: '/merchops/publish.html' },
-                { id: 'settings', name: '환경 설정', icon: 'fas fa-cog', url: '/merchops/settings.html' }
-            ];
+        const generateUUID = () => Math.random().toString(36).substr(2, 9);
 
-            return (
-                <div className="flex flex-col shrink-0 z-40 w-full term-bg border-b term-border">
-                    <header className="h-[60px] flex justify-between items-center px-6">
-                        <div className="flex items-center gap-6 h-full">
-                            <a href="/merchops/parser.html" className="font-black text-[20px] tracking-wider text-white hover:text-indigo-400 transition-colors">
-                                NEXUS<span className="text-indigo-500">.IO</span>
-                            </a>
-                            <div className="flex items-end h-full gap-1 ml-4 pt-2">
-                                {NAV_MENU.map(menu => {
-                                    const isActive = activeTab === menu.id;
-                                    const isManager = menu.id === 'manager';
-                                    return (
-                                        <a key={menu.id} href={menu.url}
-                                            className={`relative flex items-center gap-2 px-5 py-3 text-[13px] font-bold rounded-t-lg transition-colors border-x border-t ${isActive ? 'term-panel border-b-transparent text-white z-10' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
-                                            style={{ marginBottom: isActive ? '-1px' : '0' }}
-                                        >
-                                            <i className={`${menu.icon} ${isActive ? 'text-indigo-400' : ''}`}></i> {menu.name}
-                                            {isManager && pendingCount > 0 && <span className="ml-1.5 flex h-5 min-w-[20px] px-1.5 items-center justify-center rounded-full bg-rose-600 text-white text-[10px] font-black shadow-sm animate-pulse">{pendingCount}</span>}
-                                        </a>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    </header>
-                </div>
-            );
-        };
-
-        const parseText = (text) => {
-            const lines = text.split('\n').map(l => l.trim()).filter(l => l);
-            const results = [];
-            lines.forEach(line => {
-                const priceMatch = line.match(/([\d,]+)\s*원/);
-                if (priceMatch) {
-                    const price = parseNum(priceMatch[1]);
-                    const infoPart = line.replace(priceMatch[0], '').trim();
-                    results.push({ id: Math.random().toString(36).substr(2, 9), rawName: infoPart, price });
+        // ==========================================
+        // 🧠 1. 텍스트 파싱 및 정규식 추출 엔진
+        // ==========================================
+        const parseTextSemantically = (rawText) => {
+            let cleanText = rawText.replace(/[\u00A0\u200B\u200C\u200D\uFEFF]/g, ' ');
+            let lines = cleanText.split('\n').map(l => l.trim()).filter(l => l !== '');
+            const results = []; 
+            let currentItem = {};
+            
+            const pushItem = () => {
+                if (currentItem.품목명) {
+                    if (currentItem.입고가) currentItem.입고가 = parseNum(currentItem.입고가);
+                    results.push({ _id: generateUUID(), ...currentItem });
                 }
+                currentItem = {};
+            };
+
+            lines.forEach(line => {
+                // 노이즈 필터링
+                if (/상품\s*\([\d,]+개\)/i.test(line) || /마켓보로|통신판매업|- 끝 -/.test(line)) return;
+
+                // 가격(단가) 추출
+                const priceMatch = line.match(/(?:^|\s|\/|\|)(\d{1,3}(?:,\d{3})*|\d+)\s*원$/);
+                let extractedPrice = null;
+                if (priceMatch) {
+                    extractedPrice = priceMatch[1];
+                    line = line.replace(priceMatch[0], '').trim();
+                    if (line.endsWith('/')) line = line.slice(0, -1).trim();
+                }
+                if (extractedPrice) currentItem.입고가 = extractedPrice;
+                if (!line) { if (extractedPrice) pushItem(); return; }
+
+                // 품목명, 규격, 단위 추론 로직
+                if (!currentItem.품목명) {
+                    if (line.includes(' / ')) {
+                        const splitParts = line.split(' / ');
+                        let namePart = splitParts[0].trim(); 
+                        let specPart = splitParts.slice(1).join(' / ').trim();
+                        const unitMatch = namePart.match(/(EA|BOX|포|개|박스|봉|캔|병|팩|단|마리)$/i);
+                        if (unitMatch) { 
+                            currentItem.단위 = unitMatch[0]; 
+                            currentItem.품목명 = namePart.slice(0, -unitMatch[0].length).trim(); 
+                        } else { 
+                            currentItem.품목명 = namePart; 
+                        }
+                        currentItem.규격 = specPart.split('/')[0].trim() || '';
+                    } else { 
+                        currentItem.품목명 = line; 
+                    }
+                } else {
+                    if (line.includes('/')) {
+                        const parts = line.split('/').map(s => s.trim());
+                        if (!currentItem.단위) currentItem.단위 = parts[0] || '';
+                        if (parts.length > 1 && !currentItem.규격) currentItem.규격 = parts[1] || '';
+                    } else if (/^\d+(?:\.\d+)?(?:kg|g|ml|l|ea|box|박스|개|포|단|박|캔|병|봉|팩|입)/i.test(line) && !currentItem.규격) {
+                        currentItem.규격 = line;
+                    }
+                }
+                if (extractedPrice) pushItem();
             });
+            if (currentItem.품목명) pushItem();
             return results;
         };
 
+        // ==========================================
+        // 🧠 2. AI 유사도 매칭 엔진 (N-gram)
+        // ==========================================
+        const normalizeText = (text) => text ? String(text).replace(/\s+/g, '').toLowerCase() : '';
+        const tokenize = (str) => str ? String(str).replace(/[^\w가-힣]/g, ' ').split(/\s+/).filter(Boolean) : [];
+        const extractSpec = (str) => {
+            if (!str) return '';
+            const match = String(str).toLowerCase().match(/\d+(?:\.\d+)?(?:kg|g|ml|l|ea|박스|개|포|단|박|캔|병|봉|팩|입|t|입수)/g);
+            return match ? match.join('') : '';
+        };
+
+        const runSmartMatch = (extName, extSpec, mProducts) => {
+            const extFullText = normalizeText((extName || '') + " " + (extSpec || ''));
+            let bestMatch = null; 
+            let bestScore = 0;
+            const extTokens = tokenize((extName || '') + " " + (extSpec || ''));
+            const extSpecNum = extractSpec((extName || '') + " " + (extSpec || ''));
+            let perfectMatches = [];
+
+            for (const mCode in mProducts) {
+                const m = mProducts[mCode];
+                const mName = String(m.품목명 || '').trim();
+                const mSpec = String(m.규격 || '').trim();
+                const mFullText = normalizeText(mName + mSpec);
+                const mSpecNum = extractSpec(mName + " " + mSpec);
+
+                let isSpecMatch = true;
+                if (extSpecNum && mSpecNum && extSpecNum !== mSpecNum) isSpecMatch = false; 
+
+                if (extFullText === mFullText && isSpecMatch) {
+                    perfectMatches.push(m); continue;
+                }
+
+                const mTokens = tokenize(mName + " " + mSpec);
+                const intersection = extTokens.filter(t => mTokens.includes(t));
+                let score = intersection.length / Math.max(extTokens.length, mTokens.length);
+
+                if (!isSpecMatch) score = score * 0.1; 
+                if (score >= 0.7 && score > bestScore) { bestScore = score; bestMatch = m; }
+            }
+
+            if (perfectMatches.length === 1) return { code: perfectMatches[0].코드 || perfectMatches[0].품목코드, status: '🟢 일치' };
+            if (perfectMatches.length > 1) return { code: '', status: '🟡 중복품목' }; 
+            if (bestMatch && bestScore >= 0.7) return { code: bestMatch.코드 || bestMatch.품목코드, status: '🟡 유사발견' };
+            
+            return { code: '', status: '🔴 불일치 (신규)' };
+        };
+
+        // ==========================================
+        // 📊 메인 애플리케이션
+        // ==========================================
         function ParserApp() {
+            const [baseCatalog, setBaseCatalog] = useState({});
+            const [settings, setSettings] = useState({});
             const [inputText, setInputText] = useState('');
             const [parsedItems, setParsedItems] = useState([]);
-            const [masterData, setMasterData] = useState({});
-            const [pendingCount, setPendingCount] = useState(0);
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [toastMsg, setToastMsg] = useState('');
 
-            const loadData = useCallback(async () => {
-                setMasterData(await getIDB(CORE_KEYS.BASE_CATALOG) || {});
-                setPendingCount(Object.keys(await getIDB(CORE_KEYS.PENDING_QUEUE) || {}).length);
+            const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
+
+            useEffect(() => {
+                const loadData = async () => {
+                    setBaseCatalog(await getIDB(CORE_KEYS.BASE_CATALOG) || {});
+                    setSettings(await getIDB(CORE_KEYS.SETTINGS) || {});
+                };
+                loadData();
+                window.addEventListener('storage', (e) => { if (e.key === CORE_KEYS.SYNC_TRIGGER) loadData(); });
             }, []);
 
             useEffect(() => {
-                loadData();
-                window.addEventListener('storage', (e) => { if (e.key === CORE_KEYS.SYNC_TRIGGER) loadData(); });
-                return () => window.removeEventListener('storage', loadData);
-            }, [loadData]);
-
-            useEffect(() => {
-                const handleKeyDown = (e) => { if (e.key === 'F8') document.getElementById('btn-parse-apply')?.click(); };
+                const handleKeyDown = (e) => { if (e.key === 'F8') document.getElementById('btn-apply')?.click(); };
                 window.addEventListener('keydown', handleKeyDown);
                 return () => window.removeEventListener('keydown', handleKeyDown);
             }, []);
 
+            // 1. 텍스트 분석 실행
             const handleStartParsing = () => {
-                if (!inputText.trim()) return;
-                setParsedItems(parseText(inputText));
+                if (!inputText.trim()) return showToast('⚠️ 텍스트를 입력해주세요.');
+                setIsProcessing(true);
+                
+                setTimeout(() => {
+                    const rawItems = parseTextSemantically(inputText);
+                    const processedItems = rawItems.map(item => {
+                        const matchResult = runSmartMatch(item.품목명, item.규격, baseCatalog);
+                        return {
+                            ...item,
+                            matchCode: matchResult.code,
+                            matchStatus: matchResult.status
+                        };
+                    });
+                    setParsedItems(processedItems);
+                    setIsProcessing(false);
+                    showToast(`✅ ${processedItems.length}건 텍스트 분석 및 매칭 완료`);
+                }, 100);
             };
 
-            const handleApply = async () => {
+            // 2. F8 전송 (상품 관리 대기열로 일괄 상신)
+            const handleApplyDelta = async () => {
                 if (parsedItems.length === 0) return;
-                const master = await getIDB(CORE_KEYS.BASE_CATALOG) || {};
-                const queue = await getIDB(CORE_KEYS.PENDING_QUEUE) || {};
-                const cycleLog = await getIDB(CORE_KEYS.CYCLE_LOG) || {};
+                setIsProcessing(true);
 
-                parsedItems.forEach(item => {
-                    const code = "TEMP_CODE"; // 임시
-                    const mItem = master[code];
-                    if (mItem) {
-                        master[code] = { ...mItem, 입고가: item.price };
-                        cycleLog[code] = true;
-                    } else {
-                        queue[item.id] = { rawName: item.rawName, price: item.price, isNew: true };
-                    }
-                });
+                try {
+                    const queue = await getIDB(CORE_KEYS.PENDING_QUEUE) || {};
+                    let count = 0;
 
-                await setIDB(CORE_KEYS.BASE_CATALOG, master);
-                await setIDB(CORE_KEYS.PENDING_QUEUE, queue);
-                await setIDB(CORE_KEYS.CYCLE_LOG, cycleLog);
-                localStorage.setItem(CORE_KEYS.SYNC_TRIGGER, Date.now().toString());
+                    parsedItems.forEach(item => {
+                        const code = item.matchCode || `NEW-${generateUUID().substring(0,6).toUpperCase()}`;
+                        
+                        // 파서의 결과는 무조건 큐(Queue)로 보내어 검증을 거치게 합니다.
+                        if (!queue[code]) queue[code] = { 코드: code, finalData: {} };
+                        
+                        if (!item.matchCode) queue[code].isNewItem = true; // 매칭 안된건 신규 처리
+                        
+                        queue[code].finalData = { 
+                            ...queue[code].finalData, 
+                            품목명: item.품목명, 
+                            규격: item.규격 || '',
+                            입고가: item.입고가 || 0
+                        };
+                        count++;
+                    });
 
-                alert("🚀 분석 결과가 마스터 DB와 상품 관리로 각각 전송되었습니다.");
-                setParsedItems([]); setInputText('');
-                loadData();
+                    await setIDB(CORE_KEYS.PENDING_QUEUE, queue);
+                    localStorage.setItem(CORE_KEYS.SYNC_TRIGGER, Date.now().toString());
+
+                    setParsedItems([]);
+                    setInputText('');
+                    showToast(`🚀 ${count}건 파싱 데이터 대기열(상품 관리) 상신 완료`);
+                } catch(err) {
+                    console.error(err);
+                    showToast("❌ 전송 중 오류 발생");
+                } finally {
+                    setIsProcessing(false);
+                }
             };
+
+            const kpi = useMemo(() => {
+                return {
+                    total: parsedItems.length,
+                    matched: parsedItems.filter(i => i.matchStatus.includes('일치') && !i.matchStatus.includes('불일치')).length,
+                    similar: parsedItems.filter(i => i.matchStatus.includes('유사')).length,
+                    unmatched: parsedItems.filter(i => i.matchStatus.includes('불일치')).length,
+                };
+            }, [parsedItems]);
 
             return (
-                <div className="flex-1 flex flex-col h-full w-full">
-                    <GlobalHeader activeTab="parser" pendingCount={pendingCount} />
-                    <div className="flex-1 flex flex-col p-6 max-w-[1400px] mx-auto w-full gap-4">
-                        <div className="flex justify-between items-end border-b term-border pb-4 shrink-0">
-                            <div>
-                                <h1 className="text-xl font-black tracking-tighter text-white">SMART_PARSER<span className="text-indigo-500">.EXE</span></h1>
-                                <p className="text-xs text-gray-500 font-mono">비정형 텍스트를 분석하여 델타 데이터로 변환합니다.</p>
+                <div className="flex-1 flex flex-col p-6 max-w-[1400px] mx-auto w-full gap-4 h-full">
+                    {/* Header */}
+                    <div className="flex justify-between items-end pb-4 border-b term-border shrink-0">
+                        <div>
+                            <h1 className="text-xl font-black text-white mb-1"><i className="fas fa-bolt text-[#e3b341] mr-2"></i>SMART_PARSER</h1>
+                            <p className="text-xs text-gray-500 font-mono">카카오톡, 문자 등 비정형 텍스트를 분석하여 구조화된 데이터로 변환합니다.</p>
+                        </div>
+                        <div className="flex gap-2">
+                            <button id="btn-apply" onClick={handleApplyDelta} disabled={parsedItems.length === 0 || isProcessing} className={`px-6 py-2.5 rounded text-xs font-black transition-colors shadow-sm flex items-center ${parsedItems.length > 0 ? 'bg-[#238636] hover:bg-[#2ea043] text-white' : 'term-panel text-gray-500 cursor-not-allowed'}`}>
+                                <i className="fas fa-paper-plane mr-2"></i> 전송 및 반영 (F8)
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 flex gap-4 overflow-hidden h-full">
+                        {/* Left: Input Textarea */}
+                        <div className="w-[400px] flex flex-col gap-3 shrink-0 h-full">
+                            <div className="flex justify-between items-center bg-[#010409] p-3 border term-border rounded-lg">
+                                <span className="text-xs font-bold text-[#8b949e] uppercase tracking-widest"><i className="fas fa-paste mr-2"></i>Raw Text Input</span>
                             </div>
-                            <button id="btn-parse-apply" onClick={handleApply} disabled={parsedItems.length === 0} className="px-6 py-2.5 bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-black rounded transition-all disabled:bg-[#30363d] disabled:text-gray-500 disabled:cursor-not-allowed">
-                                <i className="fas fa-paper-plane mr-2"></i> F8 전송 (반영)
+                            <textarea 
+                                value={inputText}
+                                onChange={(e) => setInputText(e.target.value)}
+                                className="flex-1 term-input p-4 rounded-lg resize-none text-[13px] leading-relaxed custom-scrollbar shadow-inner"
+                                placeholder="카톡 시세나 웹 텍스트를 전체 복사하여 이곳에 붙여넣으세요..."
+                            ></textarea>
+                            <button onClick={handleStartParsing} disabled={!inputText || isProcessing} className="py-3.5 bg-[#21262d] hover:bg-[#30363d] text-[#58a6ff] font-bold text-xs rounded-lg border term-border transition-colors disabled:opacity-50">
+                                {isProcessing ? <i className="fas fa-circle-notch fa-spin mr-2"></i> : <i className="fas fa-magic mr-2"></i>}
+                                AI 텍스트 분석 실행
                             </button>
                         </div>
 
-                        <div className="flex-1 flex gap-4 overflow-hidden">
-                            <div className="w-1/3 flex flex-col gap-2">
-                                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Input Raw Text</label>
-                                <textarea value={inputText} onChange={(e) => setInputText(e.target.value)} className="flex-1 term-input p-4 rounded resize-none text-[13px] leading-relaxed" placeholder="카톡 시세나 웹 텍스트를 붙여넣으세요..."></textarea>
-                                <button onClick={handleStartParsing} className="py-3 bg-[#21262d] hover:bg-[#30363d] text-indigo-400 font-bold text-xs rounded border term-border transition-colors">
-                                    <i className="fas fa-bolt mr-2"></i>텍스트 분석 실행
-                                </button>
+                        {/* Right: Parsed Results */}
+                        <div className="flex-1 flex flex-col gap-3 h-full overflow-hidden">
+                            <div className="flex justify-between items-center bg-[#010409] p-3 border term-border rounded-lg shrink-0">
+                                <span className="text-xs font-bold text-[#8b949e] uppercase tracking-widest"><i className="fas fa-list-ul mr-2"></i>Parsed & Matched Results</span>
+                                <div className="flex gap-3 text-[11px] font-bold">
+                                    <span className="text-[#3fb950]">🟢 일치: {kpi.matched}</span>
+                                    <span className="text-[#e3b341]">🟡 유사: {kpi.similar}</span>
+                                    <span className="text-[#f85149]">🔴 신규/불일치: {kpi.unmatched}</span>
+                                </div>
                             </div>
-                            <div className="w-2/3 flex flex-col gap-2">
-                                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Parsed Result Preview</label>
-                                <div className="flex-1 term-panel rounded overflow-auto custom-scrollbar">
-                                    <table className="w-full text-left text-xs">
-                                        <thead className="sticky top-0 bg-[#0d1117] border-b term-border text-gray-500">
-                                            <tr><th className="p-3">분석 품명</th><th className="p-3 text-right">추출 단가</th><th className="p-3 text-center">매칭 상태</th></tr>
+                            
+                            <div className="flex-1 term-panel rounded-lg flex flex-col overflow-hidden shadow-xl border term-border">
+                                <div className="flex-1 overflow-auto custom-scrollbar">
+                                    <table className="w-full text-left text-xs whitespace-nowrap">
+                                        <thead className="term-bg sticky top-0 z-10 border-b term-border text-gray-400">
+                                            <tr>
+                                                <th className="py-3 px-4 w-20 text-center">매칭 상태</th>
+                                                <th className="py-3 px-4 w-32">마스터 매칭 코드</th>
+                                                <th className="py-3 px-4 text-[#d2a8ff] bg-[rgba(210,168,255,0.05)] border-x term-border">파싱 추출 품명 및 규격</th>
+                                                <th className="py-3 px-4 text-right w-32">추출 단가</th>
+                                            </tr>
                                         </thead>
                                         <tbody className="divide-y divide-[#21262d]">
-                                            {parsedItems.length === 0 ? <tr><td colSpan="3" className="p-10 text-center text-gray-600 font-mono">NO DATA PARSED</td></tr> : (
-                                                parsedItems.map(item => (
-                                                    <tr key={item.id} className="data-row">
-                                                        <td className="p-3 font-bold text-[#c9d1d9]">{item.rawName}</td>
-                                                        <td className="p-3 text-right font-mono text-[#3fb950]">{item.price.toLocaleString()}원</td>
-                                                        <td className="p-3 text-center"><span className="bg-rose-900/30 text-[#f85149] border border-rose-900/50 text-[10px] font-black px-2 py-0.5 rounded">NEW_ITEM</span></td>
-                                                    </tr>
-                                                ))
+                                            {parsedItems.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan="4" className="py-20 text-center term-text-muted">
+                                                        <i className="fas fa-robot text-4xl mb-4 opacity-20 block"></i>
+                                                        좌측에 텍스트를 입력하고 분석을 실행해 주세요.
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                parsedItems.map(item => {
+                                                    const mItem = baseCatalog[item.matchCode] || {};
+                                                    const isMatched = item.matchStatus.includes('일치') && !item.matchStatus.includes('불일치');
+                                                    const isNew = item.matchStatus.includes('불일치');
+
+                                                    return (
+                                                        <tr key={item._id} className="data-row h-[46px]">
+                                                            <td className="py-1.5 px-4 text-center">
+                                                                <span className={`px-2 py-1 rounded text-[10px] font-black ${isMatched ? 'bg-[rgba(63,185,80,0.1)] text-[#3fb950]' : isNew ? 'bg-[rgba(248,81,73,0.1)] text-[#f85149]' : 'bg-[rgba(227,179,65,0.1)] text-[#e3b341]'}`}>
+                                                                    {item.matchStatus}
+                                                                </span>
+                                                            </td>
+                                                            <td className="py-1.5 px-4 font-mono text-[#8b949e]">
+                                                                {item.matchCode || <span className="text-gray-600">코드 없음</span>}
+                                                            </td>
+                                                            <td className="py-1.5 px-4 bg-[rgba(210,168,255,0.02)] border-x term-border">
+                                                                <div className="flex flex-col">
+                                                                    <span className="font-bold text-[#c9d1d9]">{item.품목명}</span>
+                                                                    {item.규격 && <span className="text-[10px] text-[#d2a8ff] mt-0.5">{item.규격} {item.단위 ? `| ${item.단위}` : ''}</span>}
+                                                                </div>
+                                                            </td>
+                                                            <td className="py-1.5 px-4 text-right font-mono font-bold text-[#58a6ff]">
+                                                                {item.입고가 > 0 ? item.입고가.toLocaleString() : '-'}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })
                                             )}
                                         </tbody>
                                     </table>
@@ -217,9 +392,18 @@
                             </div>
                         </div>
                     </div>
+
+                    {/* Toast */}
+                    {toastMsg && (
+                        <div className="fixed bottom-6 right-6 z-50 bg-[#161b22] border term-border text-white px-5 py-3 rounded shadow-2xl flex items-center gap-3 fade-in text-xs font-bold">
+                            <i className={`fas ${toastMsg.includes('✅') || toastMsg.includes('🚀') ? 'fa-check-circle term-highlight' : toastMsg.includes('♻️') ? 'fa-sync-alt text-[#58a6ff]' : 'fa-exclamation-triangle term-warn'}`}></i>
+                            {toastMsg.replace(/✅|❌|⚠️|🚀|♻️/g, '')}
+                        </div>
+                    )}
                 </div>
             );
         }
+
         ReactDOM.createRoot(document.getElementById('root')).render(<ParserApp />);
     </script>
 </body>
