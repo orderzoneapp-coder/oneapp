@@ -14,7 +14,7 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
     <style>
-        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        @import url('https://cdn.jsdelivr.gh/orioncactus/pretendard/dist/web/static/pretendard.css');
         body { font-family: 'Pretendard', sans-serif; background-color: #000000; color: #c9d1d9; margin: 0; overflow: hidden; user-select: none; }
         ::-webkit-scrollbar { width: 8px; height: 8px; } 
         ::-webkit-scrollbar-track { background: #010409; }
@@ -43,7 +43,7 @@
         .sticky-col-2 { position: sticky; left: 140px; z-index: 15; background-color: #0d1117 !important; box-shadow: 2px 0 10px rgba(0,0,0,0.5); border-right: 2px solid #30363d; }
         .excel-th.sticky-col-1, .excel-th.sticky-col-2 { z-index: 30; background-color: #161b22 !important; }
 
-        /* 🔥 New Premium Edge Navigation Button */
+        /* 🔥 Premium Edge Navigation Button */
         .edge-nav-btn {
             position: fixed;
             top: 50%;
@@ -208,7 +208,7 @@
             );
         }, (prev, next) => prev.value === next.value && prev.code === next.code);
 
-        function MasterApp() {
+        function App() {
             const [baseCatalog, setBaseCatalog] = useState({});
             const [pendingCount, setPendingCount] = useState(0);
             const [searchTerm, setSearchTerm] = useState('');
@@ -242,11 +242,9 @@
                 return () => window.removeEventListener('storage', handleStorage);
             }, [loadData]);
 
-            // 🔥 수정된 우측 앱 이동 로직 (먹통 방지 및 로딩 효과 적용)
             const handleNavigate = (url) => {
                 if (isNavigating) return;
                 setIsNavigating(true);
-                // 100ms 정도 딜레이를 주어 스피너가 먼저 돌게 한 후 페이지 이동 처리
                 setTimeout(() => { window.location.href = url; }, 100);
             };
 
@@ -293,14 +291,8 @@
             };
 
             const handleExportExcel = () => {
-                if (!window.XLSX) {
-                    showToast('❌ 엑셀 라이브러리가 로드되지 않았습니다.');
-                    return;
-                }
-                if (displayRows.length === 0) {
-                    showToast('⚠️ 내보낼 데이터가 없습니다.');
-                    return;
-                }
+                if (!window.XLSX) { showToast('❌ 엑셀 라이브러리가 로드되지 않았습니다.'); return; }
+                if (displayRows.length === 0) { showToast('⚠️ 내보낼 데이터가 없습니다.'); return; }
                 
                 showToast('⏳ 엑셀 파일을 생성 중입니다...');
                 setTimeout(() => {
@@ -308,15 +300,11 @@
                         const exportData = displayRows.map(item => {
                             const row = {};
                             MASTER_HEADERS.forEach(h => {
-                                if (h === '품목코드') {
-                                    row[h] = item['코드'] || item['품목코드'] || '';
-                                } else {
-                                    row[h] = item[h] || '';
-                                }
+                                if (h === '품목코드') row[h] = item['코드'] || item['품목코드'] || '';
+                                else row[h] = item[h] || '';
                             });
                             return row;
                         });
-
                         const ws = window.XLSX.utils.json_to_sheet(exportData, { header: MASTER_HEADERS });
                         const wb = window.XLSX.utils.book_new();
                         window.XLSX.utils.book_append_sheet(wb, ws, "MasterDB");
@@ -324,7 +312,6 @@
                         showToast('✅ 엑셀 다운로드가 완료되었습니다.');
                     } catch (error) {
                         showToast('❌ 엑셀 생성 중 오류가 발생했습니다.');
-                        console.error(error);
                     }
                 }, 100);
             };
@@ -332,11 +319,7 @@
             const handleImportExcel = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
-
-                if (!window.XLSX) {
-                    showToast('❌ 엑셀 라이브러리가 로드되지 않았습니다.');
-                    return;
-                }
+                if (!window.XLSX) { showToast('❌ 엑셀 라이브러리가 로드되지 않았습니다.'); return; }
 
                 showToast('⏳ 엑셀/CSV 파일을 읽고 분석하는 중입니다...');
                 const isCSV = file.name.toLowerCase().endsWith('.csv');
@@ -344,105 +327,64 @@
                 const processWorkbookData = async (parsedData) => {
                     if (!parsedData || parsedData.length === 0) {
                         showToast('⚠️ 인식할 수 있는 데이터가 없거나 형식이 맞지 않습니다.');
-                        e.target.value = '';
-                        return;
+                        e.target.value = ''; return;
                     }
-
                     let newMaster = { ...baseCatalog };
                     let updatedCount = 0;
-
                     parsedData.forEach(row => {
                         const code = row['품목코드'] || row['상품코드'] || row['코드'] || row['바코드'];
                         if (code) {
                             const cleanCode = String(code).trim();
                             if (!cleanCode) return;
-                            
                             if (!newMaster[cleanCode]) newMaster[cleanCode] = { 코드: cleanCode };
                             MASTER_HEADERS.forEach(h => {
                                 if (h !== '품목코드' && h !== '코드' && row[h] !== undefined && row[h] !== "") {
                                     const val = row[h];
                                     if (['출고가', '입고가', '입고B', '도매A', '도매B', '상장가', '최종전송', '최종입고', '시중가', '안전재고', '순번'].includes(h)) {
                                         newMaster[cleanCode][h] = Number(String(val).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0;
-                                    } else {
-                                        newMaster[cleanCode][h] = val;
-                                    }
+                                    } else { newMaster[cleanCode][h] = val; }
                                 }
                             });
-                            
                             if (row['품목명'] || row['상품명'] || row['품명']) {
                                 newMaster[cleanCode]['품목명'] = row['품목명'] || row['상품명'] || row['품명'];
                             }
                             updatedCount++;
                         }
                     });
-
                     setBaseCatalog(newMaster);
                     await setIDB(CORE_KEYS.BASE_CATALOG, newMaster);
                     localStorage.setItem(CORE_KEYS.SYNC_TRIGGER, Date.now().toString());
-                    
                     showToast(`✅ 업로드 완료: ${updatedCount}건의 상품 정보가 갱신되었습니다.`);
                     e.target.value = '';
                 };
 
-                const parseData = (data, type) => {
+                const reader = new FileReader();
+                reader.onload = (evt) => {
                     try {
-                        const wb = window.XLSX.read(data, { type: type, cellDates: true });
+                        const data = isCSV ? evt.target.result : new Uint8Array(evt.target.result);
+                        const wb = window.XLSX.read(data, { type: isCSV ? 'string' : 'array', cellDates: true });
                         const ws = wb.Sheets[wb.SheetNames[0]];
                         const jsonAll = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
                         
-                        if(jsonAll.length === 0) return null;
-
                         let headerRowIdx = -1;
-                        const maxSearch = Math.min(25, jsonAll.length);
-                        for (let i = 0; i < maxSearch; i++) {
-                            const rowArr = jsonAll[i] || [];
-                            const rowStr = rowArr.join('').replace(/\s/g, '');
-                            if (rowStr.includes('품목코드') || rowStr.includes('상품코드') || rowStr.includes('바코드') || (rowStr.includes('코드') && (rowStr.includes('품명') || rowStr.includes('상품명')))) { 
-                                headerRowIdx = i; break; 
-                            }
+                        for (let i = 0; i < Math.min(25, jsonAll.length); i++) {
+                            const rowStr = (jsonAll[i] || []).join('').replace(/\s/g, '');
+                            if (rowStr.includes('품목코드') || rowStr.includes('상품코드') || rowStr.includes('바코드')) { headerRowIdx = i; break; }
                         }
-                        
-                        if (headerRowIdx === -1) headerRowIdx = 0; 
-
+                        if (headerRowIdx === -1) headerRowIdx = 0;
                         const headers = jsonAll[headerRowIdx] || [];
                         const parsedData = [];
                         for (let i = headerRowIdx + 1; i < jsonAll.length; i++) {
                             const row = jsonAll[i];
                             if (!row || row.length === 0) continue;
-                            const obj = {}; 
-                            let isEmpty = true;
-                            headers.forEach((h, idx) => { 
-                                if (h && typeof h === 'string') {
-                                    const cleanH = h.trim();
-                                    obj[cleanH] = row[idx];
-                                    if(row[idx] !== undefined && String(row[idx]).trim() !== '') isEmpty = false;
-                                }
-                            }); 
+                            const obj = {}; let isEmpty = true;
+                            headers.forEach((h, idx) => { if (h) { obj[String(h).trim()] = row[idx]; if(row[idx] !== undefined && String(row[idx]).trim() !== '') isEmpty = false; } });
                             if(!isEmpty) parsedData.push(obj);
                         }
-                        return parsedData;
-                    } catch(err) {
-                        return null;
-                    }
+                        processWorkbookData(parsedData);
+                    } catch(err) { showToast('❌ 파싱 실패'); }
                 };
-
-                if (isCSV) {
-                    const reader = new FileReader();
-                    reader.onload = (evt) => {
-                        const text = evt.target.result;
-                        const parsed = parseData(text, 'string');
-                        processWorkbookData(parsed);
-                    };
-                    reader.readAsText(file, 'euc-kr');
-                } else {
-                    const reader = new FileReader();
-                    reader.onload = (evt) => {
-                        const data = new Uint8Array(evt.target.result);
-                        const parsed = parseData(data, 'array');
-                        processWorkbookData(parsed);
-                    };
-                    reader.readAsArrayBuffer(file);
-                }
+                if (isCSV) reader.readAsText(file, 'euc-kr'); else reader.readAsArrayBuffer(file);
             };
 
             const handleCellSave = useCallback(async (code, field, newValue) => {
@@ -450,25 +392,39 @@
                     let newMaster = { ...baseCatalog };
                     if (!newMaster[code]) newMaster[code] = { 코드: code };
                     newMaster[code][field] = newValue;
-                    
                     setBaseCatalog(newMaster);
                     await setIDB(CORE_KEYS.BASE_CATALOG, newMaster);
-                    
                     localStorage.setItem(CORE_KEYS.SYNC_TRIGGER, Date.now().toString());
                 } catch(e) { showToast("❌ 저장 중 오류 발생"); }
             }, [baseCatalog, showToast]);
 
             const c1List = useMemo(() => {
-                const set = new Set();
-                Object.values(baseCatalog).filter(Boolean).forEach(p => { if (p['1그룹명']) set.add(p['1그룹명']); });
-                return Array.from(set).sort();
+                const map = new Map();
+                Object.values(baseCatalog).filter(Boolean).forEach(p => { 
+                    if (p['1그룹명']) {
+                        if (!map.has(p['1그룹명']) || (!map.get(p['1그룹명']) && p['1코드'])) {
+                            map.set(p['1그룹명'], p['1코드'] || '');
+                        }
+                    } 
+                });
+                return Array.from(map.entries())
+                    .sort((a, b) => String(a[1]).localeCompare(String(b[1]), undefined, { numeric: true }) || String(a[0]).localeCompare(String(b[0])))
+                    .map(entry => entry[0]);
             }, [baseCatalog]);
 
             const c2List = useMemo(() => {
                 if (!activeC1) return [];
-                const set = new Set();
-                Object.values(baseCatalog).filter(Boolean).forEach(p => { if (p['1그룹명'] === activeC1 && p['2그룹명']) set.add(p['2그룹명']); });
-                return Array.from(set).sort();
+                const map = new Map();
+                Object.values(baseCatalog).filter(Boolean).forEach(p => { 
+                    if (p['1그룹명'] === activeC1 && p['2그룹명']) {
+                        if (!map.has(p['2그룹명']) || (!map.get(p['2그룹명']) && p['2코드'])) {
+                            map.set(p['2그룹명'], p['2코드'] || '');
+                        }
+                    } 
+                });
+                return Array.from(map.entries())
+                    .sort((a, b) => String(a[1]).localeCompare(String(b[1]), undefined, { numeric: true }) || String(a[0]).localeCompare(String(b[0])))
+                    .map(entry => entry[0]);
             }, [baseCatalog, activeC1]);
 
             useEffect(() => { if (c1List.length > 0 && !c1List.includes(activeC1)) setActiveC1(c1List[0]); }, [c1List, activeC1]);
@@ -476,25 +432,27 @@
 
             const displayRows = useMemo(() => {
                 const arr = Object.values(baseCatalog).filter(Boolean);
+                let filtered = [];
                 if (searchTerm.trim()) {
                     const kw = searchTerm.toLowerCase().replace(/\s+/g, '');
-                    return arr.filter(item => (String(item.코드 || '') + String(item.품목명 || '') + String(item.규격 || '')).toLowerCase().includes(kw)); 
+                    filtered = arr.filter(item => (String(item.코드 || '') + String(item.품목명 || '') + String(item.규격 || '')).toLowerCase().includes(kw)); 
+                } else {
+                    filtered = arr.filter(p => p['1그룹명'] === activeC1 && p['2그룹명'] === activeC2);
                 }
-                return arr.filter(p => p['1그룹명'] === activeC1 && p['2그룹명'] === activeC2);
+                return filtered.sort((a, b) => {
+                    const codeA = String(a.코드 || a.품목코드 || '');
+                    const codeB = String(b.코드 || b.품목코드 || '');
+                    return codeA.localeCompare(codeB, undefined, { numeric: true });
+                });
             }, [baseCatalog, searchTerm, activeC1, activeC2]);
 
-            // 🏎️ 가상 스크롤 엔진 (음수 계산 방어코드 적용)
             const [scrollTop, setScrollTop] = useState(0);
             const handleScroll = useCallback((e) => setScrollTop(Math.max(0, e.target.scrollTop)), []);
-            
             const ROW_HEIGHT = 40;
             const BUFFER_SIZE = 15;
-            // 뷰포트 높이가 비정상적으로 작아져 음수가 되는 현상 완벽 차단
             const VIEWPORT_HEIGHT = Math.max(400, window.innerHeight - 250);
-
             const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_SIZE);
             const endIndex = Math.max(startIndex, Math.min(displayRows.length, Math.floor((scrollTop + VIEWPORT_HEIGHT) / ROW_HEIGHT) + (BUFFER_SIZE * 2)));
-
             const virtualRows = displayRows.slice(startIndex, endIndex);
             const topPadding = startIndex * ROW_HEIGHT;
             const bottomPadding = Math.max(0, (displayRows.length - endIndex) * ROW_HEIGHT);
@@ -508,58 +466,38 @@
 
             return (
                 <div className="relative w-full h-full flex justify-center overflow-hidden">
-                    
-                    {/* 🔥 새롭게 적용된 우측 고정 대형 이동 버튼 */}
-                    <button 
-                        onClick={() => handleNavigate('manager.html')} 
-                        disabled={isNavigating}
-                        className="edge-nav-btn right group"
-                    >
-                        {isNavigating ? (
-                            <i className="fas fa-circle-notch fa-spin text-2xl"></i>
-                        ) : (
-                            <Fragment>
-                                <i className="fas fa-chevron-right text-xl"></i>
-                                <span className="edge-nav-text">상품 관리</span>
-                            </Fragment>
-                        )}
+                    <button onClick={() => handleNavigate('manager.html')} disabled={isNavigating} className="edge-nav-btn right group">
+                        {isNavigating ? <i className="fas fa-circle-notch fa-spin text-2xl"></i> : <Fragment><i className="fas fa-chevron-right text-xl"></i><span className="edge-nav-text">상품 관리</span></Fragment>}
                     </button>
 
                     <div className="w-full max-w-[1400px] h-full flex flex-col border-x term-border bg-[#010409] relative shadow-2xl">
                         <GlobalHeader activeTab="master" pendingCount={pendingCount} />
                         
                         <div className="flex-1 flex flex-col p-6 w-full gap-4 overflow-hidden fade-in relative">
-                            {/* 🎛️ 상단 툴바 및 게이트키퍼 버튼 */}
                             <div className="flex justify-between items-end pb-4 border-b term-border shrink-0">
                                 <div>
                                     <h1 className="text-xl font-black text-white mb-1"><i className="fas fa-server text-[#e3b341] mr-2"></i>MASTER_DB <span className="text-[10px] bg-[#21262d] px-2 py-0.5 rounded ml-2">DIRECT EDITOR</span></h1>
                                     <p className="text-xs text-gray-500 font-mono">전사 메타데이터(48열)를 직접 수정하고 클라우드로 배포하는 최종 관제탑입니다.</p>
                                 </div>
-                                <div className="flex gap-2 mr-10"> {/* 우측 버튼 가려짐 방지 여백 */}
+                                <div className="flex gap-2 mr-10">
                                     <label className="cursor-pointer px-5 py-2.5 text-[13px] font-bold rounded term-panel border term-border hover:bg-[#21262d] text-[#c9d1d9] transition-colors shadow-sm flex items-center">
-                                        <i className="fas fa-file-upload text-[#a371f7] mr-2"></i> 
-                                        업로드
+                                        <i className="fas fa-file-upload text-[#a371f7] mr-2"></i> 업로드
                                         <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleImportExcel} />
                                     </label>
                                     <button onClick={handleExportExcel} className="px-5 py-2.5 text-[13px] font-bold rounded term-panel border term-border hover:bg-[#21262d] text-[#c9d1d9] transition-colors shadow-sm flex items-center">
-                                        <i className="fas fa-file-download text-[#3fb950] mr-2"></i> 
-                                        다운로드
+                                        <i className="fas fa-file-download text-[#3fb950] mr-2"></i> 다운로드
                                     </button>
                                     <button onClick={handlePullMaster} disabled={isSyncing} className="px-5 py-2.5 text-[13px] font-bold rounded term-panel border term-border hover:bg-[#21262d] text-[#c9d1d9] transition-colors disabled:opacity-50 shadow-sm flex items-center">
-                                        {isSyncing ? <i className="fas fa-spinner spin-anim mr-2"></i> : <i className="fas fa-cloud-download-alt text-[#58a6ff] mr-2"></i>} 
-                                        클라우드 수신 (Pull)
+                                        {isSyncing ? <i className="fas fa-spinner spin-anim mr-2"></i> : <i className="fas fa-cloud-download-alt text-[#58a6ff] mr-2"></i>} 클라우드 수신 (Pull)
                                     </button>
                                     <button onClick={handlePushCloud} disabled={isSyncing} className={`px-6 py-2.5 text-[13px] font-black rounded transition-colors border flex items-center shadow-md ${pendingCount > 0 ? 'bg-transparent border-[#f85149] text-[#f85149] hover:bg-[rgba(248,81,73,0.1)]' : 'bg-[#e3b341] hover:bg-yellow-500 text-black border-transparent shadow-[0_0_10px_rgba(227,179,65,0.3)] disabled:opacity-50'}`}>
-                                        {isSyncing ? <i className="fas fa-spinner spin-anim mr-2"></i> : <i className="fas fa-cloud-upload-alt mr-2"></i>} 
-                                        클라우드 배포 (Push)
+                                        {isSyncing ? <i className="fas fa-spinner spin-anim mr-2"></i> : <i className="fas fa-cloud-upload-alt mr-2"></i>} 클라우드 배포 (Push)
                                     </button>
                                 </div>
                             </div>
 
-                            {/* 🔎 2단 카테고리 네비게이션 및 검색 */}
                             <div className="flex items-center justify-between bg-[#010409] p-3 rounded-lg border term-border shrink-0 mr-10">
                                 <div className="flex flex-col gap-2 w-full max-w-[800px]">
-                                    {/* 1차 분류 탭 */}
                                     <div className="flex gap-1 overflow-x-auto custom-scrollbar pb-1">
                                         {c1List.map(c1 => (
                                             <button key={c1} onClick={() => { setActiveC1(c1); setSearchTerm(''); setScrollTop(0); }} className={`px-4 py-1.5 rounded-full text-[12px] font-bold transition-colors whitespace-nowrap border ${activeC1 === c1 ? 'bg-[rgba(88,166,255,0.15)] text-[#58a6ff] border-[#58a6ff]' : 'bg-[#161b22] text-gray-500 border-transparent hover:text-gray-300 hover:bg-[#21262d]'}`}>
@@ -567,7 +505,6 @@
                                             </button>
                                         ))}
                                     </div>
-                                    {/* 2차 분류 탭 */}
                                     <div className="flex gap-2 items-center">
                                         <span className="text-[10px] font-bold text-gray-600 shrink-0"><i className="fas fa-level-up-alt rotate-90 mr-1"></i>중분류:</span>
                                         <div className="flex gap-1 overflow-x-auto custom-scrollbar">
@@ -579,7 +516,6 @@
                                         </div>
                                     </div>
                                 </div>
-                                
                                 <div className="flex flex-col items-end gap-2 ml-4 shrink-0">
                                     <div className="relative w-72">
                                         <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-[11px]"></i>
@@ -591,7 +527,6 @@
                                 </div>
                             </div>
 
-                            {/* 🖥️ 48열 마스터 에디터 (가상 스크롤) */}
                             <div className="flex-1 term-panel rounded-xl flex flex-col overflow-hidden border term-border shadow-2xl relative">
                                 <div className="flex-1 overflow-auto custom-scrollbar" onScroll={handleScroll}>
                                     <table className="excel-table">
@@ -614,15 +549,12 @@
                                                         const code = safeStr(item['코드'] || item['품목코드'], `key-${idx}`);
                                                         return (
                                                             <tr key={code} className="excel-tr h-[40px]">
-                                                                {/* 1. 코드 (고정) */}
                                                                 <td className={`sticky-col-1 excel-td ${getColWidth('품목코드')}`}>
                                                                     <EditableCell code={code} field="코드" value={code} isFixed={true} onSave={()=>{}} />
                                                                 </td>
-                                                                {/* 2. 품목명 (고정) */}
                                                                 <td className={`sticky-col-2 excel-td border-r border-[#30363d] ${getColWidth('품목명')}`}>
                                                                     <EditableCell code={code} field="품목명" value={item['품목명']} onSave={handleCellSave} />
                                                                 </td>
-                                                                {/* 3. 나머지 속성 (스크롤 영역) */}
                                                                 {MASTER_HEADERS.filter(h => h !== '품목코드' && h !== '코드' && h !== '품목명').map(h => (
                                                                     <td key={`${code}-${h}`} className={`excel-td ${getColWidth(h)}`}>
                                                                         <EditableCell code={code} field={h} value={item[h]} onSave={handleCellSave} />
@@ -637,17 +569,14 @@
                                         </tbody>
                                     </table>
                                 </div>
-                                
-                                {/* 하단 인포 바 */}
                                 <div className="bg-[#010409] border-t border-[#30363d] px-4 py-2 text-[10px] font-bold text-gray-500 flex justify-between shrink-0 pr-16">
-                                    <span><i className="fas fa-info-circle mr-1"></i>[품목명] 등 모든 속성은 클릭하여 직접 수정할 수 있으며, 즉시 로컬 스냅샷에 저장됩니다. (결재 대기열 거치지 않음)</span>
+                                    <span><i className="fas fa-info-circle mr-1"></i>[품목명] 등 모든 속성은 클릭하여 직접 수정할 수 있으며, 즉시 로컬 스냅샷에 저장됩니다.</span>
                                     {pendingCount > 0 && <span className="text-[#f85149] animate-pulse"><i className="fas fa-lock mr-1"></i>배포 차단 활성화: 상품 관리 탭을 확인하세요.</span>}
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    {/* Toast Notification */}
                     {toastMsg && (
                         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 term-panel text-white px-5 py-3 rounded-full shadow-2xl flex items-center gap-3 fade-in text-[13px] font-bold z-50 border term-border">
                             <i className={toastMsg.includes('🚨') || toastMsg.includes('❌') || toastMsg.includes('⚠️') ? "fas fa-exclamation-triangle text-[#f85149]" : "fas fa-check-circle text-[#3fb950]"}></i>
@@ -659,7 +588,7 @@
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<MasterApp />);
+        root.render(<App />);
     </script>
 </body>
 </html>
