@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEXUS V1.95 실무 워크플로우</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { 50: '#eff6ff', 100: '#dbeafe', 500: '#3b82f6', 600: '#2563eb', 900: '#1e3a8a' },
+                        dark: '#0f172a'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', sans-serif; background-color: #f8fafc; color: #334155; }
+        .timeline-line {
+            position: absolute;
+            left: 2rem;
+            top: 2rem;
+            bottom: 0;
+            width: 2px;
+            background-color: #e2e8f0;
+            z-index: 0;
+        }
+        @media (min-width: 768px) {
+            .timeline-line { left: 3rem; }
+        }
+    </style>
+</head>
+<body class="antialiased min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-dark text-white py-6 px-4 md:px-8 shadow-lg z-10">
+        <div class="max-w-5xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-3">
+                <i class="fa-solid fa-network-wired text-3xl text-brand-400"></i>
+                <div>
+                    <h1 class="text-2xl font-bold tracking-tight">NEXUS V1.95 실무 워크플로우</h1>
+                    <p class="text-sm text-gray-400 mt-1">앱 역할 정의 및 전체 운영 프로세스 가이드</p>
+                </div>
+            </div>
+            <div class="bg-gray-800 border border-gray-700 px-4 py-2 rounded-lg text-sm text-gray-300 max-w-md w-full md:w-auto">
+                <div class="text-xs text-brand-400 font-bold mb-1">시나리오 (Scenario)</div>
+                "A 거래처에서 온 신규 단가표(엑셀/카톡)를 시스템에 반영하여 쇼핑몰 출고가까지 세팅하기"
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 w-full max-w-5xl mx-auto px-4 py-10 md:py-16 relative">
+        
+        <!-- Timeline Background Line -->
+        <div class="timeline-line hidden sm:block"></div>
+
+        <!-- Steps Container -->
+        <div class="space-y-12 relative z-10">
+
+            <!-- Step 1: 환경 설정 -->
+            <div class="relative flex flex-col sm:flex-row gap-6">
+                <div class="hidden sm:flex flex-col items-center shrink-0 w-24">
+                    <div class="w-16 h-16 bg-white border-4 border-slate-200 rounded-full flex items-center justify-center shadow-md z-10">
+                        <i class="fa-solid fa-cogs text-2xl text-slate-500"></i>
+                    </div>
+                </div>
+                <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200 flex-1 hover:shadow-md transition-shadow">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold uppercase">Step 1. 사전 준비</span>
+                    </div>
+                    <h2 class="text-2xl font-extrabold text-slate-800 mb-2">⚙️ 환경 설정 <span class="text-lg font-medium text-slate-500">(Settings Center)</span></h2>
+                    <p class="text-brand-600 font-medium italic mb-4">"작업의 룰(Rule)과 번역기를 미리 세팅해 두는 두뇌"</p>
+                    
+                    <div class="space-y-4">
+                        <div class="bg-slate-50 p-4 rounded-lg border border-slate-100">
+                            <h3 class="text-sm font-bold text-slate-700 mb-1"><i class="fa-solid fa-building text-slate-400 mr-2"></i>운영 상황</h3>
+                            <p class="text-sm text-slate-600">A 거래처의 엑셀은 '품목코드' 대신 '상품번호'를 쓰고, '매입가'라는 단어를 씁니다. 또한 이 거래처 상품들은 마진을 15% 얹어야 합니다.</p>
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-700 mb-2 border-b pb-1"><i class="fa-solid fa-wrench text-slate-400 mr-2"></i>앱의 역할 (기능)</h3>
+                            <ul class="list-disc pl-5 text-sm text-slate-600 space-y-1">
+                                <li><strong>엑셀 매핑 사전:</strong> 엑셀의 '상품번호' ➡️ 시스템의 '품목코드'로, '매입가' ➡️ '입고가'로 자동 번역되도록 사전에 키워드를 등록해 둡니다.</li>
+                                <li><strong>마진 룰 세팅:</strong> "A거래처(또는 특정 창고/단위) 상품은 입고가에서 ÷ 0.85 (역산 15%) 하여 출고가를 계산하라"는 글로벌 룰을 심어둡니다.</li>
+                            </ul>
+                        </div>
+                        <div class="bg-blue-50 border-l-4 border-blue-400 p-3 rounded-r-lg">
+                            <p class="text-sm text-blue-800"><strong>영향력:</strong> 여기서 세팅된 룰은 하위 작업장(시세 관리, 파서)이 데이터를 읽고 계산할 때 100% 종속적으로 작동합니다.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 병렬 처리 라인 알림 -->
+            <div class="relative flex flex-col sm:flex-row gap-6 ml-1 sm:ml-0">
+                <div class="hidden sm:flex flex-col items-center shrink-0 w-24">
+                    <div class="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center z-10 text-xs font-bold text-gray-500">OR</div>
+                </div>
+                <div class="flex-1 text-sm font-bold text-gray-400 uppercase tracking-widest pl-2">
+                    ▼ 데이터 소스에 따른 1차 작업 병렬 분기 ▼
+                </div>
+            </div>
+
+            <!-- Step 2-A: 시세 관리 (엑셀) -->
+            <div class="relative flex flex-col sm:flex-row gap-6">
+                <div class="hidden sm:flex flex-col items-center shrink-0 w-24">
+                    <div class="w-16 h-16 bg-white border-4 border-emerald-200 rounded-full flex items-center justify-center shadow-md z-10">
+                        <i class="fa-solid fa-file-excel text-2xl text-emerald-500"></i>
+                    </div>
+                </div>
+                <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-emerald-100 flex-1 hover:shadow-md transition-shadow relative overflow-hidden">
+                    <div class="absolute top-0 right-0 bg-emerald-50 text-emerald-600 text-xs font-bold px-3 py-1 rounded-bl-lg">엑셀(Excel) 기반</div>
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="bg-emerald-100 text-emerald-700 px-2 py-1 rounded text-xs font-bold uppercase">Step 2-A. 1차 작업</span>
+                    </div>
+                    <h2 class="text-2xl font-extrabold text-slate-800 mb-2">⚖️ 시세 관리 <span class="text-lg font-medium text-slate-500">(Workspace)</span></h2>
+                    <p class="text-emerald-600 font-medium italic mb-4">"엑셀을 붓고, 바뀐 돈(단가)을 계산하여 기안서(Queue)를 올리는 도마"</p>
+                    
+                    <div class="space-y-4">
+                        <div class="bg-emerald-50 p-4 rounded-lg border border-emerald-100">
+                            <h3 class="text-sm font-bold text-slate-700 mb-1"><i class="fa-solid fa-user-clock text-emerald-500 mr-2"></i>운영 상황</h3>
+                            <p class="text-sm text-slate-600">작업자가 A 거래처 엑셀을 업로드합니다.</p>
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-700 mb-2 border-b pb-1"><i class="fa-solid fa-wrench text-emerald-500 mr-2"></i>앱의 역할 (기능)</h3>
+                            <ul class="list-disc pl-5 text-sm text-slate-600 space-y-1">
+                                <li><strong>대조 (Diff):</strong> 마스터 DB 스냅샷을 기반으로 엑셀과 비교하여, 가격이 오른 것, 내린 것, 이름이 다른 것, 마스터에 아예 없는 신상품을 색상으로 하이라이트 합니다.</li>
+                                <li><strong>연산 (Calc):</strong> [환경설정 룰 강제 적용]을 누르면 Step 1에서 정한 15% 마진 룰이 작동하여 새 출고가가 화면에 찍힙니다.</li>
+                                <li><strong>상신 (Push to Queue):</strong> 작업자가 눈으로 훑어보고 F8(전송)을 누릅니다.</li>
+                            </ul>
+                        </div>
+                        <div class="bg-slate-800 text-slate-200 p-3 rounded-lg flex items-start gap-3">
+                            <i class="fa-solid fa-arrow-right-arrow-left mt-1 text-emerald-400"></i>
+                            <p class="text-sm"><strong>데이터 흐름 (핵심):</strong> 마스터 DB를 절대 직접 건드리지 않습니다. 변경된 '델타(Delta)' 정보들만 포장하여 [상품 관리]의 결재 대기열(PENDING_QUEUE)로 쏘아 올립니다.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 2-B: 스마트 파서 (텍스트) -->
+            <div class="relative flex flex-col sm:flex-row gap-6">
+                <div class="hidden sm:flex flex-col items-center shrink-0 w-24">
+                    <div class="w-16 h-16 bg-white border-4 border-cyan-200 rounded-full flex items-center justify-center shadow-md z-10">
+                        <i class="fa-solid fa-robot text-2xl text-cyan-500"></i>
+                    </div>
+                </div>
+                <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-cyan-100 flex-1 hover:shadow-md transition-shadow relative overflow-hidden">
+                    <div class="absolute top-0 right-0 bg-cyan-50 text-cyan-600 text-xs font-bold px-3 py-1 rounded-bl-lg">비정형 텍스트 기반</div>
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="bg-cyan-100 text-cyan-700 px-2 py-1 rounded text-xs font-bold uppercase">Step 2-B. 1차 작업</span>
+                    </div>
+                    <h2 class="text-2xl font-extrabold text-slate-800 mb-2">🤖 스마트 파서 <span class="text-lg font-medium text-slate-500">(Smart Parser)</span></h2>
+                    <p class="text-cyan-600 font-medium italic mb-4">"비정형 데이터 구조화 공장: 형식이 없는 텍스트에서 데이터를 자동 추출하고 짝을 지어주는 AI 엔진"</p>
+                    
+                    <div class="space-y-4">
+                        <div class="bg-cyan-50 p-4 rounded-lg border border-cyan-100">
+                            <h3 class="text-sm font-bold text-slate-700 mb-1"><i class="fa-solid fa-comment-dots text-cyan-500 mr-2"></i>운영 상황</h3>
+                            <p class="text-sm text-slate-600">작업자가 카카오톡, 웹사이트, 문자 메시지 등 형식이 없는 외부 시세 텍스트를 좌측 화면에 통째로 복사/붙여넣기 합니다.</p>
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-700 mb-2 border-b pb-1"><i class="fa-solid fa-wrench text-cyan-500 mr-2"></i>앱의 역할 (기능)</h3>
+                            <ul class="list-disc pl-5 text-sm text-slate-600 space-y-1">
+                                <li><strong>정규식 추출 엔진:</strong> 불필요한 인사말, 기호 등을 걸러내고 "단가" 패턴을 추적하여 '품명', '규격', '단가' 행을 자동 분리합니다.</li>
+                                <li><strong>지능형 맵핑 (Smart Mapping):</strong> N-gram 기반 AI로 "백설 설탕 15k"와 "하얀설탕 15kg"의 문자열 유사도를 분석하여 최적의 마스터 코드를 추천합니다.</li>
+                                <li><strong>투트랙 프리뷰:</strong> 자동 매칭 성공은 <span class="text-green-600 font-bold">녹색(🟢 일치)</span>, 실패한 신규 상품은 <span class="text-red-500 font-bold">붉은색(🔴 불일치)</span>으로 직관적으로 표시합니다.</li>
+                            </ul>
+                        </div>
+                        <div class="bg-slate-800 text-slate-200 p-3 rounded-lg flex items-start gap-3">
+                            <i class="fa-solid fa-arrow-right mt-1 text-cyan-400"></i>
+                            <div class="text-sm space-y-1">
+                                <p><strong>단방향 라우팅 전송 (F8):</strong> 작업자가 내역 확인 후 전송 시, 환경설정의 마진 룰을 입혀 <strong>[상품 관리]의 결재 대기열(PENDING_QUEUE)</strong>로 넘깁니다.</p>
+                                <p class="text-xs text-gray-400 mt-1 font-mono">DB 명세 | [읽기]: base_catalog, global_settings / [쓰기]: pending_queue</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 3: 상품 관리 -->
+            <div class="relative flex flex-col sm:flex-row gap-6 mt-12">
+                <div class="hidden sm:flex flex-col items-center shrink-0 w-24">
+                    <div class="w-16 h-16 bg-white border-4 border-amber-200 rounded-full flex items-center justify-center shadow-md z-10">
+                        <i class="fa-solid fa-clipboard-check text-2xl text-amber-500"></i>
+                    </div>
+                </div>
+                <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-amber-100 flex-1 hover:shadow-md transition-shadow relative">
+                    <div class="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-dark text-white px-4 py-1 rounded-full text-xs font-bold shadow-md">
+                        <i class="fa-solid fa-arrow-down mr-1 text-amber-400"></i> 대기열(Queue) 통합
+                    </div>
+                    <div class="flex items-center gap-2 mb-2 mt-2">
+                        <span class="bg-amber-100 text-amber-700 px-2 py-1 rounded text-xs font-bold uppercase">Step 3. 2차 검증 및 맵핑</span>
+                    </div>
+                    <h2 class="text-2xl font-extrabold text-slate-800 mb-2">📦 상품 관리 <span class="text-lg font-medium text-slate-500">(Item Manager)</span></h2>
+                    <p class="text-amber-600 font-medium italic mb-4">"작업장에서 올라온 기안서를 검토하고, 문제아(미매핑/신규)를 해결하는 통합 검증소"</p>
+                    
+                    <div class="space-y-4">
+                        <div class="bg-amber-50 p-4 rounded-lg border border-amber-100">
+                            <h3 class="text-sm font-bold text-slate-700 mb-1"><i class="fa-solid fa-bell text-amber-500 mr-2"></i>운영 상황</h3>
+                            <p class="text-sm text-slate-600">본사 관리자의 화면 상단 [상품 관리] 탭에 시세관리/파서에서 보낸 빨간 뱃지(🔴 45건 대기)가 뜹니다.</p>
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-700 mb-2 border-b pb-1"><i class="fa-solid fa-wrench text-amber-500 mr-2"></i>앱의 역할 (기능)</h3>
+                            <ul class="list-disc pl-5 text-sm text-slate-600 space-y-2">
+                                <li><strong>단가/텍스트 승인:</strong> "오이 단가 100원 인상, 양파 이름 갱신" 내역을 보고 [✅ 일괄 승인]을 누릅니다. (파서 결과물도 듀얼 뷰로 여기서 재검토)</li>
+                                <li>
+                                    <strong>미매핑 해결 (Resolution):</strong> 작업실에서 "마스터에 없어요"라고 올라온 신상품을 검토합니다.
+                                    <div class="mt-2 ml-2 space-y-1 bg-white p-2 border rounded text-xs">
+                                        <p>💡 <span class="font-bold text-blue-600">상황 1:</span> "어? 이거 기존에 있던 '백설설탕'인데 엑셀 오타네?" 👉 AI 추천/수동 검색으로 기존 마스터 상품에 강제 연결(Bind).</p>
+                                        <p>🆕 <span class="font-bold text-green-600">상황 2:</span> "진짜 신상품이네" 👉 [+ 신규 발급] 클릭하여 정식 편입.</p>
+                                    </div>
+                                </li>
+                                <li><strong>전략적 정지 (Suspend):</strong> "A 거래처 단가가 너무 올랐네. 당분간 이 상품 팔지 마" 👉 해당 상품 [⛔ 임의 정지] 처리.</li>
+                            </ul>
+                        </div>
+                        <div class="bg-slate-800 text-slate-200 p-3 rounded-lg flex items-start gap-3">
+                            <i class="fa-solid fa-code-merge mt-1 text-amber-400"></i>
+                            <p class="text-sm"><strong>데이터 흐름 (핵심):</strong> 관리자가 승인(결재 확정)을 내리는 순간, 비로소 데이터가 [마스터 DB (BASE_CATALOG)]로 병합(Merge) 됩니다.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 4: 마스터 DB -->
+            <div class="relative flex flex-col sm:flex-row gap-6">
+                <div class="hidden sm:flex flex-col items-center shrink-0 w-24">
+                    <div class="w-16 h-16 bg-white border-4 border-purple-200 rounded-full flex items-center justify-center shadow-md z-10">
+                        <i class="fa-solid fa-database text-2xl text-purple-500"></i>
+                    </div>
+                </div>
+                <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-purple-100 flex-1 hover:shadow-md transition-shadow">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs font-bold uppercase">Step 4. 최종 편집 및 배포</span>
+                    </div>
+                    <h2 class="text-2xl font-extrabold text-slate-800 mb-2">🏛️ 마스터 DB <span class="text-lg font-medium text-slate-500">(Master DB)</span></h2>
+                    <p class="text-purple-600 font-medium italic mb-4">"전사 데이터를 직접 수정하고 클라우드로 최종 백업하는 관제탑"</p>
+                    
+                    <div class="space-y-4">
+                        <div class="bg-purple-50 p-4 rounded-lg border border-purple-100">
+                            <h3 class="text-sm font-bold text-slate-700 mb-1"><i class="fa-solid fa-check-double text-purple-500 mr-2"></i>운영 상황</h3>
+                            <p class="text-sm text-slate-600">검증소에서 모든 데이터가 확정되어 마스터 DB로 들어왔습니다.</p>
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-700 mb-2 border-b pb-1"><i class="fa-solid fa-wrench text-purple-500 mr-2"></i>앱의 역할 (기능)</h3>
+                            <ul class="list-disc pl-5 text-sm text-slate-600 space-y-1">
+                                <li><strong>48열 직접 편집 (Direct Edit):</strong> 상품 관리에서 신규로 등록된 상품은 이름/단가 정도만 있습니다. 마스터 관리자가 엑셀 뷰를 열고 바코드, 소싱태그, 안전재고 등 나머지 48개 세부 메타데이터를 직접 타이핑하여 채워 넣습니다.</li>
+                                <li><strong>배포 차단 (Safe Lock):</strong> 관리자가 [☁️ 클라우드 Sync]를 누릅니다. 만약 [상품 관리]에 누군가 방금 보낸 결재 대기 건이 1건이라도 남아있으면 "대기열을 마저 비우라"며 전송을 차단합니다.</li>
+                                <li><strong>최종 배포 (Push):</strong> 모든 락이 해제되면, 최신 48열 마스터 정보가 구글 클라우드(Apps Script)로 쏘아져 영구 저장 및 타 부서(영업/출력)에 공유됩니다.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Summary Table -->
+        <div class="mt-16 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden relative z-10">
+            <div class="bg-dark p-4 border-b border-gray-700">
+                <h3 class="text-lg font-bold text-white flex items-center"><i class="fa-solid fa-list-check mr-2 text-brand-400"></i>요약 (Summary of Roles)</h3>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse text-sm min-w-[750px]">
+                    <thead>
+                        <tr class="bg-slate-50 text-slate-600 border-b border-slate-200">
+                            <th class="p-4 font-bold w-1/6">앱 이름</th>
+                            <th class="p-4 font-bold w-1/6">페르소나</th>
+                            <th class="p-4 font-bold w-2/6">데이터 흐름</th>
+                            <th class="p-4 font-bold w-2/6">핵심 무기</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 text-slate-700">
+                        <tr class="hover:bg-slate-50 transition-colors">
+                            <td class="p-4 font-bold text-slate-800"><i class="fa-solid fa-cogs text-slate-400 mr-2 w-4"></i>환경설정</td>
+                            <td class="p-4">룰 메이커</td>
+                            <td class="p-4 font-mono text-xs bg-slate-50 rounded mx-2 inline-block px-2 py-1 my-2">클라이언트(브라우저) 셋팅</td>
+                            <td class="p-4 text-xs">마진 연산 룰, 엑셀 헤더 사전</td>
+                        </tr>
+                        <tr class="hover:bg-emerald-50 transition-colors">
+                            <td class="p-4 font-bold text-emerald-800"><i class="fa-solid fa-file-excel text-emerald-500 mr-2 w-4"></i>시세관리</td>
+                            <td class="p-4">기안자 (엑셀)</td>
+                            <td class="p-4 text-xs"><span class="bg-slate-100 px-2 py-1 rounded">엑셀</span> <i class="fa-solid fa-arrow-right text-slate-400 mx-1"></i> <span class="bg-emerald-100 text-emerald-800 px-2 py-1 rounded font-bold">대기열(QUEUE)</span></td>
+                            <td class="p-4 text-xs">동적 마진 연산, F8 고속 상신</td>
+                        </tr>
+                        <tr class="hover:bg-cyan-50 transition-colors">
+                            <td class="p-4 font-bold text-cyan-800"><i class="fa-solid fa-robot text-cyan-500 mr-2 w-4"></i>스마트파서</td>
+                            <td class="p-4">기안자 (텍스트)</td>
+                            <td class="p-4 text-xs"><span class="bg-slate-100 px-2 py-1 rounded">비정형 텍스트</span> <i class="fa-solid fa-arrow-right text-slate-400 mx-1"></i> <span class="bg-cyan-100 text-cyan-800 px-2 py-1 rounded font-bold">대기열(QUEUE)</span></td>
+                            <td class="p-4 text-xs">정규식 엔진, N-gram 유사도 AI 매핑</td>
+                        </tr>
+                        <tr class="hover:bg-amber-50 transition-colors">
+                            <td class="p-4 font-bold text-amber-800"><i class="fa-solid fa-clipboard-check text-amber-500 mr-2 w-4"></i>상품관리</td>
+                            <td class="p-4">검증자 (데스크)</td>
+                            <td class="p-4 text-xs"><span class="bg-emerald-100 text-emerald-800 px-2 py-1 rounded">대기열</span> <i class="fa-solid fa-arrow-right text-slate-400 mx-1"></i> <span class="bg-amber-100 text-amber-800 px-2 py-1 rounded font-bold">로컬 마스터</span></td>
+                            <td class="p-4 text-xs">델타 승인, 유사도 매핑/연결, 임의 정지</td>
+                        </tr>
+                        <tr class="hover:bg-purple-50 transition-colors">
+                            <td class="p-4 font-bold text-purple-800"><i class="fa-solid fa-database text-purple-500 mr-2 w-4"></i>마스터 DB</td>
+                            <td class="p-4">관제탑 (본사)</td>
+                            <td class="p-4 text-xs"><span class="bg-amber-100 text-amber-800 px-2 py-1 rounded">로컬 마스터</span> <i class="fa-solid fa-arrow-right text-slate-400 mx-1"></i> <span class="bg-purple-100 text-purple-800 px-2 py-1 rounded font-bold">클라우드(서버)</span></td>
+                            <td class="p-4 text-xs">48열 직접 편집(Edit), 배포(Push) 락 제어</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="mt-12 text-center text-slate-400 text-sm">
+            &copy; 2026 NEXUS MerchOps System Guide.
+        </div>
+    </main>
+
+</body>
+</html>
