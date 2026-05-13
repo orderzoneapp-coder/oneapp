@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEXUS 환경설정 센터 가이드 V1.95</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { 50: '#eff6ff', 100: '#dbeafe', 500: '#3b82f6', 600: '#2563eb', 900: '#1e3a8a' },
+                        dark: '#111827'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', sans-serif; background-color: #f8fafc; color: #334155; }
+        .nav-link { transition: all 0.2s; }
+        .nav-link:hover { color: #3b82f6; background-color: #eff6ff; }
+        .nav-link.active { color: #2563eb; background-color: #dbeafe; font-weight: bold; border-right: 4px solid #2563eb; }
+        
+        /* 스무스 스크롤 */
+        html { scroll-behavior: smooth; }
+        
+        /* 섹션 패딩 (헤더에 안 가려지게) */
+        section { scroll-margin-top: 5rem; }
+    </style>
+</head>
+<body class="flex flex-col h-screen overflow-hidden">
+
+    <!-- Top Header -->
+    <header class="bg-dark text-white p-4 shadow-md z-20 flex justify-between items-center shrink-0">
+        <div class="flex items-center space-x-3">
+            <i class="fa-solid fa-satellite-dish text-2xl text-brand-500"></i>
+            <div>
+                <h1 class="text-xl font-bold tracking-wide">NEXUS USER GUIDE</h1>
+                <p class="text-xs text-gray-400">환경설정 센터 (Settings Center) V1.95 명세서</p>
+            </div>
+        </div>
+        <div class="hidden md:block">
+            <span class="bg-brand-600 text-xs px-2 py-1 rounded-full font-bold">Administrator Only</span>
+        </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden">
+        <!-- Sidebar Navigation -->
+        <nav class="w-64 bg-white border-r border-gray-200 overflow-y-auto hidden md:block shrink-0 shadow-sm z-10">
+            <div class="p-4">
+                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">목차</p>
+                <ul class="space-y-1">
+                    <li><a href="#purpose" class="nav-link block px-4 py-2 text-sm rounded-l-lg text-gray-700"><i class="fa-solid fa-bullseye w-5 text-center mr-2"></i>목적 및 역할</a></li>
+                    <li><a href="#flow" class="nav-link block px-4 py-2 text-sm rounded-l-lg text-gray-700"><i class="fa-solid fa-route w-5 text-center mr-2"></i>운영 플로우</a></li>
+                    <li><a href="#integration" class="nav-link block px-4 py-2 text-sm rounded-l-lg text-gray-700"><i class="fa-solid fa-diagram-project w-5 text-center mr-2"></i>타 앱 연동</a></li>
+                    <li><a href="#features" class="nav-link block px-4 py-2 text-sm rounded-l-lg text-gray-700"><i class="fa-solid fa-star w-5 text-center mr-2"></i>핵심 기능</a></li>
+                    <li><a href="#architecture" class="nav-link block px-4 py-2 text-sm rounded-l-lg text-gray-700"><i class="fa-solid fa-server w-5 text-center mr-2"></i>아키텍처 및 보안</a></li>
+                </ul>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="flex-1 overflow-y-auto p-6 md:p-10 relative">
+            <div class="max-w-4xl mx-auto space-y-16 pb-20">
+
+                <!-- Header Title -->
+                <div class="border-b-2 border-brand-500 pb-6">
+                    <h2 class="text-4xl font-extrabold text-gray-900 mb-2">글로벌 환경설정 센터</h2>
+                    <p class="text-lg text-gray-600">NEXUS 생태계의 전역 비즈니스 룰을 통제하는 중앙 관제탑 가이드입니다.</p>
+                </div>
+
+                <!-- Section 1: Purpose -->
+                <section id="purpose" class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+                    <h3 class="text-2xl font-bold text-gray-800 mb-4 flex items-center">
+                        <span class="bg-blue-100 text-blue-600 w-10 h-10 rounded-full flex items-center justify-center mr-3 text-lg"><i class="fa-solid fa-bullseye"></i></span>
+                        1. 목적 및 역할 (Purpose)
+                    </h3>
+                    <ul class="space-y-4 text-gray-700 leading-relaxed ml-2">
+                        <li class="flex items-start">
+                            <i class="fa-solid fa-check text-green-500 mt-1 mr-3"></i>
+                            <div>
+                                <strong class="text-gray-900 block">시스템의 통제탑 (Control Tower)</strong>
+                                NEXUS MerchOps 생태계 내 모든 앱(작업장, 마스터, 파서 등)이 공통으로 참조하는 <span class="bg-yellow-100 px-1 font-bold">전역 비즈니스 룰(Global Baseline)</span>을 중앙에서 정의하고 통제합니다.
+                            </div>
+                        </li>
+                        <li class="flex items-start">
+                            <i class="fa-solid fa-check text-green-500 mt-1 mr-3"></i>
+                            <div>
+                                <strong class="text-gray-900 block">운영 표준화 (Standardization)</strong>
+                                작업자마다 다를 수 있는 마진율 계산법, 엑셀 헤더 식별법, 화면 레이아웃 등을 하나로 통일시켜 휴먼 에러를 원천 차단합니다.
+                            </div>
+                        </li>
+                    </ul>
+                </section>
+
+                <!-- Section 2: Flow -->
+                <section id="flow" class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+                    <h3 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+                        <span class="bg-indigo-100 text-indigo-600 w-10 h-10 rounded-full flex items-center justify-center mr-3 text-lg"><i class="fa-solid fa-route"></i></span>
+                        2. 운영 플로우 (Operational Flow)
+                    </h3>
+                    <div class="relative pl-8 border-l-2 border-indigo-200 space-y-8">
+                        <div class="relative">
+                            <span class="absolute -left-[41px] bg-indigo-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border-4 border-white">1</span>
+                            <h4 class="font-bold text-lg text-gray-900">규칙 세팅</h4>
+                            <p class="text-gray-600 mt-1">관리자가 환경설정 탭에 진입하여 클라우드 URL, 마진 룰(나누기/곱하기), 엑셀 매핑 키워드를 세팅합니다.</p>
+                        </div>
+                        <div class="relative">
+                            <span class="absolute -left-[41px] bg-indigo-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border-4 border-white">2</span>
+                            <h4 class="font-bold text-lg text-gray-900">안전 저장 (F8)</h4>
+                            <p class="text-gray-600 mt-1">[전역 설정 반영] 버튼 클릭 시, 시스템은 마진율 오류(0% 이하)를 내부 검증한 후 안전하게 브라우저 DB에 저장합니다.</p>
+                        </div>
+                        <div class="relative">
+                            <span class="absolute -left-[41px] bg-indigo-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border-4 border-white">3</span>
+                            <h4 class="font-bold text-lg text-gray-900">실시간 전파 (Broadcast)</h4>
+                            <p class="text-gray-600 mt-1">저장이 완료되는 즉시, 보이지 않는 백그라운드 무전(<code class="text-sm bg-gray-100 text-pink-600 px-1 rounded">SYNC_TRIGGER</code>)이 전체 시스템으로 발송됩니다.</p>
+                        </div>
+                        <div class="relative">
+                            <span class="absolute -left-[41px] bg-indigo-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border-4 border-white">4</span>
+                            <h4 class="font-bold text-lg text-gray-900">전사 동기화</h4>
+                            <p class="text-gray-600 mt-1">현재 열려있는 모든 작업 창(시세 관리, 마스터 DB 등)이 새로고침 없이 즉각 새로운 룰을 적용하여 작동합니다.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Section 3: Integration -->
+                <section id="integration" class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+                    <h3 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+                        <span class="bg-emerald-100 text-emerald-600 w-10 h-10 rounded-full flex items-center justify-center mr-3 text-lg"><i class="fa-solid fa-diagram-project"></i></span>
+                        3. 다른 앱과의 유기적 연동
+                    </h3>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <!-- App 1 -->
+                        <div class="border border-gray-200 rounded-xl p-5 hover:shadow-md transition-shadow bg-gray-50">
+                            <div class="flex items-center space-x-2 mb-3">
+                                <i class="fa-solid fa-table-cells text-emerald-600 text-xl"></i>
+                                <h4 class="font-bold text-gray-800">시세 관리 (작업장)</h4>
+                            </div>
+                            <ul class="text-sm text-gray-600 space-y-2 list-disc pl-4">
+                                <li><strong>단가 연산:</strong> 설정된 마진 룰을 읽어 엑셀 단가에 적용.</li>
+                                <li><strong>엑셀 파싱:</strong> 제각각인 거래처 엑셀 헤더를 시스템 표준으로 치환.</li>
+                                <li><strong>UI 노출:</strong> 작업 뷰 노출 설정에 따라 필요 컬럼만 동적 표시.</li>
+                            </ul>
+                        </div>
+                        <!-- App 2 -->
+                        <div class="border border-gray-200 rounded-xl p-5 hover:shadow-md transition-shadow bg-gray-50">
+                            <div class="flex items-center space-x-2 mb-3">
+                                <i class="fa-solid fa-database text-blue-600 text-xl"></i>
+                                <h4 class="font-bold text-gray-800">마스터 DB (관제탑)</h4>
+                            </div>
+                            <ul class="text-sm text-gray-600 space-y-2 list-disc pl-4">
+                                <li><strong>클라우드 통신:</strong> API URL을 참조하여 클라우드 서버와 데이터 송수신.</li>
+                                <li><strong>UI 노출:</strong> 48개 속성 중 필요한 정보만 선별하여 화면에 표시.</li>
+                            </ul>
+                        </div>
+                        <!-- App 3 -->
+                        <div class="border border-gray-200 rounded-xl p-5 hover:shadow-md transition-shadow bg-gray-50">
+                            <div class="flex items-center space-x-2 mb-3">
+                                <i class="fa-solid fa-microchip text-purple-600 text-xl"></i>
+                                <h4 class="font-bold text-gray-800">스마트 파서 (분석기)</h4>
+                            </div>
+                            <ul class="text-sm text-gray-600 space-y-2 list-disc pl-4">
+                                <li><strong>데이터 매핑:</strong> 비정형 텍스트를 쪼갤 때 매핑 사전을 참조하여 알맞은 속성에 자동 할당.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Section 4: Features -->
+                <section id="features" class="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+                    <h3 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+                        <span class="bg-amber-100 text-amber-600 w-10 h-10 rounded-full flex items-center justify-center mr-3 text-lg"><i class="fa-solid fa-star"></i></span>
+                        4. 주요 핵심 기능
+                    </h3>
+
+                    <div class="space-y-6">
+                        <div class="flex flex-col md:flex-row gap-4 border-b border-gray-100 pb-6">
+                            <div class="md:w-1/4">
+                                <div class="bg-amber-50 text-amber-700 font-bold px-3 py-1 rounded inline-block text-sm">Feature 01</div>
+                                <h4 class="font-bold mt-2 text-gray-800">하이브리드 단가 연산 엔진</h4>
+                            </div>
+                            <div class="md:w-3/4 text-gray-600 text-sm space-y-2">
+                                <p>창고조건(예: 01)과 단위조건(예: BOX)을 교차 매칭하여 각기 다른 마진율을 설정합니다.</p>
+                                <p>단순 곱하기(×) 외에, 실무 도소매 마진 계산법인 <strong>역산 마진(나누기, ÷)</strong> 방식을 완벽 지원합니다. (예: 마진 10% 확보 시 '원가 ÷ 0.9')</p>
+                                <p>1만 원 기준 작동 예시를 실시간 UI로 보여주어 관리자의 실수를 방지합니다.</p>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-col md:flex-row gap-4 border-b border-gray-100 pb-6">
+                            <div class="md:w-1/4">
+                                <div class="bg-amber-50 text-amber-700 font-bold px-3 py-1 rounded inline-block text-sm">Feature 02</div>
+                                <h4 class="font-bold mt-2 text-gray-800">무한 확장형 엑셀 매핑 사전</h4>
+                            </div>
+                            <div class="md:w-3/4 text-gray-600 text-sm space-y-2">
+                                <p>관리자가 <strong>"새로운 마스터 속성명"</strong>과 <strong>"매칭할 엑셀 키워드"</strong>를 무제한으로 사전에 추가할 수 있습니다.</p>
+                                <p>특이한 포맷의 엑셀이 들어와도 개발자 도움 없이 현장에서 즉시 매핑 사전을 확장하여 대응 가능합니다.</p>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-col md:flex-row gap-4">
+                            <div class="md:w-1/4">
+                                <div class="bg-red-50 text-red-700 font-bold px-3 py-1 rounded inline-block text-sm">Feature 03</div>
+                                <h4 class="font-bold mt-2 text-gray-800 text-red-600">투트랙 위험 구역 (Danger Zone)</h4>
+                            </div>
+                            <div class="md:w-3/4 text-gray-600 text-sm space-y-2">
+                                <p>시스템 꼬임 대비 2단계 초기화 기능입니다.</p>
+                                <ul class="list-disc pl-4 space-y-1 mt-2">
+                                    <li><strong>옵션 1 (설정 초기화):</strong> 상품 데이터는 보존하고 마진/매핑 룰만 기본값으로 덮어씁니다.</li>
+                                    <li><strong>옵션 2 (DB 완전 삭제):</strong> 마스터 DB까지 영구 삭제하는 하드 리셋입니다. 보안을 위해 타이핑 검증을 거칩니다.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Section 5: Architecture -->
+                <section id="architecture" class="bg-dark text-white p-8 rounded-2xl shadow-lg relative overflow-hidden">
+                    <!-- 배경 장식 -->
+                    <i class="fa-solid fa-microchip absolute -right-10 -bottom-10 text-9xl text-gray-700 opacity-20"></i>
+                    
+                    <h3 class="text-2xl font-bold mb-6 flex items-center relative z-10">
+                        <span class="bg-gray-700 text-white w-10 h-10 rounded-full flex items-center justify-center mr-3 text-lg"><i class="fa-solid fa-server"></i></span>
+                        5. 기술 아키텍처 및 보안 요약
+                    </h3>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
+                        <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                            <h4 class="text-brand-400 font-bold mb-2 text-sm"><i class="fa-solid fa-database mr-2"></i>저장소 (Storage)</h4>
+                            <p class="text-gray-300 text-sm">브라우저 내장 <strong>IndexedDB</strong>를 사용하며, 안정적인 오프라인 저장을 지원합니다.</p>
+                        </div>
+                        <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                            <h4 class="text-brand-400 font-bold mb-2 text-sm"><i class="fa-solid fa-code mr-2"></i>UI 프레임워크</h4>
+                            <p class="text-gray-300 text-sm">사용자 환경 구성을 위해 최신 표준 웹 기술과 유틸리티 CSS(Tailwind)를 활용합니다.</p>
+                        </div>
+                        <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                            <h4 class="text-brand-400 font-bold mb-2 text-sm"><i class="fa-solid fa-shield-halved mr-2"></i>보안 (Security)</h4>
+                            <p class="text-gray-300 text-sm">기본적인 우클릭 차단 및 단축키 제어를 통해 설정값 임의 조작을 방어합니다.</p>
+                        </div>
+                        <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                            <h4 class="text-brand-400 font-bold mb-2 text-sm"><i class="fa-solid fa-bolt mr-2"></i>통신 (Sync)</h4>
+                            <p class="text-gray-300 text-sm">Event-driven 아키텍처를 통해 탭 간의 설정 변경 사항을 즉시 동기화합니다.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <div class="text-center text-gray-400 text-sm pt-8">
+                    &copy; 2026 NEXUS MerchOps System. All rights reserved.
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // 사이드바 스크롤 스파이 (간단 구현)
+        document.addEventListener('DOMContentLoaded', () => {
+            const sections = document.querySelectorAll('section');
+            const navLinks = document.querySelectorAll('.nav-link');
+
+            const observerOptions = {
+                root: null,
+                rootMargin: '0px',
+                threshold: 0.5
+            };
+
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const id = entry.target.getAttribute('id');
+                        navLinks.forEach(link => {
+                            link.classList.remove('active');
+                            if (link.getAttribute('href') === `#${id}`) {
+                                link.classList.add('active');
+                            }
+                        });
+                    }
+                });
+            }, observerOptions);
+
+            sections.forEach(section => {
+                observer.observe(section);
+            });
+        });
+    </script>
+</body>
+</html>
