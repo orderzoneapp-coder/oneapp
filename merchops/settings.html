@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NEXUS - Workspace Frame [v1.95]</title>
+    <title>NEXUS - Global Settings [v1.95]</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -14,35 +14,37 @@
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
         body { font-family: 'Pretendard', sans-serif; background-color: #000000; color: #c9d1d9; margin: 0; overflow: hidden; user-select: none; }
+        
         .term-bg { background-color: #010409; }
         .term-panel { background-color: #0d1117; border: 1px solid #30363d; }
         .term-border { border-color: #30363d; }
-        .term-input { background-color: #010409; border: 1px solid #30363d; color: #c9d1d9; }
-        .term-input:focus { border-color: #58a6ff; outline: none; }
+        .term-input { background-color: #010409; border: 1px solid #30363d; color: #c9d1d9; outline: none; transition: border-color 0.2s; }
+        .term-input:focus { border-color: #58a6ff; }
+        
         ::-webkit-scrollbar { width: 8px; height: 8px; } 
-        ::-webkit-scrollbar-track { background: #0d1117; }
+        ::-webkit-scrollbar-track { background: #010409; }
         ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+        
         .config-chip { display: inline-flex; align-items: center; padding: 6px 14px; border-radius: 9999px; border: 1px solid #30363d; background-color: #010409; color: #8b949e; font-size: 12px; cursor: pointer; transition: all 0.2s; }
         .config-chip.active { background-color: rgba(88,166,255,0.1); border-color: #58a6ff; color: #58a6ff; font-weight: bold; }
-        .fade-in { animation: fadeIn 0.2s ease-out; } 
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         
-        /* Modal Transitions */
-        .modal-overlay { transition: opacity 0.3s ease-out; }
-        .modal-panel { transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+        .fade-in { animation: fadeIn 0.3s ease-out forwards; } 
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         
-        /* Swipe Buttons */
-        .nav-btn { background: rgba(22, 27, 34, 0.6); border: 1px solid #30363d; backdrop-filter: blur(4px); transition: all 0.2s; }
-        .nav-btn:hover { background: rgba(48, 54, 61, 0.9); transform: scale(1.1); color: white; }
+        .slide-in { animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+
+        .slide-out { animation: slideOut 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes slideOut { from { transform: translateX(0); } to { transform: translateX(100%); } }
     </style>
 </head>
 <body class="term-bg text-sm h-screen flex flex-col">
-    <div id="root" class="h-full flex flex-col w-full"></div>
+    <div id="root" class="h-full w-full"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useCallback, useMemo } = React;
 
-        // 보안 스크립트
+        // 🔒 [보안] F12 및 우클릭 원천 차단
         window.addEventListener('keydown', (e) => {
             if (e.keyCode === 123 || (e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74 || e.keyCode === 67)) || (e.ctrlKey && e.keyCode === 85)) {
                 e.preventDefault(); return false;
@@ -120,54 +122,71 @@
             visibleUploadCols: ['순번', '창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명']
         };
 
-        // ============================================================================
-        // 공통 환경설정 컴포넌트 (모달 & 전체화면 대응)
-        // ============================================================================
-        function SettingsUI({ isStandalone, isOpen, onClose, globalShowToast }) {
+        function SettingsApp() {
             const [settings, setSettings] = useState(DEFAULT_SETTINGS);
             const [activeTab, setActiveTab] = useState('cloud');
             const [isSyncing, setIsSyncing] = useState(false);
-            const [localToastMsg, setLocalToastMsg] = useState('');
+            const [toastMsg, setToastMsg] = useState('');
             
+            // 모달 애니메이션 상태
+            const [isVisible, setIsVisible] = useState(false);
+            const [isClosing, setIsClosing] = useState(false);
+
             const [resetSettingsText, setResetSettingsText] = useState('');
             const [wipeDBText, setWipeDBText] = useState('');
             const [newMapTarget, setNewMapTarget] = useState('');
             const [newMapKeywords, setNewMapKeywords] = useState('');
 
-            const showToast = globalShowToast || ((msg) => { setLocalToastMsg(msg); setTimeout(() => setLocalToastMsg(''), 3000); });
             const mockCatalogs = ['공통식자재', '냉동수산', '가공품', '포장재'];
 
-            useEffect(() => {
-                if(isOpen || isStandalone) {
-                    getIDB(CORE_KEYS.SETTINGS).then(data => { if (data) setSettings(data); });
-                }
-            }, [isOpen, isStandalone]);
+            const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
 
+            // 앱 접속 즉시 슬라이드 인 애니메이션 실행
             useEffect(() => {
-                const handleKeyDown = (e) => { if (e.key === 'Escape' && isOpen && !isStandalone) onClose(); };
+                const timer = setTimeout(() => setIsVisible(true), 50);
+                getIDB(CORE_KEYS.SETTINGS).then(data => { if (data) setSettings(data); });
+                return () => clearTimeout(timer);
+            }, []);
+
+            // ESC 키 입력 시 닫기
+            useEffect(() => {
+                const handleKeyDown = (e) => { if (e.key === 'Escape' && isVisible) handleClose(); };
                 window.addEventListener('keydown', handleKeyDown);
                 return () => window.removeEventListener('keydown', handleKeyDown);
-            }, [isOpen, isStandalone, onClose]);
+            }, [isVisible]);
+
+            // 닫기 로직 (애니메이션 후 이전 페이지로 복귀)
+            const handleClose = () => {
+                setIsClosing(true);
+                setTimeout(() => {
+                    if (window.history.length > 1) {
+                        window.history.back(); // 이전 앱으로 복귀
+                    } else {
+                        window.location.href = 'master.html'; // 이전 기록 없으면 마스터로 폴백
+                    }
+                }, 300); // 애니메이션 시간 대기
+            };
 
             const handleSave = async () => {
                 await setIDB(CORE_KEYS.SETTINGS, settings);
                 localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
                 showToast('✅ 환경설정이 안전하게 저장되었습니다.');
-                if (!isStandalone && onClose) onClose(); 
+                setTimeout(() => handleClose(), 1000);
             };
 
             const handleCloudSync = async () => {
                 if (!settings.appScriptUrl) return showToast('⚠️ GAS API URL을 먼저 설정해주세요.');
                 try {
                     setIsSyncing(true);
-                    
                     const resMaster = await fetch(settings.appScriptUrl, { method: 'POST', body: JSON.stringify({ action: 'PULL_MASTER' }) }).then(r => r.json());
-                    if (resMaster.status === 'success') { await setIDB(CORE_KEYS.MASTER, resMaster.data.master); } else throw new Error(resMaster.message);
+                    if (resMaster.status === 'success') await setIDB(CORE_KEYS.MASTER, resMaster.data.master); 
+                    else throw new Error(resMaster.message);
 
                     const resDict = await fetch(settings.appScriptUrl, { method: 'POST', body: JSON.stringify({ action: 'PULL_DICT' }) }).then(r => r.json());
-                    if (resDict.status === 'success') { await setIDB(CORE_KEYS.DICT, resDict.data.dict); } else throw new Error(resDict.message);
+                    if (resDict.status === 'success') await setIDB(CORE_KEYS.DICT, resDict.data.dict); 
+                    else throw new Error(resDict.message);
 
-                    showToast('✅ 클라우드 동기화 완료! (가벼운 마스터 & 최신 딕셔너리 로드)');
+                    showToast('✅ 클라우드 동기화 완료! (가벼운 마스터 & 딕셔너리 로드)');
                 } catch (e) {
                     showToast('❌ 동기화 실패: ' + e.message);
                 } finally {
@@ -216,358 +235,261 @@
                 { id: 'danger', icon: 'fas fa-exclamation-triangle', label: '6. 시스템 초기화', color: 'text-[#f85149]' }
             ];
 
-            // 실제 설정화면 본문 (모달/전체화면 공통)
-            const settingsContent = (
-                <div className="flex flex-1 overflow-hidden h-full">
-                    {/* LNB */}
-                    <div className="w-[300px] bg-[#010409] border-r term-border flex flex-col shrink-0">
-                        <div className="p-6 border-b term-border flex justify-between items-center">
-                            <div>
-                                <h1 className="text-xl font-black text-white"><i className="fas fa-cog text-gray-400 mr-2"></i>GLOBAL SETTINGS</h1>
-                                <p className="text-[11px] text-[#58a6ff] font-mono mt-1 tracking-widest">{isStandalone ? 'STANDALONE MODE' : 'MODAL MODE'}</p>
-                            </div>
-                        </div>
-                        <div className="flex-1 overflow-y-auto py-4 flex flex-col">
-                            {lnbMenu.map(menu => (
-                                <button key={menu.id} onClick={() => setActiveTab(menu.id)} 
-                                    className={`px-6 py-4 text-left text-[14px] font-bold border-l-4 transition-colors flex items-center ${activeTab === menu.id ? 'bg-[#21262d] border-[#58a6ff] text-[#58a6ff]' : 'border-transparent text-gray-400 hover:bg-[#161b22] hover:text-gray-200'} ${menu.color || ''}`}>
-                                    <i className={`${menu.icon} w-6`}></i> {menu.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Main Content */}
-                    <div className="flex-1 flex flex-col overflow-hidden relative bg-[#0d1117]">
-                        <div className="px-10 py-6 border-b term-border flex justify-between items-center bg-[#010409]">
-                            <h2 className="text-xl font-black text-white">{lnbMenu.find(m => m.id === activeTab)?.label}</h2>
-                            <div className="flex gap-3">
-                                {!isStandalone && <button onClick={onClose} className="px-5 py-2 text-gray-400 hover:text-white transition-colors"><i className="fas fa-times mr-1"></i> 닫기</button>}
-                                {isStandalone && <button onClick={() => window.location.href = window.location.pathname} className="px-5 py-2 text-gray-400 hover:text-white transition-colors border term-border rounded"><i className="fas fa-arrow-left mr-1"></i> 앱으로 돌아가기</button>}
-                                <button onClick={handleSave} className="px-8 py-3 bg-[#238636] hover:bg-[#2ea043] text-white text-sm font-black rounded-lg transition-all shadow-[0_0_15px_rgba(35,134,54,0.3)]">
-                                    <i className="fas fa-save mr-2"></i>전역 설정 반영
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="flex-1 overflow-auto custom-scrollbar p-10 bg-[#0d1117]">
-                            <div className="max-w-[1200px] w-full mx-auto space-y-6 fade-in">
-                                
-                                {activeTab === 'cloud' && (
-                                    <div className="space-y-4">
-                                        <div className="term-panel p-8 rounded-lg border term-border">
-                                            <h3 className="text-base font-bold text-white mb-4"><i className="fas fa-network-wired text-[#58a6ff] mr-2"></i>Google AppScript API 연결</h3>
-                                            <input type="text" value={settings.appScriptUrl} onChange={(e) => setSettings({...settings, appScriptUrl: e.target.value})} placeholder="https://script.google.com/macros/s/..." className="term-input w-full p-4 rounded text-sm font-mono mb-2" />
-                                            <p className="text-xs text-gray-500">* 클라우드 마스터 DB 및 파서 딕셔너리와 통신하기 위한 게이트웨이입니다.</p>
-                                        </div>
-                                        
-                                        <div className="term-panel p-8 rounded-lg border term-border bg-[#010409]">
-                                            <div className="flex justify-between items-center">
-                                                <div>
-                                                    <h3 className="text-base font-bold text-[#3fb950] mb-2"><i className="fas fa-sync-alt mr-2"></i>클라우드 지능 강제 동기화 (PULL)</h3>
-                                                    <p className="text-sm text-gray-400">서버의 최신 마스터 정보(경량화) 및 파서 매핑 딕셔너리를 메모리로 가져옵니다.</p>
-                                                </div>
-                                                <button onClick={handleCloudSync} disabled={isSyncing} className="px-6 py-4 bg-[#161b22] hover:bg-[#21262d] border border-[#3fb950] text-[#3fb950] font-bold rounded-lg shadow-lg disabled:opacity-50 transition-colors">
-                                                    {isSyncing ? <><i className="fas fa-spinner fa-spin mr-2"></i>동기화 중...</> : <><i className="fas fa-cloud-download-alt mr-2"></i>데이터 가져오기</>}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {activeTab === 'catalog' && (
-                                    <div className="term-panel p-8 rounded-lg border term-border">
-                                        <h3 className="text-base font-bold text-white mb-4"><i className="fas fa-tags text-[#d2a8ff] mr-2"></i>단가 룰 적용 카탈로그 지정</h3>
-                                        <div className="flex flex-wrap gap-3">
-                                            {mockCatalogs.map(cat => {
-                                                const isActive = settings.targetCatalogs.includes(cat);
-                                                return (
-                                                    <label key={cat} className={`cursor-pointer px-5 py-3 border rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${isActive ? 'bg-[rgba(88,166,255,0.1)] border-[#58a6ff] text-[#58a6ff]' : 'bg-[#010409] border-[#30363d] text-gray-400 hover:text-gray-200'}`}>
-                                                        <input type="checkbox" className="hidden" checked={isActive} onChange={() => {
-                                                            setSettings(p => ({ ...p, targetCatalogs: isActive ? p.targetCatalogs.filter(c => c !== cat) : [...p.targetCatalogs, cat] }))
-                                                        }} />
-                                                        <i className={`fas ${isActive ? 'fa-check-square' : 'fa-square'} text-base`}></i> {cat}
-                                                    </label>
-                                                )
-                                            })}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {activeTab === 'margin' && (
-                                    <div className="term-panel p-8 rounded-lg border term-border">
-                                        <div className="flex justify-between items-center mb-6">
-                                            <div>
-                                                <h3 className="text-base font-bold text-white"><i className="fas fa-calculator text-[#3fb950] mr-2"></i>동적 단가 연산 엔진 (Margin Rules)</h3>
-                                            </div>
-                                            <button onClick={() => setSettings(p => ({...p, marginRules: [...p.marginRules, { id: generateUUID(), condition: '*', unit: '*', type: 'divide', rate: 10 }]}))} className="px-4 py-2 bg-[#21262d] hover:bg-[#30363d] text-white text-sm rounded border term-border"><i className="fas fa-plus mr-1"></i>룰 추가</button>
-                                        </div>
-                                        <div className="space-y-3">
-                                            {settings.marginRules.map((rule, idx) => {
-                                                const rawPrice = rule.type === 'divide' ? (10000 / (1 - rule.rate / 100)) : (10000 * (1 + rule.rate / 100));
-                                                const examplePrice = Math.round(rawPrice / 100) * 100;
-                                                return (
-                                                <div key={rule.id} className="flex gap-3 items-center bg-[#010409] p-4 rounded border term-border">
-                                                    <div className="flex flex-col gap-1.5 w-32">
-                                                        <label className="text-[10px] text-gray-500 font-bold uppercase">창고조건</label>
-                                                        <input type="text" value={rule.condition} onChange={e => {
-                                                            const newRules = [...settings.marginRules]; newRules[idx].condition = e.target.value; setSettings({...settings, marginRules: newRules});
-                                                        }} className="term-input text-sm p-2 rounded" />
-                                                    </div>
-                                                    <div className="flex flex-col gap-1.5 flex-1">
-                                                        <label className="text-[10px] text-gray-500 font-bold uppercase">단위조건</label>
-                                                        <input type="text" value={rule.unit} onChange={e => {
-                                                            const newRules = [...settings.marginRules]; newRules[idx].unit = e.target.value; setSettings({...settings, marginRules: newRules});
-                                                        }} className="term-input text-sm p-2 rounded" />
-                                                    </div>
-                                                    <div className="flex flex-col gap-1.5 w-32">
-                                                        <label className="text-[10px] text-[#d2a8ff] font-bold uppercase">연산 방식</label>
-                                                        <select value={rule.type} onChange={e => {
-                                                            const newRules = [...settings.marginRules]; newRules[idx].type = e.target.value; setSettings({...settings, marginRules: newRules});
-                                                        }} className="term-input text-sm p-2 rounded text-[#d2a8ff]">
-                                                            <option value="divide">나누기 (÷)</option>
-                                                            <option value="multiply">곱하기 (×)</option>
-                                                        </select>
-                                                    </div>
-                                                    <div className="flex flex-col gap-1.5 w-24">
-                                                        <label className="text-[10px] text-[#58a6ff] font-bold uppercase">마진율 (%)</label>
-                                                        <input type="number" value={rule.rate} onChange={e => {
-                                                            const newRules = [...settings.marginRules]; newRules[idx].rate = parseFloat(e.target.value) || 0; setSettings({...settings, marginRules: newRules});
-                                                        }} className="term-input text-sm p-2 rounded text-[#58a6ff] text-center font-bold" />
-                                                    </div>
-                                                    <div className="flex flex-col gap-1.5 w-36 items-center bg-[#161b22] rounded px-3 py-2 justify-center border term-border">
-                                                        <label className="text-[10px] text-gray-500 font-bold">1만원 기준 예시</label>
-                                                        <div className="text-[13px] font-mono text-[#3fb950] font-bold">{examplePrice.toLocaleString()}원</div>
-                                                    </div>
-                                                    <button onClick={() => {
-                                                        const newRules = settings.marginRules.filter(r => r.id !== rule.id); setSettings({...settings, marginRules: newRules});
-                                                    }} className="w-10 h-10 flex items-center justify-center text-gray-500 hover:text-[#f85149] text-lg"><i className="fas fa-trash-alt"></i></button>
-                                                </div>
-                                            )})}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {activeTab === 'mapping' && (
-                                    <div className="term-panel p-8 rounded-lg border term-border flex flex-col h-[70vh]">
-                                        <h3 className="text-base font-bold text-white mb-4 shrink-0"><i className="fas fa-book text-[#e3b341] mr-2"></i>확장형 엑셀 매핑 사전</h3>
-                                        <div className="flex-1 overflow-auto custom-scrollbar border term-border rounded-lg mb-4 bg-[#010409]">
-                                            <table className="w-full text-left text-sm">
-                                                <thead className="bg-[#0d1117] border-b term-border text-gray-400 sticky top-0 z-10">
-                                                    <tr>
-                                                        <th className="p-4 w-48 font-bold">마스터 속성명</th>
-                                                        <th className="p-4 font-bold">엑셀 헤더 감지 키워드</th>
-                                                        <th className="p-4 w-56 text-center font-bold">DB 연동</th>
-                                                        <th className="p-4 w-16 text-center"></th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-[#21262d]">
-                                                    {Object.keys(settings.mappings).map(h => {
-                                                        const isRequired = REQUIRED_COLS.includes(h);
-                                                        return (
-                                                        <tr key={h} className="hover:bg-[#161b22] transition-colors">
-                                                            <td className="p-4 font-bold text-gray-300">{isRequired ? <i className="fas fa-lock mr-2"></i> : <i className="fas fa-link text-[#58a6ff] mr-2"></i>}{h}</td>
-                                                            <td className="p-4"><input type="text" value={settings.mappings[h] || ''} onChange={e => setSettings(p => ({...p, mappings: {...p.mappings, [h]: e.target.value}}))} className="term-input w-full p-2.5 rounded" /></td>
-                                                            <td className="p-4">
-                                                                {isRequired ? <div className="text-center text-gray-600 font-bold bg-[#010409] p-2.5 rounded border term-border">식별자 고정</div> : (
-                                                                    <select value={settings.masterLinks[h] || ''} onChange={e => setSettings(p => ({...p, masterLinks: {...p.masterLinks, [h]: e.target.value}}))} className="term-input w-full p-2.5 rounded">
-                                                                        <option value="">-- 연동 안함 --</option>
-                                                                        {MASTER_HEADERS.map(mh => <option key={`sel-${h}-${mh}`} value={mh}>{mh}</option>)}
-                                                                    </select>
-                                                                )}
-                                                            </td>
-                                                            <td className="p-4 text-center">
-                                                                {!isRequired && <button onClick={() => handleRemoveMapping(h)} className="text-gray-500 hover:text-[#f85149] p-2 text-lg"><i className="fas fa-trash-alt"></i></button>}
-                                                            </td>
-                                                        </tr>
-                                                    )})}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                        <div className="bg-[#0d1117] border term-border p-5 rounded-lg flex gap-4 shrink-0">
-                                            <input type="text" value={newMapTarget} onChange={e => setNewMapTarget(e.target.value)} placeholder="새 속성명" className="term-input p-3 rounded text-sm w-56" />
-                                            <input type="text" value={newMapKeywords} onChange={e => setNewMapKeywords(e.target.value)} placeholder="감지 키워드 (콤마 구분)" className="term-input p-3 rounded text-sm flex-1" />
-                                            <button onClick={handleAddMapping} className="px-6 py-3 bg-[#21262d] hover:bg-[#30363d] text-[#3fb950] font-bold rounded-lg text-sm transition-colors"><i className="fas fa-plus mr-2"></i> 규칙 추가</button>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {activeTab === 'ui' && (
-                                    <div className="space-y-6">
-                                        <div className="term-panel p-8 rounded-lg border term-border">
-                                            <h3 className="text-base font-bold text-white mb-5">마스터 DB 노출 컬럼 설정</h3>
-                                            <div className="flex flex-wrap gap-2.5">
-                                                {REQUIRED_COLS.map(h => <div key={`ui-req-${h}`} className="config-chip locked opacity-50"><i className="fas fa-lock mr-1.5"></i>{h}</div>)}
-                                                {MASTER_HEADERS.filter(h => !REQUIRED_COLS.includes(h)).map(h => (
-                                                    <div key={`ui-mst-${h}`} onClick={() => setSettings(p => ({...p, visibleMasterCols: p.visibleMasterCols.includes(h) ? p.visibleMasterCols.filter(x => x !== h) : [...p.visibleMasterCols, h]}))} className={`config-chip ${settings.visibleMasterCols.includes(h) ? 'active' : ''}`}>{h}</div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                        <div className="term-panel p-8 rounded-lg border term-border">
-                                            <h3 className="text-base font-bold text-white mb-5">작업 뷰(시세관리/파서) 컬럼 설정</h3>
-                                            <div className="flex flex-wrap gap-2.5 mb-5">
-                                                {settings.visibleUploadCols.filter(h => !REQUIRED_COLS.includes(h)).map(h => (
-                                                    <div key={`ui-up-${h}`} className="config-chip active cursor-default">
-                                                        {h} <button onClick={() => setSettings(p => ({...p, visibleUploadCols: p.visibleUploadCols.filter(x => x !== h)}))} className="ml-2.5 text-[#58a6ff] hover:text-[#f85149]"><i className="fas fa-times"></i></button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                            <select onChange={e => { if(e.target.value && !settings.visibleUploadCols.includes(e.target.value)) setSettings(p => ({...p, visibleUploadCols: [...p.visibleUploadCols, e.target.value]})); e.target.value=''; }} className="term-input p-3 rounded text-sm w-80">
-                                                <option value="">-- 작업 컬럼 추가 --</option>
-                                                {MASTER_HEADERS.filter(h => !REQUIRED_COLS.includes(h) && !settings.visibleUploadCols.includes(h)).map(h => <option key={`add-ui-${h}`} value={h}>{h}</option>)}
-                                            </select>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {activeTab === 'danger' && (
-                                    <div className="space-y-5">
-                                        <div className="term-panel p-8 rounded-lg border border-amber-900/50 bg-[rgba(217,119,6,0.02)]">
-                                            <h3 className="text-base font-black text-amber-500 mb-2">환경설정 기본값 복원</h3>
-                                            <p className="text-sm text-gray-500 mb-4">설정값만 초기 상태로 되돌립니다. 마스터 데이터는 유지됩니다.</p>
-                                            <div className="flex items-center gap-3">
-                                                <input type="text" placeholder="설정초기화" value={resetSettingsText} onChange={(e) => setResetSettingsText(e.target.value)} className="term-input p-3 rounded text-sm w-56 border-amber-600/50" />
-                                                <button onClick={handleResetSettings} disabled={resetSettingsText !== '설정초기화'} className="px-6 py-3 bg-amber-600 hover:bg-amber-500 text-white text-sm font-black rounded disabled:opacity-30">복원 실행</button>
-                                            </div>
-                                        </div>
-                                        <div className="term-panel p-8 rounded-lg border border-rose-900/50 bg-[rgba(248,81,73,0.02)]">
-                                            <h3 className="text-base font-black text-[#f85149] mb-2">로컬 마스터 DB 강제 삭제</h3>
-                                            <p className="text-sm text-gray-500 mb-4">상품 DB와 대기열(Queue)이 모두 영구 삭제됩니다.</p>
-                                            <div className="flex items-center gap-3">
-                                                <input type="text" placeholder="DB완전삭제" value={wipeDBText} onChange={(e) => setWipeDBText(e.target.value)} className="term-input p-3 rounded text-sm w-56 border-[#f85149]" />
-                                                <button onClick={handleWipeDB} disabled={wipeDBText !== 'DB완전삭제'} className="px-6 py-3 bg-[#f85149] hover:bg-rose-600 text-white text-sm font-black rounded disabled:opacity-30">삭제 실행</button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                    {/* Standalone Toast */}
-                    {isStandalone && localToastMsg && (
-                        <div className="fixed bottom-6 right-6 term-panel text-white px-5 py-3 rounded-lg text-sm font-bold border term-border shadow-2xl flex items-center gap-3 z-[60] fade-in">
-                            <i className={localToastMsg.includes('❌') || localToastMsg.includes('🚨') ? "fas fa-exclamation-circle text-[#f85149]" : localToastMsg.includes('♻️') ? "fas fa-sync-alt text-amber-400" : "fas fa-check-circle text-[#3fb950]"}></i>
-                            {localToastMsg.replace(/✅|❌|🚨|♻️/g, '')}
-                        </div>
-                    )}
-                </div>
-            );
-
-            // 렌더링 분기: 전체화면(Standalone) vs 모달창(Modal)
-            if (isStandalone) {
-                return (
-                    <div className="w-full h-full bg-[#0d1117] flex justify-center overflow-hidden">
-                        <div className="w-full max-w-[1600px] h-full shadow-2xl border-x term-border">
-                            {settingsContent}
-                        </div>
-                    </div>
-                );
-            }
-
             return (
-                <div className={`fixed inset-0 z-50 flex justify-end ${isOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}>
-                    <div className={`absolute inset-0 bg-black/40 backdrop-blur-sm modal-overlay ${isOpen ? 'opacity-100' : 'opacity-0'}`} onClick={onClose}></div>
-                    {/* 설정 모달 너비: 85% / 최대 1600px */}
-                    <div className={`relative w-[85%] max-w-[1600px] h-full shadow-[-10px_0_30px_rgba(0,0,0,0.5)] flex flex-col modal-panel ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-                        {settingsContent}
-                    </div>
-                </div>
-            );
-        }
+                <div className="fixed inset-0 z-50 flex justify-end overflow-hidden">
+                    {/* Backdrop (화면 밖 터치 영역) */}
+                    <div 
+                        className={`absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity duration-300 ${isVisible && !isClosing ? 'opacity-100' : 'opacity-0'}`} 
+                        onClick={handleClose}
+                    ></div>
 
-        // ============================================================================
-        // 메인 프레임 앱 (1400px 골격)
-        // ============================================================================
-        function MainWorkspace() {
-            const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-            const [toastMsg, setToastMsg] = useState('');
-
-            const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
-
-            const handleSwipe = (direction) => {
-                showToast(`ℹ️ [화면 전환] ${direction} 앱으로 이동합니다.`);
-            };
-
-            const openStandaloneSettings = () => {
-                // 실제 환경에서는 window.open('?mode=settings', '_blank') 등 사용
-                window.location.href = window.location.pathname + "?mode=settings";
-            };
-
-            return (
-                <div className="relative w-full h-full flex justify-center overflow-hidden">
-                    
-                    <button onClick={() => handleSwipe('이전(좌측)')} className="nav-btn fixed left-4 top-1/2 -translate-y-1/2 z-40 p-4 rounded-full text-gray-500 group">
-                        <i className="fas fa-chevron-left text-xl"></i>
-                        <span className="absolute left-14 top-1/2 -translate-y-1/2 text-xs font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">이전 앱</span>
-                    </button>
-
-                    <button onClick={() => handleSwipe('다음(우측)')} className="nav-btn fixed right-4 top-1/2 -translate-y-1/2 z-40 p-4 rounded-full text-gray-500 group">
-                        <i className="fas fa-chevron-right text-xl"></i>
-                        <span className="absolute right-14 top-1/2 -translate-y-1/2 text-xs font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">다음 앱</span>
-                    </button>
-
-                    {/* Main Content Area (1400px Fixed) */}
-                    <div className="w-full max-w-[1400px] h-full flex flex-col border-x term-border bg-[#010409] relative shadow-2xl">
+                    {/* Sliding Modal Panel (최대 1600px, 너비 85%) */}
+                    <div className={`relative w-[85%] max-w-[1600px] h-full bg-[#0d1117] shadow-[-10px_0_30px_rgba(0,0,0,0.8)] flex flex-col border-l term-border ${isVisible && !isClosing ? 'slide-in' : ''} ${isClosing ? 'slide-out' : 'translate-x-full'}`}>
                         
-                        <header className="h-16 border-b term-border bg-[#0d1117] flex justify-between items-center px-6 shrink-0">
-                            <div className="flex items-center gap-4">
-                                <h1 className="text-xl font-black text-white"><i className="fas fa-cube text-[#58a6ff] mr-3"></i>WORKSPACE</h1>
-                                <span className="bg-[#21262d] text-gray-400 px-3 py-1 rounded-full text-[10px] font-mono tracking-widest">APP_MODULE_READY</span>
-                            </div>
-                            <div className="flex gap-3">
-                                <button onClick={() => showToast('ℹ️ 단축키 F9: 팝업없는 즉시 엑셀 출력 대기 중')} className="px-4 py-2 bg-[#21262d] hover:bg-[#30363d] text-gray-300 font-bold rounded text-xs transition-colors border term-border">
-                                    <i className="fas fa-file-excel text-[#3fb950] mr-2"></i>[F9] 엑셀
-                                </button>
-                                <button onClick={() => setIsSettingsOpen(true)} className="px-4 py-2 bg-[#161b22] hover:bg-[#21262d] text-white font-bold rounded text-xs transition-colors border term-border shadow-[0_0_10px_rgba(88,166,255,0.1)]">
-                                    <i className="fas fa-sliders-h text-[#58a6ff] mr-2"></i>환경 설정 (모달)
-                                </button>
-                            </div>
-                        </header>
-
-                        <div className="flex-1 p-10 flex flex-col items-center justify-center text-center">
-                            <i className="fas fa-satellite-dish text-6xl text-[#30363d] mb-6 animate-pulse"></i>
-                            <h2 className="text-2xl font-black text-gray-400 mb-2">프레임 및 데이터 통신망 구축 완료</h2>
-                            <p className="text-gray-600 text-sm mb-8">좌측/우측 스와이프 버튼 및 우측 상단의 [환경 설정] 모달을 테스트해 보세요.</p>
-                            
-                            <div className="flex gap-4 mb-8">
-                                <div className="p-4 border term-border rounded bg-[#0d1117] w-64">
-                                    <div className="text-[#3fb950] font-bold mb-1"><i className="fas fa-database mr-2"></i>Local DB (V3)</div>
-                                    <div className="text-xs text-gray-500">핵심 15개 필드 슬림화 구조</div>
+                        <div className="flex flex-1 overflow-hidden h-full">
+                            {/* 좌측 LNB 네비게이션 */}
+                            <div className="w-[300px] bg-[#010409] border-r term-border flex flex-col shrink-0">
+                                <div className="p-6 border-b term-border flex justify-between items-center">
+                                    <div>
+                                        <h1 className="text-xl font-black text-white"><i className="fas fa-cog text-gray-400 mr-2"></i>GLOBAL SETTINGS</h1>
+                                        <p className="text-[11px] text-[#58a6ff] font-mono mt-1 tracking-widest">NEXUS_V1.95</p>
+                                    </div>
                                 </div>
-                                <div className="p-4 border term-border rounded bg-[#0d1117] w-64">
-                                    <div className="text-[#58a6ff] font-bold mb-1"><i className="fas fa-brain mr-2"></i>Cloud Dictionary</div>
-                                    <div className="text-xs text-gray-500">메모리 상주형 매핑 엔진 연결</div>
+                                <div className="flex-1 overflow-y-auto py-4 flex flex-col">
+                                    {lnbMenu.map(menu => (
+                                        <button key={menu.id} onClick={() => setActiveTab(menu.id)} 
+                                            className={`px-6 py-4 text-left text-[14px] font-bold border-l-4 transition-colors flex items-center ${activeTab === menu.id ? 'bg-[#21262d] border-[#58a6ff] text-[#58a6ff]' : 'border-transparent text-gray-400 hover:bg-[#161b22] hover:text-gray-200'} ${menu.color || ''}`}>
+                                            <i className={`${menu.icon} w-6`}></i> {menu.label}
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
 
-                            {/* 단독화면 접속 테스트 버튼 */}
-                            <button onClick={openStandaloneSettings} className="px-6 py-3 bg-[#161b22] border term-border text-[#58a6ff] font-bold rounded-full shadow-lg hover:bg-[#21262d] transition-colors">
-                                <i className="fas fa-external-link-alt mr-2"></i>새 탭에서 설정 열기 (전체화면 1600px 테스트)
-                            </button>
+                            {/* 메인 컨텐츠 영역 */}
+                            <div className="flex-1 flex flex-col overflow-hidden relative bg-[#0d1117]">
+                                {/* 헤더 툴바 (닫기 버튼 포함) */}
+                                <div className="px-10 py-6 border-b term-border flex justify-between items-center bg-[#010409]">
+                                    <h2 className="text-xl font-black text-white">{lnbMenu.find(m => m.id === activeTab)?.label}</h2>
+                                    <div className="flex gap-3">
+                                        <button onClick={handleClose} className="px-5 py-2.5 text-gray-400 hover:text-white transition-colors border term-border rounded-lg bg-[#161b22] hover:bg-[#21262d] font-bold text-sm">
+                                            <i className="fas fa-times mr-2"></i> 닫기 (돌아가기)
+                                        </button>
+                                        <button onClick={handleSave} className="px-8 py-2.5 bg-[#238636] hover:bg-[#2ea043] text-white text-sm font-black rounded-lg transition-all shadow-[0_0_15px_rgba(35,134,54,0.3)]">
+                                            <i className="fas fa-save mr-2"></i>전역 설정 반영
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* 설정 본문 탭 */}
+                                <div className="flex-1 overflow-auto custom-scrollbar p-10 bg-[#0d1117]">
+                                    <div className="max-w-[1100px] mx-auto space-y-6">
+                                        
+                                        {activeTab === 'cloud' && (
+                                            <div className="space-y-4 fade-in">
+                                                <div className="term-panel p-8 rounded-lg border term-border">
+                                                    <h3 className="text-base font-bold text-white mb-4"><i className="fas fa-network-wired text-[#58a6ff] mr-2"></i>Google AppScript API 연결</h3>
+                                                    <input type="text" value={settings.appScriptUrl} onChange={(e) => setSettings({...settings, appScriptUrl: e.target.value})} placeholder="https://script.google.com/macros/s/..." className="term-input w-full p-4 rounded text-sm font-mono mb-2" />
+                                                    <p className="text-xs text-gray-500">* 클라우드 마스터 DB 및 파서 딕셔너리와 통신하기 위한 게이트웨이입니다.</p>
+                                                </div>
+                                                
+                                                <div className="term-panel p-8 rounded-lg border term-border bg-[#010409]">
+                                                    <div className="flex justify-between items-center">
+                                                        <div>
+                                                            <h3 className="text-base font-bold text-[#3fb950] mb-2"><i className="fas fa-sync-alt mr-2"></i>클라우드 지능 강제 동기화 (PULL)</h3>
+                                                            <p className="text-sm text-gray-400">서버의 최신 마스터 정보(경량화) 및 파서 매핑 딕셔너리를 메모리로 가져옵니다.</p>
+                                                        </div>
+                                                        <button onClick={handleCloudSync} disabled={isSyncing} className="px-6 py-4 bg-[#161b22] hover:bg-[#21262d] border border-[#3fb950] text-[#3fb950] font-bold rounded-lg shadow-lg disabled:opacity-50 transition-colors">
+                                                            {isSyncing ? <><i className="fas fa-spinner fa-spin mr-2"></i>동기화 중...</> : <><i className="fas fa-cloud-download-alt mr-2"></i>데이터 가져오기</>}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {activeTab === 'catalog' && (
+                                            <div className="term-panel p-8 rounded-lg border term-border fade-in">
+                                                <h3 className="text-base font-bold text-white mb-4"><i className="fas fa-tags text-[#d2a8ff] mr-2"></i>단가 룰 적용 카탈로그 지정</h3>
+                                                <div className="flex flex-wrap gap-3">
+                                                    {mockCatalogs.map(cat => {
+                                                        const isActive = settings.targetCatalogs.includes(cat);
+                                                        return (
+                                                            <label key={cat} className={`cursor-pointer px-5 py-3 border rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${isActive ? 'bg-[rgba(88,166,255,0.1)] border-[#58a6ff] text-[#58a6ff]' : 'bg-[#010409] border-[#30363d] text-gray-400 hover:text-gray-200'}`}>
+                                                                <input type="checkbox" className="hidden" checked={isActive} onChange={() => {
+                                                                    setSettings(p => ({ ...p, targetCatalogs: isActive ? p.targetCatalogs.filter(c => c !== cat) : [...p.targetCatalogs, cat] }))
+                                                                }} />
+                                                                <i className={`fas ${isActive ? 'fa-check-square' : 'fa-square'} text-base`}></i> {cat}
+                                                            </label>
+                                                        )
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {activeTab === 'margin' && (
+                                            <div className="term-panel p-8 rounded-lg border term-border fade-in">
+                                                <div className="flex justify-between items-center mb-6">
+                                                    <div>
+                                                        <h3 className="text-base font-bold text-white"><i className="fas fa-calculator text-[#3fb950] mr-2"></i>동적 단가 연산 엔진 (Margin Rules)</h3>
+                                                    </div>
+                                                    <button onClick={() => setSettings(p => ({...p, marginRules: [...p.marginRules, { id: generateUUID(), condition: '*', unit: '*', type: 'divide', rate: 10 }]}))} className="px-4 py-2 bg-[#21262d] hover:bg-[#30363d] text-white text-sm rounded border term-border"><i className="fas fa-plus mr-1"></i>룰 추가</button>
+                                                </div>
+                                                <div className="space-y-3">
+                                                    {settings.marginRules.map((rule, idx) => {
+                                                        const rawPrice = rule.type === 'divide' ? (10000 / (1 - rule.rate / 100)) : (10000 * (1 + rule.rate / 100));
+                                                        const examplePrice = Math.round(rawPrice / 100) * 100;
+                                                        return (
+                                                        <div key={rule.id} className="flex gap-3 items-center bg-[#010409] p-4 rounded border term-border">
+                                                            <div className="flex flex-col gap-1.5 w-32">
+                                                                <label className="text-[10px] text-gray-500 font-bold uppercase">창고조건</label>
+                                                                <input type="text" value={rule.condition} onChange={e => {
+                                                                    const newRules = [...settings.marginRules]; newRules[idx].condition = e.target.value; setSettings({...settings, marginRules: newRules});
+                                                                }} className="term-input text-sm p-2 rounded" />
+                                                            </div>
+                                                            <div className="flex flex-col gap-1.5 flex-1">
+                                                                <label className="text-[10px] text-gray-500 font-bold uppercase">단위조건</label>
+                                                                <input type="text" value={rule.unit} onChange={e => {
+                                                                    const newRules = [...settings.marginRules]; newRules[idx].unit = e.target.value; setSettings({...settings, marginRules: newRules});
+                                                                }} className="term-input text-sm p-2 rounded" />
+                                                            </div>
+                                                            <div className="flex flex-col gap-1.5 w-32">
+                                                                <label className="text-[10px] text-[#d2a8ff] font-bold uppercase">연산 방식</label>
+                                                                <select value={rule.type} onChange={e => {
+                                                                    const newRules = [...settings.marginRules]; newRules[idx].type = e.target.value; setSettings({...settings, marginRules: newRules});
+                                                                }} className="term-input text-sm p-2 rounded text-[#d2a8ff] cursor-pointer">
+                                                                    <option value="divide">나누기 (÷)</option>
+                                                                    <option value="multiply">곱하기 (×)</option>
+                                                                </select>
+                                                            </div>
+                                                            <div className="flex flex-col gap-1.5 w-24">
+                                                                <label className="text-[10px] text-[#58a6ff] font-bold uppercase">마진율 (%)</label>
+                                                                <input type="number" value={rule.rate} onChange={e => {
+                                                                    const newRules = [...settings.marginRules]; newRules[idx].rate = parseFloat(e.target.value) || 0; setSettings({...settings, marginRules: newRules});
+                                                                }} className="term-input text-sm p-2 rounded text-[#58a6ff] text-center font-bold" />
+                                                            </div>
+                                                            <div className="flex flex-col gap-1.5 w-36 items-center bg-[#161b22] rounded px-3 py-2 justify-center border term-border">
+                                                                <label className="text-[10px] text-gray-500 font-bold">1만원 기준 예시</label>
+                                                                <div className="text-[13px] font-mono text-[#3fb950] font-bold">{examplePrice.toLocaleString()}원</div>
+                                                            </div>
+                                                            <button onClick={() => {
+                                                                const newRules = settings.marginRules.filter(r => r.id !== rule.id); setSettings({...settings, marginRules: newRules});
+                                                            }} className="w-10 h-10 flex items-center justify-center text-gray-500 hover:text-[#f85149] text-lg"><i className="fas fa-trash-alt"></i></button>
+                                                        </div>
+                                                    )})}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {activeTab === 'mapping' && (
+                                            <div className="term-panel p-8 rounded-lg border term-border flex flex-col h-[70vh] fade-in">
+                                                <h3 className="text-base font-bold text-white mb-4 shrink-0"><i className="fas fa-book text-[#e3b341] mr-2"></i>확장형 엑셀 매핑 사전</h3>
+                                                <div className="flex-1 overflow-auto custom-scrollbar border term-border rounded-lg mb-4 bg-[#010409]">
+                                                    <table className="w-full text-left text-sm">
+                                                        <thead className="bg-[#0d1117] border-b term-border text-gray-400 sticky top-0 z-10">
+                                                            <tr>
+                                                                <th className="p-4 w-48 font-bold">마스터 속성명</th>
+                                                                <th className="p-4 font-bold">엑셀 헤더 감지 키워드</th>
+                                                                <th className="p-4 w-56 text-center font-bold">DB 연동</th>
+                                                                <th className="p-4 w-16 text-center"></th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-[#21262d]">
+                                                            {Object.keys(settings.mappings).map(h => {
+                                                                const isRequired = REQUIRED_COLS.includes(h);
+                                                                return (
+                                                                <tr key={h} className="hover:bg-[#161b22] transition-colors">
+                                                                    <td className="p-4 font-bold text-gray-300">{isRequired ? <i className="fas fa-lock mr-2 text-gray-600"></i> : <i className="fas fa-link text-[#58a6ff] mr-2"></i>}{h}</td>
+                                                                    <td className="p-4"><input type="text" value={settings.mappings[h] || ''} onChange={e => setSettings(p => ({...p, mappings: {...p.mappings, [h]: e.target.value}}))} className="term-input w-full p-2.5 rounded" /></td>
+                                                                    <td className="p-4">
+                                                                        {isRequired ? <div className="text-center text-gray-600 font-bold bg-[#010409] p-2.5 rounded border term-border">식별자 고정</div> : (
+                                                                            <select value={settings.masterLinks[h] || ''} onChange={e => setSettings(p => ({...p, masterLinks: {...p.masterLinks, [h]: e.target.value}}))} className="term-input w-full p-2.5 rounded cursor-pointer">
+                                                                                <option value="">-- 연동 안함 --</option>
+                                                                                {MASTER_HEADERS.map(mh => <option key={`sel-${h}-${mh}`} value={mh}>{mh}</option>)}
+                                                                            </select>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="p-4 text-center">
+                                                                        {!isRequired && <button onClick={() => handleRemoveMapping(h)} className="text-gray-500 hover:text-[#f85149] p-2 text-lg"><i className="fas fa-trash-alt"></i></button>}
+                                                                    </td>
+                                                                </tr>
+                                                            )})}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                                <div className="bg-[#0d1117] border term-border p-5 rounded-lg flex gap-4 shrink-0">
+                                                    <input type="text" value={newMapTarget} onChange={e => setNewMapTarget(e.target.value)} placeholder="새 속성명" className="term-input p-3 rounded text-sm w-56" />
+                                                    <input type="text" value={newMapKeywords} onChange={e => setNewMapKeywords(e.target.value)} placeholder="감지 키워드 (콤마 구분)" className="term-input p-3 rounded text-sm flex-1" />
+                                                    <button onClick={handleAddMapping} className="px-6 py-3 bg-[#21262d] hover:bg-[#30363d] text-[#3fb950] font-bold rounded-lg text-sm transition-colors"><i className="fas fa-plus mr-2"></i> 규칙 추가</button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {activeTab === 'ui' && (
+                                            <div className="space-y-6 fade-in">
+                                                <div className="term-panel p-8 rounded-lg border term-border">
+                                                    <h3 className="text-base font-bold text-white mb-5">마스터 DB 노출 컬럼 설정</h3>
+                                                    <div className="flex flex-wrap gap-2.5">
+                                                        {REQUIRED_COLS.map(h => <div key={`ui-req-${h}`} className="config-chip locked opacity-50 cursor-not-allowed"><i className="fas fa-lock mr-1.5"></i>{h}</div>)}
+                                                        {MASTER_HEADERS.filter(h => !REQUIRED_COLS.includes(h)).map(h => (
+                                                            <div key={`ui-mst-${h}`} onClick={() => setSettings(p => ({...p, visibleMasterCols: p.visibleMasterCols.includes(h) ? p.visibleMasterCols.filter(x => x !== h) : [...p.visibleMasterCols, h]}))} className={`config-chip ${settings.visibleMasterCols.includes(h) ? 'active' : ''}`}>{h}</div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <div className="term-panel p-8 rounded-lg border term-border">
+                                                    <h3 className="text-base font-bold text-white mb-5">작업 뷰(시세관리/파서) 컬럼 설정</h3>
+                                                    <div className="flex flex-wrap gap-2.5 mb-5">
+                                                        {settings.visibleUploadCols.filter(h => !REQUIRED_COLS.includes(h)).map(h => (
+                                                            <div key={`ui-up-${h}`} className="config-chip active cursor-default">
+                                                                {h} <button onClick={() => setSettings(p => ({...p, visibleUploadCols: p.visibleUploadCols.filter(x => x !== h)}))} className="ml-2.5 text-[#58a6ff] hover:text-[#f85149]"><i className="fas fa-times"></i></button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <select onChange={e => { if(e.target.value && !settings.visibleUploadCols.includes(e.target.value)) setSettings(p => ({...p, visibleUploadCols: [...p.visibleUploadCols, e.target.value]})); e.target.value=''; }} className="term-input p-3 rounded text-sm w-80 cursor-pointer">
+                                                        <option value="">-- 작업 컬럼 추가 --</option>
+                                                        {MASTER_HEADERS.filter(h => !REQUIRED_COLS.includes(h) && !settings.visibleUploadCols.includes(h)).map(h => <option key={`add-ui-${h}`} value={h}>{h}</option>)}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {activeTab === 'danger' && (
+                                            <div className="space-y-5 fade-in">
+                                                <div className="term-panel p-8 rounded-lg border border-amber-900/50 bg-[rgba(217,119,6,0.02)]">
+                                                    <h3 className="text-base font-black text-amber-500 mb-2">환경설정 기본값 복원</h3>
+                                                    <p className="text-sm text-gray-500 mb-4">설정값만 초기 상태로 되돌립니다. 마스터 데이터는 유지됩니다.</p>
+                                                    <div className="flex items-center gap-3">
+                                                        <input type="text" placeholder="설정초기화" value={resetSettingsText} onChange={(e) => setResetSettingsText(e.target.value)} className="term-input p-3 rounded text-sm w-56 border-amber-600/50" />
+                                                        <button onClick={handleResetSettings} disabled={resetSettingsText !== '설정초기화'} className="px-6 py-3 bg-amber-600 hover:bg-amber-500 text-white text-sm font-black rounded disabled:opacity-30 transition-colors">복원 실행</button>
+                                                    </div>
+                                                </div>
+                                                <div className="term-panel p-8 rounded-lg border border-rose-900/50 bg-[rgba(248,81,73,0.02)]">
+                                                    <h3 className="text-base font-black text-[#f85149] mb-2">로컬 마스터 DB 강제 삭제</h3>
+                                                    <p className="text-sm text-gray-500 mb-4">상품 DB와 대기열(Queue)이 모두 영구 삭제됩니다.</p>
+                                                    <div className="flex items-center gap-3">
+                                                        <input type="text" placeholder="DB완전삭제" value={wipeDBText} onChange={(e) => setWipeDBText(e.target.value)} className="term-input p-3 rounded text-sm w-56 border-[#f85149]" />
+                                                        <button onClick={handleWipeDB} disabled={wipeDBText !== 'DB완전삭제'} className="px-6 py-3 bg-[#f85149] hover:bg-rose-600 text-white text-sm font-black rounded disabled:opacity-30 transition-colors">삭제 실행</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
-
-                    <SettingsUI isStandalone={false} isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} globalShowToast={showToast} />
-
+                    
+                    {/* Toast Notification */}
                     {toastMsg && (
-                        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 term-panel text-white px-5 py-3 rounded-full text-xs font-bold border term-border shadow-2xl flex items-center gap-3 z-[60] fade-in">
-                            <i className={toastMsg.includes('❌') || toastMsg.includes('🚨') ? "fas fa-exclamation-circle text-[#f85149]" : toastMsg.includes('♻️') ? "fas fa-sync-alt text-amber-400" : toastMsg.includes('ℹ️') ? "fas fa-info-circle text-[#58a6ff]" : "fas fa-check-circle text-[#3fb950]"}></i>
-                            {toastMsg.replace(/✅|❌|🚨|♻️|ℹ️/g, '')}
+                        <div className="fixed bottom-6 right-6 term-panel text-white px-5 py-3 rounded-lg shadow-2xl flex items-center gap-3 fade-in text-[13px] font-bold z-[60] border term-border">
+                            <i className={toastMsg.includes('❌') || toastMsg.includes('🚨') ? "fas fa-exclamation-triangle text-[#f85149]" : toastMsg.includes('♻️') ? "fas fa-sync-alt text-amber-400" : "fas fa-check-circle text-[#3fb950]"}></i>
+                            {toastMsg.replace(/✅|❌|🚨|♻️/g, '')}
                         </div>
                     )}
                 </div>
             );
         }
 
-        // URL 쿼리 파라미터로 모드 확인 (예: ?mode=settings)
-        const urlParams = new URLSearchParams(window.location.search);
-        const isStandaloneMode = urlParams.get('mode') === 'settings';
-
-        if (isStandaloneMode) {
-            ReactDOM.createRoot(document.getElementById('root')).render(<SettingsUI isStandalone={true} isOpen={true} />);
-        } else {
-            ReactDOM.createRoot(document.getElementById('root')).render(<MainWorkspace />);
-        }
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<SettingsApp />);
     </script>
 </body>
 </html>
