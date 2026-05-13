@@ -3,12 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NEXUS - Global Settings [v1.94]</title>
+    <title>NEXUS - Global Settings [v1.95-Advanced]</title>
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
         body { font-family: 'Pretendard', sans-serif; background-color: #000000; color: #c9d1d9; margin: 0; overflow: hidden; user-select: none; }
@@ -20,6 +22,8 @@
         ::-webkit-scrollbar { width: 8px; height: 8px; } 
         ::-webkit-scrollbar-track { background: #0d1117; }
         ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+        .config-chip { display: inline-flex; align-items: center; padding: 6px 14px; border-radius: 9999px; border: 1px solid #30363d; background-color: #010409; color: #8b949e; font-size: 12px; cursor: pointer; transition: all 0.2s; }
+        .config-chip.active { background-color: rgba(88,166,255,0.1); border-color: #58a6ff; color: #58a6ff; font-weight: bold; }
         .fade-in { animation: fadeIn 0.2s ease-out; } 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
     </style>
@@ -28,9 +32,9 @@
     <div id="root" class="h-full flex flex-col"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useCallback } = React;
+        const { useState, useEffect, useCallback, useMemo } = React;
 
-        // 🔒 보안 스크립트 (수정: React Hook 외부에서 순수 JS로 즉시 실행)
+        // 🔒 보안 스크립트 (React Hook 외부에서 순수 JS로 즉시 실행되도록 수정 완료)
         window.addEventListener('keydown', (e) => {
             if (e.keyCode === 123 || (e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74 || e.keyCode === 67)) || (e.ctrlKey && e.keyCode === 85)) {
                 e.preventDefault(); return false;
@@ -38,8 +42,20 @@
         });
         window.addEventListener('contextmenu', e => e.preventDefault());
 
-        const CORE_KEYS = { SETTINGS: 'oneapp_global_settings', PENDING_QUEUE: 'oneapp_pending_queue', SYNC_TRIGGER: 'merchMaster_sync_trigger' };
+        const CORE_KEYS = { SETTINGS: 'oneapp_global_settings' };
+        const generateUUID = () => Math.random().toString(36).substr(2, 9);
 
+        const MASTER_HEADERS = [
+            "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", 
+            "구매처", "브랜드", "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", 
+            "견적서", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", 
+            "최종입고", "단가H", "단가I", "시중가", "행사가", "1종코드", "1종규격", "1종연산", 
+            "2종코드", "2종규격", "2종연산", "외주비", "노무비", "경비", "비과세", "기본", 
+            "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록", "소싱태그", "순번"
+        ];
+        const REQUIRED_COLS = ['품목코드'];
+
+        // 🐛 수정: 주석 처리되어 있던 선언부 복구
         const initIDB = () => new Promise((resolve) => {
             const req = indexedDB.open('OneAppMerchDB_V2', 2);
             req.onupgradeneeded = (e) => { if (!e.target.result.objectStoreNames.contains('store')) e.target.result.createObjectStore('store'); };
@@ -72,150 +88,354 @@
             });
         };
 
+        // 🐛 수정: 주석 처리되어 있던 선언부 복구
         const DEFAULT_SETTINGS = {
             appScriptUrl: '',
-            marginRules: [{ id: 1, condition: '전체', unit: '전체', multiplier: 1.15, description: '기본 출고가 (입고가 x 1.15)' }]
+            targetCatalogs: [],
+            marginRules: [
+                { id: generateUUID(), condition: '01', unit: 'box, 박스, BOX', type: 'divide', rate: 10 },
+                { id: generateUUID(), condition: '01', unit: '개, 낱개, 소분, EA, ea', type: 'divide', rate: 15 },
+                { id: generateUUID(), condition: '03, 05', unit: 'box, 박스, BOX', type: 'divide', rate: 15 },
+                { id: generateUUID(), condition: '03, 05', unit: '개, 낱개, 소분, EA, ea', type: 'divide', rate: 20 },
+                { id: generateUUID(), condition: '*', unit: 'box, 박스, BOX', type: 'divide', rate: 10 },
+                { id: generateUUID(), condition: '*', unit: '개, 낱개, 소분, EA, ea', type: 'divide', rate: 15 },
+                { id: generateUUID(), condition: '전체', unit: '전체', type: 'divide', rate: 20 }
+            ],
+            mappings: {
+                '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드',
+                '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격명, 규격, 사이즈, 단량',
+                '구매처': '거래처명, 구매처, 거래처', '견적서': '견적서, 카테고리, 템플릿',
+                '단위': '단위, 판매단위', '입고가': '입고가, 입고, 매입가', '출고가': '출고가, 판매가',
+                '도매A': '도매A, A판매', '입고B': 'B단가, 입고B', '간단설명': '지시사항, 간단설명, 비고'
+            },
+            masterLinks: {
+                '창고': '창고', '구매처': '구매처', '견적서': '견적서', '단위': '단위',
+                '입고가': '입고가', '출고가': '출고가', '도매A': '도매A', '입고B': '입고B', '간단설명': '간단설명', '순번': '순번'
+            },
+            visibleMasterCols: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'],
+            visibleUploadCols: ['순번', '창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명']
         };
 
-        const GlobalHeader = ({ activeTab, pendingCount }) => {
-            const NAV_MENU = [
-                { id: 'master', name: '마스터 DB', icon: 'fas fa-server', url: '/merchops/master.html' },
-                { id: 'manager', name: '상품 관리', icon: 'fas fa-tasks', url: '/merchops/manager.html' },
-                { id: 'workspace', name: '시세 관리', icon: 'fas fa-edit', url: '/merchops/workspace.html' },
-                { id: 'parser', name: '스마트 파서', icon: 'fas fa-bolt', url: '/merchops/parser.html' },
-                { id: 'insights', name: '인사이트', icon: 'fas fa-chart-line', url: '/merchops/insights.html' },
-                { id: 'publish', name: '대외 발행', icon: 'fas fa-share-square', url: '/merchops/publish.html' },
-                { id: 'settings', name: '환경 설정', icon: 'fas fa-cog', url: '/merchops/settings.html' }
-            ];
-
-            return (
-                <div className="flex flex-col shrink-0 z-40 w-full term-bg border-b term-border">
-                    <header className="h-[60px] flex justify-between items-center px-6">
-                        <div className="flex items-center gap-6 h-full">
-                            <a href="/merchops/settings.html" className="font-black text-[20px] tracking-wider text-white hover:text-indigo-400 transition-colors">
-                                NEXUS<span className="text-indigo-500">.IO</span>
-                            </a>
-                            <div className="flex items-end h-full gap-1 ml-4 pt-2">
-                                {NAV_MENU.map(menu => {
-                                    const isActive = activeTab === menu.id;
-                                    const isManager = menu.id === 'manager';
-                                    return (
-                                        <a key={menu.id} href={menu.url}
-                                            className={`relative flex items-center gap-2 px-5 py-3 text-[13px] font-bold rounded-t-lg transition-colors border-x border-t ${isActive ? 'term-panel border-b-transparent text-white z-10' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
-                                            style={{ marginBottom: isActive ? '-1px' : '0' }}
-                                        >
-                                            <i className={`${menu.icon} ${isActive ? 'text-indigo-400' : ''}`}></i> {menu.name}
-                                            {isManager && pendingCount > 0 && <span className="ml-1.5 flex h-5 min-w-[20px] px-1.5 items-center justify-center rounded-full bg-rose-600 text-white text-[10px] font-black shadow-sm animate-pulse">{pendingCount}</span>}
-                                        </a>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    </header>
-                </div>
-            );
-        };
-
+        // 🐛 수정: 주석 처리되어 있던 선언부 복구
         function SettingsApp() {
             const [settings, setSettings] = useState(DEFAULT_SETTINGS);
-            const [pendingCount, setPendingCount] = useState(0);
+            const [activeTab, setActiveTab] = useState('cloud');
             const [toastMsg, setToastMsg] = useState('');
-            const [resetConfirmText, setResetConfirmText] = useState('');
+            
+            const [resetSettingsText, setResetSettingsText] = useState('');
+            const [wipeDBText, setWipeDBText] = useState('');
+            
+            const [newMapTarget, setNewMapTarget] = useState('');
+            const [newMapKeywords, setNewMapKeywords] = useState('');
+
+            const mockCatalogs = ['공통식자재', '냉동수산', '가공품', '포장재'];
 
             const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
 
-            const loadData = useCallback(async () => {
-                const data = await getIDB(CORE_KEYS.SETTINGS);
-                if (data) setSettings(data);
-                const queue = await getIDB(CORE_KEYS.PENDING_QUEUE) || {};
-                setPendingCount(Object.keys(queue).length);
+            useEffect(() => {
+                getIDB(CORE_KEYS.SETTINGS).then(data => { if (data) setSettings(data); });
             }, []);
 
-            useEffect(() => {
-                loadData();
-                window.addEventListener('storage', (e) => { if (e.key === CORE_KEYS.SYNC_TRIGGER) loadData(); });
-                return () => window.removeEventListener('storage', loadData);
-            }, [loadData]);
-
+            // 🐛 수정: 주석 처리되어 있던 선언부 복구
             const handleSave = async () => {
-                const hasInvalidMargin = settings.marginRules.some(rule => rule.multiplier < 1);
-                if (hasInvalidMargin) { showToast('❌ 경고: 마진 배율은 1.0(원가) 이상이어야 합니다.'); return; }
                 await setIDB(CORE_KEYS.SETTINGS, settings);
-                showToast('✅ 환경설정이 안전하게 저장되었습니다.');
+                localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+                showToast('✅ 환경설정이 안전하게 저장 및 전파되었습니다.');
             };
 
-            const handleResetDB = async () => {
-                if (resetConfirmText !== '초기화승인') return;
-                await clearIDB(); 
+            const handleResetSettings = async () => {
+                if (resetSettingsText !== '설정초기화') return;
                 await setIDB(CORE_KEYS.SETTINGS, DEFAULT_SETTINGS); 
-                setSettings(DEFAULT_SETTINGS); setResetConfirmText('');
-                showToast('🚨 로컬 DB가 초기화되었습니다.');
+                setSettings(DEFAULT_SETTINGS); 
+                setResetSettingsText('');
+                showToast('♻️ 마진 룰 및 매핑 설정이 기본값으로 복원되었습니다.');
             };
 
-            const updateMarginRule = (id, field, value) => {
-                setSettings(prev => ({ ...prev, marginRules: prev.marginRules.map(rule => rule.id === id ? { ...rule, [field]: value } : rule) }));
+            const handleWipeDB = async () => {
+                if (wipeDBText !== 'DB완전삭제') return;
+                await clearIDB(); // 전체 스토어 날림
+                await setIDB(CORE_KEYS.SETTINGS, settings); // 설정값만 다시 복구
+                setWipeDBText('');
+                showToast('🚨 로컬 마스터 데이터 및 대기열이 완전히 영구 삭제되었습니다.');
             };
+
+            // 매핑 사전 확장 로직
+            const handleAddMapping = () => {
+                if (!newMapTarget || !newMapKeywords) return showToast('⚠️ 타겟 속성과 키워드를 모두 입력하세요.');
+                setSettings(p => ({
+                    ...p,
+                    mappings: { ...p.mappings, [newMapTarget]: newMapKeywords },
+                    masterLinks: { ...p.masterLinks, [newMapTarget]: newMapTarget } // 기본적으로 자기 자신과 연동
+                }));
+                setNewMapTarget(''); setNewMapKeywords('');
+                showToast('✅ 새 매핑 규칙이 추가되었습니다.');
+            };
+
+            const handleRemoveMapping = (key) => {
+                if (REQUIRED_COLS.includes(key)) return showToast('⚠️ 필수 컬럼은 삭제할 수 없습니다.');
+                const newMappings = { ...settings.mappings }; delete newMappings[key];
+                const newLinks = { ...settings.masterLinks }; delete newLinks[key];
+                setSettings(p => ({ ...p, mappings: newMappings, masterLinks: newLinks }));
+            };
+
+            const lnbMenu = [
+                { id: 'cloud', icon: 'fas fa-cloud', label: '1. 시스템 & 클라우드' },
+                { id: 'catalog', icon: 'fas fa-tags', label: '2. 기준 카탈로그 제어' },
+                { id: 'margin', icon: 'fas fa-calculator', label: '3. 단가 마진율 (÷, ×)' },
+                { id: 'mapping', icon: 'fas fa-file-excel', label: '4. 엑셀 매핑 사전 확장' },
+                { id: 'ui', icon: 'fas fa-desktop', label: '5. 화면 노출 컬럼 설정' },
+                { id: 'danger', icon: 'fas fa-exclamation-triangle', label: '6. 시스템 초기화', color: 'text-[#f85149]' }
+            ];
 
             return (
-                <div className="flex-1 flex flex-col h-full w-full">
-                    <GlobalHeader activeTab="settings" pendingCount={pendingCount} />
-                    <div className="flex-1 flex flex-col p-6 max-w-[1000px] mx-auto w-full gap-6 overflow-auto custom-scrollbar fade-in">
-                        <div className="flex justify-between items-end pb-4 border-b term-border shrink-0">
-                            <div>
-                                <h1 className="text-xl font-black text-white mb-1"><i className="fas fa-cog text-gray-400 mr-2"></i>GLOBAL_SETTINGS</h1>
-                                <p className="text-xs text-gray-500 font-mono">NEXUS MerchOps 기초 단가 연산 규칙 및 통신 환경을 설정합니다.</p>
-                            </div>
-                            <button onClick={handleSave} className="px-6 py-2.5 bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-black rounded transition-colors shadow-sm">
-                                <i className="fas fa-save mr-2"></i>설정 저장 (Save)
+                <div className="flex-1 flex h-full w-full overflow-hidden">
+                    {/* LNB Sidebar */}
+                    <div className="w-[280px] term-panel border-r term-border flex flex-col shrink-0 z-10 shadow-xl">
+                        <div className="p-6 border-b term-border">
+                            <h1 className="text-xl font-black text-white"><i className="fas fa-cog text-gray-400 mr-2"></i>SETTINGS</h1>
+                            <p className="text-[10px] text-gray-500 font-mono mt-1 tracking-widest">NEXUS_V1.95</p>
+                        </div>
+                        <div className="flex-1 overflow-y-auto py-4 flex flex-col">
+                            {lnbMenu.map(menu => (
+                                <button key={menu.id} onClick={() => setActiveTab(menu.id)} 
+                                    className={`px-6 py-4 text-left text-[13px] font-bold border-l-4 transition-colors flex items-center ${activeTab === menu.id ? 'bg-[#21262d] border-[#58a6ff] text-[#58a6ff]' : 'border-transparent text-gray-400 hover:bg-[#161b22] hover:text-gray-200'} ${menu.color || ''}`}>
+                                    <i className={`${menu.icon} w-6`}></i> {menu.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Main Content Area */}
+                    <div className="flex-1 flex flex-col overflow-hidden relative">
+                        <div className="p-6 border-b term-border flex justify-between items-center bg-[#010409]">
+                            <h2 className="text-lg font-black text-white">{lnbMenu.find(m => m.id === activeTab)?.label}</h2>
+                            <button onClick={handleSave} className="px-8 py-2.5 bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-black rounded-lg transition-all shadow-[0_0_15px_rgba(35,134,54,0.3)]">
+                                <i className="fas fa-save mr-2"></i>전역 설정 반영 (F8)
                             </button>
                         </div>
 
-                        <div className="term-panel rounded-lg p-5 border term-border">
-                            <h2 className="text-sm font-bold text-white mb-4"><i className="fas fa-calculator text-[#d2a8ff] mr-2"></i>동적 단가 연산 엔진 (Margin Rules)</h2>
-                            <p className="text-xs text-gray-500 mb-4">시세 관리(작업실)에서 엑셀 작업 시 즉각 적용할 출고가 생성 기준(배수)을 정의합니다.</p>
-                            <div className="space-y-3">
-                                {settings.marginRules.map(rule => (
-                                    <div key={rule.id} className="flex gap-3 items-center bg-[#010409] p-3 rounded border term-border">
-                                        <div className="flex flex-col gap-1 w-1/4">
-                                            <label className="text-[10px] text-gray-500 font-bold uppercase">대상 조건</label>
-                                            <input type="text" value={rule.condition} onChange={e => updateMarginRule(rule.id, 'condition', e.target.value)} className="term-input text-xs p-1.5 rounded" />
-                                        </div>
-                                        <div className="flex flex-col gap-1 w-1/4">
-                                            <label className="text-[10px] text-gray-500 font-bold uppercase">단위</label>
-                                            <input type="text" value={rule.unit} onChange={e => updateMarginRule(rule.id, 'unit', e.target.value)} className="term-input text-xs p-1.5 rounded" />
-                                        </div>
-                                        <div className="flex flex-col gap-1 w-1/4">
-                                            <label className="text-[10px] text-[#58a6ff] font-bold uppercase">적용 배수 (마진율)</label>
-                                            <input type="number" step="0.01" min="1.0" value={rule.multiplier} onChange={e => updateMarginRule(rule.id, 'multiplier', parseFloat(e.target.value) || 1)} className="term-input text-xs p-1.5 rounded text-[#58a6ff] font-bold" />
+                        {}
+                        <div className="flex-1 overflow-auto custom-scrollbar p-8">
+                            <div className="max-w-[1000px] mx-auto space-y-6 fade-in">
+                                
+                                {activeTab === 'cloud' && (
+                                    <div className="term-panel p-6 rounded-lg border term-border">
+                                        <h3 className="text-sm font-bold text-white mb-4"><i className="fas fa-network-wired text-[#58a6ff] mr-2"></i>Google AppScript API 통신 URL</h3>
+                                        <input type="text" value={settings.appScriptUrl} onChange={(e) => setSettings({...settings, appScriptUrl: e.target.value})} placeholder="https://script.google.com/macros/s/..." className="term-input w-full p-3 rounded text-xs font-mono" />
+                                        <p className="text-[11px] text-gray-500 mt-2">* 마스터 DB가 클라우드 백엔드와 동기화할 때 사용하는 게이트웨이 주소입니다.</p>
+                                    </div>
+                                )}
+
+                                {activeTab === 'catalog' && (
+                                    <div className="term-panel p-6 rounded-lg border term-border">
+                                        <h3 className="text-sm font-bold text-white mb-4"><i className="fas fa-tags text-[#d2a8ff] mr-2"></i>단가 룰 적용 대상 (카탈로그 필터링)</h3>
+                                        <p className="text-xs text-gray-400 mb-4">선택된 카탈로그에 속한 품목들만 작업실에서 [환경설정 룰 강제 적용] 시 마진율 연산 대상이 됩니다.</p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {mockCatalogs.map(cat => {
+                                                const isActive = settings.targetCatalogs.includes(cat);
+                                                return (
+                                                    <label key={cat} className={`cursor-pointer px-4 py-2 border rounded text-xs font-bold transition-all flex items-center gap-2 ${isActive ? 'bg-[rgba(88,166,255,0.1)] border-[#58a6ff] text-[#58a6ff]' : 'bg-[#010409] border-[#30363d] text-gray-400 hover:text-gray-200'}`}>
+                                                        <input type="checkbox" className="hidden" checked={isActive} onChange={() => {
+                                                            setSettings(p => ({ ...p, targetCatalogs: isActive ? p.targetCatalogs.filter(c => c !== cat) : [...p.targetCatalogs, cat] }))
+                                                        }} />
+                                                        <i className={`fas ${isActive ? 'fa-check-square' : 'fa-square'} text-sm`}></i> {cat}
+                                                    </label>
+                                                )
+                                            })}
                                         </div>
                                     </div>
-                                ))}
-                            </div>
-                        </div>
+                                )}
 
-                        <div className="term-panel rounded-lg p-5 border term-border">
-                            <h2 className="text-sm font-bold text-white mb-4"><i className="fas fa-network-wired text-[#3fb950] mr-2"></i>클라우드 통신 (Cloud Comm)</h2>
-                            <div className="flex flex-col gap-2">
-                                <label className="text-xs text-gray-400 font-bold">Google AppScript 엔드포인트 URL</label>
-                                <input type="text" value={settings.appScriptUrl} onChange={(e) => setSettings({...settings, appScriptUrl: e.target.value})} placeholder="https://script.google.com/macros/s/..." className="term-input p-2.5 rounded text-xs font-mono w-full" />
-                            </div>
-                        </div>
+                                {activeTab === 'margin' && (
+                                    <div className="term-panel p-6 rounded-lg border term-border">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <div>
+                                                <h3 className="text-sm font-bold text-white"><i className="fas fa-calculator text-[#3fb950] mr-2"></i>동적 단가 연산 엔진 (Margin Rules)</h3>
+                                                <p className="text-[11px] text-gray-500 mt-1">입고가에 마진율을 <strong>나누거나(역산)</strong> <strong>곱하여</strong> 시중가(출고가)를 자동 산출합니다.</p>
+                                            </div>
+                                            <button onClick={() => setSettings(p => ({...p, marginRules: [...p.marginRules, { id: generateUUID(), condition: '*', unit: '*', type: 'divide', rate: 10 }]}))} className="px-3 py-1.5 bg-[#21262d] hover:bg-[#30363d] text-white text-xs rounded border term-border"><i className="fas fa-plus mr-1"></i>룰 추가</button>
+                                        </div>
+                                        <div className="space-y-3">
+                                            {settings.marginRules.map((rule, idx) => {
+                                                const rawPrice = rule.type === 'divide' ? (10000 / (1 - rule.rate / 100)) : (10000 * (1 + rule.rate / 100));
+                                                const examplePrice = Math.round(rawPrice / 100) * 100; // 100원 단위 반올림
+                                                const exampleFormula = rule.type === 'divide' ? `10k ÷ ${(1 - rule.rate / 100).toFixed(2)}` : `10k × ${(1 + rule.rate / 100).toFixed(2)}`;
 
-                        <div className="term-panel rounded-lg p-5 border border-rose-900/50 bg-[rgba(248,81,73,0.02)] mt-4">
-                            <h2 className="text-sm font-black text-[#f85149] mb-2"><i className="fas fa-skull-crossbones mr-2"></i>위험 구역 (Danger Zone)</h2>
-                            <p className="text-xs text-[#f85149] opacity-80 mb-4">마스터 DB 및 대기열을 포함한 브라우저 내의 모든 로컬 스토리지 데이터를 영구 삭제합니다.</p>
-                            <div className="flex items-center gap-3">
-                                <input type="text" placeholder="초기화승인" value={resetConfirmText} onChange={(e) => setResetConfirmText(e.target.value)} className="term-input p-2.5 rounded text-xs font-mono w-48 border-[#f85149] text-[#f85149] focus:border-rose-500" />
-                                <button onClick={handleResetDB} disabled={resetConfirmText !== '초기화승인'} className="px-5 py-2.5 bg-[#f85149] hover:bg-rose-600 text-white text-xs font-black rounded transition-all disabled:opacity-30 disabled:cursor-not-allowed">
-                                    <i className="fas fa-trash-alt mr-2"></i> 로컬 DB 강제 초기화
-                                </button>
+                                                return (
+                                                <div key={rule.id} className="flex gap-2 items-center bg-[#010409] p-3 rounded border term-border transition-colors hover:border-[#58a6ff]">
+                                                    <div className="text-[10px] text-gray-600 font-bold w-4 text-center">{idx + 1}</div>
+                                                    <div className="flex flex-col gap-1 w-24">
+                                                        <label className="text-[9px] text-gray-500 font-bold uppercase">창고조건</label>
+                                                        <input type="text" value={rule.condition} onChange={e => {
+                                                            const newRules = [...settings.marginRules]; newRules[idx].condition = e.target.value; setSettings({...settings, marginRules: newRules});
+                                                        }} className="term-input text-xs p-1.5 rounded" />
+                                                    </div>
+                                                    <div className="flex flex-col gap-1 flex-1">
+                                                        <label className="text-[9px] text-gray-500 font-bold uppercase">단위조건</label>
+                                                        <input type="text" value={rule.unit} onChange={e => {
+                                                            const newRules = [...settings.marginRules]; newRules[idx].unit = e.target.value; setSettings({...settings, marginRules: newRules});
+                                                        }} className="term-input text-xs p-1.5 rounded" />
+                                                    </div>
+                                                    <div className="flex flex-col gap-1 w-24">
+                                                        <label className="text-[9px] text-[#d2a8ff] font-bold uppercase">연산 방식</label>
+                                                        <select value={rule.type} onChange={e => {
+                                                            const newRules = [...settings.marginRules]; newRules[idx].type = e.target.value; setSettings({...settings, marginRules: newRules});
+                                                        }} className="term-input text-xs p-1.5 rounded cursor-pointer font-bold text-[#d2a8ff]">
+                                                            <option value="divide">나누기 (÷)</option>
+                                                            <option value="multiply">곱하기 (×)</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="flex flex-col gap-1 w-20">
+                                                        <label className="text-[9px] text-[#58a6ff] font-bold uppercase">마진율 (%)</label>
+                                                        <input type="number" step="1" value={rule.rate} onChange={e => {
+                                                            const newRules = [...settings.marginRules]; newRules[idx].rate = parseFloat(e.target.value) || 0; setSettings({...settings, marginRules: newRules});
+                                                        }} className="term-input text-xs p-1.5 rounded text-[#58a6ff] font-bold text-center" />
+                                                    </div>
+                                                    <div className="flex flex-col gap-1 w-32 items-center bg-[#161b22] rounded px-2 py-1 justify-center border term-border">
+                                                        <label className="text-[9px] text-gray-500 font-bold">1만원 기준 예시</label>
+                                                        <div className="text-[11px] font-mono text-[#3fb950] font-bold">{examplePrice.toLocaleString()}원</div>
+                                                    </div>
+                                                    <button onClick={() => {
+                                                        const newRules = settings.marginRules.filter(r => r.id !== rule.id); setSettings({...settings, marginRules: newRules});
+                                                    }} className="w-8 h-8 flex items-center justify-center text-gray-500 hover:text-[#f85149] transition-colors"><i className="fas fa-trash-alt"></i></button>
+                                                </div>
+                                            )})}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {activeTab === 'mapping' && (
+                                    <div className="term-panel p-6 rounded-lg border term-border flex flex-col h-[70vh]">
+                                        <h3 className="text-sm font-bold text-white mb-4 shrink-0"><i className="fas fa-book text-[#e3b341] mr-2"></i>확장형 엑셀 매핑 사전 (Extensible Dictionary)</h3>
+                                        <p className="text-xs text-gray-400 mb-4 shrink-0">스마트 파서와 작업실이 외부 엑셀을 읽을 때 사용할 키워드입니다. 새로운 마스터 항목을 무제한으로 추가할 수 있습니다.</p>
+                                        
+                                        <div className="flex-1 overflow-auto custom-scrollbar border term-border rounded mb-4">
+                                            <table className="w-full text-left text-xs">
+                                                <thead className="bg-[#010409] border-b term-border text-gray-500 sticky top-0 z-10">
+                                                    <tr>
+                                                        <th className="p-3 w-40">마스터 속성명 (Target)</th>
+                                                        <th className="p-3">엑셀 헤더 감지 키워드 (콤마 구분)</th>
+                                                        <th className="p-3 w-48 text-center">DB 연동</th>
+                                                        <th className="p-3 w-12 text-center"></th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-[#21262d]">
+                                                    {Object.keys(settings.mappings).map(h => {
+                                                        const isRequired = REQUIRED_COLS.includes(h);
+                                                        return (
+                                                        <tr key={h} className="hover:bg-[#161b22] transition-colors">
+                                                            <td className="p-3 font-bold text-gray-300">
+                                                                {isRequired ? <i className="fas fa-lock text-gray-600 mr-2"></i> : <i className="fas fa-link text-[#58a6ff] mr-2"></i>}
+                                                                {h}
+                                                            </td>
+                                                            <td className="p-3"><input type="text" value={settings.mappings[h] || ''} onChange={e => setSettings(p => ({...p, mappings: {...p.mappings, [h]: e.target.value}}))} className="term-input w-full p-2 rounded" /></td>
+                                                            <td className="p-3">
+                                                                {isRequired ? (
+                                                                    <div className="text-center text-gray-600 font-bold bg-[#010409] p-2 rounded border term-border cursor-not-allowed">식별자 고정</div>
+                                                                ) : (
+                                                                    <select value={settings.masterLinks[h] || ''} onChange={e => setSettings(p => ({...p, masterLinks: {...p.masterLinks, [h]: e.target.value}}))} className="term-input w-full p-2 rounded cursor-pointer">
+                                                                        <option value="">-- DB 연동 안함 --</option>
+                                                                        {MASTER_HEADERS.map(mh => <option key={`sel-${h}-${mh}`} value={mh}>{mh}</option>)}
+                                                                    </select>
+                                                                )}
+                                                            </td>
+                                                            <td className="p-3 text-center">
+                                                                {!isRequired && <button onClick={() => handleRemoveMapping(h)} className="text-gray-500 hover:text-[#f85149] transition-colors p-2"><i className="fas fa-trash-alt"></i></button>}
+                                                            </td>
+                                                        </tr>
+                                                    )})}
+                                                </tbody>
+                                            </table>
+                                        </div>
+
+                                        {/* 새 항목 추가 폼 */}
+                                        <div className="bg-[#010409] border term-border p-4 rounded-lg shrink-0 flex items-end gap-3">
+                                            <div className="flex flex-col gap-1 w-48">
+                                                <label className="text-[10px] text-[#3fb950] font-bold uppercase">새로운 마스터 속성명</label>
+                                                <input type="text" value={newMapTarget} onChange={e => setNewMapTarget(e.target.value)} placeholder="예: 행사비고" className="term-input p-2 rounded text-xs" />
+                                            </div>
+                                            <div className="flex flex-col gap-1 flex-1">
+                                                <label className="text-[10px] text-[#3fb950] font-bold uppercase">매칭할 엑셀 키워드 (콤마 구분)</label>
+                                                <input type="text" value={newMapKeywords} onChange={e => setNewMapKeywords(e.target.value)} placeholder="예: 행사내용, 비고, 특이사항" className="term-input p-2 rounded text-xs" />
+                                            </div>
+                                            <button onClick={handleAddMapping} className="px-5 py-2 bg-[#21262d] hover:bg-[#30363d] text-[#3fb950] font-bold rounded text-xs border term-border transition-colors">
+                                                <i className="fas fa-plus mr-1.5"></i> 사전에 추가
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {activeTab === 'ui' && (
+                                    <div className="space-y-6">
+                                        <div className="term-panel p-6 rounded-lg border term-border">
+                                            <h3 className="text-sm font-bold text-white mb-4"><span className="bg-[#21262d] text-gray-300 px-2 py-0.5 rounded mr-2 text-[10px]">참조 뷰 (읽기)</span> 마스터 DB 노출 컬럼 설정</h3>
+                                            <div className="flex flex-wrap gap-2">
+                                                {REQUIRED_COLS.map(h => <div key={`ui-req-${h}`} className="config-chip locked opacity-50 cursor-not-allowed"><i className="fas fa-lock mr-1.5"></i>{h}</div>)}
+                                                {MASTER_HEADERS.filter(h => !REQUIRED_COLS.includes(h)).map(h => (
+                                                    <div key={`ui-mst-${h}`} onClick={() => setSettings(p => ({...p, visibleMasterCols: p.visibleMasterCols.includes(h) ? p.visibleMasterCols.filter(x => x !== h) : [...p.visibleMasterCols, h]}))} className={`config-chip ${settings.visibleMasterCols.includes(h) ? 'active' : ''}`}>{h}</div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div className="term-panel p-6 rounded-lg border term-border">
+                                            <h3 className="text-sm font-bold text-white mb-4"><span className="bg-[rgba(63,185,80,0.1)] border border-[rgba(63,185,80,0.2)] text-[#3fb950] px-2 py-0.5 rounded mr-2 text-[10px]">작업 뷰 (입력)</span> 시세 관리 및 파서 컬럼 설정</h3>
+                                            <div className="flex flex-wrap gap-2 mb-4">
+                                                {settings.visibleUploadCols.filter(h => !REQUIRED_COLS.includes(h)).map(h => (
+                                                    <div key={`ui-up-${h}`} className="config-chip active cursor-default">
+                                                        {h} <button onClick={() => setSettings(p => ({...p, visibleUploadCols: p.visibleUploadCols.filter(x => x !== h)}))} className="ml-2 text-[#58a6ff] hover:text-[#f85149]"><i className="fas fa-times"></i></button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <div className="flex items-center gap-2 w-72">
+                                                <select onChange={e => { if(e.target.value && !settings.visibleUploadCols.includes(e.target.value)) setSettings(p => ({...p, visibleUploadCols: [...p.visibleUploadCols, e.target.value]})); e.target.value=''; }} className="term-input flex-1 p-2 rounded text-xs cursor-pointer">
+                                                    <option value="">-- 작업 컬럼 추가 --</option>
+                                                    {MASTER_HEADERS.filter(h => !REQUIRED_COLS.includes(h) && !settings.visibleUploadCols.includes(h)).map(h => <option key={`add-ui-${h}`} value={h}>{h}</option>)}
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {activeTab === 'danger' && (
+                                    <div className="space-y-4">
+                                        <div className="term-panel p-6 rounded-lg border border-amber-900/50 bg-[rgba(217,119,6,0.02)]">
+                                            <h3 className="text-sm font-black text-amber-500 mb-2"><i className="fas fa-undo-alt mr-2"></i>옵션 1. 환경설정 및 매핑 기본값 복원</h3>
+                                            <p className="text-xs text-amber-500/80 mb-4">마진 룰과 매핑 사전이 꼬였을 때, 설정값만 초기 상태로 되돌립니다. (마스터 데이터는 유지됨)</p>
+                                            <div className="flex items-center gap-3">
+                                                <input type="text" placeholder="설정초기화" value={resetSettingsText} onChange={(e) => setResetSettingsText(e.target.value)} className="term-input p-2.5 rounded text-xs font-mono w-48 border-amber-600/50 text-amber-500 focus:border-amber-400" />
+                                                <button onClick={handleResetSettings} disabled={resetSettingsText !== '설정초기화'} className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-black rounded transition-all disabled:opacity-30 disabled:cursor-not-allowed">
+                                                    기본값 복원 실행
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="term-panel p-6 rounded-lg border border-rose-900/50 bg-[rgba(248,81,73,0.02)]">
+                                            <h3 className="text-sm font-black text-[#f85149] mb-2"><i className="fas fa-skull-crossbones mr-2"></i>옵션 2. 실무 데이터 (마스터 DB) 완전 삭제</h3>
+                                            <p className="text-xs text-[#f85149] opacity-80 mb-4">시스템을 처음부터 다시 구축할 때 사용합니다. 상품 DB와 대기열(Queue)이 모두 영구 삭제됩니다.</p>
+                                            <div className="flex items-center gap-3">
+                                                <input type="text" placeholder="DB완전삭제" value={wipeDBText} onChange={(e) => setWipeDBText(e.target.value)} className="term-input p-2.5 rounded text-xs font-mono w-48 border-[#f85149] text-[#f85149] focus:border-rose-500" />
+                                                <button onClick={handleWipeDB} disabled={wipeDBText !== 'DB완전삭제'} className="px-5 py-2.5 bg-[#f85149] hover:bg-rose-600 text-white text-xs font-black rounded transition-all disabled:opacity-30 disabled:cursor-not-allowed">
+                                                    <i className="fas fa-trash-alt mr-2"></i> 로컬 DB 강제 초기화
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
                             </div>
                         </div>
                     </div>
-                    {toastMsg && <div className="fixed bottom-6 right-6 term-panel text-white px-5 py-3 rounded text-xs font-bold border term-border shadow-2xl flex items-center gap-3 z-50 fade-in">{toastMsg.replace(/✅|❌|🚨/g, '')}</div>}
+
+                    {/* Toast Notification */}
+                    {toastMsg && (
+                        <div className="fixed bottom-6 right-6 term-panel text-white px-5 py-3 rounded text-xs font-bold border term-border shadow-2xl flex items-center gap-3 z-50 fade-in">
+                            <i className={toastMsg.includes('❌') || toastMsg.includes('🚨') ? "fas fa-exclamation-circle text-[#f85149]" : toastMsg.includes('♻️') ? "fas fa-sync-alt text-amber-400" : "fas fa-check-circle text-[#3fb950]"}></i>
+                            {toastMsg.replace(/✅|❌|🚨|♻️/g, '')}
+                        </div>
+                    )}
                 </div>
             );
         }
+
         ReactDOM.createRoot(document.getElementById('root')).render(<SettingsApp />);
     </script>
 </body>
