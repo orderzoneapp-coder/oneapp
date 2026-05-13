@@ -28,6 +28,8 @@
         input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
         .fade-in { animation: fadeIn 0.2s ease-out; } 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        .nav-btn { background: rgba(22, 27, 34, 0.6); border: 1px solid #30363d; backdrop-filter: blur(4px); transition: all 0.2s; }
+        .nav-btn:hover { background: rgba(48, 54, 61, 0.9); transform: scale(1.1); color: white; }
     </style>
 </head>
 <body class="term-bg text-sm h-screen flex flex-col">
@@ -49,7 +51,6 @@
             PENDING_QUEUE: 'oneapp_pending_queue',
             CYCLE_LOG: 'oneapp_workspace_cycle_log',
             SETTINGS: 'oneapp_global_settings',
-            DICT: 'PARSER_DICT',
             SYNC_TRIGGER: 'merchMaster_sync_trigger'
         };
 
@@ -96,26 +97,31 @@
                 { id: 'master', name: '마스터 DB', icon: 'fas fa-server', url: 'master.html' },
                 { id: 'manager', name: '상품 관리', icon: 'fas fa-tasks', url: 'manager.html' },
                 { id: 'workspace', name: '시세 관리', icon: 'fas fa-edit', url: 'workspace.html' },
-                { id: 'parser', name: '스마트 파서', icon: 'fas fa-bolt', url: 'parser.html' },
-                { id: 'settings', name: '환경 설정', icon: 'fas fa-cog', url: 'settings.html' }
+                { id: 'parser', name: '스마트 파서', icon: 'fas fa-bolt', url: 'parser.html' }
             ];
 
             return (
                 <div className="flex flex-col shrink-0 z-40 w-full term-bg border-b term-border max-w-[1400px] mx-auto">
-                    <header className="h-[60px] flex items-center px-6">
-                        <span className="font-black text-[20px] tracking-wider text-white mr-8">NEXUS<span className="text-[#58a6ff]">.IO</span></span>
-                        <div className="flex items-end h-full pt-2">
-                            {tabs.map(tab => {
-                                const isActive = activeTab === tab.id;
-                                const isManager = tab.id === 'manager';
-                                return (
-                                    <a key={tab.id} href={tab.url} className={`relative flex items-center gap-2 px-5 py-3 text-[13px] font-bold rounded-t-lg transition-colors border-x border-t ${isActive ? 'term-panel border-b-transparent text-white z-10' : 'border-transparent text-gray-500 hover:text-gray-300'}`} style={{ marginBottom: isActive ? '-1px' : '0' }}>
-                                        <i className={`${tab.icon} ${isActive ? 'text-[#58a6ff]' : ''}`}></i> {tab.name}
-                                        {isManager && pendingCount > 0 && <span className="ml-1.5 flex h-5 min-w-[20px] px-1.5 items-center justify-center rounded-full bg-[#f85149] text-white text-[10px] font-black shadow-sm animate-pulse">{pendingCount}</span>}
-                                    </a>
-                                );
-                            })}
+                    <header className="h-[60px] flex justify-between items-center px-6">
+                        <div className="flex items-center">
+                            <span className="font-black text-[20px] tracking-wider text-white mr-8">NEXUS<span className="text-[#58a6ff]">.IO</span></span>
+                            <div className="flex items-end h-full pt-2 mt-[11px]">
+                                {tabs.map(tab => {
+                                    const isActive = activeTab === tab.id;
+                                    const isManager = tab.id === 'manager';
+                                    return (
+                                        <a key={tab.id} href={tab.url} className={`relative flex items-center gap-2 px-5 py-3 text-[13px] font-bold rounded-t-lg transition-colors border-x border-t ${isActive ? 'term-panel border-b-transparent text-white z-10' : 'border-transparent text-gray-500 hover:text-gray-300'}`} style={{ marginBottom: isActive ? '-1px' : '0' }}>
+                                            <i className={`${tab.icon} ${isActive ? 'text-[#58a6ff]' : ''}`}></i> {tab.name}
+                                            {isManager && pendingCount > 0 && <span className="ml-1.5 flex h-5 min-w-[20px] px-1.5 items-center justify-center rounded-full bg-[#f85149] text-white text-[10px] font-black shadow-sm animate-pulse">{pendingCount}</span>}
+                                        </a>
+                                    );
+                                })}
+                            </div>
                         </div>
+                        {/* 환경 설정 열기 버튼 */}
+                        <button onClick={() => window.location.href = 'settings.html'} className="px-4 py-2 bg-[#161b22] hover:bg-[#21262d] text-white font-bold rounded text-xs transition-colors border term-border">
+                            <i className="fas fa-sliders-h text-[#58a6ff] mr-2"></i>환경 설정
+                        </button>
                     </header>
                 </div>
             );
@@ -155,30 +161,29 @@
                 return () => window.removeEventListener('keydown', handleKeyDown);
             }, []);
 
-            // 📂 엑셀 로드 및 지능형 파싱 (Dictionary 연동)
+            const handleSwipe = (direction, url) => {
+                showToast(`ℹ️ [화면 전환] ${direction} 앱으로 이동합니다.`);
+                setTimeout(() => { window.location.href = url; }, 500);
+            };
+
+            // 📂 순수 엑셀 로드 (파서 로직 제거)
             const handleFileUpload = async (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
                 try {
                     const data = await parseExcel(file);
-                    const dict = await getIDB(CORE_KEYS.DICT) || {}; // 클라우드 딕셔너리 로드
                     
                     const items = data.map(row => {
-                        let code = String(row['품목코드'] || row['상품코드'] || row['코드'] || '');
+                        const code = String(row['품목코드'] || row['상품코드'] || row['코드'] || '');
                         const name = String(row['품목명'] || row['상품명'] || '');
                         const spec = String(row['규격'] || '');
                         const price = parseNum(row['입고가'] || row['매입가'] || row['단가']);
 
-                        // ✨ 딕셔너리 지능형 매핑: 코드가 없지만 품목명이 딕셔너리에 존재하면 자동 매칭
-                        if (!code && name && dict[name]) {
-                            code = dict[name];
-                        }
-
                         return { code, name, spec, inPrice: price };
-                    }).filter(item => item.code); // 코드가 매핑된 항목만 살림
+                    }).filter(item => item.code); // 코드가 존재하는 항목만 허용 (시세관리 원칙)
                     
                     setWorkspaceItems(items);
-                    showToast(`✅ ${items.length}건 엑셀 로드 (딕셔너리 자동매핑 포함) 완료`);
+                    showToast(`✅ ${items.length}건 엑셀 로드 완료`);
                 } catch(err) { 
                     showToast("❌ 엑셀 파싱 실패. 양식을 확인하세요."); 
                 }
@@ -374,7 +379,18 @@
             }, [workspaceItems, searchTerm]);
 
             return (
-                <div className="flex-1 flex flex-col h-full w-full items-center justify-center">
+                <div className="flex-1 flex flex-col h-full w-full items-center justify-center relative">
+                    
+                    {/* Swipe Navigation Buttons */}
+                    <button onClick={() => handleSwipe('상품 관리', 'manager.html')} className="nav-btn fixed left-4 top-1/2 -translate-y-1/2 z-40 p-4 rounded-full text-gray-500 group">
+                        <i className="fas fa-chevron-left text-xl"></i>
+                        <span className="absolute left-14 top-1/2 -translate-y-1/2 text-xs font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">상품 관리로 이동</span>
+                    </button>
+                    <button onClick={() => handleSwipe('스마트 파서', 'parser.html')} className="nav-btn fixed right-4 top-1/2 -translate-y-1/2 z-40 p-4 rounded-full text-gray-500 group">
+                        <i className="fas fa-chevron-right text-xl"></i>
+                        <span className="absolute right-14 top-1/2 -translate-y-1/2 text-xs font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">스마트 파서로 이동</span>
+                    </button>
+
                     <div className="w-full max-w-[1400px] h-full flex flex-col border-x term-border shadow-2xl relative bg-[#010409]">
                         <GlobalHeader activeTab="workspace" pendingCount={pendingCount} />
                         
@@ -384,11 +400,11 @@
                             <div className="flex justify-between items-end pb-4 border-b term-border shrink-0">
                                 <div>
                                     <h1 className="text-xl font-black text-white mb-1"><i className="fas fa-edit text-[#58a6ff] mr-2"></i>VALUATION_WORKSPACE</h1>
-                                    <p className="text-xs text-gray-500 font-mono">다중 컬럼 편집 및 지능형 엑셀 파싱 기능이 적용된 시세 관리 뷰입니다.</p>
+                                    <p className="text-xs text-gray-500 font-mono">코드가 포함된 엑셀을 로드하여 다중 편집 및 단가 룰을 적용합니다.</p>
                                 </div>
                                 <div className="flex gap-2">
                                     <label className="cursor-pointer px-5 py-2.5 rounded term-panel term-border text-[13px] font-bold hover:bg-[#21262d] transition-colors text-white shadow-sm flex items-center">
-                                        <i className="fas fa-file-excel text-[#58a6ff] mr-2"></i> 엑셀 데이터 로드
+                                        <i className="fas fa-file-excel text-[#58a6ff] mr-2"></i> 엑셀 로드
                                         <input type="file" className="hidden" accept=".xlsx" onChange={handleFileUpload} />
                                     </label>
                                     
@@ -401,7 +417,7 @@
                                     </button>
                                     
                                     <button id="btn-f7" onClick={handleHighPass} disabled={workspaceItems.length === 0} className={`px-4 py-2.5 rounded text-[12px] font-bold transition-colors shadow-sm flex items-center ${workspaceItems.length > 0 ? 'bg-[#1f6feb] hover:bg-[#388bfd] text-white' : 'bg-[#30363d] text-gray-500 cursor-not-allowed'}`}>
-                                        [F7] 하이패스 반영
+                                        [F7] 즉시 반영 (하이패스)
                                     </button>
 
                                     <button id="btn-f8" onClick={handleApplyDelta} disabled={workspaceItems.length === 0} className={`px-6 py-2.5 rounded text-[13px] font-black transition-colors shadow-md flex items-center ${workspaceItems.length > 0 ? 'bg-[#238636] hover:bg-[#2ea043] text-white shadow-[0_0_10px_rgba(35,134,54,0.3)]' : 'bg-[#30363d] text-gray-500 cursor-not-allowed'}`}>
@@ -448,7 +464,7 @@
                                                 <tr>
                                                     <td colSpan="5" className="py-32 text-center text-gray-600 font-bold bg-[#010409]">
                                                         <i className="fas fa-file-excel text-5xl mb-4 block opacity-20"></i>
-                                                        {workspaceItems.length === 0 ? "우측 상단 [엑셀 데이터 로드] 버튼을 눌러 작업을 시작하세요." : "검색 결과가 없습니다."}
+                                                        {workspaceItems.length === 0 ? "우측 상단 [엑셀 로드] 버튼을 눌러 작업을 시작하세요." : "검색 결과가 없습니다."}
                                                     </td>
                                                 </tr>
                                             ) : (
