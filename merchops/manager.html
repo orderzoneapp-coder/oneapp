@@ -54,7 +54,7 @@
 
         const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
 
-        // 🚨 V3 DB로 연결되도록 변경
+        // 🚨 V3 DB로 연결
         const initIDB = () => new Promise((resolve) => {
             const req = indexedDB.open('OneAppMerchDB_V3', 1);
             req.onupgradeneeded = (e) => { 
@@ -117,7 +117,7 @@
                                     const isActive = activeTab === tab.id;
                                     const isManager = tab.id === 'manager';
                                     return (
-                                        <a key={tab.id} href={tab.url} className={`relative flex items-center gap-2 px-5 py-3 text-[13px] font-bold rounded-t-lg transition-colors border-x border-t ${isActive ? 'term-panel border-b-transparent text-white z-10' : 'border-transparent text-gray-500 hover:text-gray-300'}`} style={{ marginBottom: isActive ? '-1px' : '0' }}>
+                                        <a key={tab.id} href={tab.url} className={`relative flex items-center gap-2 px-5 py-3 text-[13px] font-bold rounded-t-lg transition-colors border-x border-t ${isActive ? 'term-panel border-b-transparent text-white z-10 shadow-[0_-2px_10px_rgba(0,0,0,0.5)]' : 'border-transparent text-gray-500 hover:text-gray-300'}`} style={{ marginBottom: isActive ? '-1px' : '0' }}>
                                             <i className={`${tab.icon} ${isActive ? 'text-[#3fb950]' : ''}`}></i> {tab.name}
                                             {isManager && pendingCount > 0 && <span className="ml-1.5 flex h-5 min-w-[20px] px-1.5 items-center justify-center rounded-full bg-[#f85149] text-white text-[10px] font-black shadow-sm animate-pulse">{pendingCount}</span>}
                                         </a>
@@ -314,14 +314,14 @@
             return (
                 <div className="relative w-full h-full flex justify-center overflow-hidden">
                     
-                    {/* Swipe Navigation Buttons */}
-                    <button onClick={() => handleSwipe('스마트 파서', 'parser.html')} className="nav-btn fixed left-4 top-1/2 -translate-y-1/2 z-40 p-4 rounded-full text-gray-500 group">
+                    {/* Swipe Navigation Buttons: 수정 완료 (좌측 -> 마스터 DB, 우측 -> 시세 관리) */}
+                    <button onClick={() => handleSwipe('마스터 DB', 'master.html')} className="nav-btn fixed left-4 top-1/2 -translate-y-1/2 z-40 p-4 rounded-full text-gray-500 group">
                         <i className="fas fa-chevron-left text-xl"></i>
-                        <span className="absolute left-14 top-1/2 -translate-y-1/2 text-xs font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">스마트 파서로 이동</span>
+                        <span className="absolute left-14 top-1/2 -translate-y-1/2 text-xs font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">마스터 DB로 이동</span>
                     </button>
-                    <button onClick={() => handleSwipe('마스터 DB', 'master.html')} className="nav-btn fixed right-4 top-1/2 -translate-y-1/2 z-40 p-4 rounded-full text-gray-500 group">
+                    <button onClick={() => handleSwipe('시세 관리', 'workspace.html')} className="nav-btn fixed right-4 top-1/2 -translate-y-1/2 z-40 p-4 rounded-full text-gray-500 group">
                         <i className="fas fa-chevron-right text-xl"></i>
-                        <span className="absolute right-14 top-1/2 -translate-y-1/2 text-xs font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">마스터 DB로 이동</span>
+                        <span className="absolute right-14 top-1/2 -translate-y-1/2 text-xs font-bold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">시세 관리로 이동</span>
                     </button>
 
                     {/* Main Content Area (1400px Fixed) */}
@@ -514,9 +514,9 @@
 
                         {/* Toast Notification */}
                         {toastMsg && (
-                            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 term-panel text-white px-5 py-3 rounded-full shadow-2xl flex items-center gap-3 fade-in text-[13px] font-bold z-50">
+                            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 term-panel text-white px-5 py-3 rounded-full shadow-2xl flex items-center gap-3 fade-in text-[13px] font-bold z-[60]">
                                 <i className={`fas ${toastMsg.includes('✅') || toastMsg.includes('🔗') || toastMsg.includes('🟢') ? 'fa-check-circle text-[#3fb950]' : toastMsg.includes('🗑️') ? 'fa-trash-alt text-gray-400' : 'fa-exclamation-triangle text-[#f85149]'}`}></i>
-                                {toastMsg.replace(/✅|❌|⚠️|🗑️|🔗|🟢|⛔/g, '')}
+                                {toastMsg.replace(/✅|❌|⚠️|🗑️|🔗|🟢|⛔|ℹ️/g, '')}
                             </div>
                         )}
                     </div>
