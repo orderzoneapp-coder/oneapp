@@ -10,6 +10,8 @@
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- 엑셀 다운로드를 위한 SheetJS 라이브러리 추가 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
 
     <style>
@@ -231,6 +233,99 @@
                 }
             };
 
+            // 🗃️ 엑셀 다운로드 (추가된 기능)
+            const handleExportExcel = () => {
+                if (!window.XLSX) {
+                    showToast('❌ 엑셀 라이브러리가 로드되지 않았습니다.');
+                    return;
+                }
+                if (displayRows.length === 0) {
+                    showToast('⚠️ 내보낼 데이터가 없습니다.');
+                    return;
+                }
+                
+                showToast('⏳ 엑셀 파일을 생성 중입니다...');
+                setTimeout(() => {
+                    try {
+                        const exportData = displayRows.map(item => {
+                            const row = {};
+                            MASTER_HEADERS.forEach(h => {
+                                if (h === '품목코드') {
+                                    row[h] = item['코드'] || item['품목코드'] || '';
+                                } else {
+                                    row[h] = item[h] || '';
+                                }
+                            });
+                            return row;
+                        });
+
+                        const ws = window.XLSX.utils.json_to_sheet(exportData, { header: MASTER_HEADERS });
+                        const wb = window.XLSX.utils.book_new();
+                        window.XLSX.utils.book_append_sheet(wb, ws, "MasterDB");
+                        window.XLSX.writeFile(wb, `MasterDB_Export_${new Date().toISOString().slice(0,10)}.xlsx`);
+                        showToast('✅ 엑셀 다운로드가 완료되었습니다.');
+                    } catch (error) {
+                        showToast('❌ 엑셀 생성 중 오류가 발생했습니다.');
+                        console.error(error);
+                    }
+                }, 100);
+            };
+
+            // 📂 엑셀 업로드 (추가된 기능)
+            const handleImportExcel = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                if (!window.XLSX) {
+                    showToast('❌ 엑셀 라이브러리가 로드되지 않았습니다.');
+                    return;
+                }
+
+                showToast('⏳ 엑셀 파일을 읽어오는 중입니다...');
+                const reader = new FileReader();
+                reader.onload = async (evt) => {
+                    try {
+                        const data = new Uint8Array(evt.target.result);
+                        const wb = window.XLSX.read(data, { type: 'array' });
+                        const wsname = wb.SheetNames[0];
+                        const ws = wb.Sheets[wsname];
+                        const jsonData = window.XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+                        if (jsonData.length === 0) {
+                            showToast('⚠️ 데이터가 비어있습니다.');
+                            return;
+                        }
+
+                        let newMaster = { ...baseCatalog };
+                        let updatedCount = 0;
+
+                        jsonData.forEach(row => {
+                            const code = row['품목코드'] || row['코드'];
+                            if (code) {
+                                if (!newMaster[code]) newMaster[code] = { 코드: code };
+                                MASTER_HEADERS.forEach(h => {
+                                    if (h !== '품목코드' && h !== '코드' && row[h] !== undefined && row[h] !== "") {
+                                        newMaster[code][h] = row[h];
+                                    }
+                                });
+                                updatedCount++;
+                            }
+                        });
+
+                        setBaseCatalog(newMaster);
+                        await setIDB(CORE_KEYS.BASE_CATALOG, newMaster);
+                        localStorage.setItem(CORE_KEYS.SYNC_TRIGGER, Date.now().toString());
+                        
+                        showToast(`✅ 엑셀 업로드 완료: ${updatedCount}건 업데이트됨`);
+                    } catch (error) {
+                        showToast('❌ 엑셀 처리 중 오류가 발생했습니다.');
+                        console.error(error);
+                    }
+                    e.target.value = ''; // 입력란 초기화
+                };
+                reader.readAsArrayBuffer(file);
+            };
+
             // ✏️ 인라인 에디팅 (마스터 직접 수정)
             const handleCellSave = useCallback(async (code, field, newValue) => {
                 try {
@@ -308,6 +403,15 @@
                                 <p className="text-xs text-gray-500 font-mono">전사 메타데이터(48열)를 직접 수정하고 클라우드로 배포하는 최종 관제탑입니다.</p>
                             </div>
                             <div className="flex gap-2">
+                                <label className="cursor-pointer px-5 py-2.5 text-[13px] font-bold rounded term-panel border term-border hover:bg-[#21262d] text-[#c9d1d9] transition-colors shadow-sm flex items-center">
+                                    <i className="fas fa-file-upload text-[#a371f7] mr-2"></i> 
+                                    업로드
+                                    <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleImportExcel} />
+                                </label>
+                                <button onClick={handleExportExcel} className="px-5 py-2.5 text-[13px] font-bold rounded term-panel border term-border hover:bg-[#21262d] text-[#c9d1d9] transition-colors shadow-sm flex items-center">
+                                    <i className="fas fa-file-download text-[#3fb950] mr-2"></i> 
+                                    다운로드
+                                </button>
                                 <button onClick={handlePullMaster} disabled={isSyncing} className="px-5 py-2.5 text-[13px] font-bold rounded term-panel border term-border hover:bg-[#21262d] text-[#c9d1d9] transition-colors disabled:opacity-50 shadow-sm flex items-center">
                                     {isSyncing ? <i className="fas fa-spinner spin-anim mr-2"></i> : <i className="fas fa-cloud-download-alt text-[#58a6ff] mr-2"></i>} 
                                     클라우드 수신 (Pull)
@@ -413,7 +517,7 @@
                     {toastMsg && (
                         <div className="fixed bottom-6 right-6 term-panel text-white px-5 py-3 rounded-lg shadow-2xl flex items-center gap-3 fade-in text-[13px] font-bold z-50 border term-border">
                             <i className={toastMsg.includes('🚨') || toastMsg.includes('❌') || toastMsg.includes('⚠️') ? "fas fa-exclamation-triangle text-[#f85149]" : "fas fa-check-circle text-[#3fb950]"}></i>
-                            {toastMsg.replace(/🚨|❌|⚠️|☁️|✅|📥|📤/g, '')}
+                            {toastMsg.replace(/🚨|❌|⚠️|☁️|✅|📥|📤|⏳/g, '')}
                         </div>
                     )}
                 </Fragment>
