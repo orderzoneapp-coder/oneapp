@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NEXUS - Valuation Hub (시세 관리) [v1.95]</title>
+    <title>NEXUS - Valuation Hub (시세 관리) V1.95</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -89,36 +89,29 @@
         });
 
         const GlobalHeader = ({ activeTab, pendingCount }) => {
-            const NAV_MENU = [
-                { id: 'master', name: '마스터 DB', icon: 'fas fa-server', url: '/merchops/master.html' },
-                { id: 'manager', name: '상품 관리', icon: 'fas fa-tasks', url: '/merchops/manager.html' },
-                { id: 'workspace', name: '시세 관리', icon: 'fas fa-edit', url: '/merchops/workspace.html' },
-                { id: 'parser', name: '스마트 파서', icon: 'fas fa-bolt', url: '/merchops/parser.html' },
-                { id: 'settings', name: '환경 설정', icon: 'fas fa-cog', url: '/merchops/settings.html' }
+            const tabs = [
+                { id: 'master', name: '마스터 DB', icon: 'fas fa-server', url: 'master.html' },
+                { id: 'manager', name: '상품 관리', icon: 'fas fa-tasks', url: 'manager.html' },
+                { id: 'workspace', name: '시세 관리', icon: 'fas fa-edit', url: 'workspace.html' },
+                { id: 'parser', name: '스마트 파서', icon: 'fas fa-bolt', url: 'parser.html' },
+                { id: 'settings', name: '환경 설정', icon: 'fas fa-cog', url: 'settings.html' }
             ];
 
             return (
                 <div className="flex flex-col shrink-0 z-40 w-full term-bg border-b term-border">
-                    <header className="h-[60px] flex justify-between items-center px-6">
-                        <div className="flex items-center gap-6 h-full">
-                            <a href="/merchops/workspace.html" className="font-black text-[20px] tracking-wider text-white hover:text-[#58a6ff] transition-colors">
-                                NEXUS<span className="text-[#58a6ff]">.IO</span>
-                            </a>
-                            <div className="flex items-end h-full gap-1 ml-4 pt-2">
-                                {NAV_MENU.map(menu => {
-                                    const isActive = activeTab === menu.id;
-                                    const isManager = menu.id === 'manager';
-                                    return (
-                                        <a key={menu.id} href={menu.url}
-                                            className={`relative flex items-center gap-2 px-5 py-3 text-[13px] font-bold rounded-t-lg transition-colors border-x border-t ${isActive ? 'term-panel border-b-transparent text-white z-10' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
-                                            style={{ marginBottom: isActive ? '-1px' : '0' }}
-                                        >
-                                            <i className={`${menu.icon} ${isActive ? 'text-[#58a6ff]' : ''}`}></i> {menu.name}
-                                            {isManager && pendingCount > 0 && <span className="ml-1.5 flex h-5 min-w-[20px] px-1.5 items-center justify-center rounded-full bg-[#f85149] text-white text-[10px] font-black shadow-sm animate-pulse">{pendingCount}</span>}
-                                        </a>
-                                    );
-                                })}
-                            </div>
+                    <header className="h-[60px] flex items-center px-6">
+                        <span className="font-black text-[20px] tracking-wider text-white mr-8">NEXUS<span className="text-[#58a6ff]">.IO</span></span>
+                        <div className="flex items-end h-full pt-2">
+                            {tabs.map(tab => {
+                                const isActive = activeTab === tab.id;
+                                const isManager = tab.id === 'manager';
+                                return (
+                                    <a key={tab.id} href={tab.url} className={`relative flex items-center gap-2 px-5 py-3 text-[13px] font-bold rounded-t-lg transition-colors border-x border-t ${isActive ? 'term-panel border-b-transparent text-white z-10' : 'border-transparent text-gray-500 hover:text-gray-300'}`} style={{ marginBottom: isActive ? '-1px' : '0' }}>
+                                        <i className={`${tab.icon} ${isActive ? 'text-[#58a6ff]' : ''}`}></i> {tab.name}
+                                        {isManager && pendingCount > 0 && <span className="ml-1.5 flex h-5 min-w-[20px] px-1.5 items-center justify-center rounded-full bg-[#f85149] text-white text-[10px] font-black shadow-sm animate-pulse">{pendingCount}</span>}
+                                    </a>
+                                );
+                            })}
                         </div>
                     </header>
                 </div>
@@ -179,6 +172,7 @@
                 e.target.value = '';
             };
 
+            // ⚙️ 환경설정 룰 강제 적용 엔진 (마진율 계산)
             const handleApplySettingsRules = async () => {
                 if (workspaceItems.length === 0) return;
                 
@@ -224,7 +218,7 @@
                                 ruledPrice = item.inPrice * (1 + (matchedRule.rate / 100));
                             }
                             
-                            ruledPrice = Math.round(ruledPrice / 100) * 100; // 100원 단위 반올림
+                            ruledPrice = Math.round(ruledPrice / 10) * 10; // 10원 단위 반올림
                             appliedCount++;
                             return { ...item, inPrice: ruledPrice };
                         } else {
@@ -238,19 +232,19 @@
                 showToast(`⚙️ 룰 적용 완료 (적용: ${appliedCount}건 / 미해당: ${skippedCount}건)`);
             };
 
+            // 🚀 V1.95 마스터를 건드리지 않고 100% PENDING_QUEUE로 상신 (Maker-Checker 아키텍처)
             const handleApplyDelta = async () => {
                 if (workspaceItems.length === 0) return;
                 
-                const master = await getIDB(CORE_KEYS.BASE_CATALOG) || {};
                 const queue = await getIDB(CORE_KEYS.PENDING_QUEUE) || {};
                 const cycleLog = await getIDB(CORE_KEYS.CYCLE_LOG) || {};
 
                 let conflictCount = 0;
                 let hasUpdates = false;
 
-                // 1차 검증
+                // 1차 검증 (충돌 이력 카운트)
                 workspaceItems.forEach(item => {
-                    const mItem = master[item.code];
+                    const mItem = baseCatalog[item.code];
                     const mPrice = mItem ? parseNum(mItem['입고가']) : 0;
                     
                     const priceChanged = item.inPrice > 0 && item.inPrice !== mPrice;
@@ -262,44 +256,49 @@
                 });
 
                 if (!hasUpdates) { showToast("⚠️ 변경점 없음"); return; }
-                if (conflictCount > 0 && !window.confirm(`⚠️ ${conflictCount}건 중복 변경 이력 존재. 강제로 덮어쓰시겠습니까?`)) return;
+                if (conflictCount > 0 && !window.confirm(`⚠️ ${conflictCount}건 중복 변경 이력 존재. 덮어쓰기 상신을 계속하시겠습니까?`)) return;
 
-                // 2차 분배 (양방향 라우팅)
+                // 2차 상신 (무조건 Queue로 이관)
                 workspaceItems.forEach(item => {
-                    const mItem = master[item.code];
+                    const mItem = baseCatalog[item.code];
                     const mPrice = mItem ? parseNum(mItem['입고가']) : 0;
                     const isNewItem = !mItem;
 
-                    // [트랙 1] 단가는 마스터로 직행
-                    if (!isNewItem && item.inPrice > 0 && item.inPrice !== mPrice) {
-                        master[item.code] = { ...mItem, 코드: item.code, 입고가: item.inPrice };
-                        cycleLog[item.code] = true;
-                    }
+                    const priceChanged = item.inPrice > 0 && item.inPrice !== mPrice;
+                    const textChanged = mItem && ((item.name && item.name !== mItem.품목명) || (item.spec && item.spec !== mItem.규격));
 
-                    // [트랙 2] 신규/텍스트는 대기열(상품 관리)로 이관
-                    if (isNewItem || (mItem && ((item.name && item.name !== mItem.품목명) || (item.spec && item.spec !== mItem.규격)))) {
+                    if (priceChanged || textChanged || isNewItem) {
                         if (!queue[item.code]) queue[item.code] = { 코드: item.code, finalData: {} };
+                        
                         if (isNewItem) queue[item.code].isNewItem = true;
                         
-                        queue[item.code].finalData = { 
-                            ...queue[item.code].finalData, 
-                            품목명: item.name, 
-                            규격: item.spec,
-                            입고가: isNewItem ? item.inPrice : (queue[item.code].finalData.입고가 || item.inPrice)
-                        };
+                        // 단가 변경 포장
+                        if (priceChanged || isNewItem) {
+                            queue[item.code].finalData['입고가'] = item.inPrice;
+                            queue[item.code].baseVersionPrice = mPrice; // 마스터 측 충돌 검증용 스냅샷 가격
+                            cycleLog[item.code] = true;
+                        }
+                        
+                        // 텍스트 변경 포장 (상품 관리 탭에서 인식하도록 textUpdateReq에 담음)
+                        if (textChanged || isNewItem) {
+                            queue[item.code].textUpdateReq = {
+                                품목명: item.name,
+                                규격: item.spec
+                            };
+                        }
                     }
                 });
 
-                // DB 세이브 및 트리거 발송
-                await setIDB(CORE_KEYS.BASE_CATALOG, master);
                 await setIDB(CORE_KEYS.PENDING_QUEUE, queue);
                 await setIDB(CORE_KEYS.CYCLE_LOG, cycleLog);
+                
+                // 마스터, 상품관리 탭 등 전역 렌더링 트리거
                 localStorage.setItem(CORE_KEYS.SYNC_TRIGGER, Date.now().toString());
 
                 setWorkspaceItems([]);
                 setSearchTerm('');
-                showToast(`🚀 전송 완료 (마스터 업데이트 및 상품 관리 뱃지 점등)`);
-                loadData(); // 헤더 뱃지 즉시 갱신
+                showToast(`🚀 전송 완료! 모든 델타 데이터가 상품 관리(결재 대기함)로 상신되었습니다.`);
+                loadData(); // 헤더 뱃지 갱신
             };
 
             const filteredItems = useMemo(() => {
@@ -321,7 +320,7 @@
                         <div className="flex justify-between items-end pb-4 border-b term-border shrink-0">
                             <div>
                                 <h1 className="text-xl font-black text-white mb-1"><i className="fas fa-edit text-[#58a6ff] mr-2"></i>VALUATION_WORKSPACE</h1>
-                                <p className="text-xs text-gray-500 font-mono">업로드된 엑셀과 마스터의 차이를 대조하고 단가를 고속으로 연산하는 도마입니다.</p>
+                                <p className="text-xs text-gray-500 font-mono">엑셀을 올려 단가를 계산하고, 완성된 데이터를 상품 관리 대기열로 상신(F8)합니다.</p>
                             </div>
                             <div className="flex gap-2">
                                 <label className="cursor-pointer px-5 py-2.5 rounded term-panel term-border text-[13px] font-bold hover:bg-[#21262d] transition-colors text-white shadow-sm flex items-center">
@@ -334,7 +333,7 @@
                                 </button>
                                 
                                 <button id="btn-apply" onClick={handleApplyDelta} disabled={workspaceItems.length === 0} className={`px-6 py-2.5 rounded text-[13px] font-black transition-colors shadow-md flex items-center ${workspaceItems.length > 0 ? 'bg-[#238636] hover:bg-[#2ea043] text-white shadow-[0_0_10px_rgba(35,134,54,0.3)]' : 'bg-[#30363d] text-gray-500 cursor-not-allowed'}`}>
-                                    <i className="fas fa-paper-plane mr-2"></i> 전송 (F8)
+                                    <i className="fas fa-paper-plane mr-2"></i> 결재 상신 (F8)
                                 </button>
                             </div>
                         </div>
