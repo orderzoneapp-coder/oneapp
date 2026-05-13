@@ -3,52 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NEXUS - Verification Hub & Item Manager [v1.95]</title>
+    <title>NEXUS - Verification Hub (상품 관리) V1.96</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    
+
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
         body { font-family: 'Pretendard', sans-serif; background-color: #000000; color: #c9d1d9; margin: 0; overflow: hidden; user-select: none; }
         ::-webkit-scrollbar { width: 8px; height: 8px; } 
         ::-webkit-scrollbar-track { background: #010409; }
         ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #484f58; }
-        
         .term-bg { background-color: #010409; }
         .term-panel { background-color: #0d1117; border: 1px solid #30363d; }
         .term-border { border-color: #30363d; }
-        .term-hover:hover { background-color: #21262d; }
-        
-        .status-up { color: #f85149; background-color: rgba(248, 81, 73, 0.1); border: 1px solid rgba(248, 81, 73, 0.2); }
-        .status-down { color: #58a6ff; background-color: rgba(88, 166, 255, 0.1); border: 1px solid rgba(88, 166, 255, 0.2); }
-        .status-text { color: #d2a8ff; background-color: rgba(210, 168, 255, 0.1); border: 1px solid rgba(210, 168, 255, 0.2); }
-        .status-conflict { color: #ff7b72; background-color: rgba(255, 123, 114, 0.1); border: 1px solid rgba(255, 123, 114, 0.2); }
-
-        /* Excel-like Grid Styles (Classic Mode) */
-        .excel-table { border-collapse: separate; border-spacing: 0; width: max-content; }
-        .excel-th { background-color: #010409; border-right: 1px solid #30363d; border-bottom: 1px solid #30363d; color: #8b949e; font-weight: bold; font-size: 12px; padding: 8px 12px; white-space: nowrap; position: sticky; top: 0; z-index: 20; }
-        .excel-td { border-right: 1px solid #21262d; border-bottom: 1px solid #21262d; padding: 0; background-color: #0d1117; white-space: nowrap; transition: background-color 0.1s; }
-        .excel-tr:hover .excel-td { background-color: #161b22; }
-        .excel-input { width: 100%; height: 100%; min-height: 36px; padding: 6px 12px; font-size: 12px; color: #c9d1d9; border: 1px solid transparent; outline: none; background: transparent; transition: all 0.1s; }
-        .excel-input:focus { border-color: #58a6ff; background-color: #010409; position: relative; z-index: 10; }
-        
-        .sticky-col-1 { position: sticky; left: 0; z-index: 15; background-color: #010409 !important; border-right: 2px solid #30363d; }
-        .sticky-col-2 { position: sticky; left: 120px; z-index: 15; background-color: #0d1117 !important; border-right: 2px solid #30363d; box-shadow: 2px 0 5px rgba(0,0,0,0.2); }
-        .excel-th.sticky-col-1, .excel-th.sticky-col-2 { z-index: 30; }
+        .data-row { transition: background-color 0.1s; border-bottom: 1px solid #21262d; }
+        .data-row:hover { background-color: #161b22; }
+        .term-input { background-color: #010409; border: 1px solid #30363d; color: #c9d1d9; outline: none; }
+        .term-input:focus { border-color: #58a6ff; }
+        .fade-in { animation: fadeIn 0.2s ease-out; } 
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body class="term-bg text-sm h-screen flex flex-col">
-    <div id="root" class="h-full w-full flex flex-col"></div>
+    <div id="root" class="h-full flex flex-col"></div>
 
     <script type="text/babel">
         const { useState, useMemo, useEffect, useCallback, Fragment } = React;
 
-        // 🔒 [보안] F12 및 우클릭 원천 차단
+        /* 🔒 [보안] F12 및 개발자 도구 차단 (순수 JS로 수정 완료) */
         window.addEventListener('keydown', (e) => {
             if (e.keyCode === 123 || (e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74 || e.keyCode === 67)) || (e.ctrlKey && e.keyCode === 85)) {
                 e.preventDefault(); return false;
@@ -56,22 +42,19 @@
         });
         window.addEventListener('contextmenu', e => e.preventDefault());
 
-        const CORE_KEYS = { BASE_CATALOG: 'oneapp_base_catalog', PENDING_QUEUE: 'oneapp_pending_queue', SYNC_TRIGGER: 'merchMaster_sync_trigger' };
-        
-        const MASTER_HEADERS = [
-            "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", 
-            "구매처", "브랜드", "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", 
-            "견적서", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", 
-            "최종입고", "단가H", "단가I", "시중가", "행사가", "1종코드", "1종규격", "1종연산", 
-            "2종코드", "2종규격", "2종연산", "외주비", "노무비", "경비", "비과세", "기본", 
-            "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록", "소싱태그", "순번"
-        ];
+        const CORE_KEYS = {
+            BASE_CATALOG: 'oneapp_base_catalog',
+            PENDING_QUEUE: 'oneapp_pending_queue',
+            SYNC_TRIGGER: 'merchMaster_sync_trigger'
+        };
 
         const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
 
         const initIDB = () => new Promise((resolve) => {
             const req = indexedDB.open('OneAppMerchDB_V2', 2);
-            req.onupgradeneeded = (e) => { if (!e.target.result.objectStoreNames.contains('store')) e.target.result.createObjectStore('store'); };
+            req.onupgradeneeded = (e) => { 
+                if (!e.target.result.objectStoreNames.contains('store')) e.target.result.createObjectStore('store'); 
+            };
             req.onsuccess = () => resolve(req.result);
         });
 
@@ -92,92 +75,74 @@
             });
         };
 
-        // 네비게이션 헤더
+        const normalizeText = (text) => text ? String(text).replace(/\s+/g, '').toLowerCase() : '';
+        const runSmartMatch = (extName, extSpec, mProducts) => {
+            const target = normalizeText((extName || '') + (extSpec || ''));
+            let bestMatch = null;
+            let bestScore = 0;
+            
+            Object.values(mProducts).forEach(m => {
+                const mTarget = normalizeText((m.품목명 || '') + (m.규격 || ''));
+                if (target === mTarget) { bestScore = 1; bestMatch = m; return; }
+                
+                // 간단한 포함 관계 체크 (임시 유사도)
+                if (mTarget.includes(target) || target.includes(mTarget)) {
+                    const score = Math.min(target.length, mTarget.length) / Math.max(target.length, mTarget.length);
+                    if (score > bestScore) { bestScore = score; bestMatch = m; }
+                }
+            });
+            
+            return bestScore > 0.6 ? bestMatch : null;
+        };
+
         const GlobalHeader = ({ activeTab, pendingCount }) => {
-            const NAV_MENU = [
-                { id: 'master', name: '마스터 DB', icon: 'fas fa-server', url: '/merchops/master.html' },
-                { id: 'manager', name: '상품 관리', icon: 'fas fa-tasks', url: '/merchops/manager.html' },
-                { id: 'workspace', name: '시세 관리', icon: 'fas fa-edit', url: '/merchops/workspace.html' },
-                { id: 'parser', name: '스마트 파서', icon: 'fas fa-bolt', url: '/merchops/parser.html' },
-                { id: 'settings', name: '환경 설정', icon: 'fas fa-cog', url: '/merchops/settings.html' }
+            const tabs = [
+                { id: 'workspace', name: '시세 관리', icon: 'fas fa-edit', url: 'workspace.html' },
+                { id: 'parser', name: '스마트 파서', icon: 'fas fa-bolt', url: 'parser.html' },
+                { id: 'manager', name: '상품 관리', icon: 'fas fa-tasks', url: 'manager.html' },
+                { id: 'master', name: '마스터 DB', icon: 'fas fa-server', url: 'master.html' },
+                { id: 'settings', name: '환경 설정', icon: 'fas fa-cog', url: 'settings.html' }
             ];
 
             return (
                 <div className="flex flex-col shrink-0 z-40 w-full term-bg border-b term-border">
-                    <header className="h-[60px] flex justify-between items-center px-6">
-                        <div className="flex items-center gap-6 h-full">
-                            <a href="/merchops/master.html" className="font-black text-[20px] tracking-wider text-white hover:text-[#58a6ff] transition-colors">
-                                NEXUS<span className="text-[#58a6ff]">.IO</span>
-                            </a>
-                            <div className="flex items-end h-full gap-1 ml-4 pt-2">
-                                {NAV_MENU.map(menu => {
-                                    const isActive = activeTab === menu.id;
-                                    const isManager = menu.id === 'manager';
-                                    return (
-                                        <a key={menu.id} href={menu.url}
-                                            className={`relative flex items-center gap-2 px-5 py-3 text-[13px] font-bold rounded-t-lg transition-colors border-x border-t ${isActive ? 'term-panel border-b-transparent text-white z-10' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
-                                            style={{ marginBottom: isActive ? '-1px' : '0' }}
-                                        >
-                                            <i className={`${menu.icon} ${isActive ? 'text-[#58a6ff]' : ''}`}></i> {menu.name}
-                                            {isManager && pendingCount > 0 && <span className="ml-1.5 flex h-5 min-w-[20px] px-1.5 items-center justify-center rounded-full bg-[#f85149] text-white text-[10px] font-black shadow-sm animate-pulse">{pendingCount}</span>}
-                                        </a>
-                                    );
-                                })}
-                            </div>
+                    <header className="h-[60px] flex items-center px-6">
+                        <span className="font-black text-[20px] tracking-wider text-white mr-8">NEXUS<span className="text-[#3fb950]">.IO</span></span>
+                        <div className="flex items-end h-full pt-2">
+                            {tabs.map(tab => {
+                                const isActive = activeTab === tab.id;
+                                const isManager = tab.id === 'manager';
+                                return (
+                                    <a key={tab.id} href={tab.url} className={`relative flex items-center gap-2 px-5 py-3 text-[13px] font-bold rounded-t-lg transition-colors border-x border-t ${isActive ? 'term-panel border-b-transparent text-white z-10' : 'border-transparent text-gray-500 hover:text-gray-300'}`} style={{ marginBottom: isActive ? '-1px' : '0' }}>
+                                        <i className={`${tab.icon} ${isActive ? 'text-[#3fb950]' : ''}`}></i> {tab.name}
+                                        {isManager && pendingCount > 0 && <span className="ml-1.5 flex h-5 min-w-[20px] px-1.5 items-center justify-center rounded-full bg-[#f85149] text-white text-[10px] font-black shadow-sm animate-pulse">{pendingCount}</span>}
+                                    </a>
+                                );
+                            })}
                         </div>
                     </header>
                 </div>
             );
         };
 
-        // 엑셀 인라인 에디팅 셀 컴포넌트
-        const EditableCell = React.memo(({ code, field, value, onSave, isFixed }) => {
-            const [localVal, setLocalVal] = useState(value || '');
-            
-            useEffect(() => { setLocalVal(value || ''); }, [value]);
-
-            const commitChange = () => {
-                if (String(localVal).trim() !== String(value || '').trim()) onSave(code, field, localVal);
-            };
-
-            const handleKeyDown = (e) => {
-                if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
-            };
-
-            const widthClass = field === '품목코드' ? 'w-[120px] min-w-[120px]' : field === '품목명' ? 'w-[250px] min-w-[250px]' : 'w-[150px] min-w-[150px]';
-            const stickyClass = field === '품목코드' ? 'sticky-col-1' : field === '품목명' ? 'sticky-col-2' : '';
-            
-            return (
-                <td className={`excel-td ${widthClass} ${stickyClass}`}>
-                    <input 
-                        type="text" 
-                        className={`excel-input ${isFixed ? 'text-gray-500' : ''}`}
-                        value={localVal}
-                        onChange={(e) => setLocalVal(e.target.value)}
-                        onBlur={commitChange}
-                        onKeyDown={handleKeyDown}
-                        readOnly={isFixed}
-                        placeholder={isFixed ? '' : '-'}
-                    />
-                </td>
-            );
-        }, (prev, next) => prev.value === next.value && prev.code === next.code);
-
         function ItemManagerApp() {
             const [baseCatalog, setBaseCatalog] = useState({});
             const [pendingQueue, setPendingQueue] = useState({});
-            const [viewMode, setViewMode] = useState('verify'); // 'verify' (대기함) | 'classic' (마스터 그리드)
-            const [groupMode, setGroupMode] = useState('category'); // 검증함용: 'category' | 'list'
-            const [filterMode, setFilterMode] = useState('all');
-            const [selectedItems, setSelectedItems] = useState(new Set());
-            const [searchTerm, setSearchTerm] = useState(''); // 클래식 뷰 검색어
+            const [filterMode, setFilterMode] = useState('all'); // all, new, text, price, conflict, suspend
             const [toastMsg, setToastMsg] = useState('');
+            
+            // 수동 매핑 모달 상태
+            const [bindModalOpen, setBindModalOpen] = useState(false);
+            const [bindTarget, setBindTarget] = useState(null);
+            const [searchKw, setSearchKw] = useState('');
 
             const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
 
             const loadData = useCallback(async () => {
-                setBaseCatalog(await getIDB(CORE_KEYS.BASE_CATALOG) || {});
-                setPendingQueue(await getIDB(CORE_KEYS.PENDING_QUEUE) || {});
+                const mData = await getIDB(CORE_KEYS.BASE_CATALOG) || {};
+                const pData = await getIDB(CORE_KEYS.PENDING_QUEUE) || {};
+                setBaseCatalog(mData);
+                setPendingQueue(pData);
             }, []);
 
             useEffect(() => {
@@ -187,374 +152,351 @@
                 return () => window.removeEventListener('storage', handleStorage);
             }, [loadData]);
 
-            // ==========================================
-            // 1. [검증 대기함] 관련 로직 (Verify Mode)
-            // ==========================================
+            // 🚀 대기열 데이터 가공 엔진
             const verificationList = useMemo(() => {
                 const list = [];
                 Object.values(pendingQueue).forEach(pItem => {
-                    if (!pItem || !pItem.코드) return;
-                    const mItem = baseCatalog[pItem.코드] || { 코드: pItem.코드, 품목명: '신규 상품', 규격: '' };
+                    const mItem = baseCatalog[pItem.코드];
+                    const isNew = pItem.isNewItem || !mItem;
                     
-                    const mName = String(mItem.품목명 || '').trim();
-                    const mSpec = String(mItem.규격 || '').trim();
-                    const pName = String(pItem.finalData?.['품목명'] || pItem.sources?.['estimate']?.['품목명'] || mName).trim();
-                    const pSpec = String(pItem.finalData?.['규격'] || pItem.sources?.['estimate']?.['규격'] || mSpec).trim();
+                    const mName = isNew ? '' : String(mItem.품목명 || '');
+                    const mSpec = isNew ? '' : String(mItem.규격 || '');
+                    const pName = String(pItem.finalData?.['품목명'] || pItem.textUpdateReq?.['품목명'] || mName);
+                    const pSpec = String(pItem.finalData?.['규격'] || pItem.textUpdateReq?.['규격'] || mSpec);
+                    const vendor = String(pItem.finalData?.['구매처'] || pItem.textUpdateReq?.['vendor'] || '');
                     
-                    const mPrice = parseNum(mItem['입고가']);
-                    const pPrice = parseNum(pItem.finalData?.['입고가'] ?? pItem.sources?.['estimate']?.['입고가'] ?? mPrice);
+                    const mPrice = isNew ? 0 : parseNum(mItem['입고가']);
+                    const pPrice = parseNum(pItem.finalData?.['입고가'] || mPrice);
                     
-                    let statusTags = [];
-                    let isConflict = pItem.baseVersionPrice !== undefined && pItem.baseVersionPrice !== mPrice;
-                    
-                    if (isConflict) statusTags.push('conflict');
-                    if (mName !== pName || mSpec !== pSpec) statusTags.push('text');
-                    if (pPrice > mPrice && mPrice > 0) statusTags.push('up');
-                    else if (pPrice < mPrice && pPrice > 0) statusTags.push('down');
-                    if (statusTags.length === 0 && (pPrice > 0 || mPrice > 0)) statusTags.push('same');
+                    let issues = [];
+                    let aiSuggestion = null;
 
-                    list.push({ ...pItem, mItem, mName, mSpec, pName, pSpec, mPrice, pPrice, diff: pPrice - mPrice, statusTags, isConflict, category1: pItem.finalData?.['1그룹명'] || mItem['1그룹명'] || '미분류 카테고리' });
+                    if (isNew) {
+                        issues.push('new');
+                        // AI 매핑 추천 계산
+                        aiSuggestion = runSmartMatch(pName, pSpec, baseCatalog);
+                    } else {
+                        if (pItem.baseVersionPrice !== undefined && pItem.baseVersionPrice !== mPrice) issues.push('conflict');
+                        if (mName !== pName || mSpec !== pSpec) issues.push('text');
+                        if (pPrice > mPrice && mPrice > 0) issues.push('price_up');
+                        if (pPrice < mPrice && pPrice > 0) issues.push('price_down');
+                    }
+
+                    list.push({
+                        ...pItem,
+                        mItem: mItem || {},
+                        mName, mSpec, pName, pSpec, mPrice, pPrice, vendor, issues, aiSuggestion
+                    });
                 });
-                return list;
+                return list.sort((a, b) => b.issues.length - a.issues.length); // 이슈 많은 순 정렬
             }, [baseCatalog, pendingQueue]);
 
+            // 🛑 정지된 상품 리스트
+            const suspendedList = useMemo(() => {
+                return Object.values(baseCatalog).filter(item => item.isSuspended);
+            }, [baseCatalog]);
+
+            // KPI 카운트
             const kpi = useMemo(() => {
-                const counts = { all: verificationList.length, up: 0, down: 0, same: 0, text: 0, conflict: 0 };
+                const counts = { all: verificationList.length, new: 0, text: 0, price: 0, conflict: 0, suspend: suspendedList.length };
                 verificationList.forEach(item => {
-                    if (item.statusTags.includes('up')) counts.up++;
-                    if (item.statusTags.includes('down')) counts.down++;
-                    if (item.statusTags.includes('same')) counts.same++;
-                    if (item.statusTags.includes('text')) counts.text++;
-                    if (item.statusTags.includes('conflict')) counts.conflict++;
+                    if (item.issues.includes('new')) counts.new++;
+                    if (item.issues.includes('text')) counts.text++;
+                    if (item.issues.includes('price_up') || item.issues.includes('price_down')) counts.price++;
+                    if (item.issues.includes('conflict')) counts.conflict++;
                 });
                 return counts;
-            }, [verificationList]);
+            }, [verificationList, suspendedList]);
 
+            // 필터링 적용 리스트
             const displayList = useMemo(() => {
-                let filtered = verificationList;
-                if (filterMode !== 'all') filtered = filtered.filter(item => item.statusTags.includes(filterMode));
-                return filtered;
-            }, [verificationList, filterMode]);
-
-            const groupedDisplayList = useMemo(() => {
-                if (groupMode === 'list') return { '전체 리스트': displayList };
-                const groups = {};
-                displayList.forEach(item => { const cat = item.category1; if (!groups[cat]) groups[cat] = []; groups[cat].push(item); });
-                const sortedGroups = {};
-                Object.keys(groups).sort().forEach(k => { sortedGroups[k] = groups[k]; });
-                return sortedGroups;
-            }, [displayList, groupMode]);
-
-            const handleApprove = async (codesToApprove) => {
-                if (codesToApprove.length === 0) return;
-                let newMaster = { ...baseCatalog };
-                let newQueue = { ...pendingQueue };
-                
-                codesToApprove.forEach(code => {
-                    const pItem = newQueue[code];
-                    if (!pItem) return;
-                    if (!newMaster[code]) newMaster[code] = { 코드: code };
-                    if (pItem.finalData) {
-                        Object.keys(pItem.finalData).forEach(k => {
-                            if (pItem.finalData[k] !== undefined && pItem.finalData[k] !== '') newMaster[code][k] = pItem.finalData[k];
-                        });
-                    }
-                    delete newQueue[code]; 
+                if (filterMode === 'suspend') return suspendedList;
+                if (filterMode === 'all') return verificationList;
+                return verificationList.filter(item => {
+                    if (filterMode === 'price') return item.issues.includes('price_up') || item.issues.includes('price_down');
+                    return item.issues.includes(filterMode);
                 });
+            }, [verificationList, suspendedList, filterMode]);
+
+            const triggerSync = () => localStorage.setItem(CORE_KEYS.SYNC_TRIGGER, Date.now().toString());
+
+            // ✅ 개별 / 일괄 확정(승인) 처리
+            const handleApproveMerge = async (code) => {
+                const pItem = pendingQueue[code];
+                if (!pItem) return;
+
+                let newMaster = { ...baseCatalog };
+                if (!newMaster[code]) newMaster[code] = { 코드: code };
                 
-                setBaseCatalog(newMaster); setPendingQueue(newQueue); setSelectedItems(new Set());
+                // 단가 및 정보 덮어쓰기
+                if (pItem.finalData) {
+                    Object.assign(newMaster[code], pItem.finalData);
+                }
+                // 텍스트 변경 요청 반영
+                if (pItem.textUpdateReq) {
+                    newMaster[code].품목명 = pItem.textUpdateReq['품목명'] || newMaster[code].품목명;
+                    newMaster[code].규격 = pItem.textUpdateReq['규격'] || newMaster[code].규격;
+                }
+
+                let newQueue = { ...pendingQueue };
+                delete newQueue[code];
+
+                setBaseCatalog(newMaster); setPendingQueue(newQueue);
                 await setIDB(CORE_KEYS.BASE_CATALOG, newMaster);
                 await setIDB(CORE_KEYS.PENDING_QUEUE, newQueue);
-                localStorage.setItem(CORE_KEYS.SYNC_TRIGGER, Date.now().toString());
-                showToast(`✅ ${codesToApprove.length}건 마스터 DB 반영 완료`);
+                triggerSync();
+                showToast(`✅ [${code}] 병합 및 승인 완료`);
             };
 
+            // ❌ 무시 (삭제)
             const handleReject = async (code) => {
                 let newQueue = { ...pendingQueue };
                 delete newQueue[code];
                 setPendingQueue(newQueue);
                 await setIDB(CORE_KEYS.PENDING_QUEUE, newQueue);
-                localStorage.setItem(CORE_KEYS.SYNC_TRIGGER, Date.now().toString());
-                showToast(`🗑️ 대기열에서 삭제 처리됨`);
+                triggerSync();
+                showToast(`🗑️ 해당 요청이 삭제되었습니다.`);
             };
 
-            const toggleSelectItem = (code) => {
-                setSelectedItems(prev => { const next = new Set(prev); if (next.has(code)) next.delete(code); else next.add(code); return next; });
+            // 🔗 수동 매핑 (Bind)
+            const handleBindMapping = async (queueCode, masterCode) => {
+                const pItem = pendingQueue[queueCode];
+                if (!pItem || !baseCatalog[masterCode]) return;
+
+                let newMaster = { ...baseCatalog };
+                Object.assign(newMaster[masterCode], pItem.finalData || {});
+
+                let newQueue = { ...pendingQueue };
+                delete newQueue[queueCode];
+
+                setBaseCatalog(newMaster); setPendingQueue(newQueue);
+                await setIDB(CORE_KEYS.BASE_CATALOG, newMaster);
+                await setIDB(CORE_KEYS.PENDING_QUEUE, newQueue);
+                triggerSync();
+                setBindModalOpen(false); setBindTarget(null);
+                showToast(`🔗 기존 마스터 [${masterCode}]와 성공적으로 연결되었습니다.`);
             };
 
-            const toggleAllItems = () => {
-                if (selectedItems.size === displayList.length && displayList.length > 0) setSelectedItems(new Set());
-                else setSelectedItems(new Set(displayList.map(i => i.코드)));
-            };
-
-            // ==========================================
-            // 2. [클래식 마스터 뷰] 관련 로직 (Classic Mode)
-            // ==========================================
-            const handleCellSave = useCallback(async (code, field, newValue) => {
-                try {
-                    const currentItem = baseCatalog[code] || {};
-                    const updatedItem = { ...currentItem, [field]: newValue };
-                    
-                    const newCatalog = { ...baseCatalog, [code]: updatedItem };
-                    setBaseCatalog(newCatalog);
-                    await setIDB(CORE_KEYS.BASE_CATALOG, newCatalog);
-                    
-                    // 수정 즉시 대기열(PENDING_QUEUE)에도 자동 적재하여 관제탑 승인 사이클 합류
-                    const currentQueue = await getIDB(CORE_KEYS.PENDING_QUEUE) || {};
-                    const queueItem = currentQueue[code] || { 코드: code, finalData: {} };
-                    queueItem.isMetadataEdit = true; 
-                    queueItem.finalData = { ...queueItem.finalData, ...updatedItem };
-                    currentQueue[code] = queueItem;
-                    setPendingQueue(currentQueue);
-                    await setIDB(CORE_KEYS.PENDING_QUEUE, currentQueue);
-                    
-                    localStorage.setItem(CORE_KEYS.SYNC_TRIGGER, Date.now().toString());
-                } catch(e) { showToast("❌ 데이터 저장 오류"); }
-            }, [baseCatalog, showToast]);
-
-            const handleCreateNewItem = async () => {
-                const newCode = `NEW-${Date.now().toString().slice(-6)}`;
-                const newItem = { '품목코드': newCode, '품목명': '신규 상품명', '규격': '' };
-                
-                const newCatalog = { ...baseCatalog, [newCode]: newItem };
-                setBaseCatalog(newCatalog);
-                await setIDB(CORE_KEYS.BASE_CATALOG, newCatalog);
-                
-                const currentQueue = await getIDB(CORE_KEYS.PENDING_QUEUE) || {};
-                currentQueue[newCode] = { 코드: newCode, finalData: newItem };
-                setPendingQueue(currentQueue);
-                await setIDB(CORE_KEYS.PENDING_QUEUE, currentQueue);
-                
-                localStorage.setItem(CORE_KEYS.SYNC_TRIGGER, Date.now().toString());
-                setSearchTerm(newCode); // 새 상품으로 바로 필터링
-                showToast(`✨ 신규 품목코드 발급 완료: ${newCode}`);
-            };
-
-            const gridDisplayList = useMemo(() => {
-                let arr = Object.values(baseCatalog).filter(p => p && p['품목코드']);
-                if (searchTerm.trim()) {
-                    const kw = searchTerm.toLowerCase().replace(/\s+/g, '');
-                    arr = arr.filter(item => {
-                        const target = (safeStr(item['품목코드']) + safeStr(item['품목명']) + safeStr(item['규격'])).toLowerCase().replace(/\s+/g, '');
-                        return target.includes(kw);
-                    }); 
+            // ⛔ 임의 정지(Suspend) 토글
+            const handleToggleSuspend = async (code, currentStatus) => {
+                let newMaster = { ...baseCatalog };
+                if (newMaster[code]) {
+                    newMaster[code].isSuspended = !currentStatus;
+                    setBaseCatalog(newMaster);
+                    await setIDB(CORE_KEYS.BASE_CATALOG, newMaster);
+                    triggerSync();
+                    showToast(currentStatus ? `🟢 해당 상품의 판매가 복구되었습니다.` : `⛔ 해당 상품이 정지(보류) 처리되었습니다.`);
                 }
-                return arr.sort((a, b) => safeStr(b['품목코드']).localeCompare(safeStr(a['품목코드'])));
-            }, [baseCatalog, searchTerm]);
+            };
 
-            // 가상 스크롤 (클래식 뷰)
-            const [scrollTop, setScrollTop] = useState(0);
-            const handleScroll = useCallback((e) => setScrollTop(e.target.scrollTop), []);
-            
-            const ROW_HEIGHT = 38;
-            const BUFFER_SIZE = 15;
-            const VIEWPORT_HEIGHT = window.innerHeight * 0.7; // 대략적인 높이
-
-            const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_SIZE);
-            const endIndex = Math.min(gridDisplayList.length, Math.floor((scrollTop + VIEWPORT_HEIGHT) / ROW_HEIGHT) + BUFFER_SIZE);
-            const virtualRows = gridDisplayList.slice(startIndex, endIndex);
-            const topPadding = startIndex * ROW_HEIGHT;
-            const bottomPadding = Math.max(0, (gridDisplayList.length - endIndex) * ROW_HEIGHT);
-
-            function safeStr(val, def = '') { return (val !== undefined && val !== null) ? String(val) : def; }
+            const searchResults = useMemo(() => {
+                if (!searchKw.trim()) return [];
+                const kw = searchKw.toLowerCase().replace(/\s+/g, '');
+                return Object.values(baseCatalog).filter(m => 
+                    !m.isSuspended && ((m.품목명+m.규격+m.코드).toLowerCase().replace(/\s+/g, '').includes(kw))
+                ).slice(0, 15);
+            }, [baseCatalog, searchKw]);
 
             return (
-                <div className="flex-1 flex flex-col h-full w-full">
+                <Fragment>
                     <GlobalHeader activeTab="manager" pendingCount={kpi.all} />
                     
-                    <div className="flex-1 flex flex-col p-6 overflow-hidden gap-4 max-w-[1600px] mx-auto w-full">
-                        {/* 🎛️ 상단 컨트롤 패널 */}
-                        <div className="flex justify-between items-end shrink-0">
-                            <div className="flex gap-2">
-                                <button onClick={() => setViewMode('verify')} className={`px-6 py-2.5 rounded text-[14px] font-bold transition-all border ${viewMode === 'verify' ? 'bg-[#238636] text-white border-[#2ea043]' : 'term-panel text-gray-400 term-hover'}`}>
-                                    <i className="fas fa-check-circle mr-2"></i> 델타 검증 대기함
-                                </button>
-                                <button onClick={() => setViewMode('classic')} className={`px-6 py-2.5 rounded text-[14px] font-bold transition-all border ${viewMode === 'classic' ? 'bg-[#1f6feb] text-white border-[#388bfd]' : 'term-panel text-gray-400 term-hover'}`}>
-                                    <i className="fas fa-database mr-2"></i> 마스터 전체 뷰 (Classic)
-                                </button>
+                    <div className="flex-1 flex flex-col p-6 max-w-[1500px] mx-auto w-full gap-5 fade-in overflow-hidden">
+                        
+                        {/* 🎛️ 상단 대시보드 및 필터 (이슈 모아보기) */}
+                        <div className="flex justify-between items-end pb-3 border-b term-border shrink-0">
+                            <div>
+                                <h1 className="text-xl font-black text-white mb-1">VERIFICATION_HUB</h1>
+                                <p className="text-xs text-gray-500 font-mono">시세 관리와 파서에서 올라온 이슈를 항목별로 검증하고 병합(Merge)합니다.</p>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-6 gap-3 shrink-0">
+                            {[
+                                { id: 'all', label: '전체 검증 대기', count: kpi.all, icon: 'fa-layer-group', color: 'border-gray-500 text-gray-300' },
+                                { id: 'new', label: '신규 / 미매핑', count: kpi.new, icon: 'fa-star', color: 'border-[#3fb950] text-[#3fb950]' },
+                                { id: 'text', label: '텍스트 갱신', count: kpi.text, icon: 'fa-edit', color: 'border-[#d2a8ff] text-[#d2a8ff]' },
+                                { id: 'price', label: '단가 변동', count: kpi.price, icon: 'fa-won-sign', color: 'border-[#58a6ff] text-[#58a6ff]' },
+                                { id: 'conflict', label: '충돌 경고', count: kpi.conflict, icon: 'fa-exclamation-triangle', color: 'border-[#f85149] text-[#f85149]' },
+                                { id: 'suspend', label: '⛔ 정지 보관함', count: kpi.suspend, icon: 'fa-ban', color: 'border-gray-700 text-gray-400' }
+                            ].map(f => (
+                                <div key={f.id} onClick={() => setFilterMode(f.id)} className={`cursor-pointer term-panel rounded-xl p-3.5 border transition-all hover:bg-[#21262d] flex flex-col justify-between ${filterMode === f.id ? `bg-[#21262d] ${f.color} shadow-sm` : 'border-transparent term-border hover:border-gray-600'}`}>
+                                    <span className="text-[11px] font-bold text-gray-400 mb-2 flex items-center"><i className={`fas ${f.icon} mr-1.5`}></i>{f.label}</span>
+                                    <span className={`text-2xl font-black ${filterMode === f.id ? f.color.split(' ')[1] : 'text-white'}`}>{f.count}</span>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* 🖥️ 검증 그리드 (이슈별 맞춤 타겟팅) */}
+                        <div className="flex-1 term-panel rounded-xl flex flex-col overflow-hidden border term-border shadow-xl">
+                            <div className="px-4 py-2.5 bg-[#010409] border-b term-border flex justify-between items-center shrink-0">
+                                <span className="text-[12px] font-bold text-gray-400"><i className="fas fa-filter mr-1.5"></i>현재 필터: {filterMode.toUpperCase()} ({displayList.length}건)</span>
+                                <span className="text-[11px] text-gray-500">항목의 뱃지를 클릭하면 해당 이슈만 모아볼 수 있습니다.</span>
                             </div>
                             
-                            {viewMode === 'verify' && (
-                                <div className="flex gap-2 term-panel p-1 rounded border term-border">
-                                    <button onClick={() => setGroupMode('category')} className={`px-4 py-1.5 rounded text-[12px] font-bold transition-all ${groupMode === 'category' ? 'bg-[#30363d] text-white' : 'text-gray-500 hover:text-gray-300'}`}>
-                                        <i className="fas fa-layer-group mr-1.5"></i> NEXUS 카테고리 뷰
-                                    </button>
-                                    <button onClick={() => setGroupMode('list')} className={`px-4 py-1.5 rounded text-[12px] font-bold transition-all ${groupMode === 'list' ? 'bg-[#30363d] text-white' : 'text-gray-500 hover:text-gray-300'}`}>
-                                        <i className="fas fa-list mr-1.5"></i> 엑셀 원본 리스트 뷰
-                                    </button>
-                                </div>
-                            )}
-
-                            {viewMode === 'classic' && (
-                                <div className="flex items-center gap-3 fade-in">
-                                    <span className="text-[12px] font-bold text-gray-400 mr-2">검색 결과: <strong className="text-white">{gridDisplayList.length.toLocaleString()}</strong>건</span>
-                                    <div className="relative w-72 h-9">
-                                        <i className="fas fa-search absolute left-3.5 top-[11px] text-gray-500 text-[12px]"></i>
-                                        <input type="text" placeholder="코드, 품명, 규격 검색..." value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setScrollTop(0); }} className="w-full h-full pl-9 pr-4 term-input rounded text-[13px] outline-none" />
-                                    </div>
-                                    <button onClick={handleCreateNewItem} className="h-9 px-4 bg-[#238636] hover:bg-[#2ea043] text-white rounded text-[13px] font-black shadow-md flex items-center transition-colors">
-                                        <i className="fas fa-plus mr-1.5"></i> 신규 품목
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* 📊 KPI 대시보드 (검증 모드 전용) */}
-                        {viewMode === 'verify' && (
-                            <div className="grid grid-cols-6 gap-3 shrink-0 fade-in">
-                                {[
-                                    { id: 'all', label: '전체 대기', count: kpi.all, color: 'text-gray-300 border-gray-600' },
-                                    { id: 'up', label: '단가 인상', count: kpi.up, color: 'text-[#f85149] border-[#f85149]' },
-                                    { id: 'down', label: '단가 인하', count: kpi.down, color: 'text-[#58a6ff] border-[#58a6ff]' },
-                                    { id: 'same', label: '동결/기타', count: kpi.same, color: 'text-gray-400 border-gray-600' },
-                                    { id: 'text', label: '텍스트 갱신', count: kpi.text, color: 'text-[#d2a8ff] border-[#d2a8ff]' },
-                                    { id: 'conflict', label: '충돌 경고', count: kpi.conflict, color: 'text-[#ff7b72] border-[#ff7b72] animate-pulse' }
-                                ].map(f => (
-                                    <div key={f.id} onClick={() => setFilterMode(f.id)} className={`cursor-pointer term-panel rounded-lg p-3 border-l-4 transition-all hover:bg-[#21262d] ${filterMode === f.id ? `bg-[#21262d] border-l ${f.color}` : 'border-l-transparent border-t border-r border-b term-border'}`}>
-                                        <div className="text-[11px] font-bold text-gray-500 mb-1">{f.label}</div>
-                                        <div className={`text-xl font-black ${filterMode === f.id ? f.color.split(' ')[0] : 'text-gray-300'}`}>{f.count}</div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        {/* 🖥️ 메인 작업 영역 */}
-                        <div className="flex-1 term-panel rounded-lg flex flex-col overflow-hidden border term-border shadow-xl relative">
-                            {viewMode === 'verify' ? (
-                                /* 📦 모드 1: 검증 대기함 (Verify Mode) */
-                                <Fragment>
-                                    <div className="term-bg px-4 py-3 flex justify-between items-center border-b term-border shrink-0">
-                                        <div className="text-[13px] font-bold text-gray-400"><i className="fas fa-info-circle mr-1"></i>좌우를 비교하고 확정 버튼을 눌러 마스터 DB에 반영하세요.</div>
-                                        <div className="text-[12px] font-bold text-gray-500">선택된 항목: {selectedItems.size}개</div>
-                                    </div>
-                                    <div className="flex-1 overflow-auto custom-scrollbar p-0 fade-in">
-                                        <table className="w-full text-left text-[13px] whitespace-nowrap">
-                                            <thead className="bg-[#0d1117] sticky top-0 z-20 border-b border-[#30363d] text-gray-400">
-                                                <tr>
-                                                    <th className="py-3 px-4 w-10 text-center"><input type="checkbox" checked={selectedItems.size === displayList.length && displayList.length > 0} onChange={toggleAllItems} className="cursor-pointer" /></th>
-                                                    <th className="py-3 px-3 w-16 text-center">상태</th>
-                                                    <th className="py-3 px-3 w-28">상품코드</th>
-                                                    <th className="py-3 px-4 text-gray-500 border-r border-[#30363d]">마스터 원본 (현재)</th>
-                                                    <th className="py-3 px-4 text-[#d2a8ff] bg-[rgba(210,168,255,0.05)] border-r border-[#30363d]">작업 델타 (수정요청)</th>
-                                                    <th className="py-3 px-4 text-center w-24">액션</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-[#21262d]">
-                                                {displayList.length === 0 ? <tr><td colSpan="6" className="py-16 text-center text-gray-600 font-bold">대기 중인 검증 항목이 없습니다.</td></tr> : (
-                                                    Object.entries(groupedDisplayList).map(([groupName, items]) => (
-                                                        <Fragment key={groupName}>
-                                                            {groupMode === 'category' && (
-                                                                <tr className="bg-[#161b22] sticky top-[45px] z-10 border-y border-[#30363d]">
-                                                                    <td colSpan="6" className="py-2 px-4 text-[12px] font-black text-[#8b949e]"><i className="fas fa-folder-open mr-2"></i>{groupName} <span className="ml-2 bg-[#30363d] text-white px-1.5 py-0.5 rounded text-[10px]">{items.length}</span></td>
-                                                                </tr>
-                                                            )}
-                                                            {items.map(item => {
-                                                                const isSelected = selectedItems.has(item.코드);
-                                                                const textChanged = item.statusTags.includes('text');
-                                                                return (
-                                                                    <tr key={item.코드} className={`transition-colors hover:bg-[#21262d] ${isSelected ? 'bg-[rgba(56,139,253,0.1)]' : ''}`}>
-                                                                        <td className="py-2.5 px-4 text-center"><input type="checkbox" checked={isSelected} onChange={() => toggleSelectItem(item.코드)} className="cursor-pointer" /></td>
-                                                                        <td className="py-2.5 px-3 text-center">
-                                                                            <div className="flex flex-col gap-1 items-center">
-                                                                                {item.isConflict && <span className="status-conflict px-1.5 py-0.5 rounded text-[10px] font-black">충돌</span>}
-                                                                                {item.statusTags.includes('up') && <span className="status-up px-1.5 py-0.5 rounded text-[10px] font-black">인상</span>}
-                                                                                {item.statusTags.includes('down') && <span className="status-down px-1.5 py-0.5 rounded text-[10px] font-black">인하</span>}
-                                                                                {textChanged && <span className="status-text px-1.5 py-0.5 rounded text-[10px] font-black">텍스트</span>}
-                                                                                {item.statusTags.includes('same') && <span className="text-gray-500 text-[10px] font-bold">-</span>}
-                                                                            </div>
-                                                                        </td>
-                                                                        <td className="py-2.5 px-3 font-mono text-[11px] text-[#8b949e]">{item.코드}</td>
-                                                                        <td className="py-2.5 px-4 border-r border-[#30363d]">
-                                                                            <div className="flex flex-col">
-                                                                                <span className={`font-bold ${textChanged ? 'text-gray-500 line-through' : 'text-[#c9d1d9]'}`}>{item.mName} <span className="text-[11px] text-gray-500">({item.mSpec})</span></span>
-                                                                                <span className="text-[11px] font-mono mt-1 text-gray-400">단가: {item.mPrice ? item.mPrice.toLocaleString() : '-'}</span>
-                                                                            </div>
-                                                                        </td>
-                                                                        <td className="py-2.5 px-4 bg-[rgba(210,168,255,0.02)] border-r border-[#30363d]">
-                                                                            <div className="flex flex-col">
-                                                                                <span className={`font-bold ${textChanged ? 'text-[#d2a8ff]' : 'text-[#c9d1d9]'}`}>{item.pName} <span className="text-[11px] opacity-70">({item.pSpec})</span></span>
-                                                                                <div className="flex items-center gap-2 mt-1">
-                                                                                    <span className={`text-[11px] font-mono font-bold ${item.statusTags.includes('up') ? 'text-[#f85149]' : item.statusTags.includes('down') ? 'text-[#58a6ff]' : 'text-gray-400'}`}>단가: {item.pPrice ? item.pPrice.toLocaleString() : '-'}</span>
-                                                                                    {item.diff !== 0 && <span className={`text-[10px] font-black ${item.diff > 0 ? 'text-[#f85149]' : 'text-[#58a6ff]'}`}>({item.diff > 0 ? '+' : ''}{item.diff.toLocaleString()})</span>}
-                                                                                </div>
-                                                                            </div>
-                                                                        </td>
-                                                                        <td className="py-2.5 px-4 text-center">
-                                                                            <div className="flex justify-center gap-2">
-                                                                                <button onClick={() => handleApprove([item.코드])} className="w-8 h-8 rounded bg-[#238636] hover:bg-[#2ea043] text-white flex items-center justify-center transition-colors" title="승인"><i className="fas fa-check-circle"></i></button>
-                                                                                <button onClick={() => handleReject(item.코드)} className="w-8 h-8 rounded bg-transparent border border-[#f85149] text-[#f85149] hover:bg-[rgba(248,81,73,0.1)] flex items-center justify-center transition-colors" title="반려"><i className="fas fa-trash-alt"></i></button>
-                                                                            </div>
-                                                                        </td>
-                                                                    </tr>
-                                                                );
-                                                            })}
-                                                        </Fragment>
-                                                    ))
-                                                )}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                    <div className="term-bg px-6 py-4 flex justify-between items-center border-t border-[#30363d] shrink-0">
-                                        <div className="text-[12px] text-gray-400"><i className="fas fa-lightbulb text-amber-500 mr-2"></i>선택한 항목들을 한 번에 마스터 DB로 덮어쓰기 합니다.</div>
-                                        <button onClick={() => handleApprove(Array.from(selectedItems))} disabled={selectedItems.size === 0} className={`px-8 py-3 rounded-lg font-black text-[14px] flex items-center transition-all ${selectedItems.size > 0 ? 'bg-[#238636] hover:bg-[#2ea043] text-white shadow-[0_0_15px_rgba(35,134,54,0.3)]' : 'bg-[#30363d] text-gray-500 cursor-not-allowed'}`}>
-                                            <i className="fas fa-check-circle mr-2"></i> 선택 항목 일괄 반영 (F8)
-                                        </button>
-                                    </div>
-                                </Fragment>
-                            ) : (
-                                /* 🗄️ 모드 2: 전체 마스터 뷰 (Classic Mode - 48 Column Editable Grid) */
-                                <div className="flex-1 overflow-auto custom-scrollbar fade-in relative" onScroll={handleScroll}>
-                                    <table className="excel-table w-full text-left">
-                                        <thead>
-                                            <tr>
-                                                <th className="excel-th sticky-col-1 w-[120px]">품목코드 <i className="fas fa-lock ml-1 text-gray-600"></i></th>
-                                                <th className="excel-th sticky-col-2 w-[250px]">품목명</th>
-                                                {MASTER_HEADERS.filter(h => h !== '품목코드' && h !== '품목명').map(header => (
-                                                    <th key={header} className="excel-th w-[150px]">{header}</th>
-                                                ))}
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-[#21262d]">
-                                            {gridDisplayList.length > 0 ? (
-                                                <>
-                                                    {topPadding > 0 && <tr style={{ height: `${topPadding}px` }}><td colSpan={MASTER_HEADERS.length}></td></tr>}
-                                                    {virtualRows.map((item, idx) => {
-                                                        const code = safeStr(item['품목코드']);
-                                                        const isModified = pendingQueue[code] && pendingQueue[code].isMetadataEdit;
-                                                        
-                                                        return (
-                                                            <tr key={code} className={`excel-tr h-[38px] ${isModified ? 'bg-[rgba(210,168,255,0.05)]' : ''}`}>
-                                                                <EditableCell code={code} field="품목코드" value={code} isFixed={true} onSave={()=>{}} />
-                                                                <td className="excel-td sticky-col-2">
-                                                                    <EditableCell code={code} field="품목명" value={item['품목명']} onSave={handleCellSave} />
-                                                                </td>
-                                                                {MASTER_HEADERS.filter(h => h !== '품목코드' && h !== '품목명').map(h => (
-                                                                    <EditableCell key={`${code}-${h}`} code={code} field={h} value={item[h]} onSave={handleCellSave} />
-                                                                ))}
-                                                            </tr>
-                                                        );
-                                                    })}
-                                                    {bottomPadding > 0 && <tr style={{ height: `${bottomPadding}px` }}><td colSpan={MASTER_HEADERS.length}></td></tr>}
-                                                </>
-                                            ) : (
-                                                <tr>
-                                                    <td colSpan={MASTER_HEADERS.length} className="py-20 text-center text-gray-500 font-bold bg-[#0d1117]">
-                                                        <i className="fas fa-box-open text-4xl mb-3 block text-[#30363d]"></i>
-                                                        조회된 상품 데이터가 없습니다.
+                            <div className="flex-1 overflow-auto custom-scrollbar">
+                                <table className="w-full text-left text-[12px] whitespace-nowrap">
+                                    <thead className="bg-[#0d1117] sticky top-0 z-10 border-b border-[#30363d] text-gray-400">
+                                        <tr>
+                                            <th className="py-3 px-4 w-28 text-center">감지된 이슈</th>
+                                            <th className="py-3 px-4 w-40 text-gray-500 border-r term-border">마스터 원본 (기준)</th>
+                                            <th className="py-3 px-4 text-white">작업 요청 내용 (Delta)</th>
+                                            <th className="py-3 px-4 text-right w-48 border-l term-border">이슈별 액션 / 승인</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-[#21262d]">
+                                        {filterMode === 'suspend' ? (
+                                            displayList.length === 0 ? <tr><td colSpan="4" className="py-16 text-center text-gray-600 font-bold">정지된 품목이 없습니다.</td></tr> :
+                                            displayList.map(item => (
+                                                <tr key={item.코드} className="hover:bg-[#161b22] opacity-70 hover:opacity-100 transition-all h-[50px]">
+                                                    <td className="py-2 px-4 text-center"><span className="bg-gray-800 text-gray-300 px-2 py-1 rounded text-[10px] font-black">정지됨</span></td>
+                                                    <td colSpan="2" className="py-2 px-4 font-bold text-gray-400 line-through">{item.품목명} ({item.규격}) <span className="text-[10px] font-mono ml-2">{item.코드}</span></td>
+                                                    <td className="py-2 px-4 text-right">
+                                                        <button onClick={() => handleToggleSuspend(item.코드, true)} className="px-4 py-2 bg-transparent border border-[#3fb950] text-[#3fb950] hover:bg-[rgba(63,185,80,0.1)] rounded text-[11px] font-bold transition-colors">🟢 판매 복구</button>
                                                     </td>
                                                 </tr>
-                                            )}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
+                                            ))
+                                        ) : (
+                                            displayList.length === 0 ? <tr><td colSpan="4" className="py-16 text-center text-gray-600 font-bold">대기 중인 검증 항목이 없습니다.</td></tr> :
+                                            displayList.map(item => {
+                                                const hasNew = item.issues.includes('new');
+                                                const hasText = item.issues.includes('text');
+                                                const hasPrice = item.issues.includes('price_up') || item.issues.includes('price_down');
+                                                const hasConflict = item.issues.includes('conflict');
+
+                                                return (
+                                                    <tr key={item.코드} className={`hover:bg-[#161b22] transition-colors h-[54px] ${hasConflict ? 'bg-[rgba(248,81,73,0.05)]' : ''}`}>
+                                                        <td className="py-2 px-4">
+                                                            <div className="flex flex-col gap-1 items-center">
+                                                                {hasNew && <button onClick={() => setFilterMode('new')} className="bg-[rgba(63,185,80,0.15)] text-[#3fb950] border border-[#3fb950]/30 px-1.5 py-0.5 rounded text-[10px] font-black hover:bg-[#3fb950] hover:text-white transition-colors">신규</button>}
+                                                                {hasConflict && <button onClick={() => setFilterMode('conflict')} className="bg-rose-900/40 text-[#f85149] border border-[#f85149]/30 px-1.5 py-0.5 rounded text-[10px] font-black animate-pulse hover:bg-[#f85149] hover:text-white transition-colors">충돌</button>}
+                                                                {hasText && <button onClick={() => setFilterMode('text')} className="bg-[rgba(210,168,255,0.15)] text-[#d2a8ff] border border-[#d2a8ff]/30 px-1.5 py-0.5 rounded text-[10px] font-black hover:bg-[#d2a8ff] hover:text-white transition-colors">텍스트</button>}
+                                                                {item.issues.includes('price_up') && <button onClick={() => setFilterMode('price')} className="text-[#f85149] px-1.5 py-0.5 rounded text-[10px] font-black border border-[#f85149]/30 hover:bg-[#f85149] hover:text-white transition-colors">인상</button>}
+                                                                {item.issues.includes('price_down') && <button onClick={() => setFilterMode('price')} className="text-[#58a6ff] px-1.5 py-0.5 rounded text-[10px] font-black border border-[#58a6ff]/30 hover:bg-[#58a6ff] hover:text-white transition-colors">인하</button>}
+                                                            </div>
+                                                        </td>
+                                                        
+                                                        {/* 마스터 영역 */}
+                                                        <td className="py-2 px-4 border-r term-border">
+                                                            {hasNew ? (
+                                                                <span className="text-gray-600 font-bold text-[11px]"><i className="fas fa-question-circle mr-1"></i>마스터에 없음</span>
+                                                            ) : (
+                                                                <div className="flex flex-col">
+                                                                    <span className="text-[10px] font-mono text-gray-500 mb-0.5">{item.코드}</span>
+                                                                    <span className={`font-bold ${hasText ? 'text-gray-500 line-through' : 'text-gray-300'}`}>{item.mName} <span className="font-normal text-[10px]">({item.mSpec})</span></span>
+                                                                    {hasPrice && <span className="text-[11px] font-mono text-gray-400 mt-0.5">단가: {item.mPrice.toLocaleString()}</span>}
+                                                                </div>
+                                                            )}
+                                                        </td>
+
+                                                        {/* 요청(Delta) 영역 */}
+                                                        <td className="py-2 px-4 bg-[rgba(255,255,255,0.01)]">
+                                                            <div className="flex flex-col">
+                                                                <span className={`font-bold text-[13px] ${hasText || hasNew ? 'text-[#d2a8ff]' : 'text-white'}`}>{item.pName} <span className="text-[11px] opacity-70">({item.pSpec})</span></span>
+                                                                {hasPrice && (
+                                                                    <div className="flex items-center gap-2 mt-0.5">
+                                                                        <span className={`text-[11px] font-mono font-bold ${item.pPrice > item.mPrice ? 'text-[#f85149]' : 'text-[#58a6ff]'}`}>새 단가: {item.pPrice.toLocaleString()}</span>
+                                                                        <span className={`text-[10px] font-black ${item.pPrice > item.mPrice ? 'text-[#f85149]' : 'text-[#58a6ff]'}`}>({item.pPrice > item.mPrice ? '+' : ''}{(item.pPrice - item.mPrice).toLocaleString()})</span>
+                                                                    </div>
+                                                                )}
+                                                                {item.vendor && <span className="text-[10px] text-gray-500 font-bold mt-1 bg-[#21262d] w-max px-1.5 py-0.5 rounded">출처: {item.vendor}</span>}
+                                                                
+                                                                {/* AI 추천 UI */}
+                                                                {hasNew && item.aiSuggestion && (
+                                                                    <div className="mt-2 flex items-center gap-2 bg-[rgba(63,185,80,0.1)] border border-[#3fb950]/30 p-2 rounded-lg w-max">
+                                                                        <span className="text-[10px] text-[#3fb950] font-black"><i className="fas fa-lightbulb mr-1"></i>AI 매핑 추천:</span>
+                                                                        <span className="text-[11px] font-bold text-gray-200">{item.aiSuggestion.품목명} ({item.aiSuggestion.규격})</span>
+                                                                        <button onClick={() => handleBindMapping(item.코드, item.aiSuggestion.코드)} className="ml-2 px-2 py-1 bg-[#3fb950] text-white text-[10px] font-black rounded hover:bg-emerald-600 transition-colors">연결</button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </td>
+
+                                                        {/* 액션 영역 */}
+                                                        <td className="py-2 px-4 text-right border-l term-border">
+                                                            <div className="flex flex-col gap-1.5 items-end justify-center">
+                                                                {hasNew ? (
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <button onClick={() => { setBindTarget(item); setSearchKw(item.pName); setBindModalOpen(true); }} className="px-3 py-1.5 bg-[#21262d] hover:bg-[#30363d] text-[#58a6ff] border border-[#30363d] rounded text-[11px] font-bold transition-colors shadow-sm"><i className="fas fa-search mr-1"></i>수동 연결</button>
+                                                                        <button onClick={() => handleApproveMerge(item.코드)} className="px-3 py-1.5 bg-[#1f6feb] hover:bg-[#388bfd] text-white rounded text-[11px] font-bold transition-colors shadow-sm"><i className="fas fa-plus mr-1"></i>신규 발급</button>
+                                                                    </div>
+                                                                ) : hasConflict ? (
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <button onClick={() => handleReject(item.코드)} className="px-3 py-1.5 bg-[#21262d] text-gray-400 hover:text-white rounded text-[11px] font-bold transition-colors">취소</button>
+                                                                        <button onClick={() => handleApproveMerge(item.코드)} className="px-3 py-1.5 bg-[#f85149] hover:bg-rose-600 text-white rounded text-[11px] font-black transition-colors shadow-sm"><i className="fas fa-exclamation-triangle mr-1"></i>강제 덮어쓰기</button>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <button onClick={() => handleReject(item.코드)} className="px-3 py-1.5 bg-transparent border border-gray-600 text-gray-400 hover:bg-[#21262d] hover:text-white rounded text-[11px] font-bold transition-colors">반려(무시)</button>
+                                                                        <button onClick={() => handleApproveMerge(item.코드)} className="px-4 py-1.5 bg-[#238636] hover:bg-[#2ea043] text-white rounded text-[11px] font-black transition-colors shadow-sm"><i className="fas fa-check mr-1"></i>승인 반영</button>
+                                                                    </div>
+                                                                )}
+                                                                
+                                                                {!hasNew && (
+                                                                    <button onClick={() => handleToggleSuspend(item.코드, false)} className="mt-1 text-[10px] text-gray-500 hover:text-[#f85149] font-bold transition-colors"><i className="fas fa-ban mr-1"></i>이 상품 임의 정지</button>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
-                    {toastMsg && <div className="fixed bottom-6 right-6 term-panel text-white px-5 py-3 rounded-lg shadow-2xl flex items-center gap-3 fade-in text-[13px] font-bold z-50 border term-border"><i className={toastMsg.includes('✅') || toastMsg.includes('✨') ? "fas fa-check-circle text-[#3fb950]" : "fas fa-trash-alt text-[#f85149]"} /> {toastMsg.replace(/✅|🗑️|✨/g, '')}</div>}
-                </div>
+
+                    {/* 🔍 수동 연결 (Bind) 모달 */}
+                    {bindModalOpen && (
+                        <div className="fixed inset-0 bg-[#010409]/80 flex justify-center items-center z-[100] backdrop-blur-sm fade-in">
+                            <div className="bg-[#0d1117] w-[600px] rounded-xl border border-[#30363d] shadow-2xl flex flex-col overflow-hidden">
+                                <div className="p-4 bg-[#010409] border-b border-[#30363d] flex justify-between items-center">
+                                    <h2 className="text-white font-black text-[15px]"><i className="fas fa-link text-[#58a6ff] mr-2"></i>기존 마스터 상품에 수동 연결</h2>
+                                    <button onClick={() => setBindModalOpen(false)} className="text-gray-500 hover:text-white"><i className="fas fa-times"></i></button>
+                                </div>
+                                <div className="p-5 flex flex-col gap-4">
+                                    <div className="bg-[#161b22] p-4 rounded-lg border border-[#30363d]">
+                                        <p className="text-[11px] text-gray-400 mb-1">연결할 원본 텍스트</p>
+                                        <p className="text-[14px] font-black text-[#d2a8ff]">{bindTarget?.pName} <span className="text-[12px] font-normal text-gray-500">({bindTarget?.pSpec})</span></p>
+                                    </div>
+                                    <div className="relative">
+                                        <i className="fas fa-search absolute left-3 top-3 text-gray-500"></i>
+                                        <input type="text" value={searchKw} onChange={e=>setSearchKw(e.target.value)} placeholder="연결할 마스터 품명/규격 검색..." className="w-full term-input pl-9 pr-4 py-2.5 rounded outline-none text-[13px] font-bold focus:shadow-[0_0_10px_rgba(88,166,255,0.2)]" autoFocus />
+                                    </div>
+                                    <div className="max-h-[300px] overflow-y-auto custom-scrollbar border border-[#30363d] rounded bg-[#010409]">
+                                        <ul className="divide-y divide-[#21262d]">
+                                            {searchResults.length === 0 ? <li className="p-6 text-center text-gray-600 font-bold text-xs">검색 결과가 없습니다.</li> :
+                                                searchResults.map(m => (
+                                                    <li key={m.코드} className="p-3 hover:bg-[#161b22] flex justify-between items-center group cursor-pointer" onClick={() => handleBindMapping(bindTarget.코드, m.코드)}>
+                                                        <div className="flex flex-col">
+                                                            <span className="text-[10px] font-mono text-gray-500">{m.코드}</span>
+                                                            <span className="font-bold text-gray-300 text-[12px]">{m.품목명} <span className="font-normal text-gray-500">({m.규격})</span></span>
+                                                        </div>
+                                                        <button className="px-3 py-1.5 bg-[#21262d] text-[#58a6ff] group-hover:bg-[#1f6feb] group-hover:text-white rounded text-[11px] font-bold transition-colors">선택</button>
+                                                    </li>
+                                                ))
+                                            }
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Toast Notification */}
+                    {toastMsg && (
+                        <div className="fixed bottom-6 right-6 term-panel text-white px-5 py-3 rounded-lg shadow-2xl flex items-center gap-3 fade-in text-[13px] font-bold z-50">
+                            <i className={`fas ${toastMsg.includes('✅') || toastMsg.includes('🔗') || toastMsg.includes('🟢') ? 'fa-check-circle text-[#3fb950]' : toastMsg.includes('🗑️') ? 'fa-trash-alt text-gray-400' : 'fa-exclamation-triangle text-[#f85149]'}`}></i>
+                            {toastMsg.replace(/✅|❌|⚠️|🗑️|🔗|🟢|⛔/g, '')}
+                        </div>
+                    )}
+                </Fragment>
             );
         }
-        ReactDOM.createRoot(document.getElementById('root')).render(<ItemManagerApp />);
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<ItemManagerApp />);
     </script>
 </body>
 </html>
