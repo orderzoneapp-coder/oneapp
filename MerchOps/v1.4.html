@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v1.4.2 통합 엑셀 최적화]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v1.4.3 통합 엑셀 최적화]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -153,6 +153,10 @@
         // 🧩 2. 핵심 비즈니스 로직 (단가 계산 및 파서)
         // ==========================================
         const calculatePricesEngine = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
+            
+            // 💡 [추가] 단수 처리 기준값 (기본 100단위, 필요시 10으로 변경)
+            const ROUND_UNIT = 100;
+
             const outsrc = parseNum(currentFinalData?.['외주비'] ?? mItem?.['외주비']);
             const labor = parseNum(currentFinalData?.['노무비'] ?? mItem?.['노무비']);
             const totalCost = baseInPrice + outsrc + labor;
@@ -187,13 +191,18 @@
 
             const appliedRule = bestRule || { rate: 10, type: 'divide' };
 
-            let calcOutPrice = totalCost;
-            if (appliedRule.type === 'divide') {
-                calcOutPrice = totalCost / (1 - (appliedRule.rate / 100));
-            } else {
-                calcOutPrice = totalCost * (1 + (appliedRule.rate / 100));
+            let calcOutPrice = 0;
+
+            // 💡 [수정] 입고가가 0초과일 때만 마진, 노무비, 외주비 연산
+            if (baseInPrice > 0) {
+                if (appliedRule.type === 'divide') {
+                    calcOutPrice = totalCost / (1 - (appliedRule.rate / 100));
+                } else {
+                    calcOutPrice = totalCost * (1 + (appliedRule.rate / 100));
+                }
+                // 💡 [수정] 변수(ROUND_UNIT)를 이용한 단수 처리
+                calcOutPrice = Math.round(calcOutPrice / ROUND_UNIT) * ROUND_UNIT;
             }
-            calcOutPrice = Math.round(calcOutPrice / 100) * 100;
 
             let newFinalData = { ...currentFinalData, '입고가': baseInPrice };
             newFinalData['시중가'] = calcOutPrice;
@@ -202,7 +211,10 @@
             const mIn = parseNum(mItem?.['입고가']);
             const mOut = parseNum(mItem?.['출고가']);
 
-            if (providedOutPrice > 0 && !forceRecalc) {
+            // 💡 [수정] 입고가가 0이면 출고가도 무조건 0으로 덮어씀
+            if (baseInPrice === 0) {
+                newFinalData['출고가'] = 0;
+            } else if (providedOutPrice > 0 && !forceRecalc) {
                 newFinalData['출고가'] = providedOutPrice;
             } else if (baseInPrice === mIn && mOut > 0 && !forceRecalc) {
                 newFinalData['출고가'] = mOut;
@@ -213,9 +225,15 @@
             const div1 = parseNum(currentFinalData?.['1종연산'] ?? mItem?.['1종연산']);
             const extraCost = parseNum(currentFinalData?.['경비'] ?? mItem?.['경비']); 
             if (div1 > 0) {
-                newFinalData['1입고'] = Math.round(((baseInPrice + outsrc) / div1) / 100) * 100;
-                const calc1Out = Math.round((newFinalData['출고가'] / div1) + extraCost);
-                newFinalData['1출고'] = Math.round(calc1Out / 10) * 10; 
+                // 💡 [수정] 입고가가 0일 때 소분 연산도 0처리
+                if (baseInPrice === 0) {
+                    newFinalData['1입고'] = 0;
+                    newFinalData['1출고'] = 0;
+                } else {
+                    newFinalData['1입고'] = Math.round(((baseInPrice + outsrc) / div1) / ROUND_UNIT) * ROUND_UNIT;
+                    const calc1Out = Math.round((newFinalData['출고가'] / div1) + extraCost);
+                    newFinalData['1출고'] = Math.round(calc1Out / 10) * 10; 
+                }
             }
             return newFinalData;
         };
@@ -590,7 +608,7 @@
                             }
 
                             // 💡 [기능 2] 동기화 직후엔 변경사항 없음 상태
-                            ui.setHasUnsavedChanges(false);
+                            ui.setHasUnsavedChanges?.(false); // Make it safe if setHasUnsavedChanges is not present
                             
                             // 💡 [수정] 데이터 개수 카운트 기능 복구
                             const masterCount = result.data.master ? Object.keys(result.data.master).length : 0;
@@ -700,7 +718,8 @@
                                 if (mapKey === 'estimate') {
                                     if (mItem.finalData['출고가'] !== undefined) delete mItem.finalData['출고가'];
                                     const pIn = parseNum(mItem.sources[mapKey]['입고가'] || newMaster[code]?.['입고가']);
-                                    if (pIn > 0) mItem.finalData = calculatePricesEngine(pIn, newMaster[code]||{}, mItem.finalData, config.marginRules, false);
+                                    // 💡 입고가가 0이어도 이제 안전하게 0으로 처리하므로 조건문을 완화합니다.
+                                    mItem.finalData = calculatePricesEngine(pIn, newMaster[code]||{}, mItem.finalData, config.marginRules, false);
                                 }
                                 newManaged[code] = mItem;
                             }
@@ -1671,7 +1690,7 @@
 
             const isDiff = linkedMasterField && mVal !== undefined && localVal !== '' && String(mVal) !== String(localVal) && isNumeric;
             const isHighlightCol = HIGHLIGHT_COLS.includes(field);
-            const diffAmount = isDiff ? parseNum(localVal) - parseNum(mVal) : 0; // 💡 단가 차액 계산
+            const diffAmount = isDiff ? parseNum(localVal) - parseNum(mVal) : 0;
 
             let baseBg = 'bg-white';
             if (isHighlightCol) baseBg = 'bg-orange-50/40';
@@ -1785,11 +1804,10 @@
                             {visibleMasterCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map((h, i, arr) => {
                                 const isNum = NUMERIC_HEADERS.includes(h);
                                 const mVal = mItem[h];
-                                let displayVal = mVal; // 💡 마스터 값 고정
+                                let displayVal = mVal; 
                                 let isChanged = false;
 
                                 if (row.finalData && row.finalData[h] !== undefined) {
-                                    // 💡 버그 수정: 값이 다를 경우 배경색 플래그(isChanged)만 true로 바꾸고, 화면의 텍스트(displayVal)는 원본을 유지합니다.
                                     if (isNum && parseNum(row.finalData[h]) !== parseNum(mVal)) { isChanged = true; } 
                                     else if (!isNum && String(row.finalData[h]) !== String(mVal)) { isChanged = true; }
                                 }
@@ -1911,7 +1929,7 @@
                     <i className="fas fa-box-open"></i>
                     <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm"><i className="fas fa-check"></i></div>
                 </div>
-                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v1.4.2 통합 엑셀 최적화]</h2>
+                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v1.4.3 통합 엑셀 최적화]</h2>
                 <p className="text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold">
                     현재 등록된 <span className="text-indigo-500">마스터 상품 데이터</span>가 없습니다.<br/>
                     견적 작업 및 파서 연동을 위해 전체 상품 DB를 세팅해주세요.
@@ -2300,7 +2318,7 @@
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <div className="flex items-center mb-0.5">
                                                     <span className="text-[14px] font-black text-slate-200 leading-none">MerchOps</span>
-                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.4.2 통합 엑셀 최적화</span>
+                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.4.3 통합 엑셀 최적화</span>
                                                 </div>
                                                 <span className="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">MAIN WORKSPACE</span>
                                             </div>
