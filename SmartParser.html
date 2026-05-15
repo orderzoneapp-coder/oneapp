@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ko" translate="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="google" content="notranslate">
+    <title>ONEAPP MerchOps - Smart Parser [v1.5 클라우드 최적화]</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="coreEngine.js"></script>
+</head>
+<body class="bg-slate-100 font-sans text-slate-800 overflow-hidden">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo, useEffect, useRef, useCallback } = React;
+
+        const useParserApp = () => {
+            const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v870') || '');
+            const [masterProducts, setMasterProducts] = useState({});
+            const [parserDict, setParserDict] = useState(() => { try { return JSON.parse(localStorage.getItem('parserDict_v870')) || {}; } catch(e){ return {}; }});
+            const [marginRules, setMarginRules] = useState(() => { try { return JSON.parse(localStorage.getItem('merchMarginRules_v878')) || [{ id: 'default', whCode: '*', unit: '*', rate: 10, type: 'divide' }]; } catch(e) { return [{ id: 'default', whCode: '*', unit: '*', rate: 10, type: 'divide' }]; } });
+
+            useEffect(() => {
+                if(window.getAllIDB) {
+                    window.getAllIDB('master_products').then(items => {
+                        if (items && items.length > 0) {
+                            const dict = {}; items.forEach(i => dict[i.코드] = i);
+                            setMasterProducts(dict);
+                        }
+                    }).catch(console.error);
+                }
+            }, []);
+
+            useEffect(() => {
+                const handleConfigSync = (e) => {
+                    if (e.key === 'config_sync_trigger' || e.key === 'merchMaster_sync_trigger') {
+                        const fMarginRules = JSON.parse(localStorage.getItem('merchMarginRules_v878'));
+                        const fUrl = localStorage.getItem('merchCloudUrl_v870');
+                        if(fMarginRules) setMarginRules(fMarginRules);
+                        if(fUrl) setCloudUrl(fUrl);
+                        
+                        if(window.getAllIDB) {
+                            window.getAllIDB('master_products').then(items => {
+                                if (items && items.length > 0) {
+                                    const dict = {}; items.forEach(i => dict[i.코드] = i);
+                                    setMasterProducts(dict);
+                                }
+                            }).catch(console.error);
+                        }
+                    }
+                };
+                window.addEventListener('storage', handleConfigSync);
+                return () => window.removeEventListener('storage', handleConfigSync);
+            }, []);
+
+            const saveMaster = async (data) => {
+                setMasterProducts(data);
+                const safeData = Object.values(data).filter(item => item && item.코드);
+                if(window.bulkPutIDB) await window.bulkPutIDB('master_products', safeData);
+                localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+            };
+
+            const saveDict = (data) => { setParserDict(data); localStorage.setItem('parserDict_v870', JSON.stringify(data)); };
+            const [toastMsg, setToastMsg] = useState('');
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [processMsg, setProcessMsg] = useState('');
+            const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
+
+            return { cloudUrl, masterProducts, saveMaster, parserDict, saveDict, marginRules, toastMsg, showToast, isProcessing, setIsProcessing, processMsg, setProcessMsg };
+        };
+
+        const useParserActions = (appState) => {
+            const { cloudUrl, masterProducts, saveMaster, saveDict, marginRules, setIsProcessing, setProcessMsg, showToast } = appState;
+
+            const handleCloudSync = useCallback(async (type) => { 
+                if (!cloudUrl) return showToast("⚠️ 클라우드 URL이 설정되지 않았습니다. 콘트롤 타워에서 셋팅하세요.");
+                showToast(`☁️ 클라우드 ${type === 'upload' ? '전체 분할 백업' : '불러오기'} 시작...`);
+                setIsProcessing(true);
+                
+                try {
+                    if (type === 'upload') {
+                        setProcessMsg('서버 초기화 중...');
+                        let initRes = await fetch(cloudUrl, { method: 'POST', body: JSON.stringify({ action: 'initSync' }) });
+                        if ((await initRes.json()).status !== 'success') throw new Error("초기화 실패");
+
+                        const masterItems = Object.values(masterProducts);
+                        const chunkSize = 500;
+                        for (let i = 0; i < masterItems.length; i += chunkSize) {
+                            const chunk = masterItems.slice(i, i + chunkSize);
+                            setProcessMsg(`마스터 데이터 업로드 중... (${Math.min(i + chunkSize, masterItems.length).toLocaleString()} / ${masterItems.length.toLocaleString()}건)`);
+                            await fetch(cloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_master', data: chunk }) });
+                        }
+
+                        const historyItems = JSON.parse(localStorage.getItem('merchHistory_v870') || '[]');
+                        for (let i = 0; i < historyItems.length; i += chunkSize) {
+                            const chunk = historyItems.slice(i, i + chunkSize);
+                            setProcessMsg(`히스토리 업로드 중... (${Math.min(i + chunkSize, historyItems.length).toLocaleString()} / ${historyItems.length.toLocaleString()}건)`);
+                            await fetch(cloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_history', data: chunk }) });
+                        }
+
+                        setProcessMsg('환경설정 및 사전 업로드 중...');
+                        const dict = JSON.parse(localStorage.getItem('parserDict_v870') || '{}');
+                        const configPayload = {
+                            action: 'config',
+                            data: {
+                                dict: dict,
+                                rules: marginRules,
+                                appConfig: { 
+                                    mappings: JSON.parse(localStorage.getItem('merchMappings_v870') || '{}'), 
+                                    masterLinks: JSON.parse(localStorage.getItem('merchMasterLinks_v870') || '{}'), 
+                                    visibleUploadCols: JSON.parse(localStorage.getItem('merchVisUpload_v870') || '{}'), 
+                                    visibleMasterCols: JSON.parse(localStorage.getItem('merchVisMaster_v870') || '{}')
+                                }
+                            }
+                        };
+                        await fetch(cloudUrl, { method: 'POST', body: JSON.stringify(configPayload) });
+
+                        showToast('✅ 클라우드 대용량 분할 백업(Push) 성공!');
+                    } else {
+                        setProcessMsg('클라우드 데이터 수신 중...');
+                        const res = await fetch(cloudUrl, { method: 'GET' });
+                        if (!res.ok) throw new Error("Network Error");
+                        const result = await res.json();
+                        
+                        if (result.status === 'success' && result.data) { 
+                            if (result.data.master && Object.keys(result.data.master).length > 0) {
+                                await saveMaster(result.data.master);
+                            }
+                            if (result.data.dict && Object.keys(result.data.dict).length > 0) saveDict(result.data.dict);
+                            if (result.data.rules && result.data.rules.length > 0) localStorage.setItem('merchMarginRules_v878', JSON.stringify(result.data.rules));
+                            if (result.data.history && Array.isArray(result.data.history)) localStorage.setItem('merchHistory_v870', JSON.stringify(result.data.history));
+                            
+                            localStorage.setItem('config_sync_trigger', Date.now().toString());
+                            const masterCount = result.data.master ? Object.keys(result.data.master).length : 0;
+                            showToast(`✅ 데이터 불러오기 완료! (상품: ${masterCount.toLocaleString()}건)`);
+                        } else {
+                            throw new Error("Invalid Data Format");
+                        }
+                    }
+                } catch (error) { 
+                    console.error(error);
+                    showToast("❌ 통신 오류 발생. URL이나 서버를 확인하세요.");
+                } finally {
+                    setIsProcessing(false);
+                    setProcessMsg('');
+                }
+            }, [cloudUrl, masterProducts, marginRules, saveMaster, saveDict, setIsProcessing, setProcessMsg, showToast]);
+
+            return useMemo(() => ({ handleCloudSync }), [handleCloudSync]);
+        };
+
+        const App = () => {
+            const appState = useParserApp();
+            const actions = useParserActions(appState);
+
+            return (
+                <div className="h-screen w-full bg-slate-100 flex justify-center overflow-hidden font-sans">
+                    {appState.toastMsg && <div className="fixed bottom-6 right-6 z-[1000] bg-slate-800 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 text-sm font-bold border border-slate-700"><i className="fas fa-check-circle text-emerald-400"></i>{appState.toastMsg}</div>}
+                    <div className="w-full h-full flex flex-col bg-slate-50 overflow-hidden mx-auto">
+                        <div className="bg-[#0f172a] px-6 py-4 flex justify-between items-center text-white shrink-0 shadow-md z-40">
+                            <div className="flex items-center gap-4">
+                                <h1 className="text-xl font-black text-indigo-400 tracking-tight">Smart Parser</h1>
+                                {appState.isProcessing && <div className="text-amber-400 text-[12px] font-bold animate-pulse"><i className="fas fa-spinner fa-spin mr-2"></i>{appState.processMsg}</div>}
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={() => actions.handleCloudSync('download')} disabled={appState.isProcessing} className="w-9 h-9 rounded bg-[#1e293b] hover:bg-[#334155] border border-slate-700 text-slate-300 flex items-center justify-center transition-colors disabled:opacity-50" title="클라우드 데이터 수신"><i className="fas fa-cloud-download-alt text-[14px]"></i></button>
+                                <button onClick={() => actions.handleCloudSync('upload')} disabled={appState.isProcessing} className="w-9 h-9 rounded bg-[#1e293b] hover:bg-[#334155] border border-slate-700 text-slate-300 flex items-center justify-center transition-colors disabled:opacity-50" title="클라우드 분할 백업"><i className="fas fa-cloud-upload-alt text-[14px]"></i></button>
+                                <div className="w-px h-5 bg-slate-700 mx-1 my-auto"></div>
+                                <button onClick={() => window.open('settings.html', '_blank')} className="w-9 h-9 rounded bg-[#1e293b] hover:bg-[#334155] border border-slate-700 text-slate-400 flex items-center justify-center transition-colors" title="콘트롤 타워 (환경설정)"><i className="fas fa-cogs text-[14px]"></i></button>
+                            </div>
+                        </div>
+                        <div className="flex-1 p-6 bg-slate-50 flex items-center justify-center">
+                            <div className="text-center p-10 bg-white rounded-2xl border border-slate-200 shadow-sm max-w-lg w-full">
+                                <div className="text-emerald-500 text-6xl mx-auto mb-6"><i className="fas fa-check-circle"></i></div>
+                                <h2 className="text-xl font-black text-slate-800 mb-3">스마트 파서 모듈 준비 완료</h2>
+                                <p className="text-slate-500 text-[13px] font-bold mb-8">대용량 분할 전송 기능이 성공적으로 탑재되었습니다.<br/>상단의 <i className="fas fa-cloud-upload-alt text-indigo-500 mx-1"></i> 클라우드 버튼을 눌러 테스트해보세요.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
