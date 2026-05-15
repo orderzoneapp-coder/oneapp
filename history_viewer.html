@@ -28,6 +28,7 @@
             const [logs, setLogs] = useState([]);
             const [searchTerm, setSearchTerm] = useState('');
             const [filterField, setFilterField] = useState('all');
+            const [activeTab, setActiveTab] = useState('general');
 
             useEffect(() => {
                 try {
@@ -43,19 +44,25 @@
             const filteredLogs = useMemo(() => {
                 const keyword = searchTerm.toLowerCase().trim();
                 return logs.filter(log => {
+                    const safeCode = String(log.code || '').toLowerCase();
+                    
+                    // 탭 분류 필터 (농산/일배 10~ 여부 검증)
+                    const isAgri = safeCode.startsWith('10');
+                    if (activeTab === 'agri' && !isAgri) return false;
+                    if (activeTab === 'general' && isAgri) return false;
+
                     const matchField = filterField === 'all' || log.field === filterField;
                     if (!matchField) return false;
                     
                     if (!keyword) return true;
                     
                     const safeName = String(log.name || '').toLowerCase();
-                    const safeCode = String(log.code || '').toLowerCase();
                     const safeField = String(log.field || '').toLowerCase();
                     const safeSpec = String(log.spec || '').toLowerCase();
 
                     return safeName.includes(keyword) || safeCode.includes(keyword) || safeField.includes(keyword) || safeSpec.includes(keyword);
                 });
-            }, [logs, searchTerm, filterField]);
+            }, [logs, searchTerm, filterField, activeTab]);
 
             const clearLogs = () => {
                 if (window.confirm("정말 모든 감사 로그를 삭제하시겠습니까? (복구 불가)")) {
@@ -100,7 +107,7 @@
                         <div className="bg-white p-6 border-b border-slate-200 flex items-center justify-between shadow-sm shrink-0">
                             <div>
                                 <h2 className="text-2xl font-black text-slate-800 mb-1">단가 변동 추적기</h2>
-                                <p className="text-[13px] text-slate-500 font-bold">최대 최근 2,000건의 작업 및 변동 내역이 이곳에 안전하게 보관됩니다.</p>
+                                <p className="text-[13px] text-slate-500 font-bold">일반 상품 1,000건, 농산/일배 상품 1,000건의 변동 내역이 보관됩니다.</p>
                             </div>
                             <div className="flex gap-2 items-center">
                                 <select value={filterField} onChange={(e) => setFilterField(e.target.value)} className="border border-slate-300 rounded-lg px-4 py-2.5 text-[13px] outline-none focus:border-amber-500 bg-white font-bold text-slate-600 shadow-sm">
@@ -121,6 +128,22 @@
                                     />
                                 </div>
                             </div>
+                        </div>
+
+                        {/* 탭 네비게이션 */}
+                        <div className="flex gap-4 border-b border-slate-200 px-6 pt-3 bg-white shrink-0">
+                            <button 
+                                onClick={() => setActiveTab('general')}
+                                className={`pb-3 px-3 font-black text-[14px] transition-colors border-b-[3px] ${activeTab === 'general' ? 'border-amber-500 text-amber-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                            >
+                                일반 식자재/공산품 ({logs.filter(l => !String(l.code).startsWith('10')).length})
+                            </button>
+                            <button 
+                                onClick={() => setActiveTab('agri')}
+                                className={`pb-3 px-3 font-black text-[14px] transition-colors border-b-[3px] ${activeTab === 'agri' ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                            >
+                                농산/일배 (10~) ({logs.filter(l => String(l.code).startsWith('10')).length})
+                            </button>
                         </div>
 
                         <div className="flex-1 overflow-auto custom-scrollbar p-6 bg-slate-100">
