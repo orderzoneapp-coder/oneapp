@@ -519,49 +519,6 @@
                 }
             }, [data.masterProducts, data.managedItems, config.mappings, config.masterLinks, config.marginRules, ui]);
 
-            const handleLoadAllMaster = useCallback(() => {
-                ui.setIsProcessing(true);
-                ui.setProcessMsg(`전체 마스터 데이터 불러오는 중...`);
-                
-                setTimeout(() => {
-                    try {
-                        ui.setActiveTags(prev => {
-                            if (!prev.some(t => t.type === 'all_master')) return [...prev, {type: 'all_master', name: '전체 상품'}];
-                            return prev;
-                        });
-                        let newManaged = { ...data.managedItems };
-                        let addedCount = 0;
-                        const safeMarginRules = Array.isArray(config.marginRules) ? config.marginRules : [];
-
-                        Object.values(data.masterProducts).forEach(mItem => {
-                            if (!newManaged[mItem.코드]) {
-                                newManaged[mItem.코드] = {
-                                    코드: mItem.코드,
-                                    sources: { estimate: {} },
-                                    finalData: window.calculatePricesEngine(window.parseNum(mItem['입고가']), mItem, {}, safeMarginRules, false),
-                                    _tags: new Set([`all_master:전체 상품`])
-                                };
-                                addedCount++;
-                            } else {
-                                newManaged[mItem.코드] = {
-                                    ...newManaged[mItem.코드],
-                                    _tags: new Set([...(newManaged[mItem.코드]._tags || []), `all_master:전체 상품`])
-                                };
-                            }
-                        });
-                        data.setManagedItems(newManaged);
-                        ui.setSelectedRows(new Set());
-                        ui.showToast(`✅ 전체 마스터 데이터 로드 완료! (${addedCount}건 추가됨)`);
-                    } catch (e) {
-                        console.error(e);
-                        ui.showToast("❌ 데이터 병합 중 오류가 발생했습니다.");
-                    } finally {
-                        ui.setIsProcessing(false);
-                        ui.setProcessMsg('');
-                    }
-                }, 100);
-            }, [data.masterProducts, data.managedItems, data.setManagedItems, config.marginRules, ui]);
-
             const handleLoadFilter = useCallback((type, name) => {
                 if (!name) return;
                 
@@ -886,8 +843,8 @@
             }, [fullDisplayRows, ui.selectedRows, data.masterProducts, data.setManagedItems, config.marginRules, ui]);
 
             return useMemo(() => ({
-                handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadAllMaster, handleLoadFilter, handleRemoveFilter, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules
-            }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadAllMaster, handleLoadFilter, handleRemoveFilter, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules]);
+                handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules
+            }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules]);
         };
 
         const SystemConsole = ({ itemCount, isProcessing, processMsg, estimateCount, activeTags }) => {
@@ -975,7 +932,7 @@
 
         const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
             const { activeTags, isEstimateUploaded, selectedRows, globalSearch } = state;
-            const { handleCommitEstimate, handleRemoveFromWorkspace, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleLoadAllMaster, handleForceApplyMarginRules, showToast } = actions;
+            const { handleCommitEstimate, handleRemoveFromWorkspace, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, showToast } = actions;
 
             const showActionButtons = activeTags.length > 0;
 
@@ -1033,10 +990,6 @@
 
                         {/* 그룹 3: 전체 보기 및 엑셀 I/O */}
                         <div className="flex items-center gap-1.5 bg-emerald-50/50 p-1.5 rounded-xl shrink-0 border border-emerald-100">
-                             <button onClick={handleLoadAllMaster} className="h-8 px-3 rounded-lg text-[11px] font-black bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 transition-colors flex items-center border border-emerald-700" title="마스터 전체보기">
-                                <i className="fas fa-list-alt mr-1.5 text-[13px]"></i> 전체보기
-                            </button>
-                            <div className="w-px h-5 bg-emerald-200 mx-0.5"></div>
                             <label className="cursor-pointer h-8 px-3 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center bg-white text-emerald-700 shadow-sm hover:bg-emerald-50 border border-emerald-200" title="엑셀 견적서를 업로드합니다.">
                                 <i className="fas fa-file-excel mr-1.5 text-[13px]"></i> 불러오기
                                 <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e, 'estimate')} accept=".xlsx, .xls, .csv" disabled={state.isProcessing} />
@@ -1336,7 +1289,7 @@
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 text-slate-700">
-                                {displayRows.length === 0 ? <tr><td colSpan="50" className="p-16 text-center text-slate-400 bg-white"><i className="fas fa-folder-open text-4xl mb-4 block"></i>{isEstimateUploaded ? "작업 버퍼에 일치하는 항목이 없습니다." : "조건에 일치하는 상품이 없거나, 데이터가 비어있습니다.\n상단의 [전체보기] 또는 [카탈로그 선택]을 통해 목록을 띄우세요."}</td></tr> : displayRows.map((row, idx) => {
+                                {displayRows.length === 0 ? <tr><td colSpan="50" className="p-16 text-center text-slate-400 bg-white"><i className="fas fa-folder-open text-4xl mb-4 block"></i>{isEstimateUploaded ? "작업 버퍼에 일치하는 항목이 없습니다." : "조건에 일치하는 상품이 없거나, 데이터가 비어있습니다.\n상단의 [카탈로그 선택] 또는 [견적서 추가]를 통해 목록을 띄우세요."}</td></tr> : displayRows.map((row, idx) => {
                                     const isSel = selectedRows.has(row.코드); 
                                     const bg = isSel ? 'bg-indigo-50/50' : (isEstimateUploaded ? 'bg-white hover:bg-slate-50' : 'bg-[#faf9f5] hover:bg-[#f0ece1]');
                                     const mItem = masterProducts[row.코드] || {}; 
