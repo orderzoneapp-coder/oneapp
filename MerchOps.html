@@ -6,6 +6,7 @@
     <meta name="google" content="notranslate">
     <title>ONEAPP MerchOps - Main Workspace [v1.5 클라우드 분할전송 최적화]</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -1262,7 +1263,7 @@
                             
                             {visibleUploadCols['estimate']?.filter(h => h !== '품목코드').map(h => {
                                 const linkedMasterField = config.masterLinks['estimate']?.[h];
-                                const mVal = linkedMasterField && row.코드 ? mItem[linkedMasterField] : undefined;
+                                const mVal = (linkedMasterField && row.코드 ? mItem[linkedMasterField] : undefined) ?? mItem[h];
                                 return <EditableCell key={`p-u-e-${h}`} row={row} field={h} linkedMasterField={linkedMasterField} mVal={mVal} config={config} data={data} isSel={isSel} />;
                             })}
                         </>
