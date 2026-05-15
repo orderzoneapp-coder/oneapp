@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ko" translate="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ONEAPP MerchOps - 콘트롤 타워 (설정)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="coreEngine.js"></script>
+</head>
+<body class="bg-slate-100 font-sans text-slate-800">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo, useEffect, useCallback } = React;
+
+        const useMerchConfig = () => {
+            const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v870') || '');
+            const [visibleMasterCols, setVisibleMasterCols] = useState(() => JSON.parse(localStorage.getItem('merchVisMaster_v870')) || { estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] });
+            const [visibleUploadCols, setVisibleUploadCols] = useState(() => JSON.parse(localStorage.getItem('merchVisUpload_v870')) || { estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명'] });
+            const [mappings, setMappings] = useState(() => JSON.parse(localStorage.getItem('merchMappings_v870')) || { master: {}, estimate: {} });
+            const [masterLinks, setMasterLinks] = useState(() => JSON.parse(localStorage.getItem('merchMasterLinks_v870')) || { estimate: {} });
+            const [marginRules, setMarginRules] = useState(() => {
+                const s = localStorage.getItem('merchMarginRules_v878');
+                return s ? JSON.parse(s) : [{ id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }];
+            });
+
+            useEffect(() => {
+                localStorage.setItem('merchCloudUrl_v870', cloudUrl);
+                localStorage.setItem('merchVisMaster_v870', JSON.stringify(visibleMasterCols));
+                localStorage.setItem('merchVisUpload_v870', JSON.stringify(visibleUploadCols));
+                localStorage.setItem('merchMappings_v870', JSON.stringify(mappings));
+                localStorage.setItem('merchMasterLinks_v870', JSON.stringify(masterLinks));
+                localStorage.setItem('merchMarginRules_v878', JSON.stringify(marginRules));
+                localStorage.setItem('config_sync_trigger', Date.now().toString()); 
+            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules]);
+
+            return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules };
+        };
+
+        const App = () => {
+            const config = useMerchConfig();
+            const [activeTab, setActiveTab] = useState('display');
+            const [toast, setToast] = useState('');
+            const [masterProducts, setMasterProducts] = useState({});
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [processMsg, setProcessMsg] = useState('');
+
+            const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+
+            useEffect(() => {
+                if(window.getAllIDB) {
+                    window.getAllIDB('master_products').then(items => {
+                        if (items && items.length > 0) {
+                            const dict = {}; items.forEach(i => dict[i.코드] = i);
+                            setMasterProducts(dict);
+                        }
+                    });
+                }
+            }, []);
+
+            const handleCloudSync = useCallback(async (type) => {
+                if (!config.cloudUrl) return showToast("⚠️ 클라우드 URL이 설정되지 않았습니다.");
+                showToast(`☁️ 클라우드 ${type === 'upload' ? '전체 분할 백업' : '불러오기'} 시작...`);
+                setIsProcessing(true);
+                
+                try {
+                    if (type === 'upload') {
+                        setProcessMsg('서버 초기화 중...');
+                        let initRes = await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify({ action: 'initSync' }) });
+                        if ((await initRes.json()).status !== 'success') throw new Error("초기화 실패");
+
+                        const masterItems = Object.values(masterProducts);
+                        const chunkSize = 500;
+                        for (let i = 0; i < masterItems.length; i += chunkSize) {
+                            const chunk = masterItems.slice(i, i + chunkSize);
+                            setProcessMsg(`마스터 데이터 업로드 중... (${Math.min(i + chunkSize, masterItems.length).toLocaleString()} / ${masterItems.length.toLocaleString()}건)`);
+                            await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_master', data: chunk }) });
+                        }
+
+                        const historyItems = JSON.parse(localStorage.getItem('merchHistory_v870') || '[]');
+                        for (let i = 0; i < historyItems.length; i += chunkSize) {
+                            const chunk = historyItems.slice(i, i + chunkSize);
+                            setProcessMsg(`히스토리 업로드 중... (${Math.min(i + chunkSize, historyItems.length).toLocaleString()} / ${historyItems.length.toLocaleString()}건)`);
+                            await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_history', data: chunk }) });
+                        }
+
+                        setProcessMsg('환경설정 및 AI 사전 업로드 중...');
+                        const dict = JSON.parse(localStorage.getItem('parserDict_v870') || '{}');
+                        const configPayload = {
+                            action: 'config',
+                            data: {
+                                dict: dict,
+                                rules: config.marginRules,
+                                appConfig: { mappings: config.mappings, masterLinks: config.masterLinks, visibleUploadCols: config.visibleUploadCols, visibleMasterCols: config.visibleMasterCols }
+                            }
+                        };
+                        await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify(configPayload) });
+
+                        showToast('✅ 클라우드 대용량 분할 백업(Push) 성공!');
+                    } else {
+                        setProcessMsg('클라우드 데이터 수신 중...');
+                        const res = await fetch(config.cloudUrl, { method: 'GET' });
+                        if (!res.ok) throw new Error("Network Error");
+                        const result = await res.json();
+                        
+                        if (result.status === 'success' && result.data) { 
+                            if (result.data.master && Object.keys(result.data.master).length > 0) {
+                                setMasterProducts(result.data.master);
+                                const safeData = Object.values(result.data.master).filter(item => item && item.코드);
+                                if(window.bulkPutIDB) await window.bulkPutIDB('master_products', safeData);
+                            }
+                            if (result.data.dict && Object.keys(result.data.dict).length > 0) localStorage.setItem('parserDict_v870', JSON.stringify(result.data.dict));
+                            if (result.data.rules && result.data.rules.length > 0) config.setMarginRules(result.data.rules);
+                            if (result.data.history && Array.isArray(result.data.history)) localStorage.setItem('merchHistory_v870', JSON.stringify(result.data.history));
+                            
+                            if (result.data.appConfig) {
+                                if (result.data.appConfig.mappings) config.setMappings(result.data.appConfig.mappings);
+                                if (result.data.appConfig.masterLinks) config.setMasterLinks(result.data.appConfig.masterLinks);
+                                if (result.data.appConfig.visibleUploadCols) config.setVisibleUploadCols(result.data.appConfig.visibleUploadCols);
+                                if (result.data.appConfig.visibleMasterCols) config.setVisibleMasterCols(result.data.appConfig.visibleMasterCols);
+                            }
+                            
+                            localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+                            localStorage.setItem('config_sync_trigger', Date.now().toString());
+                            
+                            const masterCount = result.data.master ? Object.keys(result.data.master).length : 0;
+                            showToast(`✅ 데이터 불러오기 완료! (상품: ${masterCount.toLocaleString()}건)`);
+                        } else {
+                            throw new Error("Invalid Data Format");
+                        }
+                    }
+                } catch (error) { 
+                    console.error(error);
+                    showToast("❌ 통신 오류 발생. URL이나 서버를 확인하세요.");
+                } finally {
+                    setIsProcessing(false);
+                    setProcessMsg('');
+                }
+            }, [config, masterProducts]);
+
+            return (
+                <div className="flex h-screen overflow-hidden bg-slate-50">
+                    {toast && <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-[1000] bg-slate-800 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 text-sm font-bold border border-slate-700 transition-all"><i className="fas fa-check-circle text-emerald-400"></i>{toast}</div>}
+                    
+                    {}
+                    <div className="w-[260px] bg-[#0f172a] flex flex-col text-slate-300 shadow-xl z-10 shrink-0">
+                        <div className="p-6 border-b border-slate-800 bg-[#0b1120]">
+                            <h1 className="text-xl font-black text-indigo-400 tracking-tight flex items-center"><i className="fas fa-sliders-h mr-3"></i>콘트롤 타워</h1>
+                            <p className="text-[11px] text-slate-500 mt-2 font-bold uppercase tracking-widest">MerchOps Settings</p>
+                        </div>
+                        <div className="flex flex-col py-4 gap-1 px-3 flex-1">
+                            <button className={`px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all bg-indigo-600 text-white shadow-md`}><i className="fas fa-cloud w-6 text-center mr-1"></i> 클라우드 동기화 셋팅</button>
+                        </div>
+                        <div className="p-6 border-t border-slate-800 shrink-0">
+                            <button onClick={() => window.close()} className="w-full py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[13px] font-bold transition-colors"><i className="fas fa-times mr-2"></i> 닫기</button>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-10 custom-scrollbar relative">
+                        <div className="max-w-4xl space-y-6">
+                            <h2 className="text-2xl font-black text-slate-800">클라우드 동기화 및 백업</h2>
+                            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                                <h3 className="text-[15px] font-black text-slate-800 mb-4 pb-2 border-b flex items-center">
+                                    <i className="fas fa-cloud text-indigo-500 mr-2"></i>클라우드 동기화 타겟 URL (Apps Script)
+                                </h3>
+                                <input type="text" value={config.cloudUrl} onChange={e=>config.setCloudUrl(e.target.value)} placeholder="https://script.google.com/macros/s/.../exec" className="w-full border border-slate-300 rounded-xl px-4 py-3 text-[13px] font-mono outline-none focus:border-indigo-500 bg-slate-50" />
+                                
+                                <div className="mt-6 pt-6 border-t border-slate-100 flex flex-col gap-3">
+                                    <div className="text-[13px] font-black text-slate-800 flex items-center justify-between">
+                                        <span><i className="fas fa-database mr-1.5 text-indigo-500"></i>대용량 분할 전송 (Chunking) 컨트롤</span>
+                                        {isProcessing && <span className="text-amber-600 font-bold text-[12px] bg-amber-50 px-3 py-1 rounded-full"><i className="fas fa-spinner fa-spin mr-1"></i>{processMsg}</span>}
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <button onClick={() => handleCloudSync('upload')} disabled={isProcessing} className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white px-4 py-3.5 rounded-xl text-[13px] font-black transition-colors shadow-md flex items-center justify-center">
+                                            <i className="fas fa-cloud-upload-alt mr-2 text-[16px]"></i> 현재 데이터를 클라우드에 백업 (저장)
+                                        </button>
+                                        <button onClick={() => handleCloudSync('download')} disabled={isProcessing} className="flex-1 bg-white border-2 border-indigo-200 disabled:bg-slate-100 text-indigo-700 hover:bg-indigo-50 px-4 py-3.5 rounded-xl text-[13px] font-black transition-colors shadow-sm flex items-center justify-center">
+                                            <i className="fas fa-cloud-download-alt mr-2 text-[16px]"></i> 클라우드에서 데이터 복구 (불러오기)
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
