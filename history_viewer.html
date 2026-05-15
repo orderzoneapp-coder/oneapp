@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ONEAPP MerchOps - 시스템 감사 로그(History)</title>
+    <meta name="google" content="notranslate">
+    <title>ONEAPP MerchOps - 시스템 감사 로그 뷰어</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -11,155 +12,171 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-        body { font-family: 'Pretendard', -apple-system, sans-serif; }
+        body { font-family: 'Pretendard', -apple-system, sans-serif; overflow: hidden; }
         ::-webkit-scrollbar { width: 8px; height: 8px; } 
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; }
-        .fade-in { animation: fadeIn 0.3s ease-out; } 
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
-<body class="bg-slate-100 font-sans text-slate-800 overflow-hidden">
+<body class="bg-slate-100 font-sans text-slate-800">
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
-        const injectMockDataForPreview = () => {
-            if (!localStorage.getItem('merchHistory_v870') || JSON.parse(localStorage.getItem('merchHistory_v870')).length === 0) {
-                const mockLogs = [
-                    { id: '1', timestamp: new Date().toLocaleString('ko-KR'), code: '10001001', name: '냉동 흰다리새우', spec: '1.8kg', field: '입고가', oldVal: '18000', newVal: '19500', diff: 1500 },
-                    { id: '2', timestamp: new Date(Date.now() - 3600000).toLocaleString('ko-KR'), code: 'SYSTEM', name: '[견적서 그룹 생성] 주말 VIP 납품단가', spec: '', field: '견적서', oldVal: '-', newVal: '142개 상품 추가됨', diff: 0 },
-                    { id: '3', timestamp: new Date(Date.now() - 7200000).toLocaleString('ko-KR'), code: '20003015', name: '청정원 진간장', spec: '15kg', field: '출고가', oldVal: '45000', newVal: '42000', diff: -3000 }
-                ];
-                localStorage.setItem('merchHistory_v870', JSON.stringify(mockLogs));
-            }
-        };
-
         const HistoryApp = () => {
             const [logs, setLogs] = useState([]);
             const [searchTerm, setSearchTerm] = useState('');
-
-            // 로컬 스토리지에서 히스토리 데이터 불러오기 (실시간 감지 포함)
-            const loadLogs = () => {
-                try {
-                    injectMockDataForPreview(); // 미리보기용 임시 코드
-                    const savedLogs = JSON.parse(localStorage.getItem('merchHistory_v870')) || [];
-                    setLogs(savedLogs);
-                } catch(e) { console.error(e); }
-            };
+            const [filterField, setFilterField] = useState('all');
 
             useEffect(() => {
-                loadLogs();
-                // 메인 앱에서 F8로 새로운 로그가 저장되면 즉시 화면 갱신
-                const handleStorageChange = (e) => {
-                    if (e.key === 'merchHistory_v870') loadLogs();
-                };
-                window.addEventListener('storage', handleStorageChange);
-                return () => window.removeEventListener('storage', handleStorageChange);
+                try {
+                    const savedLogs = JSON.parse(localStorage.getItem('merchHistory_v870') || '[]');
+                    // 저장된 로그가 아예 없으면 미리보기용 빈 배열
+                    setLogs(savedLogs);
+                } catch (e) {
+                    setLogs([]);
+                }
             }, []);
 
+            // 화면 깨짐의 주원인 해결: String(val || '') 로 널(null) 데이터 예외 처리
             const filteredLogs = useMemo(() => {
-                if (!searchTerm.trim()) return logs;
-                const keyword = searchTerm.toLowerCase();
-                return logs.filter(log => 
-                    (log.name && log.name.toLowerCase().includes(keyword)) ||
-                    (log.code && log.code.toLowerCase().includes(keyword)) ||
-                    (log.field && log.field.toLowerCase().includes(keyword))
-                );
-            }, [logs, searchTerm]);
+                const keyword = searchTerm.toLowerCase().trim();
+                return logs.filter(log => {
+                    const matchField = filterField === 'all' || log.field === filterField;
+                    if (!matchField) return false;
+                    
+                    if (!keyword) return true;
+                    
+                    const safeName = String(log.name || '').toLowerCase();
+                    const safeCode = String(log.code || '').toLowerCase();
+                    const safeField = String(log.field || '').toLowerCase();
+                    const safeSpec = String(log.spec || '').toLowerCase();
+
+                    return safeName.includes(keyword) || safeCode.includes(keyword) || safeField.includes(keyword) || safeSpec.includes(keyword);
+                });
+            }, [logs, searchTerm, filterField]);
+
+            const clearLogs = () => {
+                if (window.confirm("정말 모든 감사 로그를 삭제하시겠습니까? (복구 불가)")) {
+                    localStorage.removeItem('merchHistory_v870');
+                    setLogs([]);
+                }
+            };
+
+            const formatDiff = (diff) => {
+                if (!diff || diff === 0) return <span className="text-slate-400">-</span>;
+                if (diff > 0) return <span className="text-rose-500 font-bold">▲ {diff.toLocaleString()}</span>;
+                return <span className="text-blue-500 font-bold">▼ {Math.abs(diff).toLocaleString()}</span>;
+            };
 
             return (
-                <div className="flex h-screen overflow-hidden bg-slate-50 fade-in">
+                <div className="flex h-screen overflow-hidden bg-slate-50">
                     {/* 왼쪽 사이드바 */}
-                    <div className="w-[260px] bg-[#0f172a] flex flex-col text-slate-300 shadow-xl z-10 shrink-0 h-full">
-                        <div className="p-6 border-b border-slate-800 bg-[#0b1120] shrink-0">
+                    <div className="w-[260px] bg-[#0f172a] flex flex-col text-slate-300 shadow-xl z-10 shrink-0">
+                        <div className="p-6 border-b border-slate-800 bg-[#0b1120]">
                             <h1 className="text-xl font-black text-amber-400 tracking-tight flex items-center">
-                                <i className="fas fa-history mr-3"></i>로그 뷰어
+                                <i className="fas fa-history mr-3"></i>감사 로그
                             </h1>
-                            <p className="text-[11px] text-slate-500 mt-2 font-bold uppercase tracking-widest">Audit & History</p>
+                            <p className="text-[10px] text-slate-500 mt-2 font-bold uppercase tracking-widest">History & Tracker</p>
                         </div>
                         <div className="flex flex-col py-4 gap-1 px-3 flex-1">
-                            <div className="px-4 py-3.5 rounded-xl text-left text-[13px] font-bold bg-amber-600 text-white shadow-md cursor-default">
-                                <i className="fas fa-list-alt w-6 text-center mr-1"></i> 전체 작업 내역
+                            <div className="px-4 py-3.5 rounded-xl text-left text-[13px] font-bold bg-amber-600 text-white shadow-md">
+                                <i className="fas fa-list w-6 text-center mr-1"></i> 시스템 단가 변동 기록
                             </div>
                         </div>
-                        <div className="p-6 border-t border-slate-800 shrink-0">
-                            <button onClick={() => window.close()} className="w-full py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[13px] font-bold transition-colors">
-                                <i className="fas fa-arrow-left mr-2"></i> 메인으로 (닫기)
+                        <div className="mt-auto p-6 border-t border-slate-800 flex flex-col gap-3">
+                            <button onClick={clearLogs} className="w-full py-2.5 bg-rose-900/50 text-rose-300 border border-rose-800/50 rounded-xl hover:bg-rose-800 hover:text-white text-[12px] font-bold transition-colors">
+                                <i className="fas fa-trash-alt mr-2"></i> 기록 전체 지우기
+                            </button>
+                            <button onClick={() => window.location.href = 'MerchOps.html'} className="w-full py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[13px] font-bold transition-colors">
+                                <i className="fas fa-arrow-left mr-2"></i> 메인으로 돌아가기
                             </button>
                         </div>
                     </div>
 
-                    {/* 메인 컨텐츠 영역 */}
-                    <div className="flex-1 flex flex-col p-8 overflow-hidden relative">
-                        <div className="flex justify-between items-end mb-6 shrink-0">
+                    {/* 메인 뷰 */}
+                    <div className="flex-1 overflow-hidden flex flex-col">
+                        <div className="bg-white p-6 border-b border-slate-200 flex items-center justify-between shadow-sm shrink-0">
                             <div>
-                                <h2 className="text-2xl font-black text-slate-800 mb-2">최근 작업 및 동기화 내역</h2>
-                                <p className="text-[13px] font-bold text-slate-500">메인 앱에서 [F8]로 단가를 저장하거나 카탈로그를 조작한 이력입니다. (최대 2,000건 자동 보관)</p>
+                                <h2 className="text-2xl font-black text-slate-800 mb-1">단가 변동 추적기</h2>
+                                <p className="text-[13px] text-slate-500 font-bold">최대 최근 2,000건의 작업 및 변동 내역이 이곳에 안전하게 보관됩니다.</p>
                             </div>
-                            <div className="relative w-[300px]">
-                                <input 
-                                    type="text" 
-                                    placeholder="품목명, 코드, 변동항목 검색..." 
-                                    value={searchTerm} 
-                                    onChange={e=>setSearchTerm(e.target.value)} 
-                                    className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-[13px] font-bold outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-200 shadow-sm transition-all" 
-                                />
-                                <i className="fas fa-search absolute right-3 top-3.5 text-slate-400 text-[13px]"></i>
+                            <div className="flex gap-2 items-center">
+                                <select value={filterField} onChange={(e) => setFilterField(e.target.value)} className="border border-slate-300 rounded-lg px-4 py-2.5 text-[13px] outline-none focus:border-amber-500 bg-white font-bold text-slate-600 shadow-sm">
+                                    <option value="all">모든 항목</option>
+                                    <option value="입고가">입고가</option>
+                                    <option value="출고가">출고가</option>
+                                    <option value="카탈로그">카탈로그 (생성/삭제)</option>
+                                    <option value="견적서">견적서 (생성/삭제)</option>
+                                </select>
+                                <div className="relative">
+                                    <i className="fas fa-search absolute left-4 top-3.5 text-slate-400"></i>
+                                    <input 
+                                        type="text" 
+                                        value={searchTerm} 
+                                        onChange={(e) => setSearchTerm(e.target.value)} 
+                                        placeholder="상품명, 코드, 항목 등 검색..." 
+                                        className="border border-slate-300 rounded-lg pl-10 pr-4 py-2.5 w-64 text-[13px] outline-none focus:border-amber-500 bg-white shadow-sm"
+                                    />
+                                </div>
                             </div>
                         </div>
 
-                        {}
-                        <div className="flex-1 bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex flex-col relative">
-                            <div className="flex-1 overflow-auto custom-scrollbar p-1">
-                                {filteredLogs.length > 0 ? (
-                                    <table className="w-full text-left text-[13px] whitespace-nowrap">
-                                        <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 shadow-sm z-10 text-slate-600 font-bold">
+                        <div className="flex-1 overflow-auto custom-scrollbar p-6 bg-slate-100">
+                            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                                <table className="w-full text-left text-[13px] whitespace-nowrap">
+                                    <thead className="bg-slate-50 border-b border-slate-200">
+                                        <tr className="text-slate-500 font-bold">
+                                            <th className="px-4 py-3 w-40 text-center">작업 일시</th>
+                                            <th className="px-4 py-3 w-28">상품코드</th>
+                                            <th className="px-4 py-3 max-w-[200px]">상품명 (규격)</th>
+                                            <th className="px-4 py-3 w-24 text-center">변동 항목</th>
+                                            <th className="px-4 py-3 w-28 text-right">기존 데이터</th>
+                                            <th className="px-4 py-3 w-28 text-right text-indigo-600">변경 데이터</th>
+                                            <th className="px-4 py-3 w-28 text-right">증감(차액)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {filteredLogs.length === 0 ? (
                                             <tr>
-                                                <th className="px-4 py-3.5 text-center w-40">작업일시</th>
-                                                <th className="px-4 py-3.5 w-28">구분/코드</th>
-                                                <th className="px-4 py-3.5 w-full">품명 (내용)</th>
-                                                <th className="px-4 py-3.5 text-center w-24">변경항목</th>
-                                                <th className="px-4 py-3.5 text-right w-24">기존값</th>
-                                                <th className="px-4 py-3.5 text-right w-24">변경값</th>
-                                                <th className="px-4 py-3.5 text-right w-24">차액</th>
+                                                <td colSpan="7" className="p-16 text-center text-slate-400">
+                                                    <i className="fas fa-search text-3xl mb-3 block opacity-50"></i>
+                                                    기록된 내용이 없거나 검색 결과가 없습니다.
+                                                </td>
                                             </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100">
-                                            {filteredLogs.map((log, i) => (
-                                                <tr key={i} className="hover:bg-slate-50 transition-colors text-slate-700">
-                                                    <td className="px-4 py-2.5 text-center text-slate-500 font-mono text-[11px]">{log.timestamp}</td>
-                                                    <td className="px-4 py-2.5 font-bold text-[11px]">
-                                                        {log.code === 'SYSTEM' ? <span className="text-amber-500">시스템 연산</span> : <span className="font-mono text-slate-500">{log.code}</span>}
-                                                    </td>
-                                                    <td className="px-4 py-2.5 font-bold truncate max-w-[300px]">
-                                                        {log.name} <span className="text-[11px] text-slate-400 font-normal ml-1">{log.spec && `(${log.spec})`}</span>
-                                                    </td>
-                                                    <td className="px-4 py-2.5 text-center">
-                                                        <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-[11px] font-black border border-slate-200">{log.field}</span>
-                                                    </td>
-                                                    <td className="px-4 py-2.5 text-right text-slate-400 line-through">
-                                                        {log.oldVal !== undefined && log.oldVal !== null && log.oldVal !== '' ? (isNaN(log.oldVal) ? log.oldVal : Number(log.oldVal).toLocaleString()) : '-'}
-                                                    </td>
-                                                    <td className="px-4 py-2.5 text-right font-black text-amber-600">
-                                                        {log.newVal !== undefined && log.newVal !== null && log.newVal !== '' ? (isNaN(log.newVal) ? log.newVal : Number(log.newVal).toLocaleString()) : '-'}
-                                                    </td>
-                                                    <td className="px-4 py-2.5 text-right font-bold text-[11px]">
-                                                        {log.diff > 0 && <span className="text-rose-500">+{log.diff.toLocaleString()}</span>}
-                                                        {log.diff < 0 && <span className="text-blue-500">{log.diff.toLocaleString()}</span>}
-                                                        {(!log.diff || log.diff === 0) && <span className="text-slate-300">-</span>}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                ) : (
-                                    <div className="h-full flex flex-col items-center justify-center text-slate-400 font-bold">
-                                        <i className="fas fa-folder-open text-5xl mb-4 block text-slate-200"></i>
-                                        기록된 최신 작업 내역이 없거나 검색 결과가 없습니다.
-                                    </div>
-                                )}
+                                        ) : (
+                                            filteredLogs.map((log) => {
+                                                const isSystem = log.code === 'SYSTEM';
+                                                const isPrice = ['입고가', '출고가', '시중가'].includes(log.field);
+                                                
+                                                return (
+                                                    <tr key={log.id} className="hover:bg-slate-50 transition-colors group">
+                                                        <td className="px-4 py-3 text-center text-slate-500 text-[11px] tracking-tight">{log.timestamp}</td>
+                                                        <td className="px-4 py-3">
+                                                            {isSystem ? <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded text-[10px] font-black">시스템</span> : <span className="font-mono text-slate-500 text-[11px]">{log.code}</span>}
+                                                        </td>
+                                                        <td className="px-4 py-3 font-bold text-slate-800 truncate max-w-[200px]">
+                                                            {log.name} <span className="text-slate-400 font-normal ml-1 text-[11px]">{log.spec && `(${log.spec})`}</span>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-center">
+                                                            <span className="bg-slate-100 border border-slate-200 px-2 py-1 rounded text-[11px] font-bold text-slate-600">{log.field}</span>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right text-slate-500">
+                                                            {isPrice && !isNaN(log.oldVal) ? Number(log.oldVal).toLocaleString() : log.oldVal}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right font-black text-indigo-600">
+                                                            {isPrice && !isNaN(log.newVal) ? Number(log.newVal).toLocaleString() : log.newVal}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right">
+                                                            {formatDiff(log.diff)}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
