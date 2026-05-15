@@ -275,9 +275,20 @@
 
             const addHistoryLogs = useCallback((newLogs) => {
                 setHistoryLogs(prev => {
-                    const combined = [...newLogs, ...prev].slice(0, 2000); 
-                    localStorage.setItem('merchHistory_v870', JSON.stringify(combined));
-                    return combined;
+                    const allLogs = [...newLogs, ...prev];
+                    
+                    // 1. 농산/일배 (코드 10 시작) 필터링 및 1000개 보존
+                    const agriLogs = allLogs.filter(l => String(l.code).startsWith('10')).slice(0, 1000);
+                    // 2. 일반 식자재/공산품 필터링 및 1000개 보존
+                    const generalLogs = allLogs.filter(l => !String(l.code).startsWith('10')).slice(0, 1000);
+                    
+                    // 3. 기존의 최신 시간 순서를 유지하기 위해 ID 기준으로 교집합 병합
+                    const safeAgriIds = new Set(agriLogs.map(l => l.id));
+                    const safeGeneralIds = new Set(generalLogs.map(l => l.id));
+                    const finalLogs = allLogs.filter(l => safeAgriIds.has(l.id) || safeGeneralIds.has(l.id));
+
+                    localStorage.setItem('merchHistory_v870', JSON.stringify(finalLogs));
+                    return finalLogs;
                 });
             }, []);
 
