@@ -305,7 +305,9 @@
             const [toastMsg, setToastMsg] = useState('');
             const [isProcessing, setIsProcessing] = useState(false);
             const [processMsg, setProcessMsg] = useState('');
-            const [priceFilter, setPriceFilter] = useState('all'); // 단가 변동 필터 상태 추가
+            
+            // [검수뷰 추가 1] 단가 필터 상태
+            const [priceFilter, setPriceFilter] = useState('all');
 
             const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
 
@@ -490,6 +492,10 @@
                                 mItem.sources[mapKey]['규격'] = specKey ? row[specKey] : '';
                                 mItem.sources[mapKey]['구매처'] = vendorKey ? row[vendorKey] : '';
                                 
+                                // [검수뷰 추가 4] 자동 빈칸 채움: 엑셀에 이름, 규격이 비어있으면 마스터에서 땡겨옴
+                                if (!mItem.sources[mapKey]['품목명'] && newMaster[code]?.['품목명']) mItem.sources[mapKey]['품목명'] = newMaster[code]['품목명'];
+                                if (!mItem.sources[mapKey]['규격'] && newMaster[code]?.['규격']) mItem.sources[mapKey]['규격'] = newMaster[code]['규격'];
+                                
                                 Object.keys(curMap).forEach(h => {
                                     if (!['품목코드', '품목명', '규격', '구매처'].includes(h)) {
                                         const actualKey = headerCache[h];
@@ -503,6 +509,10 @@
                                         }
                                     }
                                 });
+
+                                // 이름, 규격은 무조건 finalData에 먼저 매핑
+                                if (mItem.finalData['품목명'] === undefined) mItem.finalData['품목명'] = mItem.sources[mapKey]['품목명'];
+                                if (mItem.finalData['규격'] === undefined) mItem.finalData['규격'] = mItem.sources[mapKey]['규격'];
 
                                 if (mapKey === 'estimate') {
                                     const pIn = window.parseNum(mItem.sources[mapKey]['입고가'] || newMaster[code]?.['입고가']);
@@ -1048,21 +1058,22 @@
                                 <i className="fas fa-redo-alt text-[13px]"></i>
                             </button>
                             
-                            {/* 3. 단가 변동 필터 (작업 모드일 때만 표시) */}
+                            {/* [검수뷰 추가 2] 단가 변동 필터 (작업 모드일 때만 표시) */}
                             {isEstimateUploaded && (
-                                <div className="relative shrink-0">
+                                <div className="relative shrink-0 flex items-center">
                                     <select 
                                         value={state.priceFilter} 
                                         onChange={(e) => actions.setPriceFilter(e.target.value)} 
-                                        className={`appearance-none h-9 pl-3 pr-8 rounded-lg text-[12px] font-bold outline-none cursor-pointer border shadow-sm transition-colors ${state.priceFilter !== 'all' ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                                        className={`appearance-none h-9 pl-3 pr-8 rounded-lg text-[12px] font-bold outline-none cursor-pointer border shadow-sm transition-colors ml-2 ${state.priceFilter !== 'all' ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'}`}
                                         title="단가 변동 내역 필터링"
                                     >
-                                        <option value="all">모든 상품 보기</option>
-                                        <option value="changed">🔄 변동 상품 (전체)</option>
+                                        <option value="all">모든 상품</option>
+                                        <option value="changed">🔄 변동 상품</option>
                                         <option value="up">📈 단가 인상</option>
                                         <option value="down">📉 단가 인하</option>
+                                        <option value="new">✨ 신규 상품</option>
                                     </select>
-                                    <i className={`fas fa-chevron-down absolute right-3 top-3 text-[10px] pointer-events-none ${state.priceFilter !== 'all' ? 'text-amber-500' : 'text-slate-400'}`}></i>
+                                    <i className={`fas fa-chevron-down absolute right-3 top-3 text-[10px] pointer-events-none ${state.priceFilter !== 'all' ? 'text-emerald-500' : 'text-slate-400'}`}></i>
                                 </div>
                             )}
                             
@@ -1111,8 +1122,14 @@
             }, [initialVal]);
 
             const isDiff = linkedMasterField && mVal !== undefined && localVal !== '' && String(mVal) !== String(localVal) && isNumeric;
-            const isHighlightCol = ['입고가', '도매A', '행사가', '출고가'].includes(field);
-            const diffAmount = isDiff ? window.parseNum(localVal) - window.parseNum(mVal) : 0;
+            const isHighlightCol = ['입고가', '출고가'].includes(field);
+            const oldP = window.parseNum(mVal);
+            const newP = window.parseNum(localVal);
+            const diffAmount = isDiff ? newP - oldP : 0;
+            
+            // [검수뷰 추가 3] 30% 이상 폭등/폭락 경고등
+            const isSpike = oldP > 0 && newP > 0 && Math.abs(diffAmount) / oldP >= 0.3;
+            const isTargetCol = ['입고가', '출고가'].includes(field) || ['입고가', '출고가'].includes(linkedMasterField);
 
             let baseBg = 'bg-white';
             if (isHighlightCol) baseBg = 'bg-orange-50/40';
@@ -1164,17 +1181,23 @@
             return (
                 <td className={`px-1 py-1 border-r border-slate-200 ${getCellWidthClass(linkedMasterField || field)} ${baseBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-100/60'} transition-colors relative`}>
                     <div className="flex flex-col justify-center h-full">
-                        <input 
-                            type="text" 
-                            className={`w-full bg-transparent hover:bg-white/60 focus:bg-white focus:ring-1 rounded px-1.5 outline-none ${isNumeric ? 'text-right font-bold' : 'truncate text-center'} ${isDiff ? 'text-indigo-700' : ''} ${diffAmount !== 0 ? 'text-[11px] pb-0' : 'text-[12px] py-1'}`} 
-                            value={localVal === "오류" ? "" : localVal} 
-                            placeholder={mVal || ''} 
-                            onChange={(e) => setLocalVal(e.target.value)} 
-                            onBlur={(e) => commitChange(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            onClick={(e) => e.target.select()} 
-                        />
-                        {isDiff && diffAmount !== 0 && (
+                        {isTargetCol && isDiff && oldP > 0 && (
+                            <div className="text-[10px] text-slate-400 line-through decoration-slate-400 font-mono tracking-tighter text-right pr-1.5">{oldP.toLocaleString()}</div>
+                        )}
+                        <div className={`flex items-center w-full ${isNumeric ? 'justify-end' : 'justify-center'}`}>
+                            {isTargetCol && isSpike && <i className="fas fa-exclamation-triangle text-rose-500 animate-pulse mr-1" title="주의! 단가가 30% 이상 변동되었습니다."></i>}
+                            <input 
+                                type="text" 
+                                className={`w-full bg-transparent hover:bg-white/60 focus:bg-white focus:ring-1 rounded px-1.5 outline-none ${isNumeric ? 'text-right font-bold' : 'truncate text-center'} ${isDiff ? 'text-indigo-700' : ''} ${diffAmount !== 0 && isTargetCol ? 'text-[11px] pb-0' : 'text-[12px] py-1'}`} 
+                                value={localVal === "오류" ? "" : localVal} 
+                                placeholder={mVal || ''} 
+                                onChange={(e) => setLocalVal(e.target.value)} 
+                                onBlur={(e) => commitChange(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                                onClick={(e) => e.target.select()} 
+                            />
+                        </div>
+                        {isTargetCol && isDiff && diffAmount !== 0 && (
                             <div className={`text-[10px] font-black text-right pr-1.5 leading-none mt-0.5 ${diffAmount > 0 ? 'text-rose-500' : 'text-blue-500'}`}>
                                 {diffAmount > 0 ? '▲' : '▼'} {Math.abs(diffAmount).toLocaleString()}
                             </div>
@@ -1578,14 +1601,15 @@
                     baseList.sort((a, b) => String(a.코드).localeCompare(String(b.코드)));
                 }
 
-                // 가격 변동 필터 적용
+                // 가격 변동 필터 적용 [검수뷰 연동]
                 if (ui.priceFilter !== 'all') {
                     baseList = baseList.filter(item => {
                         const mItem = data.masterProducts[item.코드] || {};
                         const oldP = window.parseNum(mItem['입고가']);
                         const newP = window.parseNum(item.finalData?.['입고가'] !== undefined ? item.finalData['입고가'] : item.sources?.['estimate']?.['입고가']);
 
-                        if (oldP === 0 || newP === 0) return false; // 신규나 데이터 오류는 변동에서 제외
+                        if (ui.priceFilter === 'new') return !data.masterProducts[item.코드];
+                        if (oldP === 0 || newP === 0) return false; 
 
                         if (ui.priceFilter === 'changed') return oldP !== newP;
                         if (ui.priceFilter === 'up') return newP > oldP;
