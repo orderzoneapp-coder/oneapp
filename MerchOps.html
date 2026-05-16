@@ -57,7 +57,6 @@
     <script type="text/babel">
         const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
-        // 로컬 스토리지 안전 파싱 함수 (클라우드 싱크 오류 시 앱 크래시 방지)
         const safeJSONParse = (key, defaultVal) => {
             try {
                 const s = localStorage.getItem(key);
@@ -310,12 +309,9 @@
                 setHistoryLogs(prev => {
                     const allLogs = [...newLogs, ...prev];
                     
-                    // 1. 농산/일배 (코드 10 시작) 필터링 및 1000개 보존
                     const agriLogs = allLogs.filter(l => String(l.code).startsWith('10')).slice(0, 1000);
-                    // 2. 일반 식자재/공산품 필터링 및 1000개 보존
                     const generalLogs = allLogs.filter(l => !String(l.code).startsWith('10')).slice(0, 1000);
                     
-                    // 3. 기존의 최신 시간 순서를 유지하기 위해 ID 기준으로 교집합 병합
                     const safeAgriIds = new Set(agriLogs.map(l => l.id));
                     const safeGeneralIds = new Set(generalLogs.map(l => l.id));
                     const finalLogs = allLogs.filter(l => safeAgriIds.has(l.id) || safeGeneralIds.has(l.id));
@@ -339,7 +335,6 @@
             const [isProcessing, setIsProcessing] = useState(false);
             const [processMsg, setProcessMsg] = useState('');
             
-            // [검수 뷰] 단가 필터 상태 추가
             const [priceFilter, setPriceFilter] = useState('all');
 
             const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
@@ -354,7 +349,6 @@
 
         const useMerchActions = (config, data, ui, fullDisplayRows) => {
             
-            // 🚀 클라우드 분할전송 로직 (사용자 요청 frontend_update.js 100% 동일 적용)
             const handleCloudSync = useCallback(async (type) => { 
                 if (!config.cloudUrl) return ui.setAlertMsg("클라우드 URL이 설정되지 않았습니다. 우측 상단 톱니바퀴에서 URL을 세팅해주세요.");
                 ui.showToast(`☁️ 클라우드 ${type === 'upload' ? '전체 백업' : '불러오기'} 시작...`);
@@ -513,7 +507,6 @@
                                 mItem.sources[mapKey]['규격'] = specKey ? row[specKey] : '';
                                 mItem.sources[mapKey]['구매처'] = vendorKey ? row[vendorKey] : '';
                                 
-                                // [검수 뷰 기능] 자동 빈칸 채움: 엑셀에 이름, 규격이 비어있으면 마스터에서 땡겨옴
                                 if (!mItem.sources[mapKey]['품목명'] && newMaster[code]?.['품목명']) mItem.sources[mapKey]['품목명'] = newMaster[code]['품목명'];
                                 if (!mItem.sources[mapKey]['규격'] && newMaster[code]?.['규격']) mItem.sources[mapKey]['규격'] = newMaster[code]['규격'];
 
@@ -883,9 +876,16 @@
                 }, 100);
             }, [fullDisplayRows, ui.selectedRows, data.masterProducts, data.setManagedItems, config.marginRules, ui]);
 
+            // [출력 센터 연동 고도화] 화면의 상품들만 정확히 전달하기
+            const handleOpenExportCenter = useCallback(() => {
+                const codes = fullDisplayRows.map(r => r.코드);
+                localStorage.setItem('merchExportTargets', JSON.stringify(codes));
+                window.open('export_center.html', '_blank');
+            }, [fullDisplayRows]);
+
             return useMemo(() => ({
-                handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules
-            }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules]);
+                handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleOpenExportCenter
+            }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleRemoveFromWorkspace, handleSaveAsCategory, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleOpenExportCenter]);
         };
 
         const SystemConsole = ({ itemCount, isProcessing, processMsg, estimateCount, activeTags }) => {
@@ -973,7 +973,7 @@
 
         const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
             const { activeTags, isEstimateUploaded, selectedRows, globalSearch, priceFilter } = state;
-            const { handleCommitEstimate, handleRemoveFromWorkspace, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, showToast, setPriceFilter } = actions;
+            const { handleCommitEstimate, handleRemoveFromWorkspace, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, showToast, setPriceFilter, handleOpenExportCenter } = actions;
 
             const showActionButtons = activeTags.length > 0;
 
@@ -1036,13 +1036,15 @@
                                 <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e, 'estimate')} accept=".xlsx, .xls, .csv" disabled={state.isProcessing} />
                             </label>
                             
-                            <button onClick={() => window.open('export_center.html', '_blank')} className="h-8 px-3 rounded-lg text-[11px] font-bold bg-white text-emerald-700 shadow-sm hover:bg-emerald-50 transition-colors flex items-center border border-emerald-200" title="통합 엑셀 다운로드 센터로 이동 (단축키: F9)">
+                            {/* [연동] 출력 센터로 데이터 넘기기 연동 (다운로드) */}
+                            <button onClick={handleOpenExportCenter} className="h-8 px-3 rounded-lg text-[11px] font-bold bg-white text-emerald-700 shadow-sm hover:bg-emerald-50 transition-colors flex items-center border border-emerald-200" title="통합 엑셀 다운로드 센터로 이동 (단축키: F9)">
                                 <i className="fas fa-file-download mr-1.5 text-[13px]"></i> 다운로드 <span className="ml-1 text-[9px] text-emerald-400">F9</span>
                             </button>
 
                             <div className="w-px h-5 bg-emerald-200 mx-0.5"></div>
 
-                            <button onClick={() => window.open('export_center.html', '_blank')} className="h-8 px-2.5 rounded-lg bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 transition-colors flex items-center border border-emerald-700" title="데이터 출력 센터로 이동 (단축키: F10)">
+                            {/* [연동] 출력 센터로 데이터 넘기기 연동 (이미지 전송) */}
+                            <button onClick={handleOpenExportCenter} className="h-8 px-2.5 rounded-lg bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 transition-colors flex items-center border border-emerald-700" title="데이터 출력 센터로 이동 (단축키: F10)">
                                 <i className="fas fa-camera text-[14px]"></i> <span className="ml-1 text-[9px] text-emerald-200 font-bold tracking-wider">F10</span>
                             </button>
                         </div>
@@ -1071,7 +1073,7 @@
                                 </>
                             )}
 
-                            {/* [검수 뷰 추가 1] 단가 변동 즉시 필터 콤보박스 */}
+                            {/* 단가 변동 즉시 필터 콤보박스 */}
                             {isEstimateUploaded && (
                                 <div className="relative shrink-0 flex items-center">
                                     <select 
@@ -1122,7 +1124,6 @@
             const newP = window.parseNum(localVal);
             const diffAmount = isDiff ? newP - oldP : 0;
             
-            // [검수 뷰 추가 2] 30% 이상 폭등/폭락 스마트 경고등 감지 로직
             const isSpike = oldP > 0 && newP > 0 && Math.abs(diffAmount) / oldP >= 0.3;
 
             let baseBg = 'bg-white';
@@ -1175,7 +1176,6 @@
             return (
                 <td className={`px-1 py-1 border-r border-slate-200 ${getCellWidthClass(linkedMasterField || field)} ${baseBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-100/60'} transition-colors relative`}>
                     <div className="flex flex-col justify-center h-full">
-                        {/* [검수 뷰 추가 3] 전/후 비교 직관적 UI 적용 (기존가 취소선) */}
                         {isTargetCol && isDiff && oldP > 0 && (
                             <div className="text-[10px] text-slate-400 line-through decoration-slate-400 font-mono tracking-tighter text-right pr-1.5">{oldP.toLocaleString()}</div>
                         )}
@@ -1656,7 +1656,7 @@
                     } else if (e.key === 'F9' || e.key === 'F10') {
                         e.preventDefault();
                         if (isInput) document.activeElement.blur();
-                        if (!appState.isProcessing) window.open('export_center.html', '_blank'); 
+                        if (!appState.isProcessing) appActions.handleOpenExportCenter(); 
                     }
                 };
 
