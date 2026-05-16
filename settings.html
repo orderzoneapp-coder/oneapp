@@ -36,8 +36,24 @@
             const [mappings, setMappings] = useState(() => JSON.parse(localStorage.getItem('merchMappings_v870')) || { master: {}, estimate: {} });
             const [masterLinks, setMasterLinks] = useState(() => JSON.parse(localStorage.getItem('merchMasterLinks_v870')) || { estimate: {} });
             const [marginRules, setMarginRules] = useState(() => {
+                // 하드코딩된 기본 마진 룰
+                const defaultRules = [
+                    { id: 'rule_1', whCode: '01', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
+                    { id: 'rule_2', whCode: '01', unit: '개, 낱개, 소분, EA, ea,', rate: 15, type: 'divide' },
+                    { id: 'rule_3', whCode: '03, 05', unit: 'box, 박스, BOX', rate: 15, type: 'divide' },
+                    { id: 'rule_4', whCode: '03, 05', unit: '개, 낱개, 소분, EA, ea,', rate: 20, type: 'divide' },
+                    { id: 'rule_5', whCode: '*', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
+                    { id: 'rule_6', whCode: '*', unit: '개, 낱개, 소분, EA, ea,', rate: 15, type: 'divide' },
+                    { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }
+                ];
                 const s = localStorage.getItem('merchMarginRules_v878');
-                return s ? JSON.parse(s) : [{ id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }];
+                if (s) {
+                    const parsed = JSON.parse(s);
+                    // 기존에 단순 기본값 1개만 저장되어 있던 상태라면, 새로운 하드코딩 값으로 덮어씀
+                    if (parsed.length <= 1) return defaultRules;
+                    return parsed;
+                }
+                return defaultRules;
             });
 
             useEffect(() => {
