@@ -305,13 +305,15 @@
             const [toastMsg, setToastMsg] = useState('');
             const [isProcessing, setIsProcessing] = useState(false);
             const [processMsg, setProcessMsg] = useState('');
+            const [priceFilter, setPriceFilter] = useState('all'); // 단가 변동 필터 상태 추가
 
             const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
 
             return {
                 selectedRows, setSelectedRows, globalSearch, setGlobalSearch, activeTags, setActiveTags,
                 showReviewModal, setShowReviewModal, showCategoryModal, setShowCategoryModal,
-                alertMsg, setAlertMsg, toastMsg, setToastMsg, isProcessing, setIsProcessing, processMsg, setProcessMsg, showToast
+                alertMsg, setAlertMsg, toastMsg, setToastMsg, isProcessing, setIsProcessing, processMsg, setProcessMsg, showToast,
+                priceFilter, setPriceFilter
             };
         };
 
@@ -1046,7 +1048,25 @@
                                 <i className="fas fa-redo-alt text-[13px]"></i>
                             </button>
                             
-                            {/* 3. 검색창 */}
+                            {/* 3. 단가 변동 필터 (작업 모드일 때만 표시) */}
+                            {isEstimateUploaded && (
+                                <div className="relative shrink-0">
+                                    <select 
+                                        value={state.priceFilter} 
+                                        onChange={(e) => actions.setPriceFilter(e.target.value)} 
+                                        className={`appearance-none h-9 pl-3 pr-8 rounded-lg text-[12px] font-bold outline-none cursor-pointer border shadow-sm transition-colors ${state.priceFilter !== 'all' ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                                        title="단가 변동 내역 필터링"
+                                    >
+                                        <option value="all">모든 상품 보기</option>
+                                        <option value="changed">🔄 변동 상품 (전체)</option>
+                                        <option value="up">📈 단가 인상</option>
+                                        <option value="down">📉 단가 인하</option>
+                                    </select>
+                                    <i className={`fas fa-chevron-down absolute right-3 top-3 text-[10px] pointer-events-none ${state.priceFilter !== 'all' ? 'text-amber-500' : 'text-slate-400'}`}></i>
+                                </div>
+                            )}
+                            
+                            {/* 4. 검색창 */}
                             <SearchBar value={globalSearch} onChange={setGlobalSearch} />
                             
                         </div>
@@ -1557,22 +1577,41 @@
                 } else {
                     baseList.sort((a, b) => String(a.코드).localeCompare(String(b.코드)));
                 }
+
+                // 가격 변동 필터 적용
+                if (ui.priceFilter !== 'all') {
+                    baseList = baseList.filter(item => {
+                        const mItem = data.masterProducts[item.코드] || {};
+                        const oldP = window.parseNum(mItem['입고가']);
+                        const newP = window.parseNum(item.finalData?.['입고가'] !== undefined ? item.finalData['입고가'] : item.sources?.['estimate']?.['입고가']);
+
+                        if (oldP === 0 || newP === 0) return false; // 신규나 데이터 오류는 변동에서 제외
+
+                        if (ui.priceFilter === 'changed') return oldP !== newP;
+                        if (ui.priceFilter === 'up') return newP > oldP;
+                        if (ui.priceFilter === 'down') return newP < oldP;
+                        return true;
+                    });
+                }
+
                 return baseList;
-            }, [isEstimateUploaded, data.managedItems, data.masterProducts, ui.globalSearch]);
+            }, [isEstimateUploaded, data.managedItems, data.masterProducts, ui.globalSearch, ui.priceFilter]);
 
             const customActions = useMerchActions(config, data, ui, fullDisplayRows);
             
             const appState = useMemo(() => ({
                 config, data,
                 activeTags: ui.activeTags, isEstimateUploaded, selectedRows: ui.selectedRows, globalSearch: ui.globalSearch, isProcessing: ui.isProcessing, processMsg: ui.processMsg,
-                visibleMasterCols: config.visibleMasterCols, visibleUploadCols: config.visibleUploadCols, masterProducts: data.masterProducts, fullDisplayRows
-            }), [config, data, ui.activeTags, isEstimateUploaded, ui.selectedRows, ui.globalSearch, ui.isProcessing, ui.processMsg, config.visibleMasterCols, config.visibleUploadCols, data.masterProducts, fullDisplayRows]);
+                visibleMasterCols: config.visibleMasterCols, visibleUploadCols: config.visibleUploadCols, masterProducts: data.masterProducts, fullDisplayRows,
+                priceFilter: ui.priceFilter
+            }), [config, data, ui.activeTags, isEstimateUploaded, ui.selectedRows, ui.globalSearch, ui.isProcessing, ui.processMsg, config.visibleMasterCols, config.visibleUploadCols, data.masterProducts, fullDisplayRows, ui.priceFilter]);
             
             const appActions = useMemo(() => ({
                 setShowReviewModal: ui.setShowReviewModal, setShowCategoryModal: ui.setShowCategoryModal,
                 setSelectedRows: ui.setSelectedRows, setGlobalSearch: ui.setGlobalSearch, showToast: ui.showToast,
+                setPriceFilter: ui.setPriceFilter,
                 ...customActions
-            }), [ui.setShowReviewModal, ui.setShowCategoryModal, ui.setSelectedRows, ui.setGlobalSearch, ui.showToast, customActions]);
+            }), [ui.setShowReviewModal, ui.setShowCategoryModal, ui.setSelectedRows, ui.setGlobalSearch, ui.showToast, ui.setPriceFilter, customActions]);
 
             useEffect(() => {
                 const handleGlobalKeyDown = (e) => {
