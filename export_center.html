@@ -27,7 +27,6 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
-        // 코어 엔진 대체 (미리보기 환경 단독 실행을 위한 내장)
         const NUMERIC_HEADERS = [
             "안전재고", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고",
             "단가H", "단가I", "시중가", "행사가", "1종연산", "2종연산", "외주비", "노무비", "경비",
@@ -79,10 +78,6 @@
             const [masterProducts, setMasterProducts] = useState([]);
             const [isProcessing, setIsProcessing] = useState(false);
             const [toast, setToast] = useState('');
-            
-            // [출력 대상 선택을 위한 상태]
-            const [exportTarget, setExportTarget] = useState('workspace'); // workspace, group, all
-            const [selectedGroup, setSelectedGroup] = useState('');
             const [workspaceCodes, setWorkspaceCodes] = useState([]);
 
             const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
@@ -97,39 +92,18 @@
                 try {
                     const codes = JSON.parse(localStorage.getItem('merchExportTargets') || '[]');
                     setWorkspaceCodes(codes);
-                    // 메인 화면에서 넘어온 코드가 없으면 기본값을 'all'로 설정
-                    if (codes.length === 0) setExportTarget('all');
                 } catch(e) {}
             }, []);
 
-            // 사용 가능한 그룹(카탈로그/견적서/카테고리) 목록 추출
-            const availableGroups = useMemo(() => {
-                const groups = new Set();
-                masterProducts.forEach(m => {
-                    const tags = String(m['카탈로그'] || '') + ',' + String(m['견적서'] || '') + ',' + String(m['카테고리'] || '');
-                    tags.split(',').forEach(t => { if(t.trim()) groups.add(t.trim()); });
-                });
-                return Array.from(groups).sort();
-            }, [masterProducts]);
-
-            // 현재 선택된 모드에 맞게 출력할 타겟 상품들 필터링
-            const getFilteredProducts = () => {
-                if (exportTarget === 'workspace') {
-                    const codeSet = new Set(workspaceCodes);
-                    return masterProducts.filter(m => codeSet.has(m.코드));
-                }
-                if (exportTarget === 'group' && selectedGroup) {
-                    return masterProducts.filter(m => {
-                        const tags = String(m['카탈로그'] || '') + ',' + String(m['견적서'] || '') + ',' + String(m['카테고리'] || '');
-                        return tags.includes(selectedGroup);
-                    });
-                }
-                return masterProducts; // 'all'
-            };
+            // 메인 작업대에서 넘어온 코드들만 정확히 필터링
+            const targetProducts = useMemo(() => {
+                if (workspaceCodes.length === 0) return [];
+                const codeSet = new Set(workspaceCodes);
+                return masterProducts.filter(m => codeSet.has(m.코드));
+            }, [masterProducts, workspaceCodes]);
 
             const handleExportExcel = () => {
-                const targetProducts = getFilteredProducts();
-                if (targetProducts.length === 0) return showToast("⚠️ 출력할 대상 데이터가 없습니다. (옵션을 확인하세요)");
+                if (targetProducts.length === 0) return showToast("⚠️ 출력할 데이터가 없습니다. 메인 화면에서 목록을 확인해주세요.");
                 
                 setIsProcessing(true);
                 showToast(`⏳ [통합 엑셀] ${targetProducts.length}건 양식 조립 중...`);
@@ -152,7 +126,6 @@
                             return [ code, outIn, '0', outOut, '0', bPrice||'', 'n', aSale||'', 'n', bSale||'', 'n', outFinal, 'n', instruction||'', 'n', (inPrice > 0 || outPrice > 0) ? '1' : '' ]; 
                         };
 
-                        // 설정에서 화면 노출 항목 가져오기
                         let visMaster = [];
                         let visUpload = [];
                         try {
@@ -194,8 +167,7 @@
                         window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), "ERP업데이트"); 
                         window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(viewData), "화면엑셀변환"); 
                         
-                        let fileNamePrefix = exportTarget === 'workspace' ? '현재작업화면' : (exportTarget === 'group' ? selectedGroup : '마스터전체');
-                        window.XLSX.writeFile(wb, `통합보고서_${fileNamePrefix}_${new Date().toISOString().slice(0,10)}.xlsx`); 
+                        window.XLSX.writeFile(wb, `통합보고서_데이터추출_${new Date().toISOString().slice(0,10)}.xlsx`); 
                         showToast(`✅ ${targetProducts.length}건 엑셀 다운로드가 완료되었습니다.`);
                     } catch(e) {
                         console.error(e);
@@ -207,7 +179,6 @@
             };
 
             const handleImageExport = async () => {
-                const targetProducts = getFilteredProducts();
                 if (targetProducts.length === 0) return showToast("⚠️ 내보낼 대상 데이터가 없습니다.");
                 setIsProcessing(true);
 
@@ -272,47 +243,11 @@
                     <div className="flex-1 overflow-y-auto p-10 flex flex-col items-center justify-center relative">
                         
                         <div className="max-w-4xl w-full bg-white p-10 rounded-3xl shadow-xl border border-slate-200">
-                            <div className="text-center mb-8">
+                            <div className="text-center mb-10">
                                 <h2 className="text-3xl font-black text-slate-800 mb-3">데이터 출력 및 보고서 생성</h2>
-                                <p className="text-slate-500 font-bold">
-                                    용도에 맞게 대상을 선택하고 출력물을 생성하세요.<br/>
-                                    <span className="text-[12px] opacity-80">(※ 작업 중인 내역은 반드시 메인 앱에서 F8을 눌러 저장한 뒤 출력 센터로 넘어와야 합니다.)</span>
+                                <p className="text-slate-500 font-bold mb-4">
+                                    메인 화면에서 전달받은 <strong className="text-indigo-600">{targetProducts.length}건</strong>의 상품 데이터를 즉시 출력합니다.<br/>
                                 </p>
-                            </div>
-
-                            {/* [타겟 선택 UI] 메인 작업대 연동 */}
-                            <div className="mb-10 bg-slate-50 p-6 rounded-2xl border border-slate-200 shadow-inner">
-                                <h3 className="text-[15px] font-black text-slate-800 mb-4 flex items-center"><i className="fas fa-filter text-indigo-500 mr-2"></i>무엇을 출력하시겠습니까? (출력 대상 선택)</h3>
-                                <div className="flex gap-4">
-                                    <label className={`flex-1 flex flex-col p-4 rounded-xl border-2 cursor-pointer transition-colors ${exportTarget === 'workspace' ? 'border-indigo-500 bg-white shadow-md' : 'border-slate-200 bg-white hover:border-indigo-300'}`}>
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <input type="radio" name="exportTarget" value="workspace" checked={exportTarget === 'workspace'} onChange={() => setExportTarget('workspace')} className="w-4 h-4 text-indigo-600 focus:ring-indigo-500" />
-                                            <span className="font-black text-[15px] text-slate-800">🛒 현재 작업 화면</span>
-                                        </div>
-                                        <span className="text-[13px] text-slate-500 ml-6 font-bold">메인 앱에서 방금 전까지 필터링해둔 <span className="text-indigo-600">{workspaceCodes.length}건</span></span>
-                                    </label>
-                                    
-                                    <label className={`flex-1 flex flex-col p-4 rounded-xl border-2 cursor-pointer transition-colors ${exportTarget === 'group' ? 'border-blue-500 bg-white shadow-md' : 'border-slate-200 bg-white hover:border-blue-300'}`}>
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <input type="radio" name="exportTarget" value="group" checked={exportTarget === 'group'} onChange={() => setExportTarget('group')} className="w-4 h-4 text-blue-600 focus:ring-blue-500" />
-                                            <span className="font-black text-[15px] text-slate-800">📂 카탈로그/견적서</span>
-                                        </div>
-                                        <div className="ml-6 mt-1">
-                                            <select value={selectedGroup} onChange={e => {setExportTarget('group'); setSelectedGroup(e.target.value);}} className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-[13px] font-bold outline-none focus:border-blue-500 bg-slate-50 text-blue-700">
-                                                <option value="" disabled>그룹을 선택하세요</option>
-                                                {availableGroups.map(g => <option key={g} value={g}>{g}</option>)}
-                                            </select>
-                                        </div>
-                                    </label>
-
-                                    <label className={`flex-1 flex flex-col p-4 rounded-xl border-2 cursor-pointer transition-colors ${exportTarget === 'all' ? 'border-emerald-500 bg-white shadow-md' : 'border-slate-200 bg-white hover:border-emerald-300'}`}>
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <input type="radio" name="exportTarget" value="all" checked={exportTarget === 'all'} onChange={() => setExportTarget('all')} className="w-4 h-4 text-emerald-600 focus:ring-emerald-500" />
-                                            <span className="font-black text-[15px] text-slate-800">📦 마스터 DB 전체</span>
-                                        </div>
-                                        <span className="text-[13px] text-slate-500 ml-6 font-bold">저장되어 있는 <span className="text-emerald-600">{masterProducts.length.toLocaleString()}건</span></span>
-                                    </label>
-                                </div>
                             </div>
 
                             <div className="grid grid-cols-2 gap-6">
@@ -323,7 +258,7 @@
                                     </div>
                                     <div className="font-black text-slate-800 text-[18px] mb-2">통합 엑셀 다운로드</div>
                                     <div className="text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded text-[10px] font-bold mb-3">단축키: F9</div>
-                                    <div className="text-slate-500 text-[12px] text-center">선택된 대상만 추려내어 쇼핑몰 업로드, <br/>ERP 업데이트 시트 등 3개를 동시 생성합니다.</div>
+                                    <div className="text-slate-500 text-[12px] text-center">전달받은 대상만 추려내어 쇼핑몰 업로드, <br/>ERP 업데이트 시트 등 3개를 동시 생성합니다.</div>
                                 </button>
 
                                 {/* 이미지 내보내기 버튼 */}
@@ -333,7 +268,7 @@
                                     </div>
                                     <div className="font-black text-slate-800 text-[18px] mb-2">카톡 공유용 이미지</div>
                                     <div className="text-amber-600 bg-amber-100 px-2 py-0.5 rounded text-[10px] font-bold mb-3">단축키: F10</div>
-                                    <div className="text-slate-500 text-[12px] text-center">선택된 대상의 단가를 바탕으로<br/>카카오톡 전송에 최적화된 이미지를 생성합니다.</div>
+                                    <div className="text-slate-500 text-[12px] text-center">전달받은 대상의 단가를 바탕으로<br/>카카오톡 전송에 최적화된 이미지를 생성합니다.</div>
                                 </button>
                             </div>
                             
