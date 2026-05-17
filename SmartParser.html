@@ -459,6 +459,29 @@
             const memoizedState = useMemo(() => ({ masterProducts, parserBuffer, currentTag, activeTab, targetId, globalSearch, missingRows, selectedMissingCodes, isProcessing, processMsg }), [masterProducts, parserBuffer, currentTag, activeTab, targetId, globalSearch, missingRows, selectedMissingCodes, isProcessing, processMsg]);
             const memoizedActions = useMemo(() => ({ ...actions, setShowReviewModal, setShowInputModal, setActiveTab, setGlobalSearch }), [actions, setShowReviewModal, setShowInputModal, setActiveTab, setGlobalSearch]);
 
+            // [1순위] 작업 데이터 세션 자동 저장 및 복원 (Auto-Save)
+            useEffect(() => {
+                // 오류 원인 수정: window.getIDB -> getIDB 로 변경
+                getIDB('parser_session').then(state => {
+                    if (state) {
+                        if (state.parserBuffer && state.parserBuffer.length > 0) {
+                            appState.setParserBuffer(state.parserBuffer);
+                            appState.setShowInputModal(false); // 데이터 복원 시 모달 닫기
+                        }
+                        if (state.currentTag) appState.setCurrentTag(state.currentTag);
+                    }
+                }).catch(e => console.warn("세션 복원 실패", e));
+            }, []);
+
+            useEffect(() => {
+                const stateToSave = {
+                    parserBuffer: appState.parserBuffer,
+                    currentTag: appState.currentTag
+                };
+                // 오류 원인 수정: window.setIDB -> setIDB 로 변경
+                setIDB('parser_session', stateToSave).catch(e => console.warn("세션 저장 실패", e));
+            }, [appState.parserBuffer, appState.currentTag]);
+
             return (
                 <div className="h-screen w-full bg-slate-100 flex justify-center overflow-hidden font-sans">
                     <style>{`@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css'); body { font-family: 'Pretendard', sans-serif; background-color: #f1f5f9; overflow: hidden; } ::-webkit-scrollbar { width: 8px; height: 8px; } ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; } .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; } .fade-in { animation: fadeIn 0.3s ease-out; } @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }`}</style>
