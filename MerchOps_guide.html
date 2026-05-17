@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="ko" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ONEAPP MerchOps 가이드</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Pretendard"', '"Noto Sans KR"', '"Inter"', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#eff6ff',
+                            100: '#dbeafe',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                            900: '#1e3a8a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Noto Sans KR', sans-serif; background-color: #f8fafc; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Keyboard Key Style */
+        .kbd {
+            display: inline-block;
+            padding: 0.2rem 0.5rem;
+            font-size: 0.85em;
+            font-weight: 700;
+            line-height: 1;
+            color: #1e293b;
+            background-color: #f8fafc;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            box-shadow: 0 2px 0 #cbd5e1;
+            margin: 0 0.2rem;
+            font-family: monospace;
+        }
+
+        /* Sidebar active link style */
+        .nav-link.active {
+            background-color: #eff6ff;
+            color: #2563eb;
+            border-left: 4px solid #2563eb;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body class="text-slate-800 antialiased selection:bg-brand-200 selection:text-brand-900">
+
+    <div class="flex h-screen overflow-hidden">
+        
+        <!-- Mobile Header & Menu Toggle -->
+        <div class="md:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-slate-200 z-50 flex items-center justify-between px-4 shadow-sm">
+            <div class="flex items-center gap-2 font-bold text-lg text-brand-700">
+                <i class="fa-solid fa-layer-group"></i> MerchOps 가이드
+            </div>
+            <button id="mobileMenuBtn" class="text-slate-500 hover:text-slate-800 focus:outline-none text-2xl">
+                <i class="fa-solid fa-bars"></i>
+            </button>
+        </div>
+
+        <!-- Sidebar Navigation -->
+        <aside id="sidebar" class="fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-slate-200 transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out flex flex-col md:relative md:flex-shrink-0 pt-16 md:pt-0">
+            <div class="p-6 hidden md:flex items-center border-b border-slate-100">
+                <h1 class="font-extrabold text-2xl tracking-tight text-brand-700">ONEAPP</h1>
+            </div>
+            
+            <div class="overflow-y-auto flex-1 p-4 space-y-6">
+                <!-- Part 1 Nav -->
+                <div>
+                    <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 px-3">초기 도입 (1회 정독용)</div>
+                    <ul class="space-y-1">
+                        <li><a href="#part1-1" class="nav-link block px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors">1. 비즈니스 가치</a></li>
+                        <li><a href="#part1-2" class="nav-link block px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors">2. 핵심 UX 철학</a></li>
+                        <li><a href="#part1-3" class="nav-link block px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors">3. 4대 핵심 구역</a></li>
+                        <li><a href="#part1-4" class="nav-link block px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors">4. 데이터 연동 구조</a></li>
+                        <li><a href="#part1-5" class="nav-link block px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors">5. 핵심 알고리즘</a></li>
+                    </ul>
+                </div>
+                
+                <!-- Part 2 Nav -->
+                <div>
+                    <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 px-3">실무 매뉴얼 (상시 열람용)</div>
+                    <ul class="space-y-1">
+                        <li><a href="#part2-1" class="nav-link block px-3 py-2 rounded-lg text-sm text-brand-600 font-medium hover:bg-brand-50 transition-colors"><i class="fa-regular fa-keyboard mr-1"></i> 마법의 마감 단축키</a></li>
+                        <li><a href="#part2-2" class="nav-link block px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors">업무 플로우 A (스마트 파서)</a></li>
+                        <li><a href="#part2-3" class="nav-link block px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors">업무 플로우 B (메인 화면)</a></li>
+                        <li><a href="#part2-4" class="nav-link block px-3 py-2 rounded-lg text-sm text-red-600 hover:bg-red-50 transition-colors"><i class="fa-solid fa-triangle-exclamation mr-1"></i> 예외 상황 대처법</a></li>
+                        <li><a href="#part2-5" class="nav-link block px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors">산출물 활용 가이드</a></li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="p-4 border-t border-slate-200 text-xs text-slate-400 text-center">
+                MerchOps System v1.0
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 overflow-y-auto relative pt-16 md:pt-0 scroll-smooth" id="main-content">
+            <!-- Mobile overlay for sidebar -->
+            <div id="sidebarOverlay" class="fixed inset-0 bg-slate-900 bg-opacity-50 z-30 hidden md:hidden"></div>
+
+            <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10 pb-32">
+                
+                <!-- Hero Section -->
+                <div class="mb-12 text-center md:text-left">
+                    <span class="inline-block py-1 px-3 rounded-full bg-brand-100 text-brand-700 text-sm font-bold mb-4 shadow-sm">
+                        <i class="fa-solid fa-book-open-reader mr-1"></i> Official Document
+                    </span>
+                    <h1 class="text-3xl md:text-4xl font-extrabold text-slate-900 tracking-tight mb-4">ONEAPP MerchOps 통합 사용자 가이드</h1>
+                    <p class="text-lg text-slate-500 leading-relaxed">이 가이드는 식자재 유통사와 식당 사장님을 연결하는 B2B 플랫폼의 운영 혁신, ONEAPP MerchOps 시스템의 완벽한 사용을 위해 제작되었습니다.</p>
+                </div>
+
+                <!-- ================= PART 1 ================= -->
+                <div class="mb-16">
+                    <div class="flex items-center gap-3 mb-8">
+                        <div class="w-10 h-10 rounded-full bg-slate-800 text-white flex items-center justify-center font-bold text-xl shadow-md">1</div>
+                        <h2 class="text-2xl font-bold text-slate-800 border-b-2 border-brand-500 pb-1 inline-block">초기 도입 가이드</h2>
+                    </div>
+                    <p class="text-slate-600 mb-6 bg-white p-4 rounded-xl shadow-sm border border-slate-100">시스템의 철학과 기본 작동 원리를 이해하여, 기능의 100%를 활용하기 위한 필수 배경지식입니다.</p>
+
+                    <!-- Section 1.1 -->
+                    <section id="part1-1" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 mb-6 scroll-mt-24">
+                        <h3 class="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+                            <i class="fa-solid fa-chart-line text-brand-500"></i> 1. 비즈니스 가치
+                        </h3>
+                        <p class="text-slate-600 mb-4">이 시스템은 <strong>'업무 효율성 극대화'</strong>와 <strong>'수익 안정성 보장'</strong>을 위해 탄생했습니다.</p>
+                        <ul class="space-y-4">
+                            <li class="flex gap-3">
+                                <i class="fa-solid fa-check-circle text-green-500 mt-1"></i>
+                                <div>
+                                    <strong class="text-slate-800 block mb-1">압도적인 업무 시간 단축</strong>
+                                    <span class="text-slate-600 text-sm">수기 타이핑을 없앴습니다. AI 파서와 단축키로 몇 시간 걸리던 업무를 몇 분 만에 종료합니다.</span>
+                                </div>
+                            </li>
+                            <li class="flex gap-3">
+                                <i class="fa-solid fa-shield-halved text-brand-500 mt-1"></i>
+                                <div>
+                                    <strong class="text-slate-800 block mb-1">휴먼 에러 차단 및 역마진 방어</strong>
+                                    <span class="text-slate-600 text-sm">창고/단위별 마진율이 자동 적용됩니다. 특히 <span class="bg-red-100 text-red-700 px-1 rounded font-semibold">매입가가 0원일 경우 출고가도 강제로 0원 처리</span>하여 치명적인 영업 손실을 원천 통제합니다.</span>
+                                </div>
+                            </li>
+                            <li class="flex gap-3">
+                                <i class="fa-solid fa-bolt text-yellow-500 mt-1"></i>
+                                <div>
+                                    <strong class="text-slate-800 block mb-1">시세 변동의 즉각적인 반영</strong>
+                                    <span class="text-slate-600 text-sm">매일 변하는 단가를 지연 없이 B2B 쇼핑몰 및 내부 ERP에 동기화하여 고객 신뢰도를 높입니다.</span>
+                                </div>
+                            </li>
+                            <li class="flex gap-3">
+                                <i class="fa-solid fa-magnifying-glass-chart text-purple-500 mt-1"></i>
+                                <div>
+                                    <strong class="text-slate-800 block mb-1">적은 인력으로 고품질 유지</strong>
+                                    <span class="text-slate-600 text-sm">정상 데이터는 시스템에 맡기고, 관리자는 비정상적으로 튀는 <strong>'이상 항목(Anomaly)'에만 집중</strong>하여 수만 건의 데이터를 통제합니다.</span>
+                                </div>
+                            </li>
+                        </ul>
+                    </section>
+
+                    <!-- Section 1.2 -->
+                    <section id="part1-2" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 mb-6 scroll-mt-24">
+                        <h3 class="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+                            <i class="fa-solid fa-lightbulb text-brand-500"></i> 2. 핵심 UX 철학
+                        </h3>
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <div class="bg-slate-50 p-5 rounded-xl border border-slate-100">
+                                <div class="text-2xl mb-3">⌨️</div>
+                                <h4 class="font-bold text-slate-800 mb-2">Hands-free (마우스 제로)</h4>
+                                <p class="text-sm text-slate-600">마우스 이동으로 인한 지연을 없앴습니다. 숫자 입력 후 <span class="kbd">Enter</span>나 방향키만 누르면 다음 에러 칸으로 부드럽게 이동합니다. 업무 마감은 오직 단축키로 직렬화했습니다.</p>
+                            </div>
+                            <div class="bg-slate-50 p-5 rounded-xl border border-slate-100">
+                                <div class="text-2xl mb-3">👁️</div>
+                                <h4 class="font-bold text-slate-800 mb-2">Focus on Anomaly (이상점 집중)</h4>
+                                <p class="text-sm text-slate-600">수만 건을 다 볼 필요가 없습니다. 단가가 폭등/폭락하거나, 0원 누락, 불완전 매칭된 항목만 강렬한 색상으로 하이라이트됩니다. 무채색(정상)은 건너뛰십시오.</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Section 1.3 & 1.4 -->
+                    <div class="grid md:grid-cols-2 gap-6 mb-6">
+                        <section id="part1-3" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 scroll-mt-24">
+                            <h3 class="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-server text-brand-500"></i> 3. 4대 핵심 구역
+                            </h3>
+                            <ul class="space-y-3 text-sm text-slate-600">
+                                <li><strong class="text-slate-800"><i class="fa-solid fa-database w-5 text-center text-slate-400"></i> 데이터 저장소 (창고):</strong> 브라우저 내부에 데이터를 보관하여 렉 없이 쾌적하게 사용.</li>
+                                <li><strong class="text-slate-800"><i class="fa-solid fa-microchip w-5 text-center text-slate-400"></i> 연산 엔진 (두뇌):</strong> 외부 텍스트를 마스터 상품과 매칭하고 단가 자동 연산.</li>
+                                <li><strong class="text-slate-800"><i class="fa-solid fa-user-tie w-5 text-center text-slate-400"></i> 상태/동작 통제 (관리자):</strong> 클라우드 백업, 카탈로그 그룹 관리, 히스토리 기록.</li>
+                                <li><strong class="text-slate-800"><i class="fa-solid fa-desktop w-5 text-center text-slate-400"></i> 화면 및 디자인 (UI):</strong> 눈에 보이는 표와 버튼. 두뇌 구역과 분리되어 안전함.</li>
+                            </ul>
+                        </section>
+                        
+                        <section id="part1-4" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 scroll-mt-24">
+                            <h3 class="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-network-wired text-brand-500"></i> 4. 데이터 연동 구조
+                            </h3>
+                            <p class="text-sm text-slate-600 mb-3">모든 데이터는 브라우저의 <strong>'로컬 스토리지(IndexedDB)'</strong>를 중앙 허브로 주고받습니다.</p>
+                            <ul class="space-y-2 text-sm text-slate-600">
+                                <li><strong class="text-brand-600"><i class="fa-solid fa-cloud"></i> 클라우드 연동:</strong> 내 PC의 작업을 구글 클라우드에 백업(Push)하거나 불러오기(Pull).</li>
+                                <li><strong class="text-slate-700"><i class="fa-solid fa-gear"></i> 환경설정:</strong> 엑셀 매핑 규칙, 마진 룰 시스템 전체 공통 적용.</li>
+                                <li><strong class="text-slate-700"><i class="fa-solid fa-clone"></i> 다중 탭 연동:</strong> 파서 창에서 수정 시 메인 창이 새로고침 없이 백그라운드에서 갱신.</li>
+                            </ul>
+                        </section>
+                    </div>
+
+                    <!-- Section 1.5 -->
+                    <section id="part1-5" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 scroll-mt-24">
+                        <h3 class="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+                            <i class="fa-solid fa-code-branch text-brand-500"></i> 5. 핵심 알고리즘 요약
+                        </h3>
+                        <div class="grid sm:grid-cols-2 gap-4">
+                            <div class="border border-slate-100 rounded-lg p-4 bg-slate-50/50">
+                                <h4 class="font-bold text-slate-800 mb-1 text-sm"><i class="fa-solid fa-filter text-brand-500 mr-1"></i> 스마트 파서</h4>
+                                <p class="text-xs text-slate-600">불필요한 노이즈(마감, 품절 등)를 걸러내고 상품명, 규격, 가격을 정확히 분리합니다.</p>
+                            </div>
+                            <div class="border border-slate-100 rounded-lg p-4 bg-slate-50/50">
+                                <h4 class="font-bold text-slate-800 mb-1 text-sm"><i class="fa-solid fa-link text-brand-500 mr-1"></i> 스마트 매칭</h4>
+                                <p class="text-xs text-slate-600">과거 연결 이력은 <strong>학습 사전(parserDict)</strong>에 저장되어 다음엔 100% 자동 매칭됩니다.</p>
+                            </div>
+                            <div class="border border-slate-100 rounded-lg p-4 bg-slate-50/50">
+                                <h4 class="font-bold text-slate-800 mb-1 text-sm"><i class="fa-solid fa-calculator text-brand-500 mr-1"></i> 하이브리드 마진 연산</h4>
+                                <p class="text-xs text-slate-600">창고코드/판매단위에 부합하는 마진 룰을 찾아 출고가/소분 단가를 산출합니다.</p>
+                            </div>
+                            <div class="border border-slate-100 rounded-lg p-4 bg-slate-50/50">
+                                <h4 class="font-bold text-slate-800 mb-1 text-sm"><i class="fa-solid fa-magnifying-glass text-brand-500 mr-1"></i> 다중 키워드 검색</h4>
+                                <p class="text-xs text-slate-600">띄어쓰기를 섞어도 상품명, 규격 가중치를 계산해 가장 연관성 높은 상품을 찾습니다.</p>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- ================= PART 2 ================= -->
+                <div>
+                    <div class="flex items-center gap-3 mb-8 mt-16">
+                        <div class="w-10 h-10 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold text-xl shadow-md">2</div>
+                        <h2 class="text-2xl font-bold text-slate-800 border-b-2 border-brand-500 pb-1 inline-block">실무 매뉴얼 <span class="text-sm text-slate-500 font-normal ml-2">(상시 열람용)</span></h2>
+                    </div>
+
+                    <!-- Section 2.1 Hotkeys -->
+                    <section id="part2-1" class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl shadow-lg border border-slate-700 p-6 md:p-8 mb-8 scroll-mt-24 text-white">
+                        <h3 class="text-xl font-bold mb-6 flex items-center gap-2 text-brand-300">
+                            <i class="fa-regular fa-keyboard"></i> [필독] 마법의 마감 단축키
+                        </h3>
+                        <p class="text-slate-300 text-sm mb-6">어떤 화면에서든 작업이 끝나면 아래 순서대로 단축키를 누릅니다.</p>
+                        
+                        <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <!-- F7 -->
+                            <div class="bg-slate-800/80 rounded-xl p-4 border border-slate-600 hover:border-brand-400 transition-colors">
+                                <div class="text-brand-400 font-mono text-2xl font-bold mb-2 shadow-sm inline-block px-2 py-1 bg-slate-900 rounded border border-slate-700">F7</div>
+                                <h4 class="font-bold text-white mb-1 text-sm">검토 및 프리뷰</h4>
+                                <p class="text-xs text-slate-400">인상/인하/신규 건수 요약 팝업을 띄워 1초 최종 점검</p>
+                            </div>
+                            <!-- F8 -->
+                            <div class="bg-slate-800/80 rounded-xl p-4 border border-slate-600 hover:border-brand-400 transition-colors">
+                                <div class="text-brand-400 font-mono text-2xl font-bold mb-2 shadow-sm inline-block px-2 py-1 bg-slate-900 rounded border border-slate-700">F8</div>
+                                <h4 class="font-bold text-white mb-1 text-sm">마스터 저장 (Commit)</h4>
+                                <p class="text-xs text-slate-400">시스템 메인 두뇌에 영구 덮어쓰고 클라우드 동기화 대기</p>
+                            </div>
+                            <!-- F9 -->
+                            <div class="bg-slate-800/80 rounded-xl p-4 border border-slate-600 hover:border-brand-400 transition-colors">
+                                <div class="text-brand-400 font-mono text-2xl font-bold mb-2 shadow-sm inline-block px-2 py-1 bg-slate-900 rounded border border-slate-700">F9</div>
+                                <h4 class="font-bold text-white mb-1 text-sm">엑셀 다운로드</h4>
+                                <p class="text-xs text-slate-400">쇼핑몰용, ERP용, 대조용 3개 시트 통합 엑셀 파일 즉시 추출</p>
+                            </div>
+                            <!-- F10 -->
+                            <div class="bg-slate-800/80 rounded-xl p-4 border border-slate-600 hover:border-brand-400 transition-colors">
+                                <div class="text-brand-400 font-mono text-2xl font-bold mb-2 shadow-sm inline-block px-2 py-1 bg-slate-900 rounded border border-slate-700">F10</div>
+                                <h4 class="font-bold text-white mb-1 text-sm">이미지 생성</h4>
+                                <p class="text-xs text-slate-400">식당 사장님 카톡 전송용 모바일 최적화 단가표 이미지 생성</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Section 2.2 Workflow A -->
+                    <section id="part2-2" class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-6 scroll-mt-24">
+                        <div class="bg-brand-50 px-6 py-4 border-b border-brand-100">
+                            <h3 class="text-lg font-bold text-brand-900 flex items-center gap-2">
+                                <i class="fa-solid fa-rocket text-brand-500"></i> 업무 플로우 A : 스마트 파서 (카톡/문자 시세 처리)
+                            </h3>
+                        </div>
+                        <div class="p-6">
+                            <ol class="relative border-l border-slate-200 ml-3 space-y-6">                  
+                                <li class="ml-6">            
+                                    <span class="absolute flex items-center justify-center w-6 h-6 bg-brand-100 rounded-full -left-3 ring-4 ring-white text-brand-600 text-xs font-bold">1</span>
+                                    <h4 class="font-bold text-slate-800 mb-1">입력 (Input)</h4>
+                                    <p class="text-sm text-slate-600">카톡 시세표 텍스트를 그대로 복사하여 붙여넣고 카탈로그 지정 후 분석 시작.</p>
+                                </li>
+                                <li class="ml-6">            
+                                    <span class="absolute flex items-center justify-center w-6 h-6 bg-brand-100 rounded-full -left-3 ring-4 ring-white text-brand-600 text-xs font-bold">2</span>
+                                    <h4 class="font-bold text-slate-800 mb-1">자동 연산 (Process)</h4>
+                                    <p class="text-sm text-slate-600">시스템이 노이즈를 제거하고 마진 룰을 곱해 단가를 계산합니다.</p>
+                                </li>
+                                <li class="ml-6">            
+                                    <span class="absolute flex items-center justify-center w-6 h-6 bg-brand-100 rounded-full -left-3 ring-4 ring-white text-brand-600 text-xs font-bold">3</span>
+                                    <h4 class="font-bold text-slate-800 mb-2">투트랙 검증 (색상을 확인하세요!)</h4>
+                                    <div class="grid gap-2 text-sm">
+                                        <div class="flex items-center gap-2 bg-green-50 text-green-800 p-2 rounded border border-green-100">
+                                            <span class="w-4 h-4 rounded-full bg-green-400 block flex-shrink-0"></span>
+                                            <span><strong>일치:</strong> 단가가 급변하여 색상이 칠해진 항목만 훑어보며 수정.</span>
+                                        </div>
+                                        <div class="flex items-center gap-2 bg-yellow-50 text-yellow-800 p-2 rounded border border-yellow-100">
+                                            <span class="w-4 h-4 rounded-full bg-yellow-400 block flex-shrink-0"></span>
+                                            <span><strong>유사/불일치:</strong> 검색창에서 수동 연결하거나 <code class="bg-yellow-200 px-1 rounded">[ERP 신규 코드]</code>로 즉시 등록.</span>
+                                        </div>
+                                        <div class="flex items-center gap-2 bg-slate-100 text-slate-600 p-2 rounded border border-slate-200">
+                                            <span class="w-4 h-4 rounded-full bg-slate-300 block flex-shrink-0"></span>
+                                            <span><strong>누락:</strong> 이번 시세에 없는 상품은 선택 후 <strong>'숨김(제외)'</strong> 처리.</span>
+                                        </div>
+                                    </div>
+                                </li>
+                                <li class="ml-6">            
+                                    <span class="absolute flex items-center justify-center w-6 h-6 bg-brand-100 rounded-full -left-3 ring-4 ring-white text-brand-600 text-xs font-bold">4</span>
+                                    <h4 class="font-bold text-slate-800 mb-1">확정 및 산출</h4>
+                                    <p class="text-sm text-slate-600"><span class="kbd">F7</span> (프리뷰) ➡️ <span class="kbd">F8</span> (저장) ➡️ 메인 이동 ➡️ <span class="kbd">F9</span> (엑셀) ➡️ <span class="kbd">F10</span> (이미지)</p>
+                                </li>
+                            </ol>
+                        </div>
+                    </section>
+
+                    <!-- Section 2.3 Workflow B -->
+                    <section id="part2-3" class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-6 scroll-mt-24">
+                        <div class="bg-indigo-50 px-6 py-4 border-b border-indigo-100">
+                            <h3 class="text-lg font-bold text-indigo-900 flex items-center gap-2">
+                                <i class="fa-solid fa-table text-indigo-500"></i> 업무 플로우 B : 메인 워크스페이스 (엑셀/그룹)
+                            </h3>
+                        </div>
+                        <div class="p-6">
+                            <ol class="relative border-l border-slate-200 ml-3 space-y-6">                  
+                                <li class="ml-6">            
+                                    <span class="absolute flex items-center justify-center w-6 h-6 bg-indigo-100 rounded-full -left-3 ring-4 ring-white text-indigo-600 text-xs font-bold">1</span>
+                                    <h4 class="font-bold text-slate-800 mb-1">데이터 호출</h4>
+                                    <p class="text-sm text-slate-600">유통사 엑셀 업로드 / 파서 작업물 호출 / 저장해둔 견적서 그룹 호출.</p>
+                                </li>
+                                <li class="ml-6">            
+                                    <span class="absolute flex items-center justify-center w-6 h-6 bg-indigo-100 rounded-full -left-3 ring-4 ring-white text-indigo-600 text-xs font-bold">2</span>
+                                    <h4 class="font-bold text-slate-800 mb-1">대조 및 보정</h4>
+                                    <p class="text-sm text-slate-600">단가가 변동되어 색상이 바뀐 항목 확인. 직접 숫자를 수정하거나 <code class="bg-indigo-100 px-1 rounded text-indigo-800">[룰 적용]</code> 버튼으로 강제 적용.</p>
+                                </li>
+                                <li class="ml-6">            
+                                    <span class="absolute flex items-center justify-center w-6 h-6 bg-indigo-100 rounded-full -left-3 ring-4 ring-white text-indigo-600 text-xs font-bold">3</span>
+                                    <h4 class="font-bold text-slate-800 mb-1">편집 및 그룹핑</h4>
+                                    <p class="text-sm text-slate-600">화면에서 숨길 상품은 <code class="bg-slate-100 px-1 rounded">[빼기]</code> (DB 삭제 아님). 알짜 상품만 <code class="bg-indigo-100 px-1 rounded text-indigo-800">[견적서 만들기]</code>로 저장.</p>
+                                </li>
+                                <li class="ml-6">            
+                                    <span class="absolute flex items-center justify-center w-6 h-6 bg-indigo-100 rounded-full -left-3 ring-4 ring-white text-indigo-600 text-xs font-bold">4</span>
+                                    <h4 class="font-bold text-slate-800 mb-1">마감</h4>
+                                    <p class="text-sm text-slate-600"><span class="kbd">F8</span> (마스터 확정) ➡️ <span class="kbd">F9</span> (통합 엑셀 다운) ➡️ <span class="kbd">F10</span> (이미지 추출)</p>
+                                </li>
+                            </ol>
+                        </div>
+                    </section>
+
+                    <!-- Section 2.4 Exceptions -->
+                    <section id="part2-4" class="bg-red-50 rounded-2xl shadow-sm border border-red-200 p-6 md:p-8 mb-6 scroll-mt-24">
+                        <h3 class="text-xl font-bold text-red-800 mb-6 flex items-center gap-2">
+                            <i class="fa-solid fa-triangle-exclamation text-red-500"></i> [중요] 예외 상황 발생 시 대처법
+                        </h3>
+                        
+                        <div class="space-y-6">
+                            <div class="bg-white rounded-xl p-5 border border-red-100 shadow-sm">
+                                <h4 class="font-bold text-slate-800 mb-2 border-b border-slate-100 pb-2">🚨 1. 새로운 상품이 등장했을 때 (마스터 DB에 없음)</h4>
+                                <ul class="text-sm space-y-2 mt-3">
+                                    <li class="flex items-start gap-2 text-slate-500 line-through">
+                                        <i class="fa-solid fa-xmark text-red-400 mt-1"></i> 하던 작업을 멈추고 ERP 메뉴로 이동해서 등록하고 온다.
+                                    </li>
+                                    <li class="flex items-start gap-2 text-slate-800 font-medium">
+                                        <i class="fa-solid fa-check text-green-500 mt-1"></i> 작업 화면 내에서 <strong>[ERP 코드로 직접 등록]</strong> 버튼 클릭. 즉석 코드가 부여되며 마스터 등록, 연산, 학습이 동시 처리됨.
+                                    </li>
+                                </ul>
+                            </div>
+
+                            <div class="bg-white rounded-xl p-5 border border-red-100 shadow-sm">
+                                <h4 class="font-bold text-slate-800 mb-2 border-b border-slate-100 pb-2">🚨 2. 기존 취급 상품이 시세표에서 사라졌을 때 (단종 의심)</h4>
+                                <ul class="text-sm space-y-2 mt-3">
+                                    <li class="flex items-start gap-2 text-red-600 font-bold">
+                                        <i class="fa-solid fa-ban text-red-500 mt-1"></i> 절대 마스터 DB에서 '삭제(Delete)'하지 마십시오! (과거 정산 이력 훼손 우려)
+                                    </li>
+                                    <li class="flex items-start gap-2 text-slate-800 font-medium">
+                                        <i class="fa-solid fa-check text-green-500 mt-1"></i> <strong>[카탈로그 제외]</strong> 기능을 사용하세요. 원본은 보존되며 현재 화면과 해당 쇼핑몰에서만 안전하게 '숨김' 처리됩니다.
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Section 2.5 Outputs -->
+                    <section id="part2-5" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8 mb-6 scroll-mt-24">
+                        <h3 class="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+                            <i class="fa-solid fa-file-export text-brand-500"></i> 산출물 활용 가이드 (F9, F10)
+                        </h3>
+                        
+                        <div class="grid md:grid-cols-2 gap-6 mt-6">
+                            <div>
+                                <h4 class="font-bold text-slate-800 flex items-center gap-2 mb-3">
+                                    <i class="fa-solid fa-file-excel text-green-600 text-lg"></i> [F9] 통합 엑셀 보고서
+                                </h4>
+                                <ul class="space-y-3 text-sm text-slate-600 bg-slate-50 p-4 rounded-xl border border-slate-100 h-full">
+                                    <li><strong class="text-slate-800">1. 쇼핑몰 업로드 시트:</strong> B2B 쇼핑몰 표준 양식. 재고수량까지 맞춰져 있어 즉시 업로드 가능.</li>
+                                    <li><strong class="text-slate-800">2. ERP 업데이트 시트:</strong> 내부 재무/재고 자산 갱신용. 매입원가 및 소분 단가 정리.</li>
+                                    <li><strong class="text-slate-800">3. 화면 엑셀 변환 시트:</strong> 변경 전/후 단가 및 차액을 캡처하듯 저장한 대조/백업용.</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-slate-800 flex items-center gap-2 mb-3">
+                                    <i class="fa-solid fa-image text-yellow-500 text-lg"></i> [F10] 모바일 단가표 이미지
+                                </h4>
+                                <div class="bg-slate-50 p-4 rounded-xl border border-slate-100 h-full text-sm text-slate-600 flex flex-col justify-center">
+                                    <p class="mb-2">모바일 화면 비율에 최적화된 깔끔한 이미지로 자동 출력됩니다.</p>
+                                    <p>엑셀을 열어보기 힘든 영업 현장이나 식당 사장님들의 카카오톡/문자로 즉시 공유하여 영업력을 극대화하세요.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+            const sidebar = document.getElementById('sidebar');
+            const sidebarOverlay = document.getElementById('sidebarOverlay');
+            const navLinks = document.querySelectorAll('.nav-link');
+            const mainContent = document.getElementById('main-content');
+            const sections = document.querySelectorAll('section[id]');
+
+            // Mobile menu toggle
+            function toggleMenu() {
+                const isClosed = sidebar.classList.contains('-translate-x-full');
+                if (isClosed) {
+                    sidebar.classList.remove('-translate-x-full');
+                    sidebarOverlay.classList.remove('hidden');
+                } else {
+                    sidebar.classList.add('-translate-x-full');
+                    sidebarOverlay.classList.add('hidden');
+                }
+            }
+
+            mobileMenuBtn.addEventListener('click', toggleMenu);
+            sidebarOverlay.addEventListener('click', toggleMenu);
+
+            // Close mobile menu when clicking a link
+            navLinks.forEach(link => {
+                link.addEventListener('click', () => {
+                    if (window.innerWidth < 768) {
+                        toggleMenu();
+                    }
+                });
+            });
+
+            // ScrollSpy Implementation
+            const observerOptions = {
+                root: mainContent,
+                rootMargin: '-20% 0px -60% 0px',
+                threshold: 0.1
+            };
+
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const id = entry.target.getAttribute('id');
+                        // Remove active class from all
+                        navLinks.forEach(link => link.classList.remove('active'));
+                        // Add active class to current
+                        const activeLink = document.querySelector(`.nav-link[href="#${id}"]`);
+                        if(activeLink) {
+                            activeLink.classList.add('active');
+                        }
+                    }
+                });
+            }, observerOptions);
+
+            sections.forEach(section => {
+                observer.observe(section);
+            });
+        });
+    </script>
+</body>
+</html>
