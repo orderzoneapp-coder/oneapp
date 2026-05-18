@@ -48,6 +48,20 @@
             request.onerror = () => reject(request.error);
         });
 
+        const getIDB = async (key) => {
+            try {
+                const db = await initIDB();
+                return new Promise((resolve, reject) => {
+                    const tx = db.transaction('store', 'readonly');
+                    const req = tx.objectStore('store').get(key);
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(tx.error);
+                });
+            } catch(e) { 
+                return null; 
+            }
+        };
+
         const getAllIDB = async (storeName) => {
             try {
                 const db = await initIDB();
@@ -80,7 +94,10 @@
             const [toast, setToast] = useState('');
             const [workspaceCodes, setWorkspaceCodes] = useState([]);
 
-            const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+            const showToast = (msg) => { 
+                setToast(msg); 
+                setTimeout(() => setToast(''), 3000); 
+            };
 
             useEffect(() => {
                 getAllIDB('master_products').then(items => {
@@ -108,7 +125,7 @@
                 setIsProcessing(true);
                 showToast(`⏳ [통합 엑셀] ${targetProducts.length}건 양식 조립 중...`);
 
-                setTimeout(() => {
+                setTimeout(async () => {
                     try {
                         if (!window.XLSX) throw new Error("엑셀 라이브러리가 로드되지 않았습니다.");
                         
@@ -128,6 +145,7 @@
 
                         let visMaster = [];
                         let visUpload = [];
+                        
                         try {
                             visMaster = JSON.parse(localStorage.getItem('merchVisMaster_v870'))?.estimate || ['입고가', '출고가'];
                             visUpload = JSON.parse(localStorage.getItem('merchVisUpload_v870'))?.estimate || ['간단설명'];
@@ -138,6 +156,7 @@
                         visUpload.forEach(h => viewHeaders.push(`[작업]${h}`));
                         const viewData = [viewHeaders];
 
+                        // 1. 정상 상품 병합
                         targetProducts.forEach(mItem => {
                             const pIn = parseNum(mItem['입고가']);
                             const pOut = parseNum(mItem['출고가']);
@@ -155,13 +174,45 @@
                             const isForSale = isZeroPrice ? zeroAction.sale : (pIn > 0 || pOut > 0 ? '1' : '0');
                             const stockQty = isZeroPrice ? zeroAction.stock : '999';
                             
-                            shopData.push([mItem.코드, mItem.품목명, mItem.규격, pOut, priceA, priceMarketShop, 0, 0, 0, 0, 0, 0, mItem.브랜드, mItem.간단설명, isForSale, stockQty, '', '', '', '', '', mItem.검색어등록]);
+                            // 🌟 F8에서 저장한 테마 정보 읽기
+                            const t1 = (mItem['테마1'] === 1 || mItem['테마1'] === '1') ? '1' : '';
+                            const t2 = (mItem['테마2'] === 1 || mItem['테마2'] === '1') ? '1' : '';
+                            
+                            shopData.push([
+                                mItem.코드, mItem.품목명, mItem.규격, pOut, priceA, priceMarketShop, 
+                                0, 0, 0, 0, 0, 0, mItem.브랜드, mItem.간단설명, 
+                                isForSale, stockQty, t1, t2, '', '', '', mItem.검색어등록
+                            ]);
 
                             const viewRowData = ['', mItem.코드 || '', mItem.품목명 || '', mItem.규격 || ''];
                             visMaster.forEach(h => viewRowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(mItem[h]) : (mItem[h] || '')));
                             visUpload.forEach(h => viewRowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(mItem[h]) : (mItem[h] || '')));
                             viewData.push(viewRowData);
                         });
+
+                        // 🌟 2. 파서에서 제외된 '품절/단종' 대기열 상품 병합 로직
+                        let pendingRows = [];
+                        try { 
+                            pendingRows = await getIDB('pending_shop_status') || []; 
+                        } catch(e) {}
+                        
+                        if (pendingRows.length > 0) {
+                            pendingRows.forEach(pending => {
+                                const saleFlag = pending.type === 'stop' ? '0' : '1';
+                                const stockFlag = '0';
+                                const mItem = masterProducts.find(m => m.코드 === pending.code) || { 코드: pending.code, 품목명: pending.name };
+                                
+                                // 쇼핑몰 시트 하단에 강제 품절 상태로 추가
+                                shopData.push([
+                                    mItem.코드, mItem.품목명, mItem.규격||'', mItem['출고가']||0, mItem['도매A']||0, 
+                                    mItem['시중가']||mItem['출고가']||0, 0, 0, 0, 0, 0, 0, mItem.브랜드||'', mItem.간단설명||'', 
+                                    saleFlag, stockFlag, '', '', '', '', '', mItem.검색어등록||''
+                                ]);
+                            });
+                            
+                            // 1회성 소모: 사용 후 대기열 완전히 비우기
+                            await setIDB('pending_shop_status', null);
+                        }
 
                         window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shopData), "쇼핑몰업로드"); 
                         window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), "ERP업데이트"); 
@@ -201,7 +252,12 @@
                         const exportData = Object.keys(grouped).map(title => ({ title: `📌 ${title}`, items: grouped[title] }));
                         await setIDB('ONEAPP_IMAGE_DATA_TEMP', JSON.stringify(exportData));
                         
-                        showToast("✅ [ OK ] 데이터 생성 완료. (이미지 생성기 앱은 별도로 구축 예정입니다.)");
+                        showToast("✅ [ OK ] 데이터 생성 완료. 렌더링 화면으로 이동합니다.");
+                        
+                        // 현재 창에서 부드럽게 이미지 생성기로 이동 (새 창 열림 방지)
+                        setTimeout(() => {
+                            window.location.href = 'image_generator.html';
+                        }, 500);
                     } catch (e) {
                         console.error(e);
                         showToast("❌ 이미지 데이터 준비 중 오류 발생");
@@ -233,8 +289,9 @@
                             </div>
                         </div>
                         <div className="p-6 border-t border-slate-800 shrink-0">
-                            <button onClick={() => window.close()} className="w-full py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[13px] font-bold transition-colors">
-                                <i className="fas fa-arrow-left mr-2"></i> 메인으로 (닫기)
+                            {/* 새 창 열림 방지 - window.close() 대신 메인으로 이동 */}
+                            <button onClick={() => window.location.href = 'MerchOps.html'} className="w-full py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[13px] font-bold transition-colors">
+                                <i className="fas fa-arrow-left mr-2"></i> 메인으로 돌아가기
                             </button>
                         </div>
                     </div>
