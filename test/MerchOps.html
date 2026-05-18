@@ -170,7 +170,7 @@
             const estTargetOut = window.calculatePricesEngine(estInPrice, estProvidedOut, mItem, est, marginRules, forceRecalc);
             const masterTargetOut = window.calculatePricesEngine(masterInPrice, masterProvidedOut, mItem, {}, marginRules, forceRecalc);
 
-            // 🌟 1. 시중가 결정 (오직 마스터 기준)
+            // 🌟 1. 시중가 결정 (오직 마스터 기준 고정 유지)
             let finalMarketPrice = 0;
             if (forceRecalc) {
                 finalMarketPrice = masterTargetOut; 
