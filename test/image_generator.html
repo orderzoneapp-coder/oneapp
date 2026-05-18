@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ONEAPP MerchOps - 카톡 공유용 단가표 이미지 생성기 [v1.6 통합 버전]</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', -apple-system, sans-serif; }
+        
+        /* =========================================
+           [캡처 전용 고정 레이아웃 CSS]
+           어떤 데이터가 와도 800x1200 규격이 유지됩니다.
+           (잉크 절약형 하이엔드 화이트 테마)
+        ========================================= */
+        .capture-page {
+            width: 800px;
+            height: 1200px; /* 높이 완벽 고정 */
+            background-color: #ffffff; /* 잉크 절약을 위한 퓨어 화이트 */
+            color: #1e293b; /* 가독성 높은 다크 그레이 */
+            padding: 40px;
+            box-sizing: border-box;
+            font-family: 'Malgun Gothic', '맑은 고딕', sans-serif;
+            position: relative; /* 하단 영역 고정을 위한 relative */
+            margin-bottom: 20px;
+        }
+        
+        /* 1. 타이틀 영역 */
+        .capture-header { margin-bottom: 20px; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; }
+        .capture-title {
+            font-size: 42px;
+            font-weight: 900;
+            color: #0f172a; /* 진한 블랙 */
+            text-align: center;
+            letter-spacing: -1.5px;
+            margin: 0 0 15px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+        }
+        .notice-box {
+            border: 1px solid #fecaca;
+            background-color: #fef2f2; /* 연한 핑크 배경 */
+            color: #9f1239; /* 진한 레드 텍스트 */
+            padding: 10px 12px;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 15px;
+        }
+
+        /* 2. 2단 그리드 본문 영역 (높이 고정) */
+        .content-grid {
+            display: flex;
+            gap: 25px;
+            height: 770px; /* 이 틀을 넘어가면 다음 페이지로 분할됨 */
+        }
+        .col-wrapper {
+            flex: 1;
+            border: 1px solid #e2e8f0;
+            border-top: 4px solid #16a34a; /* 상단 포인트 그린 라인 */
+            border-radius: 8px;
+            background-color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); /* 은은한 고급 그림자 */
+        }
+        .col-content {
+            padding: 5px 20px 15px 20px;
+            flex: 1;
+        }
+        
+        /* 테이블 스타일 */
+        .capture-table { width: 100%; border-collapse: collapse; }
+        
+        /* 동적 카테고리 헤더 */
+        .category-header {
+            background-color: #f0fdf4; /* 연한 그린 틴트 */
+            color: #15803d; /* 딥 그린 텍스트 */
+            font-size: 18px;
+            font-weight: bold;
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin: 15px 0 8px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border: 1px solid #dcfce7;
+        }
+        /* 첫 번째 카테고리는 상단 여백 제거 */
+        .category-header.first-of-col { margin-top: 5px; }
+
+        .capture-table td {
+            padding: 9px 5px;
+            font-size: 16px;
+            border-bottom: 1px dashed #e2e8f0; /* 부드러운 점선 */
+        }
+        .capture-table tr:last-child td { border-bottom: none; }
+        .td-name { color: #334155; font-weight: 600; }
+        .td-price {
+            text-align: right;
+            font-weight: 800;
+            color: #0f172a;
+            letter-spacing: 0.5px;
+        }
+
+        /* 등락(차액) 및 예외 텍스트 */
+        .diff-up { color: #e11d48; font-size: 13px; margin-left: 6px; font-weight: bold; }
+        .diff-down { color: #2563eb; font-size: 13px; margin-left: 6px; font-weight: bold; }
+        .diff-same { color: #94a3b8; font-size: 13px; margin-left: 6px; }
+        .price-empty { color: #94a3b8; font-size: 14px; font-weight: normal; }
+
+        /* 3. 하단 고정 영역 (메모 & 문의처) */
+        .fixed-bottom-area {
+            position: absolute;
+            bottom: 40px;
+            left: 40px;
+            right: 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .capture-memo {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 15px 20px;
+            color: #475569;
+            font-size: 14px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            display: none; /* 기본 숨김 */
+            box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.02);
+        }
+        .capture-footer {
+            background-color: #f1f5f9;
+            color: #475569;
+            text-align: center;
+            padding: 16px;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            border: 1px solid #e2e8f0;
+        }
+
+        /* 스크롤바 */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .fade-in { animation: fadeIn 0.3s ease-out; } 
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen p-4 md:p-8 font-sans fade-in">
+
+    <div class="max-w-[1500px] mx-auto space-y-6">
+        
+        <header class="bg-[#0f172a] p-6 rounded-2xl shadow-md flex flex-col md:flex-row justify-between items-center gap-4 border border-slate-800">
+            <div class="flex items-center group shrink-0">
+                <span class="text-xl font-black text-amber-400 mr-3">ONEAPP</span>
+                <div class="flex flex-col border-l-2 border-slate-700 pl-3">
+                    <div class="flex items-center mb-0.5">
+                        <span class="text-[14px] font-black text-slate-200 leading-none">MerchOps</span>
+                        <span class="ml-2 bg-amber-500/20 border border-amber-400/30 text-amber-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.6 통합 버전</span>
+                    </div>
+                    <span class="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">IMAGE GENERATOR</span>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <div class="text-sm px-4 py-2 bg-slate-800 text-slate-300 rounded-lg font-bold border border-slate-700 hidden md:block">
+                    카톡 공유용 단가표 이미지 변환기
+                </div>
+                <button onclick="window.close()" class="h-9 px-4 rounded-lg bg-rose-600 text-white shadow-sm hover:bg-rose-700 font-bold text-[13px] transition-colors flex items-center">
+                    <i class="fas fa-times mr-1.5"></i> 닫기
+                </button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-[450px_1fr] gap-6">
+            
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[850px]">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-500"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                        1. 시스템 데이터 (카테고리 구조)
+                    </h2>
+                </div>
+                
+                <textarea id="json-input" class="w-full flex-grow p-4 bg-slate-50 border border-slate-200 rounded-xl font-mono text-[13px] focus:ring-2 focus:ring-amber-500 outline-none resize-none mb-4" spellcheck="false" placeholder="출력 센터에서 전달된 데이터가 이곳에 로드됩니다..."></textarea>
+                
+                <h3 class="text-sm font-bold text-slate-800 mb-2 flex items-center gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                    공지사항 (비워두면 노출 안 됨)
+                </h3>
+                <textarea id="memo-input" class="w-full h-20 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 outline-none resize-none" placeholder="내용을 비우면 메모 박스는 깔끔하게 사라집니다."></textarea>
+
+                <button onclick="processData()" class="mt-4 w-full py-4 bg-amber-500 hover:bg-amber-600 text-white font-black rounded-xl transition-colors shadow-sm flex justify-center items-center gap-2 text-lg">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                    2. 자동 분할 템플릿 굽기
+                </button>
+            </div>
+
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[850px]">
+                <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-500"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                    3. 생성된 이미지 (다중 페이지)
+                </h2>
+
+                <div class="flex-grow bg-slate-200 rounded-xl border border-slate-300 overflow-auto flex flex-col items-center p-8 relative gap-8" id="output-container">
+                    <div id="placeholder-msg" class="absolute inset-0 flex flex-col items-center justify-center text-slate-500 font-bold">
+                        데이터를 수신 대기 중입니다...
+                    </div>
+
+                    <div id="image-results-list" class="w-full flex flex-col items-center gap-10"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="hidden-render-area" style="position: absolute; top: -9999px; left: -9999px;"></div>
+
+    <div id="toast" class="fixed bottom-5 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-6 py-3 rounded-full shadow-lg transition-opacity duration-300 opacity-0 pointer-events-none z-50 flex items-center gap-2">
+        <span id="toast-msg">처리 완료!</span>
+    </div>
+
+    <script>
+        // 대용량 데이터 수신용 IndexedDB 브릿지
+        const initIDB = () => new Promise((resolve, reject) => {
+            const request = indexedDB.open('MerchOpsDB', 2);
+            request.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains('store')) db.createObjectStore('store');
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+
+        const getIDB = async (key) => {
+            const db = await initIDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('store', 'readonly');
+                const req = tx.objectStore('store').get(key);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(tx.error);
+            });
+        };
+
+        let generatedCanvases = [];
+
+        async function init() {
+            try {
+                const passedData = await getIDB('ONEAPP_IMAGE_DATA_TEMP');
+                if (passedData) {
+                    document.getElementById('json-input').value = JSON.stringify(JSON.parse(passedData), null, 4);
+                    document.getElementById('memo-input').value = "※ 알림: 금일 시장 상황에 따라 일부 단가가 변동되었습니다.";
+                    setTimeout(() => processData(), 500); // 자동 렌더링
+                } else {
+                    showToast("수신된 데이터가 없습니다. 출력 센터에서 대상을 다시 선택해주세요.", true);
+                }
+            } catch (error) {
+                showToast("데이터를 불러오는 데 실패했습니다.", true);
+            }
+        }
+
+        // 실시간 날짜 생성 함수
+        function getRealtimeDateStr() {
+            const now = new Date();
+            const yyyy = now.getFullYear();
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const mins = String(now.getMinutes()).padStart(2, '0');
+            return `${yyyy}.${mm}.${dd} ${hours}:${mins} 기준`;
+        }
+
+        // 포맷팅 함수 (금액 + 차액)
+        function formatPrice(price, prevPrice) {
+            if (!price || price === 0 || price === "0") {
+                return `<span class="price-empty">별도 문의</span>`;
+            }
+            
+            let html = Number(price).toLocaleString('ko-KR') + " <span style='font-size:12px; color:#94a3b8; font-weight:normal;'>원</span>";
+            if (prevPrice && prevPrice > 0) {
+                const diff = price - prevPrice;
+                if (diff > 0) html += `<span class="diff-up">▲ ${Number(diff).toLocaleString('ko-KR')}</span>`;
+                else if (diff < 0) html += `<span class="diff-down">▼ ${Number(Math.abs(diff)).toLocaleString('ko-KR')}</span>`;
+                else html += `<span class="diff-same">-</span>`;
+            }
+            return html;
+        }
+
+        async function processData() {
+            const inputVal = document.getElementById('json-input').value;
+            const memoVal = document.getElementById('memo-input').value.trim();
+            let data = [];
+            
+            try { data = JSON.parse(inputVal); } 
+            catch (e) { return showToast("JSON 데이터 형식을 확인해주세요.", true); }
+
+            document.getElementById('placeholder-msg').style.display = 'none';
+            const resultList = document.getElementById('image-results-list');
+            resultList.innerHTML = '<div class="text-amber-600 font-bold text-lg mt-10 animate-pulse">자동 분할 렌더링 중입니다... 잠시만 기다려주세요.</div>';
+            generatedCanvases = [];
+
+            // ==========================================
+            // [페이지 자동 분할 알고리즘]
+            // 하나의 단(Column)에 들어갈 수 있는 높이를 계산하여,
+            // 꽉 차면 다음 단으로, 2단이 꽉 차면 다음 페이지로 넘깁니다.
+            // ==========================================
+            const MAX_COL_HEIGHT = 720; // 750px 틀 안에서 여유를 둔 안전 높이
+            const HEADER_HEIGHT = 60;   // 카테고리 헤더 예상 높이
+            const ROW_HEIGHT = 42;      // 아이템 1줄 예상 높이
+
+            let pages = []; // 전체 페이지 배열 [ page1, page2, ... ]
+            let currentColIndex = 0;
+            let currentHeight = 0;
+            let currentPage = [[], []];
+
+            function advanceColumn() {
+                currentColIndex++;
+                if (currentColIndex > 1) { // 2단 다 차면 새 페이지
+                    pages.push(currentPage);
+                    currentPage = [[], []];
+                    currentColIndex = 0;
+                }
+                currentHeight = 0;
+            }
+
+            data.forEach(category => {
+                // 카테고리 헤더 넣기 전 남은 공간 체크 (타이틀 + 아이템 최소 1개 공간)
+                if (currentHeight + HEADER_HEIGHT + ROW_HEIGHT > MAX_COL_HEIGHT) {
+                    advanceColumn();
+                }
+
+                let isFirstOfCol = (currentHeight === 0);
+                currentPage[currentColIndex].push({ type: 'header', text: category.title, isFirst: isFirstOfCol });
+                currentHeight += HEADER_HEIGHT;
+
+                category.items.forEach(item => {
+                    // 줄 추가 전 공간 체크
+                    if (currentHeight + ROW_HEIGHT > MAX_COL_HEIGHT) {
+                        advanceColumn();
+                        // 단이 넘어갔으므로 카테고리 헤더를 '(계속)' 붙여서 다시 출력
+                        currentPage[currentColIndex].push({ type: 'header', text: `${category.title} (계속)`, isFirst: true });
+                        currentHeight += HEADER_HEIGHT;
+                    }
+                    currentPage[currentColIndex].push({ type: 'item', data: item });
+                    currentHeight += ROW_HEIGHT;
+                });
+            });
+            // 마지막 페이지 보관
+            if (currentPage[0].length > 0 || currentPage[1].length > 0) {
+                pages.push(currentPage);
+            }
+
+            // ==========================================
+            // [HTML 템플릿 생성]
+            // ==========================================
+            const renderArea = document.getElementById('hidden-render-area');
+            renderArea.innerHTML = ''; // 초기화
+            const dateStr = getRealtimeDateStr(); // 실시간 날짜 가져오기
+
+            pages.forEach((pageData, pIndex) => {
+                const totalPages = pages.length;
+                const pageNumStr = totalPages > 1 ? ` <span style="font-size: 24px; color: #a0aab5;">(${pIndex + 1}/${totalPages})</span>` : '';
+                
+                // 메모 노출 여부 처리 (내용이 없으면 숨김)
+                const memoDisplay = memoVal ? 'block' : 'none';
+
+                let pageHTML = `
+                    <div class="capture-page" id="capture-page-${pIndex}">
+                        <div class="capture-header">
+                            <h1 class="capture-title">
+                                <span style="font-size: 50px;">📦</span> 금일 발주 단가표${pageNumStr}
+                            </h1>
+                            <div class="notice-box">
+                                ※ 중요 공지: 품목 및 단가는 [${dateStr}] 실시간 상황에 따라 변동될 수 있습니다.
+                            </div>
+                        </div>
+
+                        <div class="content-grid">
+                `;
+
+                // 2개 컬럼 렌더링
+                pageData.forEach((colData, cIndex) => {
+                    pageHTML += `<div class="col-wrapper"><div class="col-content"><table class="capture-table"><tbody>`;
+                    
+                    colData.forEach(row => {
+                        if (row.type === 'header') {
+                            const marginClass = row.isFirst ? 'first-of-col' : '';
+                            pageHTML += `
+                                <tr>
+                                    <td colspan="2" style="padding:0; border:none;">
+                                        <div class="category-header ${marginClass}">${row.text}</div>
+                                    </td>
+                                </tr>
+                            `;
+                        } else {
+                            pageHTML += `
+                                <tr>
+                                    <td class="td-name">${row.data.name}</td>
+                                    <td class="td-price">${formatPrice(row.data.price, row.data.prevPrice)}</td>
+                                </tr>
+                            `;
+                        }
+                    });
+                    
+                    pageHTML += `</tbody></table></div></div>`;
+                });
+
+                pageHTML += `
+                        </div> <div class="fixed-bottom-area">
+                            <div class="capture-memo" style="display: ${memoDisplay};">
+                                ${memoVal}
+                            </div>
+                            <div class="capture-footer">
+                                📞 문의처 | 당일 정확한 단가는 별도 문의 부탁드립니다.
+                            </div>
+                        </div>
+                    </div> `;
+                renderArea.innerHTML += pageHTML;
+            });
+
+            // ==========================================
+            // [다중 캡처 실행]
+            // ==========================================
+            setTimeout(async () => {
+                resultList.innerHTML = ''; // 로딩 메시지 삭제
+                
+                for (let i = 0; i < pages.length; i++) {
+                    const template = document.getElementById(`capture-page-${i}`);
+                    try {
+                        const canvas = await html2canvas(template, { 
+                            scale: 1.5, // 고해상도
+                            backgroundColor: '#ffffff', // 캡처 시 투명 영역을 흰색으로 보정
+                            useCORS: true,
+                            logging: false
+                        });
+                        
+                        generatedCanvases.push(canvas);
+                        const imgUrl = canvas.toDataURL("image/png");
+                        
+                        // 결과 리스트에 이미지와 각각의 조작 버튼 추가
+                        const itemWrapper = document.createElement('div');
+                        itemWrapper.className = "w-full max-w-[500px] flex flex-col gap-3 bg-white p-4 rounded-xl shadow-sm border border-slate-200";
+                        itemWrapper.innerHTML = `
+                            <div class="flex justify-between items-center px-1">
+                                <span class="font-bold text-slate-700 bg-slate-100 px-3 py-1 rounded-md">페이지 ${i + 1} / ${pages.length}</span>
+                                <div class="flex gap-2">
+                                    <button onclick="copyImage(${i})" class="px-4 py-1.5 bg-[#FEE500] hover:bg-[#e5cf00] text-black text-sm font-bold rounded-lg transition-colors shadow-sm">복사</button>
+                                    <button onclick="downloadImage(${i})" class="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-sm font-bold rounded-lg transition-colors shadow-sm">저장</button>
+                                </div>
+                            </div>
+                            <img src="${imgUrl}" class="w-full rounded-lg border border-slate-300 shadow-md cursor-pointer" onclick="copyImage(${i})" title="클릭하면 복사됩니다">
+                        `;
+                        resultList.appendChild(itemWrapper);
+                    } catch (error) {
+                        showToast("캡처 중 오류가 발생했습니다.", true);
+                    }
+                }
+                showToast(`총 ${pages.length}장의 이미지 생성이 완료되었습니다!`);
+                renderArea.innerHTML = ''; // 메모리 정리
+            }, 300); // 렌더링 대기 시간
+        }
+
+        // 특정 인덱스의 이미지를 복사
+        async function copyImage(index) {
+            const canvas = generatedCanvases[index];
+            if (!canvas) return;
+            try {
+                canvas.toBlob(async function(blob) {
+                    try {
+                        const item = new ClipboardItem({ "image/png": blob });
+                        await navigator.clipboard.write([item]);
+                        showToast(`페이지 ${index + 1} 복사 완료! 카톡에 바로 붙여넣기 하세요.`);
+                    } catch (err) {
+                        showToast("우클릭하여 '이미지 복사'를 이용해주세요.", true);
+                    }
+                }, 'image/png');
+            } catch (err) { showToast("복사 중 오류 발생", true); }
+        }
+
+        // 특정 인덱스의 이미지를 다운로드
+        function downloadImage(index) {
+            const canvas = generatedCanvases[index];
+            if (!canvas) return;
+            
+            const now = new Date();
+            const dateStr = `${now.getMonth()+1}월${now.getDate()}일`;
+            const link = document.createElement('a');
+            link.download = `단가표_${dateStr}_페이지${index+1}.png`;
+            link.href = canvas.toDataURL("image/png");
+            link.click();
+        }
+
+        function showToast(msg, isError = false, duration = 3000) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-msg').innerText = msg;
+            toast.className = `fixed bottom-5 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-full shadow-lg transition-opacity duration-300 z-50 flex items-center gap-2 ${isError ? 'bg-red-600' : 'bg-slate-800'} text-white opacity-100`;
+            
+            setTimeout(() => { 
+                toast.classList.remove('opacity-100');
+                toast.classList.add('opacity-0', 'pointer-events-none'); 
+            }, duration);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
