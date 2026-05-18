@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="ko" translate="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="google" content="notranslate">
+    <title>ONEAPP MerchOps - 데이터 출력 센터 [v1.6 5단 연산 및 품절 병합 엔진]</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', -apple-system, sans-serif; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; } 
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; }
+        .fade-in { animation: fadeIn 0.3s ease-out; } 
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans text-slate-800 overflow-hidden">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        const NUMERIC_HEADERS = [
+            "안전재고", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고",
+            "단가H", "단가I", "시중가", "행사가", "1종연산", "2종연산", "외주비", "노무비", "경비",
+            "1구매", "1출고", "2구매", "2출고", "1입고", "2입고"
+        ];
+
+        const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
+
+        const initIDB = () => new Promise((resolve, reject) => {
+            const request = indexedDB.open('MerchOpsDB', 2);
+            request.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains('store')) db.createObjectStore('store');
+                if (!db.objectStoreNames.contains('master_products')) {
+                    db.createObjectStore('master_products', { keyPath: '코드' });
+                }
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+
+        const getAllIDB = async (storeName) => {
+            try {
+                const db = await initIDB();
+                return new Promise((resolve, reject) => {
+                    if (!db.objectStoreNames.contains(storeName)) return resolve([]);
+                    const tx = db.transaction(storeName, 'readonly');
+                    const req = tx.objectStore(storeName).getAll();
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(tx.error);
+                });
+            } catch (error) {
+                console.warn(`[IndexedDB] ${storeName} 로드 실패`, error);
+                return [];
+            }
+        };
+
+        const getIDB = async (key) => {
+            try {
+                const db = await initIDB();
+                return new Promise((resolve, reject) => {
+                    const tx = db.transaction('store', 'readonly');
+                    const req = tx.objectStore('store').get(key);
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(tx.error);
+                });
+            } catch (error) {
+                return null;
+            }
+        };
+
+        const setIDB = async (key, val) => {
+            const db = await initIDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('store', 'readwrite');
+                tx.objectStore('store').put(val, key);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        };
+
+        const ExportApp = () => {
+            const [masterProducts, setMasterProducts] = useState([]);
+            const [workspaceCodes, setWorkspaceCodes] = useState([]);
+            const [liveSessionData, setLiveSessionData] = useState({}); // 메인 화면의 실시간 5단 연산 결과
+            const [pendingList, setPendingList] = useState([]); // 판매중단 처리된 대기열
+
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [toast, setToast] = useState('');
+
+            const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+
+            useEffect(() => {
+                const loadData = async () => {
+                    // 1. 마스터 데이터 로드
+                    const items = await getAllIDB('master_products');
+                    if (items && items.length > 0) setMasterProducts(items);
+
+                    // 2. 메인 작업대 대상 코드 로드
+                    try {
+                        const codes = JSON.parse(localStorage.getItem('merchExportTargets') || '[]');
+                        setWorkspaceCodes(codes);
+                    } catch(e) {}
+
+                    // 3. 메인 작업대 세션 (실시간 5단 연산 결과 획득)
+                    const session = await getIDB('merchops_session');
+                    if (session && session.managedItems) {
+                        setLiveSessionData(session.managedItems);
+                    }
+
+                    // 4. 판매중단 임시 창고 로드
+                    const pending = await getIDB('pending_shop_status') || [];
+                    setPendingList(pending);
+                };
+                loadData();
+            }, []);
+
+            // 메인 작업대에서 넘어온 정상 코드들 필터링
+            const targetProducts = useMemo(() => {
+                if (workspaceCodes.length === 0) return [];
+                const codeSet = new Set(workspaceCodes);
+                return masterProducts.filter(m => codeSet.has(m.코드));
+            }, [masterProducts, workspaceCodes]);
+
+            const handleExportExcel = () => {
+                if (targetProducts.length === 0 && pendingList.length === 0) return showToast("⚠️ 출력할 데이터가 없습니다.");
+                
+                setIsProcessing(true);
+                showToast(`⏳ [통합 엑셀] 정상 ${targetProducts.length}건, 단종 ${pendingList.length}건 병합 조립 중...`);
+
+                setTimeout(async () => {
+                    try {
+                        if (!window.XLSX) throw new Error("엑셀 라이브러리가 로드되지 않았습니다.");
+                        
+                        const wb = window.XLSX.utils.book_new(); 
+                        const zeroAction = { sale: '0', stock: '0' }; // 완전 단종 세팅
+                        
+                        let erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '최종(전송)', 'n', '행사', 'n', '1']]; 
+                        let shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', '도매B', '도매B', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
+                        
+                        const createRowArr = (code, inPrice, outPrice, bPrice='', aSale='', bSale='', finalPrice='', instruction='', isStop=false) => { 
+                            if (!code) return null; 
+                            const outIn = inPrice > 0 ? inPrice : ''; 
+                            const outOut = outPrice > 0 ? outPrice : ''; 
+                            const outFinal = finalPrice > 0 ? finalPrice : outIn; 
+                            // 단종 상품은 ERP에서도 0처리 (선택적)
+                            return [ code, outIn, '0', outOut, '0', bPrice||'', 'n', aSale||'', 'n', bSale||'', 'n', outFinal, 'n', instruction||'', 'n', isStop ? '0' : ((inPrice > 0 || outPrice > 0) ? '1' : '') ]; 
+                        };
+
+                        let visMaster = [];
+                        let visUpload = [];
+                        try {
+                            visMaster = JSON.parse(localStorage.getItem('merchVisMaster_v870'))?.estimate || ['입고가', '출고가'];
+                            visUpload = JSON.parse(localStorage.getItem('merchVisUpload_v870'))?.estimate || ['간단설명'];
+                        } catch(e) {}
+                        
+                        const viewHeaders = ['상태/선택', '품목코드', '마스터_품목명', '마스터_규격'];
+                        visMaster.forEach(h => viewHeaders.push(`[M]${h}`)); 
+                        visUpload.forEach(h => viewHeaders.push(`[작업]${h}`));
+                        const viewData = [viewHeaders];
+
+                        // 🌟 1. 정상 판매 상품 상단 배치 (라이브 5단 연산 데이터 적용)
+                        targetProducts.forEach(mItem => {
+                            const code = mItem.코드;
+                            const liveData = liveSessionData[code]?.finalData || {}; // F8 저장 안해도 화면에 있던 값 가로채기
+                            
+                            // 연산 우선순위: 화면 실시간 데이터 > 마스터 원본
+                            const pIn = parseNum(liveData['입고가'] !== undefined ? liveData['입고가'] : mItem['입고가']);
+                            const pOut = parseNum(liveData['출고가'] !== undefined ? liveData['출고가'] : mItem['출고가']);
+                            const pMarketPrice = parseNum(liveData['시중가'] !== undefined ? liveData['시중가'] : mItem['시중가']);
+                            const pBPrice = parseNum(liveData['입고B'] !== undefined ? liveData['입고B'] : mItem['입고B']);
+                            const pASale = parseNum(liveData['도매A'] !== undefined ? liveData['도매A'] : mItem['도매A']);
+                            const pBSale = parseNum(liveData['도매B'] !== undefined ? liveData['도매B'] : mItem['도매B']);
+
+                            // 테마 마킹
+                            const themeVal = liveData._theme || 0;
+                            const theme1 = themeVal === 1 ? '1' : ''; // 견적행사
+                            const theme2 = themeVal === 2 ? '1' : ''; // 자사행사
+
+                            const pRowErp = createRowArr(mItem.코드, pIn, pOut, pBPrice, pASale, pBSale, pIn, mItem['간단설명'], false); 
+                            if (pRowErp) erpData.push(pRowErp);
+                            
+                            const priceMarketShop = pMarketPrice > 0 ? pMarketPrice : pOut;
+                            const priceA = pASale > 0 ? pASale : pOut;
+                            const isZeroPrice = (pIn === 0 && pOut === 0);
+                            
+                            // 기본 상태 (정상 상품)
+                            const isForSale = isZeroPrice ? zeroAction.sale : '1';
+                            const stockQty = isZeroPrice ? zeroAction.stock : '999';
+                            
+                            shopData.push([mItem.코드, mItem.품목명, mItem.규격, pOut, priceA, priceMarketShop, 0, 0, 0, 0, 0, 0, mItem.브랜드, mItem.간단설명, isForSale, stockQty, theme1, theme2, '', '', '', mItem.검색어등록]);
+
+                            const viewRowData = ['', mItem.코드 || '', mItem.품목명 || '', mItem.규격 || ''];
+                            visMaster.forEach(h => viewRowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(mItem[h]) : (mItem[h] || '')));
+                            visUpload.forEach(h => viewRowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(liveData[h] ?? mItem[h]) : ((liveData[h] ?? mItem[h]) || '')));
+                            viewData.push(viewRowData);
+                        });
+
+                        // 🌟 2. 단종/품절 상품 최하단 병합 (O열=0, P열=0 강제 조작)
+                        const safePendingList = pendingList || [];
+                        const targetCodeSet = new Set(targetProducts.map(p => p.코드)); // 중복 방지 방어벽
+
+                        safePendingList.forEach(pItem => {
+                            if (targetCodeSet.has(pItem.code)) return; // 위에서 이미 넣은 상품이면 패스
+
+                            const mItem = masterProducts.find(m => m.코드 === pItem.code) || { 코드: pItem.code, 품목명: pItem.name };
+                            
+                            const pIn = parseNum(mItem['입고가']);
+                            const pOut = parseNum(mItem['출고가']);
+                            const pMarketPrice = parseNum(mItem['시중가']);
+                            const pASale = parseNum(mItem['도매A']);
+                            
+                            const priceMarketShop = pMarketPrice > 0 ? pMarketPrice : pOut;
+                            const priceA = pASale > 0 ? pASale : pOut;
+
+                            // 🚨 [핵심] 판매여부 0, 재고수량 0 강제 조작
+                            shopData.push([
+                                mItem.코드, mItem.품목명, mItem.규격 || '', pOut, priceA, priceMarketShop, 0, 0, 0, 0, 0, 0, mItem.브랜드 || '', mItem.간단설명 || '', 
+                                '0', // O열: 판매여부 = 0
+                                '0', // P열: 재고수량 = 0
+                                '', '', '', '', '', mItem.검색어등록 || ''
+                            ]);
+
+                            const pRowErp = createRowArr(mItem.코드, pIn, pOut, 0, pASale, 0, pIn, mItem['간단설명'], true); 
+                            if (pRowErp) erpData.push(pRowErp);
+                        });
+
+                        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shopData), "쇼핑몰업로드"); 
+                        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), "ERP업데이트"); 
+                        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(viewData), "화면엑셀변환"); 
+                        
+                        window.XLSX.writeFile(wb, `통합보고서_데이터추출_${new Date().toISOString().slice(0,10)}.xlsx`); 
+                        
+                        // 🌟 3. Auto-Flush (창고 비우기)
+                        await setIDB('pending_shop_status', []);
+                        setPendingList([]);
+
+                        showToast(`✅ 정상 ${targetProducts.length}건 + 단종 ${safePendingList.length}건 다운로드 및 창고 정리가 완료되었습니다.`);
+                    } catch(e) {
+                        console.error(e);
+                        showToast("❌ 엑셀 파일 생성 중 오류가 발생했습니다.");
+                    } finally {
+                        setIsProcessing(false);
+                    }
+                }, 500);
+            };
+
+            const handleImageExport = async () => {
+                if (targetProducts.length === 0) return showToast("⚠️ 내보낼 대상 데이터가 없습니다.");
+                setIsProcessing(true);
+
+                setTimeout(async () => {
+                    try {
+                        const grouped = {};
+                        targetProducts.forEach(mItem => {
+                            const code = mItem.코드;
+                            const liveData = liveSessionData[code]?.finalData || {}; // 라이브 데이터 우선
+                            
+                            const fullName = mItem.규격 ? `${mItem.품목명} (${mItem.규격})` : mItem.품목명;
+                            const pIn = parseNum(liveData['입고가'] !== undefined ? liveData['입고가'] : mItem['입고가']);
+                            const pOut = parseNum(liveData['출고가'] !== undefined ? liveData['출고가'] : mItem['출고가']);
+                            const pPromo = parseNum(liveData['행사가']);
+                            
+                            const displayPrice = pPromo > 0 ? pPromo : (pOut > 0 ? pOut : pIn);
+                            const prevPrice = parseNum(mItem['출고가']) > 0 ? parseNum(mItem['출고가']) : parseNum(mItem['입고가']);
+
+                            const catStr = mItem['견적서'] || mItem['카테고리'] || '일반 상품목록';
+                            const mainCat = catStr.split(',')[0].trim();
+
+                            if(!grouped[mainCat]) grouped[mainCat] = [];
+                            grouped[mainCat].push({ name: fullName, price: displayPrice, prevPrice: prevPrice });
+                        });
+
+                        const exportData = Object.keys(grouped).map(title => ({ title: `📌 ${title}`, items: grouped[title] }));
+                        await setIDB('ONEAPP_IMAGE_DATA_TEMP', JSON.stringify(exportData));
+                        
+                        showToast("✅ [ OK ] 데이터 생성 완료. 카톡 이미지 뷰어 탭을 열어주세요.");
+                    } catch (e) {
+                        console.error(e);
+                        showToast("❌ 이미지 데이터 준비 중 오류 발생");
+                    } finally {
+                        setIsProcessing(false);
+                    }
+                }, 300);
+            };
+
+            return (
+                <div className="flex h-screen overflow-hidden bg-slate-50 fade-in">
+                    {toast && (
+                        <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-[1000] bg-slate-800 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 text-sm font-bold transition-all">
+                            <i className="fas fa-check-circle text-emerald-400"></i>{toast}
+                        </div>
+                    )}
+                    
+                    {/* 왼쪽 GNB */}
+                    <div className="w-[260px] bg-[#0f172a] flex flex-col text-slate-300 shadow-xl z-10 shrink-0 h-full">
+                        <div className="p-6 border-b border-slate-800 bg-[#0b1120] shrink-0">
+                            <h1 className="text-xl font-black text-amber-400 tracking-tight flex items-center">
+                                <i className="fas fa-print mr-3"></i>출력 센터
+                            </h1>
+                            <p className="text-[11px] text-slate-500 mt-2 font-bold uppercase tracking-widest">Export & Report</p>
+                        </div>
+                        <div className="flex flex-col py-4 gap-1 px-3 flex-1">
+                            <div className="px-4 py-3.5 rounded-xl text-left text-[13px] font-bold bg-amber-600 text-white shadow-md cursor-default">
+                                <i className="fas fa-file-export w-6 text-center mr-1"></i> 데이터 출력 및 리포트
+                            </div>
+                        </div>
+                        <div className="p-6 border-t border-slate-800 shrink-0">
+                            <button onClick={() => window.close()} className="w-full py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[13px] font-bold transition-colors">
+                                <i className="fas fa-arrow-left mr-2"></i> 메인으로 (닫기)
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* 메인 콘텐츠 영역 */}
+                    <div className="flex-1 overflow-y-auto p-10 flex flex-col items-center justify-center relative">
+                        
+                        <div className="max-w-4xl w-full bg-white p-10 rounded-3xl shadow-xl border border-slate-200 relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-emerald-400 to-indigo-500"></div>
+                            
+                            <div className="text-center mb-10 mt-2">
+                                <h2 className="text-3xl font-black text-slate-800 mb-3">데이터 출력 및 보고서 생성</h2>
+                                <p className="text-slate-500 font-bold mb-4">
+                                    현재 실시간 화면의 <strong className="text-indigo-600">{targetProducts.length}건</strong> 정상 상품과 <br/>
+                                    수동 처리된 <strong className="text-rose-500">{pendingList.length}건</strong>의 판매중단 품목을 즉시 병합 출력합니다.
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-6">
+                                {/* 엑셀 다운로드 버튼 */}
+                                <button onClick={handleExportExcel} disabled={isProcessing} className={`flex flex-col items-center p-8 border-2 rounded-2xl transition-all group ${isProcessing ? 'bg-slate-50 border-slate-200 cursor-not-allowed opacity-70' : 'bg-emerald-50 border-emerald-200 hover:border-emerald-500 hover:shadow-lg'}`}>
+                                    <div className="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-500 text-4xl mb-6 group-hover:scale-110 transition-transform">
+                                        <i className="fas fa-file-excel"></i>
+                                    </div>
+                                    <div className="font-black text-slate-800 text-[18px] mb-2">통합 엑셀 다운로드</div>
+                                    <div className="text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded text-[10px] font-bold mb-3">단축키: F9</div>
+                                    <div className="text-slate-500 text-[12px] text-center">정상가와 단종 품목을 하나로 합쳐<br/>쇼핑몰/ERP 업로드용 시트를 생성합니다.</div>
+                                    
+                                    {pendingList.length > 0 && (
+                                        <div className="mt-4 bg-rose-100 text-rose-600 px-3 py-1 rounded-full text-[11px] font-black animate-pulse border border-rose-200">
+                                            <i className="fas fa-ban mr-1"></i>단종 대기열 {pendingList.length}건 병합 대기중
+                                        </div>
+                                    )}
+                                </button>
+
+                                {/* 이미지 내보내기 버튼 */}
+                                <button onClick={handleImageExport} disabled={isProcessing} className={`flex flex-col items-center p-8 border-2 rounded-2xl transition-all group ${isProcessing ? 'bg-slate-50 border-slate-200 cursor-not-allowed opacity-70' : 'bg-amber-50 border-amber-200 hover:border-amber-500 hover:shadow-lg'}`}>
+                                    <div className="w-20 h-20 rounded-full bg-amber-100 flex items-center justify-center text-amber-500 text-4xl mb-6 group-hover:scale-110 transition-transform">
+                                        <i className="fas fa-image"></i>
+                                    </div>
+                                    <div className="font-black text-slate-800 text-[18px] mb-2">카톡 공유용 이미지</div>
+                                    <div className="text-amber-600 bg-amber-100 px-2 py-0.5 rounded text-[10px] font-bold mb-3">단축키: F10</div>
+                                    <div className="text-slate-500 text-[12px] text-center">전달받은 정상 대상의 단가를 바탕으로<br/>카카오톡 전송용 이미지를 생성합니다.</div>
+                                </button>
+                            </div>
+                            
+                            {/* 진행 상태 인디케이터 */}
+                            {isProcessing && (
+                                <div className="mt-8 flex justify-center items-center text-slate-500 font-bold text-sm fade-in">
+                                    <i className="fas fa-circle-notch fa-spin text-indigo-500 mr-2 text-lg"></i>
+                                    데이터를 조립하고 있습니다. 잠시만 기다려주세요...
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<ExportApp />);
+    </script>
+</body>
+</html>
