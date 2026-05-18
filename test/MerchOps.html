@@ -1729,10 +1729,10 @@
             };
 
             return (
-                <tr className="group border-b border-[#edebe3] transition-all hover:shadow-[0_0_8px_rgba(59,130,246,0.12)] relative z-0 hover:z-10">
+                <tr className="group border-b border-slate-200 transition-all hover:shadow-[0_0_8px_rgba(59,130,246,0.12)] relative z-0 hover:z-10">
                     
-                    {/* [1구역: 마스터 정보] - 고정열 포함 은은한 Slate테두리 */}
-                    <td className={`sticky z-20 px-3 py-2 border-r border-[#edebe3] transition-colors min-w-[280px] w-[280px] max-w-[280px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : 'bg-[#faf9f5] group-hover:!bg-blue-100/40 border-l-4 border-l-transparent group-hover:!border-l-blue-400'}`} style={{left: 0}}>
+                    {/* 마스터 영역: 통일된 배경색(slate-50) 적용 */}
+                    <td className={`sticky z-20 px-3 py-2 border-r border-slate-200 transition-colors min-w-[280px] w-[280px] max-w-[280px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : 'bg-slate-50 group-hover:!bg-slate-100 border-l-4 border-l-transparent group-hover:!border-l-slate-300'}`} style={{left: 0}}>
                         <div className="flex gap-2 items-center w-full min-w-0">
                             {isEstimateUploaded && (
                                 <input type="checkbox" className="w-4 h-4 rounded border-slate-300 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500" checked={isSel} onChange={() => {const n = new Set(state.selectedRows); n.has(row.코드)?n.delete(row.코드):n.add(row.코드); actions.setSelectedRows(n);}} />
@@ -1752,7 +1752,7 @@
                             const isNum = window.NUMERIC_HEADERS.includes(h);
                             const mVal = mItem[h] !== undefined && mItem[h] !== '' ? (isNum ? window.parseNum(mItem[h]).toLocaleString() : mItem[h]) : '-';
                             return (
-                                <td key={`idle-td-${h}`} className={`px-2 py-1.5 border-r border-[#edebe3] text-[#6b675e] ${getCellWidthClass(h)} ${isNum ? 'text-right font-bold' : 'text-center'} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-100/40'}`}>
+                                <td key={`idle-td-${h}`} className={`px-2 py-1.5 border-r border-slate-200 text-slate-600 ${getCellWidthClass(h)} ${isNum ? 'text-right font-bold' : 'text-center'} ${isSel ? '!bg-indigo-100/70' : 'bg-slate-50 group-hover:!bg-slate-100'}`}>
                                     <div className="truncate w-full">{mVal}</div>
                                 </td>
                             );
@@ -1771,14 +1771,14 @@
                                 const formattedVal = mVal !== undefined && mVal !== '' ? (isNum ? window.parseNum(mVal).toLocaleString() : mVal) : '-';
                                 
                                 return (
-                                    <td key={`pm-d-${h}`} className={`px-2 py-1.5 border-r border-[#edebe3] transition-colors ${getCellWidthClass(h)} ${isChanged ? 'bg-amber-50/80 text-amber-800' : 'bg-[#faf9f5] text-[#6b675e]'} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-100/40'} ${isNum ? 'text-right font-bold' : 'text-center'}`}>
+                                    <td key={`pm-d-${h}`} className={`px-2 py-1.5 border-r border-slate-200 transition-colors ${getCellWidthClass(h)} ${isChanged ? 'bg-amber-50/80 text-amber-800' : 'bg-slate-50 text-slate-600'} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-100'} ${isNum ? 'text-right font-bold' : 'text-center'}`}>
                                         <div className="truncate w-full">{formattedVal}</div>
                                     </td>
                                 );
                             })}
                             
-                            {/* [2구역: 판매여부 / 이슈] - Violet 바이올렛 틴트 배경 + 두꺼운 Indigo 300 보더 경계선 */}
-                            <td className={`px-2 py-1.5 border-l-2 border-indigo-200 bg-[#fbfbfe] text-center w-[100px] min-w-[100px] max-w-[100px] ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-100/40'}`}>
+                            {/* 판매여부 / 이슈 구역 */}
+                            <td className={`px-2 py-1.5 border-l-2 border-indigo-200 bg-[#fbfbfe] text-center w-[100px] min-w-[100px] max-w-[100px] ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-50/50'}`}>
                                 <button onClick={handleToggleSalesStatus} className="px-2 py-1 rounded-md transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-1.5 w-full h-full" title="클릭하여 즉시 단종/정지 상태로 전환">
                                     {isSelling ? (
                                         <span className="text-[12px] font-black text-emerald-600 flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
@@ -1792,13 +1792,13 @@
                                 </button>
                             </td>
 
-                            <td className={`px-2 py-1.5 border-r-2 border-indigo-300 bg-[#fbfbfe] text-center w-[100px] min-w-[100px] max-w-[100px] ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-100/40'}`}>
+                            <td className={`px-2 py-1.5 border-r-2 border-indigo-300 bg-[#fbfbfe] text-center w-[100px] min-w-[100px] max-w-[100px] ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-50/50'}`}>
                                 <div className="flex flex-col items-center justify-center h-full">
                                     {issueBadge}
                                 </div>
                             </td>
 
-                            {/* [3구역: 작업 정보 (오늘 편집값)] */}
+                            {/* 작업 정보 (오늘 편집값) */}
                             {visibleUploadCols['estimate']?.filter(h => h !== '품목코드').map(h => {
                                 const linkedMasterField = config.masterLinks['estimate']?.[h];
                                 const mVal = (linkedMasterField && row.코드 ? mItem[linkedMasterField] : undefined) ?? mItem[h];
@@ -1832,55 +1832,29 @@
                     <div className="flex-1 overflow-auto custom-scrollbar relative" onScroll={handleScroll}>
                         <table className="text-left border-collapse text-[13px] whitespace-nowrap relative z-0 w-max bg-white">
                             <thead className="text-[12px] font-extrabold sticky top-0 z-40">
-                                
-                                {/* 🌟 3단 영역 구분을 위한 1단 대분류 헤더 생성 (너무 튀지 않으면서 정돈된 디자인) */}
-                                {isEstimateUploaded && (
-                                    <tr className="border-b border-slate-200">
-                                        <th className="bg-[#f1f3f5] border-r border-slate-200 p-2 text-center text-slate-500 text-[11px] font-bold tracking-wider" style={{left: 0, position: 'sticky', zIndex: 50}}>
-                                            G-ZONE
-                                        </th>
-                                        
-                                        {/* 1구역: 마스터 정보 대형 탭 */}
-                                        <th colSpan={visibleMasterCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).length} className="bg-slate-100 text-slate-600 border-r border-slate-200 text-center py-1.5 text-[11px] font-extrabold tracking-wider">
-                                            <i className="fas fa-database mr-1"></i> [1구역] 기존 마스터 데이터 원본
-                                        </th>
-
-                                        {/* 2구역: 판매여부 및 변동 이슈 (indigo/violet 계열 보더 포인트) */}
-                                        <th colSpan={2} className="bg-indigo-50 text-indigo-700 border-x-2 border-indigo-200 text-center py-1.5 text-[11px] font-black tracking-wider">
-                                            <i className="fas fa-exclamation-circle mr-1"></i> [2구역] 실시간 상태 및 변동 분석 (판단 지점)
-                                        </th>
-
-                                        {/* 3구역: 오늘자 엑셀 업로드 작업 영역 */}
-                                        <th colSpan={activeUploadColsCount} className="bg-orange-50/50 text-orange-800 border-r border-slate-200 text-center py-1.5 text-[11px] font-extrabold tracking-wider">
-                                            <i className="fas fa-keyboard mr-1"></i> [3구역] 오늘자 임시 작업대 편집 및 수식
-                                        </th>
-                                    </tr>
-                                )}
-
                                 <tr>
-                                    <th className="sticky top-0 z-40 bg-[#f5f4f0] px-3 py-2 border-b border-r border-[#e8e4db] shadow-sm text-[#5c554d] min-w-[280px] w-[280px] max-w-[280px]" style={{left: 0}}>
+                                    <th className="sticky top-0 z-40 bg-slate-100 px-3 py-2 border-b border-r border-slate-200 shadow-sm text-slate-700 min-w-[280px] w-[280px] max-w-[280px]" style={{left: 0}}>
                                         <div className="flex items-center gap-2 pl-1">
                                             {isEstimateUploaded && (
                                                 <input type="checkbox" className="rounded w-4 h-4 border-slate-300 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500" checked={selectedRows.size === fullDisplayRows.length && displayRows.length > 0} onChange={actions.toggleAllRows} />
                                             )}
-                                            <span className="truncate">상품정보 (코드/품명/규격)</span>
-                                            {isEstimateUploaded && <span className="bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded text-[10px] font-black shrink-0">작업모드</span>}
+                                            <span className="truncate font-black">상품 기본정보</span>
                                         </div>
                                     </th>
 
                                     {!isEstimateUploaded ? (
                                         visibleMasterCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map(h => (
-                                            <th key={`idle-th-${h}`} className="sticky top-0 z-30 bg-[#f8fafc] px-2 py-3 border-r border-b border-slate-200 text-center text-slate-600 font-bold" style={{width: getCellWidthClass(h)}}>{h}</th>
+                                            <th key={`idle-th-${h}`} className="sticky top-0 z-30 bg-slate-100 px-2 py-3 border-r border-b border-slate-200 text-center text-slate-600 font-bold" style={{width: getCellWidthClass(h)}}>{h}</th>
                                         ))
                                     ) : (
                                         <>
                                             {visibleMasterCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map((h, i, arr) => (
-                                                <th key={`pm-${h}`} className="sticky top-0 z-30 bg-[#fafafa] px-2 py-3 border-r border-b text-center text-slate-600 border-slate-200 font-bold" style={{width: getCellWidthClass(h)}}>
-                                                    [M] {h}
+                                                <th key={`pm-${h}`} className="sticky top-0 z-30 bg-slate-100 px-2 py-3 border-r border-b text-center text-slate-600 border-slate-200 font-bold" style={{width: getCellWidthClass(h)}}>
+                                                    기존 {h}
                                                 </th>
                                             ))}
                                             
-                                            {/* 🌟 2구역 헤더 고도화 연동 */}
+                                            {/* 판매여부/변동이슈 헤더 */}
                                             <th className="sticky top-0 z-30 bg-[#f6f5ff] px-2 py-3 border-b border-l-2 border-indigo-200 text-center text-indigo-700 font-black min-w-[100px] w-[100px] max-w-[100px]">
                                                 판매여부
                                             </th>
@@ -1891,7 +1865,7 @@
                                             {visibleUploadCols['estimate']?.filter(h => h !== '품목코드').map(h => {
                                                 const isHighlight = ['입고가', '도매A', '행사가', '출고가'].includes(h);
                                                 return (
-                                                    <th key={`pu-e-${h}`} className={`sticky top-0 z-30 ${isHighlight ? 'bg-orange-50/50 text-orange-800 font-black' : 'bg-[#fffdfd] text-slate-600'} px-2 py-3 border-r border-b border-slate-200 text-center`} style={{width: getCellWidthClass(h)}}>
+                                                    <th key={`pu-e-${h}`} className={`sticky top-0 z-30 ${isHighlight ? 'bg-orange-50/50 text-orange-800 font-black' : 'bg-white text-slate-600'} px-2 py-3 border-r border-b border-slate-200 text-center`} style={{width: getCellWidthClass(h)}}>
                                                         {h} {isHighlight && <i className="fas fa-bolt text-orange-400 ml-1 text-[10px]"></i>}
                                                     </th>
                                                 );
