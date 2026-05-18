@@ -84,7 +84,7 @@
             }); 
         };
 
-        // 기존 마진 룰 엔진
+        // 🌟 마진 룰 엔진 (단가 변동 없을 시 마스터 유지 로직 강화)
         window.calculatePricesEngine = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
             const ROUND_UNIT = 100;
             const outsrc = (!currentFinalData?.['외주비'] && currentFinalData?.['외주비'] !== 0) 
@@ -140,20 +140,24 @@
             }
 
             let newFinalData = { ...currentFinalData, '입고가': baseInPrice }; 
-            newFinalData['시중가'] = calcOutPrice;
-            
-            const providedOutPrice = window.parseNum(currentFinalData?.['출고가']); 
             const mIn = window.parseNum(mItem?.['입고가']); 
             const mOut = window.parseNum(mItem?.['출고가']);
+            const mMarket = window.parseNum(mItem?.['시중가']);
+            const providedOutPrice = window.parseNum(currentFinalData?.['출고가']); 
 
+            // 🚨 핵심 수정: 강제 룰 적용이 아니고 입고가 변동이 없다면 기존 마스터 출고가, 시중가 유지
             if (baseInPrice === 0) {
                 newFinalData['출고가'] = 0; 
+                newFinalData['시중가'] = 0;
             } else if (providedOutPrice > 0 && !forceRecalc) {
                 newFinalData['출고가'] = providedOutPrice; 
+                newFinalData['시중가'] = calcOutPrice; // 시중가는 룰 기준가
             } else if (baseInPrice === mIn && mOut > 0 && !forceRecalc) {
                 newFinalData['출고가'] = mOut; 
+                newFinalData['시중가'] = mMarket > 0 ? mMarket : mOut; // 기존 마스터 시중가 유지
             } else {
                 newFinalData['출고가'] = calcOutPrice;
+                newFinalData['시중가'] = calcOutPrice;
             }
             
             return newFinalData;
@@ -164,7 +168,6 @@
             const inv = sources['inventory'] || {};
             const est = sources['estimate'] || {};
             
-            // 재고 수량 확인 (없으면 999로 임의 처리하되, 명시적으로 0이면 0)
             const invStock = inv['재고수량'] !== undefined ? window.parseNum(inv['재고수량']) : (inv['안전재고'] !== undefined ? window.parseNum(inv['안전재고']) : 999);
             const hasInv = Object.keys(inv).length > 0;
             const hasEst = Object.keys(est).length > 0;
@@ -176,9 +179,10 @@
             const estInPrice = est['입고가'] !== undefined ? window.parseNum(est['입고가']) : window.parseNum(mItem['입고가']);
             const masterInPrice = window.parseNum(mItem['입고가']);
 
-            const invNormal = window.calculatePricesEngine(invInPrice, mItem, inv, marginRules, true);
-            const estNormal = window.calculatePricesEngine(estInPrice, mItem, est, marginRules, true);
-            const masterNormal = window.calculatePricesEngine(masterInPrice, mItem, {}, marginRules, true);
+            // 🚨 핵심 수정: 파일 로드 시에는 forceRecalc를 false로 넘겨서 마스터 단가를 보호함
+            const invNormal = window.calculatePricesEngine(invInPrice, mItem, inv, marginRules, false);
+            const estNormal = window.calculatePricesEngine(estInPrice, mItem, est, marginRules, false);
+            const masterNormal = window.calculatePricesEngine(masterInPrice, mItem, {}, marginRules, false);
             
             let targetSource = {};
             let theme = 0; // 1: 견적행사, 2: 재고행사
@@ -186,36 +190,34 @@
             let normalPrice = 0; // 50% 폭등락 검수용 오리지널가
             
             if (hasInv && invStock > 0 && invPromo > 0) {
-                // 1순위: 재고 그룹 행사가
-                targetSource = { ...invNormal, '행사가': invPromo }; 
+                // 1순위: 재고 그룹 행사가 (출고가를 행사가로 덮어쓰기 복원!)
+                targetSource = { ...invNormal, '출고가': invPromo, '행사가': invPromo }; 
                 theme = 2; 
                 isPromo = true; 
                 normalPrice = invNormal['출고가'];
             } else if (hasEst && estPromo > 0) {
-                // 2순위: 견적 그룹 행사가
-                targetSource = { ...estNormal, '행사가': estPromo }; 
+                // 2순위: 견적 그룹 행사가 (출고가를 행사가로 덮어쓰기 복원!)
+                targetSource = { ...estNormal, '출고가': estPromo, '행사가': estPromo }; 
                 theme = 1; 
                 isPromo = true; 
                 normalPrice = estNormal['출고가'];
             } else if (hasInv && invStock > 0) {
-                // 3순위: 재고 그룹 일반 마진가
+                // 3순위: 재고 그룹 일반가
                 targetSource = invNormal; 
                 theme = 0; 
                 normalPrice = invNormal['출고가'];
             } else if (hasEst) {
-                // 4순위: 견적 그룹 일반 마진가
+                // 4순위: 견적 그룹 일반가
                 targetSource = estNormal; 
                 theme = 0; 
                 normalPrice = estNormal['출고가'];
             } else {
-                // 5순위: 마스터 기준 (파서 포함)
+                // 5순위: 마스터 기준
                 targetSource = masterNormal; 
                 theme = 0; 
                 normalPrice = masterNormal['출고가'];
             }
             
-            // 시중가는 무조건 마스터 기준(정상가)
-            targetSource['시중가'] = masterNormal['출고가'] > 0 ? masterNormal['출고가'] : normalPrice;
             targetSource._theme = theme;
             targetSource._isPromo = isPromo;
             targetSource._normalPrice = normalPrice;
@@ -1250,7 +1252,7 @@
             );
         };
 
-        // 🌟 [UI 고도화] 2단 분리 툴바 컴포넌트 (조건부 렌더링 삭제, 상시 고정)
+        // 🌟 [UI 고도화] 2단 분리 툴바 컴포넌트 (조건부 렌더링 삭제, 항상 노출)
         const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
             const { activeTags, selectedRows, globalSearch, priceFilter } = state;
             const { handleRemoveFromWorkspace, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, setPriceFilter, handleOpenExportCenter } = actions;
@@ -1304,8 +1306,9 @@
                         </button>
                     </div>
 
-                    {/* 2층: 작업 및 산출물 구역 (우측 정렬, 조건부 렌더링 해제) */}
+                    {/* 2층: 작업 및 산출물 구역 (항상 노출, 우측 정렬) */}
                     <div className="px-6 pt-3 pb-2 flex items-center gap-4 overflow-x-auto w-full">
+                        
                         <div className="flex-1 min-w-[10px]"></div>
                         
                         <div className="flex items-center gap-2 shrink-0">
