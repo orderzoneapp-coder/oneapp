@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v1.5 클라우드 분할전송 최적화 + 검수뷰]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v1.5 클라우드 통합 버전]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -1250,11 +1250,10 @@
             );
         };
 
-        // 🌟 [UI 고도화] 2단 분리 툴바 컴포넌트
+        // 🌟 [UI 고도화] 2단 분리 툴바 컴포넌트 (조건부 렌더링 삭제, 상시 고정)
         const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
             const { activeTags, selectedRows, globalSearch, priceFilter } = state;
             const { handleRemoveFromWorkspace, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, setPriceFilter, handleOpenExportCenter } = actions;
-            const showActionButtons = activeTags.length > 0;
 
             return (
                 <div className="flex flex-col w-full border-b border-slate-200 bg-white pb-2 shadow-sm relative z-10">
@@ -1300,55 +1299,51 @@
                         <div className="flex-1 min-w-[10px]"></div>
                         
                         {/* 현재 창에서 이동 */}
-                        <button onClick={() => window.location.href = 'SmartParser.html'} className="h-9 px-4 rounded-xl text-[12px] font-bold bg-slate-800 text-white shadow-sm hover:bg-slate-700 transition-colors flex items-center border border-slate-800 shrink-0">
+                        <button onClick={() => window.location.href = 'SmartParser.html'} className="h-9 px-4 rounded-xl text-[12px] font-bold bg-slate-800 text-white shadow-sm hover:bg-slate-700 transition-colors flex items-center border border-slate-800 shrink-0" title="스마트 파서로 외부 텍스트 연동">
                             <i className="fas fa-magic mr-2 text-[14px]"></i> 스마트 파서
                         </button>
                     </div>
 
-                    {/* 2층: 작업 및 산출물 구역 (우측 정렬) */}
-                    <div className="px-6 pt-3 pb-2 flex items-center justify-between gap-4 overflow-x-auto w-full">
-                        {!showActionButtons && <div className="h-9 flex items-center text-slate-400 text-[12px] font-bold italic">위에서 데이터를 불러오세요.</div>}
-                        
+                    {/* 2층: 작업 및 산출물 구역 (우측 정렬, 조건부 렌더링 해제) */}
+                    <div className="px-6 pt-3 pb-2 flex items-center gap-4 overflow-x-auto w-full">
                         <div className="flex-1 min-w-[10px]"></div>
                         
                         <div className="flex items-center gap-2 shrink-0">
-                            {showActionButtons && (
-                                <>
-                                    {selectedRows.size > 0 && (
-                                        <button onClick={handleRemoveFromWorkspace} className="h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100">
-                                            <i className="fas fa-minus-circle mr-1.5 text-[14px]"></i> 빼기
-                                        </button>
-                                    )}
-                                    <button onClick={handleForceApplyMarginRules} className="h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100">
-                                        <i className="fas fa-magic mr-1.5 text-[13px]"></i> 룰 적용
-                                    </button>
-                                    <button onClick={() => actions.setShowReviewModal(true)} disabled={selectedRows.size === 0} className={`h-9 px-5 rounded-lg text-[12px] font-black shadow-sm flex items-center ${selectedRows.size > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`} title="작업 검토 (F7)">
-                                        <i className="fas fa-check-circle mr-1.5 text-[13px]"></i> 완료 <span className="ml-1.5 text-[9px] text-slate-400 font-normal">F7</span>
-                                    </button>
-
-                                    <div className="w-px h-5 bg-slate-300 mx-1"></div>
-
-                                    <button onClick={handleOpenExportCenter} className="h-9 px-3 rounded-lg text-[12px] font-bold bg-white text-emerald-700 shadow-sm hover:bg-emerald-50 border border-emerald-200 flex items-center" title="통합 엑셀 다운로드 (F9)">
-                                        <i className="fas fa-file-download mr-1.5 text-[14px]"></i> 엑셀 <span className="ml-1 text-[9px] text-emerald-400">F9</span>
-                                    </button>
-                                    <button onClick={handleOpenExportCenter} className="h-9 px-3 rounded-lg bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 border border-emerald-700 flex items-center" title="이미지 단가표 생성 (F10)">
-                                        <i className="fas fa-camera text-[14px]"></i> <span className="ml-1 text-[9px] text-emerald-200 font-bold tracking-wider">F10</span>
-                                    </button>
-
-                                    <div className="w-px h-5 bg-slate-300 mx-1"></div>
-
-                                    <div className="relative shrink-0 flex items-center">
-                                        <select value={priceFilter} onChange={(e) => setPriceFilter(e.target.value)} className={`appearance-none h-9 pl-3 pr-8 rounded-lg text-[12px] font-bold outline-none cursor-pointer border shadow-sm ${priceFilter !== 'all' ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-white border-slate-300 text-slate-600'}`}>
-                                            <option value="all">모든 상품</option>
-                                            <option value="changed">🔄 변동 상품</option>
-                                            <option value="up">📈 인상</option>
-                                            <option value="down">📉 인하</option>
-                                            <option value="new">✨ 신규</option>
-                                        </select>
-                                        <i className={`fas fa-chevron-down absolute right-3 top-3 text-[10px] pointer-events-none ${priceFilter !== 'all' ? 'text-emerald-500' : 'text-slate-400'}`}></i>
-                                    </div>
-                                </>
+                            {selectedRows.size > 0 && (
+                                <button onClick={handleRemoveFromWorkspace} className="h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100">
+                                    <i className="fas fa-minus-circle mr-1.5 text-[14px]"></i> 빼기
+                                </button>
                             )}
+                            <button onClick={handleForceApplyMarginRules} className="h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100">
+                                <i className="fas fa-magic mr-1.5 text-[13px]"></i> 룰 적용
+                            </button>
+                            
+                            <button onClick={() => actions.setShowReviewModal(true)} disabled={selectedRows.size === 0} className={`h-9 px-5 rounded-lg text-[12px] font-black shadow-sm flex items-center ${selectedRows.size > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`} title="작업 검토 (F7)">
+                                <i className="fas fa-check-circle mr-1.5 text-[13px]"></i> 완료 <span className="ml-1.5 text-[9px] text-slate-400 font-normal">F7</span>
+                            </button>
+
+                            <div className="w-px h-5 bg-slate-300 mx-1"></div>
+
+                            <button onClick={handleOpenExportCenter} className="h-9 px-3 rounded-lg text-[12px] font-bold bg-white text-emerald-700 shadow-sm hover:bg-emerald-50 border border-emerald-200 flex items-center" title="통합 엑셀 다운로드 (F9)">
+                                <i className="fas fa-file-download mr-1.5 text-[14px]"></i> 엑셀 <span className="ml-1 text-[9px] text-emerald-400">F9</span>
+                            </button>
+                            
+                            <button onClick={handleOpenExportCenter} className="h-9 px-3 rounded-lg bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 border border-emerald-700 flex items-center" title="이미지 단가표 생성 (F10)">
+                                <i className="fas fa-camera text-[14px]"></i> <span className="ml-1 text-[9px] text-emerald-200 font-bold tracking-wider">F10</span>
+                            </button>
+
+                            <div className="w-px h-5 bg-slate-300 mx-1"></div>
+
+                            <div className="relative shrink-0 flex items-center">
+                                <select value={priceFilter} onChange={(e) => setPriceFilter(e.target.value)} className={`appearance-none h-9 pl-3 pr-8 rounded-lg text-[12px] font-bold outline-none cursor-pointer border shadow-sm ${priceFilter !== 'all' ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-white border-slate-300 text-slate-600'}`}>
+                                    <option value="all">모든 상품</option>
+                                    <option value="changed">🔄 변동 상품</option>
+                                    <option value="up">📈 인상</option>
+                                    <option value="down">📉 인하</option>
+                                    <option value="new">✨ 신규</option>
+                                </select>
+                                <i className={`fas fa-chevron-down absolute right-3 top-3 text-[10px] pointer-events-none ${priceFilter !== 'all' ? 'text-emerald-500' : 'text-slate-400'}`}></i>
+                            </div>
                             
                             <button onClick={handleReset} className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-800 bg-white border border-slate-300 shadow-sm shrink-0" title="화면 초기화">
                                 <i className="fas fa-redo-alt text-[13px]"></i>
