@@ -183,10 +183,10 @@
             let normalPrice = 0; 
             
             if (hasInv && invStock > 0 && invPromo > 0 && !forceRecalc) {
-                targetSource = { ...inv, '입고가': invInPrice, '출고가': invPromo, '행사가': invPromo }; 
+                targetSource = { ...inv, '입고가': invInPrice, '출고가': invTargetOut, '행사가': invPromo }; 
                 theme = 2; isPromo = true; normalPrice = invTargetOut;
             } else if (hasEst && estPromo > 0 && !forceRecalc) {
-                targetSource = { ...est, '입고가': estInPrice, '출고가': estPromo, '행사가': estPromo }; 
+                targetSource = { ...est, '입고가': estInPrice, '출고가': estTargetOut, '행사가': estPromo }; 
                 theme = 1; isPromo = true; normalPrice = estTargetOut;
             } else if (hasInv && invStock > 0) {
                 targetSource = { ...inv, '입고가': invInPrice, '출고가': invTargetOut }; 
@@ -549,7 +549,6 @@
             const [selectedRows, setSelectedRows] = useState(new Set());
             const [globalSearch, setGlobalSearch] = useState(''); 
             const [activeTags, setActiveTags] = useState([]);
-            const [showReviewModal, setShowReviewModal] = useState(false);
             const [showCategoryModal, setShowCategoryModal] = useState(false);
             const [alertMsg, setAlertMsg] = useState('');
             const [toastMsg, setToastMsg] = useState('');
@@ -566,7 +565,6 @@
                 selectedRows, setSelectedRows, 
                 globalSearch, setGlobalSearch, 
                 activeTags, setActiveTags,
-                showReviewModal, setShowReviewModal, 
                 showCategoryModal, setShowCategoryModal,
                 alertMsg, setAlertMsg, 
                 toastMsg, setToastMsg, 
@@ -1333,19 +1331,14 @@
                                 <i className="fas fa-magic mr-1.5 text-[13px]"></i> 룰 적용
                             </button>
                             
-                            {/* ⭐ 비활성화(disabled) 조건 제거하여 언제든 실행되게 수정 */}
-                            <button onClick={() => actions.setShowReviewModal(true)} disabled={fullDisplayRows.length === 0} className={`h-9 px-5 rounded-lg text-[12px] font-black shadow-sm flex items-center ${fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`} title="작업 검토 (F7)">
-                                <i className="fas fa-check-circle mr-1.5 text-[13px]"></i> 완료 <span className="ml-1.5 text-[9px] text-slate-400 font-normal">F7</span>
+                            <button onClick={() => actions.handleCommitEstimate()} disabled={fullDisplayRows.length === 0} className={`h-9 px-5 rounded-lg text-[12px] font-black shadow-sm flex items-center ${fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`} title="마스터 DB 저장 (F8)">
+                                <i className="fas fa-save mr-1.5 text-[13px]"></i> 저장 <span className="ml-1.5 text-[9px] text-slate-400 font-normal">F8</span>
                             </button>
 
                             <div className="w-px h-5 bg-slate-300 mx-1"></div>
 
-                            <button onClick={handleOpenExportCenter} disabled={fullDisplayRows.length === 0} className={`h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center ${fullDisplayRows.length > 0 ? 'bg-white text-emerald-700 hover:bg-emerald-50 border border-emerald-200' : 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed'}`} title="통합 엑셀 다운로드 (F9)">
-                                <i className="fas fa-file-download mr-1.5 text-[14px]"></i> 엑셀 <span className="ml-1 text-[9px] text-emerald-400">F9</span>
-                            </button>
-                            
-                            <button onClick={handleOpenExportCenter} disabled={fullDisplayRows.length === 0} className={`h-9 px-3 rounded-lg shadow-sm flex items-center ${fullDisplayRows.length > 0 ? 'bg-emerald-600 text-white hover:bg-emerald-700 border border-emerald-700' : 'bg-emerald-200 text-emerald-50 border border-emerald-200 cursor-not-allowed'}`} title="이미지 단가표 생성 (F10)">
-                                <i className="fas fa-camera text-[14px]"></i> <span className="ml-1 text-[9px] text-emerald-200 font-bold tracking-wider">F10</span>
+                            <button onClick={handleOpenExportCenter} disabled={fullDisplayRows.length === 0} className={`h-9 px-4 rounded-lg text-[12px] font-bold shadow-sm flex items-center ${fullDisplayRows.length > 0 ? 'bg-emerald-600 text-white hover:bg-emerald-700 border border-emerald-700' : 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed'}`} title="통합 출력 센터 진입 (F9)">
+                                <i className="fas fa-print mr-1.5 text-[14px]"></i> 출력 센터 <span className="ml-1 text-[9px] text-emerald-200 tracking-wider">F9</span>
                             </button>
 
                             <div className="w-px h-5 bg-slate-300 mx-1"></div>
@@ -1395,172 +1388,6 @@
             );
         };
 
-        // 🌟 [오기 검수 방어망 및 0원 판별 적용] F7 Review Modal
-        const ReviewModal = ({ onClose, onConfirm, state, data }) => {
-            // ⭐ 선택된 게 있으면 그것만, 없으면 화면 전체(fullDisplayRows)를 타겟팅
-            const targetRows = useMemo(() => {
-                if (state.selectedRows.size > 0) return state.fullDisplayRows.filter(row => state.selectedRows.has(row.코드));
-                return state.fullDisplayRows;
-            }, [state.fullDisplayRows, state.selectedRows]);
-
-            const analysis = useMemo(() => {
-                let up = 0, down = 0, newStock = 0, soldOut = 0;
-                let hasAnomaly = false;
-                const list = [];
-
-                targetRows.forEach(row => {
-                    const mItem = data.masterProducts[row.코드];
-                    const oldP = mItem ? window.parseNum(mItem['입고가']) : 0;
-                    const newP = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : row.sources?.['estimate']?.['입고가']);
-                    
-                    let status = 'same';
-                    if (!mItem) { status = 'new_stock'; newStock++; }
-                    else if (oldP === 0 && newP > 0) { status = 'new_stock'; newStock++; }
-                    else if (oldP > 0 && newP === 0) { status = 'sold_out'; soldOut++; }
-                    else if (oldP === 0 && newP === 0) { status = 'same'; }
-                    else if (newP > oldP) { status = 'up'; up++; }
-                    else if (newP < oldP) { status = 'down'; down++; }
-                    else { status = 'same'; }
-
-                    const isPromo = row.finalData?._isPromo;
-                    const theme = row.finalData?._theme;
-                    
-                    const normalPrice = row.finalData?._normalPrice || oldP;
-                    
-                    const baseOutPrice = window.parseNum(row.finalData?.['출고가']);
-                    const promoPrice = window.parseNum(row.finalData?.['행사가']);
-                    const finalOutPrice = isPromo && promoPrice > 0 ? promoPrice : baseOutPrice;
-                    
-                    const anomaly = isPromo && normalPrice > 0 && (Math.abs(finalOutPrice - normalPrice) / normalPrice >= 0.5);
-                    if (anomaly) hasAnomaly = true;
-
-                    list.push({
-                        코드: row.코드,
-                        품명: row.finalData?.['품목명'] || row.sources?.['estimate']?.['품목명'] || mItem?.품목명 || '',
-                        규격: row.finalData?.['규격'] || row.sources?.['estimate']?.['규격'] || mItem?.규격 || '',
-                        기존단가: oldP, 
-                        새단가: newP, 
-                        차액: newP - oldP, 
-                        상태: status,
-                        isPromo, 
-                        theme, 
-                        anomaly, 
-                        baseOutPrice,
-                        finalOutPrice
-                    });
-                });
-
-                list.sort((a, b) => {
-                    if (a.anomaly && !b.anomaly) return -1;
-                    if (!a.anomaly && b.anomaly) return 1;
-                    return Math.abs(b.차액) - Math.abs(a.차액);
-                });
-                return { up, down, newStock, soldOut, total: targetRows.length, list, hasAnomaly };
-            }, [targetRows, data.masterProducts]);
-
-            return (
-                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in" onClick={onClose}>
-                    <div className="bg-white w-[900px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                        <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
-                            <h2 className="font-black text-[16px]"><i className="fas fa-search-dollar text-indigo-400 mr-2"></i>작업 완료 및 저장 전 프리뷰</h2>
-                            <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>
-                        </div>
-                        
-                        {analysis.hasAnomaly && (
-                            <div className="bg-rose-500 text-white px-6 py-3 font-black text-[13px] flex items-center justify-between shrink-0 shadow-md z-10 animate-pulse">
-                                <div className="flex items-center"><i className="fas fa-exclamation-triangle text-xl mr-3"></i>주의! 행사가가 정상가 대비 50% 이상 변동된 오기 의심 항목이 있습니다.</div>
-                            </div>
-                        )}
-
-                        <div className="p-6 flex flex-col flex-1 overflow-hidden bg-slate-50">
-                            <div className="grid grid-cols-4 gap-3 mb-4 shrink-0">
-                                <div className="bg-white border border-rose-200 p-3 rounded-xl flex flex-col items-center justify-center shadow-sm">
-                                    <div className="text-[11px] text-rose-500 font-bold mb-1"><i className="fas fa-arrow-up mr-1"></i>인상</div>
-                                    <div className="text-rose-700 font-black text-xl">{analysis.up}<span className="text-[11px] ml-1 font-bold">건</span></div>
-                                </div>
-                                <div className="bg-white border border-blue-200 p-3 rounded-xl flex flex-col items-center justify-center shadow-sm">
-                                    <div className="text-[11px] text-blue-500 font-bold mb-1"><i className="fas fa-arrow-down mr-1"></i>인하</div>
-                                    <div className="text-blue-700 font-black text-xl">{analysis.down}<span className="text-[11px] ml-1 font-bold">건</span></div>
-                                </div>
-                                <div className="bg-white border border-emerald-200 p-3 rounded-xl flex flex-col items-center justify-center shadow-sm">
-                                    <div className="text-[11px] text-emerald-600 font-bold mb-1"><i className="fas fa-star mr-1"></i>신규 / 재입고</div>
-                                    <div className="text-emerald-700 font-black text-xl">{analysis.newStock}<span className="text-[11px] ml-1 font-bold">건</span></div>
-                                </div>
-                                <div className="bg-white border border-slate-300 p-3 rounded-xl flex flex-col items-center justify-center shadow-sm">
-                                    <div className="text-[11px] text-slate-500 font-bold mb-1"><i className="fas fa-ban mr-1"></i>품절 / 단종</div>
-                                    <div className="text-slate-700 font-black text-xl">{analysis.soldOut}<span className="text-[11px] ml-1 font-bold">건</span></div>
-                                </div>
-                            </div>
-
-                            <div className="flex-1 overflow-hidden flex flex-col bg-white border border-slate-200 rounded-xl shadow-sm">
-                                <div className="px-4 py-2 bg-slate-100 border-b border-slate-200 text-[12px] font-bold text-slate-600 flex items-center justify-between">
-                                    <span>반영 대기 대상: {analysis.total}건</span>
-                                    {state.selectedRows.size === 0 && <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-black">전체 반영 모드</span>}
-                                </div>
-                                <div className="flex-1 overflow-auto custom-scrollbar">
-                                    <table className="w-full text-left text-[12px] whitespace-nowrap">
-                                        <thead className="bg-white sticky top-0 border-b border-slate-200 shadow-sm z-10">
-                                            <tr className="text-slate-500">
-                                                <th className="px-4 py-2 w-20 text-center">상태</th>
-                                                <th className="px-4 py-2 w-24">품목코드</th>
-                                                <th className="px-4 py-2 w-full">품목명 (규격)</th>
-                                                <th className="px-4 py-2 text-right w-24">기존 입고가</th>
-                                                <th className="px-4 py-2 text-right w-24 text-indigo-600">새 입고가</th>
-                                                <th className="px-4 py-2 text-right w-24">출고가</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100">
-                                            {analysis.list.map((item, i) => (
-                                                <tr key={i} className={`hover:bg-slate-50 transition-colors ${item.anomaly ? 'bg-rose-50' : ''}`}>
-                                                    <td className="px-4 py-2 text-center">
-                                                        {item.상태 === 'up' && <span className="bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded text-[10px] font-black">인상</span>}
-                                                        {item.상태 === 'down' && <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[10px] font-black">인하</span>}
-                                                        {item.상태 === 'new_stock' && <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded text-[10px] font-black">신규/재입고</span>}
-                                                        {item.상태 === 'sold_out' && <span className="bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded text-[10px] font-black">품절/단종</span>}
-                                                        {item.상태 === 'same' && <span className="text-slate-400 text-[10px] font-black">-</span>}
-                                                    </td>
-                                                    <td className="px-4 py-2 font-mono text-slate-500 text-[11px]">{item.코드}</td>
-                                                    <td className="px-4 py-2 font-bold text-slate-800 truncate max-w-[250px]">
-                                                        {item.품명} <span className="text-slate-400 font-normal ml-1 text-[11px]">{item.규격 && `(${item.규격})`}</span>
-                                                        {item.isPromo && item.theme === 1 && <span className="ml-2 bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded text-[10px] font-black">🎁 견적행사</span>}
-                                                        {item.isPromo && item.theme === 2 && <span className="ml-2 bg-pink-100 text-pink-700 px-1.5 py-0.5 rounded text-[10px] font-black">🎁 자사행사</span>}
-                                                        {item.anomaly && <i className="fas fa-exclamation-triangle text-rose-500 ml-2 animate-pulse" title="단가 오기 의심!"></i>}
-                                                    </td>
-                                                    <td className="px-4 py-2 text-right text-slate-500">{item.기존단가 > 0 ? item.기존단가.toLocaleString() : '-'}</td>
-                                                    <td className="px-4 py-2 text-right font-black text-indigo-600">{item.새단가 > 0 ? item.새단가.toLocaleString() : '-'}</td>
-                                                    <td className="px-4 py-2 text-right">
-                                                        <div className="flex flex-col items-end">
-                                                            <span className={item.isPromo ? "line-through text-slate-400 text-[10px] font-bold" : "text-slate-700 font-bold"}>
-                                                                {item.baseOutPrice > 0 ? item.baseOutPrice.toLocaleString() : '-'}
-                                                            </span>
-                                                            {item.isPromo && (
-                                                                <span className="text-rose-600 font-black leading-none mt-0.5">
-                                                                    {item.finalOutPrice > 0 ? item.finalOutPrice.toLocaleString() : '-'}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="bg-white p-4 border-t border-slate-200 flex justify-between items-center shrink-0">
-                            <div className="text-[11px] text-slate-500 font-bold"><i className="fas fa-info-circle mr-1"></i>수정할 내용이 있다면 닫기를 누르고 뒤쪽 테이블에서 숫자를 수정하세요.</div>
-                            <div className="flex gap-2">
-                                <button onClick={onClose} className="px-5 py-2.5 bg-slate-100 border border-slate-200 text-slate-600 font-bold rounded-lg hover:bg-slate-200 transition-colors">닫기 (수정하러 가기)</button>
-                                <button onClick={() => { onConfirm(); onClose(); }} className="px-6 py-2.5 bg-indigo-600 text-white font-black rounded-lg hover:bg-indigo-700 shadow-sm flex items-center transition-colors">
-                                    <i className="fas fa-save mr-1.5 text-[14px]"></i> 저장 및 반영
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
         const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, data, isSel }) => {
             const isNumeric = window.NUMERIC_HEADERS.includes(linkedMasterField) || window.NUMERIC_HEADERS.includes(field);
             const initialVal = row.finalData?.[field] !== undefined ? row.finalData[field] : (mVal !== undefined ? mVal : '');
@@ -1588,7 +1415,7 @@
                     
                     if (['입고가', '출고가', '외주비', '노무비', '행사가'].includes(field) || ['입고가', '출고가'].includes(linkedMasterField)) {
                         currentItem.finalData = window.computeFinalData(data.masterProducts[code] || {}, currentItem.sources, config.marginRules);
-                        if (field === '출고가' && !currentItem.finalData._isPromo) {
+                        if (field === '출고가') {
                             currentItem.finalData['출고가'] = window.parseNum(v);
                         }
                     }
@@ -2016,30 +1843,22 @@
             }), [config, data, ui.activeTags, isEstimateUploaded, ui.selectedRows, ui.globalSearch, ui.isProcessing, ui.processMsg, config.visibleMasterCols, config.visibleUploadCols, data.masterProducts, fullDisplayRows, ui.priceFilter]);
             
             const appActions = useMemo(() => ({
-                setShowReviewModal: ui.setShowReviewModal, setShowCategoryModal: ui.setShowCategoryModal, setSelectedRows: ui.setSelectedRows, setGlobalSearch: ui.setGlobalSearch, showToast: ui.showToast, setPriceFilter: ui.setPriceFilter, ...customActions
-            }), [ui.setShowReviewModal, ui.setShowCategoryModal, ui.setSelectedRows, ui.setGlobalSearch, ui.showToast, ui.setPriceFilter, customActions]);
+                setShowCategoryModal: ui.setShowCategoryModal, setSelectedRows: ui.setSelectedRows, setGlobalSearch: ui.setGlobalSearch, showToast: ui.showToast, setPriceFilter: ui.setPriceFilter, ...customActions
+            }), [ui.setShowCategoryModal, ui.setSelectedRows, ui.setGlobalSearch, ui.showToast, ui.setPriceFilter, customActions]);
 
             useEffect(() => {
                 const handleGlobalKeyDown = (e) => {
                     const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
                     
-                    if (e.key === 'F7') { 
+                    if (e.key === 'F8') { 
                         e.preventDefault(); 
                         if (isInput) document.activeElement.blur(); 
-                        // ⭐ 선택 유무 상관없이 화면 데이터가 있으면 바로 실행되도록 조건 변경
-                        if (!appState.isProcessing && appState.fullDisplayRows.length > 0) appActions.setShowReviewModal(true); 
-                        else if(appState.fullDisplayRows.length === 0) appActions.showToast("⚠️ [F7] 검수할 데이터가 화면에 없습니다."); 
-                    }
-                    else if (e.key === 'F8') { 
-                        e.preventDefault(); 
-                        if (isInput) document.activeElement.blur(); 
-                        // ⭐ 선택 유무 상관없이 화면 데이터가 있으면 바로 실행되도록 조건 변경
                         if (!appState.isProcessing && appState.fullDisplayRows.length > 0) { 
                             appActions.handleCommitEstimate(); 
                         } 
                         else if(appState.fullDisplayRows.length === 0) appActions.showToast("⚠️ [F8] 반영할 데이터가 화면에 없습니다."); 
                     }
-                    else if (e.key === 'F9' || e.key === 'F10') { 
+                    else if (e.key === 'F9') { 
                         e.preventDefault(); 
                         if (isInput) document.activeElement.blur(); 
                         if (!appState.isProcessing) appActions.handleOpenExportCenter(); 
@@ -2124,7 +1943,6 @@
                     </div>
                     
                     {ui.showCategoryModal && <CategorySaveModal onClose={() => ui.setShowCategoryModal(false)} onSave={customActions.handleSaveAsCategory} />}
-                    {ui.showReviewModal && <ReviewModal onClose={() => ui.setShowReviewModal(false)} onConfirm={customActions.handleCommitEstimate} state={appState} data={data} />}
                 </div>
             );
         };
