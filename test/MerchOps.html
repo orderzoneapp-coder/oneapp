@@ -1644,6 +1644,7 @@
             );
         });
 
+        // 🌟 [UI 개편] 3대 논리 영역 (마스터 / 판매여부·이슈 / 작업정보) 시각적 렌더링 열 구성
         const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem }) => {
             const { isEstimateUploaded, visibleMasterCols, visibleUploadCols, config, data } = state;
             const requiredCoreFields = ['품목코드', '품목명', '규격'];
@@ -1660,6 +1661,9 @@
             let issueBadge = <span className="text-slate-300 font-bold">-</span>;
             
             if (isEstimateUploaded) {
+                // 대표님 지시: 30% 이상 및 1,000원 이상 변동 시에만 배색 뱃지로 강조
+                const isSpike = oldP > 0 && newP > 0 && (Math.abs(diffAmount) / oldP >= 0.3) && Math.abs(diffAmount) >= 1000;
+
                 if (!mItem.코드) {
                     issueBadge = <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-black">✨ 신규등록</span>;
                 } else if (oldP === 0 && newP > 0) {
@@ -1669,20 +1673,13 @@
                 } else if (oldP === 0 && newP === 0) {
                     issueBadge = <span className="text-slate-400 text-[10px] font-bold">-</span>;
                 } else if (newP > oldP) {
-                    issueBadge = <span className="bg-rose-100 text-rose-600 px-2 py-0.5 rounded text-[10px] font-black">▲ {(newP - oldP).toLocaleString()}</span>;
+                    // 일반: 글자색만 / 의심: 배경 박스 강조
+                    const badgeClass = isSpike ? "bg-rose-100 text-rose-700 px-2 py-0.5 rounded text-[11px] font-black border border-rose-200" : "text-rose-500 text-[12px] font-bold";
+                    issueBadge = <span className={badgeClass}>▲ {(newP - oldP).toLocaleString()}</span>;
                 } else if (newP < oldP) {
-                    issueBadge = <span className="bg-blue-100 text-blue-600 px-2 py-0.5 rounded text-[10px] font-black">▼ {(oldP - newP).toLocaleString()}</span>;
-                }
-
-                const isSpike = oldP > 0 && newP > 0 && (Math.abs(diffAmount) / oldP >= 0.3) && Math.abs(diffAmount) >= 1000;
-                
-                if (isSpike) {
-                    issueBadge = (
-                        <div className="flex flex-col items-center gap-0.5 leading-none">
-                            {issueBadge}
-                            <span className="text-rose-500 text-[9px] font-black animate-pulse mt-0.5"><i className="fas fa-exclamation-triangle"></i> 오기의심</span>
-                        </div>
-                    );
+                    // 일반: 글자색만 / 의심: 배경 박스 강조
+                    const badgeClass = isSpike ? "bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[11px] font-black border border-blue-200" : "text-blue-500 text-[12px] font-bold";
+                    issueBadge = <span className={badgeClass}>▼ {(oldP - newP).toLocaleString()}</span>;
                 }
             }
 
