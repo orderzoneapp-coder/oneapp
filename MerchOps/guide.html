@@ -1,187 +1,327 @@
 <!DOCTYPE html>
-<html lang="ko" translate="no">
+<html lang="ko" class="scroll-smooth">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 사용자 가이드</title>
+    <title>ONEAPP MerchOps - 실무 사용 가이드</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Pretendard"', '"Noto Sans KR"', '"Inter"', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: { 50: '#eff6ff', 100: '#dbeafe', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8', 900: '#1e3a8a' }
+                    }
+                }
+            }
+        }
+    </script>
     <style>
-        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-        body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; }
-        .smooth-scroll { scroll-behavior: smooth; }
-        .guide-section { scroll-margin-top: 5rem; }
+        body { font-family: 'Noto Sans KR', sans-serif; background-color: #f8fafc; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .kbd {
+            display: inline-block; padding: 0.2rem 0.5rem; font-size: 0.85em; font-weight: 700;
+            line-height: 1; color: #1e293b; background-color: #f8fafc; border: 1px solid #cbd5e1;
+            border-radius: 6px; box-shadow: 0 2px 0 #cbd5e1; margin: 0 0.2rem; font-family: monospace;
+        }
+        .nav-link.active { background-color: #eff6ff; color: #2563eb; border-left: 4px solid #2563eb; font-weight: 600; }
+        .step-num { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-weight: 900; font-size: 14px; flex-shrink: 0; }
     </style>
 </head>
-<body class="smooth-scroll text-slate-800">
-    <div id="root"></div>
+<body class="text-slate-800 antialiased selection:bg-brand-200 selection:text-brand-900 flex flex-col h-screen overflow-hidden">
 
-    <script type="text/babel">
-        const { useState } = React;
+    <!-- Top Navigation Bar (Page 1 & 2 Switcher) -->
+    <header class="h-16 bg-white border-b border-slate-200 z-50 flex items-center justify-between px-6 shadow-sm shrink-0">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 bg-slate-800 text-white rounded flex items-center justify-center font-black text-xl">O</div>
+            <h1 class="font-black text-xl tracking-tight text-slate-800 hidden sm:block">MerchOps <span class="text-brand-600">가이드 센터</span></h1>
+        </div>
+        
+        <div class="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
+            <!-- 현재 페이지 (Page 1) -->
+            <button class="px-5 py-2 text-[13px] font-black rounded-md bg-white text-brand-600 shadow-sm border border-slate-200 cursor-default">
+                <i class="fa-solid fa-book-open mr-1.5"></i> 실무 사용 매뉴얼
+            </button>
+            <!-- 이동할 페이지 (Page 2) - 링크 연결 대기 -->
+            <a href="guide_dev.html" class="px-5 py-2 text-[13px] font-bold rounded-md text-slate-500 hover:text-slate-700 hover:bg-slate-200 transition-all flex items-center">
+                <i class="fa-solid fa-sitemap mr-1.5"></i> 기획 및 아키텍처 브리핑
+            </a>
+        </div>
+    </header>
 
-        const GuideApp = () => {
-            const [activeMenu, setActiveMenu] = useState('intro');
+    <div class="flex flex-1 overflow-hidden">
+        <!-- Sidebar Navigation -->
+        <aside id="sidebar" class="w-64 bg-white border-r border-slate-200 flex-shrink-0 overflow-y-auto custom-scrollbar hidden md:block">
+            <div class="p-4 space-y-6 mt-4">
+                <div>
+                    <div class="text-xs font-black text-slate-400 uppercase tracking-wider mb-3 px-3">빠른 참조</div>
+                    <ul class="space-y-1">
+                        <li><a href="#intro" class="nav-link block px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50">1. 마법의 단축키 4총사</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <div class="text-xs font-black text-slate-400 uppercase tracking-wider mb-3 px-3">업무별 플로우 가이드</div>
+                    <ul class="space-y-1">
+                        <li><a href="#task1" class="nav-link block px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50">2. 엑셀 업로드 및 단가 반영</a></li>
+                        <li><a href="#task2" class="nav-link block px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50">3. 카톡/문자 시세 텍스트 파싱</a></li>
+                        <li><a href="#task3" class="nav-link block px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50">4. 품절 및 단종 상품 처리</a></li>
+                        <li><a href="#task4" class="nav-link block px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50">5. 최종 보고서 및 단가표 출력</a></li>
+                    </ul>
+                </div>
+            </div>
+        </aside>
 
-            // 네비게이션 메뉴 데이터
-            const menus = [
-                { id: 'intro', icon: 'fa-flag', label: '1. 도입 목적 및 개요' },
-                { id: 'workflow', icon: 'fa-route', label: '2. 핵심 업무 흐름' },
-                { id: 'buttons', icon: 'fa-toggle-on', label: '3. 각 버튼별 기능 완벽 가이드' },
-                { id: 'parser', icon: 'fa-magic', label: '4. 스마트 파서 사용법' },
-                { id: 'settings', icon: 'fa-cogs', label: '5. 환경설정 ⚙️ 완벽 가이드' },
-                { id: 'tips', icon: 'fa-lightbulb', label: '6. 활용 팁 & FAQ' }
-            ];
+        <!-- Main Content -->
+        <main class="flex-1 overflow-y-auto relative scroll-smooth bg-slate-50" id="main-content">
+            <div class="max-w-4xl mx-auto px-6 py-10 pb-32">
+                
+                <div class="mb-10">
+                    <span class="inline-block py-1.5 px-3 rounded-md bg-brand-100 text-brand-700 text-[11px] font-black mb-3 tracking-wider uppercase">
+                        Operator Manual
+                    </span>
+                    <h2 class="text-3xl font-black text-slate-900 tracking-tight mb-2">MerchOps 실무 조작 매뉴얼</h2>
+                    <p class="text-slate-500 font-medium">B2B 식자재 유통 실무자가 엑셀 및 텍스트 데이터를 처리하고 쇼핑몰에 연동하기까지의 순서도입니다.</p>
+                </div>
 
-            const scrollTo = (id) => {
-                setActiveMenu(id);
-                document.getElementById(id).scrollIntoView({ behavior: 'smooth' });
-            };
+                <!-- 1. 단축키 -->
+                <section id="intro" class="bg-slate-800 rounded-2xl shadow-lg border border-slate-700 p-8 mb-10 scroll-mt-24 text-white">
+                    <h3 class="text-xl font-bold mb-5 flex items-center gap-2 text-brand-300">
+                        <i class="fa-regular fa-keyboard"></i> 1. 마법의 단축키 (반드시 암기)
+                    </h3>
+                    <p class="text-slate-400 text-sm mb-6">마우스를 만질 필요가 없습니다. 작업이 끝나면 항상 아래 순서대로 키보드만 누르세요.</p>
+                    <div class="grid sm:grid-cols-4 gap-4">
+                        <div class="bg-slate-900/80 rounded-xl p-4 border border-slate-700 text-center">
+                            <div class="text-brand-400 font-mono text-2xl font-black mb-2">F7</div>
+                            <h4 class="font-bold text-white mb-1 text-sm">프리뷰</h4>
+                            <p class="text-[11px] text-slate-400 leading-tight">작업한 내용(인상/인하/품절)을 최종 검토</p>
+                        </div>
+                        <div class="bg-slate-900/80 rounded-xl p-4 border border-slate-700 text-center">
+                            <div class="text-rose-400 font-mono text-2xl font-black mb-2">F8</div>
+                            <h4 class="font-bold text-white mb-1 text-sm">저장</h4>
+                            <p class="text-[11px] text-slate-400 leading-tight">마스터 DB에 영구 기록 및 업데이트</p>
+                        </div>
+                        <div class="bg-slate-900/80 rounded-xl p-4 border border-slate-700 text-center relative overflow-hidden">
+                            <div class="absolute top-0 right-0 w-8 h-8 bg-emerald-500/20 rounded-bl-full"></div>
+                            <div class="text-emerald-400 font-mono text-2xl font-black mb-2">F9</div>
+                            <h4 class="font-bold text-white mb-1 text-sm">엑셀 출력</h4>
+                            <p class="text-[11px] text-slate-400 leading-tight">쇼핑몰 및 ERP 업로드용 엑셀 다운로드</p>
+                        </div>
+                        <div class="bg-slate-900/80 rounded-xl p-4 border border-slate-700 text-center relative overflow-hidden">
+                            <div class="absolute top-0 right-0 w-8 h-8 bg-amber-500/20 rounded-bl-full"></div>
+                            <div class="text-amber-400 font-mono text-2xl font-black mb-2">F10</div>
+                            <h4 class="font-bold text-white mb-1 text-sm">이미지 출력</h4>
+                            <p class="text-[11px] text-slate-400 leading-tight">카톡 전송용 깔끔한 단가표 이미지 렌더링</p>
+                        </div>
+                    </div>
+                </section>
 
-            return (
-                <div className="min-h-screen flex flex-col">
-                    {/* 상단 글로벌 네비게이션 */}
-                    <header className="bg-[#0f172a] text-white sticky top-0 z-50 shadow-md">
-                        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <span className="text-xl font-black text-indigo-400">ONEAPP</span>
-                                <span className="text-sm font-bold border-l border-slate-600 pl-3">MerchOps 사용자 가이드 v1.2</span>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <a href="https://oneapp.orderz.co.kr/MerchOps/v1.1" className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-md text-xs font-bold transition-colors border border-slate-600"><i className="fas fa-desktop mr-1.5 text-emerald-400"></i>머치옵스</a>
-                                <a href="https://oneapp.orderz.co.kr/MerchOps/vp1.1.html" className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-md text-xs font-bold transition-colors border border-slate-600"><i className="fas fa-magic mr-1.5 text-indigo-400"></i>스마트 파서</a>
+                <!-- 2. 엑셀 업로드 워크플로우 -->
+                <section id="task1" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-8 scroll-mt-24">
+                    <h3 class="text-xl font-black text-slate-900 mb-6 pb-4 border-b border-slate-100 flex items-center">
+                        <span class="bg-blue-100 text-blue-700 p-2 rounded-lg mr-3 text-lg leading-none"><i class="fa-solid fa-file-excel"></i></span>
+                        [업무 1] 엑셀 단가표 및 재고장 업로드
+                    </h3>
+                    
+                    <div class="space-y-6 pl-2">
+                        <div class="flex gap-4">
+                            <div class="step-num bg-blue-600 text-white shadow-md">1</div>
+                            <div>
+                                <h4 class="font-bold text-slate-800 text-[15px] mb-1">엑셀 파일 불러오기</h4>
+                                <p class="text-[13px] text-slate-600 mb-3">상단 툴바에서 목적에 맞는 버튼을 눌러 엑셀을 업로드합니다.</p>
+                                <div class="flex gap-3 text-[12px]">
+                                    <div class="bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-lg text-emerald-800 font-bold">
+                                        <i class="fa-solid fa-box mr-1"></i> 재고 불러오기 (자사 재고용)
+                                    </div>
+                                    <div class="bg-blue-50 border border-blue-200 px-3 py-2 rounded-lg text-blue-800 font-bold">
+                                        <i class="fa-solid fa-file-invoice mr-1"></i> 견적서 불러오기 (공급사용)
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                    </header>
 
-                    <div className="flex flex-1 max-w-7xl mx-auto w-full">
-                        {/* 좌측 목차 (사이드바) */}
-                        <aside className="w-64 hidden md:block shrink-0 py-8 pr-6 sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto">
-                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">목차 (Table of Contents)</h3>
-                            <nav className="flex flex-col gap-1">
-                                {menus.map(menu => (
-                                    <button 
-                                        key={menu.id} 
-                                        onClick={() => scrollTo(menu.id)}
-                                        className={`text-left px-4 py-3 rounded-lg text-sm font-bold transition-all ${activeMenu === menu.id ? 'bg-indigo-50 text-indigo-700 shadow-sm border border-indigo-100' : 'text-slate-600 hover:bg-slate-100'}`}
-                                    >
-                                        <i className={`fas ${menu.icon} w-6 text-center opacity-70`}></i> {menu.label}
-                                    </button>
-                                ))}
-                            </nav>
-                        </aside>
-
-                        {/* 우측 메인 콘텐츠 */}
-                        <main className="flex-1 py-8 px-4 md:pl-8 md:pr-0 pb-32">
-                            {/* 1. 도입 목적 */}
-                            <section id="intro" className="guide-section mb-16">
-                                <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl p-8 text-white shadow-lg mb-6">
-                                    <h1 className="text-3xl font-black mb-4">ONEAPP MerchOps 시스템 개요</h1>
-                                    <p className="text-indigo-100 text-lg leading-relaxed">
-                                        MerchOps는 텍스트 형태의 외부 시세 데이터(카톡 등) 및 엑셀 견적서를 자체 마스터 DB 규격으로 자동 매핑하고,<br/>
-                                        사전 설정된 마진 룰에 따라 <strong>단가를 갱신 및 카탈로그 동기화(Delta)</strong>를 수행하는 강력한 사내 전용 상품 관리 시스템입니다.
-                                    </p>
-                                </div>
-                                <div className="grid md:grid-cols-3 gap-6">
-                                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                                        <i className="fas fa-bolt text-3xl text-amber-500 mb-4"></i>
-                                        <h3 className="font-bold text-lg mb-2">실시간 탭 동기화</h3>
-                                        <p className="text-sm text-slate-600 leading-relaxed">데이터를 저장할 필요 없이, 스마트 파서에서 작업한 내용이 머치옵스에 즉각(0초) 반영됩니다.</p>
+                        <div class="flex gap-4">
+                            <div class="step-num bg-slate-200 text-slate-600">2</div>
+                            <div class="w-full">
+                                <h4 class="font-bold text-slate-800 text-[15px] mb-1">오류 및 변동 내역 시각적 검수 (정직한 거울)</h4>
+                                <p class="text-[13px] text-slate-600 mb-3">마진이 붙기 전의 엑셀 원본 그대로 화면에 노출됩니다. 무채색(정상)은 무시하고 색칠된 부분만 확인하세요.</p>
+                                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2 text-[12px]">
+                                    <div class="flex justify-between items-center bg-white p-2 rounded border border-slate-100">
+                                        <span class="font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded">▲ 1,000 (인상)</span>
+                                        <span class="text-slate-500">기존 매입가보다 단가가 올랐을 때 표시됩니다.</span>
                                     </div>
-                                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                                        <i className="fas fa-tags text-3xl text-emerald-500 mb-4"></i>
-                                        <h3 className="font-bold text-lg mb-2">카탈로그 & 델타 관리</h3>
-                                        <p className="text-sm text-slate-600 leading-relaxed">단순 단가 변경뿐만 아니라, 특정 거래처의 신규 품목 추가 및 단종(누락) 품목까지 완벽하게 잡아냅니다.</p>
+                                    <div class="flex justify-between items-center bg-white p-2 rounded border border-slate-100">
+                                        <span class="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">▼ 500 (인하)</span>
+                                        <span class="text-slate-500">단가가 내려갔을 때 표시됩니다.</span>
                                     </div>
-                                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                                        <i className="fas fa-cloud text-3xl text-blue-500 mb-4"></i>
-                                        <h3 className="font-bold text-lg mb-2">안전한 클라우드 백업</h3>
-                                        <p className="text-sm text-slate-600 leading-relaxed">무제한 로컬 메모리(IndexedDB)를 통해 브라우저가 멈추지 않으며, 원할 때 구글 시트에 영구 백업 가능합니다.</p>
+                                    <div class="flex justify-between items-center bg-white p-2 rounded border border-slate-100">
+                                        <span class="font-bold text-rose-500"><i class="fa-solid fa-exclamation-triangle animate-pulse"></i> 오기의심</span>
+                                        <span class="text-slate-500">단가가 기존 대비 30% 이상 폭등락 했을 때 뜨는 강력 경고입니다.</span>
                                     </div>
                                 </div>
-                            </section>
-
-                            {/* 5. 환경설정 ⚙️ 완벽 가이드 */}
-                            <section id="settings" className="guide-section mb-16">
-                                <h2 className="text-2xl font-black border-b-2 border-slate-200 pb-2 mb-6"><i className="fas fa-cogs text-slate-500 mr-2"></i>환경설정 ⚙️ 완벽 가이드</h2>
-                                <p className="text-slate-600 mb-6">머치옵스 우측 상단의 톱니바퀴 버튼을 누르면 열리는 '환경설정 센터'의 핵심 기능들을 안내합니다.</p>
-
-                                <div className="space-y-4">
-                                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-rose-500">
-                                        <h3 className="font-bold text-slate-800 text-lg mb-2 flex items-center"><i className="fas fa-broom text-rose-500 mr-2"></i>클라우드 DB 최적화 (검색어 찌꺼기 삭제)</h3>
-                                        <p className="text-sm text-slate-600 mb-3 leading-relaxed">
-                                            과거 엑셀 업로드 시 저장되었던 불필요한 '검색어등록' 필드의 찌꺼기 데이터들(예: 110g, 가공식품, #REF! 등)을 한 번에 삭제합니다. 불필요한 데이터를 제거하여 <strong>클라우드 DB 용량을 다이어트하고 시스템 속도를 최적화</strong>합니다.
-                                        </p>
-                                        <div className="bg-rose-50 p-3 rounded text-xs text-rose-800 font-bold border border-rose-100">
-                                            👉 <strong>사용 팁:</strong> [기존 엑셀 검색어 일괄 삭제] 버튼을 누른 후에는, 반드시 상단의 <span className="bg-slate-800 text-white px-1.5 py-0.5 rounded">☁️ 클라우드 백업(↑)</span>을 눌러야 찌꺼기 없는 깨끗한 상태가 클라우드에 영구 반영됩니다! (파서에서 만든 카탈로그와 견적서는 안전하게 보호됩니다.)
-                                        </div>
-                                    </div>
-
-                                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-indigo-500">
-                                        <h3 className="font-bold text-slate-800 text-lg mb-2 flex items-center"><i className="fas fa-calculator text-indigo-500 mr-2"></i>단가 계산 및 하이브리드 마진 룰</h3>
-                                        <p className="text-sm text-slate-600 leading-relaxed">
-                                            공급처의 입고가를 바탕으로 우리의 <strong>출고가(시중가)를 얼마로 세팅할지 자동으로 계산</strong>해 주는 공식입니다.<br/>
-                                            '창고코드'와 '단위(ea, box)'를 조합하여 조건별로 마진율(%)과 연산 방식(곱하기/나누기)을 다르게 지정할 수 있습니다.
-                                        </p>
-                                    </div>
-
-                                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-emerald-500">
-                                        <h3 className="font-bold text-slate-800 text-lg mb-2 flex items-center"><i className="fas fa-columns text-emerald-500 mr-2"></i>화면 노출 항목 및 엑셀 헤더 매핑</h3>
-                                        <p className="text-sm text-slate-600 leading-relaxed">
-                                            화면에 보여줄 데이터 기둥(열)을 켜고 끄거나 커스텀 항목을 새로 추가할 수 있습니다. 또한, 엑셀을 업로드할 때 <strong>어떤 엑셀 헤더명(예: 거래처명)을 우리 DB의 어떤 필드(예: 구매처)로 자동 연결할지 키워드를 콤마(,)로 구분하여 설정</strong>합니다.
-                                        </p>
-                                    </div>
-                                    
-                                    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-slate-600">
-                                        <h3 className="font-bold text-slate-800 text-lg mb-2 flex items-center"><i className="fas fa-undo text-slate-500 mr-2"></i>앱 전체 초기화</h3>
-                                        <p className="text-sm text-slate-600 leading-relaxed">
-                                            로컬 브라우저에 꼬여있는 캐시나 데이터를 완벽하게 포맷(Format)하는 최후의 수단입니다. <strong>"파서 학습 사전(AI 매칭 데이터)"</strong>은 보존할지 묻는 알림창이 뜨므로, 소중한 학습 데이터는 날리지 않고 안전하게 초기화할 수 있습니다.
-                                        </p>
-                                    </div>
-                                </div>
-                            </section>
-
-                            {/* 6. 활용 팁 & FAQ */}
-                            <section id="tips" className="guide-section">
-                                <h2 className="text-2xl font-black border-b-2 border-slate-200 pb-2 mb-6"><i className="fas fa-lightbulb text-amber-500 mr-2"></i>자주 묻는 질문 & 활용 팁</h2>
-                                
-                                <div className="space-y-4">
-                                    <details className="bg-white border border-slate-200 rounded-xl group overflow-hidden cursor-pointer">
-                                        <summary className="p-5 font-bold text-slate-800 outline-none flex justify-between items-center group-open:bg-slate-50">
-                                            Q. 파싱 후 화면에 100% 일치하는 데이터가 없다고 나옵니다.
-                                            <i className="fas fa-chevron-down text-slate-400 transition-transform group-open:rotate-180"></i>
-                                        </summary>
-                                        <div className="p-5 pt-0 text-sm text-slate-600 leading-relaxed border-t border-slate-100 mt-2">
-                                            A. 오류가 아닙니다! 처음에는 파서가 똑똑하지 않아 [🟡 매핑 대기] 또는 [🔴 신규 대기] 탭에 데이터가 쌓입니다. 해당 탭을 눌러 수동으로 검색 후 연결(학습)해 주면, 다음번부터는 자동으로 [✅ 자동 일치] 탭에 나타납니다.
-                                        </div>
-                                    </details>
-
-                                    <details className="bg-white border border-slate-200 rounded-xl group overflow-hidden cursor-pointer">
-                                        <summary className="p-5 font-bold text-slate-800 outline-none flex justify-between items-center group-open:bg-slate-50">
-                                            Q. 단가 계산 및 마진 룰은 어디서 설정하나요?
-                                            <i className="fas fa-chevron-down text-slate-400 transition-transform group-open:rotate-180"></i>
-                                        </summary>
-                                        <div className="p-5 pt-0 text-sm text-slate-600 leading-relaxed border-t border-slate-100 mt-2">
-                                            A. 머치옵스(메인 화면) 우측 상단의 <strong>[톱니바퀴 ⚙️] 아이콘</strong>을 클릭하세요. '환경설정 센터' 창이 열리면 좌측 메뉴에서 <strong>'3. 단가 계산 및 마진 룰'</strong>을 선택하여 창고별/단위별로 마진율을 정밀하게 세팅할 수 있습니다.
-                                        </div>
-                                    </details>
-                                </div>
-                            </section>
-
-                            <div className="mt-12 text-center text-slate-400 text-sm font-bold">
-                                © ONEAPP MerchOps. All rights reserved.
                             </div>
-                        </main>
-                    </div>
-                </div>
-            );
-        };
+                        </div>
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<GuideApp />);
+                        <div class="flex gap-4">
+                            <div class="step-num bg-slate-200 text-slate-600">3</div>
+                            <div>
+                                <h4 class="font-bold text-slate-800 text-[15px] mb-1">수동 조작 및 마진 룰 강제 적용</h4>
+                                <p class="text-[13px] text-slate-600 mb-2">필요시 우측 <span class="bg-orange-50 text-orange-800 font-bold px-1 rounded">[3구역]</span>의 입력칸을 클릭하여 단가를 직접 고칩니다. 방향키와 <kbd>Enter</kbd>로 이동합니다.</p>
+                                <p class="text-[13px] text-slate-600">직접 수정한 단가들을 모두 무시하고 시스템 설정대로 일괄 덮어씌우려면 상단의 <code class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-bold"><i class="fa-solid fa-magic"></i> 룰 적용</code> 버튼을 누르세요.</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 3. 파서 워크플로우 -->
+                <section id="task2" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-8 scroll-mt-24">
+                    <h3 class="text-xl font-black text-slate-900 mb-6 pb-4 border-b border-slate-100 flex items-center">
+                        <span class="bg-purple-100 text-purple-700 p-2 rounded-lg mr-3 text-lg leading-none"><i class="fa-solid fa-robot"></i></span>
+                        [업무 2] 카톡/문자 시세 텍스트 자동 파싱
+                    </h3>
+                    
+                    <div class="space-y-6 pl-2">
+                        <div class="flex gap-4">
+                            <div class="step-num bg-purple-600 text-white shadow-md">1</div>
+                            <div>
+                                <h4 class="font-bold text-slate-800 text-[15px] mb-1">스마트 파서 진입 및 텍스트 붙여넣기</h4>
+                                <p class="text-[13px] text-slate-600 mb-2">우측 상단의 <strong>[스마트 파서]</strong> 메뉴로 진입하여 <code class="bg-indigo-50 text-indigo-600 px-1 rounded font-bold">새 파싱</code>을 누릅니다.</p>
+                                <p class="text-[13px] text-slate-600">카톡 시세를 그대로 복사해 붙여넣고, 해당 유통사의 '기준 카탈로그'를 지정한 후 분석을 시작합니다.</p>
+                            </div>
+                        </div>
+
+                        <div class="flex gap-4">
+                            <div class="step-num bg-slate-200 text-slate-600">2</div>
+                            <div class="w-full">
+                                <h4 class="font-bold text-slate-800 text-[15px] mb-1">투트랙 검증 (신규/유사품 연결)</h4>
+                                <p class="text-[13px] text-slate-600 mb-3">AI가 자동으로 마스터 상품과 짝을 맞춥니다. 상단의 3가지 탭을 순서대로 눌러 확인합니다.</p>
+                                <div class="grid grid-cols-3 gap-3 text-[12px] text-center">
+                                    <div class="bg-emerald-50 border border-emerald-200 p-3 rounded-lg">
+                                        <div class="font-black text-emerald-700 mb-1">🟢 일치 탭</div>
+                                        <div class="text-slate-500">완벽히 짝을 찾은 상품. 단가만 훑어보고 확정합니다.</div>
+                                    </div>
+                                    <div class="bg-amber-50 border border-amber-200 p-3 rounded-lg">
+                                        <div class="font-black text-amber-700 mb-1">🟡 유사 탭</div>
+                                        <div class="text-slate-500">이름이 비슷하거나 중복된 상품. 우측 마스터를 보고 <strong>수동 연결</strong> 하세요.</div>
+                                    </div>
+                                    <div class="bg-rose-50 border border-rose-200 p-3 rounded-lg">
+                                        <div class="font-black text-rose-700 mb-1">🔴 불일치 탭</div>
+                                        <div class="text-slate-500">DB에 없는 새 상품입니다. <strong>[ERP 코드]</strong> 버튼으로 즉석 생성하세요.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex gap-4">
+                            <div class="step-num bg-slate-200 text-slate-600">3</div>
+                            <div>
+                                <h4 class="font-bold text-slate-800 text-[15px] mb-1">누락 탭 (⚪) : 카탈로그 제외</h4>
+                                <p class="text-[13px] text-slate-600">마스터 DB에는 존재하지만, 방금 올린 시세표에는 적혀있지 않은 상품들이 모입니다.</p>
+                                <p class="text-[13px] text-slate-600 font-bold text-rose-600 mt-1">이곳의 상품을 선택해 [카탈로그 제외]를 누르면 일시 품절 처리할 수 있습니다.</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 4. 단종 처리 워크플로우 -->
+                <section id="task3" class="bg-rose-50 rounded-2xl shadow-sm border border-rose-200 p-8 mb-8 scroll-mt-24">
+                    <h3 class="text-xl font-black text-rose-900 mb-6 pb-4 border-b border-rose-100 flex items-center">
+                        <span class="bg-white text-rose-500 p-2 rounded-lg mr-3 text-lg leading-none shadow-sm"><i class="fa-solid fa-ban"></i></span>
+                        [업무 3] 품절 및 단종 상품 처리 (매우 중요)
+                    </h3>
+                    
+                    <p class="text-[13px] text-rose-800 mb-6 bg-white p-3 rounded-lg border border-rose-100 font-bold">
+                        더 이상 취급하지 않는 상품을 시스템에서 영구히 삭제(Delete)하지 마십시오! 과거 정산 데이터가 훼손됩니다.
+                    </p>
+
+                    <div class="space-y-6 pl-2">
+                        <div class="flex gap-4">
+                            <div class="step-num bg-rose-600 text-white shadow-md">1</div>
+                            <div>
+                                <h4 class="font-bold text-slate-800 text-[15px] mb-1">메인 화면에서 단종시킬 상품 체크</h4>
+                                <p class="text-[13px] text-slate-600">메인 화면 좌측의 체크박스를 이용해 더 이상 발주/판매하지 않을 상품을 모두 선택합니다.</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-4">
+                            <div class="step-num bg-slate-200 text-slate-600">2</div>
+                            <div>
+                                <h4 class="font-bold text-slate-800 text-[15px] mb-1">상단 [🚫 판매중단] 버튼 클릭</h4>
+                                <p class="text-[13px] text-slate-600 mb-2">클릭하는 순간 해당 상품은 마스터 DB의 판매여부가 '0'으로 영구 고정되며 화면에서 사라집니다.</p>
+                                <p class="text-[12px] text-indigo-600 font-bold bg-indigo-50 p-2 rounded border border-indigo-100">
+                                    💡 이 데이터는 즉시 백그라운드의 '품절 임시 창고(대기열)'로 자동 이동합니다.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 5. 산출물 워크플로우 -->
+                <section id="task4" class="bg-emerald-50 rounded-2xl shadow-sm border border-emerald-200 p-8 mb-8 scroll-mt-24">
+                    <h3 class="text-xl font-black text-emerald-900 mb-6 pb-4 border-b border-emerald-100 flex items-center">
+                        <span class="bg-white text-emerald-500 p-2 rounded-lg mr-3 text-lg leading-none shadow-sm"><i class="fa-solid fa-file-export"></i></span>
+                        [업무 4] 최종 보고서 및 단가표 출력
+                    </h3>
+                    
+                    <div class="space-y-6 pl-2">
+                        <div class="flex gap-4">
+                            <div class="step-num bg-emerald-600 text-white shadow-md">1</div>
+                            <div>
+                                <h4 class="font-bold text-slate-800 text-[15px] mb-1">단축키 <kbd>F9</kbd> (통합 엑셀 다운로드)</h4>
+                                <p class="text-[13px] text-slate-600 mb-2">화면의 정상 상품들이 <strong class="text-emerald-700">5단 우선순위 공식(자사행사 > 견적행사 > 기본마진)</strong>에 의해 1원 단위까지 계산되어 엑셀로 추출됩니다.</p>
+                                <p class="text-[12px] text-rose-600 font-bold bg-white p-2 rounded border border-rose-100">
+                                    🚨 위 [업무 3]에서 처리했던 '단종 대기열' 상품들은 이 단계에서 쇼핑몰 규격(판매여부:0, 재고:0)으로 변환되어 엑셀 맨 밑바닥에 자동으로 병합됩니다!
+                                </p>
+                            </div>
+                        </div>
+                        <div class="flex gap-4">
+                            <div class="step-num bg-slate-200 text-slate-600">2</div>
+                            <div>
+                                <h4 class="font-bold text-slate-800 text-[15px] mb-1">단축키 <kbd>F10</kbd> (이미지 단가표 생성)</h4>
+                                <p class="text-[13px] text-slate-600">엑셀을 모바일에서 열기 힘들어하는 식당 사장님들을 위해, 스마트폰 비율에 맞춘 하이엔드 단가표 이미지가 생성됩니다. 카카오톡으로 복사/붙여넣기 하세요.</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-4">
+                            <div class="step-num bg-slate-200 text-slate-600">3</div>
+                            <div>
+                                <h4 class="font-bold text-slate-800 text-[15px] mb-1">구름 버튼 ☁️ (클라우드 영구 백업)</h4>
+                                <p class="text-[13px] text-slate-600">모든 업무를 마치면 세팅 창의 구름 버튼을 눌러 지금까지 작업한 마스터 DB와 품절 이력을 구글 서버에 백업해 두고 퇴근합니다.</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const observerOptions = {
+                root: document.getElementById('main-content'),
+                rootMargin: '-10% 0px -80% 0px',
+                threshold: 0
+            };
+
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+                        const activeLink = document.querySelector(`.nav-link[href="#${entry.target.id}"]`);
+                        if (activeLink) activeLink.classList.add('active');
+                    }
+                });
+            }, observerOptions);
+
+            document.querySelectorAll('section[id]').forEach(section => observer.observe(section));
+        });
     </script>
 </body>
 </html>
