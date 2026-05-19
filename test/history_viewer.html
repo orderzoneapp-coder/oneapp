@@ -78,7 +78,7 @@
 
             return (
                 <div className="flex h-screen overflow-hidden bg-slate-50 fade-in">
-                    {/* 왼쪽 사이드바 (v1.6 ONEAPP 통일화) */}
+                    {/* 왼쪽 사이드바 */}
                     <div className="w-[260px] bg-[#0f172a] flex flex-col text-slate-300 shadow-xl z-10 shrink-0">
                         <div className="p-6 border-b border-slate-800 bg-[#0b1120]">
                             <div className="flex items-center group shrink-0 mb-4">
@@ -101,8 +101,8 @@
                             <button onClick={clearLogs} className="w-full py-2.5 bg-rose-900/50 text-rose-300 border border-rose-800/50 rounded-xl hover:bg-rose-800 hover:text-white text-[12px] font-bold transition-colors">
                                 <i className="fas fa-trash-alt mr-2"></i> 기록 전체 지우기
                             </button>
-                            <button onClick={() => window.close()} className="w-full py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[13px] font-bold transition-colors">
-                                <i className="fas fa-arrow-left mr-2"></i> 닫기 (메인으로)
+                            <button onClick={() => window.location.href = 'MerchOps.html'} className="w-full py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[13px] font-bold transition-colors">
+                                <i className="fas fa-arrow-left mr-2"></i> 메인으로 돌아가기
                             </button>
                         </div>
                     </div>
