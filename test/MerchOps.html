@@ -84,7 +84,7 @@
             }); 
         };
 
-        // 🌟 마진 룰 엔진 (오직 룰에 따른 원가 계산만 담당하도록 역할 축소)
+        // 🌟 마진 룰 엔진
         window.calculatePricesEngine = (baseInPrice, providedOutPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
             const ROUND_UNIT = 100;
             const outsrc = (!currentFinalData?.['외주비'] && currentFinalData?.['외주비'] !== 0) 
@@ -145,7 +145,7 @@
             return calcOutPrice;
         };
 
-        // 🌟 [5단 우선순위 단가 병합 및 테마 지정 엔진] 출고가와 시중가를 완벽히 분리
+        // 🌟 [5단 우선순위 단가 병합 및 테마 지정 엔진]
         window.computeFinalData = (mItem, sources, marginRules, forceRecalc = false) => {
             const inv = sources['inventory'] || {};
             const est = sources['estimate'] || {};
@@ -170,7 +170,6 @@
             const estTargetOut = window.calculatePricesEngine(estInPrice, estProvidedOut, mItem, est, marginRules, forceRecalc);
             const masterTargetOut = window.calculatePricesEngine(masterInPrice, masterProvidedOut, mItem, {}, marginRules, forceRecalc);
 
-            // 🌟 1. 시중가 결정 (오직 마스터 기준 고정 유지)
             let finalMarketPrice = 0;
             if (forceRecalc) {
                 finalMarketPrice = masterTargetOut; 
@@ -179,11 +178,10 @@
             }
             
             let targetSource = {};
-            let theme = 0; // 1: 견적행사, 2: 재고행사
+            let theme = 0; 
             let isPromo = false;
-            let normalPrice = 0; // 50% 폭등락 검수용 오리지널가
+            let normalPrice = 0; 
             
-            // 🌟 2. 출고가 결정 (5단 우선순위 적용)
             if (hasInv && invStock > 0 && invPromo > 0 && !forceRecalc) {
                 targetSource = { ...inv, '입고가': invInPrice, '출고가': invPromo, '행사가': invPromo }; 
                 theme = 2; isPromo = true; normalPrice = invTargetOut;
@@ -910,7 +908,7 @@
                 ui.setSelectedRows(new Set());
             }, [data.setManagedItems, ui]);
 
-            // 🚫 [판매중단] 핵심 기획 개편 적용 (기존 '빼기' 기능 대체하여 마스터 DB에 판매여부:0 강제 입력)
+            // 🚫 [판매중단] 핵심 기획 (화면에서 숨기지 않고 상태만 변경)
             const handleStopSales = useCallback(async () => {
                 if (ui.selectedRows.size === 0) return ui.showToast('⚠️ 판매 정지할 항목을 선택해주세요.');
                 
@@ -935,17 +933,8 @@
                     await window.setIDB('pending_shop_status', pendingList);
                     await data.setMasterProducts(newMaster);
                     
-                    // 현재 활성 작업대에서도 부드럽게 제외시킴
-                    data.setManagedItems(prev => {
-                        const next = { ...prev };
-                        ui.selectedRows.forEach(code => {
-                            delete next[code];
-                        });
-                        return next;
-                    });
-                    
                     ui.setSelectedRows(new Set());
-                    ui.showToast(`✅ 선택한 ${ui.selectedRows.size}개 상품이 마스터DB 판매중단(판매여부:0) 기록 및 화면 정지 완료되었습니다.`);
+                    ui.showToast(`✅ 선택한 ${ui.selectedRows.size}개 상품이 판매중단(0) 처리되었습니다. 화면에 🔴 상태로 유지됩니다.`);
                 } catch (e) {
                     console.error(e);
                     ui.showToast('❌ 판매 정지 처리 중 예기치 않은 오류가 발생했습니다.');
@@ -1051,13 +1040,20 @@
             }, [data.masterProducts, data.setMasterProducts, data.addHistoryLogs, ui, handleRemoveFilter]);
 
             const handleCommitEstimate = useCallback(() => {
-                if (ui.selectedRows.size === 0) return ui.showToast('⚠️ 반영할 항목을 선택해주세요.');
+                // ⭐ 선택 여부에 관계없이 작동하도록 수정
+                const targets = ui.selectedRows.size > 0 ? ui.selectedRows : new Set(fullDisplayRows.map(r => r.코드));
+                if (targets.size === 0) return ui.showToast('⚠️ 반영할 항목이 없습니다.');
+                
+                // 선택 없이 전체 저장 시 안전 확인창 추가
+                if (ui.selectedRows.size === 0) {
+                    if (!window.confirm(`선택된 항목이 없습니다.\n현재 화면에 있는 전체 ${targets.size}건의 데이터를 모두 저장하시겠습니까?`)) return;
+                }
                 
                 let newMaster = { ...data.masterProducts }, commitCount = 0;
                 let localLogs = [];
                 const nowStr = new Date().toLocaleString('ko-KR');
 
-                ui.selectedRows.forEach(code => {
+                targets.forEach(code => {
                     const item = data.managedItems[code]; 
                     if (!item || !item.코드) return;
                     
@@ -1065,7 +1061,6 @@
                     newMaster[item.코드] = { ...(newMaster[item.코드] || { 코드: item.코드 }) };
 
                     if (item.finalData) {
-                        // 🌟 테마 속성 마스터 DB 저장
                         if (item.finalData._theme !== undefined) {
                             newMaster[item.코드]['테마1'] = item.finalData._theme === 1 ? '1' : '';
                             newMaster[item.코드]['테마2'] = item.finalData._theme === 2 ? '1' : '';
@@ -1121,7 +1116,7 @@
                 data.setMasterProducts(newMaster); 
                 ui.setSelectedRows(new Set()); 
                 ui.showToast(`✅ ${commitCount}건 마스터 업데이트 완료.`);
-            }, [ui.selectedRows, data.masterProducts, data.managedItems, data.setMasterProducts, data.addHistoryLogs, config.masterLinks, ui]);
+            }, [ui.selectedRows, fullDisplayRows, data.masterProducts, data.managedItems, data.setMasterProducts, data.addHistoryLogs, config.masterLinks, ui]);
 
             const toggleAllRows = useCallback(() => {
                 if (ui.selectedRows.size === fullDisplayRows.length && fullDisplayRows.length > 0) {
@@ -1271,7 +1266,7 @@
 
         // 🌟 [UI 고도화] 2단 분리 툴바 컴포넌트
         const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
-            const { activeTags, selectedRows, globalSearch, priceFilter } = state;
+            const { activeTags, selectedRows, globalSearch, priceFilter, fullDisplayRows } = state;
             const { handleStopSales, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, setPriceFilter, handleOpenExportCenter } = actions;
 
             return (
@@ -1338,17 +1333,18 @@
                                 <i className="fas fa-magic mr-1.5 text-[13px]"></i> 룰 적용
                             </button>
                             
-                            <button onClick={() => actions.setShowReviewModal(true)} disabled={selectedRows.size === 0} className={`h-9 px-5 rounded-lg text-[12px] font-black shadow-sm flex items-center ${selectedRows.size > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`} title="작업 검토 (F7)">
+                            {/* ⭐ 비활성화(disabled) 조건 제거하여 언제든 실행되게 수정 */}
+                            <button onClick={() => actions.setShowReviewModal(true)} disabled={fullDisplayRows.length === 0} className={`h-9 px-5 rounded-lg text-[12px] font-black shadow-sm flex items-center ${fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`} title="작업 검토 (F7)">
                                 <i className="fas fa-check-circle mr-1.5 text-[13px]"></i> 완료 <span className="ml-1.5 text-[9px] text-slate-400 font-normal">F7</span>
                             </button>
 
                             <div className="w-px h-5 bg-slate-300 mx-1"></div>
 
-                            <button onClick={handleOpenExportCenter} className="h-9 px-3 rounded-lg text-[12px] font-bold bg-white text-emerald-700 shadow-sm hover:bg-emerald-50 border border-emerald-200 flex items-center" title="통합 엑셀 다운로드 (F9)">
+                            <button onClick={handleOpenExportCenter} disabled={fullDisplayRows.length === 0} className={`h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center ${fullDisplayRows.length > 0 ? 'bg-white text-emerald-700 hover:bg-emerald-50 border border-emerald-200' : 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed'}`} title="통합 엑셀 다운로드 (F9)">
                                 <i className="fas fa-file-download mr-1.5 text-[14px]"></i> 엑셀 <span className="ml-1 text-[9px] text-emerald-400">F9</span>
                             </button>
                             
-                            <button onClick={handleOpenExportCenter} className="h-9 px-3 rounded-lg bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 border border-emerald-700 flex items-center" title="이미지 단가표 생성 (F10)">
+                            <button onClick={handleOpenExportCenter} disabled={fullDisplayRows.length === 0} className={`h-9 px-3 rounded-lg shadow-sm flex items-center ${fullDisplayRows.length > 0 ? 'bg-emerald-600 text-white hover:bg-emerald-700 border border-emerald-700' : 'bg-emerald-200 text-emerald-50 border border-emerald-200 cursor-not-allowed'}`} title="이미지 단가표 생성 (F10)">
                                 <i className="fas fa-camera text-[14px]"></i> <span className="ml-1 text-[9px] text-emerald-200 font-bold tracking-wider">F10</span>
                             </button>
 
@@ -1361,6 +1357,7 @@
                                     <option value="up">📈 인상</option>
                                     <option value="down">📉 인하</option>
                                     <option value="new">✨ 신규</option>
+                                    <option value="stopped">🔴 판매중단 상품</option>
                                 </select>
                                 <i className={`fas fa-chevron-down absolute right-3 top-3 text-[10px] pointer-events-none ${priceFilter !== 'all' ? 'text-emerald-500' : 'text-slate-400'}`}></i>
                             </div>
@@ -1400,7 +1397,11 @@
 
         // 🌟 [오기 검수 방어망 및 0원 판별 적용] F7 Review Modal
         const ReviewModal = ({ onClose, onConfirm, state, data }) => {
-            const targetRows = useMemo(() => state.fullDisplayRows.filter(row => state.selectedRows.has(row.코드)), [state.fullDisplayRows, state.selectedRows]);
+            // ⭐ 선택된 게 있으면 그것만, 없으면 화면 전체(fullDisplayRows)를 타겟팅
+            const targetRows = useMemo(() => {
+                if (state.selectedRows.size > 0) return state.fullDisplayRows.filter(row => state.selectedRows.has(row.코드));
+                return state.fullDisplayRows;
+            }, [state.fullDisplayRows, state.selectedRows]);
 
             const analysis = useMemo(() => {
                 let up = 0, down = 0, newStock = 0, soldOut = 0;
@@ -1492,8 +1493,9 @@
                             </div>
 
                             <div className="flex-1 overflow-hidden flex flex-col bg-white border border-slate-200 rounded-xl shadow-sm">
-                                <div className="px-4 py-2 bg-slate-100 border-b border-slate-200 text-[12px] font-bold text-slate-600 flex justify-between">
-                                    <span>선택된 반영 대상: {analysis.total}건</span>
+                                <div className="px-4 py-2 bg-slate-100 border-b border-slate-200 text-[12px] font-bold text-slate-600 flex items-center justify-between">
+                                    <span>반영 대기 대상: {analysis.total}건</span>
+                                    {state.selectedRows.size === 0 && <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-black">전체 반영 모드</span>}
                                 </div>
                                 <div className="flex-1 overflow-auto custom-scrollbar">
                                     <table className="w-full text-left text-[12px] whitespace-nowrap">
@@ -1559,7 +1561,6 @@
             );
         };
 
-        // 🌟 [UI 고도화] 단가 입력칸 다이어트 및 편집
         const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, data, isSel }) => {
             const isNumeric = window.NUMERIC_HEADERS.includes(linkedMasterField) || window.NUMERIC_HEADERS.includes(field);
             const initialVal = row.finalData?.[field] !== undefined ? row.finalData[field] : (mVal !== undefined ? mVal : '');
@@ -1570,7 +1571,7 @@
             const isDiff = linkedMasterField && mVal !== undefined && localVal !== '' && String(mVal) !== String(localVal) && isNumeric;
             const isHighlightCol = ['입고가', '출고가', '행사가'].includes(field);
 
-            let baseBg = 'bg-[#fffdfb]'; // 3구역 작업 영역: 연한 파스텔 주황 틴트
+            let baseBg = 'bg-[#fffdfb]'; 
             if (isHighlightCol) baseBg = 'bg-orange-50/70';
             if (isDiff) baseBg = 'bg-amber-100/70';
 
@@ -1643,7 +1644,6 @@
             );
         });
 
-        // 🌟 [UI 개편] 3대 논리 영역 (마스터 / 판매여부·이슈 / 작업정보) 시각적 렌더링 열 구성
         const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem }) => {
             const { isEstimateUploaded, visibleMasterCols, visibleUploadCols, config, data } = state;
             const requiredCoreFields = ['품목코드', '품목명', '규격'];
@@ -1653,7 +1653,6 @@
             const dName = uploadName || mItem.품목명 || '[미등록]';
             const dSpec = uploadSpec || mItem.규격 || '';
 
-            // 이슈 뱃지 계산 로직 (기존 대비 30% 이상 & 차액 1000원 이상일 때만 경고등)
             const oldP = window.parseNum(mItem['입고가']);
             const newP = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : (row.sources?.['estimate']?.['입고가'] ?? row.sources?.['inventory']?.['입고가'] ?? oldP));
             const diffAmount = newP - oldP;
@@ -1675,7 +1674,6 @@
                     issueBadge = <span className="bg-blue-100 text-blue-600 px-2 py-0.5 rounded text-[10px] font-black">▼ {(oldP - newP).toLocaleString()}</span>;
                 }
 
-                // 대표님 지시: 30% 이상 및 1,000원 이상 변동 시에만 오기의심 띄우기
                 const isSpike = oldP > 0 && newP > 0 && (Math.abs(diffAmount) / oldP >= 0.3) && Math.abs(diffAmount) >= 1000;
                 
                 if (isSpike) {
@@ -1688,10 +1686,8 @@
                 }
             }
 
-            // 🟢 / 🔴 판매여부 마스터 연동 및 대조열 렌더링
             const isSelling = mItem['판매여부'] !== 0 && mItem['판매여부'] !== '0';
             
-            // 토글 이벤트 처리 (아이콘 클릭 시 DB 영구 업데이트 및 큐 적재)
             const handleToggleSalesStatus = async (e) => {
                 e.stopPropagation();
                 const nextStatus = isSelling ? 0 : 1;
@@ -1701,7 +1697,6 @@
                 let newMaster = { ...data.masterProducts };
                 newMaster[row.코드] = { ...newMaster[row.코드], '판매여부': nextStatus };
 
-                // 판매중단(0) 처리인 경우 IndexedDB pending_shop_status 대기열에도 적재
                 let pendingList = [];
                 try {
                     pendingList = await window.getIDB('pending_shop_status') || [];
@@ -1716,22 +1711,12 @@
                 await window.setIDB('pending_shop_status', pendingList);
                 await data.setMasterProducts(newMaster);
                 
-                // 만약 판매중단처리 했다면 화면에서 즉각 숨기기 (구 '빼기' 프로세스 적용)
-                if (nextStatus === 0) {
-                    data.setManagedItems(prev => {
-                        const next = { ...prev };
-                        delete next[row.코드];
-                        return next;
-                    });
-                }
-                
-                config.setCloudUrl(url => url); // 임의 트리거
+                config.setCloudUrl(url => url); 
             };
 
             return (
-                <tr className="group border-b border-slate-200 transition-all hover:shadow-[0_0_8px_rgba(59,130,246,0.12)] relative z-0 hover:z-10">
+                <tr className={`group border-b border-slate-200 transition-all hover:shadow-[0_0_8px_rgba(59,130,246,0.12)] relative z-0 hover:z-10 ${!isSelling ? 'opacity-50' : ''}`}>
                     
-                    {/* 마스터 영역: 통일된 배경색(slate-50) 적용 */}
                     <td className={`sticky z-20 px-3 py-2 border-r border-slate-200 transition-colors min-w-[280px] w-[280px] max-w-[280px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : 'bg-slate-50 group-hover:!bg-slate-100 border-l-4 border-l-transparent group-hover:!border-l-slate-300'}`} style={{left: 0}}>
                         <div className="flex gap-2 items-center w-full min-w-0">
                             {isEstimateUploaded && (
@@ -1777,7 +1762,6 @@
                                 );
                             })}
                             
-                            {/* 판매여부 / 이슈 구역 */}
                             <td className={`px-2 py-1.5 border-l-2 border-indigo-200 bg-[#fbfbfe] text-center w-[100px] min-w-[100px] max-w-[100px] ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-50/50'}`}>
                                 <button onClick={handleToggleSalesStatus} className="px-2 py-1 rounded-md transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-1.5 w-full h-full" title="클릭하여 즉시 단종/정지 상태로 전환">
                                     {isSelling ? (
@@ -1798,7 +1782,6 @@
                                 </div>
                             </td>
 
-                            {/* 작업 정보 (오늘 편집값) */}
                             {visibleUploadCols['estimate']?.filter(h => h !== '품목코드').map(h => {
                                 const linkedMasterField = config.masterLinks['estimate']?.[h];
                                 const mVal = (linkedMasterField && row.코드 ? mItem[linkedMasterField] : undefined) ?? mItem[h];
@@ -1854,7 +1837,6 @@
                                                 </th>
                                             ))}
                                             
-                                            {/* 판매여부/변동이슈 헤더 */}
                                             <th className="sticky top-0 z-30 bg-[#f6f5ff] px-2 py-3 border-b border-l-2 border-indigo-200 text-center text-indigo-700 font-black min-w-[100px] w-[100px] max-w-[100px]">
                                                 판매여부
                                             </th>
@@ -2010,7 +1992,12 @@
 
                 if (ui.priceFilter !== 'all') {
                     baseList = baseList.filter(item => {
-                        const oldP = window.parseNum((data.masterProducts[item.코드] || {})['입고가']);
+                        const mItem = data.masterProducts[item.코드] || {};
+                        const isStopped = mItem['판매여부'] === 0 || mItem['판매여부'] === '0';
+                        
+                        if (ui.priceFilter === 'stopped') return isStopped;
+
+                        const oldP = window.parseNum(mItem['입고가']);
                         const newP = window.parseNum(item.finalData?.['입고가'] !== undefined ? item.finalData['입고가'] : (item.sources?.['estimate']?.['입고가'] ?? item.sources?.['inventory']?.['입고가']));
                         
                         if (ui.priceFilter === 'new') return !data.masterProducts[item.코드];
@@ -2042,17 +2029,18 @@
                     if (e.key === 'F7') { 
                         e.preventDefault(); 
                         if (isInput) document.activeElement.blur(); 
-                        if (!appState.isProcessing && appState.selectedRows.size > 0) appActions.setShowReviewModal(true); 
-                        else if(appState.selectedRows.size === 0) appActions.showToast("⚠️ [F7] 반영할 항목을 먼저 선택해주세요."); 
+                        // ⭐ 선택 유무 상관없이 화면 데이터가 있으면 바로 실행되도록 조건 변경
+                        if (!appState.isProcessing && appState.fullDisplayRows.length > 0) appActions.setShowReviewModal(true); 
+                        else if(appState.fullDisplayRows.length === 0) appActions.showToast("⚠️ [F7] 검수할 데이터가 화면에 없습니다."); 
                     }
                     else if (e.key === 'F8') { 
                         e.preventDefault(); 
                         if (isInput) document.activeElement.blur(); 
-                        if (!appState.isProcessing && appState.selectedRows.size > 0) { 
+                        // ⭐ 선택 유무 상관없이 화면 데이터가 있으면 바로 실행되도록 조건 변경
+                        if (!appState.isProcessing && appState.fullDisplayRows.length > 0) { 
                             appActions.handleCommitEstimate(); 
-                            appActions.showToast("⏳ [F8] 데이터를 저장합니다..."); 
                         } 
-                        else if(appState.selectedRows.size === 0) appActions.showToast("⚠️ [F8] 반영할 항목을 먼저 선택해주세요."); 
+                        else if(appState.fullDisplayRows.length === 0) appActions.showToast("⚠️ [F8] 반영할 데이터가 화면에 없습니다."); 
                     }
                     else if (e.key === 'F9' || e.key === 'F10') { 
                         e.preventDefault(); 
@@ -2062,7 +2050,7 @@
                 };
                 window.addEventListener('keydown', handleGlobalKeyDown);
                 return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-            }, [appState.isProcessing, appState.selectedRows.size, appActions]);
+            }, [appState.isProcessing, appState.fullDisplayRows.length, appActions]);
 
             return (
                 <div className="h-screen w-full bg-slate-100 flex justify-center overflow-hidden font-sans">
