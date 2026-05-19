@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ONEAPP MerchOps - 카톡 공유용 단가표 이미지 생성기 [v1.6 통합 버전]</title>
+    <!-- Tailwind CSS for UI styling -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- html2canvas for image generation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -161,6 +163,7 @@
 
     <div class="max-w-[1500px] mx-auto space-y-6">
         
+        <!-- Header (v1.6 통일화 레이아웃) -->
         <header class="bg-[#0f172a] p-6 rounded-2xl shadow-md flex flex-col md:flex-row justify-between items-center gap-4 border border-slate-800">
             <div class="flex items-center group shrink-0">
                 <span class="text-xl font-black text-amber-400 mr-3">ONEAPP</span>
@@ -176,14 +179,15 @@
                 <div class="text-sm px-4 py-2 bg-slate-800 text-slate-300 rounded-lg font-bold border border-slate-700 hidden md:block">
                     카톡 공유용 단가표 이미지 변환기
                 </div>
-                <button onclick="window.close()" class="h-9 px-4 rounded-lg bg-rose-600 text-white shadow-sm hover:bg-rose-700 font-bold text-[13px] transition-colors flex items-center">
-                    <i class="fas fa-times mr-1.5"></i> 닫기
+                <button onclick="window.location.href = 'MerchOps.html'" class="h-9 px-4 rounded-lg bg-rose-600 text-white shadow-sm hover:bg-rose-700 font-bold text-[13px] transition-colors flex items-center">
+                    <i class="fas fa-home mr-1.5"></i> 메인으로 돌아가기
                 </button>
             </div>
         </header>
 
         <div class="grid grid-cols-1 lg:grid-cols-[450px_1fr] gap-6">
             
+            <!-- Left Column: Data Input -->
             <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[850px]">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
@@ -206,25 +210,30 @@
                 </button>
             </div>
 
+            <!-- Right Column: Preview & Output -->
             <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[850px]">
                 <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-500"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                     3. 생성된 이미지 (다중 페이지)
                 </h2>
 
+                <!-- 출력 화면 영역 -->
                 <div class="flex-grow bg-slate-200 rounded-xl border border-slate-300 overflow-auto flex flex-col items-center p-8 relative gap-8" id="output-container">
                     <div id="placeholder-msg" class="absolute inset-0 flex flex-col items-center justify-center text-slate-500 font-bold">
                         데이터를 수신 대기 중입니다...
                     </div>
 
+                    <!-- 생성된 이미지 카드들이 리스트 형태로 들어가는 곳 -->
                     <div id="image-results-list" class="w-full flex flex-col items-center gap-10"></div>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- 백그라운드 렌더링 영역 (실제 화면엔 안보이고 캡처용으로만 존재) -->
     <div id="hidden-render-area" style="position: absolute; top: -9999px; left: -9999px;"></div>
 
+    <!-- Toast Notification -->
     <div id="toast" class="fixed bottom-5 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-6 py-3 rounded-full shadow-lg transition-opacity duration-300 opacity-0 pointer-events-none z-50 flex items-center gap-2">
         <span id="toast-msg">처리 완료!</span>
     </div>
@@ -375,6 +384,7 @@
 
                 let pageHTML = `
                     <div class="capture-page" id="capture-page-${pIndex}">
+                        <!-- Header -->
                         <div class="capture-header">
                             <h1 class="capture-title">
                                 <span style="font-size: 50px;">📦</span> 금일 발주 단가표${pageNumStr}
@@ -384,6 +394,7 @@
                             </div>
                         </div>
 
+                        <!-- 2단 본문 -->
                         <div class="content-grid">
                 `;
 
@@ -415,7 +426,10 @@
                 });
 
                 pageHTML += `
-                        </div> <div class="fixed-bottom-area">
+                        </div> <!-- /content-grid -->
+
+                        <!-- 하단 영역 (메모 노출/비노출 동적 적용) -->
+                        <div class="fixed-bottom-area">
                             <div class="capture-memo" style="display: ${memoDisplay};">
                                 ${memoVal}
                             </div>
@@ -423,7 +437,8 @@
                                 📞 문의처 | 당일 정확한 단가는 별도 문의 부탁드립니다.
                             </div>
                         </div>
-                    </div> `;
+                    </div> <!-- /capture-page -->
+                `;
                 renderArea.innerHTML += pageHTML;
             });
 
