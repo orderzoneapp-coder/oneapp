@@ -223,7 +223,7 @@
         };
 
         const getInitialVisibleMasterCols = () => ({ 
-            estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] 
+            estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A', '판매여부'] 
         });
         
         const getInitialVisibleUploadCols = () => ({ 
@@ -278,7 +278,7 @@
         const getCellWidthClass = (h) => {
             if (window.NUMERIC_HEADERS.includes(h)) return 'min-w-[90px] w-[90px] max-w-[90px]';
             if (h === '구매처' || h === '거래처명' || h === '일자') return 'min-w-[100px] w-[100px] max-w-[100px]';
-            if (h === '품목명' || h === '상품명' || h === '카탈로그' || h === '견적서') return 'min-w-[200px] w-[200px] max-w-[200px]';
+            if (h === '품목명' || h === '상품명' || h === '카탈로그' || h === '견적서' || h === '판매여부') return 'min-w-[100px] w-[100px] max-w-[100px]';
             if (h === '간단설명' || h === '지시사항' || h === '상품정보' || h === '적요2') return 'min-w-[150px] w-[150px] max-w-[150px]';
             if (h === '단위' || h === '창고') return 'min-w-[60px] w-[60px] max-w-[60px]';
             return 'min-w-[100px] w-[100px] max-w-[100px]';
@@ -1163,13 +1163,11 @@
                 }, 100);
             }, [fullDisplayRows, ui.selectedRows, data.masterProducts, data.setManagedItems, config.marginRules, ui]);
 
-            // 🚪 [F9] 출력 센터 (Export Center) 진입
             const handleOpenExportCenter = useCallback(() => {
                 const draftData = {};
                 let exportCount = 0;
 
                 fullDisplayRows.forEach(r => {
-                    // 체크박스로 선택한 항목이 있다면 해당 항목만, 없다면 현재 화면(필터 적용 등)의 전체 항목 대상
                     if (ui.selectedRows.size === 0 || ui.selectedRows.has(r.코드)) {
                         draftData[r.코드] = r;
                         exportCount++;
@@ -1178,7 +1176,6 @@
 
                 if (exportCount === 0) return ui.showToast('⚠️ 출력할 항목이 없습니다.');
 
-                // 선택된 항목 없이 전체(또는 필터된 전체)를 넘길 때 안전장치
                 if (ui.selectedRows.size === 0) {
                     if (!window.confirm(`체크박스로 선택된 작업 항목이 없습니다.\n현재 화면에 보이는 ${exportCount}건을 모두 출력센터로 넘기시겠습니까?`)) return;
                 }
@@ -1391,7 +1388,6 @@
             const isDiff = linkedMasterField && mVal !== undefined && localVal !== '' && String(mVal) !== String(localVal) && isNumeric;
             const isHighlightCol = ['입고가', '출고가', '행사가'].includes(field);
             
-            // 🚨 오류(오기수정 의심) 강제 감지 로직
             const isSuspicious = isNumeric && localVal !== '' && localVal !== undefined && isNaN(Number(String(localVal).replace(/,/g, '')));
 
             let baseBg = 'bg-[#fffdfb]'; 
@@ -1489,47 +1485,9 @@
             const newP = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : (row.sources?.['estimate']?.['입고가'] ?? row.sources?.['inventory']?.['입고가'] ?? oldP));
             const diffAmount = newP - oldP;
             
-            // 🚨 수정된 판매여부(Sales Status) 단순 텍스트 로직
-            const rawInPrice = row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : mItem['입고가'];
-            const rawOutPrice = row.finalData?.['출고가'] !== undefined ? row.finalData['출고가'] : mItem['출고가'];
-            const pIn = window.parseNum(rawInPrice);
-            const pOut = window.parseNum(rawOutPrice);
-            
-            let currentStatus = row.finalData?.['판매여부'] !== undefined ? row.finalData['판매여부'] : mItem['판매여부'];
-            let displayStatus = '-';
+            const mStatus = String(mItem['판매여부'] || '').trim();
+            const isStopped = mStatus === '0' || mStatus === '판매중단' || mStatus === '단종' || mStatus === '품절';
 
-            if (rawInPrice == null || rawInPrice === '' || rawOutPrice == null || rawOutPrice === '') {
-                displayStatus = '-';
-            } else if (pIn === 0 || pOut === 0) {
-                displayStatus = '판매중단';
-            } else {
-                if (currentStatus === undefined || currentStatus === null || currentStatus === '') {
-                    displayStatus = '-';
-                } else {
-                    const s = String(currentStatus).trim();
-                    if (s === '0') displayStatus = '판매중단';
-                    else if (s === '1') displayStatus = '판매중';
-                    else displayStatus = s;
-                }
-            }
-
-            const handleToggleSalesStatus = async (e) => {
-                e.stopPropagation();
-                if (pIn === 0 || pOut === 0) {
-                    alert("단가가 0원인 상태에서는 판매중으로 임의 변경할 수 없습니다. 단가를 먼저 입력해주세요.");
-                    return;
-                }
-                const nextStatus = (displayStatus === '판매중' || displayStatus === '1') ? 0 : 1;
-                actions.setManagedItems(prev => {
-                    const next = { ...prev };
-                    if(next[row.코드]) {
-                        next[row.코드].finalData = { ...next[row.코드].finalData, '판매여부': nextStatus };
-                    }
-                    return next;
-                });
-            };
-
-            // 🚨 수정된 변동이슈 단순화(오기수정 배색 유지, 두줄 삭제) 로직
             let issueText = '-';
             let issueCellBg = 'bg-[#fbfbfe]'; 
             let issueTextColor = 'text-slate-400';
@@ -1537,7 +1495,6 @@
             if (isEstimateUploaded) {
                 const isSpike = oldP > 0 && newP > 0 && (Math.abs(diffAmount) / oldP >= 0.3) && Math.abs(diffAmount) >= 1000;
                 
-                // 오기수정 발동시 배색
                 if (isSpike) {
                     issueCellBg = newP > oldP ? '!bg-rose-100' : '!bg-blue-100';
                 }
@@ -1564,7 +1521,7 @@
             }
 
             return (
-                <tr className={`group border-b border-slate-200 transition-all hover:shadow-[0_0_8px_rgba(59,130,246,0.12)] relative z-0 hover:z-10 ${displayStatus === '판매중단' ? 'opacity-70 bg-slate-50' : ''}`}>
+                <tr className={`group border-b border-slate-200 transition-all hover:shadow-[0_0_8px_rgba(59,130,246,0.12)] relative z-0 hover:z-10 ${isStopped ? 'opacity-70 bg-slate-50' : ''}`}>
                     
                     <td className={`sticky z-20 px-3 py-2 border-r border-slate-200 transition-colors min-w-[280px] w-[280px] max-w-[280px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : 'bg-slate-50 group-hover:!bg-slate-100 border-l-4 border-l-transparent group-hover:!border-l-slate-300'}`} style={{left: 0}}>
                         <div className="flex gap-2 items-center w-full min-w-0">
@@ -1583,11 +1540,19 @@
 
                     {!isEstimateUploaded ? (
                         visibleMasterCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map(h => {
+                            let mVal = mItem[h];
+                            if (h === '판매여부') {
+                                if (mVal === '0' || mVal === 0) mVal = '판매중단';
+                                else if (mVal === '1' || mVal === 1) mVal = '판매중';
+                                else mVal = mVal || '-';
+                            } else {
+                                const isNum = window.NUMERIC_HEADERS.includes(h);
+                                mVal = mVal !== undefined && mVal !== '' ? (isNum ? window.parseNum(mVal).toLocaleString() : mVal) : '-';
+                            }
                             const isNum = window.NUMERIC_HEADERS.includes(h);
-                            const mVal = mItem[h] !== undefined && mItem[h] !== '' ? (isNum ? window.parseNum(mItem[h]).toLocaleString() : mItem[h]) : '-';
                             return (
                                 <td key={`idle-td-${h}`} className={`px-2 py-1.5 border-r border-slate-200 text-slate-600 ${getCellWidthClass(h)} ${isNum ? 'text-right font-bold' : 'text-center'} ${isSel ? '!bg-indigo-100/70' : 'bg-slate-50 group-hover:!bg-slate-100'}`}>
-                                    <div className="truncate w-full">{mVal}</div>
+                                    <div className={`truncate w-full ${h === '판매여부' && mVal === '판매중단' ? 'text-rose-500 font-bold' : ''}`}>{mVal}</div>
                                 </td>
                             );
                         })
@@ -1595,29 +1560,31 @@
                         <>
                             {visibleMasterCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map((h, i, arr) => {
                                 const isNum = window.NUMERIC_HEADERS.includes(h); 
-                                const mVal = mItem[h]; 
+                                let mVal = mItem[h]; 
                                 let isChanged = false;
                                 
                                 if (row.finalData && row.finalData[h] !== undefined) { 
                                     if (isNum && window.parseNum(row.finalData[h]) !== window.parseNum(mVal)) { isChanged = true; } 
                                     else if (!isNum && String(row.finalData[h]) !== String(mVal)) { isChanged = true; } 
                                 }
-                                const formattedVal = mVal !== undefined && mVal !== '' ? (isNum ? window.parseNum(mVal).toLocaleString() : mVal) : '-';
+                                
+                                let formattedVal;
+                                if (h === '판매여부') {
+                                    if (mVal === '0' || mVal === 0) formattedVal = '판매중단';
+                                    else if (mVal === '1' || mVal === 1) formattedVal = '판매중';
+                                    else formattedVal = mVal || '-';
+                                } else {
+                                    formattedVal = mVal !== undefined && mVal !== '' ? (isNum ? window.parseNum(mVal).toLocaleString() : mVal) : '-';
+                                }
                                 
                                 return (
                                     <td key={`pm-d-${h}`} className={`px-2 py-1.5 border-r border-slate-200 transition-colors ${getCellWidthClass(h)} ${isChanged ? 'bg-amber-50/80 text-amber-800' : 'bg-slate-50 text-slate-600'} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-100'} ${isNum ? 'text-right font-bold' : 'text-center'}`}>
-                                        <div className="truncate w-full">{formattedVal}</div>
+                                        <div className={`truncate w-full ${h === '판매여부' && formattedVal === '판매중단' ? 'text-rose-500 font-bold' : ''}`}>{formattedVal}</div>
                                     </td>
                                 );
                             })}
                             
-                            <td className={`px-2 py-1.5 border-l-2 border-indigo-200 bg-[#fbfbfe] text-center w-[100px] min-w-[100px] max-w-[100px] ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-50/50'}`}>
-                                <button onClick={handleToggleSalesStatus} className={`w-full h-full text-[12px] font-bold ${displayStatus === '판매중단' ? 'text-rose-500' : (displayStatus === '판매중' ? 'text-emerald-600' : 'text-slate-400')} hover:text-indigo-600`} title="상태 토글 (클릭 시 F8 저장 전 임시 변경)">
-                                    {displayStatus}
-                                </button>
-                            </td>
-
-                            <td className={`px-2 py-1.5 border-r-2 border-indigo-300 text-center w-[100px] min-w-[100px] max-w-[100px] ${issueCellBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-50/50'}`}>
+                            <td className={`px-2 py-1.5 border-l-2 border-indigo-300 border-r-2 border-r-indigo-300 text-center w-[100px] min-w-[100px] max-w-[100px] ${issueCellBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-50/50'}`}>
                                 <div className={`text-[12px] font-black ${issueTextColor}`}>
                                     {issueText}
                                 </div>
@@ -1676,10 +1643,7 @@
                                                 </th>
                                             ))}
                                             
-                                            <th className="sticky top-0 z-[60] bg-[#eef2ff] px-2 py-3 border-b border-slate-300 border-l-2 border-l-indigo-300 text-center text-indigo-800 font-black min-w-[100px] w-[100px] max-w-[100px]">
-                                                판매여부
-                                            </th>
-                                            <th className="sticky top-0 z-[60] bg-[#eef2ff] px-2 py-3 border-b border-slate-300 border-r-2 border-r-indigo-300 text-center text-indigo-800 font-black min-w-[100px] w-[100px] max-w-[100px]">
+                                            <th className="sticky top-0 z-[60] bg-[#eef2ff] px-2 py-3 border-b border-slate-300 border-l-2 border-l-indigo-300 border-r-2 border-r-indigo-300 text-center text-indigo-800 font-black min-w-[100px] w-[100px] max-w-[100px]">
                                                 변동이슈
                                             </th>
 
