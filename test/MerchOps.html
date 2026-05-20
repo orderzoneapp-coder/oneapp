@@ -13,7 +13,6 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     
     <script>
-        // 🚨 필수 코어 엔진 
         window.MASTER_HEADERS = [ "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "판매여부", "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록" ];
         window.NUMERIC_HEADERS = [ "안전재고", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "1종연산", "2종연산", "외주비", "노무비", "경비", "1구매", "1출고", "2구매", "2출고", "1입고", "2입고" ];
         
@@ -84,7 +83,6 @@
             }); 
         };
 
-        // 🌟 마진 룰 엔진
         window.calculatePricesEngine = (baseInPrice, providedOutPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
             const ROUND_UNIT = 100;
             const outsrc = (!currentFinalData?.['외주비'] && currentFinalData?.['외주비'] !== 0) 
@@ -145,7 +143,6 @@
             return calcOutPrice;
         };
 
-        // 🌟 [5단 우선순위 단가 병합 엔진]
         window.computeFinalData = (mItem, sources, marginRules, forceRecalc = false) => {
             const inv = sources['inventory'] || {};
             const est = sources['estimate'] || {};
@@ -437,7 +434,6 @@
             });
         };
 
-        // --- Custom Hooks ---
         const useMerchConfig = () => {
             const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v870') || '');
             const [visibleMasterCols, setVisibleMasterCols] = useState(() => safeJSONParse('merchVisMaster_v870', getInitialVisibleMasterCols()));
@@ -575,7 +571,6 @@
             };
         };
 
-        // --- Actions ---
         const useMerchActions = (config, data, ui, fullDisplayRows) => {
             
             const handleCloudSync = useCallback(async (type) => { 
@@ -904,7 +899,6 @@
                 ui.setSelectedRows(new Set());
             }, [data.setManagedItems, ui]);
 
-            // 🚫 [판매중단] 핵심 기획 (UI 임시 상태로만 변경 -> F8 저장 시 DB 반영)
             const handleStopSales = useCallback(async () => {
                 if (ui.selectedRows.size === 0) return ui.showToast('⚠️ 판매 정지할 항목을 선택해주세요.');
                 
@@ -1024,7 +1018,7 @@
                 ui.showToast(`✅ ${count}개의 상품에서 [${tagName}] 태그를 삭제했습니다.`);
             }, [data.masterProducts, data.setMasterProducts, data.addHistoryLogs, ui, handleRemoveFilter]);
 
-            // 💾 [F8] 마스터 DB 반영 (저장)
+            // 💾 [F8] 마스터 DB 반영 (저장) - 가격 0원이면 강제 0(판매중단) 처리 포함
             const handleCommitEstimate = useCallback(() => {
                 const targets = ui.selectedRows.size > 0 ? ui.selectedRows : new Set(fullDisplayRows.map(r => r.코드));
                 if (targets.size === 0) return ui.showToast('⚠️ 반영할 항목이 없습니다.');
@@ -1050,10 +1044,15 @@
                             newMaster[item.코드]['테마2'] = item.finalData._theme === 2 ? '1' : '';
                         }
 
-                        // 판매여부 강제 반영
-                        if (item.finalData['판매여부'] !== undefined) {
-                            newMaster[item.코드]['판매여부'] = item.finalData['판매여부'];
+                        // 단가 0원 강제 통제 로직 포함 판매여부 저장
+                        let finalStatusToSave = item.finalData['판매여부'] !== undefined ? item.finalData['판매여부'] : oldItem['판매여부'];
+                        const pIn = window.parseNum(item.finalData['입고가'] !== undefined ? item.finalData['입고가'] : oldItem['입고가']);
+                        const pOut = window.parseNum(item.finalData['출고가'] !== undefined ? item.finalData['출고가'] : oldItem['출고가']);
+                        
+                        if (pIn === 0 || pOut === 0) {
+                            finalStatusToSave = 0; // 단가가 0원이면 무조건 0으로 덮어씀
                         }
+                        newMaster[item.코드]['판매여부'] = finalStatusToSave;
                         
                         Object.keys(item.finalData).forEach(field => {
                             if (field.startsWith('_') || field === '판매여부') return; 
@@ -1166,7 +1165,6 @@
                 }, 100);
             }, [fullDisplayRows, ui.selectedRows, data.masterProducts, data.setManagedItems, config.marginRules, ui]);
 
-            // 🚪 [F9] 출력 센터 (Export Center) 진입
             const handleOpenExportCenter = useCallback(() => {
                 const draftData = {};
                 fullDisplayRows.forEach(r => draftData[r.코드] = r);
@@ -1476,62 +1474,37 @@
             const newP = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : (row.sources?.['estimate']?.['입고가'] ?? row.sources?.['inventory']?.['입고가'] ?? oldP));
             const diffAmount = newP - oldP;
             
-            // ✅ 판매여부 원본값 1:1 매칭 로직 (단순화 및 오류 수정)
-            const checkIsStopped = (val) => {
-                if (val === undefined || val === null) return false;
-                const strVal = String(val).replace(/\s/g, '').toLowerCase();
-                return strVal === '0' || strVal === '단종' || strVal === '품절' || strVal === '판매정지' || strVal === '판매중지' || strVal === '중단';
-            };
-
-            const oldStatus = checkIsStopped(mItem['판매여부']) ? 0 : 1;
-            const newStatusRaw = row.finalData?.['판매여부'] !== undefined ? row.finalData['판매여부'] : mItem['판매여부'];
-            const newStatus = checkIsStopped(newStatusRaw) ? 0 : 1;
-
-            let issueBadge = <span className="text-slate-300 font-bold">-</span>;
-            let issueCellBg = 'bg-[#fbfbfe]'; // 변동이슈 기본 배경색
-
-            if (isEstimateUploaded) {
-                const isSpike = oldP > 0 && newP > 0 && (Math.abs(diffAmount) / oldP >= 0.3) && Math.abs(diffAmount) >= 1000;
-                
-                // ✅ 오기수정 조건일 때 셀의 배경색을 강조
-                if (isSpike) {
-                    issueCellBg = newP > oldP ? '!bg-rose-100' : '!bg-blue-100';
-                }
-
-                if (!mItem.코드) {
-                    issueBadge = <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-black">✨ 신규등록</span>;
-                } else if (oldP === 0 && newP > 0) {
-                    issueBadge = <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-black">✨ 신규/재입고</span>;
-                } else if (oldP > 0 && newP === 0) {
-                    issueBadge = <span className="text-slate-500 text-[11px] font-black">🚫 품절/단종</span>;
-                } else if (oldP === 0 && newP === 0) {
-                    issueBadge = <span className="text-slate-400 text-[10px] font-bold">-</span>;
-                } else if (newP > oldP) {
-                    // ✅ 배색 없음 (글자색으로만 표현), 두 줄 텍스트 삭제
-                    issueBadge = <span className={`text-[12px] font-black ${isSpike ? 'text-rose-800' : 'text-rose-500'}`}>▲ {(newP - oldP).toLocaleString()}</span>;
-                } else if (newP < oldP) {
-                    // ✅ 배색 없음 (글자색으로만 표현), 두 줄 텍스트 삭제
-                    issueBadge = <span className={`text-[12px] font-black ${isSpike ? 'text-blue-800' : 'text-blue-500'}`}>▼ {(oldP - newP).toLocaleString()}</span>;
-                }
-            }
-
-            let statusBadge;
-            if (oldStatus === 1 && newStatus === 0) {
-                statusBadge = <span className="text-[12px] font-black text-rose-600 flex items-center gap-1 bg-rose-100 px-2 py-0.5 rounded-full border border-rose-300"><span className="w-2 h-2 rounded-full bg-rose-500 inline-block animate-pulse"></span>판매중단(변경)</span>;
-            } else if (oldStatus === 0 && newStatus === 0) {
-                statusBadge = <span className="text-[12px] font-bold text-slate-500 flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-300"><span className="w-2 h-2 rounded-full bg-slate-400 inline-block"></span>판매정지</span>;
-            } else if (oldStatus === 0 && newStatus === 1) {
-                statusBadge = <span className="text-[12px] font-black text-emerald-600 flex items-center gap-1 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>재판매(변경)</span>;
-            } else {
-                statusBadge = <span className="text-[12px] font-black text-emerald-600 flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>판매중</span>;
-            }
+            // 🚨 수정된 판매여부(Sales Status) 단순 텍스트 로직
+            const rawInPrice = row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : mItem['입고가'];
+            const rawOutPrice = row.finalData?.['출고가'] !== undefined ? row.finalData['출고가'] : mItem['출고가'];
+            const pIn = window.parseNum(rawInPrice);
+            const pOut = window.parseNum(rawOutPrice);
             
+            let currentStatus = row.finalData?.['판매여부'] !== undefined ? row.finalData['판매여부'] : mItem['판매여부'];
+            let displayStatus = '-';
+
+            if (rawInPrice == null || rawInPrice === '' || rawOutPrice == null || rawOutPrice === '') {
+                displayStatus = '-';
+            } else if (pIn === 0 || pOut === 0) {
+                displayStatus = '판매중단';
+            } else {
+                if (currentStatus === undefined || currentStatus === null || currentStatus === '') {
+                    displayStatus = '-';
+                } else {
+                    const s = String(currentStatus).trim();
+                    if (s === '0') displayStatus = '판매중단';
+                    else if (s === '1') displayStatus = '판매중';
+                    else displayStatus = s;
+                }
+            }
+
             const handleToggleSalesStatus = async (e) => {
                 e.stopPropagation();
-                const nextStatus = newStatus === 1 ? 0 : 1;
-                const confirmMsg = `[${dName}] 상품을 정말 ${nextStatus === 0 ? '🔴 판매중단' : '🟢 판매중'} 상태로 변경하시겠습니까?\n(F8을 눌러 저장해야 마스터 DB에 확정됩니다.)`;
-                if (!window.confirm(confirmMsg)) return;
-
+                if (pIn === 0 || pOut === 0) {
+                    alert("단가가 0원인 상태에서는 판매중으로 임의 변경할 수 없습니다. 단가를 먼저 입력해주세요.");
+                    return;
+                }
+                const nextStatus = (displayStatus === '판매중' || displayStatus === '1') ? 0 : 1;
                 actions.setManagedItems(prev => {
                     const next = { ...prev };
                     if(next[row.코드]) {
@@ -1541,8 +1514,42 @@
                 });
             };
 
+            // 🚨 수정된 변동이슈 단순화(오기수정 배색 유지, 두줄 삭제) 로직
+            let issueText = '-';
+            let issueCellBg = 'bg-[#fbfbfe]'; 
+            let issueTextColor = 'text-slate-400';
+
+            if (isEstimateUploaded) {
+                const isSpike = oldP > 0 && newP > 0 && (Math.abs(diffAmount) / oldP >= 0.3) && Math.abs(diffAmount) >= 1000;
+                
+                // 오기수정 발동시 배색
+                if (isSpike) {
+                    issueCellBg = newP > oldP ? '!bg-rose-100' : '!bg-blue-100';
+                }
+
+                if (!mItem.코드) {
+                    issueText = '신규등록';
+                    issueTextColor = 'text-emerald-600';
+                } else if (oldP === 0 && newP > 0) {
+                    issueText = '신규/재입고';
+                    issueTextColor = 'text-emerald-600';
+                } else if (oldP > 0 && newP === 0) {
+                    issueText = '품절/단종';
+                    issueTextColor = 'text-slate-500';
+                } else if (oldP === 0 && newP === 0) {
+                    issueText = '-';
+                    issueTextColor = 'text-slate-400';
+                } else if (newP > oldP) {
+                    issueText = `▲ ${(newP - oldP).toLocaleString()}`;
+                    issueTextColor = isSpike ? 'text-rose-800' : 'text-rose-500';
+                } else if (newP < oldP) {
+                    issueText = `▼ ${(oldP - newP).toLocaleString()}`;
+                    issueTextColor = isSpike ? 'text-blue-800' : 'text-blue-500';
+                }
+            }
+
             return (
-                <tr className={`group border-b border-slate-200 transition-all hover:shadow-[0_0_8px_rgba(59,130,246,0.12)] relative z-0 hover:z-10 ${newStatus === 0 ? 'opacity-70 bg-slate-50' : ''}`}>
+                <tr className={`group border-b border-slate-200 transition-all hover:shadow-[0_0_8px_rgba(59,130,246,0.12)] relative z-0 hover:z-10 ${displayStatus === '판매중단' ? 'opacity-70 bg-slate-50' : ''}`}>
                     
                     <td className={`sticky z-20 px-3 py-2 border-r border-slate-200 transition-colors min-w-[280px] w-[280px] max-w-[280px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : 'bg-slate-50 group-hover:!bg-slate-100 border-l-4 border-l-transparent group-hover:!border-l-slate-300'}`} style={{left: 0}}>
                         <div className="flex gap-2 items-center w-full min-w-0">
@@ -1589,16 +1596,16 @@
                                 );
                             })}
                             
+                            {/* 단순 텍스트로 치환된 판매여부 컬럼 */}
                             <td className={`px-2 py-1.5 border-l-2 border-indigo-200 bg-[#fbfbfe] text-center w-[100px] min-w-[100px] max-w-[100px] ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-50/50'}`}>
-                                <button onClick={handleToggleSalesStatus} className="px-1 py-1 rounded-md transition-all hover:scale-105 active:scale-95 flex items-center justify-center w-full h-full" title="클릭하여 즉시 단종/정지 상태로 임시 전환">
-                                    {statusBadge}
+                                <button onClick={handleToggleSalesStatus} className={`w-full h-full text-[12px] font-bold ${displayStatus === '판매중단' ? 'text-rose-500' : (displayStatus === '판매중' ? 'text-emerald-600' : 'text-slate-400')} hover:text-indigo-600`} title="상태 토글 (클릭 시 F8 저장 전 임시 변경)">
+                                    {displayStatus}
                                 </button>
                             </td>
 
-                            {/* ✅ 오기수정 발동 시 셀 배경색 강조 (issueCellBg 적용) */}
                             <td className={`px-2 py-1.5 border-r-2 border-indigo-300 text-center w-[100px] min-w-[100px] max-w-[100px] ${issueCellBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-50/50'}`}>
-                                <div className="flex flex-col items-center justify-center h-full">
-                                    {issueBadge}
+                                <div className={`text-[12px] font-black ${issueTextColor}`}>
+                                    {issueText}
                                 </div>
                             </td>
 
@@ -1628,14 +1635,12 @@
             const hiddenCount = fullDisplayRows.length - displayRows.length;
             const requiredCoreFields = ['품목코드', '품목명', '규격'];
 
-            // 🚨 테이블 헤더 투명도 제거 및 Z-index 최상단(Solid Background) 적용
             return (
                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm h-full flex flex-col relative overflow-hidden">
                     <div className="flex-1 overflow-auto custom-scrollbar relative" onScroll={handleScroll}>
                         <table className="text-left border-collapse text-[13px] whitespace-nowrap relative z-0 w-max bg-white">
                             <thead className="text-[12px] font-extrabold sticky top-0 z-[60] shadow-sm border-b-2 border-slate-300">
                                 <tr>
-                                    {/* 첫 번째 고정 열 헤더 */}
                                     <th className="sticky top-0 left-0 z-[70] bg-slate-200 px-3 py-2 border-r border-slate-300 text-slate-700 min-w-[280px] w-[280px] max-w-[280px]">
                                         <div className="flex items-center gap-2 pl-1">
                                             {isEstimateUploaded && (
@@ -1842,7 +1847,6 @@
                 setShowCategoryModal: ui.setShowCategoryModal, setSelectedRows: ui.setSelectedRows, setGlobalSearch: ui.setGlobalSearch, showToast: ui.showToast, setPriceFilter: ui.setPriceFilter, ...customActions
             }), [ui.setShowCategoryModal, ui.setSelectedRows, ui.setGlobalSearch, ui.showToast, ui.setPriceFilter, customActions]);
 
-            // 🌟 F8, F9 전역 단축키 할당
             useEffect(() => {
                 const handleGlobalKeyDown = (e) => {
                     const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
