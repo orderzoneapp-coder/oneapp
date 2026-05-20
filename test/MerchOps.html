@@ -1018,7 +1018,6 @@
                 ui.showToast(`✅ ${count}개의 상품에서 [${tagName}] 태그를 삭제했습니다.`);
             }, [data.masterProducts, data.setMasterProducts, data.addHistoryLogs, ui, handleRemoveFilter]);
 
-            // 💾 [F8] 마스터 DB 반영 (저장) - 가격 0원이면 강제 0(판매중단) 처리 포함
             const handleCommitEstimate = useCallback(() => {
                 const targets = ui.selectedRows.size > 0 ? ui.selectedRows : new Set(fullDisplayRows.map(r => r.코드));
                 if (targets.size === 0) return ui.showToast('⚠️ 반영할 항목이 없습니다.');
@@ -1044,13 +1043,12 @@
                             newMaster[item.코드]['테마2'] = item.finalData._theme === 2 ? '1' : '';
                         }
 
-                        // 단가 0원 강제 통제 로직 포함 판매여부 저장
                         let finalStatusToSave = item.finalData['판매여부'] !== undefined ? item.finalData['판매여부'] : oldItem['판매여부'];
                         const pIn = window.parseNum(item.finalData['입고가'] !== undefined ? item.finalData['입고가'] : oldItem['입고가']);
                         const pOut = window.parseNum(item.finalData['출고가'] !== undefined ? item.finalData['출고가'] : oldItem['출고가']);
                         
                         if (pIn === 0 || pOut === 0) {
-                            finalStatusToSave = 0; // 단가가 0원이면 무조건 0으로 덮어씀
+                            finalStatusToSave = 0; 
                         }
                         newMaster[item.코드]['판매여부'] = finalStatusToSave;
                         
@@ -1165,12 +1163,29 @@
                 }, 100);
             }, [fullDisplayRows, ui.selectedRows, data.masterProducts, data.setManagedItems, config.marginRules, ui]);
 
+            // 🚪 [F9] 출력 센터 (Export Center) 진입
             const handleOpenExportCenter = useCallback(() => {
                 const draftData = {};
-                fullDisplayRows.forEach(r => draftData[r.코드] = r);
+                let exportCount = 0;
+
+                fullDisplayRows.forEach(r => {
+                    // 체크박스로 선택한 항목이 있다면 해당 항목만, 없다면 현재 화면(필터 적용 등)의 전체 항목 대상
+                    if (ui.selectedRows.size === 0 || ui.selectedRows.has(r.코드)) {
+                        draftData[r.코드] = r;
+                        exportCount++;
+                    }
+                });
+
+                if (exportCount === 0) return ui.showToast('⚠️ 출력할 항목이 없습니다.');
+
+                // 선택된 항목 없이 전체(또는 필터된 전체)를 넘길 때 안전장치
+                if (ui.selectedRows.size === 0) {
+                    if (!window.confirm(`체크박스로 선택된 작업 항목이 없습니다.\n현재 화면에 보이는 ${exportCount}건을 모두 출력센터로 넘기시겠습니까?`)) return;
+                }
+
                 localStorage.setItem('merch_temp_draft', JSON.stringify(draftData));
                 window.open('export_center.html', '_blank');
-            }, [fullDisplayRows]);
+            }, [fullDisplayRows, ui.selectedRows, ui]);
 
             useEffect(() => {
                 window.getIDB('merchops_session').then(state => {
@@ -1596,7 +1611,6 @@
                                 );
                             })}
                             
-                            {/* 단순 텍스트로 치환된 판매여부 컬럼 */}
                             <td className={`px-2 py-1.5 border-l-2 border-indigo-200 bg-[#fbfbfe] text-center w-[100px] min-w-[100px] max-w-[100px] ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-50/50'}`}>
                                 <button onClick={handleToggleSalesStatus} className={`w-full h-full text-[12px] font-bold ${displayStatus === '판매중단' ? 'text-rose-500' : (displayStatus === '판매중' ? 'text-emerald-600' : 'text-slate-400')} hover:text-indigo-600`} title="상태 토글 (클릭 시 F8 저장 전 임시 변경)">
                                     {displayStatus}
