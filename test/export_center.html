@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 출력검증센터 [v2.4 이슈 모아보기]</title>
+    <title>ONEAPP MerchOps - 출력검증센터 [v2.5 자동 단가계산]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -127,9 +127,66 @@
             return stock > 0 && stock < 999;
         };
 
+        const safeJSONParse = (key, defaultVal) => {
+            try {
+                const raw = localStorage.getItem(key);
+                return raw && raw !== 'undefined' ? JSON.parse(raw) : defaultVal;
+            } catch (e) {
+                return defaultVal;
+            }
+        };
+
+        const calculateReviewOutPrice = (baseInPrice, context = {}, marginRules = []) => {
+            const inPrice = parseNum(baseInPrice);
+            if (inPrice <= 0) return 0;
+
+            const outsrc = parseNum(context['외주비']);
+            const labor = parseNum(context['노무비']);
+            const totalCost = inPrice + outsrc + labor;
+            const whCode = String(context['창고'] ?? '').trim();
+            const unitStr = String(context['단위'] ?? '').trim().toLowerCase();
+
+            const matchWh = (ruleWh, targetWh) => {
+                if (!ruleWh || ruleWh === '*') return true;
+                const targets = String(ruleWh).split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean);
+                return targets.some(s => s === targetWh || (targetWh !== '' && !isNaN(s) && !isNaN(targetWh) && Number(s) === Number(targetWh)));
+            };
+
+            const matchUnit = (ruleUnit, targetUnit) => {
+                if (!ruleUnit || ruleUnit === '*') return true;
+                const targets = String(ruleUnit).toLowerCase().split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean);
+                return targets.some(s => targetUnit === s || targetUnit.includes(s));
+            };
+
+            let bestRule = null;
+            let bestScore = -1;
+            const safeRules = Array.isArray(marginRules) ? marginRules : [];
+            safeRules.forEach(rule => {
+                if (matchWh(rule.whCode, whCode) && matchUnit(rule.unit, unitStr)) {
+                    let score = 0;
+                    if (rule.whCode && rule.whCode !== '*') score += 2;
+                    if (rule.unit && rule.unit !== '*') score += 1;
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestRule = rule;
+                    }
+                }
+            });
+
+            const applied = bestRule || { rate: 20, type: 'divide' };
+            let calc = 0;
+            if (applied.type === 'divide') {
+                calc = totalCost / (1 - (parseNum(applied.rate) / 100));
+            } else {
+                calc = totalCost * (1 + (parseNum(applied.rate) / 100));
+            }
+            return Math.round(calc / 100) * 100;
+        };
+
         const ExportApp = () => {
             const [masterProducts, setMasterProducts] = useState({});
             const [reviewRows, setReviewRows] = useState([]);
+            const [marginRules] = useState(() => safeJSONParse('merchMarginRules_v878', [{ id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }]));
             const [activeIssue, setActiveIssue] = useState('all');
             const [sortMode, setSortMode] = useState('category');
             const [searchInput, setSearchInput] = useState('');
@@ -172,7 +229,9 @@
                             const 기준판매여부 = String(master['판매여부'] ?? baseline.기준판매여부 ?? '-');
 
                             const 입고가 = parseNum(working.입고가);
-                            const 출고가 = parseNum(working.출고가);
+                            const 불러온출고가 = parseNum(working.출고가);
+                            const 계산출고가 = calculateReviewOutPrice(입고가, { ...master, ...working }, marginRules);
+                            const 출고가 = 불러온출고가 > 0 ? 불러온출고가 : 계산출고가;
                             const 행사가 = parseNum(working.행사가);
                             const 최종출고가 = 행사가 > 0 ? 행사가 : 출고가;
                             const rawStock = working.재고수량;
@@ -191,6 +250,8 @@
                                 기준시중가,
                                 기준판매여부,
                                 입고가,
+                                불러온출고가,
+                                계산출고가,
                                 출고가,
                                 행사가,
                                 최종출고가,
@@ -214,20 +275,35 @@
                     }
                 };
                 loadData();
-            }, [showToast]);
+            }, [showToast, marginRules]);
 
             const handleEdit = useCallback((code, field, value) => {
                 setReviewRows(prev => prev.map(row => {
                     if (row.코드 !== code) return row;
+
                     const next = { ...row, [field]: value };
-                    if (field === '행사가' || field === '출고가') {
-                        const newPromo = parseNum(field === '행사가' ? value : row.행사가);
-                        const newOut = parseNum(field === '출고가' ? value : row.출고가);
-                        next.최종출고가 = newPromo > 0 ? newPromo : newOut;
+
+                    if (field === '입고가') {
+                        const newIn = parseNum(value);
+                        const calcOut = calculateReviewOutPrice(newIn, row, marginRules);
+                        next.입고가 = newIn;
+                        next.계산출고가 = calcOut;
+                        // A안: 관리자는 입고가 기준으로 판단하므로, 입고가 수정 시 계산출고가를 최종 출고가에 자동 반영한다.
+                        next.출고가 = calcOut;
+                        next.최종출고가 = parseNum(row.행사가) > 0 ? parseNum(row.행사가) : calcOut;
+                    } else if (field === '행사가') {
+                        const newPromo = parseNum(value);
+                        next.행사가 = newPromo;
+                        next.최종출고가 = newPromo > 0 ? newPromo : parseNum(row.출고가);
+                    } else if (field === '출고가') {
+                        const newOut = parseNum(value);
+                        next.출고가 = newOut;
+                        next.최종출고가 = parseNum(row.행사가) > 0 ? parseNum(row.행사가) : newOut;
                     }
+
                     return next;
                 }));
-            }, []);
+            }, [marginRules]);
 
             const analysis = useMemo(() => {
                 const result = { total: reviewRows.length, up: 0, down: 0, promo: 0, soldout: 0, stopped: 0, anomaly: 0, margin: 0, newItem: 0, lowStock: 0 };
@@ -515,16 +591,18 @@
                                             <th className="px-3 py-3 w-28 font-bold">카테고리</th>
                                             <th className="px-3 py-3 font-bold">품목명 (규격)</th>
                                             <th className="px-3 py-3 w-20 text-right font-bold text-slate-500">기준가</th>
-                                            <th className="px-3 py-3 w-20 text-right font-bold text-indigo-600">입고가</th>
+                                            <th className="px-3 py-3 w-24 text-right font-bold text-indigo-600">입고가</th>
+                                            <th className="px-3 py-3 w-24 text-right font-bold text-slate-500">불러온 출고가</th>
+                                            <th className="px-3 py-3 w-24 text-right font-bold text-emerald-600">계산 출고가</th>
                                             <th className="px-3 py-3 w-20 text-right font-bold text-purple-600">행사가</th>
-                                            <th className="px-3 py-3 w-24 text-right font-bold text-rose-600">출고가 수정</th>
+                                            <th className="px-3 py-3 w-24 text-right font-bold text-rose-600">최종 출고가</th>
                                             <th className="px-3 py-3 w-20 text-center font-bold">재고</th>
                                             <th className="px-3 py-3 w-24 text-center font-bold">상태</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {filteredRows.length === 0 ? (
-                                            <tr><td colSpan="10" className="p-10 text-center text-slate-400 font-bold">표시할 데이터가 없습니다.</td></tr>
+                                            <tr><td colSpan="12" className="p-10 text-center text-slate-400 font-bold">표시할 데이터가 없습니다.</td></tr>
                                         ) : filteredRows.map(item => {
                                             const sale = getSaleState(item);
                                             const promo = parseNum(item.행사가) > 0;
@@ -550,12 +628,20 @@
                                                         {fmt(item.기준출고가)}
                                                         {item.기준출고가 > 0 && <div className={`text-[10px] font-bold ${diff >= 0 ? 'text-rose-400' : 'text-blue-400'}`}>{diff === 0 ? '-' : `${diff > 0 ? '+' : ''}${fmt(diff)} / ${(rate*100).toFixed(1)}%`}</div>}
                                                     </td>
-                                                    <td className="px-3 py-2 text-right font-bold text-indigo-500">{fmt(item.입고가)}</td>
+                                                    <td className="px-2 py-1 bg-indigo-50/30">
+                                                        <input type="text" value={item.입고가} onChange={(e)=>handleEdit(item.코드, '입고가', e.target.value)} title="입고가 수정 시 계산 출고가가 최종 출고가에 자동 반영됩니다." className="w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 px-1 py-1 text-right font-black text-indigo-600 outline-none" />
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right text-slate-500 font-bold">
+                                                        {parseNum(item.불러온출고가) > 0 ? fmt(item.불러온출고가) : <span className="text-slate-300">-</span>}
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right text-emerald-600 font-black">
+                                                        {parseNum(item.계산출고가) > 0 ? fmt(item.계산출고가) : <span className="text-slate-300">-</span>}
+                                                    </td>
                                                     <td className="px-3 py-2 text-right">
                                                         <input type="text" value={item.행사가} onChange={(e)=>handleEdit(item.코드, '행사가', e.target.value)} className="w-20 bg-transparent border-b border-transparent focus:border-purple-400 hover:border-slate-300 px-1 py-1 text-right font-black text-purple-700 outline-none" />
                                                     </td>
-                                                    <td className={`px-2 py-1 ${promo ? 'bg-purple-50/30' : 'bg-orange-50/30'}`}>
-                                                        <input type="text" value={item.출고가} onChange={(e)=>handleEdit(item.코드, '출고가', e.target.value)} disabled={promo} title={promo ? '행사가가 적용되어 출고가 수정이 잠금 처리됩니다.' : '클릭하여 수정'} className={`w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 rounded-none px-1 py-1 text-right font-black outline-none transition-colors ${margin ? 'text-rose-600' : 'text-slate-800'} ${promo ? 'opacity-50 cursor-not-allowed' : ''}`} />
+                                                    <td className="px-2 py-1 bg-orange-50/30">
+                                                        <input type="text" value={item.출고가} onChange={(e)=>handleEdit(item.코드, '출고가', e.target.value)} title="최종 저장할 기본 출고가입니다. 행사가가 있으면 행사가가 우선 적용됩니다." className={`w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 rounded-none px-1 py-1 text-right font-black outline-none transition-colors ${margin ? 'text-rose-600' : 'text-slate-800'}`} />
                                                     </td>
                                                     <td className="px-2 py-1 bg-slate-50/50">
                                                         <input type="text" value={item.재고수량} onChange={(e)=>handleEdit(item.코드, '재고수량', e.target.value)} className="w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 px-1 py-1 text-center font-bold text-slate-600 outline-none" />
