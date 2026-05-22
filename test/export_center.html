@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 출력검증센터 [v2.5.1 소분가 출력 복구]</title>
+    <title>ONEAPP MerchOps - 출력검증센터 [v2.5.2 소분 출력 건수 복구]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -145,6 +145,34 @@
             const rawSubOut = outPrice > 0 ? Math.round((outPrice / div1) + extraCost) : 0;
             const subOut = rawSubOut > 0 ? Math.round(rawSubOut / 10) * 10 : 0;
             return { code: String(row['1종코드']).trim(), spec: row['1종규격'] || '', div1, subIn, subOut };
+        };
+
+        const buildSubShopRow = (parentRow, subInfo, masterProducts, sale) => {
+            if (!subInfo) return null;
+            const subMaster = masterProducts[subInfo.code] || {};
+            const subName = subMaster['품목명'] || `${parentRow.품목명 || ''} (소분)`;
+            const subSpec = subMaster['규격'] || subInfo.spec || parentRow['1종규격'] || '';
+            const subBrand = subMaster['브랜드'] || parentRow.브랜드 || '';
+            const subDesc = subMaster['간단설명'] || parentRow.간단설명 || '';
+            const subTags = subMaster['검색어등록'] || parentRow.검색어등록 || '';
+            const subStock = parentRow.재고수량 !== undefined && parentRow.재고수량 !== '' ? parseNum(parentRow.재고수량) : 999;
+            return [
+                subInfo.code,
+                subName,
+                subSpec,
+                subInfo.subOut,
+                subInfo.subOut,
+                subInfo.subOut,
+                0, 0, 0, 0, 0, 0,
+                subBrand,
+                subDesc,
+                sale.code,
+                subStock,
+                parentRow.테마1 || '',
+                parentRow.테마2 || '',
+                '', '', '',
+                subTags
+            ];
         };
 
         const safeJSONParse = (key, defaultVal) => {
@@ -470,6 +498,7 @@
                         const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '최종(전송)', 'n', '행사', 'n', '1']];
                         const shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', '도매B', '도매B', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
 
+                        let subOutputCount = 0;
                         reviewRows.forEach(item => {
                             const sale = getSaleState(item);
                             const inPrice = parseNum(item.입고가);
@@ -478,17 +507,22 @@
                             const pMarket = parseNum(item.시중가);
                             const finalStock = parseNum(item.재고수량);
                             erpData.push([item.코드, inPrice, '0', finalOut, '0', parseNum(item.입고B)||'', 'n', pASale||'', 'n', parseNum(item.도매B)||'', 'n', inPrice, 'n', parseNum(item.행사가)||'', 'n', sale.code]);
+                            shopData.push([item.코드, item.품목명, item.규격, finalOut, (pASale>0?pASale:finalOut), (pMarket>0?pMarket:finalOut), 0, 0, 0, 0, 0, 0, item.브랜드||'', item.간단설명||'', sale.code, finalStock, item.테마1||'', item.테마2||'', '', '', '', item.검색어등록||'']);
+
                             const subInfo = calculateSubPriceInfo(item);
                             if (subInfo) {
+                                // 소분품목은 원물 행과 별도 출력물로 취급한다. ERP와 쇼핑몰업로드 모두 행 수가 증가해야 한다.
                                 erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', subInfo.subIn, 'n', '', 'n', sale.code]);
+                                const subShopRow = buildSubShopRow(item, subInfo, masterProducts, sale);
+                                if (subShopRow) shopData.push(subShopRow);
+                                subOutputCount++;
                             }
-                            shopData.push([item.코드, item.품목명, item.규격, finalOut, (pASale>0?pASale:finalOut), (pMarket>0?pMarket:finalOut), 0, 0, 0, 0, 0, 0, item.브랜드||'', item.간단설명||'', sale.code, finalStock, item.테마1||'', item.테마2||'', '', '', '', item.검색어등록||'']);
                         });
 
                         window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shopData), '쇼핑몰업로드');
                         window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), 'ERP업데이트');
                         window.XLSX.writeFile(wb, `통합업로드용_Export_${new Date().toISOString().slice(0,10)}.xlsx`);
-                        showToast(`✅ ${reviewRows.length}건 마스터 반영 및 엑셀 다운로드 완료`);
+                        showToast(`✅ 원물 ${reviewRows.length}건 + 소분 ${subOutputCount}건 = 총 ${reviewRows.length + subOutputCount}건 엑셀 다운로드 완료`);
                     } catch (e) {
                         console.error('[Export Excel Error]', e);
                         showToast('❌ 엑셀 파일 생성 중 오류가 발생했습니다.');
