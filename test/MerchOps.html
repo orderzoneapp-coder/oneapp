@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v1.8 Final]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v1.9.1 소분가/조작 복구 패치]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -1258,6 +1258,13 @@
                             도매B: getNum('도매B'),
                             시중가: getNum('시중가'),
                             입고B: getNum('입고B'),
+                            // 소분가 생성을 위한 원물-소분 매칭 정보
+                            '1종코드': getStr('1종코드'),
+                            '1종규격': getStr('1종규격'),
+                            '1종연산': getNum('1종연산'),
+                            '경비': getNum('경비'),
+                            '외주비': getNum('외주비'),
+                            '노무비': getNum('노무비'),
                             재고수량: stockQty,
                             테마1: finalData._theme === 1 ? '1' : (master['테마1'] || ''),
                             테마2: finalData._theme === 2 ? '1' : (master['테마2'] || ''),
@@ -1289,7 +1296,7 @@
                     try {
                         await window.setIDB('merch_export_draft', exportDraft);
                         ui.showToast(`✅ ${exportDraft.length}건을 출력검증센터로 전달했습니다.`);
-                        window.open('export_center.html', '_blank');
+                        window.open('export_center.html', 'ONEAPP_EXPORT_CENTER');
                     } catch (error) {
                         console.error('[Export Draft Error]', error);
                         ui.showToast('❌ 출력검증센터 전달 중 오류가 발생했습니다.');
@@ -1367,6 +1374,7 @@
                     <input 
                         type="text" 
                         ref={inputRef} 
+                        id="merch-global-search"
                         placeholder={placeholder || "결과 내 검색 (단어 조합)"} 
                         value={localVal} 
                         onChange={handleChange} 
@@ -1451,7 +1459,7 @@
                                     <option value="up">📈 인상</option>
                                     <option value="down">📉 인하</option>
                                     <option value="new">✨ 신규</option>
-                                    <option value="promo">🟣 행사</option>
+                                    <option value="promo">🟣 행사중</option>
                                     <option value="soldout">🟠 품절</option>
                                     <option value="stopped">🔴 정지중</option>
                                 </select>
@@ -1944,11 +1952,61 @@
 
             useEffect(() => {
                 const handleGlobalKeyDown = (e) => {
-                    const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+                    const activeEl = document.activeElement;
+                    const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl?.tagName);
+                    const hasModal = document.querySelector('[role="dialog"], .modal, .fixed.inset-0');
+                    
+                    if (e.key === 'F3') {
+                        e.preventDefault();
+                        const searchEl = document.getElementById('merch-global-search');
+                        if (searchEl) {
+                            searchEl.focus();
+                            searchEl.select();
+                            appActions.showToast('🔎 검색창으로 이동했습니다.');
+                        }
+                        return;
+                    }
+
+                    if (e.key === 'Escape') {
+                        if (isInput) {
+                            activeEl.blur();
+                            return;
+                        }
+                        if (!hasModal && appState.selectedRows.size > 0) {
+                            e.preventDefault();
+                            appActions.setSelectedRows(new Set());
+                            appActions.showToast('선택을 해제했습니다.');
+                        }
+                        return;
+                    }
+
+                    if (!isInput && !hasModal && ['ArrowDown', 'ArrowUp'].includes(e.key)) {
+                        e.preventDefault();
+                        const rows = appState.fullDisplayRows || [];
+                        if (rows.length === 0) return;
+                        const selectedList = Array.from(appState.selectedRows || []);
+                        const currentCode = selectedList.length ? selectedList[selectedList.length - 1] : null;
+                        const currentIdx = rows.findIndex(r => r.코드 === currentCode);
+                        const nextIdx = e.key === 'ArrowDown'
+                            ? Math.min((currentIdx < 0 ? -1 : currentIdx) + 1, rows.length - 1)
+                            : Math.max((currentIdx < 0 ? rows.length : currentIdx) - 1, 0);
+                        const nextCode = rows[nextIdx]?.코드;
+                        if (nextCode) appActions.setSelectedRows(new Set([nextCode]));
+                        return;
+                    }
+
+                    if (!isInput && !hasModal && e.key === 'Enter') {
+                        const rows = appState.fullDisplayRows || [];
+                        if (rows.length > 0 && appState.selectedRows.size === 0) {
+                            e.preventDefault();
+                            appActions.setSelectedRows(new Set([rows[0].코드]));
+                            return;
+                        }
+                    }
                     
                     if (e.key === 'F8') { 
                         e.preventDefault(); 
-                        if (isInput) document.activeElement.blur(); 
+                        if (isInput) activeEl.blur(); 
                         if (!appState.isProcessing && appState.fullDisplayRows.length > 0) { 
                             appActions.handleCommitEstimate(); 
                         } 
@@ -1956,13 +2014,13 @@
                     }
                     else if (e.key === 'F9') { 
                         e.preventDefault(); 
-                        if (isInput) document.activeElement.blur(); 
+                        if (isInput) activeEl.blur(); 
                         if (!appState.isProcessing) appActions.handleOpenExportCenter(); 
                     }
                 };
                 window.addEventListener('keydown', handleGlobalKeyDown);
                 return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-            }, [appState.isProcessing, appState.fullDisplayRows.length, appActions]);
+            }, [appState.isProcessing, appState.fullDisplayRows, appState.selectedRows, appActions]);
 
             return (
                 <div className="h-screen w-full bg-slate-100 flex justify-center overflow-hidden font-sans">
