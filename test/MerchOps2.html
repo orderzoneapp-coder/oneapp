@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v1.9.7 필터/UI 행사제안 패치]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v1.9.8 UI 정돈/단축버튼 이동 패치]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -1487,7 +1487,7 @@
             };
 
             return (
-                <div className="relative w-[180px] lg:w-[240px] h-9 shrink-0" onClick={() => {inputRef.current?.focus(); inputRef.current?.select();}}>
+                <div className="relative w-[220px] lg:w-[280px] h-9 shrink-0" onClick={() => {inputRef.current?.focus(); inputRef.current?.select();}}>
                     <input 
                         type="text" 
                         ref={inputRef} 
@@ -1544,9 +1544,19 @@
                         
                         <div className="flex-1 min-w-[10px]"></div>
                         
-                        <button onClick={() => window.location.href = 'SmartParser.html'} className="h-9 px-4 rounded-xl text-[12px] font-bold bg-slate-800 text-white shadow-sm hover:bg-slate-700 transition-colors flex items-center border border-slate-800 shrink-0" title="스마트 파서로 외부 텍스트 연동">
-                            <i className="fas fa-magic mr-2 text-[14px]"></i> 스마트 파서
-                        </button>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button onClick={() => window.location.href = 'SmartParser.html'} className="h-9 px-4 rounded-xl text-[12px] font-bold bg-slate-800 text-white shadow-sm hover:bg-slate-700 transition-colors flex items-center border border-slate-800 shrink-0" title="스마트 파서로 외부 텍스트 연동">
+                                <i className="fas fa-magic mr-2 text-[14px]"></i> 스마트 파서
+                            </button>
+
+                            <button onClick={handleCommitEstimate} disabled={fullDisplayRows.length === 0} className={`h-9 px-3 rounded-xl text-[12px] font-black shadow-sm flex items-center shrink-0 ${fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700 border border-slate-800' : 'bg-slate-200 text-slate-400 border border-slate-200 cursor-not-allowed'}`} title="마스터 DB 저장 (F8)">
+                                <i className="fas fa-save mr-1.5 text-[13px]"></i> F8
+                            </button>
+
+                            <button onClick={handleOpenExportCenter} disabled={fullDisplayRows.length === 0} className={`h-9 px-3 rounded-xl text-[12px] font-black shadow-sm flex items-center shrink-0 ${fullDisplayRows.length > 0 ? 'bg-emerald-600 text-white hover:bg-emerald-700 border border-emerald-700' : 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed'}`} title="통합 출력 센터 진입 (F9)">
+                                <i className="fas fa-print mr-1.5 text-[14px]"></i> F9
+                            </button>
+                        </div>
                     </div>
 
                     <div className="px-6 pt-3 pb-2 flex items-center gap-3 overflow-x-auto w-full">
@@ -1564,8 +1574,6 @@
                                 </button>
                             ))}
                         </div>
-
-                        <SearchBar value={globalSearch} onChange={setGlobalSearch} />
 
                         <div className="flex-1 min-w-[10px]"></div>
                         
@@ -1586,13 +1594,7 @@
                                 <i className="fas fa-redo-alt mr-1.5 text-[13px]"></i> 초기화
                             </button>
 
-                            <button onClick={handleCommitEstimate} disabled={fullDisplayRows.length === 0} className={`h-9 px-3 rounded-lg text-[12px] font-black shadow-sm flex items-center ${fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`} title="마스터 DB 저장 (F8)">
-                                <i className="fas fa-save mr-1.5 text-[13px]"></i> F8
-                            </button>
-
-                            <button onClick={handleOpenExportCenter} disabled={fullDisplayRows.length === 0} className={`h-9 px-3 rounded-lg text-[12px] font-black shadow-sm flex items-center ${fullDisplayRows.length > 0 ? 'bg-emerald-600 text-white hover:bg-emerald-700 border border-emerald-700' : 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed'}`} title="통합 출력 센터 진입 (F9)">
-                                <i className="fas fa-print mr-1.5 text-[14px]"></i> F9
-                            </button>
+                            <SearchBar value={globalSearch} onChange={setGlobalSearch} />
                         </div>
                     </div>
                 </div>
@@ -1760,13 +1762,13 @@
             
             const isSuspicious = isNumeric && localVal !== '' && localVal !== undefined && isNaN(Number(String(localVal).replace(/,/g, '')));
 
-            let baseBg = 'bg-[#fffdfb]'; 
+            let baseBg = 'bg-white'; 
             let textClass = isNumeric ? 'text-right font-bold text-slate-700' : 'text-center text-slate-700';
 
-            if (isHighlightCol) baseBg = 'bg-orange-50/70';
+            if (isHighlightCol) baseBg = 'bg-white';
             if (isDiff) {
-                baseBg = 'bg-amber-100/70';
-                textClass = isNumeric ? 'text-right font-bold text-indigo-700' : 'text-center text-indigo-700';
+                baseBg = 'bg-amber-50';
+                textClass = isNumeric ? 'text-right font-bold text-amber-800' : 'text-center text-amber-800';
             }
             if (isSuspicious) {
                 baseBg = '!bg-rose-100';
@@ -1849,12 +1851,12 @@
             };
 
             return (
-                <td className={`px-1 py-1 border-r border-slate-200 ${getCellWidthClass(linkedMasterField || field)} ${baseBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-100/40'} transition-colors relative`}>
+                <td className={`px-1 py-1 border-r border-slate-200 ${getCellWidthClass(linkedMasterField || field)} ${baseBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'} transition-colors relative`}>
                     <div className="flex flex-col justify-center h-full">
                         <div className={`flex items-center w-full ${isNumeric ? 'justify-end' : 'justify-center'}`}>
                             <input 
                                 type="text" 
-                                className={`w-full bg-transparent hover:bg-white/60 focus:bg-white focus:ring-1 focus:ring-orange-400 rounded px-1.5 outline-none ${textClass} text-[12px] py-1`} 
+                                className={`w-full bg-transparent hover:bg-white/60 focus:bg-white focus:ring-1 focus:ring-indigo-300 rounded px-1.5 outline-none ${textClass} text-[12px] py-1`} 
                                 value={localVal} 
                                 placeholder={mVal || ''} 
                                 onChange={(e) => setLocalVal(e.target.value)} 
@@ -1893,7 +1895,7 @@
 
             let issueText = '-';
             let issueSubText = marginText;
-            let issueCellBg = 'bg-[#fbfbfe]'; 
+            let issueCellBg = 'bg-white'; 
             let issueTextColor = 'text-slate-500';
 
             if (isEstimateUploaded) {
@@ -1901,30 +1903,30 @@
                 if (isStopPending) {
                     issueText = '정지대기';
                     issueSubText = marginText;
-                    issueCellBg = '!bg-rose-50';
+                    issueCellBg = 'bg-white';
                     issueTextColor = 'text-rose-700';
                 } else if (promoActive) {
                     issueText = '행사중';
                     issueTextColor = 'text-purple-700';
-                    issueCellBg = '!bg-purple-50';
+                    issueCellBg = 'bg-white';
                     if (stockQty === 0) {
                         issueSubText = '품절';
                         issueTextColor = 'text-rose-700';
-                        issueCellBg = '!bg-rose-50';
+                        issueCellBg = 'bg-white';
                     } else if (stockQty !== null && safeStock > 0 && stockQty < safeStock) {
                         issueSubText = '품절임박';
                         issueTextColor = 'text-amber-700';
-                        issueCellBg = '!bg-amber-50';
+                        issueCellBg = 'bg-white';
                     } else if (marginInfo.rate !== null && marginInfo.rate < 0) {
                         issueSubText = '역마진';
                         issueTextColor = 'text-rose-700';
-                        issueCellBg = '!bg-rose-50';
+                        issueCellBg = 'bg-white';
                     }
                 } else if (isPromoSuggestion(row, mItem, config)) {
                     issueText = '행사제안';
                     issueSubText = getPromoSuggestionReason(row, mItem, config) || marginText;
                     issueTextColor = 'text-fuchsia-700';
-                    issueCellBg = '!bg-fuchsia-50';
+                    issueCellBg = 'bg-white';
                 } else if (!mItem.코드) {
                     issueText = '신규등록';
                     issueSubText = marginText;
@@ -1942,7 +1944,7 @@
                     const diffLabel = diffAmount > 0 ? `기준 +${diffAmount.toLocaleString()}` : `기준 ${diffAmount.toLocaleString()}`;
                     issueSubText = isSpike ? `${diffLabel} · ${Math.round(diffRate)}%` : `${diffLabel} · ${marginText}`;
                     issueTextColor = diffAmount > 0 ? 'text-rose-600' : 'text-blue-600';
-                    issueCellBg = isSpike ? (diffAmount > 0 ? '!bg-rose-100' : '!bg-blue-100') : (diffAmount > 0 ? '!bg-rose-50' : '!bg-blue-50');
+                    issueCellBg = 'bg-white';
                 }
             }
 
@@ -1952,7 +1954,7 @@
                     issueText = issueText === '-' ? '단가확인' : issueText;
                     issueSubText = compareSummary.summary;
                     issueTextColor = issueText === '단가확인' ? 'text-violet-700' : issueTextColor;
-                    issueCellBg = issueText === '단가확인' ? '!bg-violet-50' : issueCellBg;
+                    issueCellBg = 'bg-white';
                 } else if (!['품절', '품절임박', '역마진'].includes(issueSubText)) {
                     issueSubText = compareSummary.summary;
                 }
@@ -1961,10 +1963,28 @@
             if ((issueText === '-' || !issueText) && marginInfo.rate !== null) {
                 issueSubText = marginText;
             }
+
+            const issueBadgeClassMap = {
+                '가격변동': 'bg-amber-50 text-amber-700 border-amber-200',
+                '단가확인': 'bg-sky-50 text-sky-700 border-sky-200',
+                '행사중': 'bg-violet-50 text-violet-700 border-violet-200',
+                '행사제안': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                '정지대기': 'bg-rose-50 text-rose-700 border-rose-200',
+                '신규등록': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                '신규/재입고': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                '품절/단종': 'bg-slate-100 text-slate-600 border-slate-200',
+                '-': 'bg-slate-50 text-slate-500 border-slate-200'
+            };
+            if (['품절', '품절임박', '역마진'].includes(issueSubText)) {
+                issueBadgeClassMap[issueText] = issueSubText === '품절임박'
+                    ? 'bg-orange-50 text-orange-700 border-orange-200'
+                    : 'bg-rose-50 text-rose-700 border-rose-200';
+            }
+            const issueBadgeClass = issueBadgeClassMap[issueText] || 'bg-slate-50 text-slate-600 border-slate-200';
             return (
-                <tr className={`group border-b border-slate-200 transition-all hover:shadow-[0_0_8px_rgba(59,130,246,0.12)] relative z-0 hover:z-10 ${isStopped ? 'opacity-70 bg-slate-50' : ''}`}>
+                <tr className={`group border-b border-slate-200 transition-all hover:bg-slate-50 relative z-0 hover:z-10 ${isStopped ? 'opacity-70 bg-slate-50' : ''}`}>
                     
-                    <td className={`sticky z-20 px-3 py-2 border-r border-slate-200 transition-colors min-w-[280px] w-[280px] max-w-[280px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : 'bg-slate-50 group-hover:!bg-slate-100 border-l-4 border-l-transparent group-hover:!border-l-slate-300'}`} style={{left: 0}}>
+                    <td className={`sticky z-20 px-3 py-2 border-r border-slate-200 transition-colors min-w-[280px] w-[280px] max-w-[280px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : 'bg-white group-hover:!bg-slate-50 border-l-4 border-l-transparent group-hover:!border-l-slate-300'}`} style={{left: 0}}>
                         <div className="flex gap-2 items-center w-full min-w-0">
                             {isEstimateUploaded && (
                                 <input type="checkbox" className="w-4 h-4 rounded border-slate-300 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500" checked={isSel} onChange={() => {const n = new Set(state.selectedRows); n.has(row.코드)?n.delete(row.코드):n.add(row.코드); actions.setSelectedRows(n);}} />
@@ -1993,7 +2013,7 @@
                             }
                             const isNum = window.NUMERIC_HEADERS.includes(h);
                             return (
-                                <td key={`idle-td-${h}`} className={`px-2 py-1.5 border-r border-slate-200 text-slate-600 ${getCellWidthClass(h)} ${isNum ? 'text-right font-bold' : 'text-center'} ${isSel ? '!bg-indigo-100/70' : 'bg-slate-50 group-hover:!bg-slate-100'}`}>
+                                <td key={`idle-td-${h}`} className={`px-2 py-1.5 border-r border-slate-200 text-slate-600 ${getCellWidthClass(h)} ${isNum ? 'text-right font-bold' : 'text-center'} ${isSel ? '!bg-indigo-100/70' : 'bg-white group-hover:!bg-slate-50'}`}>
                                     <div className={`truncate w-full ${h === '판매여부' ? salesClassName : ''}`}>{mVal}</div>
                                 </td>
                             );
@@ -2021,20 +2041,24 @@
                                 }
                                 
                                 return (
-                                    <td key={`pm-d-${h}`} className={`px-2 py-1.5 border-r border-slate-200 transition-colors ${getCellWidthClass(h)} ${isChanged ? 'bg-amber-50/80 text-amber-800' : 'bg-slate-50 text-slate-600'} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-100'} ${isNum ? 'text-right font-bold' : 'text-center'}`}>
+                                    <td key={`pm-d-${h}`} className={`px-2 py-1.5 border-r border-slate-200 transition-colors ${getCellWidthClass(h)} ${isChanged ? 'bg-amber-50 text-amber-800' : 'bg-white text-slate-600'} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'} ${isNum ? 'text-right font-bold' : 'text-center'}`}>
                                         <div className={`truncate w-full ${h === '판매여부' ? salesClassName : ''}`}>{formattedVal}</div>
                                     </td>
                                 );
                             })}
                             
-                            <td className={`px-2 py-1.5 border-l-2 border-indigo-300 border-r-2 border-r-indigo-300 text-center w-[150px] min-w-[150px] max-w-[150px] ${issueCellBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-50/50'}`}>
-                                <div className={`text-[12px] font-black ${issueTextColor}`}>
-                                    {issueText}
-                                </div>
-                                <div className="flex items-center justify-center gap-1 mt-0.5 min-w-0">
-                                    {issueSubText && <span className={`text-[10px] font-bold truncate ${issueSubText.startsWith('마진') ? marginToneClass + ' border px-1.5 py-0.5 rounded-full' : 'text-slate-500'}`} title={issueSubText}>{issueSubText}</span>}
-                                    {issueSubText && !issueSubText.startsWith('마진') && !['품절', '품절임박', '역마진'].includes(issueSubText) && marginInfo.rate !== null && <span className={`text-[9px] font-black border px-1.5 py-0.5 rounded-full shrink-0 ${marginToneClass}`}>{marginInfo.rate.toFixed(1)}%</span>}
-                                    {marginInfo.isPromo && issueSubText !== '품절' && issueSubText !== '품절임박' && issueSubText !== '역마진' && <span className="text-[9px] font-black bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded-full shrink-0">행사</span>}
+                            <td className={`px-2 py-1.5 border-l border-r border-slate-200 text-center w-[150px] min-w-[150px] max-w-[150px] ${issueCellBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'}`}>
+                                <div className="flex flex-col items-center justify-center gap-1 min-w-0">
+                                    {issueText && issueText !== '-' && (
+                                        <span className={`inline-flex items-center max-w-full px-2 py-0.5 rounded-full border text-[11px] font-black truncate ${issueBadgeClass}`} title={issueText}>
+                                            {issueText}
+                                        </span>
+                                    )}
+                                    <div className="flex items-center justify-center gap-1 min-w-0 max-w-full">
+                                        {issueSubText && <span className={`text-[10px] font-bold truncate ${issueSubText.startsWith('마진') ? marginToneClass + ' border px-1.5 py-0.5 rounded-full' : ['품절', '품절임박', '역마진'].includes(issueSubText) ? issueBadgeClass + ' border px-1.5 py-0.5 rounded-full' : 'text-slate-500'}`} title={issueSubText}>{issueSubText}</span>}
+                                        {issueSubText && !issueSubText.startsWith('마진') && !['품절', '품절임박', '역마진'].includes(issueSubText) && marginInfo.rate !== null && <span className={`text-[9px] font-black border px-1.5 py-0.5 rounded-full shrink-0 ${marginToneClass}`}>{marginInfo.rate.toFixed(1)}%</span>}
+                                        {marginInfo.isPromo && issueSubText !== '품절' && issueSubText !== '품절임박' && issueSubText !== '역마진' && <span className="text-[9px] font-black bg-violet-50 text-violet-700 border border-violet-200 px-1.5 py-0.5 rounded-full shrink-0">행사</span>}
+                                    </div>
                                 </div>
                             </td>
 
@@ -2068,9 +2092,9 @@
                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm h-full flex flex-col relative overflow-hidden">
                     <div className="flex-1 overflow-auto custom-scrollbar relative" onScroll={handleScroll}>
                         <table className="text-left border-collapse text-[13px] whitespace-nowrap relative z-0 w-max bg-white">
-                            <thead className="text-[12px] font-extrabold sticky top-0 z-[60] shadow-sm border-b-2 border-slate-300">
+                            <thead className="text-[12px] font-extrabold sticky top-0 z-[60] shadow-sm border-b border-slate-200">
                                 <tr>
-                                    <th className="sticky top-0 left-0 z-[70] bg-slate-200 px-3 py-2 border-r border-slate-300 text-slate-700 min-w-[280px] w-[280px] max-w-[280px]">
+                                    <th className="sticky top-0 left-0 z-[70] bg-slate-100 px-3 py-2 border-r border-slate-200 text-slate-700 min-w-[280px] w-[280px] max-w-[280px]">
                                         <div className="flex items-center gap-2 pl-1">
                                             {isEstimateUploaded && (
                                                 <input type="checkbox" className="rounded w-4 h-4 border-slate-400 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500" checked={selectedRows.size === fullDisplayRows.length && displayRows.length > 0} onChange={actions.toggleAllRows} />
@@ -2081,25 +2105,25 @@
 
                                     {!isEstimateUploaded ? (
                                         visibleMasterCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map(h => (
-                                            <th key={`idle-th-${h}`} className="sticky top-0 z-[60] bg-slate-200 px-2 py-3 border-r border-b border-slate-300 text-center text-slate-700 font-bold" style={{width: getCellWidthClass(h)}}>{h === '판매여부' ? '판매상태' : h}</th>
+                                            <th key={`idle-th-${h}`} className="sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-r border-b border-slate-200 text-center text-slate-700 font-bold" style={{width: getCellWidthClass(h)}}>{h === '판매여부' ? '판매상태' : h}</th>
                                         ))
                                     ) : (
                                         <>
                                             {visibleMasterCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map((h, i, arr) => (
-                                                <th key={`pm-${h}`} className="sticky top-0 z-[60] bg-slate-200 px-2 py-3 border-r border-b text-center text-slate-700 border-slate-300 font-bold" style={{width: getCellWidthClass(h)}}>
+                                                <th key={`pm-${h}`} className="sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-r border-b text-center text-slate-700 border-slate-200 font-bold" style={{width: getCellWidthClass(h)}}>
                                                     {h === '판매여부' ? '판매상태' : h}
                                                 </th>
                                             ))}
                                             
-                                            <th className="sticky top-0 z-[60] bg-[#eef2ff] px-2 py-3 border-b border-slate-300 border-l-2 border-l-indigo-300 border-r-2 border-r-indigo-300 text-center text-indigo-800 font-black min-w-[150px] w-[150px] max-w-[150px]">
+                                            <th className="sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-b border-slate-200 border-l border-l-slate-200 border-r border-r-slate-200 text-center text-slate-700 font-black min-w-[150px] w-[150px] max-w-[150px]">
                                                 이슈
                                             </th>
 
                                             {visibleUploadCols['estimate']?.filter(h => h !== '품목코드').map(h => {
                                                 const isHighlight = ['입고가', '도매A', '행사가', '출고가'].includes(h);
                                                 return (
-                                                    <th key={`pu-e-${h}`} className={`sticky top-0 z-[60] ${isHighlight ? 'bg-orange-100 text-orange-900 font-black' : 'bg-slate-200 text-slate-700'} px-2 py-3 border-r border-b border-slate-300 text-center`} style={{width: getCellWidthClass(h)}}>
-                                                        {h} {isHighlight && <i className="fas fa-bolt text-orange-500 ml-1 text-[10px]"></i>}
+                                                    <th key={`pu-e-${h}`} className={`sticky top-0 z-[60] bg-slate-100 text-slate-700 ${isHighlight ? 'font-black' : 'font-bold'} px-2 py-3 border-r border-b border-slate-200 text-center`} style={{width: getCellWidthClass(h)}}>
+                                                        {h} {isHighlight && <i className="fas fa-bolt text-amber-500 ml-1 text-[10px]"></i>}
                                                     </th>
                                                 );
                                             })}
