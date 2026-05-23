@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v1.9.5 설정저장/적용가마진/정지처리 패치]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v1.9.7 필터/UI 행사제안 패치]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -1549,50 +1549,50 @@
                         </button>
                     </div>
 
-                    <div className="px-6 pt-3 pb-2 flex items-center gap-4 overflow-x-auto w-full">
+                    <div className="px-6 pt-3 pb-2 flex items-center gap-3 overflow-x-auto w-full">
+                        <div className="flex items-center gap-1.5 shrink-0">
+                            {[
+                                ['all', '전체'],
+                                ['changed', '가격변동'],
+                                ['promo', '행사중'],
+                                ['promoSuggest', '행사제안'],
+                                ['basic', '기본상품'],
+                                ['nonBasic', '기본제외']
+                            ].map(([value, label]) => (
+                                <button key={value} onClick={() => setPriceFilter(value)} className={`h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+
+                        <SearchBar value={globalSearch} onChange={setGlobalSearch} />
+
                         <div className="flex-1 min-w-[10px]"></div>
                         
                         <div className="flex items-center gap-2 shrink-0">
-                            <button onClick={handleForceApplyMarginRules} className="h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100">
-                                <i className="fas fa-magic mr-1.5 text-[13px]"></i> 룰 적용
-                            </button>
-                            
-                            <button onClick={handleCommitEstimate} disabled={fullDisplayRows.length === 0} className={`h-9 px-5 rounded-lg text-[12px] font-black shadow-sm flex items-center ${fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`} title="마스터 DB 저장 (F8)">
-                                <i className="fas fa-save mr-1.5 text-[13px]"></i> 저장 <span className="ml-1.5 text-[9px] text-slate-400 font-normal">F8</span>
-                            </button>
+                            {selectedRows.size > 0 && (
+                                <>
+                                    <button onClick={handleForceApplyMarginRules} className="h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100">
+                                        <i className="fas fa-magic mr-1.5 text-[13px]"></i> 선택 룰적용
+                                    </button>
+                                    <button onClick={handleStopSales} className="h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100" title="체크한 상품을 판매중지 대기 상태로 표시">
+                                        <i className="fas fa-ban mr-1.5 text-[13px]"></i> 정지처리
+                                    </button>
+                                    <div className="w-px h-5 bg-slate-300 mx-1"></div>
+                                </>
+                            )}
 
-                            <button onClick={handleStopSales} disabled={selectedRows.size === 0} className={`h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center ${selectedRows.size > 0 ? 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100' : 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed'}`} title="체크한 상품을 판매중지 대기 상태로 표시">
-                                <i className="fas fa-ban mr-1.5 text-[13px]"></i> 정지처리
-                            </button>
-
-                            <div className="w-px h-5 bg-slate-300 mx-1"></div>
-
-                            <button onClick={handleOpenExportCenter} disabled={fullDisplayRows.length === 0} className={`h-9 px-4 rounded-lg text-[12px] font-bold shadow-sm flex items-center ${fullDisplayRows.length > 0 ? 'bg-emerald-600 text-white hover:bg-emerald-700 border border-emerald-700' : 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed'}`} title="통합 출력 센터 진입 (F9)">
-                                <i className="fas fa-print mr-1.5 text-[14px]"></i> 출력 센터 <span className="ml-1 text-[9px] text-emerald-200 tracking-wider">F9</span>
+                            <button onClick={handleReset} className="h-9 px-3 rounded-lg flex items-center text-[12px] font-bold text-slate-600 hover:text-slate-900 bg-white border border-slate-300 shadow-sm shrink-0" title="화면 초기화">
+                                <i className="fas fa-redo-alt mr-1.5 text-[13px]"></i> 초기화
                             </button>
 
-                            <div className="w-px h-5 bg-slate-300 mx-1"></div>
-
-                            <div className="relative shrink-0 flex items-center">
-                                <select value={priceFilter} onChange={(e) => setPriceFilter(e.target.value)} className={`appearance-none h-9 pl-3 pr-8 rounded-lg text-[12px] font-bold outline-none cursor-pointer border shadow-sm ${priceFilter !== 'all' ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-white border-slate-300 text-slate-600'}`}>
-                                    <option value="all">모든 상품</option>
-                                    <option value="changed">🔄 변동 상품</option>
-                                    <option value="up">📈 인상</option>
-                                    <option value="down">📉 인하</option>
-                                    <option value="new">✨ 신규</option>
-                                    <option value="promo">🟣 행사</option>
-                                    <option value="referenceDiff">🟪 참고가차</option>
-                                    <option value="soldout">🟠 품절</option>
-                                    <option value="stopped">🔴 정지중</option>
-                                </select>
-                                <i className={`fas fa-chevron-down absolute right-3 top-3 text-[10px] pointer-events-none ${priceFilter !== 'all' ? 'text-emerald-500' : 'text-slate-400'}`}></i>
-                            </div>
-                            
-                            <button onClick={handleReset} className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-800 bg-white border border-slate-300 shadow-sm shrink-0" title="화면 초기화">
-                                <i className="fas fa-redo-alt text-[13px]"></i>
+                            <button onClick={handleCommitEstimate} disabled={fullDisplayRows.length === 0} className={`h-9 px-3 rounded-lg text-[12px] font-black shadow-sm flex items-center ${fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`} title="마스터 DB 저장 (F8)">
+                                <i className="fas fa-save mr-1.5 text-[13px]"></i> F8
                             </button>
-                            
-                            <SearchBar value={globalSearch} onChange={setGlobalSearch} />
+
+                            <button onClick={handleOpenExportCenter} disabled={fullDisplayRows.length === 0} className={`h-9 px-3 rounded-lg text-[12px] font-black shadow-sm flex items-center ${fullDisplayRows.length > 0 ? 'bg-emerald-600 text-white hover:bg-emerald-700 border border-emerald-700' : 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed'}`} title="통합 출력 센터 진입 (F9)">
+                                <i className="fas fa-print mr-1.5 text-[14px]"></i> F9
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1668,6 +1668,84 @@
         };
 
         const hasComparePriceDiff = (row, config = {}) => getComparePriceSummary(row, config).hasDiff;
+
+        const isBasicItem = (item = {}) => {
+            const v = String(item?.['기본'] ?? '').trim().toLowerCase();
+            return v !== '' && v !== '0' && v !== 'n' && v !== 'false';
+        };
+
+        const getStockQty = (row = {}, mItem = {}) => {
+            const v = row.finalData?.['재고수량'] ?? row.sources?.inventory?.['재고수량'] ?? row.sources?.inventory?.['재고'] ?? row.sources?.estimate?.['재고수량'] ?? mItem?.['재고수량'] ?? mItem?.['재고'];
+            return v !== undefined && v !== null && v !== '' ? window.parseNum(v) : null;
+        };
+
+        const getSafeStock = (mItem = {}) => window.parseNum(mItem?.['안전재고']);
+
+        const getStockCost = (row = {}) => {
+            const v = getRowValueByField(row, '재고단가') || row.sources?.inventory?.['재고단가'] || row.sources?.inventory?.['입고가'];
+            return window.parseNum(v);
+        };
+
+        const getMarginInfo = (row = {}, mItem = {}) => {
+            const promoPrice = window.parseNum(row.finalData?.['행사가']);
+            const outPrice = window.parseNum(row.finalData?.['출고가'] !== undefined ? row.finalData['출고가'] : mItem?.['출고가']);
+            const price = promoPrice > 0 ? promoPrice : outPrice;
+            const inPrice = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : mItem?.['입고가']);
+            const rate = price > 0 ? ((price - inPrice) / price) * 100 : null;
+            return { price, inPrice, rate, isPromo: promoPrice > 0 };
+        };
+
+        const isPromoActive = (row = {}) => window.parseNum(row.finalData?.['행사가']) > 0;
+
+        const getMarginToneClass = (rate) => {
+            if (rate === null || rate === undefined || isNaN(rate)) return 'bg-slate-100 text-slate-400 border-slate-200';
+            if (rate < 0) return 'bg-rose-100 text-rose-800 border-rose-200';
+            if (rate < 10) return 'bg-amber-100 text-amber-800 border-amber-200';
+            if (rate >= 30) return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+            return 'bg-slate-100 text-slate-700 border-slate-200';
+        };
+
+        const isPromoSuggestion = (row = {}, mItem = {}, config = {}) => {
+            if (isPromoActive(row)) return false;
+            const marginInfo = getMarginInfo(row, mItem);
+            if (marginInfo.rate !== null && marginInfo.rate < 0) return false;
+
+            const oldIn = window.parseNum(mItem?.['입고가']);
+            const newIn = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : (row.sources?.estimate?.['입고가'] ?? row.sources?.inventory?.['입고가']));
+            const dropAmount = oldIn > 0 && newIn > 0 ? oldIn - newIn : 0;
+            const isLargeDrop = oldIn > 0 && newIn > 0 && newIn < oldIn && (dropAmount >= 500 || (dropAmount / oldIn) >= 0.10);
+            if (isLargeDrop) return true;
+
+            const stockQty = getStockQty(row, mItem);
+            const safeStock = getSafeStock(mItem);
+            if (stockQty !== null && safeStock > 0 && stockQty >= safeStock * 1.5) return true;
+
+            const stockCost = getStockCost(row);
+            if (stockCost > 0) {
+                const compareItems = getComparePriceSummary(row, config).items || [];
+                if (compareItems.some(item => item.value > stockCost)) return true;
+            }
+            return false;
+        };
+
+        const getPromoSuggestionReason = (row = {}, mItem = {}, config = {}) => {
+            const oldIn = window.parseNum(mItem?.['입고가']);
+            const newIn = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : (row.sources?.estimate?.['입고가'] ?? row.sources?.inventory?.['입고가']));
+            const dropAmount = oldIn > 0 && newIn > 0 ? oldIn - newIn : 0;
+            if (oldIn > 0 && newIn > 0 && newIn < oldIn && (dropAmount >= 500 || (dropAmount / oldIn) >= 0.10)) return `단가하락 ${Math.round((dropAmount / oldIn) * 100)}%`;
+
+            const stockQty = getStockQty(row, mItem);
+            const safeStock = getSafeStock(mItem);
+            if (stockQty !== null && safeStock > 0 && stockQty >= safeStock * 1.5) return `재고여유 ${(stockQty / safeStock).toFixed(1)}배`;
+
+            const stockCost = getStockCost(row);
+            if (stockCost > 0) {
+                const compareItems = getComparePriceSummary(row, config).items || [];
+                if (compareItems.some(item => item.value > stockCost)) return '재고가 유리';
+            }
+            return '';
+        };
+
 
         const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, data, isSel }) => {
             const isComparePrice = config.uploadColumnMeta?.[field]?.type === 'comparePrice';
@@ -1802,68 +1880,87 @@
             const oldP = window.parseNum(mItem['입고가']);
             const newP = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : (row.sources?.['estimate']?.['입고가'] ?? row.sources?.['inventory']?.['입고가'] ?? oldP));
             const diffAmount = newP - oldP;
-            
+            const diffRate = oldP > 0 && newP > 0 ? (diffAmount / oldP) * 100 : 0;
+            const marginInfo = getMarginInfo(row, mItem);
+            const marginText = marginInfo.rate !== null ? `마진 ${marginInfo.rate.toFixed(1)}%` : '마진 -';
+            const marginToneClass = getMarginToneClass(marginInfo.rate);
             const salesState = window.getMasterSalesState(mItem);
             const isStopPending = row.finalData?._salesStopRequested === true || String(row.finalData?.['판매여부']) === '0';
             const isStopped = salesState.code === '0' || isStopPending;
+            const promoActive = isPromoActive(row);
+            const stockQty = getStockQty(row, mItem);
+            const safeStock = getSafeStock(mItem);
 
             let issueText = '-';
-            let issueSubText = '';
+            let issueSubText = marginText;
             let issueCellBg = 'bg-[#fbfbfe]'; 
-            let issueTextColor = 'text-slate-400';
+            let issueTextColor = 'text-slate-500';
 
             if (isEstimateUploaded) {
-                const isSpike = oldP > 0 && newP > 0 && (Math.abs(diffAmount) / oldP >= 0.3) && Math.abs(diffAmount) >= 1000;
+                const isSpike = oldP > 0 && newP > 0 && (Math.abs(diffAmount) / oldP >= 0.3 || Math.abs(diffAmount) >= 1000);
                 if (isStopPending) {
                     issueText = '정지대기';
+                    issueSubText = marginText;
                     issueCellBg = '!bg-rose-50';
                     issueTextColor = 'text-rose-700';
-                } else {
-                
-                if (isSpike) {
-                    issueCellBg = newP > oldP ? '!bg-rose-100' : '!bg-blue-100';
-                }
-
-                if (!mItem.코드) {
+                } else if (promoActive) {
+                    issueText = '행사중';
+                    issueTextColor = 'text-purple-700';
+                    issueCellBg = '!bg-purple-50';
+                    if (stockQty === 0) {
+                        issueSubText = '품절';
+                        issueTextColor = 'text-rose-700';
+                        issueCellBg = '!bg-rose-50';
+                    } else if (stockQty !== null && safeStock > 0 && stockQty < safeStock) {
+                        issueSubText = '품절임박';
+                        issueTextColor = 'text-amber-700';
+                        issueCellBg = '!bg-amber-50';
+                    } else if (marginInfo.rate !== null && marginInfo.rate < 0) {
+                        issueSubText = '역마진';
+                        issueTextColor = 'text-rose-700';
+                        issueCellBg = '!bg-rose-50';
+                    }
+                } else if (isPromoSuggestion(row, mItem, config)) {
+                    issueText = '행사제안';
+                    issueSubText = getPromoSuggestionReason(row, mItem, config) || marginText;
+                    issueTextColor = 'text-fuchsia-700';
+                    issueCellBg = '!bg-fuchsia-50';
+                } else if (!mItem.코드) {
                     issueText = '신규등록';
+                    issueSubText = marginText;
                     issueTextColor = 'text-emerald-600';
                 } else if (oldP === 0 && newP > 0) {
                     issueText = '신규/재입고';
+                    issueSubText = marginText;
                     issueTextColor = 'text-emerald-600';
                 } else if (oldP > 0 && newP === 0) {
                     issueText = '품절/단종';
+                    issueSubText = marginText;
                     issueTextColor = 'text-slate-500';
-                } else if (oldP === 0 && newP === 0) {
-                    issueText = '-';
-                    issueTextColor = 'text-slate-400';
-                } else if (newP > oldP) {
-                    issueText = `▲ ${(newP - oldP).toLocaleString()}`;
-                    issueTextColor = isSpike ? 'text-rose-800' : 'text-rose-500';
-                } else if (newP < oldP) {
-                    issueText = `▼ ${(oldP - newP).toLocaleString()}`;
-                    issueTextColor = isSpike ? 'text-blue-800' : 'text-blue-500';
-                }
+                } else if (oldP > 0 && newP > 0 && newP !== oldP) {
+                    issueText = '가격변동';
+                    const diffLabel = diffAmount > 0 ? `기준 +${diffAmount.toLocaleString()}` : `기준 ${diffAmount.toLocaleString()}`;
+                    issueSubText = isSpike ? `${diffLabel} · ${Math.round(diffRate)}%` : `${diffLabel} · ${marginText}`;
+                    issueTextColor = diffAmount > 0 ? 'text-rose-600' : 'text-blue-600';
+                    issueCellBg = isSpike ? (diffAmount > 0 ? '!bg-rose-100' : '!bg-blue-100') : (diffAmount > 0 ? '!bg-rose-50' : '!bg-blue-50');
                 }
             }
 
             const compareSummary = getComparePriceSummary(row, config);
-            if (compareSummary.hasDiff && issueText === '-') {
-                issueText = '참고가차';
-                issueSubText = compareSummary.summary;
-                issueTextColor = 'text-violet-700';
-                issueCellBg = '!bg-violet-50';
-            } else if (compareSummary.hasDiff) {
-                issueSubText = compareSummary.summary;
+            if (compareSummary.hasDiff) {
+                if (issueText === '-' || issueText === '가격변동') {
+                    issueText = issueText === '-' ? '단가확인' : issueText;
+                    issueSubText = compareSummary.summary;
+                    issueTextColor = issueText === '단가확인' ? 'text-violet-700' : issueTextColor;
+                    issueCellBg = issueText === '단가확인' ? '!bg-violet-50' : issueCellBg;
+                } else if (!['품절', '품절임박', '역마진'].includes(issueSubText)) {
+                    issueSubText = compareSummary.summary;
+                }
             }
 
-            const appliedPromoPrice = window.parseNum(row.finalData?.['행사가']);
-            const appliedOutPrice = window.parseNum(row.finalData?.['출고가'] !== undefined ? row.finalData['출고가'] : mItem['출고가']);
-            const appliedPrice = appliedPromoPrice > 0 ? appliedPromoPrice : appliedOutPrice;
-            const appliedSourceLabel = appliedPromoPrice > 0 ? '행사' : '출고';
-            const appliedInPrice = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : mItem['입고가']);
-            const marginRate = appliedPrice > 0 ? ((appliedPrice - appliedInPrice) / appliedPrice) * 100 : null;
-            const marginTextColor = marginRate === null ? 'text-slate-400' : (marginRate < 0 ? 'text-rose-700' : (marginRate < 10 ? 'text-amber-700' : 'text-emerald-700'));
-
+            if ((issueText === '-' || !issueText) && marginInfo.rate !== null) {
+                issueSubText = marginText;
+            }
             return (
                 <tr className={`group border-b border-slate-200 transition-all hover:shadow-[0_0_8px_rgba(59,130,246,0.12)] relative z-0 hover:z-10 ${isStopped ? 'opacity-70 bg-slate-50' : ''}`}>
                     
@@ -1930,17 +2027,14 @@
                                 );
                             })}
                             
-                            <td className={`px-2 py-1.5 border-l-2 border-indigo-300 border-r border-indigo-200 text-center w-[100px] min-w-[100px] max-w-[100px] ${issueCellBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-50/50'}`}>
+                            <td className={`px-2 py-1.5 border-l-2 border-indigo-300 border-r-2 border-r-indigo-300 text-center w-[150px] min-w-[150px] max-w-[150px] ${issueCellBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-50/50'}`}>
                                 <div className={`text-[12px] font-black ${issueTextColor}`}>
                                     {issueText}
                                 </div>
-                                {issueSubText && <div className="text-[10px] font-bold text-slate-500 truncate mt-0.5" title={issueSubText}>{issueSubText}</div>}
-                            </td>
-
-                            <td className={`px-2 py-1.5 border-r-2 border-r-indigo-300 text-center w-[120px] min-w-[120px] max-w-[120px] bg-indigo-50/40 ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-50/50'}`}>
-                                <div className="text-[12px] font-black text-slate-800">{appliedPrice > 0 ? appliedPrice.toLocaleString() : '-'}</div>
-                                <div className={`text-[10px] font-bold ${marginTextColor}`}>
-                                    {appliedPrice > 0 ? `${appliedSourceLabel} · ${marginRate !== null ? marginRate.toFixed(1) + '%' : '-'}` : '-'}
+                                <div className="flex items-center justify-center gap-1 mt-0.5 min-w-0">
+                                    {issueSubText && <span className={`text-[10px] font-bold truncate ${issueSubText.startsWith('마진') ? marginToneClass + ' border px-1.5 py-0.5 rounded-full' : 'text-slate-500'}`} title={issueSubText}>{issueSubText}</span>}
+                                    {issueSubText && !issueSubText.startsWith('마진') && !['품절', '품절임박', '역마진'].includes(issueSubText) && marginInfo.rate !== null && <span className={`text-[9px] font-black border px-1.5 py-0.5 rounded-full shrink-0 ${marginToneClass}`}>{marginInfo.rate.toFixed(1)}%</span>}
+                                    {marginInfo.isPromo && issueSubText !== '품절' && issueSubText !== '품절임박' && issueSubText !== '역마진' && <span className="text-[9px] font-black bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded-full shrink-0">행사</span>}
                                 </div>
                             </td>
 
@@ -1997,12 +2091,8 @@
                                                 </th>
                                             ))}
                                             
-                                            <th className="sticky top-0 z-[60] bg-[#eef2ff] px-2 py-3 border-b border-slate-300 border-l-2 border-l-indigo-300 border-r border-r-indigo-200 text-center text-indigo-800 font-black min-w-[100px] w-[100px] max-w-[100px]">
+                                            <th className="sticky top-0 z-[60] bg-[#eef2ff] px-2 py-3 border-b border-slate-300 border-l-2 border-l-indigo-300 border-r-2 border-r-indigo-300 text-center text-indigo-800 font-black min-w-[150px] w-[150px] max-w-[150px]">
                                                 이슈
-                                            </th>
-
-                                            <th className="sticky top-0 z-[60] bg-[#eef2ff] px-2 py-3 border-b border-slate-300 border-r-2 border-r-indigo-300 text-center text-indigo-800 font-black min-w-[120px] w-[120px] max-w-[120px]">
-                                                적용가/마진
                                             </th>
 
                                             {visibleUploadCols['estimate']?.filter(h => h !== '품목코드').map(h => {
@@ -2154,21 +2244,20 @@
                 if (ui.priceFilter !== 'all') {
                     baseList = baseList.filter(item => {
                         const mItem = data.masterProducts[item.코드] || {};
-                        const saleState = window.getMasterSalesState(mItem);
+                        const oldIn = window.parseNum(mItem['입고가']);
+                        const newIn = window.parseNum(item.finalData?.['입고가'] !== undefined ? item.finalData['입고가'] : (item.sources?.['estimate']?.['입고가'] ?? item.sources?.['inventory']?.['입고가']));
+                        const oldOut = window.parseNum(mItem['출고가']);
+                        const newOut = window.parseNum(item.finalData?.['출고가'] !== undefined ? item.finalData['출고가'] : (item.sources?.['estimate']?.['출고가'] ?? item.sources?.['inventory']?.['출고가']));
+                        const oldPromo = window.parseNum(mItem['행사가']);
+                        const newPromo = window.parseNum(item.finalData?.['행사가'] !== undefined ? item.finalData['행사가'] : (item.sources?.['estimate']?.['행사가'] ?? item.sources?.['inventory']?.['행사가']));
 
-                        if (ui.priceFilter === 'stopped') return saleState.code === '0' || String(item.finalData?.['판매여부']) === '0' || item.finalData?._salesStopRequested === true;
-                        if (ui.priceFilter === 'promo') return saleState.label === '행사중';
-                        if (ui.priceFilter === 'soldout') return saleState.label === '품절';
-
-                        const oldP = window.parseNum(mItem['입고가']);
-                        const newP = window.parseNum(item.finalData?.['입고가'] !== undefined ? item.finalData['입고가'] : (item.sources?.['estimate']?.['입고가'] ?? item.sources?.['inventory']?.['입고가']));
-                        
-                        if (ui.priceFilter === 'referenceDiff') return hasComparePriceDiff(item, config);
-                        if (ui.priceFilter === 'new') return !data.masterProducts[item.코드];
-                        if (oldP === 0 || newP === 0) return false; 
-                        if (ui.priceFilter === 'changed') return oldP !== newP;
-                        if (ui.priceFilter === 'up') return newP > oldP;
-                        if (ui.priceFilter === 'down') return newP < oldP;
+                        if (ui.priceFilter === 'changed') {
+                            return (oldIn > 0 && newIn > 0 && oldIn !== newIn) || (oldOut > 0 && newOut > 0 && oldOut !== newOut) || oldPromo !== newPromo;
+                        }
+                        if (ui.priceFilter === 'promo') return isPromoActive(item);
+                        if (ui.priceFilter === 'promoSuggest') return isPromoSuggestion(item, mItem, config);
+                        if (ui.priceFilter === 'basic') return isBasicItem(mItem);
+                        if (ui.priceFilter === 'nonBasic') return !isBasicItem(mItem);
                         return true;
                     });
                 }
