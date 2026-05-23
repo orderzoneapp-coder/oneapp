@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 시스템 콘트롤 타워</title>
+    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.1 비교단가 설정]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -39,12 +39,24 @@
 
         const { useState, useMemo, useEffect, useCallback } = React;
 
+        const safeJSONParse = (key, defaultValue) => {
+            try {
+                const raw = localStorage.getItem(key);
+                if (!raw || raw === 'undefined' || raw === 'null') return defaultValue;
+                return JSON.parse(raw) || defaultValue;
+            } catch (e) {
+                console.warn(`[Config Parse Warning] ${key}`, e);
+                return defaultValue;
+            }
+        };
+
         const useMerchConfig = () => {
             const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v870') || '');
-            const [visibleMasterCols, setVisibleMasterCols] = useState(() => JSON.parse(localStorage.getItem('merchVisMaster_v870')) || { estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] });
-            const [visibleUploadCols, setVisibleUploadCols] = useState(() => JSON.parse(localStorage.getItem('merchVisUpload_v870')) || { estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명', '행사가'] });
-            const [mappings, setMappings] = useState(() => JSON.parse(localStorage.getItem('merchMappings_v870')) || { master: {}, estimate: {} });
-            const [masterLinks, setMasterLinks] = useState(() => JSON.parse(localStorage.getItem('merchMasterLinks_v870')) || { estimate: {} });
+            const [visibleMasterCols, setVisibleMasterCols] = useState(() => safeJSONParse('merchVisMaster_v870', { estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] }));
+            const [visibleUploadCols, setVisibleUploadCols] = useState(() => safeJSONParse('merchVisUpload_v870', { estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명', '행사가'] }));
+            const [mappings, setMappings] = useState(() => safeJSONParse('merchMappings_v870', { master: {}, estimate: {} }));
+            const [masterLinks, setMasterLinks] = useState(() => safeJSONParse('merchMasterLinks_v870', { estimate: {} }));
+            const [uploadColumnMeta, setUploadColumnMeta] = useState(() => safeJSONParse('merchUploadColumnMeta_v870', { estimate: {} }));
             const [marginRules, setMarginRules] = useState(() => {
                 const defaultRules = [
                     { id: 'rule_1', whCode: '01', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
@@ -55,8 +67,8 @@
                     { id: 'rule_6', whCode: '*', unit: '개, 낱개, 소분, EA, ea,', rate: 15, type: 'divide' },
                     { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }
                 ];
-                const s = localStorage.getItem('merchMarginRules_v878');
-                if (s) { const parsed = JSON.parse(s); if (parsed.length <= 1) return defaultRules; return parsed; }
+                const parsed = safeJSONParse('merchMarginRules_v878', null);
+                if (Array.isArray(parsed) && parsed.length > 1) return parsed;
                 return defaultRules;
             });
 
@@ -67,10 +79,11 @@
                 localStorage.setItem('merchMappings_v870', JSON.stringify(mappings));
                 localStorage.setItem('merchMasterLinks_v870', JSON.stringify(masterLinks));
                 localStorage.setItem('merchMarginRules_v878', JSON.stringify(marginRules));
+                localStorage.setItem('merchUploadColumnMeta_v870', JSON.stringify(uploadColumnMeta));
                 localStorage.setItem('config_sync_trigger', Date.now().toString()); 
-            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules]);
+            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules, uploadColumnMeta]);
 
-            return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules };
+            return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules, uploadColumnMeta, setUploadColumnMeta };
         };
 
         const useMerchData = () => {
@@ -102,6 +115,7 @@
             
             const [activeTab, setActiveTab] = useState('display');
             const [customEstColInput, setCustomEstColInput] = useState('');
+            const [isComparePriceCol, setIsComparePriceCol] = useState(false);
             const [toast, setToast] = useState('');
             const [isProcessing, setIsProcessing] = useState(false);
             const [processMsg, setProcessMsg] = useState('');
@@ -171,7 +185,8 @@
                                     mappings: config.mappings,
                                     masterLinks: config.masterLinks,
                                     visibleUploadCols: config.visibleUploadCols,
-                                    visibleMasterCols: config.visibleMasterCols
+                                    visibleMasterCols: config.visibleMasterCols,
+                                    uploadColumnMeta: config.uploadColumnMeta
                                 }
                             }
                         };
@@ -213,6 +228,7 @@
                                 if (result.data.appConfig.masterLinks) config.setMasterLinks(result.data.appConfig.masterLinks);
                                 if (result.data.appConfig.visibleUploadCols) config.setVisibleUploadCols(result.data.appConfig.visibleUploadCols);
                                 if (result.data.appConfig.visibleMasterCols) config.setVisibleMasterCols(result.data.appConfig.visibleMasterCols);
+                                if (result.data.appConfig.uploadColumnMeta) config.setUploadColumnMeta(result.data.appConfig.uploadColumnMeta);
                             }
                             
                             const masterCount = result.data.master ? Object.keys(result.data.master).length : 0;
@@ -258,14 +274,47 @@
 
             const toggleMasterCol = (tabId, header) => config.setVisibleMasterCols(prev => { const list = prev[tabId] || []; return { ...prev, [tabId]: list.includes(header) ? list.filter(h => h !== header) : [...list, header] }; });
 
-            const addCustomUploadCol = (type, val) => {
-                if(!val || !val.trim()) return; const cleanVal = val.trim();
+            const isComparePriceField = useCallback((type, header) => {
+                return config.uploadColumnMeta?.[type]?.[header]?.type === 'comparePrice';
+            }, [config.uploadColumnMeta]);
+
+            const addCustomUploadCol = (type, val, comparePrice = false) => {
+                if(!val || !val.trim()) return;
+                const cleanVal = val.trim();
                 if ((config.visibleUploadCols[type] || []).includes(cleanVal)) return showToast('⚠️ 이미 추가된 항목입니다.');
                 config.setVisibleUploadCols(prev => ({ ...prev, [type]: [...(prev[type] || []), cleanVal] }));
                 config.setMappings(prev => ({ ...prev, [type]: { ...prev[type], [cleanVal]: cleanVal } }));
                 config.setMasterLinks(prev => ({ ...prev, [type]: { ...prev[type], [cleanVal]: '' } }));
+                config.setUploadColumnMeta(prev => ({
+                    ...prev,
+                    [type]: {
+                        ...(prev?.[type] || {}),
+                        [cleanVal]: { type: comparePrice ? 'comparePrice' : 'normal' }
+                    }
+                }));
                 setCustomEstColInput('');
-                showToast('✅ 항목이 추가되었습니다.');
+                setIsComparePriceCol(false);
+                showToast(comparePrice ? '✅ 비교단가 항목이 추가되었습니다.' : '✅ 항목이 추가되었습니다.');
+            };
+
+            const removeUploadCol = (type, header) => {
+                config.setVisibleUploadCols(prev => ({ ...prev, [type]: (prev[type] || []).filter(x => x !== header) }));
+                config.setMappings(prev => {
+                    const nextType = { ...(prev?.[type] || {}) };
+                    delete nextType[header];
+                    return { ...prev, [type]: nextType };
+                });
+                config.setMasterLinks(prev => {
+                    const nextType = { ...(prev?.[type] || {}) };
+                    delete nextType[header];
+                    return { ...prev, [type]: nextType };
+                });
+                config.setUploadColumnMeta(prev => {
+                    const nextType = { ...(prev?.[type] || {}) };
+                    delete nextType[header];
+                    return { ...prev, [type]: nextType };
+                });
+                showToast('✅ 작업 항목이 삭제되었습니다.');
             };
 
             const addMarginRule = () => config.setMarginRules([...(config.marginRules || []), { id: typeof window.generateUUID === 'function' ? window.generateUUID() : crypto.randomUUID(), whCode: '', unit: '', rate: 10, type: 'divide' }]);
@@ -342,16 +391,26 @@
                                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mt-6">
                                     <h3 className="text-[15px] font-black mb-4 pb-2 border-b flex items-center text-slate-800"><i className="fas fa-edit text-emerald-500 mr-2"></i> 엑셀 작업 항목 노출 설정</h3>
                                     <div className="flex flex-wrap gap-2 mb-5">
-                                        {(config.visibleUploadCols['estimate']||[]).filter(h => h !== '품목코드').map(h => (
-                                            <div key={`u-e-${h}`} className="flex items-center px-4 py-2 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-800 text-[12px] font-bold shadow-sm group">
-                                                {h} <button onClick={()=>config.setVisibleUploadCols(p=>({...p, estimate:p.estimate.filter(x=>x!==h)}))} className="ml-2 text-emerald-400 hover:text-rose-500"><i className="fas fa-times"></i></button>
-                                            </div>
-                                        ))}
+                                        {(config.visibleUploadCols['estimate']||[]).filter(h => h !== '품목코드').map(h => {
+                                            const isCompare = isComparePriceField('estimate', h);
+                                            return (
+                                                <div key={`u-e-${h}`} className={`flex items-center px-4 py-2 rounded-full border text-[12px] font-bold shadow-sm group ${isCompare ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+                                                    <span>{h}</span>
+                                                    {isCompare && <span className="ml-2 px-1.5 py-0.5 rounded-full bg-amber-200/70 text-amber-800 text-[10px] font-black">비교단가</span>}
+                                                    <button onClick={()=>removeUploadCol('estimate', h)} className={`ml-2 ${isCompare ? 'text-amber-400' : 'text-emerald-400'} hover:text-rose-500`}><i className="fas fa-times"></i></button>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
-                                    <div className="flex items-center gap-2 max-w-md">
-                                        <input type="text" value={customEstColInput} onChange={e=>setCustomEstColInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addCustomUploadCol('estimate', customEstColInput)} placeholder="새로운 컬럼명 입력..." className="flex-1 border border-slate-300 rounded-xl px-4 py-2 text-[13px] outline-none focus:border-emerald-500" />
-                                        <button onClick={()=>addCustomUploadCol('estimate', customEstColInput)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-[13px] font-bold transition-colors">추가</button>
+                                    <div className="flex items-center gap-2 max-w-2xl">
+                                        <input type="text" value={customEstColInput} onChange={e=>setCustomEstColInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addCustomUploadCol('estimate', customEstColInput, isComparePriceCol)} placeholder="항목명 입력 예: 청산물류, 동원유통, 파서카탈로그..." className="flex-1 border border-slate-300 rounded-xl px-4 py-2 text-[13px] outline-none focus:border-emerald-500" />
+                                        <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-[12px] font-black cursor-pointer select-none">
+                                            <input type="checkbox" checked={isComparePriceCol} onChange={e=>setIsComparePriceCol(e.target.checked)} className="rounded border-amber-300 text-amber-500" />
+                                            비교단가
+                                        </label>
+                                        <button onClick={()=>addCustomUploadCol('estimate', customEstColInput, isComparePriceCol)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-[13px] font-bold transition-colors">추가</button>
                                     </div>
+                                    <p className="mt-3 text-[11px] text-slate-500 leading-relaxed">비교단가로 체크한 항목은 입고가를 자동으로 덮어쓰지 않으며, 마스터 DB에 직접 저장하지 않는 참고 단가로 사용합니다.</p>
                                 </div>
                             </div>
                         )}
@@ -362,23 +421,28 @@
                                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                                     <table className="w-full text-left text-[13px]">
                                         <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold">
-                                            <tr><th className="p-4 w-[160px]">화면 노출 항목</th><th className="p-4">엑셀 감지 키워드 (콤마 구분)</th><th className="p-4 w-[240px]">마스터 DB 연결</th></tr>
+                                            <tr><th className="p-4 w-[160px]">화면 노출 항목</th><th className="p-4 w-[120px] text-center">항목 유형</th><th className="p-4">엑셀 감지 키워드 (콤마 구분)</th><th className="p-4 w-[240px]">마스터 DB 연결</th></tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
                                             {requiredCoreFields.map(h => (
                                                 <tr key={`map-req-${h}`} className="bg-slate-50/50">
                                                     <td className="p-4 font-bold text-slate-700"><i className="fas fa-lock text-slate-400 mr-2"></i>{h}</td>
+                                                    <td className="p-4 text-center"><span className="bg-slate-200 text-slate-600 px-2 py-1 rounded-full text-[10px] font-black">필수</span></td>
                                                     <td className="p-4"><input type="text" value={config.mappings['estimate']?.[h]||''} onChange={e=>config.setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 bg-white" /></td>
                                                     <td className="p-4"><div className="text-[12px] text-slate-500 bg-slate-200 px-3 py-2 rounded-lg font-bold text-center"><i className="fas fa-key mr-1.5"></i>식별자 고정</div></td>
                                                 </tr>
                                             ))}
-                                            {(config.visibleUploadCols['estimate']||[]).filter(h => !requiredCoreFields.includes(h)).map(h => (
-                                                <tr key={`map-e-${h}`} className="hover:bg-slate-50 transition-colors">
-                                                    <td className="p-4 font-bold text-slate-800">{h}</td>
-                                                    <td className="p-4"><input type="text" value={config.mappings['estimate']?.[h]||''} onChange={e=>config.setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500" /></td>
-                                                    <td className="p-4"><select value={config.masterLinks['estimate']?.[h]||''} onChange={e=>config.setMasterLinks(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 bg-white font-bold text-slate-700"><option value="">-- DB 저장 안함 --</option>{selectableMasterHeaders.map(mh=><option key={mh} value={mh}>{mh}</option>)}</select></td>
-                                                </tr>
-                                            ))}
+                                            {(config.visibleUploadCols['estimate']||[]).filter(h => !requiredCoreFields.includes(h)).map(h => {
+                                                const isCompare = isComparePriceField('estimate', h);
+                                                return (
+                                                    <tr key={`map-e-${h}`} className="hover:bg-slate-50 transition-colors">
+                                                        <td className="p-4 font-bold text-slate-800">{h}</td>
+                                                        <td className="p-4 text-center">{isCompare ? <span className="bg-amber-100 text-amber-700 border border-amber-200 px-2 py-1 rounded-full text-[10px] font-black">비교단가</span> : <span className="bg-slate-100 text-slate-500 border border-slate-200 px-2 py-1 rounded-full text-[10px] font-bold">일반</span>}</td>
+                                                        <td className="p-4"><input type="text" value={config.mappings['estimate']?.[h]||''} onChange={e=>config.setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500" /></td>
+                                                        <td className="p-4">{isCompare ? <div className="text-[12px] text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg font-bold text-center"><i className="fas fa-ban mr-1.5"></i>DB 저장 안함</div> : <select value={config.masterLinks['estimate']?.[h]||''} onChange={e=>config.setMasterLinks(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 bg-white font-bold text-slate-700"><option value="">-- DB 저장 안함 --</option>{selectableMasterHeaders.map(mh=><option key={mh} value={mh}>{mh}</option>)}</select>}</td>
+                                                    </tr>
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>
