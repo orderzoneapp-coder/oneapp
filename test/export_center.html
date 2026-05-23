@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 출력검증센터 [v2.5.2 소분 출력 건수 복구]</title>
+    <title>ONEAPP MerchOps - 출력검증센터 [v2.5.5 정지처리 연동]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -84,6 +84,8 @@
         };
 
         const getSaleState = (row) => {
+            const rawStatus = row?.판매여부;
+            if (String(rawStatus).trim() === '0') return { code: '0', label: '정지중', text: '0 정지중', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
             const baseOut = parseNum(row.출고가);
             const promo = parseNum(row.행사가);
             const finalOut = parseNum(row.최종출고가);
@@ -133,6 +135,11 @@
             return s !== '' && s !== '0' && s !== '00' && s !== '-' && s.toLowerCase() !== 'undefined' && s.toLowerCase() !== 'null';
         };
 
+        // ============================================================
+        // [E-ENGINE-02] 소분가 계산 엔진
+        // 역할: 원물코드에 연결된 1종코드의 입고/출고 소분가를 계산한다.
+        // 확정 정책: 1출고 = 원물 기본 출고가 / 1종연산 + 경비. 행사가/최종적용가 기준이 아니다.
+        // ============================================================
         const calculateSubPriceInfo = (row) => {
             const div1 = parseNum(row['1종연산']);
             if (!isValidSubItemCode(row['1종코드']) || div1 <= 0) return null;
@@ -147,6 +154,11 @@
             return { code: String(row['1종코드']).trim(), spec: row['1종규격'] || '', div1, subIn, subOut };
         };
 
+        // ============================================================
+        // [E-OUTPUT-01] 소분품목 쇼핑몰 행 생성
+        // 역할: 1종코드가 있는 경우 ERP뿐 아니라 쇼핑몰업로드 시트에도 별도 출력 행을 추가한다.
+        // 주의: masterProducts[1종코드]가 있으면 상품명/규격을 우선 사용하고, 없으면 원물명 기반 보조명을 사용한다.
+        // ============================================================
         const buildSubShopRow = (parentRow, subInfo, masterProducts, sale) => {
             if (!subInfo) return null;
             const subMaster = masterProducts[subInfo.code] || {};
@@ -184,6 +196,11 @@
             }
         };
 
+        // ============================================================
+        // [E-ENGINE-01] 출력검증센터 계산출고가 엔진
+        // 역할: reviewRows 단계에서 입고가/외주비/노무비/창고/단위/마진룰 기준 계산출고가를 산출한다.
+        // 주의: 행사가가 있으면 최종적용 가격 판단은 후속 최종출고가 계산에서 처리한다.
+        // ============================================================
         const calculateReviewOutPrice = (baseInPrice, context = {}, marginRules = []) => {
             const inPrice = parseNum(baseInPrice);
             if (inPrice <= 0) return 0;
@@ -253,6 +270,11 @@
             }, [searchInput]);
 
             useEffect(() => {
+                // ============================================================
+                // [E-FLOW-01] 출력검증센터 데이터 로드
+                // 역할: merch_export_draft만 작업 대상으로 읽고, 해당 code에 대해서만 masterProducts를 기준정보로 참조한다.
+                // 금지: master_products 전체를 reviewRows 작업대상으로 전환하지 않는다.
+                // ============================================================
                 const loadData = async () => {
                     setIsProcessing(true);
                     try {
@@ -297,6 +319,7 @@
                                 기준출고가,
                                 기준시중가,
                                 기준판매여부,
+                                판매여부: working.판매여부 !== undefined && working.판매여부 !== '' ? working.판매여부 : 기준판매여부,
                                 입고가,
                                 불러온출고가,
                                 계산출고가,
@@ -331,6 +354,11 @@
                 loadData();
             }, [showToast, marginRules]);
 
+            // ============================================================
+            // [E-FLOW-02] 검증센터 단가/작업값 수정
+            // 역할: 입고가/출고가/행사가 수정 시 계산출고가와 최종 적용 가격을 즉시 갱신한다.
+            // 정책: 입고가 변경은 계산출고가를 출고가에 자동 반영하지만, 행사가가 있으면 최종 가격은 행사가가 우선한다.
+            // ============================================================
             const handleEdit = useCallback((code, field, value) => {
                 setReviewRows(prev => prev.map(row => {
                     if (row.코드 !== code) return row;
@@ -445,6 +473,11 @@
                 else setSortMode('category');
             }, []);
 
+            // ============================================================
+            // [E-OUTPUT-02] 최종 마스터 반영 + 통합 엑셀 출력
+            // 역할: reviewRows를 기준으로 마스터를 갱신하고 쇼핑몰업로드/ERP업데이트 시트를 생성한다.
+            // 주의: 엑셀만 출력은 추적성이 떨어져 제외한다. 소분품목은 원물과 별도 행으로 건수에 포함한다.
+            // ============================================================
             const handleExportExcel = useCallback(() => {
                 if (reviewRows.length === 0) return showToast('⚠️ 출력할 데이터가 없습니다.');
                 if (analysis.margin > 0 || analysis.anomaly > 0) {
@@ -532,6 +565,11 @@
                 }, 300);
             }, [reviewRows, masterProducts, analysis, showToast]);
 
+            // ============================================================
+            // [E-OUTPUT-03] 이미지 출력 데이터 브릿지
+            // 역할: reviewRows를 이미지 생성기가 읽는 ONEAPP_IMAGE_DATA_TEMP 구조로 변환한다.
+            // 주의: 이미지 가격은 최종 적용 가격 기준이며, 정지중 상품은 제외한다.
+            // ============================================================
             const handleImageExport = useCallback(() => {
                 if (reviewRows.length === 0) return showToast('⚠️ 이미지로 보낼 데이터가 없습니다.');
                 setIsProcessing(true);
