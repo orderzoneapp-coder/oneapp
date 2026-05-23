@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v1.9 출력검증 연동 확정]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v1.9.5 설정저장/적용가마진/정지처리 패치]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -119,6 +119,12 @@
             }); 
         };
 
+        // ============================================================
+        // [M-ENGINE-01] 단가 계산 엔진
+        // 역할: 입고가 + 외주비 + 노무비 + 마진룰을 기준으로 계산출고가를 산출한다.
+        // 주의: 행사가 우선 적용 판단은 여기서 하지 않는다. 행사가는 후속 final/출력 단계에서 우선권을 가진다.
+        // 수정 시 검증: 입고가 변경, 마진룰 변경, 창고/단위별 룰, forceRecalc 동작을 함께 확인한다.
+        // ============================================================
         window.calculatePricesEngine = (baseInPrice, providedOutPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
             const ROUND_UNIT = 100;
             const outsrc = (!currentFinalData?.['외주비'] && currentFinalData?.['외주비'] !== 0) 
@@ -179,6 +185,12 @@
             return calcOutPrice;
         };
 
+        // ============================================================
+        // [M-ENGINE-02] 현재 작업값 결정 엔진
+        // 역할: 마스터 기준정보 + 재고/견적 source를 조합하여 managedItems.finalData를 만든다.
+        // 원칙: 메인은 최종 판단자가 아니라 1차 작업대다. 최종 검증/출력은 출력검증센터에서 수행한다.
+        // 수정 시 검증: 재고 우선, 견적 우선, 행사가, 재고수량 기본값 999, forceRecalc를 함께 확인한다.
+        // ============================================================
         window.computeFinalData = (mItem, sources, marginRules, forceRecalc = false) => {
             const inv = sources['inventory'] || {};
             const est = sources['estimate'] || {};
@@ -477,6 +489,57 @@
             const [mappings, setMappings] = useState(() => safeJSONParse('merchMappings_v870', getInitialMappings()));
             const [masterLinks, setMasterLinks] = useState(() => safeJSONParse('merchMasterLinks_v870', getInitialMasterLinks()));
             const [marginRules, setMarginRules] = useState(() => safeJSONParse('merchMarginRules_v878', [{ id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }]));
+            const configHydratedRef = useRef(false);
+
+            // 환경설정 영속화: localStorage를 1차 저장소로 쓰고 IndexedDB에 백업한다.
+            // 기존 코드에는 상태 변경 후 localStorage.setItem이 없어, 재접속 시 하드코딩 기본값으로 돌아갈 수 있었다.
+            useEffect(() => {
+                let mounted = true;
+                const hydrateConfigFromIDB = async () => {
+                    try {
+                        const saved = await window.getIDB('merchops_config_v870');
+                        if (mounted && saved && typeof saved === 'object') {
+                            if (saved.cloudUrl !== undefined && !localStorage.getItem('merchCloudUrl_v870')) setCloudUrl(saved.cloudUrl || '');
+                            if (saved.visibleMasterCols && !localStorage.getItem('merchVisMaster_v870')) setVisibleMasterCols(saved.visibleMasterCols);
+                            if (saved.visibleUploadCols && !localStorage.getItem('merchVisUpload_v870')) setVisibleUploadCols(saved.visibleUploadCols);
+                            if (saved.mappings && !localStorage.getItem('merchMappings_v870')) setMappings(saved.mappings);
+                            if (saved.masterLinks && !localStorage.getItem('merchMasterLinks_v870')) setMasterLinks(saved.masterLinks);
+                            if (saved.marginRules && !localStorage.getItem('merchMarginRules_v878')) setMarginRules(saved.marginRules);
+                        }
+                    } catch (e) {
+                        console.warn('[MerchOps Config Hydrate]', e);
+                    } finally {
+                        if (mounted) configHydratedRef.current = true;
+                    }
+                };
+                hydrateConfigFromIDB();
+                return () => { mounted = false; };
+            }, []);
+
+            useEffect(() => {
+                if (!configHydratedRef.current) return;
+                const payload = {
+                    cloudUrl,
+                    visibleMasterCols,
+                    visibleUploadCols,
+                    mappings,
+                    masterLinks,
+                    marginRules,
+                    savedAt: new Date().toISOString()
+                };
+                try {
+                    localStorage.setItem('merchCloudUrl_v870', cloudUrl || '');
+                    localStorage.setItem('merchVisMaster_v870', JSON.stringify(visibleMasterCols));
+                    localStorage.setItem('merchVisUpload_v870', JSON.stringify(visibleUploadCols));
+                    localStorage.setItem('merchMappings_v870', JSON.stringify(mappings));
+                    localStorage.setItem('merchMasterLinks_v870', JSON.stringify(masterLinks));
+                    localStorage.setItem('merchMarginRules_v878', JSON.stringify(marginRules));
+                    localStorage.setItem('config_sync_trigger', Date.now().toString());
+                    if (window.setIDB) window.setIDB('merchops_config_v870', payload).catch(console.warn);
+                } catch (e) {
+                    console.warn('[MerchOps Config Persist]', e);
+                }
+            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules]);
 
             useEffect(() => {
                 const handleConfigSync = (e) => {
@@ -716,6 +779,11 @@
                 }
             }, [data.masterProducts, data.setMasterProducts, ui]);
 
+            // ============================================================
+            // [M-FLOW-01] 엑셀 업로드/매핑 처리
+            // 역할: 업로드 파일을 파싱하고 managedItems.sources 및 finalData를 구성한다.
+            // 주의: 여기서 masterProducts 전체를 작업 대상으로 만들지 않는다. 업로드/필터로 들어온 대상만 managedItems에 들어간다.
+            // ============================================================
             const handleFileUpload = useCallback(async (e, role = 'estimate') => { 
                 const files = Array.from(e.target.files); 
                 const targetInput = e.target; 
@@ -809,6 +877,11 @@
                 }
             }, [data.masterProducts, data.managedItems, config.mappings, config.masterLinks, config.marginRules, ui]);
 
+            // ============================================================
+            // [M-FLOW-02] 카탈로그/견적서 필터 불러오기
+            // 역할: 마스터 기준정보 중 사용자가 선택한 카탈로그/견적서 범위만 managedItems에 올린다.
+            // 주의: 선택한 범위는 작업범위가 되지만, masterProducts 전체를 출력대상으로 보내면 안 된다.
+            // ============================================================
             const handleLoadFilter = useCallback((type, name) => {
                 if (!name) return;
                 
@@ -937,6 +1010,8 @@
 
             const handleStopSales = useCallback(async () => {
                 if (ui.selectedRows.size === 0) return ui.showToast('⚠️ 판매 정지할 항목을 선택해주세요.');
+                const stopCount = ui.selectedRows.size;
+                if (!window.confirm(`선택한 ${stopCount}개 상품을 판매중지(0 정지중)로 표시하시겠습니까?\nF8 저장 시 마스터 판매여부에 반영됩니다.`)) return;
                 
                 ui.setIsProcessing(true);
                 ui.setProcessMsg('선택 항목 판매 정지 처리 중...');
@@ -945,15 +1020,20 @@
                     data.setManagedItems(prev => {
                         let next = { ...prev };
                         ui.selectedRows.forEach(code => {
-                            if (next[code]) {
-                                next[code].finalData = { ...next[code].finalData, '판매여부': 0 };
-                            }
+                            const current = next[code] || { 코드: code, sources: {}, finalData: {} };
+                            next[code] = {
+                                ...current,
+                                finalData: {
+                                    ...(current.finalData || {}),
+                                    '판매여부': 0,
+                                    _salesStopRequested: true
+                                }
+                            };
                         });
                         return next;
                     });
                     
-                    ui.setSelectedRows(new Set());
-                    ui.showToast(`✅ 선택한 ${ui.selectedRows.size}개 상품이 임시 판매중단(0) 처리되었습니다. F8을 눌러 저장하세요.`);
+                    ui.showToast(`✅ ${stopCount}개 상품이 정지처리 대기 상태입니다. F8 저장 시 마스터에 반영됩니다.`);
                     ui.setIsProcessing(false);
                     ui.setProcessMsg('');
                 }, 100);
@@ -1079,8 +1159,25 @@
                             newMaster[item.코드]['테마2'] = item.finalData._theme === 2 ? '1' : '';
                         }
 
-                        // 판매여부는 현재 작업대에서 결정하지 않는다.
-                        // 판매중/행사중/품절/정지중은 출력검증센터의 최종 저장 결과와 마스터 단가/재고 기준으로 판단한다.
+                        // 판매중지는 사용자가 체크 후 명시적으로 요청한 경우에만 마스터 판매여부에 반영한다.
+                        // 일반 가격/재고 작업 중에는 판매여부를 자동 판단해서 덮어쓰지 않는다.
+                        if (item.finalData._salesStopRequested === true || String(item.finalData['판매여부']) === '0') {
+                            const oldStatus = oldItem['판매여부'] !== undefined && oldItem['판매여부'] !== '' ? oldItem['판매여부'] : '-';
+                            if (String(oldStatus) !== '0') {
+                                localLogs.push({
+                                    id: window.generateUUID(),
+                                    timestamp: nowStr,
+                                    code: code,
+                                    name: oldItem.품목명 || item.sources?.estimate?.품목명 || '',
+                                    spec: oldItem.규격 || item.sources?.estimate?.규격 || '',
+                                    field: '판매여부',
+                                    oldVal: oldStatus,
+                                    newVal: '0 정지중',
+                                    diff: 0
+                                });
+                            }
+                            newMaster[item.코드]['판매여부'] = 0;
+                        }
                         
                         Object.keys(item.finalData).forEach(field => {
                             if (field.startsWith('_') || field === '판매여부') return; 
@@ -1154,6 +1251,11 @@
                 ui.showToast('작업 데이터가 초기화 되었습니다.');
             }, [data.setManagedItems, ui]);
 
+            // ============================================================
+            // [M-FLOW-03] 현재 작업범위 마진룰 재계산
+            // 역할: 환경설정의 연산룰 변경 시 현재 화면/선택 작업범위에 계산출고가를 다시 적용한다.
+            // 주의: masterProducts 전체 4,000건을 즉시 변경하지 않는다. 최종 저장 전까지는 managedItems 작업값이다.
+            // ============================================================
             const handleForceApplyMarginRules = useCallback(() => {
                 if (fullDisplayRows.length === 0) return ui.showToast('⚠️ 화면에 적용할 상품이 없습니다.');
 
@@ -1193,6 +1295,12 @@
                 }, 100);
             }, [fullDisplayRows, ui.selectedRows, data.masterProducts, data.setManagedItems, config.marginRules, ui]);
 
+            // ============================================================
+            // [M-BRIDGE-01] 출력검증센터 전달 브릿지
+            // 역할: 현재 선택/검색/화면 작업범위만 merch_export_draft로 패키징한다.
+            // 금지: masterProducts 전체, finalData 전체 객체, sources 전체 객체를 그대로 넘기지 않는다.
+            // 출력센터 이동: 현재 탭 이동 방식으로 새창 누적을 방지한다.
+            // ============================================================
             const handleOpenExportCenter = useCallback(() => {
                 if (Object.keys(data.managedItems).length === 0 && ui.activeTags.length === 0) {
                     ui.showToast('⚠️ 작업 중인 데이터가 없습니다. 출력검증센터로 넘길 수 없습니다.');
@@ -1258,6 +1366,14 @@
                             도매B: getNum('도매B'),
                             시중가: getNum('시중가'),
                             입고B: getNum('입고B'),
+                            판매여부: finalData._salesStopRequested === true ? 0 : (finalData['판매여부'] !== undefined ? finalData['판매여부'] : ''),
+                            // 소분가 생성을 위한 원물-소분 매칭 정보
+                            '1종코드': getStr('1종코드'),
+                            '1종규격': getStr('1종규격'),
+                            '1종연산': getNum('1종연산'),
+                            '경비': getNum('경비'),
+                            '외주비': getNum('외주비'),
+                            '노무비': getNum('노무비'),
                             재고수량: stockQty,
                             테마1: finalData._theme === 1 ? '1' : (master['테마1'] || ''),
                             테마2: finalData._theme === 2 ? '1' : (master['테마2'] || ''),
@@ -1289,7 +1405,7 @@
                     try {
                         await window.setIDB('merch_export_draft', exportDraft);
                         ui.showToast(`✅ ${exportDraft.length}건을 출력검증센터로 전달했습니다.`);
-                        window.open('export_center.html', '_blank');
+                        window.location.href = 'export_center.html';
                     } catch (error) {
                         console.error('[Export Draft Error]', error);
                         ui.showToast('❌ 출력검증센터 전달 중 오류가 발생했습니다.');
@@ -1367,6 +1483,7 @@
                     <input 
                         type="text" 
                         ref={inputRef} 
+                        id="merch-global-search"
                         placeholder={placeholder || "결과 내 검색 (단어 조합)"} 
                         value={localVal} 
                         onChange={handleChange} 
@@ -1434,6 +1551,10 @@
                             
                             <button onClick={handleCommitEstimate} disabled={fullDisplayRows.length === 0} className={`h-9 px-5 rounded-lg text-[12px] font-black shadow-sm flex items-center ${fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`} title="마스터 DB 저장 (F8)">
                                 <i className="fas fa-save mr-1.5 text-[13px]"></i> 저장 <span className="ml-1.5 text-[9px] text-slate-400 font-normal">F8</span>
+                            </button>
+
+                            <button onClick={handleStopSales} disabled={selectedRows.size === 0} className={`h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center ${selectedRows.size > 0 ? 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100' : 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed'}`} title="체크한 상품을 판매중지 대기 상태로 표시">
+                                <i className="fas fa-ban mr-1.5 text-[13px]"></i> 정지처리
                             </button>
 
                             <div className="w-px h-5 bg-slate-300 mx-1"></div>
@@ -1537,32 +1658,58 @@
                 });
             };
 
-            const handleKeyDown = (e) => { 
-                if (['ArrowUp', 'ArrowDown', 'Enter'].includes(e.key)) { 
-                    e.preventDefault(); 
-                    e.target.blur(); 
-                    
-                    const td = e.target.closest('td');
-                    const tr = td.closest('tr');
-                    const tbody = tr.closest('tbody');
-                    const tds = Array.from(tr.children);
-                    const colIdx = tds.indexOf(td);
-                    const trs = Array.from(tbody.children);
-                    const rowIdx = trs.indexOf(tr);
+            const focusGridInput = (targetInput) => {
+                if (!targetInput) return false;
+                targetInput.focus();
+                targetInput.select();
+                return true;
+            };
 
-                    let nextRowIdx = rowIdx;
-                    if (e.key === 'ArrowUp') nextRowIdx = Math.max(0, rowIdx - 1);
-                    if (e.key === 'ArrowDown' || e.key === 'Enter') nextRowIdx = Math.min(trs.length - 1, rowIdx + 1);
+            const findNextEditableInput = (td, tr, tbody, rowIdx, colIdx, direction) => {
+                const trs = Array.from(tbody.children).filter(rowEl => rowEl.querySelector('input'));
+                const safeRowIdx = trs.indexOf(tr);
+                if (safeRowIdx < 0) return null;
 
-                    if (nextRowIdx !== rowIdx) {
-                        const nextTr = trs[nextRowIdx];
-                        const nextInput = nextTr.children[colIdx]?.querySelector('input');
-                        if (nextInput) {
-                            nextInput.focus();
-                            nextInput.select();
-                        }
-                    }
-                } 
+                if (direction === 'down' || direction === 'up') {
+                    const nextRowIdx = direction === 'down'
+                        ? Math.min(trs.length - 1, safeRowIdx + 1)
+                        : Math.max(0, safeRowIdx - 1);
+                    return trs[nextRowIdx]?.children[colIdx]?.querySelector('input') || null;
+                }
+
+                const flatInputs = trs.flatMap(rowEl => Array.from(rowEl.querySelectorAll('input')));
+                const currentInput = td.querySelector('input');
+                const currentIdx = flatInputs.indexOf(currentInput);
+                if (currentIdx < 0) return null;
+
+                const nextIdx = direction === 'next'
+                    ? Math.min(flatInputs.length - 1, currentIdx + 1)
+                    : Math.max(0, currentIdx - 1);
+                return flatInputs[nextIdx] || null;
+            };
+
+            const handleKeyDown = (e) => {
+                if (!['ArrowUp', 'ArrowDown', 'Enter', 'Tab'].includes(e.key)) return;
+
+                e.preventDefault();
+                const td = e.target.closest('td');
+                const tr = td?.closest('tr');
+                const tbody = tr?.closest('tbody');
+                if (!td || !tr || !tbody) return;
+
+                e.target.blur();
+                const tds = Array.from(tr.children);
+                const colIdx = tds.indexOf(td);
+                const trs = Array.from(tbody.children);
+                const rowIdx = trs.indexOf(tr);
+
+                let direction = 'down';
+                if (e.key === 'ArrowUp') direction = 'up';
+                if (e.key === 'Tab') direction = e.shiftKey ? 'prev' : 'next';
+                if (e.key === 'Enter' || e.key === 'ArrowDown') direction = 'down';
+
+                const nextInput = findNextEditableInput(td, tr, tbody, rowIdx, colIdx, direction);
+                focusGridInput(nextInput);
             };
 
             return (
@@ -1599,7 +1746,8 @@
             const diffAmount = newP - oldP;
             
             const salesState = window.getMasterSalesState(mItem);
-            const isStopped = salesState.code === '0';
+            const isStopPending = row.finalData?._salesStopRequested === true || String(row.finalData?.['판매여부']) === '0';
+            const isStopped = salesState.code === '0' || isStopPending;
 
             let issueText = '-';
             let issueCellBg = 'bg-[#fbfbfe]'; 
@@ -1607,6 +1755,11 @@
 
             if (isEstimateUploaded) {
                 const isSpike = oldP > 0 && newP > 0 && (Math.abs(diffAmount) / oldP >= 0.3) && Math.abs(diffAmount) >= 1000;
+                if (isStopPending) {
+                    issueText = '정지대기';
+                    issueCellBg = '!bg-rose-50';
+                    issueTextColor = 'text-rose-700';
+                } else {
                 
                 if (isSpike) {
                     issueCellBg = newP > oldP ? '!bg-rose-100' : '!bg-blue-100';
@@ -1631,7 +1784,17 @@
                     issueText = `▼ ${(oldP - newP).toLocaleString()}`;
                     issueTextColor = isSpike ? 'text-blue-800' : 'text-blue-500';
                 }
+                }
             }
+
+            const appliedPromoPrice = window.parseNum(row.finalData?.['행사가']);
+            const appliedOutPrice = window.parseNum(row.finalData?.['출고가'] !== undefined ? row.finalData['출고가'] : mItem['출고가']);
+            const appliedPrice = appliedPromoPrice > 0 ? appliedPromoPrice : appliedOutPrice;
+            const appliedSourceLabel = appliedPromoPrice > 0 ? '행사' : '출고';
+            const appliedInPrice = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : mItem['입고가']);
+            const appliedCost = appliedInPrice + window.parseNum(row.finalData?.['외주비'] !== undefined ? row.finalData['외주비'] : mItem['외주비']) + window.parseNum(row.finalData?.['노무비'] !== undefined ? row.finalData['노무비'] : mItem['노무비']);
+            const marginRate = appliedPrice > 0 ? ((appliedPrice - appliedCost) / appliedPrice) * 100 : null;
+            const marginTextColor = marginRate === null ? 'text-slate-400' : (marginRate < 0 ? 'text-rose-700' : (marginRate < 10 ? 'text-amber-700' : 'text-emerald-700'));
 
             return (
                 <tr className={`group border-b border-slate-200 transition-all hover:shadow-[0_0_8px_rgba(59,130,246,0.12)] relative z-0 hover:z-10 ${isStopped ? 'opacity-70 bg-slate-50' : ''}`}>
@@ -1699,9 +1862,16 @@
                                 );
                             })}
                             
-                            <td className={`px-2 py-1.5 border-l-2 border-indigo-300 border-r-2 border-r-indigo-300 text-center w-[100px] min-w-[100px] max-w-[100px] ${issueCellBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-50/50'}`}>
+                            <td className={`px-2 py-1.5 border-l-2 border-indigo-300 border-r border-indigo-200 text-center w-[100px] min-w-[100px] max-w-[100px] ${issueCellBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-50/50'}`}>
                                 <div className={`text-[12px] font-black ${issueTextColor}`}>
                                     {issueText}
+                                </div>
+                            </td>
+
+                            <td className={`px-2 py-1.5 border-r-2 border-r-indigo-300 text-center w-[120px] min-w-[120px] max-w-[120px] bg-indigo-50/40 ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-50/50'}`}>
+                                <div className="text-[12px] font-black text-slate-800">{appliedPrice > 0 ? appliedPrice.toLocaleString() : '-'}</div>
+                                <div className={`text-[10px] font-bold ${marginTextColor}`}>
+                                    {appliedPrice > 0 ? `${appliedSourceLabel} · ${marginRate !== null ? marginRate.toFixed(1) + '%' : '-'}` : '-'}
                                 </div>
                             </td>
 
@@ -1742,31 +1912,35 @@
                                             {isEstimateUploaded && (
                                                 <input type="checkbox" className="rounded w-4 h-4 border-slate-400 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500" checked={selectedRows.size === fullDisplayRows.length && displayRows.length > 0} onChange={actions.toggleAllRows} />
                                             )}
-                                            <span className="truncate font-black">상품 기본정보</span>
+                                            <span className="truncate font-black">기본정보</span>
                                         </div>
                                     </th>
 
                                     {!isEstimateUploaded ? (
                                         visibleMasterCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map(h => (
-                                            <th key={`idle-th-${h}`} className="sticky top-0 z-[60] bg-slate-200 px-2 py-3 border-r border-b border-slate-300 text-center text-slate-700 font-bold" style={{width: getCellWidthClass(h)}}>{h === '판매여부' ? '마스터 판매상태' : h}</th>
+                                            <th key={`idle-th-${h}`} className="sticky top-0 z-[60] bg-slate-200 px-2 py-3 border-r border-b border-slate-300 text-center text-slate-700 font-bold" style={{width: getCellWidthClass(h)}}>{h === '판매여부' ? '판매상태' : h}</th>
                                         ))
                                     ) : (
                                         <>
                                             {visibleMasterCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map((h, i, arr) => (
                                                 <th key={`pm-${h}`} className="sticky top-0 z-[60] bg-slate-200 px-2 py-3 border-r border-b text-center text-slate-700 border-slate-300 font-bold" style={{width: getCellWidthClass(h)}}>
-                                                    {h === '판매여부' ? '마스터 판매상태' : `마스터 ${h}`}
+                                                    {h === '판매여부' ? '판매상태' : h}
                                                 </th>
                                             ))}
                                             
-                                            <th className="sticky top-0 z-[60] bg-[#eef2ff] px-2 py-3 border-b border-slate-300 border-l-2 border-l-indigo-300 border-r-2 border-r-indigo-300 text-center text-indigo-800 font-black min-w-[100px] w-[100px] max-w-[100px]">
-                                                시스템정보
+                                            <th className="sticky top-0 z-[60] bg-[#eef2ff] px-2 py-3 border-b border-slate-300 border-l-2 border-l-indigo-300 border-r border-r-indigo-200 text-center text-indigo-800 font-black min-w-[100px] w-[100px] max-w-[100px]">
+                                                이슈
+                                            </th>
+
+                                            <th className="sticky top-0 z-[60] bg-[#eef2ff] px-2 py-3 border-b border-slate-300 border-r-2 border-r-indigo-300 text-center text-indigo-800 font-black min-w-[120px] w-[120px] max-w-[120px]">
+                                                적용가/마진
                                             </th>
 
                                             {visibleUploadCols['estimate']?.filter(h => h !== '품목코드').map(h => {
                                                 const isHighlight = ['입고가', '도매A', '행사가', '출고가'].includes(h);
                                                 return (
                                                     <th key={`pu-e-${h}`} className={`sticky top-0 z-[60] ${isHighlight ? 'bg-orange-100 text-orange-900 font-black' : 'bg-slate-200 text-slate-700'} px-2 py-3 border-r border-b border-slate-300 text-center`} style={{width: getCellWidthClass(h)}}>
-                                                        {`불러온 ${h}`} {isHighlight && <i className="fas fa-bolt text-orange-500 ml-1 text-[10px]"></i>}
+                                                        {h} {isHighlight && <i className="fas fa-bolt text-orange-500 ml-1 text-[10px]"></i>}
                                                     </th>
                                                 );
                                             })}
@@ -1913,7 +2087,7 @@
                         const mItem = data.masterProducts[item.코드] || {};
                         const saleState = window.getMasterSalesState(mItem);
 
-                        if (ui.priceFilter === 'stopped') return saleState.code === '0';
+                        if (ui.priceFilter === 'stopped') return saleState.code === '0' || String(item.finalData?.['판매여부']) === '0' || item.finalData?._salesStopRequested === true;
                         if (ui.priceFilter === 'promo') return saleState.label === '행사중';
                         if (ui.priceFilter === 'soldout') return saleState.label === '품절';
 
@@ -1943,12 +2117,67 @@
             }), [ui.setShowCategoryModal, ui.setSelectedRows, ui.setGlobalSearch, ui.showToast, ui.setPriceFilter, customActions]);
 
             useEffect(() => {
+                // ============================================================
+                // [M-UX-01] 전역 키보드 조작
+                // 역할: F3 검색, ESC 해제, 방향키 행 이동, Tab 셀 이동, F8/F9 업무 단축키를 처리한다.
+                // 주의: 입력창/모달에서는 브라우저 기본 조작과 충돌하지 않도록 우선순위를 제한한다.
+                // ============================================================
                 const handleGlobalKeyDown = (e) => {
-                    const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+                    const activeEl = document.activeElement;
+                    const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl?.tagName);
+                    const hasModal = document.querySelector('[role="dialog"], .modal, .fixed.inset-0');
+                    
+                    if (e.key === 'F3') {
+                        e.preventDefault();
+                        const searchEl = document.getElementById('merch-global-search');
+                        if (searchEl) {
+                            searchEl.focus();
+                            searchEl.select();
+                            appActions.showToast('🔎 검색창으로 이동했습니다.');
+                        }
+                        return;
+                    }
+
+                    if (e.key === 'Escape') {
+                        if (isInput) {
+                            activeEl.blur();
+                            return;
+                        }
+                        if (!hasModal && appState.selectedRows.size > 0) {
+                            e.preventDefault();
+                            appActions.setSelectedRows(new Set());
+                            appActions.showToast('선택을 해제했습니다.');
+                        }
+                        return;
+                    }
+
+                    if (!isInput && !hasModal && ['ArrowDown', 'ArrowUp'].includes(e.key)) {
+                        e.preventDefault();
+                        const rows = appState.fullDisplayRows || [];
+                        if (rows.length === 0) return;
+                        const selectedList = Array.from(appState.selectedRows || []);
+                        const currentCode = selectedList.length ? selectedList[selectedList.length - 1] : null;
+                        const currentIdx = rows.findIndex(r => r.코드 === currentCode);
+                        const nextIdx = e.key === 'ArrowDown'
+                            ? Math.min((currentIdx < 0 ? -1 : currentIdx) + 1, rows.length - 1)
+                            : Math.max((currentIdx < 0 ? rows.length : currentIdx) - 1, 0);
+                        const nextCode = rows[nextIdx]?.코드;
+                        if (nextCode) appActions.setSelectedRows(new Set([nextCode]));
+                        return;
+                    }
+
+                    if (!isInput && !hasModal && e.key === 'Enter') {
+                        const rows = appState.fullDisplayRows || [];
+                        if (rows.length > 0 && appState.selectedRows.size === 0) {
+                            e.preventDefault();
+                            appActions.setSelectedRows(new Set([rows[0].코드]));
+                            return;
+                        }
+                    }
                     
                     if (e.key === 'F8') { 
                         e.preventDefault(); 
-                        if (isInput) document.activeElement.blur(); 
+                        if (isInput) activeEl.blur(); 
                         if (!appState.isProcessing && appState.fullDisplayRows.length > 0) { 
                             appActions.handleCommitEstimate(); 
                         } 
@@ -1956,13 +2185,13 @@
                     }
                     else if (e.key === 'F9') { 
                         e.preventDefault(); 
-                        if (isInput) document.activeElement.blur(); 
+                        if (isInput) activeEl.blur(); 
                         if (!appState.isProcessing) appActions.handleOpenExportCenter(); 
                     }
                 };
                 window.addEventListener('keydown', handleGlobalKeyDown);
                 return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-            }, [appState.isProcessing, appState.fullDisplayRows.length, appActions]);
+            }, [appState.isProcessing, appState.fullDisplayRows, appState.selectedRows, appActions]);
 
             return (
                 <div className="h-screen w-full bg-slate-100 flex justify-center overflow-hidden font-sans">
