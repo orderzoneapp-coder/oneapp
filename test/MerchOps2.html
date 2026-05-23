@@ -1821,8 +1821,122 @@
             return '';
         };
 
+        const parseHistoryTime = (log = {}) => {
+            if (log.timestampISO) {
+                const t = new Date(log.timestampISO).getTime();
+                if (!Number.isNaN(t)) return t;
+            }
+            if (log.timestamp) {
+                const t = new Date(log.timestamp).getTime();
+                if (!Number.isNaN(t)) return t;
+            }
+            return 0;
+        };
 
-        const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, data, isSel }) => {
+        const getHistoryLogsFromLocal = () => {
+            try {
+                const raw = JSON.parse(localStorage.getItem('merchHistory_v870') || '[]');
+                return Array.isArray(raw) ? raw : [];
+            } catch (e) {
+                console.warn('[MerchOps History Load]', e);
+                return [];
+            }
+        };
+
+        const getRowCatalogNames = (row = {}, mItem = {}) => {
+            const names = new Set();
+            if (row._tags && typeof row._tags.forEach === 'function') {
+                row._tags.forEach(tag => {
+                    const s = String(tag || '');
+                    if (s.startsWith('catalog:')) names.add(s.replace('catalog:', '').trim());
+                });
+            }
+            String(mItem?.['카탈로그'] || '').split(',').map(v => v.trim()).filter(Boolean).forEach(v => names.add(v));
+            String(row.finalData?.['카탈로그'] || row.sources?.estimate?.['카탈로그'] || '').split(',').map(v => v.trim()).filter(Boolean).forEach(v => names.add(v));
+            return Array.from(names).filter(Boolean);
+        };
+
+        const normalizeHistoryCatalog = (log = {}) => String(log.catalogName || log.catalog || log.quoteName || log.estimate || log.견적서 || '').trim();
+
+        const findLatestParserHistory = (code, catalogNames = [], field = '입고가') => {
+            const targetCode = String(code || '').trim();
+            const targets = Array.isArray(catalogNames) ? catalogNames.map(v => String(v).trim()).filter(Boolean) : [String(catalogNames || '').trim()].filter(Boolean);
+            if (!targetCode) return null;
+            const logs = getHistoryLogsFromLocal();
+            const exact = logs
+                .filter(log => String(log.code || '').trim() === targetCode)
+                .filter(log => !field || String(log.field || '').trim() === field)
+                .filter(log => String(log.source || log.origin || '').trim() === 'parser' || log.catalog || log.catalogName || String(log.actionType || '').includes('parser') || String(log.actionType || '').includes('catalog'))
+                .filter(log => targets.length === 0 || targets.includes(normalizeHistoryCatalog(log)))
+                .sort((a, b) => parseHistoryTime(b) - parseHistoryTime(a));
+            if (exact[0]) return exact[0];
+            return logs
+                .filter(log => String(log.code || '').trim() === targetCode)
+                .filter(log => !field || String(log.field || '').trim() === field)
+                .filter(log => String(log.source || log.origin || '').trim() === 'parser' || log.catalog || log.catalogName || String(log.actionType || '').includes('parser') || String(log.actionType || '').includes('catalog'))
+                .sort((a, b) => parseHistoryTime(b) - parseHistoryTime(a))[0] || null;
+        };
+
+        const formatSignedNumber = (v) => {
+            const n = Number(v || 0);
+            if (!n) return '0';
+            return n > 0 ? `+${n.toLocaleString()}` : n.toLocaleString();
+        };
+
+        const formatSignedRate = (v) => {
+            const n = Number(v || 0);
+            if (!Number.isFinite(n) || n === 0) return '0.0%';
+            return `${n > 0 ? '+' : ''}${n.toFixed(1)}%`;
+        };
+
+        const buildRowReport = ({ row, mItem, issueText, issueSubText, latestHistory, compareSummary, marginInfo, stockQty, safeStock, promoActive }) => {
+            const lines = [];
+            const oldIn = window.parseNum(mItem?.['입고가']);
+            const newIn = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : (row.sources?.estimate?.['입고가'] ?? row.sources?.inventory?.['입고가'] ?? oldIn));
+            if (latestHistory) {
+                const catalog = normalizeHistoryCatalog(latestHistory) || '파서';
+                const oldVal = latestHistory.oldVal ?? latestHistory.oldInPrice ?? oldIn;
+                const newVal = latestHistory.newVal ?? latestHistory.parsedInPrice ?? newIn;
+                const diff = latestHistory.diff !== undefined ? Number(latestHistory.diff) : (window.parseNum(newVal) - window.parseNum(oldVal));
+                const rate = latestHistory.diffRate !== undefined ? Number(latestHistory.diffRate) : (window.parseNum(oldVal) > 0 ? (diff / window.parseNum(oldVal)) * 100 : 0);
+                const match = latestHistory.matchStatus || latestHistory.applyMode || '';
+                lines.push(`${catalog} ${window.parseNum(oldVal).toLocaleString()}→${window.parseNum(newVal).toLocaleString()}`);
+                lines.push(`${formatSignedNumber(diff)} / ${formatSignedRate(rate)}${match ? `, ${match}` : ''}`);
+            } else if (getRowCatalogNames(row, mItem).length > 0 && issueText === '가격변동') {
+                lines.push('카탈로그 태그 있음');
+                lines.push('최근 입고가 변경근거 없음');
+            }
+
+            if (compareSummary?.hasDiff && lines.length < 2) {
+                lines.push(`비교단가: ${compareSummary.summary}`);
+            }
+
+            if (issueText === '행사제안' && lines.length < 2) {
+                lines.push(`행사제안: ${issueSubText || '조건 충족'}`);
+                if (stockQty !== null && safeStock > 0) lines.push(`재고 ${stockQty.toLocaleString()} / 안전 ${safeStock.toLocaleString()}`);
+            }
+
+            if (promoActive && marginInfo.rate !== null && marginInfo.rate < 0) {
+                lines.splice(0, 0, '행사가 < 입고가');
+                lines.splice(1, 0, '역마진 확인 필요');
+            } else if (promoActive && ['품절', '품절임박'].includes(issueSubText)) {
+                lines.splice(0, 0, `행사중 ${issueSubText}`);
+                if (stockQty !== null && safeStock > 0) lines.splice(1, 0, `재고 ${stockQty.toLocaleString()} / 안전 ${safeStock.toLocaleString()}`);
+            }
+
+            if (issueText === '정지대기') {
+                return ['판매정지 대기', 'F8/출력센터 저장 시 반영'];
+            }
+
+            if (lines.length === 0) {
+                if (marginInfo.rate !== null) return [`마진 ${marginInfo.rate.toFixed(1)}%`, marginInfo.isPromo ? '행사가 기준' : '출고가 기준'];
+                return ['특이사항 없음', ''];
+            }
+            return lines.slice(0, 2);
+        };
+
+
+        const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, data, isSel, extraClass = '' }) => {
             const isComparePrice = config.uploadColumnMeta?.[field]?.type === 'comparePrice';
             const isNumeric = isComparePrice || window.NUMERIC_HEADERS.includes(linkedMasterField) || window.NUMERIC_HEADERS.includes(field);
             const initialVal = row.finalData?.[field] !== undefined ? row.finalData[field] : (mVal !== undefined ? mVal : '');
@@ -1924,7 +2038,7 @@
             };
 
             return (
-                <td className={`px-1 py-1 border-r border-slate-200 ${getCellWidthClass(linkedMasterField || field)} ${baseBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'} transition-colors relative`}>
+                <td className={`px-1 py-1 border-r border-slate-200 ${extraClass} ${getCellWidthClass(linkedMasterField || field)} ${baseBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'} transition-colors relative`}>
                     <div className="flex flex-col justify-center h-full">
                         <div className={`flex items-center w-full ${isNumeric ? 'justify-end' : 'justify-center'}`}>
                             <input 
@@ -2054,10 +2168,13 @@
                     : 'bg-rose-50 text-rose-700 border-rose-200';
             }
             const issueBadgeClass = issueBadgeClassMap[issueText] || 'bg-slate-50 text-slate-600 border-slate-200';
+            const latestParserHistory = findLatestParserHistory(row.코드, getRowCatalogNames(row, mItem), '입고가');
+            const reportLines = buildRowReport({ row, mItem, issueText, issueSubText, latestHistory: latestParserHistory, compareSummary, marginInfo, stockQty, safeStock, promoActive });
+            const reportTone = reportLines.some(t => String(t).includes('역마진') || String(t).includes('근거 없음') || String(t).includes('근거없음')) ? 'text-rose-700' : (latestParserHistory ? 'text-slate-700' : 'text-slate-500');
             return (
                 <tr className={`group border-b border-slate-200 transition-all hover:bg-slate-50 relative z-0 hover:z-10 ${isStopped ? 'opacity-70 bg-slate-50' : ''}`}>
                     
-                    <td className={`sticky z-20 px-3 py-2 border-r border-slate-200 transition-colors min-w-[280px] w-[280px] max-w-[280px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : 'bg-white group-hover:!bg-slate-50 border-l-4 border-l-transparent group-hover:!border-l-slate-300'}`} style={{left: 0}}>
+                    <td className={`sticky z-20 px-3 py-2 border-r-2 border-r-slate-300 transition-colors min-w-[280px] w-[280px] max-w-[280px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : 'bg-white group-hover:!bg-slate-50 border-l-4 border-l-transparent group-hover:!border-l-slate-300'}`} style={{left: 0}}>
                         <div className="flex gap-2 items-center w-full min-w-0">
                             {isEstimateUploaded && (
                                 <input type="checkbox" className="w-4 h-4 rounded border-slate-300 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500" checked={isSel} onChange={() => {const n = new Set(state.selectedRows); n.has(row.코드)?n.delete(row.코드):n.add(row.코드); actions.setSelectedRows(n);}} />
@@ -2114,13 +2231,13 @@
                                 }
                                 
                                 return (
-                                    <td key={`pm-d-${h}`} className={`px-2 py-1.5 border-r border-slate-200 transition-colors ${getCellWidthClass(h)} ${isChanged ? 'bg-amber-50 text-amber-800' : 'bg-white text-slate-600'} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'} ${isNum ? 'text-right font-bold' : 'text-center'}`}>
+                                    <td key={`pm-d-${h}`} className={`px-2 py-1.5 border-r border-slate-200 transition-colors ${getCellWidthClass(h)} ${i === arr.length - 1 ? 'border-r-2 !border-r-slate-300' : ''} ${isChanged ? 'bg-amber-50 text-amber-800' : 'bg-white text-slate-600'} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'} ${isNum ? 'text-right font-bold' : 'text-center'}`}>
                                         <div className={`truncate w-full ${h === '판매여부' ? salesClassName : ''}`}>{formattedVal}</div>
                                     </td>
                                 );
                             })}
                             
-                            <td className={`px-2 py-1.5 border-l border-r border-slate-200 text-center w-[150px] min-w-[150px] max-w-[150px] ${issueCellBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'}`}>
+                            <td className={`px-2 py-1.5 border-l-2 border-l-slate-300 border-r-2 border-r-slate-300 text-center w-[150px] min-w-[150px] max-w-[150px] ${issueCellBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'}`}>
                                 <div className="flex flex-col items-center justify-center gap-1 min-w-0">
                                     {issueText && issueText !== '-' && (
                                         <span className={`inline-flex items-center max-w-full px-2 py-0.5 rounded-full border text-[11px] font-black truncate ${issueBadgeClass}`} title={issueText}>
@@ -2135,11 +2252,19 @@
                                 </div>
                             </td>
 
-                            {visibleUploadCols['estimate']?.filter(h => h !== '품목코드').map(h => {
+                            {visibleUploadCols['estimate']?.filter(h => h !== '품목코드').map((h, i, arr) => {
                                 const linkedMasterField = config.masterLinks['estimate']?.[h];
                                 const mVal = (linkedMasterField && row.코드 ? mItem[linkedMasterField] : undefined) ?? mItem[h];
-                                return <EditableCell key={`p-u-e-${h}`} row={row} field={h} linkedMasterField={linkedMasterField} mVal={mVal} config={config} data={data} isSel={isSel} />;
+                                return (
+                                    <EditableCell key={`p-u-e-${h}`} row={row} field={h} linkedMasterField={linkedMasterField} mVal={mVal} config={config} data={data} isSel={isSel} extraClass={i === arr.length - 1 ? 'border-r-2 !border-r-slate-300' : ''} />
+                                );
                             })}
+                            <td className={`px-3 py-1.5 bg-white border-r border-slate-200 min-w-[220px] w-[220px] max-w-[220px] ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'}`}>
+                                <div className={`flex flex-col justify-center gap-0.5 leading-tight ${reportTone}`}>
+                                    <div className="text-[11px] font-black truncate" title={reportLines[0] || ''}>{reportLines[0] || '-'}</div>
+                                    <div className="text-[10px] font-bold text-slate-500 truncate" title={reportLines[1] || ''}>{reportLines[1] || ''}</div>
+                                </div>
+                            </td>
                         </>
                     )}
                 </tr>
@@ -2167,7 +2292,7 @@
                         <table className="text-left border-collapse text-[13px] whitespace-nowrap relative z-0 w-max bg-white">
                             <thead className="text-[12px] font-extrabold sticky top-0 z-[60] shadow-sm border-b border-slate-200">
                                 <tr>
-                                    <th className="sticky top-0 left-0 z-[70] bg-slate-100 px-3 py-2 border-r border-slate-200 text-slate-700 min-w-[280px] w-[280px] max-w-[280px]">
+                                    <th className="sticky top-0 left-0 z-[70] bg-slate-100 px-3 py-2 border-r-2 border-r-slate-300 text-slate-700 min-w-[280px] w-[280px] max-w-[280px]">
                                         <div className="flex items-center gap-2 pl-1">
                                             {isEstimateUploaded && (
                                                 <input type="checkbox" className="rounded w-4 h-4 border-slate-400 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500" checked={selectedRows.size === fullDisplayRows.length && displayRows.length > 0} onChange={actions.toggleAllRows} />
@@ -2183,23 +2308,26 @@
                                     ) : (
                                         <>
                                             {visibleMasterCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map((h, i, arr) => (
-                                                <th key={`pm-${h}`} className="sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-r border-b text-center text-slate-700 border-slate-200 font-bold" style={{width: getCellWidthClass(h)}}>
+                                                <th key={`pm-${h}`} className={`sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-b text-center text-slate-700 font-bold ${i === arr.length - 1 ? 'border-r-2 border-r-slate-300' : 'border-r border-r-slate-200'}`} style={{width: getCellWidthClass(h)}}>
                                                     {h === '판매여부' ? '판매상태' : h}
                                                 </th>
                                             ))}
                                             
-                                            <th className="sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-b border-slate-200 border-l border-l-slate-200 border-r border-r-slate-200 text-center text-slate-700 font-black min-w-[150px] w-[150px] max-w-[150px]">
+                                            <th className="sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-b border-slate-200 border-l-2 border-l-slate-300 border-r-2 border-r-slate-300 text-center text-slate-700 font-black min-w-[150px] w-[150px] max-w-[150px]">
                                                 이슈
                                             </th>
 
-                                            {visibleUploadCols['estimate']?.filter(h => h !== '품목코드').map(h => {
+                                            {visibleUploadCols['estimate']?.filter(h => h !== '품목코드').map((h, i, arr) => {
                                                 const isHighlight = ['입고가', '도매A', '행사가', '출고가'].includes(h);
                                                 return (
-                                                    <th key={`pu-e-${h}`} className={`sticky top-0 z-[60] bg-slate-100 text-slate-700 ${isHighlight ? 'font-black' : 'font-bold'} px-2 py-3 border-r border-b border-slate-200 text-center`} style={{width: getCellWidthClass(h)}}>
+                                                    <th key={`pu-e-${h}`} className={`sticky top-0 z-[60] bg-slate-100 text-slate-700 ${isHighlight ? 'font-black' : 'font-bold'} px-2 py-3 border-b text-center ${i === arr.length - 1 ? 'border-r-2 border-r-slate-300' : 'border-r border-r-slate-200'}`} style={{width: getCellWidthClass(h)}}>
                                                         {h} {isHighlight && <i className="fas fa-bolt text-amber-500 ml-1 text-[10px]"></i>}
                                                     </th>
                                                 );
                                             })}
+                                            <th className="sticky top-0 z-[60] bg-slate-100 px-3 py-3 border-b border-slate-200 text-center text-slate-700 font-black min-w-[220px] w-[220px] max-w-[220px]">
+                                                리포트
+                                            </th>
                                         </>
                                     )}
                                 </tr>
@@ -2241,7 +2369,7 @@
                     <i className="fas fa-box-open"></i>
                     <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm"><i className="fas fa-check"></i></div>
                 </div>
-                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v1.6 통합 버전]</h2>
+                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v1.10.1 리포트 구간]</h2>
                 <p className="text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold">
                     현재 등록된 <span className="text-indigo-500">마스터 상품 데이터</span>가 없습니다.<br/>
                     견적 작업 및 파서 연동을 위해 전체 상품 DB를 세팅해주세요.
