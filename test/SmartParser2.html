@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Smart Parser [v3.0.3 코드검색 확장본]</title>
+    <title>ONEAPP MerchOps - Smart Parser [v3.0.6 히스토리 강화본]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -23,6 +23,15 @@
 
         const generateUUID = () => { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID(); return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16); }); };
         const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
+        const calcDiffRate = (oldVal, newVal) => {
+            const oldNum = parseNum(oldVal);
+            const newNum = parseNum(newVal);
+            if (!oldNum) return null;
+            return Math.round(((newNum - oldNum) / oldNum) * 1000) / 10;
+        };
+        const getNowISO = () => {
+            try { return new Date().toISOString(); } catch(e) { return ''; }
+        };
 
         const calculatePricesEngine = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
             const ROUND_UNIT = 100;
@@ -233,22 +242,84 @@
             const handleApplyMatched = useCallback(async (updateTextData = true) => {
                 const toApply = parserBuffer.filter(r => r._apply && r._matchCode); 
                 if (toApply.length === 0) { showToast("⚠️ 적용할 항목이 없습니다."); return false; }
-                
-                if (!window.confirm(`분석된 ${toApply.length}건의 데이터를 모두 저장하시겠습니까?`)) return false;
+                const catalogLabel = currentTag || '미지정';
+                const catalogWarning = currentTag ? '' : '\n\n※ 현재 카탈로그명이 미지정입니다. 히스토리에는 [미지정] 경로로 기록됩니다.';
+                if (!window.confirm(`분석된 ${toApply.length}건의 데이터를 마스터에 바로 적용하시겠습니까?\n\n※ 카탈로그/견적서 단가는 기존 구조처럼 마스터값으로 반영됩니다.\n※ 변경 전/후 값과 작업 경로는 히스토리에 상세 저장됩니다.${catalogWarning}`)) return false;
 
-                setIsProcessing(true); setProcessMsg("데이터베이스 저장 및 이력 기록 중...");
+                setIsProcessing(true); setProcessMsg("마스터 적용 및 상세 히스토리 기록 중...");
                 try {
-                    let newMaster = { ...masterProducts }; let newDict = { ...parserDict }; let newlyProcessed = new Set(processedCodes); let localLogs = []; const nowStr = new Date().toLocaleString('ko-KR');
+                    let newMaster = { ...masterProducts }; let newDict = { ...parserDict }; let newlyProcessed = new Set(processedCodes); let localLogs = []; const nowStr = new Date().toLocaleString('ko-KR'); const nowISO = getNowISO();
+                    const historyBase = {
+                        source: 'parser',
+                        sourceLabel: '스마트 파서',
+                        actionType: 'catalog_price_apply',
+                        applyMode: 'direct_master_apply',
+                        path: `SmartParser > ${catalogLabel} > master_products`,
+                        route: `파서/${catalogLabel}/마스터직접적용`,
+                        catalog: catalogLabel,
+                        catalogName: catalogLabel,
+                        quoteName: '',
+                        timestamp: nowStr,
+                        timestampISO: nowISO,
+                        version: 'smart-parser-v3.0.6-history-enhanced'
+                    };
+                    const makeHistoryLog = ({ code, row, oldItem, field, oldVal, newVal, memo, extra = {} }) => {
+                        const numericHistoryFields = ['입고가', '출고가', '시중가', '행사가', '판매여부', '1입고', '1출고', '2입고', '2출고', '재고수량'];
+                        const oldNum = parseNum(oldVal);
+                        const newNum = parseNum(newVal);
+                        const isNumericChange = numericHistoryFields.includes(field);
+                        const diff = isNumericChange ? newNum - oldNum : '';
+                        return {
+                            id: generateUUID(),
+                            ...historyBase,
+                            code,
+                            name: oldItem?.품목명 || row?.품목명 || '',
+                            spec: oldItem?.규격 || row?.규격 || '',
+                            unit: oldItem?.단위 || row?.단위 || '',
+                            parsedName: row?.품목명 || '',
+                            parsedSpec: row?.규격 || '',
+                            parsedUnit: row?.단위 || '',
+                            parsedInPrice: parseNum(row?.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : row?.입고가),
+                            parsedSoldOut: !!row?._isSoldOut,
+                            matchStatus: row?._matchStatus || '',
+                            field,
+                            oldVal,
+                            newVal,
+                            diff,
+                            diffRate: isNumericChange ? calcDiffRate(oldVal, newVal) : null,
+                            oldOutPrice: parseNum(oldItem?.출고가),
+                            oldSalePrice: parseNum(oldItem?.행사가),
+                            oldInPrice: parseNum(oldItem?.입고가),
+                            stockQty: parseNum(oldItem?.재고수량 ?? oldItem?.현재고 ?? oldItem?.재고),
+                            safeStock: parseNum(oldItem?.안전재고),
+                            memo: memo || '스마트 파서 마스터 직접 적용',
+                            ...extra
+                        };
+                    };
                     
                     let pendingList = await getIDB('pending_shop_status') || [];
                     let addedToPending = false;
 
                     toApply.forEach(row => {
-                        const code = row._matchCode; newlyProcessed.add(code); const oldItem = newMaster[code] || {}; if (!newMaster[code]) newMaster[code] = { 코드: code }; else newMaster[code] = { ...newMaster[code] };
+                        const code = row._matchCode;
+                        newlyProcessed.add(code);
+                        const oldItem = { ...(newMaster[code] || {}) };
+                        if (!newMaster[code]) newMaster[code] = { 코드: code }; else newMaster[code] = { ...newMaster[code] };
                         
-                        // ⭐ 텍스트 품절 감지 시 마스터 연동 및 대기열 적재
+                        // ⭐ 텍스트 품절 감지 시 기존 구조대로 마스터 판매여부 반영 및 대기열 적재
                         if (row._isSoldOut) {
+                            const oldSaleStatus = newMaster[code]['판매여부'];
                             newMaster[code]['판매여부'] = 0;
+                            if (String(oldSaleStatus ?? '') !== '0') {
+                                localLogs.push(makeHistoryLog({
+                                    code, row, oldItem,
+                                    field: '판매여부',
+                                    oldVal: oldSaleStatus ?? '',
+                                    newVal: 0,
+                                    memo: '파서 텍스트에서 품절/단종/판매중단 감지',
+                                    extra: { actionType: 'parser_soldout_detected', statusType: 'stop' }
+                                }));
+                            }
                             if (!pendingList.some(p => p.code === code)) {
                                 pendingList.push({ code: code, type: 'stop', name: newMaster[code].품목명 || row['품목명'] });
                                 addedToPending = true;
@@ -258,21 +329,84 @@
                         const pInNum = parseNum(row.finalData?.['입고가'] || row['입고가']);
                         if (pInNum > 0) {
                             const oldP = parseNum(oldItem['입고가']);
-                            if (oldP > 0 && oldP !== pInNum) localLogs.push({ id: generateUUID(), timestamp: nowStr, code: code, name: oldItem.품목명 || row['품목명'], spec: oldItem.규격 || row['규격'], field: '입고가', oldVal: oldP, newVal: pInNum, diff: pInNum - oldP, catalog: currentTag });
-                            newMaster[code]['입고가'] = pInNum; const recalculated = calculatePricesEngine(pInNum, newMaster[code], row.finalData || {}, marginRules, false); Object.assign(newMaster[code], recalculated);
+                            const beforeOut = parseNum(newMaster[code]['출고가']);
+                            const beforeMarket = parseNum(newMaster[code]['시중가']);
+                            const beforeUnitIn = parseNum(newMaster[code]['1입고']);
+                            const beforeUnitOut = parseNum(newMaster[code]['1출고']);
+
+                            if (oldP !== pInNum) {
+                                localLogs.push(makeHistoryLog({
+                                    code, row, oldItem,
+                                    field: '입고가',
+                                    oldVal: oldP,
+                                    newVal: pInNum,
+                                    memo: '카탈로그/견적서 파서 단가를 마스터 입고가에 적용',
+                                    extra: { priceChangeType: oldP === 0 ? 'new_price' : (pInNum > oldP ? 'up' : 'down') }
+                                }));
+                            }
+
+                            newMaster[code]['입고가'] = pInNum;
+                            const recalculated = calculatePricesEngine(pInNum, newMaster[code], row.finalData || {}, marginRules, false);
+                            Object.assign(newMaster[code], recalculated);
+
+                            const afterOut = parseNum(newMaster[code]['출고가']);
+                            const afterMarket = parseNum(newMaster[code]['시중가']);
+                            const afterUnitIn = parseNum(newMaster[code]['1입고']);
+                            const afterUnitOut = parseNum(newMaster[code]['1출고']);
+
+                            if (beforeOut !== afterOut) localLogs.push(makeHistoryLog({ code, row, oldItem, field: '출고가', oldVal: beforeOut, newVal: afterOut, memo: '입고가 변경에 따른 출고가 재계산', extra: { actionType: 'parser_price_recalc' } }));
+                            if (beforeMarket !== afterMarket) localLogs.push(makeHistoryLog({ code, row, oldItem, field: '시중가', oldVal: beforeMarket, newVal: afterMarket, memo: '입고가 변경에 따른 시중가 재계산', extra: { actionType: 'parser_price_recalc' } }));
+                            if (beforeUnitIn !== afterUnitIn) localLogs.push(makeHistoryLog({ code, row, oldItem, field: '1입고', oldVal: beforeUnitIn, newVal: afterUnitIn, memo: '입고가 변경에 따른 소분 입고가 재계산', extra: { actionType: 'parser_unit_price_recalc' } }));
+                            if (beforeUnitOut !== afterUnitOut) localLogs.push(makeHistoryLog({ code, row, oldItem, field: '1출고', oldVal: beforeUnitOut, newVal: afterUnitOut, memo: '출고가 변경에 따른 소분 출고가 재계산', extra: { actionType: 'parser_unit_price_recalc' } }));
                         }
-                        if (currentTag) newMaster[code]['카탈로그'] = addTag(newMaster[code]['카탈로그'], currentTag);
-                        if (updateTextData) { newMaster[code]['품목명'] = row['품목명'] || newMaster[code]['품목명']; newMaster[code]['규격'] = row['규격'] || newMaster[code]['규격']; newMaster[code]['단위'] = row['단위'] || newMaster[code]['단위']; }
+
+                        if (currentTag) {
+                            const oldCatalogTags = newMaster[code]['카탈로그'] || '';
+                            const newCatalogTags = addTag(oldCatalogTags, currentTag);
+                            if (oldCatalogTags !== newCatalogTags) {
+                                localLogs.push(makeHistoryLog({
+                                    code, row, oldItem,
+                                    field: '카탈로그',
+                                    oldVal: oldCatalogTags,
+                                    newVal: newCatalogTags,
+                                    memo: '파서 적용으로 카탈로그 태그 추가',
+                                    extra: { actionType: 'parser_catalog_tag_add' }
+                                }));
+                            }
+                            newMaster[code]['카탈로그'] = newCatalogTags;
+                        }
+
+                        if (updateTextData) {
+                            ['품목명', '규격', '단위'].forEach(fieldName => {
+                                const parsedVal = row[fieldName] || '';
+                                const oldVal = newMaster[code][fieldName] || '';
+                                if (parsedVal && oldVal !== parsedVal) {
+                                    localLogs.push(makeHistoryLog({
+                                        code, row, oldItem,
+                                        field: fieldName,
+                                        oldVal,
+                                        newVal: parsedVal,
+                                        memo: `파싱 텍스트 기준 ${fieldName} 갱신`,
+                                        extra: { actionType: 'parser_text_field_update' }
+                                    }));
+                                    newMaster[code][fieldName] = parsedVal;
+                                }
+                            });
+                        }
                         if (row['품목명'] && row._matchStatus.includes('수동일치')) newDict[`${normalizeText(row['품목명'])}|${normalizeText(row['규격'])}`] = code;
                     });
                     
-                    if (localLogs.length > 0) { let currentHistory = []; try { currentHistory = JSON.parse(localStorage.getItem('merchHistory_v870')) || []; } catch(e){} localStorage.setItem('merchHistory_v870', JSON.stringify([...localLogs, ...currentHistory].slice(0, 2000))); }
+                    if (localLogs.length > 0) {
+                        let currentHistory = [];
+                        try { currentHistory = JSON.parse(localStorage.getItem('merchHistory_v870')) || []; } catch(e){}
+                        localStorage.setItem('merchHistory_v870', JSON.stringify([...localLogs, ...currentHistory].slice(0, 5000)));
+                    }
                     
                     if (addedToPending) await setIDB('pending_shop_status', pendingList);
 
                     await saveMaster(newMaster); saveDict(newDict); setProcessedCodes(newlyProcessed);
                     const appliedIds = new Set(toApply.map(r => r._id)); setParserBuffer(prev => prev.filter(r => !appliedIds.has(r._id)));
-                    showToast(`✅ ${toApply.length}건 최종 반영 완료!`); return true;
+                    showToast(`✅ ${toApply.length}건 마스터 적용 및 상세 히스토리 기록 완료`); return true;
                 } catch (error) { console.error(error); showToast("❌ 데이터베이스 저장 중 오류가 발생했습니다."); return false; } finally { setIsProcessing(false); setProcessMsg(''); }
             }, [parserBuffer, masterProducts, parserDict, marginRules, currentTag, processedCodes, saveMaster, saveDict, setProcessedCodes, setParserBuffer, setIsProcessing, setProcessMsg, showToast]);
 
@@ -424,7 +558,7 @@
                 <div className="fixed inset-0 bg-slate-900/80 z-[200] flex justify-center items-center backdrop-blur-sm fade-in" onClick={onClose}>
                     <div className="bg-white w-[800px] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
                         <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
-                            <h2 className="font-black text-[16px]"><i className="fas fa-magic text-indigo-400 mr-2"></i>스마트 텍스트 파서 & 델타 동기화</h2>
+                            <h2 className="font-black text-[16px]"><i className="fas fa-magic text-indigo-400 mr-2"></i>스마트 텍스트 파서 & 히스토리 강화</h2>
                             {onClose && <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>}
                         </div>
                         <div className="p-6 flex flex-col bg-slate-50 space-y-4">
@@ -491,7 +625,7 @@
                 <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in" onClick={onClose}>
                     <div className="bg-white w-[900px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
                         <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
-                            <h2 className="font-black text-[16px]"><i className="fas fa-clipboard-check text-indigo-400 mr-2"></i>작업 완료 및 투트랙 검증</h2>
+                            <h2 className="font-black text-[16px]"><i className="fas fa-clipboard-check text-indigo-400 mr-2"></i>마스터 적용 전 검증</h2>
                             <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>
                         </div>
                         <div className="flex bg-slate-100 border-b border-slate-200 shrink-0 p-2 gap-2">
@@ -533,8 +667,8 @@
                             )}
                         </div>
                         <div className="bg-white p-4 border-t flex justify-between items-center shrink-0">
-                            <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 text-[12px] font-bold"><input type="checkbox" className="rounded text-indigo-600" checked={updateText} onChange={e => setUpdateText(e.target.checked)} /> 마스터 상품명 및 규격을 파싱된 텍스트로 덮어쓰기</label>
-                            <div className="flex gap-2"><button onClick={onClose} className="px-5 py-2.5 bg-slate-100 font-bold rounded-lg hover:bg-slate-200">닫기</button><button onClick={() => { onConfirm(updateText); onClose(); }} className="px-6 py-2.5 bg-indigo-600 text-white font-black rounded-lg hover:bg-indigo-700 shadow-sm"><i className="fas fa-save mr-1.5"></i> 최종 반영</button></div>
+                            <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 text-[12px] font-bold"><input type="checkbox" className="rounded text-indigo-600" checked={updateText} onChange={e => setUpdateText(e.target.checked)} /> 품목명/규격/단위도 파싱값으로 갱신</label>
+                            <div className="flex gap-2"><button onClick={onClose} className="px-5 py-2.5 bg-slate-100 font-bold rounded-lg hover:bg-slate-200">닫기</button><button onClick={() => { onConfirm(updateText); onClose(); }} className="px-6 py-2.5 bg-indigo-600 text-white font-black rounded-lg hover:bg-indigo-700 shadow-sm"><i className="fas fa-save mr-1.5"></i> 마스터 적용</button></div>
                         </div>
                     </div>
                 </div>
