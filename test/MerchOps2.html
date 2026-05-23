@@ -488,6 +488,7 @@
             const [visibleUploadCols, setVisibleUploadCols] = useState(() => safeJSONParse('merchVisUpload_v870', getInitialVisibleUploadCols()));
             const [mappings, setMappings] = useState(() => safeJSONParse('merchMappings_v870', getInitialMappings()));
             const [masterLinks, setMasterLinks] = useState(() => safeJSONParse('merchMasterLinks_v870', getInitialMasterLinks()));
+            const [uploadColumnMeta, setUploadColumnMeta] = useState(() => safeJSONParse('merchUploadColumnMeta_v870', {}));
             const [marginRules, setMarginRules] = useState(() => safeJSONParse('merchMarginRules_v878', [{ id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }]));
             const configHydratedRef = useRef(false);
 
@@ -504,6 +505,7 @@
                             if (saved.visibleUploadCols && !localStorage.getItem('merchVisUpload_v870')) setVisibleUploadCols(saved.visibleUploadCols);
                             if (saved.mappings && !localStorage.getItem('merchMappings_v870')) setMappings(saved.mappings);
                             if (saved.masterLinks && !localStorage.getItem('merchMasterLinks_v870')) setMasterLinks(saved.masterLinks);
+                            if (saved.uploadColumnMeta && !localStorage.getItem('merchUploadColumnMeta_v870')) setUploadColumnMeta(saved.uploadColumnMeta);
                             if (saved.marginRules && !localStorage.getItem('merchMarginRules_v878')) setMarginRules(saved.marginRules);
                         }
                     } catch (e) {
@@ -524,6 +526,7 @@
                     visibleUploadCols,
                     mappings,
                     masterLinks,
+                    uploadColumnMeta,
                     marginRules,
                     savedAt: new Date().toISOString()
                 };
@@ -533,13 +536,14 @@
                     localStorage.setItem('merchVisUpload_v870', JSON.stringify(visibleUploadCols));
                     localStorage.setItem('merchMappings_v870', JSON.stringify(mappings));
                     localStorage.setItem('merchMasterLinks_v870', JSON.stringify(masterLinks));
+                    localStorage.setItem('merchUploadColumnMeta_v870', JSON.stringify(uploadColumnMeta || {}));
                     localStorage.setItem('merchMarginRules_v878', JSON.stringify(marginRules));
                     localStorage.setItem('config_sync_trigger', Date.now().toString());
                     if (window.setIDB) window.setIDB('merchops_config_v870', payload).catch(console.warn);
                 } catch (e) {
                     console.warn('[MerchOps Config Persist]', e);
                 }
-            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules]);
+            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, uploadColumnMeta, marginRules]);
 
             useEffect(() => {
                 const handleConfigSync = (e) => {
@@ -548,12 +552,14 @@
                         const fVisUpload = safeJSONParse('merchVisUpload_v870', null); 
                         const fMappings = safeJSONParse('merchMappings_v870', null); 
                         const fMasterLinks = safeJSONParse('merchMasterLinks_v870', null); 
+                        const fUploadColumnMeta = safeJSONParse('merchUploadColumnMeta_v870', null);
                         const fMarginRules = safeJSONParse('merchMarginRules_v878', null);
                         
                         if(fVisMaster) setVisibleMasterCols(fVisMaster); 
                         if(fVisUpload) setVisibleUploadCols(fVisUpload); 
                         if(fMappings) setMappings(fMappings); 
                         if(fMasterLinks) setMasterLinks(fMasterLinks); 
+                        if(fUploadColumnMeta) setUploadColumnMeta(fUploadColumnMeta);
                         if(fMarginRules) setMarginRules(fMarginRules);
                     }
                 };
@@ -567,6 +573,7 @@
                 visibleUploadCols, setVisibleUploadCols, 
                 mappings, setMappings, 
                 masterLinks, setMasterLinks, 
+                uploadColumnMeta, setUploadColumnMeta,
                 marginRules, setMarginRules 
             };
         };
@@ -848,7 +855,8 @@
                                     if (actualHeaders.includes(actualKey)) {
                                         const val = row[actualKey];
                                         const safeVal = (val !== undefined && val !== null) ? val : '';
-                                        const isNumeric = window.NUMERIC_HEADERS.includes(config.masterLinks['estimate']?.[h]) || window.NUMERIC_HEADERS.includes(h);
+                                        const isComparePrice = config.uploadColumnMeta?.[h]?.type === 'comparePrice';
+                                        const isNumeric = isComparePrice || window.NUMERIC_HEADERS.includes(config.masterLinks['estimate']?.[h]) || window.NUMERIC_HEADERS.includes(h);
                                         mItem.sources[role][h] = isNumeric ? window.parseNum(safeVal) : safeVal;
                                     }
                                 }
@@ -875,7 +883,7 @@
                     ui.setIsProcessing(false); 
                     ui.setProcessMsg(''); 
                 }
-            }, [data.masterProducts, data.managedItems, config.mappings, config.masterLinks, config.marginRules, ui]);
+            }, [data.masterProducts, data.managedItems, config.mappings, config.masterLinks, config.uploadColumnMeta, config.marginRules, ui]);
 
             // ============================================================
             // [M-FLOW-02] 카탈로그/견적서 필터 불러오기
@@ -1572,7 +1580,8 @@
                                     <option value="up">📈 인상</option>
                                     <option value="down">📉 인하</option>
                                     <option value="new">✨ 신규</option>
-                                    <option value="promo">🟣 행사중</option>
+                                    <option value="promo">🟣 행사</option>
+                                    <option value="referenceDiff">🟪 참고가차</option>
                                     <option value="soldout">🟠 품절</option>
                                     <option value="stopped">🔴 정지중</option>
                                 </select>
@@ -1612,8 +1621,57 @@
             );
         };
 
+
+        const getComparePriceFields = (config = {}) => {
+            const meta = config.uploadColumnMeta || {};
+            return Object.keys(meta).filter(field => meta[field]?.type === 'comparePrice');
+        };
+
+        const getRowValueByField = (row, field) => {
+            if (!row) return '';
+            const finalData = row.finalData || {};
+            const sources = row.sources || {};
+            if (finalData[field] !== undefined && finalData[field] !== '') return finalData[field];
+            if (sources.inventory && sources.inventory[field] !== undefined && sources.inventory[field] !== '') return sources.inventory[field];
+            if (sources.estimate && sources.estimate[field] !== undefined && sources.estimate[field] !== '') return sources.estimate[field];
+            if (sources.parser && sources.parser[field] !== undefined && sources.parser[field] !== '') return sources.parser[field];
+            return '';
+        };
+
+        const getComparePriceSummary = (row, config = {}) => {
+            const basePrice = window.parseNum(getRowValueByField(row, '입고가'));
+            if (basePrice <= 0) return { hasDiff: false, summary: '', minDiff: 0, maxDiff: 0, items: [] };
+
+            const items = getComparePriceFields(config)
+                .map(field => ({ field, value: window.parseNum(getRowValueByField(row, field)) }))
+                .filter(item => item.value > 0 && item.value !== basePrice)
+                .map(item => ({ ...item, diff: item.value - basePrice }));
+
+            if (items.length === 0) return { hasDiff: false, summary: '', minDiff: 0, maxDiff: 0, items: [] };
+
+            const formatDiff = (diff) => diff > 0 ? `+${diff.toLocaleString()}` : diff.toLocaleString();
+            if (items.length === 1) {
+                const item = items[0];
+                return { hasDiff: true, summary: `${item.field} ${formatDiff(item.diff)}`, minDiff: item.diff, maxDiff: item.diff, items };
+            }
+
+            const sorted = [...items].sort((a, b) => a.diff - b.diff);
+            const min = sorted[0];
+            const max = sorted[sorted.length - 1];
+            return {
+                hasDiff: true,
+                summary: `${min.field} ${formatDiff(min.diff)} ~ ${max.field} ${formatDiff(max.diff)}`,
+                minDiff: min.diff,
+                maxDiff: max.diff,
+                items
+            };
+        };
+
+        const hasComparePriceDiff = (row, config = {}) => getComparePriceSummary(row, config).hasDiff;
+
         const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, data, isSel }) => {
-            const isNumeric = window.NUMERIC_HEADERS.includes(linkedMasterField) || window.NUMERIC_HEADERS.includes(field);
+            const isComparePrice = config.uploadColumnMeta?.[field]?.type === 'comparePrice';
+            const isNumeric = isComparePrice || window.NUMERIC_HEADERS.includes(linkedMasterField) || window.NUMERIC_HEADERS.includes(field);
             const initialVal = row.finalData?.[field] !== undefined ? row.finalData[field] : (mVal !== undefined ? mVal : '');
             const [localVal, setLocalVal] = useState(initialVal);
 
@@ -1750,6 +1808,7 @@
             const isStopped = salesState.code === '0' || isStopPending;
 
             let issueText = '-';
+            let issueSubText = '';
             let issueCellBg = 'bg-[#fbfbfe]'; 
             let issueTextColor = 'text-slate-400';
 
@@ -1787,13 +1846,22 @@
                 }
             }
 
+            const compareSummary = getComparePriceSummary(row, config);
+            if (compareSummary.hasDiff && issueText === '-') {
+                issueText = '참고가차';
+                issueSubText = compareSummary.summary;
+                issueTextColor = 'text-violet-700';
+                issueCellBg = '!bg-violet-50';
+            } else if (compareSummary.hasDiff) {
+                issueSubText = compareSummary.summary;
+            }
+
             const appliedPromoPrice = window.parseNum(row.finalData?.['행사가']);
             const appliedOutPrice = window.parseNum(row.finalData?.['출고가'] !== undefined ? row.finalData['출고가'] : mItem['출고가']);
             const appliedPrice = appliedPromoPrice > 0 ? appliedPromoPrice : appliedOutPrice;
             const appliedSourceLabel = appliedPromoPrice > 0 ? '행사' : '출고';
             const appliedInPrice = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : mItem['입고가']);
-            const appliedCost = appliedInPrice + window.parseNum(row.finalData?.['외주비'] !== undefined ? row.finalData['외주비'] : mItem['외주비']) + window.parseNum(row.finalData?.['노무비'] !== undefined ? row.finalData['노무비'] : mItem['노무비']);
-            const marginRate = appliedPrice > 0 ? ((appliedPrice - appliedCost) / appliedPrice) * 100 : null;
+            const marginRate = appliedPrice > 0 ? ((appliedPrice - appliedInPrice) / appliedPrice) * 100 : null;
             const marginTextColor = marginRate === null ? 'text-slate-400' : (marginRate < 0 ? 'text-rose-700' : (marginRate < 10 ? 'text-amber-700' : 'text-emerald-700'));
 
             return (
@@ -1866,6 +1934,7 @@
                                 <div className={`text-[12px] font-black ${issueTextColor}`}>
                                     {issueText}
                                 </div>
+                                {issueSubText && <div className="text-[10px] font-bold text-slate-500 truncate mt-0.5" title={issueSubText}>{issueSubText}</div>}
                             </td>
 
                             <td className={`px-2 py-1.5 border-r-2 border-r-indigo-300 text-center w-[120px] min-w-[120px] max-w-[120px] bg-indigo-50/40 ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-blue-50/50'}`}>
@@ -2094,6 +2163,7 @@
                         const oldP = window.parseNum(mItem['입고가']);
                         const newP = window.parseNum(item.finalData?.['입고가'] !== undefined ? item.finalData['입고가'] : (item.sources?.['estimate']?.['입고가'] ?? item.sources?.['inventory']?.['입고가']));
                         
+                        if (ui.priceFilter === 'referenceDiff') return hasComparePriceDiff(item, config);
                         if (ui.priceFilter === 'new') return !data.masterProducts[item.코드];
                         if (oldP === 0 || newP === 0) return false; 
                         if (ui.priceFilter === 'changed') return oldP !== newP;
@@ -2103,7 +2173,7 @@
                     });
                 }
                 return baseList;
-            }, [isEstimateUploaded, data.managedItems, data.masterProducts, ui.globalSearch, ui.priceFilter]);
+            }, [isEstimateUploaded, data.managedItems, data.masterProducts, ui.globalSearch, ui.priceFilter, config.uploadColumnMeta]);
 
             const customActions = useMerchActions(config, data, ui, fullDisplayRows);
             
