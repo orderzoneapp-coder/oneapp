@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v1.9.8 UI 정돈/단축버튼 이동 패치]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v1.9.9 선택액션 제외 패치]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -657,6 +657,7 @@
             const [isProcessing, setIsProcessing] = useState(false);
             const [processMsg, setProcessMsg] = useState('');
             const [priceFilter, setPriceFilter] = useState('all');
+            const [basicSearch, setBasicSearch] = useState('');
 
             const showToast = useCallback((msg) => { 
                 setToastMsg(msg); 
@@ -673,7 +674,8 @@
                 isProcessing, setIsProcessing, 
                 processMsg, setProcessMsg, 
                 showToast,
-                priceFilter, setPriceFilter
+                priceFilter, setPriceFilter,
+                basicSearch, setBasicSearch
             };
         };
 
@@ -1017,9 +1019,9 @@
             }, [data.setManagedItems, ui]);
 
             const handleStopSales = useCallback(async () => {
-                if (ui.selectedRows.size === 0) return ui.showToast('⚠️ 판매 정지할 항목을 선택해주세요.');
+                if (ui.selectedRows.size === 0) return ui.showToast('⚠️ 정지할 상품을 선택해주세요.');
                 const stopCount = ui.selectedRows.size;
-                if (!window.confirm(`선택한 ${stopCount}개 상품을 판매중지(0 정지중)로 표시하시겠습니까?\nF8 저장 시 마스터 판매여부에 반영됩니다.`)) return;
+                if (!window.confirm(`선택한 ${stopCount}개 상품을 판매정지 처리하시겠습니까?\nF8 저장 또는 출력검증센터 최종 저장 시 마스터 판매여부가 0으로 반영됩니다.`)) return;
                 
                 ui.setIsProcessing(true);
                 ui.setProcessMsg('선택 항목 판매 정지 처리 중...');
@@ -1041,10 +1043,32 @@
                         return next;
                     });
                     
-                    ui.showToast(`✅ ${stopCount}개 상품이 정지처리 대기 상태입니다. F8 저장 시 마스터에 반영됩니다.`);
+                    ui.showToast(`✅ ${stopCount}개 상품이 정지 대기 상태로 변경되었습니다.`);
                     ui.setIsProcessing(false);
                     ui.setProcessMsg('');
                 }, 100);
+            }, [ui.selectedRows, data.setManagedItems, ui]);
+
+            // ============================================================
+            // [M-ACTION-01] 이번 업데이트 대상 제외
+            // 역할: 체크된 상품을 현재 작업목록(managedItems)에서만 제거한다.
+            // 주의: 판매정지와 다르다. 마스터 가격/판매여부/상품정보는 절대 변경하지 않는다.
+            // ============================================================
+            const handleExcludeSelectedFromUpdate = useCallback(() => {
+                if (ui.selectedRows.size === 0) return ui.showToast('⚠️ 제외할 상품을 선택해주세요.');
+                const excludeCount = ui.selectedRows.size;
+                if (!window.confirm(`선택한 ${excludeCount}개 상품을 이번 업데이트 대상에서 제외하시겠습니까?\n마스터 가격, 판매상태, 상품정보는 변경되지 않습니다.`)) return;
+
+                data.setManagedItems(prev => {
+                    const next = { ...prev };
+                    ui.selectedRows.forEach(code => {
+                        delete next[code];
+                    });
+                    return next;
+                });
+
+                ui.setSelectedRows(new Set());
+                ui.showToast(`✅ ${excludeCount}개 상품을 이번 업데이트 대상에서 제외했습니다.`);
             }, [ui.selectedRows, data.setManagedItems, ui]);
 
             const handleSaveAsCategory = useCallback((categoryName) => {
@@ -1255,6 +1279,7 @@
                 ui.setGlobalSearch(''); 
                 ui.setActiveTags([]); 
                 ui.setPriceFilter('all');
+                if (ui.setBasicSearch) ui.setBasicSearch('');
                 window.setIDB('merchops_session', null); 
                 ui.showToast('작업 데이터가 초기화 되었습니다.');
             }, [data.setManagedItems, ui]);
@@ -1443,8 +1468,8 @@
             }, [data.managedItems, ui.activeTags, ui.selectedRows]);
 
             return useMemo(() => ({
-                handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleSaveAsCategory, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleOpenExportCenter
-            }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleSaveAsCategory, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleOpenExportCenter]);
+                handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleSaveAsCategory, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleOpenExportCenter
+            }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleSaveAsCategory, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleOpenExportCenter]);
         };
 
         // --- UI Components ---
@@ -1505,8 +1530,23 @@
         };
 
         const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
-            const { activeTags, selectedRows, globalSearch, priceFilter, fullDisplayRows } = state;
-            const { handleStopSales, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, setPriceFilter, handleOpenExportCenter, handleCommitEstimate } = actions;
+            const { activeTags, selectedRows, globalSearch, priceFilter, basicSearch, fullDisplayRows } = state;
+            const { handleStopSales, handleExcludeSelectedFromUpdate, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, setPriceFilter, setSelectedRows, setBasicSearch, handleOpenExportCenter, handleCommitEstimate } = actions;
+
+            const applyPriceFilter = (value) => {
+                setPriceFilter(value);
+                setSelectedRows(new Set());
+            };
+
+            const applyBasicFilter = () => {
+                setPriceFilter('basic');
+                setSelectedRows(new Set());
+            };
+
+            const handleBasicSearchChange = (e) => {
+                setBasicSearch(e.target.value);
+                setSelectedRows(new Set());
+            };
 
             return (
                 <div className="flex flex-col w-full border-b border-slate-200 bg-white pb-2 shadow-sm relative z-10">
@@ -1565,14 +1605,26 @@
                                 ['all', '전체'],
                                 ['changed', '가격변동'],
                                 ['promo', '행사중'],
-                                ['promoSuggest', '행사제안'],
-                                ['basic', '기본상품'],
-                                ['nonBasic', '기본제외']
+                                ['promoSuggest', '행사제안']
                             ].map(([value, label]) => (
-                                <button key={value} onClick={() => setPriceFilter(value)} className={`h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+                                <button key={value} onClick={() => applyPriceFilter(value)} className={`h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
                                     {label}
                                 </button>
                             ))}
+                            <div className={`h-9 flex items-center rounded-lg border shadow-sm overflow-hidden ${priceFilter === 'basic' ? 'border-slate-800 bg-slate-800' : 'border-slate-300 bg-white'}`}>
+                                <button onClick={applyBasicFilter} className={`h-full px-3 text-[12px] font-black transition-all ${priceFilter === 'basic' ? 'text-white' : 'text-slate-600 hover:bg-slate-50'}`} title="기본값 필터 실행: 빈값=기본상품 전체, 0=기본아님 전체, 그 외=포함검색">
+                                    기본상품
+                                </button>
+                                <input
+                                    type="text"
+                                    value={basicSearch}
+                                    onChange={handleBasicSearchChange}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') applyBasicFilter(); }}
+                                    placeholder="기본값"
+                                    className={`h-full w-[82px] px-2 text-[12px] font-bold outline-none border-l ${priceFilter === 'basic' ? 'bg-white text-slate-800 border-slate-600' : 'bg-slate-50 text-slate-700 border-slate-200 focus:bg-white'}`}
+                                    title="빈값: 기본상품 전체 / 0: 기본아님 전체 / 1,2,Y,필수 등: 포함검색"
+                                />
+                            </div>
                         </div>
 
                         <div className="flex-1 min-w-[10px]"></div>
@@ -1580,11 +1632,14 @@
                         <div className="flex items-center gap-2 shrink-0">
                             {selectedRows.size > 0 && (
                                 <>
-                                    <button onClick={handleForceApplyMarginRules} className="h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100">
-                                        <i className="fas fa-magic mr-1.5 text-[13px]"></i> 선택 룰적용
+                                    <button onClick={handleForceApplyMarginRules} className="h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100" title="체크한 상품에 현재 룰을 다시 적용">
+                                        <i className="fas fa-magic mr-1.5 text-[13px]"></i> 룰적용
                                     </button>
-                                    <button onClick={handleStopSales} className="h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100" title="체크한 상품을 판매중지 대기 상태로 표시">
-                                        <i className="fas fa-ban mr-1.5 text-[13px]"></i> 정지처리
+                                    <button onClick={handleExcludeSelectedFromUpdate} className="h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center bg-slate-50 text-slate-700 border border-slate-300 hover:bg-slate-100" title="체크한 상품을 이번 업데이트 대상에서만 제외">
+                                        <i className="fas fa-minus-circle mr-1.5 text-[13px]"></i> 제외
+                                    </button>
+                                    <button onClick={handleStopSales} className="h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100" title="체크한 상품을 판매정지 대기 상태로 표시">
+                                        <i className="fas fa-ban mr-1.5 text-[13px]"></i> 정지
                                     </button>
                                     <div className="w-px h-5 bg-slate-300 mx-1"></div>
                                 </>
@@ -1671,9 +1726,27 @@
 
         const hasComparePriceDiff = (row, config = {}) => getComparePriceSummary(row, config).hasDiff;
 
-        const isBasicItem = (item = {}) => {
-            const v = String(item?.['기본'] ?? '').trim().toLowerCase();
-            return v !== '' && v !== '0' && v !== 'n' && v !== 'false';
+        const normalizeBasicValue = (item = {}) => String(item?.['기본'] ?? '').trim().toLowerCase();
+
+        const isNonBasicValue = (value) => {
+            const v = String(value ?? '').trim().toLowerCase();
+            return v === '' || v === '0' || v === 'n' || v === 'false';
+        };
+
+        const isBasicItem = (item = {}) => !isNonBasicValue(normalizeBasicValue(item));
+
+        const matchBasicFilter = (item = {}, query = '') => {
+            const basicVal = normalizeBasicValue(item);
+            const q = String(query ?? '').trim().toLowerCase();
+
+            // 입력값이 없으면 기존 기본상품 전체: 0/공백/N/false가 아닌 상품만 노출한다.
+            if (q === '') return !isNonBasicValue(basicVal);
+
+            // 0은 포함검색이 아니라 “기본아님 전체” 특수값이다. 10/20/100은 여기 걸리면 안 된다.
+            if (q === '0') return isNonBasicValue(basicVal);
+
+            // 0이 아닌 값만 포함검색으로 처리한다. 예: 1, 2, 10, Y, 필수
+            return basicVal.includes(q);
         };
 
         const getStockQty = (row = {}, mItem = {}) => {
@@ -2280,24 +2353,23 @@
                         }
                         if (ui.priceFilter === 'promo') return isPromoActive(item);
                         if (ui.priceFilter === 'promoSuggest') return isPromoSuggestion(item, mItem, config);
-                        if (ui.priceFilter === 'basic') return isBasicItem(mItem);
-                        if (ui.priceFilter === 'nonBasic') return !isBasicItem(mItem);
+                        if (ui.priceFilter === 'basic') return matchBasicFilter(mItem, ui.basicSearch);
                         return true;
                     });
                 }
                 return baseList;
-            }, [isEstimateUploaded, data.managedItems, data.masterProducts, ui.globalSearch, ui.priceFilter, config.uploadColumnMeta]);
+            }, [isEstimateUploaded, data.managedItems, data.masterProducts, ui.globalSearch, ui.priceFilter, ui.basicSearch, config.uploadColumnMeta]);
 
             const customActions = useMerchActions(config, data, ui, fullDisplayRows);
             
             const appState = useMemo(() => ({
                 config, data, activeTags: ui.activeTags, isEstimateUploaded, selectedRows: ui.selectedRows, globalSearch: ui.globalSearch, isProcessing: ui.isProcessing, processMsg: ui.processMsg,
-                visibleMasterCols: config.visibleMasterCols, visibleUploadCols: config.visibleUploadCols, masterProducts: data.masterProducts, fullDisplayRows, priceFilter: ui.priceFilter
-            }), [config, data, ui.activeTags, isEstimateUploaded, ui.selectedRows, ui.globalSearch, ui.isProcessing, ui.processMsg, config.visibleMasterCols, config.visibleUploadCols, data.masterProducts, fullDisplayRows, ui.priceFilter]);
+                visibleMasterCols: config.visibleMasterCols, visibleUploadCols: config.visibleUploadCols, masterProducts: data.masterProducts, fullDisplayRows, priceFilter: ui.priceFilter, basicSearch: ui.basicSearch
+            }), [config, data, ui.activeTags, isEstimateUploaded, ui.selectedRows, ui.globalSearch, ui.isProcessing, ui.processMsg, config.visibleMasterCols, config.visibleUploadCols, data.masterProducts, fullDisplayRows, ui.priceFilter, ui.basicSearch]);
             
             const appActions = useMemo(() => ({
-                setShowCategoryModal: ui.setShowCategoryModal, setSelectedRows: ui.setSelectedRows, setGlobalSearch: ui.setGlobalSearch, showToast: ui.showToast, setPriceFilter: ui.setPriceFilter, ...customActions
-            }), [ui.setShowCategoryModal, ui.setSelectedRows, ui.setGlobalSearch, ui.showToast, ui.setPriceFilter, customActions]);
+                setShowCategoryModal: ui.setShowCategoryModal, setSelectedRows: ui.setSelectedRows, setGlobalSearch: ui.setGlobalSearch, showToast: ui.showToast, setPriceFilter: ui.setPriceFilter, setBasicSearch: ui.setBasicSearch, ...customActions
+            }), [ui.setShowCategoryModal, ui.setSelectedRows, ui.setGlobalSearch, ui.showToast, ui.setPriceFilter, ui.setBasicSearch, customActions]);
 
             useEffect(() => {
                 // ============================================================
