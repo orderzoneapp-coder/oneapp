@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="google" content="notranslate" />
-  <title>ONEAPP MerchOps - 시스템 감사 로그 뷰어 [v1.7 히스토리 강화본]</title>
+  <title>ONEAPP MerchOps - 시스템 감사 로그 뷰어 [v1.8 히스토리 안전장치 강화본]</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -41,6 +41,18 @@
       return `${Number(v).toFixed(1)}%`;
     };
     const safeText = (v) => String(v ?? '').trim();
+    const parseHistoryTime = (log = {}) => {
+      const iso = log.timestampISO || log.createdAtISO || log.savedAtISO;
+      if (iso) {
+        const t = new Date(iso).getTime();
+        if (Number.isFinite(t)) return t;
+      }
+      if (log.timestamp) {
+        const t = new Date(log.timestamp).getTime();
+        if (Number.isFinite(t)) return t;
+      }
+      return 0;
+    };
 
     const normalizeLog = (log = {}) => {
       const oldVal = log.oldVal ?? log.beforeVal ?? '';
@@ -54,12 +66,17 @@
       return {
         id: log.id || `${log.timestamp || ''}_${log.code || ''}_${log.field || ''}_${Math.random()}`,
         timestamp: safeText(log.timestamp),
-        source: safeText(log.source || log.origin || (log.catalog ? 'parser' : 'unknown')),
-        actionType: safeText(log.actionType || log.action || (log.field === '입고가' && log.catalog ? 'catalog_price_apply' : 'change')),
+        timestampISO: safeText(log.timestampISO || log.createdAtISO || log.savedAtISO || ''),
+        source: safeText(log.source || log.origin || (log.catalog || log.catalogName ? 'parser' : 'unknown')),
+        sourceLabel: safeText(log.sourceLabel || (log.source === 'parser' ? '스마트 파서' : '')),
+        actionType: safeText(log.actionType || log.action || (log.field === '입고가' && (log.catalog || log.catalogName) ? 'catalog_price_apply' : 'change')),
         path: safeText(log.path || log.route || ''),
+        route: safeText(log.route || log.path || ''),
         applyMode: safeText(log.applyMode || ''),
         catalog: safeText(log.catalog || log.catalogName || ''),
-        estimate: safeText(log.estimate || log.quote || log.견적서 || ''),
+        catalogName: safeText(log.catalogName || log.catalog || ''),
+        estimate: safeText(log.estimate || log.quoteName || log.quote || log.견적서 || ''),
+        quoteName: safeText(log.quoteName || log.estimate || log.quote || log.견적서 || ''),
         code: safeText(log.code),
         name: safeText(log.name),
         spec: safeText(log.spec),
@@ -102,12 +119,15 @@
       const [activeTab, setActiveTab] = useState('all');
       const [fieldFilter, setFieldFilter] = useState('all');
       const [sourceFilter, setSourceFilter] = useState('all');
+      const [actionFilter, setActionFilter] = useState('all');
       const [selectedLog, setSelectedLog] = useState(null);
 
       const loadLogs = () => {
         try {
           const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-          setLogs(Array.isArray(raw) ? raw.map(normalizeLog) : []);
+          const normalized = Array.isArray(raw) ? raw.map(normalizeLog) : [];
+          normalized.sort((a, b) => parseHistoryTime(b) - parseHistoryTime(a));
+          setLogs(normalized);
         } catch (e) {
           console.error(e);
           setLogs([]);
@@ -137,6 +157,10 @@
         const set = new Set(logs.map(l => l.source).filter(Boolean));
         return Array.from(set).sort();
       }, [logs]);
+      const availableActions = useMemo(() => {
+        const set = new Set(logs.map(l => l.actionType).filter(Boolean));
+        return Array.from(set).sort();
+      }, [logs]);
 
       const filteredLogs = useMemo(() => {
         const keyword = searchTerm.toLowerCase().trim();
@@ -147,6 +171,7 @@
           if (activeTab === 'big' && !(Math.abs(Number(log.diffRate || 0)) >= 10 || Math.abs(Number(log.diff || 0)) >= 500)) return false;
           if (fieldFilter !== 'all' && log.field !== fieldFilter) return false;
           if (sourceFilter !== 'all' && log.source !== sourceFilter) return false;
+          if (actionFilter !== 'all' && log.actionType !== actionFilter) return false;
           if (!keyword) return true;
           const haystack = [
             log.timestamp, log.source, log.actionType, log.path, log.catalog, log.estimate,
@@ -155,14 +180,15 @@
           ].join(' ').toLowerCase();
           return haystack.includes(keyword);
         });
-      }, [logs, searchTerm, activeTab, fieldFilter, sourceFilter]);
+      }, [logs, searchTerm, activeTab, fieldFilter, sourceFilter, actionFilter]);
 
       const clearLogs = () => {
-        if (window.confirm('정말 모든 감사 로그를 삭제하시겠습니까? 복구할 수 없습니다.')) {
-          localStorage.removeItem(HISTORY_KEY);
-          setLogs([]);
-          setSelectedLog(null);
-        }
+        const msg = '히스토리는 마스터 변경 근거이자 필수 안전장치입니다.\n삭제하면 파서 적용 근거를 복구할 수 없습니다.\n정말 삭제하려면 DELETE를 입력하세요.';
+        const answer = window.prompt(msg, '');
+        if (answer !== 'DELETE') return;
+        localStorage.removeItem(HISTORY_KEY);
+        setLogs([]);
+        setSelectedLog(null);
       };
 
       const exportJson = () => {
@@ -191,12 +217,12 @@
                 <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                   <div className="flex items-center gap-2">
                     <span className="text-[14px] font-black text-slate-100">MerchOps</span>
-                    <span className="bg-amber-500/20 border border-amber-400/30 text-amber-300 px-1.5 py-0.5 rounded text-[9px] font-black">v1.7</span>
+                    <span className="bg-amber-500/20 border border-amber-400/30 text-amber-300 px-1.5 py-0.5 rounded text-[9px] font-black">v1.8</span>
                   </div>
                   <span className="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">HISTORY AUDIT VIEWER</span>
                 </div>
               </div>
-              <p className="text-[12px] leading-relaxed text-slate-400 mt-4">파서·머치옵스·출력검증센터의 변경 근거를 추적합니다.</p>
+              <p className="text-[12px] leading-relaxed text-slate-400 mt-4">파서·머치옵스·출력검증센터의 변경 근거를 추적합니다. 히스토리는 마스터 적용의 필수 안전장치입니다.</p>
             </div>
 
             <nav className="flex flex-col py-4 gap-1 px-3 flex-1">
@@ -216,7 +242,7 @@
 
             <div className="mt-auto p-5 border-t border-slate-800 flex flex-col gap-2">
               <button onClick={exportJson} className="w-full py-2.5 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[12px] font-bold transition-colors"><i className="fas fa-file-export mr-2"></i>JSON 내보내기</button>
-              <button onClick={clearLogs} className="w-full py-2.5 bg-rose-900/50 text-rose-300 border border-rose-800/50 rounded-xl hover:bg-rose-800 hover:text-white text-[12px] font-bold transition-colors"><i className="fas fa-trash-alt mr-2"></i>기록 전체 지우기</button>
+              <button onClick={clearLogs} className="w-full py-2.5 bg-rose-900/50 text-rose-300 border border-rose-800/50 rounded-xl hover:bg-rose-800 hover:text-white text-[12px] font-bold transition-colors"><i className="fas fa-trash-alt mr-2"></i>위험: 기록 전체 지우기</button>
               <button onClick={() => window.location.href = 'MerchOps.html'} className="w-full py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[13px] font-bold transition-colors"><i className="fas fa-arrow-left mr-2"></i>메인으로 돌아가기</button>
             </div>
           </aside>
@@ -229,6 +255,10 @@
                   <p className="text-[13px] text-slate-500 font-bold">마스터 변경 전/후 값, 파싱 원본, 경로, 매칭상태를 함께 확인합니다.</p>
                 </div>
                 <div className="flex gap-2 items-center">
+                  <select value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} className="border border-slate-300 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-amber-500 bg-white font-bold text-slate-600 shadow-sm">
+                    <option value="all">모든 작업유형</option>
+                    {availableActions.map(a => <option key={a} value={a}>{a}</option>)}
+                  </select>
                   <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} className="border border-slate-300 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-amber-500 bg-white font-bold text-slate-600 shadow-sm">
                     <option value="all">모든 출처</option>
                     {availableSources.map(s => <option key={s} value={s}>{s}</option>)}
@@ -244,6 +274,9 @@
                 </div>
               </div>
             </header>
+            <div className="bg-amber-50 border-b border-amber-100 px-6 py-3 text-[12px] text-amber-800 font-bold shrink-0">
+              <i className="fas fa-shield-halved mr-2"></i>정책 기준: 파서는 마스터를 무근거로 덮어쓰지 않습니다. 히스토리 저장 실패 시 마스터 적용은 완료 처리하면 안 됩니다.
+            </div>
 
             <section className="grid grid-cols-4 gap-4 p-5 bg-slate-100 border-b border-slate-200 shrink-0">
               <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm"><div className="text-[11px] text-slate-500 font-black mb-1">전체 로그</div><div className="text-2xl font-black text-slate-800">{stats.total.toLocaleString()}</div></div>
@@ -259,6 +292,7 @@
                     <tr className="text-slate-500 font-black">
                       <th className="px-4 py-3 w-40 text-center">작업일시</th>
                       <th className="px-4 py-3 w-24">출처</th>
+                      <th className="px-4 py-3 w-36">작업유형</th>
                       <th className="px-4 py-3 w-36">경로/카탈로그</th>
                       <th className="px-4 py-3 w-24">상품코드</th>
                       <th className="px-4 py-3 min-w-[220px]">마스터 상품</th>
@@ -273,12 +307,13 @@
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {filteredLogs.length === 0 ? (
-                      <tr><td colSpan="12" className="p-16 text-center text-slate-400"><i className="fas fa-search text-3xl mb-3 block opacity-50"></i>기록된 내용이 없거나 검색 결과가 없습니다.</td></tr>
+                      <tr><td colSpan="13" className="p-16 text-center text-slate-400"><i className="fas fa-search text-3xl mb-3 block opacity-50"></i>기록된 내용이 없거나 검색 결과가 없습니다.</td></tr>
                     ) : filteredLogs.map(log => (
                       <tr key={log.id} onClick={() => setSelectedLog(log)} className="hover:bg-amber-50/40 transition-colors cursor-pointer group">
                         <td className="px-4 py-3 text-center text-slate-500 text-[11px] tracking-tight">{log.timestamp || '-'}</td>
-                        <td className="px-4 py-3"><Badge tone={log.source === 'parser' ? 'indigo' : log.source === 'merchops' ? 'emerald' : 'slate'}>{log.source || '-'}</Badge></td>
-                        <td className="px-4 py-3"><div className="flex flex-col gap-1"><span className="font-black text-slate-700 truncate max-w-[160px]">{log.catalog || log.estimate || '-'}</span><span className="text-[10px] text-slate-400 truncate max-w-[180px]">{log.path || log.actionType || '-'}</span></div></td>
+                        <td className="px-4 py-3"><Badge tone={log.source === 'parser' ? 'indigo' : log.source === 'merchops' ? 'emerald' : 'slate'}>{log.sourceLabel || log.source || '-'}</Badge></td>
+                        <td className="px-4 py-3"><span className="text-[11px] font-black text-slate-600 truncate max-w-[160px] block">{log.actionType || '-'}</span><span className="text-[10px] text-slate-400 truncate max-w-[160px] block">{log.applyMode || '-'}</span></td>
+                        <td className="px-4 py-3"><div className="flex flex-col gap-1"><span className="font-black text-slate-700 truncate max-w-[160px]">{log.catalogName || log.catalog || log.quoteName || log.estimate || '-'}</span><span className="text-[10px] text-slate-400 truncate max-w-[180px]">{log.path || log.route || '-'}</span></div></td>
                         <td className="px-4 py-3 font-mono text-slate-500 text-[11px]">{log.code || '-'}</td>
                         <td className="px-4 py-3"><div className="font-bold text-slate-800 truncate max-w-[240px]">{log.name || '-'}</div><div className="text-[11px] text-slate-400 truncate max-w-[240px]">{[log.spec, log.unit].filter(Boolean).join(' / ')}</div></td>
                         <td className="px-4 py-3"><div className="font-bold text-emerald-700 truncate max-w-[240px]">{log.parsedName || '-'}</div><div className="text-[11px] text-emerald-500 truncate max-w-[240px]">{[log.parsedSpec, log.parsedUnit].filter(Boolean).join(' / ')}</div></td>
@@ -306,8 +341,8 @@
                 <div className="p-5 overflow-auto custom-scrollbar max-h-[76vh]">
                   <div className="grid grid-cols-2 gap-3 text-[12px]">
                     {[
-                      ['작업일시', selectedLog.timestamp], ['출처', selectedLog.source], ['작업유형', selectedLog.actionType], ['작업경로', selectedLog.path],
-                      ['카탈로그/견적서', selectedLog.catalog || selectedLog.estimate], ['적용방식', selectedLog.applyMode], ['상품코드', selectedLog.code], ['변동항목', selectedLog.field],
+                      ['작업일시', selectedLog.timestamp], ['ISO시각', selectedLog.timestampISO], ['출처', selectedLog.sourceLabel || selectedLog.source], ['작업유형', selectedLog.actionType], ['작업경로', selectedLog.path || selectedLog.route],
+                      ['카탈로그/견적서', selectedLog.catalogName || selectedLog.catalog || selectedLog.quoteName || selectedLog.estimate], ['적용방식', selectedLog.applyMode], ['상품코드', selectedLog.code], ['변동항목', selectedLog.field],
                       ['마스터 품명', selectedLog.name], ['파싱 품명', selectedLog.parsedName], ['마스터 규격/단위', [selectedLog.spec, selectedLog.unit].filter(Boolean).join(' / ')], ['파싱 규격/단위', [selectedLog.parsedSpec, selectedLog.parsedUnit].filter(Boolean).join(' / ')],
                       ['이전값', fmtNumber(selectedLog.oldVal)], ['변경값', fmtNumber(selectedLog.newVal)], ['차액', selectedLog.diff ? selectedLog.diff.toLocaleString() : '-'], ['변동률', fmtRate(selectedLog.diffRate)],
                       ['이전 출고가', fmtNumber(selectedLog.oldOutPrice)], ['변경 출고가', fmtNumber(selectedLog.newOutPrice)], ['재고수량', fmtNumber(selectedLog.stockQty)], ['안전재고', fmtNumber(selectedLog.safeStock)],
