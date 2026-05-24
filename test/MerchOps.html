@@ -549,6 +549,131 @@
                 }
             }, [data.masterProducts, data.setMasterProducts, ui]);
 
+
+            const getUploadRoleLabel = (role) => {
+                if (role === 'inventory') return '자사 재고';
+                if (role === 'dataOps') return 'DataOps 재고/필요수량';
+                return '공급사 견적';
+            };
+
+            const getUploadTagLabel = (role) => {
+                if (role === 'inventory') return '📦 자사 재고 엑셀';
+                if (role === 'dataOps') return '📊 DataOps 재고/필요수량';
+                return '📄 견적/시세 엑셀';
+            };
+
+            const pickDataOpsValue = (row = {}, headerCache = {}, candidates = []) => {
+                for (const key of candidates) {
+                    if (headerCache[key] && row[headerCache[key]] !== undefined && row[headerCache[key]] !== '') return row[headerCache[key]];
+                    if (row[key] !== undefined && row[key] !== '') return row[key];
+                }
+                const normalized = Object.keys(row).reduce((acc, k) => {
+                    acc[String(k).replace(/\s/g, '').toLowerCase()] = k;
+                    return acc;
+                }, {});
+                for (const key of candidates) {
+                    const nk = String(key).replace(/\s/g, '').toLowerCase();
+                    const realKey = normalized[nk] || Object.keys(normalized).find(k => k.includes(nk) || nk.includes(k));
+                    if (realKey && row[normalized[realKey] || realKey] !== undefined && row[normalized[realKey] || realKey] !== '') return row[normalized[realKey] || realKey];
+                }
+                return '';
+            };
+
+            const buildDataOpsSource = (row = {}, headerCache = {}) => {
+                const n = (keys) => window.parseNum(pickDataOpsValue(row, headerCache, keys));
+                const s = (keys) => String(pickDataOpsValue(row, headerCache, keys) || '').trim();
+
+                return {
+                    현재재고: n(['현재재고', '재고수량', '기말실사', '실사수량', '전산잔량', '기말잔량']),
+                    전산잔량: n(['전산잔량', '장부재고', '기말잔량', '기말수량']),
+                    실사수량: n(['실사수량', '기말실사', '기말실사(이월수량)', '실사']),
+                    최근출고량: n(['최근출고량', '최근판매량', '판매수량', '출고량', '출고수량']),
+                    판매속도: n(['판매속도', '일평균판매', '평균판매량', '일평균출고']),
+                    안전재고: n(['안전재고', '최소재고', '적정재고']),
+                    필요발주량: n(['필요발주량', '발주필요수량', '추천발주량', '부족수량']),
+                    재고상태: s(['재고상태', '상태', '재고판정']),
+                    로스수량: n(['로스수량', '로스', '차이수량', '편차수량']),
+                    수량이슈: s(['수량이슈', '이슈', '이슈/결과', '메모']),
+                    재고단가: n(['재고단가', '실사단가', '기초단가', '매입단가', '원가']),
+                    상품등급: s(['상품등급', '등급', '품질등급']),
+                    소분상품여부: s(['소분상품여부', '소분여부', '소분상품']),
+                    DataOps파일: s(['파일명']) || ''
+                };
+            };
+
+
+
+            const BASIC_INFO_EXCEL_COLUMNS = [
+                '코드', '품목코드', '품목명', '규격', '브랜드', '창고', '구매처',
+                '카탈로그', '견적서', '기본', '판매여부', '안전재고',
+                '단위', '준비기간', '마감시간', '검색어등록',
+                '입고가', '출고가', '행사가'
+            ];
+
+            const getBasicInfoExcelRow = (row = {}) => {
+                const finalData = row.finalData || {};
+                const master = row.master || {};
+                const sources = row.sources || {};
+                const inventory = sources.inventory || {};
+                const estimate = sources.estimate || {};
+                const dataOps = sources.dataOps || {};
+
+                const pick = (key) => {
+                    if (finalData[key] !== undefined && finalData[key] !== '') return finalData[key];
+                    if (master[key] !== undefined && master[key] !== '') return master[key];
+                    if (dataOps[key] !== undefined && dataOps[key] !== '') return dataOps[key];
+                    if (inventory[key] !== undefined && inventory[key] !== '') return inventory[key];
+                    if (estimate[key] !== undefined && estimate[key] !== '') return estimate[key];
+                    return '';
+                };
+
+                const code = row.code || finalData.코드 || finalData.품목코드 || master.코드 || master.품목코드 || '';
+                const out = {};
+                BASIC_INFO_EXCEL_COLUMNS.forEach(col => {
+                    if (col === '코드') out[col] = code;
+                    else if (col === '품목코드') out[col] = finalData.품목코드 || master.품목코드 || code;
+                    else out[col] = pick(col);
+                });
+                return out;
+            };
+
+            const downloadBasicInfoExcel = () => {
+                try {
+                    const targetRows = selectedRows && selectedRows.size > 0
+                        ? fullDisplayRows.filter(row => selectedRows.has(row.code))
+                        : fullDisplayRows;
+
+                    if (!targetRows || targetRows.length === 0) {
+                        ui.showToast('⚠️ 엑셀로 변환할 현재 화면 상품이 없습니다.');
+                        return;
+                    }
+
+                    const rows = targetRows.map(getBasicInfoExcelRow);
+                    const ws = XLSX.utils.json_to_sheet(rows, { header: BASIC_INFO_EXCEL_COLUMNS });
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, '기초정보수정');
+
+                    const guideRows = [
+                        { 항목: '용도', 설명: '현재 화면/선택 상품의 기초정보를 엑셀로 수정 후 다시 불러와 마스터에 반영하기 위한 양식입니다.' },
+                        { 항목: '수정 가능', 설명: '품목명, 규격, 브랜드, 창고, 구매처, 카탈로그, 견적서, 기본, 판매여부, 안전재고, 단위, 준비기간, 마감시간, 검색어등록, 입고가, 출고가, 행사가' },
+                        { 항목: '주의', 설명: '코드/품목코드는 매칭 기준이므로 임의 변경하지 않는 것을 권장합니다.' },
+                        { 항목: '저장 기준', 설명: '재업로드 후 환경센터 uploadColumnMeta/masterLinks 설정에 따라 F8 저장 시 마스터에 반영됩니다.' },
+                        { 항목: '비교단가/참고값', 설명: 'comparePrice/reference 유형은 마스터에 저장하지 않습니다.' }
+                    ];
+                    const guideWs = XLSX.utils.json_to_sheet(guideRows);
+                    XLSX.utils.book_append_sheet(wb, guideWs, '사용안내');
+
+                    const date = new Date();
+                    const ymd = `${date.getFullYear()}${String(date.getMonth()+1).padStart(2,'0')}${String(date.getDate()).padStart(2,'0')}`;
+                    XLSX.writeFile(wb, `MerchOps_기초정보수정_${ymd}_${targetRows.length}건.xlsx`);
+                    ui.showToast(`✅ 기초정보 엑셀 생성 완료 (${targetRows.length}건)`);
+                } catch (error) {
+                    console.error(error);
+                    ui.showToast('❌ 기초정보 엑셀 생성 중 오류가 발생했습니다.');
+                }
+            };
+
+
             // ============================================================
             // [M-FLOW-01] 엑셀 업로드/매핑 처리
             // 역할: 업로드 파일을 파싱하고 managedItems.sources 및 finalData를 구성한다.
@@ -561,7 +686,7 @@
                 if (!window.XLSX) return ui.setAlertMsg("엑셀 파서 로드 대기중입니다.");
 
                 ui.setIsProcessing(true); 
-                ui.setProcessMsg(`[${role === 'inventory' ? '자사 재고' : '공급사 견적'}] 엑셀 로딩 및 분석 중...`);
+                ui.setProcessMsg(`[${getUploadRoleLabel(role)}] 엑셀 로딩 및 분석 중...`);
                 await new Promise(resolve => setTimeout(resolve, 50)); 
 
                 try {
@@ -579,7 +704,25 @@
 
                         const actualHeaders = Object.keys(excelData[0]);
                         const curMap = config.mappings['estimate'] || {}; 
-                        const headerCache = createHeaderMap(actualHeaders, curMap);
+                        const dataOpsMap = role === 'dataOps' ? {
+                            품목코드: '품목코드, 상품코드, 코드, 품번',
+                            품목명: '품목명, 품명, 상품명, 제품명',
+                            규격: '규격, 옵션',
+                            현재재고: '현재재고, 재고수량, 기말실사, 실사수량, 기말잔량',
+                            전산잔량: '전산잔량, 장부재고, 기말잔량',
+                            실사수량: '실사수량, 기말실사, 실사',
+                            최근출고량: '최근출고량, 최근판매량, 판매수량, 출고량',
+                            판매속도: '판매속도, 일평균판매, 일평균출고',
+                            안전재고: '안전재고, 최소재고, 적정재고',
+                            필요발주량: '필요발주량, 발주필요수량, 추천발주량, 부족수량',
+                            재고상태: '재고상태, 상태, 재고판정',
+                            로스수량: '로스수량, 로스, 차이수량, 편차수량',
+                            수량이슈: '수량이슈, 이슈, 이슈/결과, 메모',
+                            재고단가: '재고단가, 실사단가, 기초단가, 매입단가, 원가',
+                            상품등급: '상품등급, 등급, 품질등급',
+                            소분상품여부: '소분상품여부, 소분여부, 소분상품'
+                        } : {};
+                        const headerCache = createHeaderMap(actualHeaders, { ...curMap, ...dataOpsMap });
                         
                         excelData.forEach(row => {
                             const codeKey = headerCache['품목코드'] || '품목코드'; 
@@ -612,6 +755,19 @@
                             if (!mItem.sources[role]['품목명'] && newMaster[code]?.['품목명']) mItem.sources[role]['품목명'] = newMaster[code]['품목명'];
                             if (!mItem.sources[role]['규격'] && newMaster[code]?.['규격']) mItem.sources[role]['규격'] = newMaster[code]['규격'];
 
+                            if (role === 'dataOps') {
+                                const dataOpsSource = buildDataOpsSource(row, headerCache);
+                                Object.keys(dataOpsSource).forEach(k => {
+                                    if (dataOpsSource[k] !== '' && dataOpsSource[k] !== 0) mItem.sources[role][k] = dataOpsSource[k];
+                                });
+
+                                // DataOps 값은 마스터 가격을 바꾸는 값이 아니라 재고/필요수량 참고값이다.
+                                // finalData에도 일부 표시용 값만 올려서 MerchOps/검증센터에서 바로 볼 수 있게 한다.
+                                ['현재재고', '전산잔량', '실사수량', '최근출고량', '판매속도', '필요발주량', '재고상태', '로스수량', '수량이슈', '재고단가', '상품등급', '소분상품여부'].forEach(k => {
+                                    if (dataOpsSource[k] !== '' && dataOpsSource[k] !== 0) mItem.finalData[k] = dataOpsSource[k];
+                                });
+                            }
+
                             Object.keys(curMap).forEach(h => {
                                 if (!['품목코드', '품목명', '규격', '구매처'].includes(h)) {
                                     const actualKey = headerCache[h];
@@ -633,11 +789,11 @@
                     data.setMasterProducts(newMaster);
                     data.setManagedItems(newManaged);
                     ui.setActiveTags(prev => {
-                        const tagLabel = role === 'inventory' ? '📦 자사 재고 엑셀' : '📄 견적/시세 엑셀';
+                        const tagLabel = getUploadTagLabel(role);
                         if (!prev.some(t => t.name === tagLabel)) return [...prev, {type: 'excel', name: tagLabel}];
                         return prev;
                     });
-                    if(totalCount > 0) ui.showToast(`✅ [${role === 'inventory' ? '자사 재고' : '공급사 견적'}] 데이터 로드 완료 (${totalCount}건)`);
+                    if(totalCount > 0) ui.showToast(`✅ [${getUploadRoleLabel(role)}] 데이터 로드 완료 (${totalCount}건)`);
                 } catch(error) { 
                     console.error(error); 
                     ui.setAlertMsg("❌ 파싱 오류 발생. 엑셀 파일 형식을 확인하세요."); 
@@ -1276,6 +1432,11 @@
                         <label className="cursor-pointer h-9 px-4 rounded-xl text-[12px] font-bold transition-all flex items-center justify-center bg-white text-emerald-700 shadow-sm hover:bg-emerald-50 border border-emerald-200 shrink-0" title="자사 재고 엑셀을 업로드합니다.">
                             <i className="fas fa-box mr-2 text-[14px]"></i> 재고 불러오기
                             <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e, 'inventory')} accept=".xlsx, .xls, .csv" disabled={state.isProcessing} />
+                        </label>
+
+                        <label className="cursor-pointer h-9 px-4 rounded-xl text-[12px] font-bold transition-all flex items-center justify-center bg-white text-purple-700 shadow-sm hover:bg-purple-50 border border-purple-200 shrink-0" title="DataOps 재고/필요수량 엑셀을 참고자료로 업로드합니다. 가격값은 직접 변경하지 않습니다.">
+                            <i className="fas fa-chart-column mr-2 text-[14px]"></i> DataOps 불러오기
+                            <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e, 'dataOps')} accept=".xlsx, .xls, .csv" disabled={state.isProcessing} />
                         </label>
                         
                         <div className="flex-1 min-w-[10px]"></div>
