@@ -168,8 +168,7 @@
                     }
                 } catch (error) {
                     console.error('클라우드 에러:', error);
-                    showToast('❌ 통신 오류 발생. URL이나 권한을 확인하세요.
-' + error.message);
+                    showToast('❌ 통신 오류 발생. URL이나 권한을 확인하세요.\n' + (error?.message || error));
                 } finally {
                     setIsProcessing(false);
                     setProcessMsg('');
