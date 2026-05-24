@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.1 coreEngine 1차 적용]</title>
+    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.1 비교단가 설정]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -25,19 +25,30 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // coreEngine.js 연결 확인 및 공통 엔진 별칭
-        if (!window.ONEAPP || !window.ONEAPP.STORAGE || !window.ONEAPP.CLOUD) {
-            throw new Error('coreEngine.js가 로드되지 않았습니다. ControlTower.html과 같은 경로에 coreEngine.js를 배치하세요.');
+        // 🚨 coreEngine.js 안전장치 및 getIDB/setIDB 폴리필 확보
+        if (typeof window.getAllIDB !== 'function') {
+            window.initIDB = () => new Promise((resolve, reject) => { const request = indexedDB.open('MerchOpsDB', 2); request.onupgradeneeded = (e) => { const db = e.target.result; if (!db.objectStoreNames.contains('store')) db.createObjectStore('store'); if (!db.objectStoreNames.contains('master_products')) db.createObjectStore('master_products', { keyPath: '코드' }); }; request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+            window.getAllIDB = async (storeName) => { try { const db = await window.initIDB(); return new Promise((resolve, reject) => { if (!db.objectStoreNames.contains(storeName)) return resolve([]); const tx = db.transaction(storeName, 'readonly'); const req = tx.objectStore(storeName).getAll(); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); } catch (e) { return []; } };
+            window.getIDB = async (key) => { try { const db = await window.initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); } catch (e) { return null; } };
+            window.setIDB = async (key, val) => { try { const db = await window.initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readwrite'); tx.objectStore('store').put(val, key); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); } catch (e) { console.warn('IDB put failed'); } };
+            window.bulkPutIDB = async (storeName, items) => { try { const db = await window.initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction(storeName, 'readwrite'); const store = tx.objectStore(storeName); items.forEach(item => store.put(item)); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); } catch (e) { console.warn('IDB put failed'); } };
         }
-        const STORAGE = window.ONEAPP.STORAGE;
-        const CLOUD = window.ONEAPP.CLOUD;
         if (!window.MASTER_HEADERS) {
             window.MASTER_HEADERS = ["창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "판매여부", "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록"];
         }
 
         const { useState, useMemo, useEffect, useCallback } = React;
 
-        const safeJSONParse = window.ONEAPP.STORAGE.safeJSONParse;
+        const safeJSONParse = (key, defaultValue) => {
+            try {
+                const raw = localStorage.getItem(key);
+                if (!raw || raw === 'undefined' || raw === 'null') return defaultValue;
+                return JSON.parse(raw) || defaultValue;
+            } catch (e) {
+                console.warn(`[Config Parse Warning] ${key}`, e);
+                return defaultValue;
+            }
+        };
 
         const useMerchConfig = () => {
             const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v870') || '');
@@ -129,46 +140,106 @@
                 return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
             }, [data.masterProducts]);
 
-            // ☁️ 클라우드 동기화
-            // 상세 fetch/chunk/restore 로직은 coreEngine.js의 ONEAPP.CLOUD가 담당한다.
-            // ControlTower는 백업/복구 버튼과 진행 메시지만 담당한다.
+            // ☁️ 클라우드 동기화 (v1.6 규격 반영 및 품절 대기열 백업)
             const handleCloudSync = async (type) => {
                 if (!config.cloudUrl) return showToast("⚠️ 클라우드 URL이 설정되지 않았습니다.");
                 setIsProcessing(true);
                 try {
                     if (type === 'upload') {
                         showToast('☁️ 클라우드 분할 백업 준비 중...');
-                        const result = await CLOUD.pushCloudBackup({
-                            url: config.cloudUrl,
-                            masterProducts: data.masterProducts,
-                            historyLogs: data.historyLogs || [],
-                            config,
-                            onProgress: (p) => setProcessMsg(p.message || '클라우드 백업 중...')
-                        });
-                        showToast(`✅ 클라우드 백업 완료! (상품: ${(result.masterCount || 0).toLocaleString()}건, 로그: ${(result.historyCount || 0).toLocaleString()}건)`);
+                        setProcessMsg('서버 초기화 중...');
+                        
+                        // 1. 초기화
+                        let initRes = await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify({ action: 'initSync' }) });
+                        if ((await initRes.json()).status !== 'success') throw new Error("초기화 실패");
+
+                        // 2. 마스터 분할 전송
+                        const masterItems = Object.values(data.masterProducts);
+                        const chunkSize = 500;
+                        for (let i = 0; i < masterItems.length; i += chunkSize) {
+                            const chunk = masterItems.slice(i, i + chunkSize);
+                            setProcessMsg(`마스터 데이터 업로드 중... (${Math.min(i + chunkSize, masterItems.length)} / ${masterItems.length}건)`);
+                            await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_master', data: chunk }) });
+                        }
+
+                        // 3. 히스토리 전송
+                        const historyItems = data.historyLogs || [];
+                        for (let i = 0; i < historyItems.length; i += chunkSize) {
+                            const chunk = historyItems.slice(i, i + chunkSize);
+                            setProcessMsg(`히스토리 업로드 중... (${Math.min(i + chunkSize, historyItems.length)} / ${historyItems.length}건)`);
+                            await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_history', data: chunk }) });
+                        }
+
+                        // 4. 품절 대기열 확보 및 전체 설정 전송
+                        setProcessMsg('환경설정 및 품절 대기열 동기화 중...');
+                        const pendingList = await window.getIDB('pending_shop_status') || [];
+                        const dict = JSON.parse(localStorage.getItem('parserDict_v870') || '{}');
+                        
+                        const configPayload = {
+                            action: 'config',
+                            data: {
+                                dict: dict,
+                                rules: config.marginRules,
+                                pendingShopStatus: pendingList, // 🚨 대기열 백업
+                                appConfig: {
+                                    mappings: config.mappings,
+                                    masterLinks: config.masterLinks,
+                                    visibleUploadCols: config.visibleUploadCols,
+                                    visibleMasterCols: config.visibleMasterCols,
+                                    uploadColumnMeta: config.uploadColumnMeta
+                                }
+                            }
+                        };
+                        await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify(configPayload) });
+
+                        showToast('✅ 클라우드 대용량 분할 백업이 완료되었습니다.');
+
                     } else {
                         showToast('☁️ 클라우드에서 데이터를 불러옵니다...');
-                        const result = await CLOUD.pullCloudBackup({
-                            url: config.cloudUrl,
-                            hooks: {
-                                setMasterProducts: data.setMasterProducts,
-                                setHistoryLogs: data.setHistoryLogs,
-                                setMarginRules: config.setMarginRules,
-                                setMappings: config.setMappings,
-                                setMasterLinks: config.setMasterLinks,
-                                setVisibleUploadCols: config.setVisibleUploadCols,
-                                setVisibleMasterCols: config.setVisibleMasterCols,
-                                setUploadColumnMeta: config.setUploadColumnMeta
-                            },
-                            onProgress: (p) => setProcessMsg(p.message || '클라우드 복구 중...')
-                        });
-                        const masterCount = result?.data?.master ? Object.keys(result.data.master).length : 0;
-                        showToast(`✅ 데이터 불러오기 성공! (상품: ${masterCount.toLocaleString()}건)`);
+                        setProcessMsg(`전체 데이터 다운로드 중...`);
+                        const res = await fetch(config.cloudUrl, { method: 'GET' });
+                        if (!res.ok) throw new Error("Network Error");
+                        const result = await res.json();
+                        
+                        if (result.status === 'success' && result.data) { 
+                            if (result.data.master && Object.keys(result.data.master).length > 0) {
+                                data.setMasterProducts(result.data.master);
+                                const requestIdle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
+                                requestIdle(async () => {
+                                    const safeData = Object.values(result.data.master).filter(item => item && item.코드);
+                                    await window.bulkPutIDB('master_products', safeData);
+                                    localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+                                });
+                            }
+                            if (result.data.dict && Object.keys(result.data.dict).length > 0) localStorage.setItem('parserDict_v870', JSON.stringify(result.data.dict));
+                            if (result.data.rules && result.data.rules.length > 0) config.setMarginRules(result.data.rules);
+                            if (result.data.history && Array.isArray(result.data.history)) {
+                                data.setHistoryLogs(result.data.history);
+                                localStorage.setItem('merchHistory_v870', JSON.stringify(result.data.history));
+                            }
+                            
+                            // 🚨 품절 대기열 복구
+                            if (result.data.pendingShopStatus) {
+                                await window.setIDB('pending_shop_status', result.data.pendingShopStatus);
+                            }
+
+                            if (result.data.appConfig) {
+                                if (result.data.appConfig.mappings) config.setMappings(result.data.appConfig.mappings);
+                                if (result.data.appConfig.masterLinks) config.setMasterLinks(result.data.appConfig.masterLinks);
+                                if (result.data.appConfig.visibleUploadCols) config.setVisibleUploadCols(result.data.appConfig.visibleUploadCols);
+                                if (result.data.appConfig.visibleMasterCols) config.setVisibleMasterCols(result.data.appConfig.visibleMasterCols);
+                                if (result.data.appConfig.uploadColumnMeta) config.setUploadColumnMeta(result.data.appConfig.uploadColumnMeta);
+                            }
+                            
+                            const masterCount = result.data.master ? Object.keys(result.data.master).length : 0;
+                            showToast(`✅ 데이터 불러오기 성공! (상품: ${masterCount.toLocaleString()}건)`);
+                        } else {
+                            throw new Error("Invalid Data");
+                        }
                     }
-                } catch (error) {
-                    console.error('클라우드 에러:', error);
-                    showToast('❌ 통신 오류 발생. URL이나 권한을 확인하세요.
-' + error.message);
+                } catch (error) { 
+                    console.error("클라우드 에러:", error);
+                    showToast("❌ 통신 오류 발생. URL이나 권한을 확인하세요.\n" + error.message); 
                 } finally {
                     setIsProcessing(false);
                     setProcessMsg('');
