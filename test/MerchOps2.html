@@ -1902,6 +1902,11 @@
                 const match = latestHistory.matchStatus || latestHistory.applyMode || '';
                 lines.push(`${catalog} ${window.parseNum(oldVal).toLocaleString()}→${window.parseNum(newVal).toLocaleString()}`);
                 lines.push(`${formatSignedNumber(diff)} / ${formatSignedRate(rate)}${match ? `, ${match}` : ''}`);
+            } else if (['가격변동', '큰변동'].includes(issueText) && oldIn > 0 && newIn > 0 && newIn !== oldIn) {
+                const diff = newIn - oldIn;
+                const rate = oldIn > 0 ? (diff / oldIn) * 100 : 0;
+                lines.push(`입고가 ${oldIn.toLocaleString()}→${newIn.toLocaleString()}`);
+                lines.push(`${formatSignedNumber(diff)} / ${formatSignedRate(rate)}`);
             } else if (getRowCatalogNames(row, mItem).length > 0 && issueText === '가격변동') {
                 lines.push('카탈로그 태그 있음');
                 lines.push('최근 입고가 변경근거 없음');
@@ -1912,7 +1917,7 @@
             }
 
             if (issueText === '행사제안' && lines.length < 2) {
-                lines.push(`행사제안: ${issueSubText || '조건 충족'}`);
+                lines.push(`조건: ${issueSubText || getPromoSuggestionReason(row, mItem, {}) || '행사 검토'}`);
                 if (stockQty !== null && safeStock > 0) lines.push(`재고 ${stockQty.toLocaleString()} / 안전 ${safeStock.toLocaleString()}`);
             }
 
@@ -1929,8 +1934,7 @@
             }
 
             if (lines.length === 0) {
-                if (marginInfo.rate !== null) return [`마진 ${marginInfo.rate.toFixed(1)}%`, marginInfo.isPromo ? '행사가 기준' : '출고가 기준'];
-                return ['특이사항 없음', ''];
+                return ['', ''];
             }
             return lines.slice(0, 2);
         };
@@ -2093,22 +2097,25 @@
                     issueCellBg = 'bg-white';
                     issueTextColor = 'text-rose-700';
                 } else if (promoActive) {
-                    issueText = '행사중';
-                    issueTextColor = 'text-purple-700';
-                    issueCellBg = 'bg-white';
+                    // 행사 상품은 중복 배지를 만들지 않는다. 꼭 봐야 할 위험이면 위험 이슈를 우선 표시한다.
                     if (stockQty === 0) {
-                        issueSubText = '품절';
+                        issueText = '품절';
+                        issueSubText = '';
                         issueTextColor = 'text-rose-700';
-                        issueCellBg = 'bg-white';
                     } else if (stockQty !== null && safeStock > 0 && stockQty < safeStock) {
-                        issueSubText = '품절임박';
+                        issueText = '품절임박';
+                        issueSubText = '';
                         issueTextColor = 'text-amber-700';
-                        issueCellBg = 'bg-white';
                     } else if (marginInfo.rate !== null && marginInfo.rate < 0) {
-                        issueSubText = '역마진';
+                        issueText = '역마진';
+                        issueSubText = '';
                         issueTextColor = 'text-rose-700';
-                        issueCellBg = 'bg-white';
+                    } else {
+                        issueText = '행사중';
+                        issueSubText = '';
+                        issueTextColor = 'text-purple-700';
                     }
+                    issueCellBg = 'bg-white';
                 } else if (isPromoSuggestion(row, mItem, config)) {
                     issueText = '행사제안';
                     issueSubText = getPromoSuggestionReason(row, mItem, config) || marginText;
@@ -2127,9 +2134,8 @@
                     issueSubText = marginText;
                     issueTextColor = 'text-slate-500';
                 } else if (oldP > 0 && newP > 0 && newP !== oldP) {
-                    issueText = '가격변동';
-                    const diffLabel = diffAmount > 0 ? `기준 +${diffAmount.toLocaleString()}` : `기준 ${diffAmount.toLocaleString()}`;
-                    issueSubText = isSpike ? `${diffLabel} · ${Math.round(diffRate)}%` : `${diffLabel} · ${marginText}`;
+                    issueText = isSpike ? '큰변동' : '가격변동';
+                    issueSubText = '';
                     issueTextColor = diffAmount > 0 ? 'text-rose-600' : 'text-blue-600';
                     issueCellBg = 'bg-white';
                 }
@@ -2137,18 +2143,17 @@
 
             const compareSummary = getComparePriceSummary(row, config);
             if (compareSummary.hasDiff) {
-                if (issueText === '-' || issueText === '가격변동') {
-                    issueText = issueText === '-' ? '단가확인' : issueText;
-                    issueSubText = compareSummary.summary;
-                    issueTextColor = issueText === '단가확인' ? 'text-violet-700' : issueTextColor;
+                if (issueText === '-') {
+                    issueText = '단가확인';
+                    issueSubText = '';
+                    issueTextColor = 'text-violet-700';
                     issueCellBg = 'bg-white';
-                } else if (!['품절', '품절임박', '역마진'].includes(issueSubText)) {
-                    issueSubText = compareSummary.summary;
                 }
             }
 
-            if ((issueText === '-' || !issueText) && marginInfo.rate !== null) {
-                issueSubText = marginText;
+            // 이슈 열은 꼭 봐야 할 라벨만 남긴다. 정상 마진/비교 상세/행사 배지는 리포트로 넘긴다.
+            if (issueText === '-' || !issueText) {
+                issueSubText = '';
             }
 
             const issueBadgeClassMap = {
@@ -2157,24 +2162,24 @@
                 '행사중': 'bg-violet-50 text-violet-700 border-violet-200',
                 '행사제안': 'bg-emerald-50 text-emerald-700 border-emerald-200',
                 '정지대기': 'bg-rose-50 text-rose-700 border-rose-200',
+                '큰변동': 'bg-orange-50 text-orange-700 border-orange-200',
+                '품절': 'bg-rose-50 text-rose-700 border-rose-200',
+                '품절임박': 'bg-orange-50 text-orange-700 border-orange-200',
+                '역마진': 'bg-rose-50 text-rose-700 border-rose-200',
                 '신규등록': 'bg-emerald-50 text-emerald-700 border-emerald-200',
                 '신규/재입고': 'bg-emerald-50 text-emerald-700 border-emerald-200',
                 '품절/단종': 'bg-slate-100 text-slate-600 border-slate-200',
                 '-': 'bg-slate-50 text-slate-500 border-slate-200'
             };
-            if (['품절', '품절임박', '역마진'].includes(issueSubText)) {
-                issueBadgeClassMap[issueText] = issueSubText === '품절임박'
-                    ? 'bg-orange-50 text-orange-700 border-orange-200'
-                    : 'bg-rose-50 text-rose-700 border-rose-200';
-            }
             const issueBadgeClass = issueBadgeClassMap[issueText] || 'bg-slate-50 text-slate-600 border-slate-200';
+            const displayIssueSubText = ['품절', '품절임박', '역마진'].includes(issueSubText) ? issueSubText : '';
             const latestParserHistory = findLatestParserHistory(row.코드, getRowCatalogNames(row, mItem), '입고가');
             const reportLines = buildRowReport({ row, mItem, issueText, issueSubText, latestHistory: latestParserHistory, compareSummary, marginInfo, stockQty, safeStock, promoActive });
             const reportTone = reportLines.some(t => String(t).includes('역마진') || String(t).includes('근거 없음') || String(t).includes('근거없음')) ? 'text-rose-700' : (latestParserHistory ? 'text-slate-700' : 'text-slate-500');
             return (
                 <tr className={`group border-b border-slate-200 transition-all hover:bg-slate-50 relative z-0 hover:z-10 ${isStopped ? 'opacity-70 bg-slate-50' : ''}`}>
                     
-                    <td className={`sticky z-20 px-3 py-2 border-r-2 border-r-slate-300 transition-colors min-w-[280px] w-[280px] max-w-[280px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : 'bg-white group-hover:!bg-slate-50 border-l-4 border-l-transparent group-hover:!border-l-slate-300'}`} style={{left: 0}}>
+                    <td className={`sticky z-20 px-3 py-2 border-r border-r-slate-200 transition-colors min-w-[280px] w-[280px] max-w-[280px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : 'bg-white group-hover:!bg-slate-50 border-l-4 border-l-transparent group-hover:!border-l-slate-300'}`} style={{left: 0}}>
                         <div className="flex gap-2 items-center w-full min-w-0">
                             {isEstimateUploaded && (
                                 <input type="checkbox" className="w-4 h-4 rounded border-slate-300 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500" checked={isSel} onChange={() => {const n = new Set(state.selectedRows); n.has(row.코드)?n.delete(row.코드):n.add(row.코드); actions.setSelectedRows(n);}} />
@@ -2244,11 +2249,11 @@
                                             {issueText}
                                         </span>
                                     )}
-                                    <div className="flex items-center justify-center gap-1 min-w-0 max-w-full">
-                                        {issueSubText && <span className={`text-[10px] font-bold truncate ${issueSubText.startsWith('마진') ? marginToneClass + ' border px-1.5 py-0.5 rounded-full' : ['품절', '품절임박', '역마진'].includes(issueSubText) ? issueBadgeClass + ' border px-1.5 py-0.5 rounded-full' : 'text-slate-500'}`} title={issueSubText}>{issueSubText}</span>}
-                                        {issueSubText && !issueSubText.startsWith('마진') && !['품절', '품절임박', '역마진'].includes(issueSubText) && marginInfo.rate !== null && <span className={`text-[9px] font-black border px-1.5 py-0.5 rounded-full shrink-0 ${marginToneClass}`}>{marginInfo.rate.toFixed(1)}%</span>}
-                                        {marginInfo.isPromo && issueSubText !== '품절' && issueSubText !== '품절임박' && issueSubText !== '역마진' && <span className="text-[9px] font-black bg-violet-50 text-violet-700 border border-violet-200 px-1.5 py-0.5 rounded-full shrink-0">행사</span>}
-                                    </div>
+                                    {displayIssueSubText && (
+                                        <div className="flex items-center justify-center gap-1 min-w-0 max-w-full">
+                                            <span className={`text-[10px] font-bold truncate ${issueBadgeClass} border px-1.5 py-0.5 rounded-full`} title={displayIssueSubText}>{displayIssueSubText}</span>
+                                        </div>
+                                    )}
                                 </div>
                             </td>
 
@@ -2259,7 +2264,7 @@
                                     <EditableCell key={`p-u-e-${h}`} row={row} field={h} linkedMasterField={linkedMasterField} mVal={mVal} config={config} data={data} isSel={isSel} extraClass={i === arr.length - 1 ? 'border-r-2 !border-r-slate-300' : ''} />
                                 );
                             })}
-                            <td className={`px-3 py-1.5 bg-white border-r border-slate-200 min-w-[220px] w-[220px] max-w-[220px] ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'}`}>
+                            <td className={`px-3 py-1.5 bg-white border-l-2 border-l-slate-300 border-r border-slate-200 min-w-[220px] w-[220px] max-w-[220px] ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'}`}>
                                 <div className={`flex flex-col justify-center gap-0.5 leading-tight ${reportTone}`}>
                                     <div className="text-[11px] font-black truncate" title={reportLines[0] || ''}>{reportLines[0] || '-'}</div>
                                     <div className="text-[10px] font-bold text-slate-500 truncate" title={reportLines[1] || ''}>{reportLines[1] || ''}</div>
@@ -2292,12 +2297,12 @@
                         <table className="text-left border-collapse text-[13px] whitespace-nowrap relative z-0 w-max bg-white">
                             <thead className="text-[12px] font-extrabold sticky top-0 z-[60] shadow-sm border-b border-slate-200">
                                 <tr>
-                                    <th className="sticky top-0 left-0 z-[70] bg-slate-100 px-3 py-2 border-r-2 border-r-slate-300 text-slate-700 min-w-[280px] w-[280px] max-w-[280px]">
+                                    <th className="sticky top-0 left-0 z-[70] bg-slate-100 px-3 py-2 border-r border-r-slate-200 text-slate-700 min-w-[280px] w-[280px] max-w-[280px]">
                                         <div className="flex items-center gap-2 pl-1">
                                             {isEstimateUploaded && (
                                                 <input type="checkbox" className="rounded w-4 h-4 border-slate-400 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500" checked={selectedRows.size === fullDisplayRows.length && displayRows.length > 0} onChange={actions.toggleAllRows} />
                                             )}
-                                            <span className="truncate font-black">기본정보</span>
+                                            <span className="truncate font-black">마스터 정보</span>
                                         </div>
                                     </th>
 
@@ -2325,7 +2330,7 @@
                                                     </th>
                                                 );
                                             })}
-                                            <th className="sticky top-0 z-[60] bg-slate-100 px-3 py-3 border-b border-slate-200 text-center text-slate-700 font-black min-w-[220px] w-[220px] max-w-[220px]">
+                                            <th className="sticky top-0 z-[60] bg-slate-100 px-3 py-3 border-b border-l-2 border-l-slate-300 border-slate-200 text-center text-slate-700 font-black min-w-[220px] w-[220px] max-w-[220px]">
                                                 리포트
                                             </th>
                                         </>
@@ -2369,7 +2374,7 @@
                     <i className="fas fa-box-open"></i>
                     <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm"><i className="fas fa-check"></i></div>
                 </div>
-                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v1.10.1 리포트 구간]</h2>
+                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v1.10.2 구간/이슈 정리]</h2>
                 <p className="text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold">
                     현재 등록된 <span className="text-indigo-500">마스터 상품 데이터</span>가 없습니다.<br/>
                     견적 작업 및 파서 연동을 위해 전체 상품 DB를 세팅해주세요.
