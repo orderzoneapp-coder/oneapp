@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Smart Parser [v3.0.6 히스토리 강화본]</title>
+    <title>ONEAPP MerchOps - Smart Parser [v3.0.7 히스토리 안전적용본]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -242,9 +242,9 @@
             const handleApplyMatched = useCallback(async (updateTextData = true) => {
                 const toApply = parserBuffer.filter(r => r._apply && r._matchCode); 
                 if (toApply.length === 0) { showToast("⚠️ 적용할 항목이 없습니다."); return false; }
-                const catalogLabel = currentTag || '미지정';
-                const catalogWarning = currentTag ? '' : '\n\n※ 현재 카탈로그명이 미지정입니다. 히스토리에는 [미지정] 경로로 기록됩니다.';
-                if (!window.confirm(`분석된 ${toApply.length}건의 데이터를 마스터에 바로 적용하시겠습니까?\n\n※ 카탈로그/견적서 단가는 기존 구조처럼 마스터값으로 반영됩니다.\n※ 변경 전/후 값과 작업 경로는 히스토리에 상세 저장됩니다.${catalogWarning}`)) return false;
+                if (!currentTag || !String(currentTag).trim()) { showToast("⚠️ 마스터 적용 전 기준 카탈로그 또는 견적서명을 먼저 선택/생성하세요."); return false; }
+                const catalogLabel = String(currentTag).trim();
+                if (!window.confirm(`분석된 ${toApply.length}건의 데이터를 마스터에 바로 적용하시겠습니까?\n\n※ 카탈로그/견적서 단가는 기존 구조처럼 마스터값으로 반영됩니다.\n※ 변경 전/후 값과 작업 경로는 히스토리에 상세 저장됩니다.\n※ 히스토리 저장에 실패하면 마스터 적용을 중단합니다.`)) return false;
 
                 setIsProcessing(true); setProcessMsg("마스터 적용 및 상세 히스토리 기록 중...");
                 try {
@@ -261,13 +261,12 @@
                         quoteName: '',
                         timestamp: nowStr,
                         timestampISO: nowISO,
-                        version: 'smart-parser-v3.0.6-history-enhanced'
+                        version: 'smart-parser-v3.0.7-history-safe-apply'
                     };
                     const makeHistoryLog = ({ code, row, oldItem, field, oldVal, newVal, memo, extra = {} }) => {
-                        const numericHistoryFields = ['입고가', '출고가', '시중가', '행사가', '판매여부', '1입고', '1출고', '2입고', '2출고', '재고수량'];
                         const oldNum = parseNum(oldVal);
                         const newNum = parseNum(newVal);
-                        const isNumericChange = numericHistoryFields.includes(field);
+                        const isNumericChange = !isNaN(oldNum) && !isNaN(newNum) && (String(oldVal).match(/[0-9]/) || String(newVal).match(/[0-9]/));
                         const diff = isNumericChange ? newNum - oldNum : '';
                         return {
                             id: generateUUID(),
@@ -299,6 +298,7 @@
                     
                     let pendingList = await getIDB('pending_shop_status') || [];
                     let addedToPending = false;
+                    let masterMutationCount = 0;
 
                     toApply.forEach(row => {
                         const code = row._matchCode;
@@ -310,6 +310,7 @@
                         if (row._isSoldOut) {
                             const oldSaleStatus = newMaster[code]['판매여부'];
                             newMaster[code]['판매여부'] = 0;
+                            masterMutationCount++;
                             if (String(oldSaleStatus ?? '') !== '0') {
                                 localLogs.push(makeHistoryLog({
                                     code, row, oldItem,
@@ -346,6 +347,7 @@
                             }
 
                             newMaster[code]['입고가'] = pInNum;
+                            masterMutationCount++;
                             const recalculated = calculatePricesEngine(pInNum, newMaster[code], row.finalData || {}, marginRules, false);
                             Object.assign(newMaster[code], recalculated);
 
@@ -374,6 +376,7 @@
                                 }));
                             }
                             newMaster[code]['카탈로그'] = newCatalogTags;
+                            masterMutationCount++;
                         }
 
                         if (updateTextData) {
@@ -390,16 +393,25 @@
                                         extra: { actionType: 'parser_text_field_update' }
                                     }));
                                     newMaster[code][fieldName] = parsedVal;
+                                    masterMutationCount++;
                                 }
                             });
                         }
                         if (row['품목명'] && row._matchStatus.includes('수동일치')) newDict[`${normalizeText(row['품목명'])}|${normalizeText(row['규격'])}`] = code;
                     });
                     
+                    if (masterMutationCount > 0 && localLogs.length === 0) {
+                        throw new Error('마스터 변경 항목이 있으나 히스토리 로그가 생성되지 않았습니다.');
+                    }
                     if (localLogs.length > 0) {
                         let currentHistory = [];
                         try { currentHistory = JSON.parse(localStorage.getItem('merchHistory_v870')) || []; } catch(e){}
-                        localStorage.setItem('merchHistory_v870', JSON.stringify([...localLogs, ...currentHistory].slice(0, 5000)));
+                        const mergedHistory = [...localLogs, ...currentHistory].slice(0, 5000);
+                        localStorage.setItem('merchHistory_v870', JSON.stringify(mergedHistory));
+                        const verifyHistory = JSON.parse(localStorage.getItem('merchHistory_v870') || '[]');
+                        const verifyIds = new Set(verifyHistory.map(log => log && log.id));
+                        const missingIds = localLogs.filter(log => !verifyIds.has(log.id));
+                        if (missingIds.length > 0) throw new Error('히스토리 저장 검증에 실패했습니다.');
                     }
                     
                     if (addedToPending) await setIDB('pending_shop_status', pendingList);
@@ -407,7 +419,7 @@
                     await saveMaster(newMaster); saveDict(newDict); setProcessedCodes(newlyProcessed);
                     const appliedIds = new Set(toApply.map(r => r._id)); setParserBuffer(prev => prev.filter(r => !appliedIds.has(r._id)));
                     showToast(`✅ ${toApply.length}건 마스터 적용 및 상세 히스토리 기록 완료`); return true;
-                } catch (error) { console.error(error); showToast("❌ 데이터베이스 저장 중 오류가 발생했습니다."); return false; } finally { setIsProcessing(false); setProcessMsg(''); }
+                } catch (error) { console.error(error); showToast(error?.message?.includes("히스토리") || error?.message?.includes("마스터 변경") ? "❌ " + error.message : "❌ 데이터베이스 저장 중 오류가 발생했습니다."); return false; } finally { setIsProcessing(false); setProcessMsg(''); }
             }, [parserBuffer, masterProducts, parserDict, marginRules, currentTag, processedCodes, saveMaster, saveDict, setProcessedCodes, setParserBuffer, setIsProcessing, setProcessMsg, showToast]);
 
             const handleConfirmMapping = useCallback(async (masterCode) => { 
@@ -551,6 +563,7 @@
             const handleExecute = () => { 
                 if (!rawText.trim()) return showToast("⚠️ 시세 텍스트를 붙여넣어주세요."); 
                 const finalTag = catalogMode === 'select' ? selectedCatalog : newCatalogInput.trim();
+                if (!finalTag) return showToast("⚠️ 기준 카탈로그 또는 견적서명을 선택/입력하세요.");
                 executeParser(rawText, finalTag, forceManual); 
             };
 
@@ -564,7 +577,7 @@
                         <div className="p-6 flex flex-col bg-slate-50 space-y-4">
                             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                                 <div className="flex items-center justify-between mb-3">
-                                    <label className="text-[14px] font-black text-slate-800 flex items-center"><i className="fas fa-folder text-emerald-500 mr-2"></i>기준 카탈로그 설정 <span className="ml-2 bg-slate-100 text-slate-500 text-[10px] px-1.5 py-0.5 rounded font-bold">선택사항</span></label>
+                                    <label className="text-[14px] font-black text-slate-800 flex items-center"><i className="fas fa-folder text-emerald-500 mr-2"></i>기준 카탈로그 설정 <span className="ml-2 bg-rose-100 text-rose-600 text-[10px] px-1.5 py-0.5 rounded font-bold">마스터 적용 필수</span></label>
                                     <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
                                         <button onClick={() => setCatalogMode('select')} className={`px-3 py-1.5 text-[12px] font-bold rounded-md transition-all ${catalogMode === 'select' ? 'bg-white text-emerald-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>기존 카탈로그</button>
                                         <button onClick={() => setCatalogMode('input')} className={`px-3 py-1.5 text-[12px] font-bold rounded-md transition-all ${catalogMode === 'input' ? 'bg-white text-indigo-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>새로 만들기</button>
@@ -573,7 +586,7 @@
                                 {catalogMode === 'select' ? (
                                     <div className="relative">
                                         <select value={selectedCatalog} onChange={(e) => setSelectedCatalog(e.target.value)} className="appearance-none w-full border border-slate-300 rounded-lg px-4 py-2.5 text-[13px] font-bold outline-none focus:border-emerald-500 bg-white">
-                                            <option value="" className="text-slate-400">-- 기준 카탈로그 지정 안 함 (단순 단가 매핑 모드) --</option>
+                                            <option value="" className="text-slate-400">-- 기준 카탈로그를 선택하세요 --</option>
                                             {availableTags.map(t => <option key={t.name} value={t.name} className="text-slate-800">📂 {t.name} ({t.count}건)</option>)}
                                         </select>
                                         <i className="fas fa-chevron-down absolute right-4 top-3.5 text-slate-400"></i>
@@ -603,7 +616,7 @@
         };
 
         const ParserReviewModal = ({ onClose, onConfirm, state, actions }) => {
-            const [viewMode, setViewMode] = useState('mapping'); const [priceFilter, setPriceFilter] = useState('all'); const [updateText, setUpdateText] = useState(true); 
+            const [viewMode, setViewMode] = useState('mapping'); const [priceFilter, setPriceFilter] = useState('all'); const [updateText, setUpdateText] = useState(false); 
             const { parserBuffer, masterProducts } = state;
             const targetRows = useMemo(() => parserBuffer.filter(r => r._apply && r._matchCode), [parserBuffer]);
             useEffect(() => { if (targetRows.length === 0) onClose(); }, [targetRows.length, onClose]);
