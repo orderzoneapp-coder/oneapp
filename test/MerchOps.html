@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v1.9.9 선택액션 제외 패치]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v1.9.9-core4 HistoryEngine 기본 교체]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -15,244 +15,24 @@
     <script>
         window.MASTER_HEADERS = [ "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "판매여부", "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록" ];
         window.NUMERIC_HEADERS = [ "안전재고", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "1종연산", "2종연산", "외주비", "노무비", "경비", "1구매", "1출고", "2구매", "2출고", "1입고", "2입고" ];
-        
-        window.generateUUID = () => {
-            return typeof crypto !== 'undefined' && crypto.randomUUID 
-                ? crypto.randomUUID() 
-                : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { 
-                    const r = Math.random() * 16 | 0; 
-                    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16); 
-                });
-        };
-
-        window.parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
-
-        // 판매상태는 현재 작업정보가 아니라 마스터에 저장된 결과 상태다.
-        // - : 아직 최종 저장 이력이 없거나 판매정보가 없음
-        // 1 판매중 : 저장된 판매 단가가 있고 재고가 있음
-        // 1 행사중 : 행사가가 적용 중이고 재고가 있음
-        // 1 품절 : 판매 단가는 있으나 재고수량이 0
-        // 0 정지중 : 판매 단가가 없거나 명시적으로 정지 처리된 상태
-        window.getMasterSalesState = (item = {}) => {
-            const rawStatus = item['판매여부'];
-            const statusStr = rawStatus !== undefined && rawStatus !== null ? String(rawStatus).trim() : '';
-            const hasStatusValue = statusStr !== '';
-            const outPrice = window.parseNum(item['출고가']);
-            const promoPrice = window.parseNum(item['행사가']);
-            const stockQty = item['재고수량'] !== undefined && item['재고수량'] !== '' ? window.parseNum(item['재고수량']) : 999;
-            const hasSalePrice = outPrice > 0 || promoPrice > 0;
-
-            if (!hasStatusValue && !hasSalePrice) {
-                return { code: '-', label: '-', text: '-', tone: 'muted', className: 'text-slate-400 font-bold' };
-            }
-
-            if (statusStr === '0' || statusStr === '정지중' || statusStr === '판매중단' || (!hasSalePrice && hasStatusValue)) {
-                return { code: '0', label: '정지중', text: '0 정지중', tone: 'stopped', className: 'text-rose-600 font-black' };
-            }
-
-            if (hasSalePrice) {
-                if (stockQty === 0) {
-                    return { code: '1', label: '품절', text: '1 품절', tone: 'soldout', className: 'text-orange-600 font-black' };
-                }
-                if (promoPrice > 0) {
-                    return { code: '1', label: '행사중', text: '1 행사중', tone: 'promo', className: 'text-purple-700 font-black' };
-                }
-                return { code: '1', label: '판매중', text: '1 판매중', tone: 'selling', className: 'text-emerald-700 font-black' };
-            }
-
-            return { code: '-', label: '-', text: '-', tone: 'muted', className: 'text-slate-400 font-bold' };
-        };
-
-        window.initIDB = () => new Promise((resolve, reject) => { 
-            const request = indexedDB.open('MerchOpsDB', 2); 
-            request.onupgradeneeded = (e) => { 
-                const db = e.target.result; 
-                if (!db.objectStoreNames.contains('store')) {
-                    db.createObjectStore('store'); 
-                }
-                if (!db.objectStoreNames.contains('master_products')) {
-                    db.createObjectStore('master_products', { keyPath: '코드' }); 
-                }
-            }; 
-            request.onsuccess = () => resolve(request.result); 
-            request.onerror = () => reject(request.error); 
-        });
-
-        window.bulkPutIDB = async (storeName, items) => { 
-            const db = await window.initIDB(); 
-            return new Promise((resolve, reject) => { 
-                const tx = db.transaction(storeName, 'readwrite'); 
-                const store = tx.objectStore(storeName); 
-                items.forEach(item => store.put(item)); 
-                tx.oncomplete = () => resolve(); 
-                tx.onerror = () => reject(tx.error); 
-            }); 
-        };
-
-        window.getAllIDB = async (storeName) => { 
-            const db = await window.initIDB(); 
-            return new Promise((resolve, reject) => { 
-                const tx = db.transaction(storeName, 'readonly'); 
-                const req = tx.objectStore(storeName).getAll(); 
-                req.onsuccess = () => resolve(req.result); 
-                req.onerror = () => reject(tx.error); 
-            }); 
-        };
-
-        window.getIDB = async (key) => { 
-            const db = await window.initIDB(); 
-            return new Promise((resolve, reject) => { 
-                const tx = db.transaction('store', 'readonly'); 
-                const req = tx.objectStore('store').get(key); 
-                req.onsuccess = () => resolve(req.result); 
-                req.onerror = () => reject(tx.error); 
-            }); 
-        };
-
-        window.setIDB = async (key, val) => { 
-            const db = await window.initIDB(); 
-            return new Promise((resolve, reject) => { 
-                const tx = db.transaction('store', 'readwrite'); 
-                tx.objectStore('store').put(val, key); 
-                tx.oncomplete = () => resolve(); 
-                tx.onerror = () => reject(tx.error); 
-            }); 
-        };
-
+    </script>
+    <script src="./coreEngine.js"></script>
+    <script>
         // ============================================================
-        // [M-ENGINE-01] 단가 계산 엔진
-        // 역할: 입고가 + 외주비 + 노무비 + 마진룰을 기준으로 계산출고가를 산출한다.
-        // 주의: 행사가 우선 적용 판단은 여기서 하지 않는다. 행사가는 후속 final/출력 단계에서 우선권을 가진다.
-        // 수정 시 검증: 입고가 변경, 마진룰 변경, 창고/단위별 룰, forceRecalc 동작을 함께 확인한다.
+        // [M-CORE-01] coreEngine.js 1차 연결
+        // 역할: 기존 MerchOps 내부 Storage/Pricing 공통 함수를 coreEngine.js로 위임한다.
+        // 주의: 4차 패치에서는 Storage/Pricing/ExportDraft/Cloud에 이어 History 기본 저장 로직을 coreEngine.js로 위임한다.
         // ============================================================
-        window.calculatePricesEngine = (baseInPrice, providedOutPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
-            const ROUND_UNIT = 100;
-            const outsrc = (!currentFinalData?.['외주비'] && currentFinalData?.['외주비'] !== 0) 
-                ? window.parseNum(mItem?.['외주비']) 
-                : window.parseNum(currentFinalData?.['외주비']);
-            
-            const labor = (!currentFinalData?.['노무비'] && currentFinalData?.['노무비'] !== 0) 
-                ? window.parseNum(mItem?.['노무비']) 
-                : window.parseNum(currentFinalData?.['노무비']);
-            
-            const totalCost = baseInPrice + outsrc + labor;
-            const whCode = String(currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '').trim();
-            const unitStr = String(currentFinalData?.['단위'] ?? mItem?.['단위'] ?? '').trim().toLowerCase();
-            
-            const matchWh = (ruleWh, targetWh) => { 
-                if (ruleWh === '*') return true; 
-                const targets = String(ruleWh).split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean); 
-                return targets.some(s => s === targetWh || (targetWh !== '' && !isNaN(s) && !isNaN(targetWh) && Number(s) === Number(targetWh))); 
-            };
-            
-            const matchUnit = (ruleUnit, targetUnit) => { 
-                if (ruleUnit === '*') return true; 
-                const targets = String(ruleUnit).toLowerCase().split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean); 
-                return targets.some(s => targetUnit === s || targetUnit.includes(s)); 
-            };
-
-            let bestRule = null; 
-            let bestScore = -1;
-            const safeMarginRules = Array.isArray(marginRules) ? marginRules : [];
-            
-            safeMarginRules.forEach(r => { 
-                if (matchWh(r.whCode, whCode) && matchUnit(r.unit, unitStr)) { 
-                    let score = 0; 
-                    if (r.whCode !== '*') score += 2; 
-                    if (r.unit !== '*') score += 1; 
-                    if (score > bestScore) { 
-                        bestScore = score; 
-                        bestRule = r; 
-                    } 
-                } 
-            });
-
-            const appliedRule = bestRule || { rate: 10, type: 'divide' }; 
-            let calcOutPrice = 0;
-            
-            if (baseInPrice > 0) { 
-                if (appliedRule.type === 'divide') {
-                    calcOutPrice = totalCost / (1 - (appliedRule.rate / 100)); 
-                } else {
-                    calcOutPrice = totalCost * (1 + (appliedRule.rate / 100)); 
-                }
-                calcOutPrice = Math.round(calcOutPrice / ROUND_UNIT) * ROUND_UNIT; 
-            }
-
-            if (baseInPrice === 0) return 0;
-            if (forceRecalc) return calcOutPrice;
-            if (providedOutPrice > 0) return providedOutPrice;
-            return calcOutPrice;
-        };
-
-        // ============================================================
-        // [M-ENGINE-02] 현재 작업값 결정 엔진
-        // 역할: 마스터 기준정보 + 재고/견적 source를 조합하여 managedItems.finalData를 만든다.
-        // 원칙: 메인은 최종 판단자가 아니라 1차 작업대다. 최종 검증/출력은 출력검증센터에서 수행한다.
-        // 수정 시 검증: 재고 우선, 견적 우선, 행사가, 재고수량 기본값 999, forceRecalc를 함께 확인한다.
-        // ============================================================
-        window.computeFinalData = (mItem, sources, marginRules, forceRecalc = false) => {
-            const inv = sources['inventory'] || {};
-            const est = sources['estimate'] || {};
-            
-            const invStock = inv['재고수량'] !== undefined ? window.parseNum(inv['재고수량']) : (inv['안전재고'] !== undefined ? window.parseNum(inv['안전재고']) : 999);
-            const hasInv = Object.keys(inv).length > 0;
-            const hasEst = Object.keys(est).length > 0;
-            
-            const invPromo = window.parseNum(inv['행사가']);
-            const estPromo = window.parseNum(est['행사가']);
-            
-            const invInPrice = inv['입고가'] !== undefined ? window.parseNum(inv['입고가']) : window.parseNum(mItem['입고가']);
-            const estInPrice = est['입고가'] !== undefined ? window.parseNum(est['입고가']) : window.parseNum(mItem['입고가']);
-            const masterInPrice = window.parseNum(mItem['입고가']);
-
-            const invProvidedOut = window.parseNum(inv['출고가']);
-            const estProvidedOut = window.parseNum(est['출고가']);
-            const masterProvidedOut = window.parseNum(mItem['출고가']);
-            const masterProvidedMarket = window.parseNum(mItem['시중가']);
-
-            const invTargetOut = window.calculatePricesEngine(invInPrice, invProvidedOut, mItem, inv, marginRules, forceRecalc);
-            const estTargetOut = window.calculatePricesEngine(estInPrice, estProvidedOut, mItem, est, marginRules, forceRecalc);
-            const masterTargetOut = window.calculatePricesEngine(masterInPrice, masterProvidedOut, mItem, {}, marginRules, forceRecalc);
-
-            let finalMarketPrice = 0;
-            if (forceRecalc) {
-                finalMarketPrice = masterTargetOut; 
-            } else {
-                finalMarketPrice = masterProvidedMarket > 0 ? masterProvidedMarket : masterTargetOut;
-            }
-            
-            let targetSource = {};
-            let theme = 0; 
-            let isPromo = false;
-            let normalPrice = 0; 
-            
-            if (hasInv && invStock > 0 && invPromo > 0 && !forceRecalc) {
-                targetSource = { ...inv, '입고가': invInPrice, '출고가': invTargetOut, '행사가': invPromo }; 
-                theme = 2; isPromo = true; normalPrice = invTargetOut;
-            } else if (hasEst && estPromo > 0 && !forceRecalc) {
-                targetSource = { ...est, '입고가': estInPrice, '출고가': estTargetOut, '행사가': estPromo }; 
-                theme = 1; isPromo = true; normalPrice = estTargetOut;
-            } else if (hasInv && invStock > 0) {
-                targetSource = { ...inv, '입고가': invInPrice, '출고가': invTargetOut }; 
-                theme = 0; normalPrice = invTargetOut;
-            } else if (hasEst) {
-                targetSource = { ...est, '입고가': estInPrice, '출고가': estTargetOut }; 
-                theme = 0; normalPrice = estTargetOut;
-            } else {
-                targetSource = { '입고가': masterInPrice, '출고가': masterTargetOut }; 
-                theme = 0; normalPrice = masterTargetOut;
-            }
-
-            if (targetSource['입고가'] === 0) targetSource['출고가'] = 0;
-            
-            targetSource['시중가'] = finalMarketPrice;
-            targetSource._theme = theme;
-            targetSource._isPromo = isPromo;
-            targetSource._normalPrice = normalPrice;
-            
-            return targetSource;
-        };
+        window.generateUUID = window.ONEAPP?.STORAGE?.generateUUID || window.generateUUID;
+        window.parseNum = window.ONEAPP?.PRICING?.parseNum || window.parseNum;
+        window.getMasterSalesState = window.ONEAPP?.PRICING?.getMasterSalesState || window.getMasterSalesState;
+        window.initIDB = window.ONEAPP?.STORAGE?.initIDB || window.initIDB;
+        window.bulkPutIDB = window.ONEAPP?.STORAGE?.bulkPutIDB || window.bulkPutIDB;
+        window.getAllIDB = window.ONEAPP?.STORAGE?.getAllIDB || window.getAllIDB;
+        window.getIDB = window.ONEAPP?.STORAGE?.getIDB || window.getIDB;
+        window.setIDB = window.ONEAPP?.STORAGE?.setIDB || window.setIDB;
+        window.calculatePricesEngine = window.ONEAPP?.PRICING?.calculatePricesEngine || window.calculatePricesEngine;
+        window.computeFinalData = window.ONEAPP?.PRICING?.computeFinalData || window.computeFinalData;
     </script>
 </head>
 <body>
@@ -630,18 +410,30 @@
                 } 
             }, []);
 
-            const addHistoryLogs = useCallback((newLogs) => {
+            // ============================================================
+            // [M-CORE-04] History Engine 기본 연결
+            // 역할: 히스토리 저장/정규화는 coreEngine.js의 ONEAPP.HISTORY로 위임한다.
+            // 주의: 기존 UI와 F8 저장 흐름은 유지하고, 로그 저장 방식만 공통 엔진으로 통일한다.
+            // ============================================================
+            const addHistoryLogs = useCallback((newLogs, options = {}) => {
+                const historyEngine = window.ONEAPP?.HISTORY;
+                const logs = Array.isArray(newLogs) ? newLogs : [newLogs];
+                const safeLogs = logs.filter(Boolean).map(log => ({ source: 'merchops', sourceLabel: 'MerchOps', actionType: log.actionType || 'merchops_commit', applyMode: log.applyMode || 'direct_master_update', path: log.path || 'MerchOps > F8 저장', route: log.route || 'MerchOps/F8', ...log }));
+                if (safeLogs.length === 0) return [];
+
+                if (historyEngine?.addHistoryLogs) {
+                    const mergedLogs = historyEngine.addHistoryLogs(safeLogs, { limit: options.limit || 5000 });
+                    setHistoryLogs(mergedLogs);
+                    return mergedLogs;
+                }
+
+                // coreEngine.js 로드 실패 시 최소한 기존 저장 동작은 유지한다.
                 setHistoryLogs(prev => {
-                    const allLogs = [...newLogs, ...prev];
-                    const agriLogs = allLogs.filter(l => String(l.code).startsWith('10')).slice(0, 1000);
-                    const generalLogs = allLogs.filter(l => !String(l.code).startsWith('10')).slice(0, 1000);
-                    const safeAgriIds = new Set(agriLogs.map(l => l.id)); 
-                    const safeGeneralIds = new Set(generalLogs.map(l => l.id));
-                    const finalLogs = allLogs.filter(l => safeAgriIds.has(l.id) || safeGeneralIds.has(l.id));
-                    
-                    localStorage.setItem('merchHistory_v870', JSON.stringify(finalLogs));
-                    return finalLogs;
+                    const allLogs = [...safeLogs, ...prev].slice(0, options.limit || 5000);
+                    localStorage.setItem('merchHistory_v870', JSON.stringify(allLogs));
+                    return allLogs;
                 });
+                return safeLogs;
             }, []);
 
             return { masterProducts, setMasterProducts: saveMasterToLocal, managedItems, setManagedItems, historyLogs, setHistoryLogs, addHistoryLogs };
@@ -681,87 +473,56 @@
 
         const useMerchActions = (config, data, ui, fullDisplayRows) => {
             
+            // ============================================================
+            // [M-CLOUD-01] 클라우드 백업/복구 호출 브릿지
+            // 역할: Cloud 상세 전송/복구 로직은 coreEngine.js의 ONEAPP.CLOUD로 위임한다.
+            // 주의: MerchOps는 클라우드 업무판단을 하지 않고, 진행상태 표시와 결과 반영만 담당한다.
+            // ============================================================
             const handleCloudSync = useCallback(async (type) => { 
                 if (!config.cloudUrl) return ui.setAlertMsg("클라우드 URL이 설정되지 않았습니다. 우측 상단 톱니바퀴에서 URL을 세팅해주세요.");
+                if (!window.ONEAPP?.CLOUD) return ui.setAlertMsg("coreEngine.js의 Cloud Engine을 찾을 수 없습니다.");
+
                 ui.showToast(`☁️ 클라우드 ${type === 'upload' ? '전체 백업' : '불러오기'} 시작...`);
                 ui.setIsProcessing(true);
+                ui.setProcessMsg(type === 'upload' ? '클라우드 백업 준비 중...' : '클라우드 복구 준비 중...');
                 
                 try {
                     if (type === 'upload') {
-                        ui.setProcessMsg('서버 초기화 중...');
-                        let initRes = await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify({ action: 'initSync' }) });
-                        if ((await initRes.json()).status !== 'success') throw new Error("초기화 실패");
-
-                        const masterItems = Object.values(data.masterProducts);
-                        const chunkSize = 500;
-                        for (let i = 0; i < masterItems.length; i += chunkSize) {
-                            const chunk = masterItems.slice(i, i + chunkSize);
-                            ui.setProcessMsg(`마스터 데이터 업로드 중... (${Math.min(i + chunkSize, masterItems.length)} / ${masterItems.length}건)`);
-                            await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_master', data: chunk }) });
-                        }
-
-                        const historyItems = data.historyLogs || [];
-                        for (let i = 0; i < historyItems.length; i += chunkSize) {
-                            const chunk = historyItems.slice(i, i + chunkSize);
-                            ui.setProcessMsg(`히스토리 업로드 중... (${Math.min(i + chunkSize, historyItems.length)} / ${historyItems.length}건)`);
-                            await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_history', data: chunk }) });
-                        }
-
-                        ui.setProcessMsg('환경설정 및 AI 매핑 사전 업로드 중...');
-                        const dict = JSON.parse(localStorage.getItem('parserDict_v870') || '{}');
-                        const configPayload = {
-                            action: 'config',
-                            data: {
-                                dict: dict,
-                                rules: config.marginRules,
-                                appConfig: { 
-                                    mappings: config.mappings, 
-                                    masterLinks: config.masterLinks, 
-                                    visibleUploadCols: config.visibleUploadCols, 
-                                    visibleMasterCols: config.visibleMasterCols 
-                                }
+                        const result = await window.ONEAPP.CLOUD.pushCloudBackup({
+                            url: config.cloudUrl,
+                            masterProducts: data.masterProducts,
+                            historyLogs: data.historyLogs || [],
+                            config,
+                            chunkSize: 500,
+                            onProgress: (p) => {
+                                if (p?.message) ui.setProcessMsg(p.message);
                             }
-                        };
-                        await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify(configPayload) });
+                        });
 
-                        ui.showToast('✅ 클라우드 대용량 분할 백업(Push) 성공!');
+                        ui.showToast(`✅ 클라우드 백업 완료! (상품: ${(result.masterCount || 0).toLocaleString()}건, 로그: ${(result.historyCount || 0).toLocaleString()}건)`);
                     } else {
-                        ui.setProcessMsg('클라우드 데이터 수신 중...');
-                        const res = await fetch(config.cloudUrl, { method: 'GET' });
-                        if (!res.ok) throw new Error("Network Error");
-                        const result = await res.json();
-                        
-                        if (result.status === 'success' && result.data) { 
-                            if (result.data.master && Object.keys(result.data.master).length > 0) {
-                                data.setMasterProducts(result.data.master);
+                        const result = await window.ONEAPP.CLOUD.pullCloudBackup({
+                            url: config.cloudUrl,
+                            hooks: {
+                                setMasterProducts: data.setMasterProducts,
+                                setHistoryLogs: data.setHistoryLogs,
+                                setMarginRules: config.setMarginRules,
+                                setMappings: config.setMappings,
+                                setMasterLinks: config.setMasterLinks,
+                                setVisibleUploadCols: config.setVisibleUploadCols,
+                                setVisibleMasterCols: config.setVisibleMasterCols,
+                                setUploadColumnMeta: config.setUploadColumnMeta
+                            },
+                            onProgress: (p) => {
+                                if (p?.message) ui.setProcessMsg(p.message);
                             }
-                            if (result.data.dict && Object.keys(result.data.dict).length > 0) {
-                                localStorage.setItem('parserDict_v870', JSON.stringify(result.data.dict));
-                            }
-                            if (result.data.rules && result.data.rules.length > 0) {
-                                config.setMarginRules(result.data.rules);
-                            }
-                            
-                            if (result.data.history && Array.isArray(result.data.history)) {
-                                data.setHistoryLogs(result.data.history);
-                                localStorage.setItem('merchHistory_v870', JSON.stringify(result.data.history));
-                            }
-                            
-                            if (result.data.appConfig) {
-                                if (result.data.appConfig.mappings) config.setMappings(result.data.appConfig.mappings);
-                                if (result.data.appConfig.masterLinks) config.setMasterLinks(result.data.appConfig.masterLinks);
-                                if (result.data.appConfig.visibleUploadCols) config.setVisibleUploadCols(result.data.appConfig.visibleUploadCols);
-                                if (result.data.appConfig.visibleMasterCols) config.setVisibleMasterCols(result.data.appConfig.visibleMasterCols);
-                            }
+                        });
 
-                            if (ui.setHasUnsavedChanges) ui.setHasUnsavedChanges(false);
-                            
-                            const masterCount = result.data.master ? Object.keys(result.data.master).length : 0;
-                            const historyCount = result.data.history ? result.data.history.length : 0;
-                            ui.showToast(`✅ 데이터 불러오기 완료! (상품: ${masterCount.toLocaleString()}건, 로그: ${historyCount.toLocaleString()}건)`);
-                        } else {
-                            throw new Error("Invalid Data Format");
-                        }
+                        if (ui.setHasUnsavedChanges) ui.setHasUnsavedChanges(false);
+                        const restored = result?.data || {};
+                        const masterCount = restored.master ? Object.keys(restored.master).length : 0;
+                        const historyCount = restored.history ? restored.history.length : 0;
+                        ui.showToast(`✅ 데이터 불러오기 완료! (상품: ${masterCount.toLocaleString()}건, 로그: ${historyCount.toLocaleString()}건)`);
                     }
                 } catch (error) { 
                     console.error(error);
@@ -770,7 +531,7 @@
                     ui.setIsProcessing(false);
                     ui.setProcessMsg('');
                 }
-            }, [config.cloudUrl, data.masterProducts, data.setMasterProducts, config.marginRules, config.setMarginRules, config.mappings, config.masterLinks, config.visibleUploadCols, config.visibleMasterCols, data.historyLogs, data.setHistoryLogs, ui]);
+            }, [config, data.masterProducts, data.historyLogs, data.setMasterProducts, data.setHistoryLogs, ui]);
 
             const cleanUpGarbageTags = useCallback(() => {
                 if(window.confirm("마스터 DB에 남아있는 불필요한 엑셀 검색어 찌꺼기를 모두 삭제하여 용량을 최적화하시겠습니까?\n(오직 시스템에서 관리하는 속성만 안전하게 남습니다.)")) {
@@ -1331,8 +1092,8 @@
             // ============================================================
             // [M-BRIDGE-01] 출력검증센터 전달 브릿지
             // 역할: 현재 선택/검색/화면 작업범위만 merch_export_draft로 패키징한다.
+            // core2 변경: draft 생성 세부 로직은 coreEngine.js의 ONEAPP.EXPORT.buildExportDraft로 위임한다.
             // 금지: masterProducts 전체, finalData 전체 객체, sources 전체 객체를 그대로 넘기지 않는다.
-            // 출력센터 이동: 현재 탭 이동 방식으로 새창 누적을 방지한다.
             // ============================================================
             const handleOpenExportCenter = useCallback(() => {
                 if (Object.keys(data.managedItems).length === 0 && ui.activeTags.length === 0) {
@@ -1355,88 +1116,23 @@
                 }
 
                 if (ui.selectedRows.size === 0) {
-                    if (!window.confirm(`체크박스로 선택된 작업 항목이 없습니다.\n현재 화면에 보이는 ${targetRows.length}건을 모두 출력검증센터로 넘기시겠습니까?`)) return;
+                    if (!window.confirm(`체크박스로 선택된 작업 항목이 없습니다.
+현재 화면에 보이는 ${targetRows.length}건을 모두 출력검증센터로 넘기시겠습니까?`)) return;
                 }
-
-                const exportDraft = targetRows.map(row => {
-                    const code = row.코드;
-                    const finalData = row.finalData || {};
-                    const sources = row.sources || {};
-                    const inventory = sources.inventory || {};
-                    const estimate = sources.estimate || {};
-                    const master = data.masterProducts[code] || {};
-                    const tags = row._tags ? Array.from(row._tags) : [];
-
-                    const getValue = (key, defaultValue = '') => {
-                        if (finalData[key] !== undefined && finalData[key] !== '') return finalData[key];
-                        if (inventory[key] !== undefined && inventory[key] !== '') return inventory[key];
-                        if (estimate[key] !== undefined && estimate[key] !== '') return estimate[key];
-                        if (master[key] !== undefined && master[key] !== '') return master[key];
-                        return defaultValue;
-                    };
-
-                    const getNum = (key, defaultValue = 0) => window.parseNum(getValue(key, defaultValue));
-                    const getStr = (key, defaultValue = '') => {
-                        const val = getValue(key, defaultValue);
-                        return val !== undefined && val !== null ? String(val) : defaultValue;
-                    };
-
-                    const stockRaw = finalData['재고수량'] ?? inventory['재고수량'] ?? inventory['안전재고'] ?? estimate['재고수량'];
-                    const stockQty = stockRaw !== undefined && stockRaw !== null && stockRaw !== '' ? window.parseNum(stockRaw) : 999;
-                    const masterSalesState = window.getMasterSalesState(master);
-
-                    return {
-                        코드: code,
-                        working: {
-                            품목명: getStr('품목명'),
-                            규격: getStr('규격'),
-                            브랜드: getStr('브랜드'),
-                            간단설명: getStr('간단설명'),
-                            입고가: getNum('입고가'),
-                            출고가: getNum('출고가'),
-                            행사가: getNum('행사가'),
-                            도매A: getNum('도매A'),
-                            도매B: getNum('도매B'),
-                            시중가: getNum('시중가'),
-                            입고B: getNum('입고B'),
-                            판매여부: finalData._salesStopRequested === true ? 0 : (finalData['판매여부'] !== undefined ? finalData['판매여부'] : ''),
-                            // 소분가 생성을 위한 원물-소분 매칭 정보
-                            '1종코드': getStr('1종코드'),
-                            '1종규격': getStr('1종규격'),
-                            '1종연산': getNum('1종연산'),
-                            '경비': getNum('경비'),
-                            '외주비': getNum('외주비'),
-                            '노무비': getNum('노무비'),
-                            재고수량: stockQty,
-                            테마1: finalData._theme === 1 ? '1' : (master['테마1'] || ''),
-                            테마2: finalData._theme === 2 ? '1' : (master['테마2'] || ''),
-                            카테고리: getStr('견적서') || getStr('카테고리'),
-                            검색어등록: getStr('검색어등록')
-                        },
-                        source: {
-                            hasInventory: Object.keys(inventory).length > 0,
-                            hasEstimate: Object.keys(estimate).length > 0,
-                            sourceType: Object.keys(inventory).length > 0 ? 'inventory' : (Object.keys(estimate).length > 0 ? 'estimate' : 'master'),
-                            tags
-                        },
-                        baselineSnapshot: {
-                            기준입고가: window.parseNum(master['입고가']),
-                            기준출고가: window.parseNum(master['출고가']),
-                            기준시중가: window.parseNum(master['시중가']),
-                            기준행사가: window.parseNum(master['행사가']),
-                            기준재고수량: master['재고수량'] !== undefined && master['재고수량'] !== '' ? window.parseNum(master['재고수량']) : 999,
-                            기준판매여부: masterSalesState.code,
-                            기준판매상태: masterSalesState.label
-                        }
-                    };
-                });
 
                 ui.setIsProcessing(true);
                 ui.setProcessMsg('출력검증센터 전달 패키지 생성 중...');
 
                 setTimeout(async () => {
                     try {
-                        await window.setIDB('merch_export_draft', exportDraft);
+                        const exportDraft = window.ONEAPP.EXPORT.buildExportDraft({
+                            targetRows,
+                            masterProducts: data.masterProducts
+                        });
+                        const validation = window.ONEAPP.EXPORT.validateExportDraft(exportDraft);
+                        if (!validation.ok) throw new Error(validation.message);
+
+                        await window.ONEAPP.STORAGE.setIDB('merch_export_draft', exportDraft);
                         ui.showToast(`✅ ${exportDraft.length}건을 출력검증센터로 전달했습니다.`);
                         window.location.href = 'export_center.html';
                     } catch (error) {
@@ -1902,11 +1598,6 @@
                 const match = latestHistory.matchStatus || latestHistory.applyMode || '';
                 lines.push(`${catalog} ${window.parseNum(oldVal).toLocaleString()}→${window.parseNum(newVal).toLocaleString()}`);
                 lines.push(`${formatSignedNumber(diff)} / ${formatSignedRate(rate)}${match ? `, ${match}` : ''}`);
-            } else if (['가격변동', '큰변동'].includes(issueText) && oldIn > 0 && newIn > 0 && newIn !== oldIn) {
-                const diff = newIn - oldIn;
-                const rate = oldIn > 0 ? (diff / oldIn) * 100 : 0;
-                lines.push(`입고가 ${oldIn.toLocaleString()}→${newIn.toLocaleString()}`);
-                lines.push(`${formatSignedNumber(diff)} / ${formatSignedRate(rate)}`);
             } else if (getRowCatalogNames(row, mItem).length > 0 && issueText === '가격변동') {
                 lines.push('카탈로그 태그 있음');
                 lines.push('최근 입고가 변경근거 없음');
@@ -1917,7 +1608,7 @@
             }
 
             if (issueText === '행사제안' && lines.length < 2) {
-                lines.push(`조건: ${issueSubText || getPromoSuggestionReason(row, mItem, {}) || '행사 검토'}`);
+                lines.push(`행사제안: ${issueSubText || '조건 충족'}`);
                 if (stockQty !== null && safeStock > 0) lines.push(`재고 ${stockQty.toLocaleString()} / 안전 ${safeStock.toLocaleString()}`);
             }
 
@@ -1934,7 +1625,8 @@
             }
 
             if (lines.length === 0) {
-                return ['', ''];
+                if (marginInfo.rate !== null) return [`마진 ${marginInfo.rate.toFixed(1)}%`, marginInfo.isPromo ? '행사가 기준' : '출고가 기준'];
+                return ['특이사항 없음', ''];
             }
             return lines.slice(0, 2);
         };
@@ -2097,25 +1789,22 @@
                     issueCellBg = 'bg-white';
                     issueTextColor = 'text-rose-700';
                 } else if (promoActive) {
-                    // 행사 상품은 중복 배지를 만들지 않는다. 꼭 봐야 할 위험이면 위험 이슈를 우선 표시한다.
-                    if (stockQty === 0) {
-                        issueText = '품절';
-                        issueSubText = '';
-                        issueTextColor = 'text-rose-700';
-                    } else if (stockQty !== null && safeStock > 0 && stockQty < safeStock) {
-                        issueText = '품절임박';
-                        issueSubText = '';
-                        issueTextColor = 'text-amber-700';
-                    } else if (marginInfo.rate !== null && marginInfo.rate < 0) {
-                        issueText = '역마진';
-                        issueSubText = '';
-                        issueTextColor = 'text-rose-700';
-                    } else {
-                        issueText = '행사중';
-                        issueSubText = '';
-                        issueTextColor = 'text-purple-700';
-                    }
+                    issueText = '행사중';
+                    issueTextColor = 'text-purple-700';
                     issueCellBg = 'bg-white';
+                    if (stockQty === 0) {
+                        issueSubText = '품절';
+                        issueTextColor = 'text-rose-700';
+                        issueCellBg = 'bg-white';
+                    } else if (stockQty !== null && safeStock > 0 && stockQty < safeStock) {
+                        issueSubText = '품절임박';
+                        issueTextColor = 'text-amber-700';
+                        issueCellBg = 'bg-white';
+                    } else if (marginInfo.rate !== null && marginInfo.rate < 0) {
+                        issueSubText = '역마진';
+                        issueTextColor = 'text-rose-700';
+                        issueCellBg = 'bg-white';
+                    }
                 } else if (isPromoSuggestion(row, mItem, config)) {
                     issueText = '행사제안';
                     issueSubText = getPromoSuggestionReason(row, mItem, config) || marginText;
@@ -2134,8 +1823,9 @@
                     issueSubText = marginText;
                     issueTextColor = 'text-slate-500';
                 } else if (oldP > 0 && newP > 0 && newP !== oldP) {
-                    issueText = isSpike ? '큰변동' : '가격변동';
-                    issueSubText = '';
+                    issueText = '가격변동';
+                    const diffLabel = diffAmount > 0 ? `기준 +${diffAmount.toLocaleString()}` : `기준 ${diffAmount.toLocaleString()}`;
+                    issueSubText = isSpike ? `${diffLabel} · ${Math.round(diffRate)}%` : `${diffLabel} · ${marginText}`;
                     issueTextColor = diffAmount > 0 ? 'text-rose-600' : 'text-blue-600';
                     issueCellBg = 'bg-white';
                 }
@@ -2143,17 +1833,18 @@
 
             const compareSummary = getComparePriceSummary(row, config);
             if (compareSummary.hasDiff) {
-                if (issueText === '-') {
-                    issueText = '단가확인';
-                    issueSubText = '';
-                    issueTextColor = 'text-violet-700';
+                if (issueText === '-' || issueText === '가격변동') {
+                    issueText = issueText === '-' ? '단가확인' : issueText;
+                    issueSubText = compareSummary.summary;
+                    issueTextColor = issueText === '단가확인' ? 'text-violet-700' : issueTextColor;
                     issueCellBg = 'bg-white';
+                } else if (!['품절', '품절임박', '역마진'].includes(issueSubText)) {
+                    issueSubText = compareSummary.summary;
                 }
             }
 
-            // 이슈 열은 꼭 봐야 할 라벨만 남긴다. 정상 마진/비교 상세/행사 배지는 리포트로 넘긴다.
-            if (issueText === '-' || !issueText) {
-                issueSubText = '';
+            if ((issueText === '-' || !issueText) && marginInfo.rate !== null) {
+                issueSubText = marginText;
             }
 
             const issueBadgeClassMap = {
@@ -2162,24 +1853,24 @@
                 '행사중': 'bg-violet-50 text-violet-700 border-violet-200',
                 '행사제안': 'bg-emerald-50 text-emerald-700 border-emerald-200',
                 '정지대기': 'bg-rose-50 text-rose-700 border-rose-200',
-                '큰변동': 'bg-orange-50 text-orange-700 border-orange-200',
-                '품절': 'bg-rose-50 text-rose-700 border-rose-200',
-                '품절임박': 'bg-orange-50 text-orange-700 border-orange-200',
-                '역마진': 'bg-rose-50 text-rose-700 border-rose-200',
                 '신규등록': 'bg-emerald-50 text-emerald-700 border-emerald-200',
                 '신규/재입고': 'bg-emerald-50 text-emerald-700 border-emerald-200',
                 '품절/단종': 'bg-slate-100 text-slate-600 border-slate-200',
                 '-': 'bg-slate-50 text-slate-500 border-slate-200'
             };
+            if (['품절', '품절임박', '역마진'].includes(issueSubText)) {
+                issueBadgeClassMap[issueText] = issueSubText === '품절임박'
+                    ? 'bg-orange-50 text-orange-700 border-orange-200'
+                    : 'bg-rose-50 text-rose-700 border-rose-200';
+            }
             const issueBadgeClass = issueBadgeClassMap[issueText] || 'bg-slate-50 text-slate-600 border-slate-200';
-            const displayIssueSubText = ['품절', '품절임박', '역마진'].includes(issueSubText) ? issueSubText : '';
             const latestParserHistory = findLatestParserHistory(row.코드, getRowCatalogNames(row, mItem), '입고가');
             const reportLines = buildRowReport({ row, mItem, issueText, issueSubText, latestHistory: latestParserHistory, compareSummary, marginInfo, stockQty, safeStock, promoActive });
             const reportTone = reportLines.some(t => String(t).includes('역마진') || String(t).includes('근거 없음') || String(t).includes('근거없음')) ? 'text-rose-700' : (latestParserHistory ? 'text-slate-700' : 'text-slate-500');
             return (
                 <tr className={`group border-b border-slate-200 transition-all hover:bg-slate-50 relative z-0 hover:z-10 ${isStopped ? 'opacity-70 bg-slate-50' : ''}`}>
                     
-                    <td className={`sticky z-20 px-3 py-2 border-r border-r-slate-200 transition-colors min-w-[280px] w-[280px] max-w-[280px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : 'bg-white group-hover:!bg-slate-50 border-l-4 border-l-transparent group-hover:!border-l-slate-300'}`} style={{left: 0}}>
+                    <td className={`sticky z-20 px-3 py-2 border-r-2 border-r-slate-300 transition-colors min-w-[280px] w-[280px] max-w-[280px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : 'bg-white group-hover:!bg-slate-50 border-l-4 border-l-transparent group-hover:!border-l-slate-300'}`} style={{left: 0}}>
                         <div className="flex gap-2 items-center w-full min-w-0">
                             {isEstimateUploaded && (
                                 <input type="checkbox" className="w-4 h-4 rounded border-slate-300 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500" checked={isSel} onChange={() => {const n = new Set(state.selectedRows); n.has(row.코드)?n.delete(row.코드):n.add(row.코드); actions.setSelectedRows(n);}} />
@@ -2249,11 +1940,11 @@
                                             {issueText}
                                         </span>
                                     )}
-                                    {displayIssueSubText && (
-                                        <div className="flex items-center justify-center gap-1 min-w-0 max-w-full">
-                                            <span className={`text-[10px] font-bold truncate ${issueBadgeClass} border px-1.5 py-0.5 rounded-full`} title={displayIssueSubText}>{displayIssueSubText}</span>
-                                        </div>
-                                    )}
+                                    <div className="flex items-center justify-center gap-1 min-w-0 max-w-full">
+                                        {issueSubText && <span className={`text-[10px] font-bold truncate ${issueSubText.startsWith('마진') ? marginToneClass + ' border px-1.5 py-0.5 rounded-full' : ['품절', '품절임박', '역마진'].includes(issueSubText) ? issueBadgeClass + ' border px-1.5 py-0.5 rounded-full' : 'text-slate-500'}`} title={issueSubText}>{issueSubText}</span>}
+                                        {issueSubText && !issueSubText.startsWith('마진') && !['품절', '품절임박', '역마진'].includes(issueSubText) && marginInfo.rate !== null && <span className={`text-[9px] font-black border px-1.5 py-0.5 rounded-full shrink-0 ${marginToneClass}`}>{marginInfo.rate.toFixed(1)}%</span>}
+                                        {marginInfo.isPromo && issueSubText !== '품절' && issueSubText !== '품절임박' && issueSubText !== '역마진' && <span className="text-[9px] font-black bg-violet-50 text-violet-700 border border-violet-200 px-1.5 py-0.5 rounded-full shrink-0">행사</span>}
+                                    </div>
                                 </div>
                             </td>
 
@@ -2264,7 +1955,7 @@
                                     <EditableCell key={`p-u-e-${h}`} row={row} field={h} linkedMasterField={linkedMasterField} mVal={mVal} config={config} data={data} isSel={isSel} extraClass={i === arr.length - 1 ? 'border-r-2 !border-r-slate-300' : ''} />
                                 );
                             })}
-                            <td className={`px-3 py-1.5 bg-white border-l-2 border-l-slate-300 border-r border-slate-200 min-w-[220px] w-[220px] max-w-[220px] ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'}`}>
+                            <td className={`px-3 py-1.5 bg-white border-r border-slate-200 min-w-[220px] w-[220px] max-w-[220px] ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'}`}>
                                 <div className={`flex flex-col justify-center gap-0.5 leading-tight ${reportTone}`}>
                                     <div className="text-[11px] font-black truncate" title={reportLines[0] || ''}>{reportLines[0] || '-'}</div>
                                     <div className="text-[10px] font-bold text-slate-500 truncate" title={reportLines[1] || ''}>{reportLines[1] || ''}</div>
@@ -2297,12 +1988,12 @@
                         <table className="text-left border-collapse text-[13px] whitespace-nowrap relative z-0 w-max bg-white">
                             <thead className="text-[12px] font-extrabold sticky top-0 z-[60] shadow-sm border-b border-slate-200">
                                 <tr>
-                                    <th className="sticky top-0 left-0 z-[70] bg-slate-100 px-3 py-2 border-r border-r-slate-200 text-slate-700 min-w-[280px] w-[280px] max-w-[280px]">
+                                    <th className="sticky top-0 left-0 z-[70] bg-slate-100 px-3 py-2 border-r-2 border-r-slate-300 text-slate-700 min-w-[280px] w-[280px] max-w-[280px]">
                                         <div className="flex items-center gap-2 pl-1">
                                             {isEstimateUploaded && (
                                                 <input type="checkbox" className="rounded w-4 h-4 border-slate-400 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500" checked={selectedRows.size === fullDisplayRows.length && displayRows.length > 0} onChange={actions.toggleAllRows} />
                                             )}
-                                            <span className="truncate font-black">마스터 정보</span>
+                                            <span className="truncate font-black">기본정보</span>
                                         </div>
                                     </th>
 
@@ -2330,7 +2021,7 @@
                                                     </th>
                                                 );
                                             })}
-                                            <th className="sticky top-0 z-[60] bg-slate-100 px-3 py-3 border-b border-l-2 border-l-slate-300 border-slate-200 text-center text-slate-700 font-black min-w-[220px] w-[220px] max-w-[220px]">
+                                            <th className="sticky top-0 z-[60] bg-slate-100 px-3 py-3 border-b border-slate-200 text-center text-slate-700 font-black min-w-[220px] w-[220px] max-w-[220px]">
                                                 리포트
                                             </th>
                                         </>
@@ -2374,7 +2065,7 @@
                     <i className="fas fa-box-open"></i>
                     <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm"><i className="fas fa-check"></i></div>
                 </div>
-                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v1.10.2 구간/이슈 정리]</h2>
+                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v1.10.1 리포트 구간]</h2>
                 <p className="text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold">
                     현재 등록된 <span className="text-indigo-500">마스터 상품 데이터</span>가 없습니다.<br/>
                     견적 작업 및 파서 연동을 위해 전체 상품 DB를 세팅해주세요.
