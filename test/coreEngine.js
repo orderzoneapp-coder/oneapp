@@ -227,6 +227,58 @@
     return calcOutPrice;
   };
 
+  // Parser 전용: 기존 SmartParser calculatePricesEngine 호환 래퍼
+  // 기존 Parser 함수는 숫자 출고가가 아니라 finalData 객체를 반환했으므로 별도 유지한다.
+  PRICING.calculateParserFinalData = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
+    const ROUND_UNIT = 100;
+    const inPrice = parseNum(baseInPrice);
+    const outsrc = (!currentFinalData?.['외주비'] && currentFinalData?.['외주비'] !== 0)
+      ? parseNum(mItem?.['외주비'])
+      : parseNum(currentFinalData?.['외주비']);
+    const labor = (!currentFinalData?.['노무비'] && currentFinalData?.['노무비'] !== 0)
+      ? parseNum(mItem?.['노무비'])
+      : parseNum(currentFinalData?.['노무비']);
+    const totalCost = inPrice + outsrc + labor;
+    const appliedRule = findBestMarginRule(marginRules, {
+      창고: currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '',
+      단위: currentFinalData?.['단위'] ?? mItem?.['단위'] ?? ''
+    });
+
+    let calcOutPrice = 0;
+    if (inPrice > 0) {
+      const rate = parseNum(appliedRule.rate);
+      if (appliedRule.type === 'divide') calcOutPrice = totalCost / (1 - (rate / 100));
+      else calcOutPrice = totalCost * (1 + (rate / 100));
+      calcOutPrice = Math.round(calcOutPrice / ROUND_UNIT) * ROUND_UNIT;
+    }
+
+    const newFinalData = { ...currentFinalData, 입고가: inPrice };
+    newFinalData['시중가'] = calcOutPrice;
+
+    const providedOutPrice = parseNum(currentFinalData?.['출고가']);
+    const mIn = parseNum(mItem?.['입고가']);
+    const mOut = parseNum(mItem?.['출고가']);
+
+    if (inPrice === 0) newFinalData['출고가'] = 0;
+    else if (providedOutPrice > 0 && !forceRecalc) newFinalData['출고가'] = providedOutPrice;
+    else if (inPrice === mIn && mOut > 0 && !forceRecalc) newFinalData['출고가'] = mOut;
+    else newFinalData['출고가'] = calcOutPrice;
+
+    const div1 = parseNum(currentFinalData?.['1종연산'] ?? mItem?.['1종연산']);
+    const extraCost = parseNum(currentFinalData?.['경비'] ?? mItem?.['경비']);
+    if (div1 > 0) {
+      if (inPrice === 0) {
+        newFinalData['1입고'] = 0;
+        newFinalData['1출고'] = 0;
+      } else {
+        newFinalData['1입고'] = Math.round(((inPrice + outsrc) / div1) / ROUND_UNIT) * ROUND_UNIT;
+        newFinalData['1출고'] = Math.round((Math.round((newFinalData['출고가'] / div1) + extraCost)) / 10) * 10;
+      }
+    }
+
+    return newFinalData;
+  };
+
   PRICING.computeFinalData = (mItem = {}, sources = {}, marginRules = [], forceRecalc = false) => {
     const inv = sources.inventory || {};
     const est = sources.estimate || {};
@@ -364,6 +416,19 @@
 
   HISTORY.calcDiffRate = calcDiffRate;
   HISTORY.getNowISO = getNowISO;
+  HISTORY.safeText = (v) => String(v ?? '').trim();
+  HISTORY.parseHistoryTime = (log = {}) => {
+    const iso = log.timestampISO || log.createdAtISO || log.savedAtISO;
+    if (iso) {
+      const t = new Date(iso).getTime();
+      if (Number.isFinite(t)) return t;
+    }
+    if (log.timestamp) {
+      const t = new Date(log.timestamp).getTime();
+      if (Number.isFinite(t)) return t;
+    }
+    return 0;
+  };
 
   HISTORY.normalizeHistoryLog = (log = {}) => {
     const oldVal = log.oldVal ?? log.beforeVal ?? '';
