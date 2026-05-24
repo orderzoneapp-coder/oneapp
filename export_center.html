@@ -11,7 +11,6 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <script src="./coreEngine.js"></script>
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
         body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; background-color: #f8fafc; }
@@ -28,14 +27,61 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useCallback } = React;
 
-        const parseNum = window.ONEAPP.PRICING.parseNum;
+        const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
         const fmt = (v) => parseNum(v).toLocaleString('ko-KR');
 
-        const initIDB = window.ONEAPP.STORAGE.initIDB;
-        const getAllIDB = window.ONEAPP.STORAGE.getAllIDB;
-        const getIDB = window.ONEAPP.STORAGE.getIDB;
-        const setIDB = window.ONEAPP.STORAGE.setIDB;
-        const bulkPutIDB = window.ONEAPP.STORAGE.bulkPutIDB;
+        const initIDB = () => new Promise((resolve, reject) => {
+            const request = indexedDB.open('MerchOpsDB', 2);
+            request.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains('store')) db.createObjectStore('store');
+                if (!db.objectStoreNames.contains('master_products')) db.createObjectStore('master_products', { keyPath: '코드' });
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+
+        const getAllIDB = async (storeName) => {
+            const db = await initIDB();
+            return new Promise((resolve, reject) => {
+                if (!db.objectStoreNames.contains(storeName)) return resolve([]);
+                const tx = db.transaction(storeName, 'readonly');
+                const req = tx.objectStore(storeName).getAll();
+                req.onsuccess = () => resolve(req.result || []);
+                req.onerror = () => reject(tx.error);
+            });
+        };
+
+        const getIDB = async (key) => {
+            const db = await initIDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('store', 'readonly');
+                const req = tx.objectStore('store').get(key);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(tx.error);
+            });
+        };
+
+        const setIDB = async (key, val) => {
+            const db = await initIDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('store', 'readwrite');
+                tx.objectStore('store').put(val, key);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        };
+
+        const bulkPutIDB = async (storeName, items) => {
+            const db = await initIDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readwrite');
+                const store = tx.objectStore(storeName);
+                items.forEach(item => store.put(item));
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        };
 
         const getSaleState = (row) => {
             const rawStatus = row?.판매여부;
@@ -83,8 +129,30 @@
             return stock > 0 && stock < 999;
         };
 
-        const isValidSubItemCode = window.ONEAPP.PRICING.isValidSubItemCode;
-        const calculateSubPriceInfo = window.ONEAPP.PRICING.calculateSubPriceInfo;
+        const isValidSubItemCode = (code) => {
+            if (!code) return false;
+            const s = String(code).trim();
+            return s !== '' && s !== '0' && s !== '00' && s !== '-' && s.toLowerCase() !== 'undefined' && s.toLowerCase() !== 'null';
+        };
+
+        // ============================================================
+        // [E-ENGINE-02] 소분가 계산 엔진
+        // 역할: 원물코드에 연결된 1종코드의 입고/출고 소분가를 계산한다.
+        // 확정 정책: 1출고 = 원물 기본 출고가 / 1종연산 + 경비. 행사가/최종적용가 기준이 아니다.
+        // ============================================================
+        const calculateSubPriceInfo = (row) => {
+            const div1 = parseNum(row['1종연산']);
+            if (!isValidSubItemCode(row['1종코드']) || div1 <= 0) return null;
+            const ROUND_UNIT = 100;
+            const inPrice = parseNum(row.입고가);
+            const outPrice = parseNum(row.출고가); // 정책 확정: 소분 1출고는 행사가/최종적용가가 아닌 원물 기본 출고가 기준
+            const outsrc = parseNum(row['외주비']);
+            const extraCost = parseNum(row['경비']);
+            const subIn = inPrice > 0 ? Math.round(((inPrice + outsrc) / div1) / ROUND_UNIT) * ROUND_UNIT : 0;
+            const rawSubOut = outPrice > 0 ? Math.round((outPrice / div1) + extraCost) : 0;
+            const subOut = rawSubOut > 0 ? Math.round(rawSubOut / 10) * 10 : 0;
+            return { code: String(row['1종코드']).trim(), spec: row['1종규격'] || '', div1, subIn, subOut };
+        };
 
         // ============================================================
         // [E-OUTPUT-01] 소분품목 쇼핑몰 행 생성
@@ -119,14 +187,66 @@
             ];
         };
 
-        const safeJSONParse = window.ONEAPP.STORAGE.safeJSONParse;
+        const safeJSONParse = (key, defaultVal) => {
+            try {
+                const raw = localStorage.getItem(key);
+                return raw && raw !== 'undefined' ? JSON.parse(raw) : defaultVal;
+            } catch (e) {
+                return defaultVal;
+            }
+        };
 
         // ============================================================
         // [E-ENGINE-01] 출력검증센터 계산출고가 엔진
         // 역할: reviewRows 단계에서 입고가/외주비/노무비/창고/단위/마진룰 기준 계산출고가를 산출한다.
-        // coreEngine.js의 공통 Pricing Engine으로 위임한다.
+        // 주의: 행사가가 있으면 최종적용 가격 판단은 후속 최종출고가 계산에서 처리한다.
         // ============================================================
-        const calculateReviewOutPrice = window.ONEAPP.PRICING.calculateReviewOutPrice;
+        const calculateReviewOutPrice = (baseInPrice, context = {}, marginRules = []) => {
+            const inPrice = parseNum(baseInPrice);
+            if (inPrice <= 0) return 0;
+
+            const outsrc = parseNum(context['외주비']);
+            const labor = parseNum(context['노무비']);
+            const totalCost = inPrice + outsrc + labor;
+            const whCode = String(context['창고'] ?? '').trim();
+            const unitStr = String(context['단위'] ?? '').trim().toLowerCase();
+
+            const matchWh = (ruleWh, targetWh) => {
+                if (!ruleWh || ruleWh === '*') return true;
+                const targets = String(ruleWh).split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean);
+                return targets.some(s => s === targetWh || (targetWh !== '' && !isNaN(s) && !isNaN(targetWh) && Number(s) === Number(targetWh)));
+            };
+
+            const matchUnit = (ruleUnit, targetUnit) => {
+                if (!ruleUnit || ruleUnit === '*') return true;
+                const targets = String(ruleUnit).toLowerCase().split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean);
+                return targets.some(s => targetUnit === s || targetUnit.includes(s));
+            };
+
+            let bestRule = null;
+            let bestScore = -1;
+            const safeRules = Array.isArray(marginRules) ? marginRules : [];
+            safeRules.forEach(rule => {
+                if (matchWh(rule.whCode, whCode) && matchUnit(rule.unit, unitStr)) {
+                    let score = 0;
+                    if (rule.whCode && rule.whCode !== '*') score += 2;
+                    if (rule.unit && rule.unit !== '*') score += 1;
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestRule = rule;
+                    }
+                }
+            });
+
+            const applied = bestRule || { rate: 20, type: 'divide' };
+            let calc = 0;
+            if (applied.type === 'divide') {
+                calc = totalCost / (1 - (parseNum(applied.rate) / 100));
+            } else {
+                calc = totalCost * (1 + (parseNum(applied.rate) / 100));
+            }
+            return Math.round(calc / 100) * 100;
+        };
 
         const ExportApp = () => {
             const [masterProducts, setMasterProducts] = useState({});
