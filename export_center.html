@@ -4,281 +4,654 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 데이터 출력 센터</title>
+    <title>ONEAPP MerchOps - 출력검증센터 [v2.5.5 정지처리 연동]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="./coreEngine.js"></script>
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-        body { font-family: 'Pretendard', -apple-system, sans-serif; }
-        ::-webkit-scrollbar { width: 8px; height: 8px; } 
+        body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; background-color: #f8fafc; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; }
-        .fade-in { animation: fadeIn 0.3s ease-out; } 
+        .fade-in { animation: fadeIn 0.25s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
-<body class="bg-slate-100 font-sans text-slate-800 overflow-hidden">
+<body class="text-slate-800">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect, useMemo, useCallback } = React;
 
-        const NUMERIC_HEADERS = [
-            "안전재고", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고",
-            "단가H", "단가I", "시중가", "행사가", "1종연산", "2종연산", "외주비", "노무비", "경비",
-            "1구매", "1출고", "2구매", "2출고", "1입고", "2입고"
-        ];
+        const parseNum = window.ONEAPP.PRICING.parseNum;
+        const fmt = (v) => parseNum(v).toLocaleString('ko-KR');
 
-        const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
+        const initIDB = window.ONEAPP.STORAGE.initIDB;
+        const getAllIDB = window.ONEAPP.STORAGE.getAllIDB;
+        const getIDB = window.ONEAPP.STORAGE.getIDB;
+        const setIDB = window.ONEAPP.STORAGE.setIDB;
+        const bulkPutIDB = window.ONEAPP.STORAGE.bulkPutIDB;
 
-        const initIDB = () => new Promise((resolve, reject) => {
-            const request = indexedDB.open('MerchOpsDB', 2);
-            request.onupgradeneeded = (e) => {
-                const db = e.target.result;
-                if (!db.objectStoreNames.contains('store')) db.createObjectStore('store');
-                if (!db.objectStoreNames.contains('master_products')) {
-                    db.createObjectStore('master_products', { keyPath: '코드' });
-                }
-            };
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-
-        const getAllIDB = async (storeName) => {
-            try {
-                const db = await initIDB();
-                return new Promise((resolve, reject) => {
-                    if (!db.objectStoreNames.contains(storeName)) return resolve([]);
-                    const tx = db.transaction(storeName, 'readonly');
-                    const req = tx.objectStore(storeName).getAll();
-                    req.onsuccess = () => resolve(req.result);
-                    req.onerror = () => reject(tx.error);
-                });
-            } catch (error) {
-                console.warn(`[IndexedDB] ${storeName} 로드 실패`, error);
-                return [];
-            }
+        const getSaleState = (row) => {
+            const rawStatus = row?.판매여부;
+            if (String(rawStatus).trim() === '0') return { code: '0', label: '정지중', text: '0 정지중', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
+            const baseOut = parseNum(row.출고가);
+            const promo = parseNum(row.행사가);
+            const finalOut = parseNum(row.최종출고가);
+            const stock = row.재고수량 !== undefined && row.재고수량 !== '' ? parseNum(row.재고수량) : 999;
+            const hasSalePrice = baseOut > 0 || promo > 0 || finalOut > 0;
+            if (!hasSalePrice) return { code: '0', label: '정지중', text: '0 정지중', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
+            if (stock === 0) return { code: '1', label: '품절', text: '1 품절', cls: 'bg-orange-50 text-orange-700 border-orange-200' };
+            if (promo > 0) return { code: '1', label: '행사', text: '1 행사', cls: 'bg-purple-50 text-purple-700 border-purple-200' };
+            return { code: '1', label: '판매중', text: '1 판매중', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
         };
 
-        const setIDB = async (key, val) => {
-            const db = await initIDB();
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction('store', 'readwrite');
-                tx.objectStore('store').put(val, key);
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error);
-            });
+        const isMarginWarning = (row) => {
+            const sale = getSaleState(row);
+            const finalOut = parseNum(row.최종출고가);
+            const inPrice = parseNum(row.입고가);
+            return sale.code === '1' && finalOut > 0 && finalOut < inPrice;
         };
+
+        const getDiffInfo = (row) => {
+            const base = parseNum(row.기준출고가);
+            const finalOut = parseNum(row.최종출고가);
+            const diff = finalOut - base;
+            const rate = base > 0 ? diff / base : 0;
+            return { diff, rate };
+        };
+
+        const isAnomaly = (row) => {
+            const { diff, rate } = getDiffInfo(row);
+            return parseNum(row.기준출고가) > 0 && Math.abs(rate) >= 0.3 && Math.abs(diff) >= 1000;
+        };
+
+        const isNewItem = (row) => {
+            const hasBase = parseNum(row.기준입고가) > 0 || parseNum(row.기준출고가) > 0;
+            const hasWork = parseNum(row.입고가) > 0 || parseNum(row.출고가) > 0 || parseNum(row.행사가) > 0;
+            return !hasBase && hasWork;
+        };
+
+        const isLowStock = (row) => {
+            const stock = parseNum(row.재고수량);
+            // 현재 단계: 안전재고 기준은 보류. 999는 일반 판매 기본값으로 보고 제외한다.
+            return stock > 0 && stock < 999;
+        };
+
+        const isValidSubItemCode = window.ONEAPP.PRICING.isValidSubItemCode;
+        const calculateSubPriceInfo = window.ONEAPP.PRICING.calculateSubPriceInfo;
+
+        // ============================================================
+        // [E-OUTPUT-01] 소분품목 쇼핑몰 행 생성
+        // 역할: 1종코드가 있는 경우 ERP뿐 아니라 쇼핑몰업로드 시트에도 별도 출력 행을 추가한다.
+        // 주의: masterProducts[1종코드]가 있으면 상품명/규격을 우선 사용하고, 없으면 원물명 기반 보조명을 사용한다.
+        // ============================================================
+        const buildSubShopRow = (parentRow, subInfo, masterProducts, sale) => {
+            if (!subInfo) return null;
+            const subMaster = masterProducts[subInfo.code] || {};
+            const subName = subMaster['품목명'] || `${parentRow.품목명 || ''} (소분)`;
+            const subSpec = subMaster['규격'] || subInfo.spec || parentRow['1종규격'] || '';
+            const subBrand = subMaster['브랜드'] || parentRow.브랜드 || '';
+            const subDesc = subMaster['간단설명'] || parentRow.간단설명 || '';
+            const subTags = subMaster['검색어등록'] || parentRow.검색어등록 || '';
+            const subStock = parentRow.재고수량 !== undefined && parentRow.재고수량 !== '' ? parseNum(parentRow.재고수량) : 999;
+            return [
+                subInfo.code,
+                subName,
+                subSpec,
+                subInfo.subOut,
+                subInfo.subOut,
+                subInfo.subOut,
+                0, 0, 0, 0, 0, 0,
+                subBrand,
+                subDesc,
+                sale.code,
+                subStock,
+                parentRow.테마1 || '',
+                parentRow.테마2 || '',
+                '', '', '',
+                subTags
+            ];
+        };
+
+        const safeJSONParse = window.ONEAPP.STORAGE.safeJSONParse;
+
+        // ============================================================
+        // [E-ENGINE-01] 출력검증센터 계산출고가 엔진
+        // 역할: reviewRows 단계에서 입고가/외주비/노무비/창고/단위/마진룰 기준 계산출고가를 산출한다.
+        // coreEngine.js의 공통 Pricing Engine으로 위임한다.
+        // ============================================================
+        const calculateReviewOutPrice = window.ONEAPP.PRICING.calculateReviewOutPrice;
 
         const ExportApp = () => {
-            const [masterProducts, setMasterProducts] = useState([]);
+            const [masterProducts, setMasterProducts] = useState({});
+            const [reviewRows, setReviewRows] = useState([]);
+            const [marginRules] = useState(() => safeJSONParse('merchMarginRules_v878', [{ id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }]));
+            const [activeIssue, setActiveIssue] = useState('all');
+            const [sortMode, setSortMode] = useState('category');
+            const [searchInput, setSearchInput] = useState('');
+            const [searchTerm, setSearchTerm] = useState('');
             const [isProcessing, setIsProcessing] = useState(false);
             const [toast, setToast] = useState('');
-            const [workspaceCodes, setWorkspaceCodes] = useState([]);
 
-            const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
-
-            useEffect(() => {
-                getAllIDB('master_products').then(items => {
-                    if (items && items.length > 0) {
-                        setMasterProducts(items);
-                    }
-                }).catch(console.error);
-
-                try {
-                    const codes = JSON.parse(localStorage.getItem('merchExportTargets') || '[]');
-                    setWorkspaceCodes(codes);
-                } catch(e) {}
+            const showToast = useCallback((msg) => {
+                setToast(msg);
+                setTimeout(() => setToast(''), 3000);
             }, []);
 
-            // 메인 작업대에서 넘어온 코드들만 정확히 필터링
-            const targetProducts = useMemo(() => {
-                if (workspaceCodes.length === 0) return [];
-                const codeSet = new Set(workspaceCodes);
-                return masterProducts.filter(m => codeSet.has(m.코드));
-            }, [masterProducts, workspaceCodes]);
+            useEffect(() => {
+                const timer = setTimeout(() => setSearchTerm(searchInput.trim()), 250);
+                return () => clearTimeout(timer);
+            }, [searchInput]);
 
-            const handleExportExcel = () => {
-                if (targetProducts.length === 0) return showToast("⚠️ 출력할 데이터가 없습니다. 메인 화면에서 목록을 확인해주세요.");
-                
-                setIsProcessing(true);
-                showToast(`⏳ [통합 엑셀] ${targetProducts.length}건 양식 조립 중...`);
-
-                setTimeout(() => {
+            useEffect(() => {
+                // ============================================================
+                // [E-FLOW-01] 출력검증센터 데이터 로드
+                // 역할: merch_export_draft만 작업 대상으로 읽고, 해당 code에 대해서만 masterProducts를 기준정보로 참조한다.
+                // 금지: master_products 전체를 reviewRows 작업대상으로 전환하지 않는다.
+                // ============================================================
+                const loadData = async () => {
+                    setIsProcessing(true);
                     try {
-                        if (!window.XLSX) throw new Error("엑셀 라이브러리가 로드되지 않았습니다.");
-                        
-                        const wb = window.XLSX.utils.book_new(); 
-                        const zeroAction = { sale: '0', stock: '999' };
-                        
-                        let erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '최종(전송)', 'n', '행사', 'n', '1']]; 
-                        let shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', '도매B', '도매B', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
-                        
-                        const createRowArr = (code, inPrice, outPrice, bPrice='', aSale='', bSale='', finalPrice='', instruction='') => { 
-                            if (!code) return null; 
-                            const outIn = inPrice > 0 ? inPrice : ''; 
-                            const outOut = outPrice > 0 ? outPrice : ''; 
-                            const outFinal = finalPrice > 0 ? finalPrice : outIn; 
-                            return [ code, outIn, '0', outOut, '0', bPrice||'', 'n', aSale||'', 'n', bSale||'', 'n', outFinal, 'n', instruction||'', 'n', (inPrice > 0 || outPrice > 0) ? '1' : '' ]; 
-                        };
+                        const items = await getAllIDB('master_products');
+                        const masterDict = {};
+                        items.forEach(i => { if (i && i.코드) masterDict[i.코드] = i; });
+                        setMasterProducts(masterDict);
 
-                        let visMaster = [];
-                        let visUpload = [];
-                        try {
-                            visMaster = JSON.parse(localStorage.getItem('merchVisMaster_v870'))?.estimate || ['입고가', '출고가'];
-                            visUpload = JSON.parse(localStorage.getItem('merchVisUpload_v870'))?.estimate || ['간단설명'];
-                        } catch(e) {}
-                        
-                        const viewHeaders = ['상태/선택', '품목코드', '마스터_품목명', '마스터_규격'];
-                        visMaster.forEach(h => viewHeaders.push(`[M]${h}`)); 
-                        visUpload.forEach(h => viewHeaders.push(`[작업]${h}`));
-                        const viewData = [viewHeaders];
+                        const rawDraft = await getIDB('merch_export_draft') || [];
+                        const exportDraft = Array.isArray(rawDraft) ? rawDraft : [];
 
-                        targetProducts.forEach(mItem => {
-                            const pIn = parseNum(mItem['입고가']);
-                            const pOut = parseNum(mItem['출고가']);
-                            const pMarketPrice = parseNum(mItem['시중가']);
-                            const pBPrice = parseNum(mItem['입고B']);
-                            const pASale = parseNum(mItem['도매A']);
-                            const pBSale = parseNum(mItem['도매B']);
+                        const rows = exportDraft.map(draft => {
+                            const code = draft.코드;
+                            const working = draft.working || draft || {};
+                            const baseline = draft.baselineSnapshot || {};
+                            const source = draft.source || {};
+                            const master = masterDict[code] || {};
 
-                            const pRowErp = createRowArr(mItem.코드, pIn, pOut, pBPrice, pASale, pBSale, pIn, mItem['간단설명']); 
-                            if (pRowErp) erpData.push(pRowErp);
-                            
-                            const priceMarketShop = pMarketPrice > 0 ? pMarketPrice : pOut;
-                            const priceA = pASale > 0 ? pASale : pOut;
-                            const isZeroPrice = (pIn === 0 && pOut === 0);
-                            const isForSale = isZeroPrice ? zeroAction.sale : (pIn > 0 || pOut > 0 ? '1' : '0');
-                            const stockQty = isZeroPrice ? zeroAction.stock : '999';
-                            
-                            shopData.push([mItem.코드, mItem.품목명, mItem.규격, pOut, priceA, priceMarketShop, 0, 0, 0, 0, 0, 0, mItem.브랜드, mItem.간단설명, isForSale, stockQty, '', '', '', '', '', mItem.검색어등록]);
+                            const 기준입고가 = parseNum(master['입고가'] ?? baseline.기준입고가 ?? 0);
+                            const 기준출고가 = parseNum(master['출고가'] ?? baseline.기준출고가 ?? 0);
+                            const 기준시중가 = parseNum(master['시중가'] ?? baseline.기준시중가 ?? 0);
+                            const 기준판매여부 = String(master['판매여부'] ?? baseline.기준판매여부 ?? '-');
 
-                            const viewRowData = ['', mItem.코드 || '', mItem.품목명 || '', mItem.규격 || ''];
-                            visMaster.forEach(h => viewRowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(mItem[h]) : (mItem[h] || '')));
-                            visUpload.forEach(h => viewRowData.push(NUMERIC_HEADERS.includes(h) ? parseNum(mItem[h]) : (mItem[h] || '')));
-                            viewData.push(viewRowData);
-                        });
+                            const 입고가 = parseNum(working.입고가);
+                            const 불러온출고가 = parseNum(working.출고가);
+                            const 계산출고가 = calculateReviewOutPrice(입고가, { ...master, ...working }, marginRules);
+                            const 출고가 = 불러온출고가 > 0 ? 불러온출고가 : 계산출고가;
+                            const 행사가 = parseNum(working.행사가);
+                            const 최종출고가 = 행사가 > 0 ? 행사가 : 출고가;
+                            const rawStock = working.재고수량;
+                            const 재고수량 = (rawStock !== undefined && rawStock !== null && rawStock !== '') ? parseNum(rawStock) : 999;
 
-                        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shopData), "쇼핑몰업로드"); 
-                        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), "ERP업데이트"); 
-                        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(viewData), "화면엑셀변환"); 
-                        
-                        window.XLSX.writeFile(wb, `통합보고서_데이터추출_${new Date().toISOString().slice(0,10)}.xlsx`); 
-                        showToast(`✅ ${targetProducts.length}건 엑셀 다운로드가 완료되었습니다.`);
-                    } catch(e) {
-                        console.error(e);
-                        showToast("❌ 엑셀 파일 생성 중 오류가 발생했습니다.");
+                            return {
+                                코드: code,
+                                품목명: working.품목명 || master['품목명'] || '',
+                                규격: working.규격 || master['규격'] || '',
+                                브랜드: working.브랜드 || master['브랜드'] || '',
+                                간단설명: working.간단설명 || master['간단설명'] || '',
+                                카테고리: working.카테고리 || master['견적서'] || master['카테고리'] || '일반 상품목록',
+                                검색어등록: working.검색어등록 || master['검색어등록'] || '',
+                                기준입고가,
+                                기준출고가,
+                                기준시중가,
+                                기준판매여부,
+                                판매여부: working.판매여부 !== undefined && working.판매여부 !== '' ? working.판매여부 : 기준판매여부,
+                                입고가,
+                                불러온출고가,
+                                계산출고가,
+                                출고가,
+                                행사가,
+                                최종출고가,
+                                도매A: parseNum(working.도매A),
+                                도매B: parseNum(working.도매B),
+                                시중가: parseNum(working.시중가 || 기준시중가),
+                                입고B: parseNum(working.입고B),
+                                '1종코드': working['1종코드'] || master['1종코드'] || '',
+                                '1종규격': working['1종규격'] || master['1종규격'] || '',
+                                '1종연산': parseNum(working['1종연산'] ?? master['1종연산']),
+                                '경비': parseNum(working['경비'] ?? master['경비']),
+                                '외주비': parseNum(working['외주비'] ?? master['외주비']),
+                                '노무비': parseNum(working['노무비'] ?? master['노무비']),
+                                재고수량,
+                                테마1: working.테마1 || (working._theme === 1 ? '1' : ''),
+                                테마2: working.테마2 || (working._theme === 2 ? '1' : ''),
+                                source
+                            };
+                        }).filter(row => row.코드);
+
+                        setReviewRows(rows);
+                    } catch (e) {
+                        console.error('[Export Center Load Error]', e);
+                        showToast('❌ 출력검증센터 데이터 로드 중 오류가 발생했습니다.');
                     } finally {
                         setIsProcessing(false);
                     }
-                }, 500);
-            };
+                };
+                loadData();
+            }, [showToast, marginRules]);
 
-            const handleImageExport = async () => {
-                if (targetProducts.length === 0) return showToast("⚠️ 내보낼 대상 데이터가 없습니다.");
+            // ============================================================
+            // [E-FLOW-02] 검증센터 단가/작업값 수정
+            // 역할: 입고가/출고가/행사가 수정 시 계산출고가와 최종 적용 가격을 즉시 갱신한다.
+            // 정책: 입고가 변경은 계산출고가를 출고가에 자동 반영하지만, 행사가가 있으면 최종 가격은 행사가가 우선한다.
+            // ============================================================
+            const handleEdit = useCallback((code, field, value) => {
+                setReviewRows(prev => prev.map(row => {
+                    if (row.코드 !== code) return row;
+
+                    const next = { ...row, [field]: value };
+
+                    if (field === '입고가') {
+                        const newIn = parseNum(value);
+                        const calcOut = calculateReviewOutPrice(newIn, row, marginRules);
+                        next.입고가 = newIn;
+                        next.계산출고가 = calcOut;
+                        // A안: 관리자는 입고가 기준으로 판단하므로, 입고가 수정 시 계산출고가를 최종 출고가에 자동 반영한다.
+                        next.출고가 = calcOut;
+                        next.최종출고가 = parseNum(row.행사가) > 0 ? parseNum(row.행사가) : calcOut;
+                    } else if (field === '행사가') {
+                        const newPromo = parseNum(value);
+                        next.행사가 = newPromo;
+                        next.최종출고가 = newPromo > 0 ? newPromo : parseNum(row.출고가);
+                    } else if (field === '출고가') {
+                        const newOut = parseNum(value);
+                        next.출고가 = newOut;
+                        next.최종출고가 = parseNum(row.행사가) > 0 ? parseNum(row.행사가) : newOut;
+                    }
+
+                    return next;
+                }));
+            }, [marginRules]);
+
+            const analysis = useMemo(() => {
+                const result = { total: reviewRows.length, up: 0, down: 0, promo: 0, soldout: 0, stopped: 0, anomaly: 0, margin: 0, newItem: 0, lowStock: 0 };
+                reviewRows.forEach(row => {
+                    const sale = getSaleState(row);
+                    const { diff } = getDiffInfo(row);
+                    if (parseNum(row.기준출고가) > 0 && diff > 0) result.up++;
+                    if (parseNum(row.기준출고가) > 0 && diff < 0) result.down++;
+                    if (parseNum(row.행사가) > 0) result.promo++;
+                    if (sale.label === '품절') result.soldout++;
+                    if (sale.label === '정지중') result.stopped++;
+                    if (isAnomaly(row)) result.anomaly++;
+                    if (isMarginWarning(row)) result.margin++;
+                    if (isNewItem(row)) result.newItem++;
+                    if (isLowStock(row)) result.lowStock++;
+                });
+                return result;
+            }, [reviewRows]);
+
+            const issueCards = useMemo(() => ([
+                { key: 'all', label: '전체', count: analysis.total, icon: 'fa-list-check', cls: 'border-slate-200 bg-slate-50 text-slate-700' },
+                { key: 'up', label: '인상', count: analysis.up, icon: 'fa-arrow-trend-up', cls: 'border-rose-200 bg-rose-50 text-rose-700' },
+                { key: 'down', label: '인하', count: analysis.down, icon: 'fa-arrow-trend-down', cls: 'border-blue-200 bg-blue-50 text-blue-700' },
+                { key: 'promo', label: '행사', count: analysis.promo, icon: 'fa-bullhorn', cls: 'border-purple-200 bg-purple-50 text-purple-700' },
+                { key: 'soldout', label: '품절', count: analysis.soldout, icon: 'fa-box-open', cls: 'border-orange-200 bg-orange-50 text-orange-700' },
+                { key: 'stopped', label: '정지중', count: analysis.stopped, icon: 'fa-ban', cls: 'border-slate-300 bg-slate-100 text-slate-700' },
+                { key: 'anomaly', label: '오기의심', count: analysis.anomaly, icon: 'fa-triangle-exclamation', cls: 'border-amber-200 bg-amber-50 text-amber-700' },
+                { key: 'margin', label: '역마진', count: analysis.margin, icon: 'fa-circle-exclamation', cls: 'border-red-300 bg-red-50 text-red-700' },
+                { key: 'new', label: '신규', count: analysis.newItem, icon: 'fa-sparkles', cls: 'border-indigo-200 bg-indigo-50 text-indigo-700' },
+                { key: 'lowstock', label: '재고적음', count: analysis.lowStock, icon: 'fa-layer-group', cls: 'border-teal-200 bg-teal-50 text-teal-700' }
+            ]), [analysis]);
+
+            const filteredRows = useMemo(() => {
+                let rows = reviewRows.filter(row => {
+                    const sale = getSaleState(row);
+                    const { diff } = getDiffInfo(row);
+                    switch (activeIssue) {
+                        case 'up': return parseNum(row.기준출고가) > 0 && diff > 0;
+                        case 'down': return parseNum(row.기준출고가) > 0 && diff < 0;
+                        case 'promo': return parseNum(row.행사가) > 0;
+                        case 'soldout': return sale.label === '품절';
+                        case 'stopped': return sale.label === '정지중';
+                        case 'anomaly': return isAnomaly(row);
+                        case 'margin': return isMarginWarning(row);
+                        case 'new': return isNewItem(row);
+                        case 'lowstock': return isLowStock(row);
+                        default: return true;
+                    }
+                });
+
+                const terms = searchTerm.toLowerCase().split(/\s+/).map(s => s.trim()).filter(Boolean);
+                if (terms.length > 0) {
+                    rows = rows.filter(row => {
+                        const haystack = [
+                            row.코드, row.품목명, row.규격, row.브랜드, row.카테고리,
+                            row.간단설명, row.검색어등록, row.source?.sourceType, ...(row.source?.tags || [])
+                        ].join(' ').toLowerCase();
+                        return terms.every(term => haystack.includes(term));
+                    });
+                }
+
+                const sorted = [...rows];
+                const byCategory = (a, b) => String(a.카테고리 || '').localeCompare(String(b.카테고리 || ''), 'ko') || String(a.품목명 || '').localeCompare(String(b.품목명 || ''), 'ko');
+                if (sortMode === 'stockAsc') sorted.sort((a, b) => parseNum(a.재고수량) - parseNum(b.재고수량) || byCategory(a, b));
+                else if (sortMode === 'diffRateDesc') sorted.sort((a, b) => Math.abs(getDiffInfo(b).rate) - Math.abs(getDiffInfo(a).rate));
+                else if (sortMode === 'diffAbsDesc') sorted.sort((a, b) => Math.abs(getDiffInfo(b).diff) - Math.abs(getDiffInfo(a).diff));
+                else if (sortMode === 'inPriceDesc') sorted.sort((a, b) => parseNum(b.입고가) - parseNum(a.입고가));
+                else if (sortMode === 'outPriceDesc') sorted.sort((a, b) => parseNum(b.최종출고가) - parseNum(a.최종출고가));
+                else sorted.sort(byCategory);
+                return sorted;
+            }, [reviewRows, activeIssue, searchTerm, sortMode]);
+
+            const resetFilters = useCallback(() => {
+                setActiveIssue('all');
+                setSortMode('category');
+                setSearchInput('');
+                setSearchTerm('');
+            }, []);
+
+            const handleCardClick = useCallback((key) => {
+                setActiveIssue(key);
+                if (key === 'lowstock') setSortMode('stockAsc');
+                else if (key === 'anomaly') setSortMode('diffRateDesc');
+                else if (key === 'margin') setSortMode('diffAbsDesc');
+                else setSortMode('category');
+            }, []);
+
+            // ============================================================
+            // [E-OUTPUT-02] 최종 마스터 반영 + 통합 엑셀 출력
+            // 역할: reviewRows를 기준으로 마스터를 갱신하고 쇼핑몰업로드/ERP업데이트 시트를 생성한다.
+            // 주의: 엑셀만 출력은 추적성이 떨어져 제외한다. 소분품목은 원물과 별도 행으로 건수에 포함한다.
+            // ============================================================
+            const handleExportExcel = useCallback(() => {
+                if (reviewRows.length === 0) return showToast('⚠️ 출력할 데이터가 없습니다.');
+                if (analysis.margin > 0 || analysis.anomaly > 0) {
+                    if (!window.confirm(`역마진 ${analysis.margin}건, 오기의심 ${analysis.anomaly}건이 있습니다.\n관리자 확인 후 마스터에 반영하고 엑셀을 출력하시겠습니까?`)) return;
+                }
                 setIsProcessing(true);
+                showToast('⏳ 마스터 반영 및 통합 엑셀 조립 중...');
 
                 setTimeout(async () => {
                     try {
-                        const grouped = {};
-                        targetProducts.forEach(mItem => {
-                            const fullName = mItem.규격 ? `${mItem.품목명} (${mItem.규격})` : mItem.품목명;
-                            const pIn = parseNum(mItem['입고가']);
-                            const pOut = parseNum(mItem['출고가']);
-                            const displayPrice = pOut > 0 ? pOut : pIn;
+                        if (!window.XLSX) throw new Error('엑셀 라이브러리 없음');
+                        const newMaster = { ...masterProducts };
+                        const updatedItems = [];
 
-                            const catStr = mItem['견적서'] || mItem['카테고리'] || '일반 상품목록';
-                            const mainCat = catStr.split(',')[0].trim();
-
-                            if(!grouped[mainCat]) grouped[mainCat] = [];
-                            grouped[mainCat].push({ name: fullName, price: displayPrice, prevPrice: displayPrice });
+                        reviewRows.forEach(item => {
+                            const code = item.코드;
+                            const sale = getSaleState(item);
+                            const mItem = { ...(newMaster[code] || { 코드: code }) };
+                            mItem['품목명'] = item.품목명;
+                            mItem['규격'] = item.규격;
+                            mItem['입고가'] = parseNum(item.입고가);
+                            mItem['출고가'] = parseNum(item.출고가);
+                            mItem['행사가'] = parseNum(item.행사가);
+                            mItem['입고B'] = parseNum(item.입고B);
+                            mItem['1종코드'] = item['1종코드'] || mItem['1종코드'] || '';
+                            mItem['1종규격'] = item['1종규격'] || mItem['1종규격'] || '';
+                            mItem['1종연산'] = parseNum(item['1종연산']);
+                            mItem['경비'] = parseNum(item['경비']);
+                            mItem['외주비'] = parseNum(item['외주비']);
+                            mItem['노무비'] = parseNum(item['노무비']);
+                            mItem['도매A'] = parseNum(item.도매A);
+                            mItem['도매B'] = parseNum(item.도매B);
+                            mItem['시중가'] = parseNum(item.시중가);
+                            mItem['재고수량'] = parseNum(item.재고수량);
+                            mItem['판매여부'] = sale.code;
+                            mItem['브랜드'] = item.브랜드 || '';
+                            mItem['간단설명'] = item.간단설명 || '';
+                            mItem['검색어등록'] = item.검색어등록 || '';
+                            mItem['테마1'] = item.테마1 || '';
+                            mItem['테마2'] = item.테마2 || '';
+                            mItem['견적서'] = item.카테고리 || mItem['견적서'] || mItem['카테고리'] || '';
+                            updatedItems.push(mItem);
+                            newMaster[code] = mItem;
                         });
 
-                        const exportData = Object.keys(grouped).map(title => ({ title: `📌 ${title}`, items: grouped[title] }));
-                        await setIDB('ONEAPP_IMAGE_DATA_TEMP', JSON.stringify(exportData));
-                        
-                        showToast("✅ [ OK ] 데이터 생성 완료. (이미지 생성기 앱은 별도로 구축 예정입니다.)");
+                        await bulkPutIDB('master_products', updatedItems);
+                        setMasterProducts(newMaster);
+                        localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+
+                        const wb = window.XLSX.utils.book_new();
+                        const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '최종(전송)', 'n', '행사', 'n', '1']];
+                        const shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', '도매B', '도매B', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
+
+                        let subOutputCount = 0;
+                        reviewRows.forEach(item => {
+                            const sale = getSaleState(item);
+                            const inPrice = parseNum(item.입고가);
+                            const finalOut = parseNum(item.최종출고가);
+                            const pASale = parseNum(item.도매A);
+                            const pMarket = parseNum(item.시중가);
+                            const finalStock = parseNum(item.재고수량);
+                            erpData.push([item.코드, inPrice, '0', finalOut, '0', parseNum(item.입고B)||'', 'n', pASale||'', 'n', parseNum(item.도매B)||'', 'n', inPrice, 'n', parseNum(item.행사가)||'', 'n', sale.code]);
+                            shopData.push([item.코드, item.품목명, item.규격, finalOut, (pASale>0?pASale:finalOut), (pMarket>0?pMarket:finalOut), 0, 0, 0, 0, 0, 0, item.브랜드||'', item.간단설명||'', sale.code, finalStock, item.테마1||'', item.테마2||'', '', '', '', item.검색어등록||'']);
+
+                            const subInfo = calculateSubPriceInfo(item);
+                            if (subInfo) {
+                                // 소분품목은 원물 행과 별도 출력물로 취급한다. ERP와 쇼핑몰업로드 모두 행 수가 증가해야 한다.
+                                erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', subInfo.subIn, 'n', '', 'n', sale.code]);
+                                const subShopRow = buildSubShopRow(item, subInfo, masterProducts, sale);
+                                if (subShopRow) shopData.push(subShopRow);
+                                subOutputCount++;
+                            }
+                        });
+
+                        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shopData), '쇼핑몰업로드');
+                        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), 'ERP업데이트');
+                        window.XLSX.writeFile(wb, `통합업로드용_Export_${new Date().toISOString().slice(0,10)}.xlsx`);
+                        showToast(`✅ 원물 ${reviewRows.length}건 + 소분 ${subOutputCount}건 = 총 ${reviewRows.length + subOutputCount}건 엑셀 다운로드 완료`);
                     } catch (e) {
-                        console.error(e);
-                        showToast("❌ 이미지 데이터 준비 중 오류 발생");
+                        console.error('[Export Excel Error]', e);
+                        showToast('❌ 엑셀 파일 생성 중 오류가 발생했습니다.');
                     } finally {
                         setIsProcessing(false);
                     }
                 }, 300);
-            };
+            }, [reviewRows, masterProducts, analysis, showToast]);
+
+            // ============================================================
+            // [E-OUTPUT-03] 이미지 출력 데이터 브릿지
+            // 역할: reviewRows를 이미지 생성기가 읽는 ONEAPP_IMAGE_DATA_TEMP 구조로 변환한다.
+            // 주의: 이미지 가격은 최종 적용 가격 기준이며, 정지중 상품은 제외한다.
+            // ============================================================
+            const handleImageExport = useCallback(() => {
+                if (reviewRows.length === 0) return showToast('⚠️ 이미지로 보낼 데이터가 없습니다.');
+                setIsProcessing(true);
+                setTimeout(async () => {
+                    try {
+                        const grouped = {};
+                        reviewRows.forEach(item => {
+                            const sale = getSaleState(item);
+                            if (sale.label === '정지중') return;
+                            const title = item.카테고리 ? String(item.카테고리).split(',')[0].trim() : '일반 상품목록';
+                            const fullName = item.규격 ? `${item.품목명} (${item.규격})` : item.품목명;
+                            if (!grouped[title]) grouped[title] = [];
+                            grouped[title].push({ name: fullName, price: parseNum(item.최종출고가), prevPrice: parseNum(item.기준출고가) });
+                        });
+                        const exportData = Object.keys(grouped).map(title => ({ title: `📌 ${title}`, items: grouped[title] }));
+                        await setIDB('ONEAPP_IMAGE_DATA_TEMP', JSON.stringify(exportData));
+                        showToast('✅ 이미지 데이터 생성 완료. 이미지 뷰어 탭을 확인하세요.');
+                    } catch (e) {
+                        console.error('[Image Export Error]', e);
+                        showToast('❌ 이미지 데이터 준비 중 오류 발생');
+                    } finally {
+                        setIsProcessing(false);
+                    }
+                }, 250);
+            }, [reviewRows, showToast]);
+
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    const tag = document.activeElement?.tagName;
+                    const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag);
+                    if (e.key === 'F9') {
+                        e.preventDefault();
+                        if (isInput) document.activeElement.blur();
+                        if (!isProcessing) handleExportExcel();
+                    } else if (e.key === 'F10') {
+                        e.preventDefault();
+                        if (isInput) document.activeElement.blur();
+                        if (!isProcessing) handleImageExport();
+                    }
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [isProcessing, handleExportExcel, handleImageExport]);
 
             return (
-                <div className="flex h-screen overflow-hidden bg-slate-50 fade-in">
+                <div className="flex h-screen overflow-hidden bg-slate-100 fade-in">
                     {toast && (
                         <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-[1000] bg-slate-800 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 text-sm font-bold transition-all">
                             <i className="fas fa-check-circle text-emerald-400"></i>{toast}
                         </div>
                     )}
-                    
-                    {/* 왼쪽 GNB */}
+
                     <div className="w-[260px] bg-[#0f172a] flex flex-col text-slate-300 shadow-xl z-10 shrink-0 h-full">
                         <div className="p-6 border-b border-slate-800 bg-[#0b1120] shrink-0">
-                            <h1 className="text-xl font-black text-amber-400 tracking-tight flex items-center">
-                                <i className="fas fa-print mr-3"></i>출력 센터
+                            <h1 className="text-xl font-black text-emerald-400 tracking-tight flex items-center">
+                                <i className="fas fa-shield-alt mr-3"></i>출력검증센터
                             </h1>
-                            <p className="text-[11px] text-slate-500 mt-2 font-bold uppercase tracking-widest">Export & Report</p>
+                            <p className="text-[10px] text-slate-500 mt-2 font-bold uppercase tracking-widest">Export Verify Center</p>
                         </div>
                         <div className="flex flex-col py-4 gap-1 px-3 flex-1">
-                            <div className="px-4 py-3.5 rounded-xl text-left text-[13px] font-bold bg-amber-600 text-white shadow-md cursor-default">
-                                <i className="fas fa-file-export w-6 text-center mr-1"></i> 데이터 출력 및 리포트
+                            <div className="px-4 py-3.5 rounded-xl text-left text-[13px] font-bold bg-slate-800/50 text-emerald-400 border border-emerald-900/30 shadow-md flex items-center">
+                                <i className="fas fa-list-check w-5 text-center mr-2"></i> 이슈별 모아보기
+                            </div>
+                            <div className="px-4 py-3 text-[11px] leading-relaxed text-slate-400">
+                                작업 대상은 메인에서 전달된 <b className="text-slate-200">merch_export_draft</b> 기준입니다. 마스터 전체는 작업 대상으로 사용하지 않습니다.
                             </div>
                         </div>
                         <div className="p-6 border-t border-slate-800 shrink-0">
-                            <button onClick={() => window.close()} className="w-full py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[13px] font-bold transition-colors">
-                                <i className="fas fa-arrow-left mr-2"></i> 메인으로 (닫기)
+                            <button onClick={() => window.location.href = 'MerchOps.html'} className="w-full py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[13px] font-bold transition-colors">
+                                <i className="fas fa-arrow-left mr-2"></i> 메인으로 돌아가기
                             </button>
                         </div>
                     </div>
 
-                    {/* 메인 콘텐츠 영역 */}
-                    <div className="flex-1 overflow-y-auto p-10 flex flex-col items-center justify-center relative">
-                        
-                        <div className="max-w-4xl w-full bg-white p-10 rounded-3xl shadow-xl border border-slate-200">
-                            <div className="text-center mb-10">
-                                <h2 className="text-3xl font-black text-slate-800 mb-3">데이터 출력 및 보고서 생성</h2>
-                                <p className="text-slate-500 font-bold mb-4">
-                                    메인 화면에서 전달받은 <strong className="text-indigo-600">{targetProducts.length}건</strong>의 상품 데이터를 즉시 출력합니다.<br/>
-                                </p>
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                        <div className="bg-white p-5 border-b border-slate-200 shadow-sm shrink-0 z-10">
+                            <div className="flex items-center justify-between mb-4">
+                                <h2 className="text-xl font-black text-slate-800 flex items-center">
+                                    <i className="fas fa-layer-group text-indigo-500 mr-2"></i>이슈 카드뷰
+                                </h2>
+                                <div className="text-[12px] text-slate-500 font-bold">표시 {filteredRows.length.toLocaleString()}건 / 전체 {reviewRows.length.toLocaleString()}건</div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-6">
-                                {/* 엑셀 다운로드 버튼 */}
-                                <button onClick={handleExportExcel} disabled={isProcessing} className={`flex flex-col items-center p-8 border-2 rounded-2xl transition-all group ${isProcessing ? 'bg-slate-50 border-slate-200 cursor-not-allowed opacity-70' : 'bg-emerald-50 border-emerald-200 hover:border-emerald-500 hover:shadow-lg'}`}>
-                                    <div className="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-500 text-4xl mb-6 group-hover:scale-110 transition-transform">
-                                        <i className="fas fa-file-excel"></i>
-                                    </div>
-                                    <div className="font-black text-slate-800 text-[18px] mb-2">통합 엑셀 다운로드</div>
-                                    <div className="text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded text-[10px] font-bold mb-3">단축키: F9</div>
-                                    <div className="text-slate-500 text-[12px] text-center">전달받은 대상만 추려내어 쇼핑몰 업로드, <br/>ERP 업데이트 시트 등 3개를 동시 생성합니다.</div>
-                                </button>
-
-                                {/* 이미지 내보내기 버튼 */}
-                                <button onClick={handleImageExport} disabled={isProcessing} className={`flex flex-col items-center p-8 border-2 rounded-2xl transition-all group ${isProcessing ? 'bg-slate-50 border-slate-200 cursor-not-allowed opacity-70' : 'bg-amber-50 border-amber-200 hover:border-amber-500 hover:shadow-lg'}`}>
-                                    <div className="w-20 h-20 rounded-full bg-amber-100 flex items-center justify-center text-amber-500 text-4xl mb-6 group-hover:scale-110 transition-transform">
-                                        <i className="fas fa-image"></i>
-                                    </div>
-                                    <div className="font-black text-slate-800 text-[18px] mb-2">카톡 공유용 이미지</div>
-                                    <div className="text-amber-600 bg-amber-100 px-2 py-0.5 rounded text-[10px] font-bold mb-3">단축키: F10</div>
-                                    <div className="text-slate-500 text-[12px] text-center">전달받은 대상의 단가를 바탕으로<br/>카카오톡 전송에 최적화된 이미지를 생성합니다.</div>
-                                </button>
+                            <div className="grid grid-cols-5 xl:grid-cols-10 gap-2 mb-4">
+                                {issueCards.map(card => (
+                                    <button key={card.key} onClick={() => handleCardClick(card.key)} className={`border p-3 rounded-xl flex flex-col items-center shadow-sm transition-all hover:shadow-md ${card.cls} ${activeIssue === card.key ? 'ring-2 ring-slate-700 scale-[1.02]' : ''}`}>
+                                        <span className="text-[11px] font-black mb-1 flex items-center"><i className={`fas ${card.icon} mr-1`}></i>{card.label}</span>
+                                        <span className="text-xl font-black">{card.count.toLocaleString()}</span>
+                                    </button>
+                                ))}
                             </div>
-                            
-                            {/* 진행 상태 인디케이터 */}
-                            {isProcessing && (
-                                <div className="mt-8 flex justify-center items-center text-slate-500 font-bold text-sm fade-in">
-                                    <i className="fas fa-circle-notch fa-spin text-indigo-500 mr-2 text-lg"></i>
-                                    데이터를 처리하고 있습니다. 잠시만 기다려주세요...
+
+                            <div className="flex items-center gap-3">
+                                <div className="relative flex-1 max-w-xl">
+                                    <i className="fas fa-search absolute left-3 top-2.5 text-slate-400 text-[13px]"></i>
+                                    <input value={searchInput} onChange={(e) => setSearchInput(e.target.value)} placeholder="코드 / 품목명 / 규격 / 브랜드 / 카테고리 검색 · 예: 양파 15kg" className="w-full h-9 pl-9 pr-3 border border-slate-300 rounded-lg text-[12px] font-bold outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100" />
                                 </div>
-                            )}
+                                <select value={sortMode} onChange={(e) => setSortMode(e.target.value)} className="h-9 px-3 border border-slate-300 rounded-lg text-[12px] font-bold text-slate-700 bg-white outline-none">
+                                    <option value="category">카테고리순</option>
+                                    <option value="stockAsc">재고수량 오름차순</option>
+                                    <option value="diffRateDesc">변동률 큰 순</option>
+                                    <option value="diffAbsDesc">차액 큰 순</option>
+                                    <option value="inPriceDesc">입고가 높은 순</option>
+                                    <option value="outPriceDesc">출고가 높은 순</option>
+                                </select>
+                                <button onClick={resetFilters} className="h-9 px-4 rounded-lg bg-slate-100 text-slate-600 border border-slate-300 text-[12px] font-black hover:bg-slate-200">
+                                    <i className="fas fa-rotate-left mr-1.5"></i>필터 초기화
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 p-5 overflow-hidden flex flex-col">
+                            <div className="flex items-center justify-between mb-3">
+                                <h3 className="font-bold text-slate-700 text-[14px]"><i className="fas fa-edit mr-2 text-emerald-500"></i>최종 퀵 수정 & 안전 점검표</h3>
+                                <div className="flex items-center gap-3 text-[11px] text-slate-500 font-bold">
+                                    <span className="bg-white px-2 py-1 rounded border border-slate-200 shadow-sm"><span className="text-purple-500">■</span> 행사가는 출고가에 우선 적용</span>
+                                    <span className="bg-white px-2 py-1 rounded border border-slate-200 shadow-sm"><span className="text-teal-500">■</span> 재고적음은 재고수량 오름차순</span>
+                                </div>
+                            </div>
+
+                            <div className="flex-1 bg-white border border-slate-200 rounded-xl overflow-auto custom-scrollbar shadow-sm">
+                                <table className="w-full text-left text-[13px] whitespace-nowrap">
+                                    <thead className="bg-[#f8fafc] sticky top-0 border-b border-slate-200 text-slate-600 z-10 shadow-sm">
+                                        <tr>
+                                            <th className="px-3 py-3 w-16 text-center font-bold">검증</th>
+                                            <th className="px-3 py-3 w-24 font-bold">코드</th>
+                                            <th className="px-3 py-3 w-28 font-bold">카테고리</th>
+                                            <th className="px-3 py-3 font-bold">품목명 (규격)</th>
+                                            <th className="px-3 py-3 w-20 text-right font-bold text-slate-500">기준가</th>
+                                            <th className="px-3 py-3 w-24 text-right font-bold text-indigo-600">입고가</th>
+                                            <th className="px-3 py-3 w-24 text-right font-bold text-slate-500">출고가</th>
+                                            <th className="px-3 py-3 w-24 text-right font-bold text-emerald-600">계산 출고가</th>
+                                            <th className="px-3 py-3 w-20 text-right font-bold text-purple-600">행사가</th>
+                                            <th className="px-3 py-3 w-24 text-right font-bold text-rose-600">최종 출고가</th>
+                                            <th className="px-3 py-3 w-20 text-center font-bold">재고</th>
+                                            <th className="px-3 py-3 w-24 text-center font-bold">상태</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {filteredRows.length === 0 ? (
+                                            <tr><td colSpan="12" className="p-10 text-center text-slate-400 font-bold">표시할 데이터가 없습니다.</td></tr>
+                                        ) : filteredRows.map(item => {
+                                            const sale = getSaleState(item);
+                                            const promo = parseNum(item.행사가) > 0;
+                                            const margin = isMarginWarning(item);
+                                            const anomaly = isAnomaly(item);
+                                            const { diff, rate } = getDiffInfo(item);
+                                            return (
+                                                <tr key={item.코드} className={`transition-colors ${margin || anomaly ? 'bg-rose-50/50' : 'hover:bg-slate-50'}`}>
+                                                    <td className="px-3 py-2 text-center">
+                                                        {margin ? <i className="fas fa-exclamation-triangle text-rose-500" title="역마진"></i> :
+                                                         anomaly ? <i className="fas fa-exclamation-circle text-orange-500" title="오기 의심"></i> :
+                                                         sale.label === '품절' ? <span className="w-2.5 h-2.5 rounded-full bg-orange-400 inline-block" title="품절"></span> :
+                                                         sale.label === '정지중' ? <span className="w-2.5 h-2.5 rounded-full bg-slate-300 inline-block" title="정지중"></span> :
+                                                         <i className="fas fa-check-circle text-emerald-400"></i>}
+                                                    </td>
+                                                    <td className="px-3 py-2 font-mono text-slate-400 text-[11px]">{item.코드}</td>
+                                                    <td className="px-3 py-2 text-[11px] text-slate-500 max-w-[140px] truncate">{item.카테고리}</td>
+                                                    <td className="px-3 py-2 font-bold text-slate-800">
+                                                        {item.품목명} <span className="text-slate-400 font-normal ml-1 text-[11px]">{item.규격 && `(${item.규격})`}</span>
+                                                        {isNewItem(item) && <span className="ml-2 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 text-[10px] font-black">신규</span>}
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right text-slate-400">
+                                                        {fmt(item.기준출고가)}
+                                                        {item.기준출고가 > 0 && <div className={`text-[10px] font-bold ${diff >= 0 ? 'text-rose-400' : 'text-blue-400'}`}>{diff === 0 ? '-' : `${diff > 0 ? '+' : ''}${fmt(diff)} / ${(rate*100).toFixed(1)}%`}</div>}
+                                                    </td>
+                                                    <td className="px-2 py-1 bg-indigo-50/30">
+                                                        <input type="text" value={item.입고가} onChange={(e)=>handleEdit(item.코드, '입고가', e.target.value)} title="입고가 수정 시 계산 출고가가 최종 출고가에 자동 반영됩니다." className="w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 px-1 py-1 text-right font-black text-indigo-600 outline-none" />
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right text-slate-500 font-bold">
+                                                        {parseNum(item.불러온출고가) > 0 ? fmt(item.불러온출고가) : <span className="text-slate-300">-</span>}
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right text-emerald-600 font-black">
+                                                        {parseNum(item.계산출고가) > 0 ? fmt(item.계산출고가) : <span className="text-slate-300">-</span>}
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right">
+                                                        <input type="text" value={item.행사가} onChange={(e)=>handleEdit(item.코드, '행사가', e.target.value)} className="w-20 bg-transparent border-b border-transparent focus:border-purple-400 hover:border-slate-300 px-1 py-1 text-right font-black text-purple-700 outline-none" />
+                                                    </td>
+                                                    <td className="px-2 py-1 bg-orange-50/30">
+                                                        <input type="text" value={item.출고가} onChange={(e)=>handleEdit(item.코드, '출고가', e.target.value)} title="최종 저장할 기본 출고가입니다. 행사가가 있으면 행사가가 우선 적용됩니다." className={`w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 rounded-none px-1 py-1 text-right font-black outline-none transition-colors ${margin ? 'text-rose-600' : 'text-slate-800'}`} />
+                                                    </td>
+                                                    <td className="px-2 py-1 bg-slate-50/50">
+                                                        <input type="text" value={item.재고수량} onChange={(e)=>handleEdit(item.코드, '재고수량', e.target.value)} className="w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 px-1 py-1 text-center font-bold text-slate-600 outline-none" />
+                                                    </td>
+                                                    <td className="px-2 py-1 text-center">
+                                                        <span className={`inline-flex items-center justify-center w-full border rounded px-2 py-1 text-[12px] font-black ${sale.cls}`}>{sale.text}</span>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div className="bg-white p-6 border-t border-slate-200 shrink-0 flex gap-4 z-20 shadow-[0_-4px_10px_rgba(0,0,0,0.02)]">
+                            <button onClick={handleExportExcel} disabled={isProcessing || reviewRows.length === 0} className="flex-1 py-4 bg-emerald-600 text-white rounded-xl font-black text-[15px] hover:bg-emerald-700 transition-all shadow-md hover:shadow-lg flex justify-center items-center">
+                                <i className="fas fa-save mr-2 text-lg"></i> 마스터 반영 후 엑셀 출력 (F9)
+                            </button>
+                            <button onClick={handleImageExport} disabled={isProcessing || reviewRows.length === 0} className="px-8 py-4 bg-amber-500 text-white rounded-xl font-black text-[15px] hover:bg-amber-600 transition-all shadow-md hover:shadow-lg flex justify-center items-center">
+                                <i className="fas fa-image mr-2 text-lg"></i> 이미지 (F10)
+                            </button>
                         </div>
                     </div>
                 </div>
