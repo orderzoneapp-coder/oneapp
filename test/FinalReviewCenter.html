@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 출력검증센터 [v2.5.5 정지처리 연동]</title>
+    <title>ONEAPP MerchOps - 최종검증센터 [v2.5.5 stage1.5 안정화]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -122,7 +122,7 @@
         const safeJSONParse = window.ONEAPP.STORAGE.safeJSONParse;
 
         // ============================================================
-        // [E-ENGINE-01] 출력검증센터 계산출고가 엔진
+        // [E-ENGINE-01] 최종검증센터 계산출고가 엔진
         // 역할: reviewRows 단계에서 입고가/외주비/노무비/창고/단위/마진룰 기준 계산출고가를 산출한다.
         // coreEngine.js의 공통 Pricing Engine으로 위임한다.
         // ============================================================
@@ -151,7 +151,7 @@
 
             useEffect(() => {
                 // ============================================================
-                // [E-FLOW-01] 출력검증센터 데이터 로드
+                // [E-FLOW-01] 최종검증센터 데이터 로드
                 // 역할: merch_export_draft만 작업 대상으로 읽고, 해당 code에 대해서만 masterProducts를 기준정보로 참조한다.
                 // 금지: master_products 전체를 reviewRows 작업대상으로 전환하지 않는다.
                 // ============================================================
@@ -226,7 +226,7 @@
                         setReviewRows(rows);
                     } catch (e) {
                         console.error('[Export Center Load Error]', e);
-                        showToast('❌ 출력검증센터 데이터 로드 중 오류가 발생했습니다.');
+                        showToast('❌ 최종검증센터 데이터 로드 중 오류가 발생했습니다.');
                     } finally {
                         setIsProcessing(false);
                     }
@@ -505,9 +505,9 @@
                     <div className="w-[260px] bg-[#0f172a] flex flex-col text-slate-300 shadow-xl z-10 shrink-0 h-full">
                         <div className="p-6 border-b border-slate-800 bg-[#0b1120] shrink-0">
                             <h1 className="text-xl font-black text-emerald-400 tracking-tight flex items-center">
-                                <i className="fas fa-shield-alt mr-3"></i>출력검증센터
+                                <i className="fas fa-shield-alt mr-3"></i>최종검증센터
                             </h1>
-                            <p className="text-[10px] text-slate-500 mt-2 font-bold uppercase tracking-widest">Export Verify Center</p>
+                            <p className="text-[10px] text-slate-500 mt-2 font-bold uppercase tracking-widest">Final Review Center</p>
                         </div>
                         <div className="flex flex-col py-4 gap-1 px-3 flex-1">
                             <div className="px-4 py-3.5 rounded-xl text-left text-[13px] font-bold bg-slate-800/50 text-emerald-400 border border-emerald-900/30 shadow-md flex items-center">
