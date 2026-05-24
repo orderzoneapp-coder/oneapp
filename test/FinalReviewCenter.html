@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 최종검증센터 [v2.5.5 stage1.5 안정화]</title>
+    <title>ONEAPP MerchOps - 최종검증센터 [v2.6 카테고리 네비게이션]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -133,6 +133,8 @@
             const [reviewRows, setReviewRows] = useState([]);
             const [marginRules] = useState(() => safeJSONParse('merchMarginRules_v878', [{ id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }]));
             const [activeIssue, setActiveIssue] = useState('all');
+            const [activeC1, setActiveC1] = useState(null);
+            const [activeC2, setActiveC2] = useState(null);
             const [sortMode, setSortMode] = useState('category');
             const [searchInput, setSearchInput] = useState('');
             const [searchTerm, setSearchTerm] = useState('');
@@ -191,6 +193,14 @@
                                 코드: code,
                                 품목명: working.품목명 || master['품목명'] || '',
                                 규격: working.규격 || master['규격'] || '',
+                                품목코드: working.품목코드 || baseline.품목코드 || master['품목코드'] || code,
+                                '1코드': working['1코드'] || baseline['1코드'] || master['1코드'] || '',
+                                '1그룹명': working['1그룹명'] || baseline['1그룹명'] || master['1그룹명'] || '',
+                                '2코드': working['2코드'] || baseline['2코드'] || master['2코드'] || '',
+                                '2그룹명': working['2그룹명'] || baseline['2그룹명'] || master['2그룹명'] || '',
+                                카탈로그: working.카탈로그 || baseline.카탈로그 || master['카탈로그'] || '',
+                                견적서: working.견적서 || baseline.견적서 || master['견적서'] || '',
+                                기본: working.기본 || baseline.기본 || master['기본'] || '',
                                 브랜드: working.브랜드 || master['브랜드'] || '',
                                 간단설명: working.간단설명 || master['간단설명'] || '',
                                 카테고리: working.카테고리 || master['견적서'] || master['카테고리'] || '일반 상품목록',
@@ -298,7 +308,7 @@
                 { key: 'lowstock', label: '재고적음', count: analysis.lowStock, icon: 'fa-layer-group', cls: 'border-teal-200 bg-teal-50 text-teal-700' }
             ]), [analysis]);
 
-            const filteredRows = useMemo(() => {
+            const baseFilteredRows = useMemo(() => {
                 let rows = reviewRows.filter(row => {
                     const sale = getSaleState(row);
                     const { diff } = getDiffInfo(row);
@@ -320,26 +330,53 @@
                 if (terms.length > 0) {
                     rows = rows.filter(row => {
                         const haystack = [
-                            row.코드, row.품목명, row.규격, row.브랜드, row.카테고리,
+                            row.코드, row.품목코드, row.품목명, row.규격, row.브랜드, row.카테고리,
+                            row['1그룹명'], row['2그룹명'], row.카탈로그, row.견적서,
                             row.간단설명, row.검색어등록, row.source?.sourceType, ...(row.source?.tags || [])
                         ].join(' ').toLowerCase();
                         return terms.every(term => haystack.includes(term));
                     });
                 }
 
-                const sorted = [...rows];
-                const byCategory = (a, b) => String(a.카테고리 || '').localeCompare(String(b.카테고리 || ''), 'ko') || String(a.품목명 || '').localeCompare(String(b.품목명 || ''), 'ko');
-                if (sortMode === 'stockAsc') sorted.sort((a, b) => parseNum(a.재고수량) - parseNum(b.재고수량) || byCategory(a, b));
-                else if (sortMode === 'diffRateDesc') sorted.sort((a, b) => Math.abs(getDiffInfo(b).rate) - Math.abs(getDiffInfo(a).rate));
-                else if (sortMode === 'diffAbsDesc') sorted.sort((a, b) => Math.abs(getDiffInfo(b).diff) - Math.abs(getDiffInfo(a).diff));
-                else if (sortMode === 'inPriceDesc') sorted.sort((a, b) => parseNum(b.입고가) - parseNum(a.입고가));
-                else if (sortMode === 'outPriceDesc') sorted.sort((a, b) => parseNum(b.최종출고가) - parseNum(a.최종출고가));
-                else sorted.sort(byCategory);
-                return sorted;
-            }, [reviewRows, activeIssue, searchTerm, sortMode]);
+                return rows;
+            }, [reviewRows, activeIssue, searchTerm]);
+
+            const reviewCategoryTree = useMemo(() => {
+                return window.ONEAPP.REVIEW.buildReviewCategoryTree(baseFilteredRows);
+            }, [baseFilteredRows]);
+
+            const c1List = useMemo(() => window.ONEAPP.REVIEW.getReviewC1List(reviewCategoryTree), [reviewCategoryTree]);
+            const c2List = useMemo(() => window.ONEAPP.REVIEW.getReviewC2List(reviewCategoryTree, activeC1), [reviewCategoryTree, activeC1]);
+
+            useEffect(() => {
+                if (c1List.length === 0) {
+                    setActiveC1(null);
+                    return;
+                }
+                if (!activeC1 || !c1List.some(c => c.code === activeC1)) {
+                    setActiveC1(c1List[0].code);
+                }
+            }, [c1List, activeC1]);
+
+            useEffect(() => {
+                if (c2List.length === 0) {
+                    setActiveC2(null);
+                    return;
+                }
+                if (!activeC2 || !c2List.some(c => c.code === activeC2)) {
+                    setActiveC2(c2List[0].code);
+                }
+            }, [c2List, activeC2]);
+
+            const filteredRows = useMemo(() => {
+                const rows = window.ONEAPP.REVIEW.getReviewItems(reviewCategoryTree, activeC1, activeC2);
+                return window.ONEAPP.REVIEW.sortReviewItems(rows, sortMode, { getDiffInfo, parseNum });
+            }, [reviewCategoryTree, activeC1, activeC2, sortMode]);
 
             const resetFilters = useCallback(() => {
                 setActiveIssue('all');
+                setActiveC1(null);
+                setActiveC2(null);
                 setSortMode('category');
                 setSearchInput('');
                 setSearchTerm('');
@@ -511,7 +548,7 @@
                         </div>
                         <div className="flex flex-col py-4 gap-1 px-3 flex-1">
                             <div className="px-4 py-3.5 rounded-xl text-left text-[13px] font-bold bg-slate-800/50 text-emerald-400 border border-emerald-900/30 shadow-md flex items-center">
-                                <i className="fas fa-list-check w-5 text-center mr-2"></i> 이슈별 모아보기
+                                <i className="fas fa-list-check w-5 text-center mr-2"></i> 카테고리 검증 네비게이션
                             </div>
                             <div className="px-4 py-3 text-[11px] leading-relaxed text-slate-400">
                                 작업 대상은 메인에서 전달된 <b className="text-slate-200">merch_export_draft</b> 기준입니다. 마스터 전체는 작업 대상으로 사용하지 않습니다.
@@ -570,7 +607,53 @@
                                 </div>
                             </div>
 
-                            <div className="flex-1 bg-white border border-slate-200 rounded-xl overflow-auto custom-scrollbar shadow-sm">
+                            <div className="flex-1 min-h-0 flex gap-4 overflow-hidden">
+                                <div className="w-[310px] shrink-0 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
+                                    <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
+                                        <div className="text-[13px] font-black text-slate-800 flex items-center"><i className="fas fa-sitemap text-indigo-500 mr-2"></i>1차 / 2차 분류</div>
+                                        <div className="text-[11px] text-slate-500 font-bold mt-1">현재 조건 {baseFilteredRows.length.toLocaleString()}건 기준</div>
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3">
+                                        {c1List.length === 0 ? (
+                                            <div className="p-6 text-center text-slate-400 text-[12px] font-bold">분류할 대상이 없습니다.</div>
+                                        ) : c1List.map(c1 => {
+                                            const c2s = window.ONEAPP.REVIEW.getReviewC2List(reviewCategoryTree, c1.code);
+                                            const isC1Active = activeC1 === c1.code;
+                                            return (
+                                                <div key={c1.code} className="rounded-xl border border-slate-100 overflow-hidden bg-slate-50/40">
+                                                    <button onClick={() => { setActiveC1(c1.code); const first = c2s[0]; if (first) setActiveC2(first.code); }} className={`w-full px-3 py-2.5 text-left flex justify-between items-center text-[12px] font-black ${isC1Active ? 'bg-indigo-50 text-indigo-700' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>
+                                                        <span className="truncate"><i className="fas fa-folder mr-2 text-indigo-400"></i>{c1.name}</span>
+                                                        <span className="ml-2 px-2 py-0.5 rounded-full bg-white border border-slate-200 text-[10px] text-slate-500">{c1.count}</span>
+                                                    </button>
+                                                    {isC1Active && (
+                                                        <div className="p-2 space-y-1">
+                                                            {c2s.map(c2 => {
+                                                                const summary = window.ONEAPP.REVIEW.getReviewIssueSummary(c2.items, { getSaleState, isMarginWarning, isAnomaly, isLowStock, isNewItem });
+                                                                const active = activeC2 === c2.code;
+                                                                return (
+                                                                    <button key={c2.code} onClick={() => setActiveC2(c2.code)} className={`w-full text-left rounded-lg px-3 py-2 border transition-all ${active ? 'bg-slate-900 text-white border-slate-900 shadow-sm' : 'bg-white text-slate-600 border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/50'}`}>
+                                                                        <div className="flex justify-between items-center gap-2">
+                                                                            <span className="truncate text-[12px] font-bold">{c2.name}</span>
+                                                                            <span className={`text-[10px] font-black ${active ? 'text-slate-300' : 'text-slate-400'}`}>{c2.count}건</span>
+                                                                        </div>
+                                                                        <div className={`mt-1 flex gap-1.5 text-[10px] font-bold ${active ? 'text-slate-300' : 'text-slate-400'}`}>
+                                                                            {summary.margin > 0 && <span className="text-rose-400">역 {summary.margin}</span>}
+                                                                            {summary.promo > 0 && <span className="text-purple-400">행 {summary.promo}</span>}
+                                                                            {summary.anomaly > 0 && <span className="text-amber-400">오 {summary.anomaly}</span>}
+                                                                            {summary.soldout > 0 && <span className="text-orange-400">품 {summary.soldout}</span>}
+                                                                            {summary.margin + summary.promo + summary.anomaly + summary.soldout === 0 && <span>특이 없음</span>}
+                                                                        </div>
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                                <div className="flex-1 bg-white border border-slate-200 rounded-xl overflow-auto custom-scrollbar shadow-sm">
                                 <table className="w-full text-left text-[13px] whitespace-nowrap">
                                     <thead className="bg-[#f8fafc] sticky top-0 border-b border-slate-200 text-slate-600 z-10 shadow-sm">
                                         <tr>
@@ -644,6 +727,8 @@
                                 </table>
                             </div>
                         </div>
+
+                            </div>
 
                         <div className="bg-white p-6 border-t border-slate-200 shrink-0 flex gap-4 z-20 shadow-[0_-4px_10px_rgba(0,0,0,0.02)]">
                             <button onClick={handleExportExcel} disabled={isProcessing || reviewRows.length === 0} className="flex-1 py-4 bg-emerald-600 text-white rounded-xl font-black text-[15px] hover:bg-emerald-700 transition-all shadow-md hover:shadow-lg flex justify-center items-center">
