@@ -40,6 +40,35 @@
 
         const safeJSONParse = window.ONEAPP.STORAGE.safeJSONParse;
 
+        const DEFAULT_REVIEW_TABLE_PRESETS = {
+            default: {
+                label: '기본보기',
+                description: '검증센터 기본 작업 테이블',
+                columns: ['선택', '품목코드', '품목명', '규격', '입고가', '출고가', '행사가', '마진율', '이슈요약']
+            },
+            promo: {
+                label: '행사작업',
+                description: '행사가 입력과 행사지정 중심',
+                columns: ['선택', '품목코드', '품목명', '규격', '기본', '기준시세입고가', '2차벤더단가', '재고수량', '안전재고', '입고가', '출고가', '행사가', '수정행사가', '마진율', '행사지정', '행사제안사유', '이슈요약']
+            },
+            price: {
+                label: '가격확인',
+                description: '기준가와 작업값 비교',
+                columns: ['선택', '품목코드', '품목명', '규격', '기준입고가', '입고가', '입고가차액', '입고가변동률', '기준출고가', '출고가', '마진율', '비교단가요약']
+            },
+            risk: {
+                label: '위험상품',
+                description: '역마진·품절·정지 등 저장 전 확인',
+                columns: ['선택', '품목코드', '품목명', '규격', '입고가', '출고가', '행사가', '판매가', '마진율', '재고수량', '안전재고', '판매여부', '이슈요약']
+            },
+            split: {
+                label: '소분가',
+                description: '원물/소분 관련 확인',
+                columns: ['선택', '품목코드', '품목명', '규격', '1종코드', '1종규격', '1종연산', '입고가', '출고가', '소분가', '경비', '이슈요약']
+            }
+        };
+
+
         const useMerchConfig = () => {
             const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v870') || '');
             const [visibleMasterCols, setVisibleMasterCols] = useState(() => safeJSONParse('merchVisMaster_v870', { estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] }));
@@ -47,6 +76,7 @@
             const [mappings, setMappings] = useState(() => safeJSONParse('merchMappings_v870', { master: {}, estimate: {} }));
             const [masterLinks, setMasterLinks] = useState(() => safeJSONParse('merchMasterLinks_v870', { estimate: {} }));
             const [uploadColumnMeta, setUploadColumnMeta] = useState(() => safeJSONParse('merchUploadColumnMeta_v870', { estimate: {} }));
+            const [reviewTablePresets, setReviewTablePresets] = useState(() => safeJSONParse('merchReviewTablePresets_v870', DEFAULT_REVIEW_TABLE_PRESETS));
             const [marginRules, setMarginRules] = useState(() => {
                 const defaultRules = [
                     { id: 'rule_1', whCode: '01', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
@@ -70,10 +100,11 @@
                 localStorage.setItem('merchMasterLinks_v870', JSON.stringify(masterLinks));
                 localStorage.setItem('merchMarginRules_v878', JSON.stringify(marginRules));
                 localStorage.setItem('merchUploadColumnMeta_v870', JSON.stringify(uploadColumnMeta));
+                localStorage.setItem('merchReviewTablePresets_v870', JSON.stringify(reviewTablePresets));
                 localStorage.setItem('config_sync_trigger', Date.now().toString()); 
-            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules, uploadColumnMeta]);
+            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules, uploadColumnMeta, reviewTablePresets]);
 
-            return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules, uploadColumnMeta, setUploadColumnMeta };
+            return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules, uploadColumnMeta, setUploadColumnMeta, reviewTablePresets, setReviewTablePresets };
         };
 
         const useMerchData = () => {
@@ -159,7 +190,8 @@
                                 setMasterLinks: config.setMasterLinks,
                                 setVisibleUploadCols: config.setVisibleUploadCols,
                                 setVisibleMasterCols: config.setVisibleMasterCols,
-                                setUploadColumnMeta: config.setUploadColumnMeta
+                                setUploadColumnMeta: config.setUploadColumnMeta,
+                                setReviewTablePresets: config.setReviewTablePresets
                             },
                             onProgress: (p) => setProcessMsg(p.message || '클라우드 복구 중...')
                         });
@@ -207,6 +239,54 @@
                 return config.uploadColumnMeta?.[type]?.[header]?.type === 'comparePrice';
             }, [config.uploadColumnMeta]);
 
+            const getColumnMeta = useCallback((type, header) => {
+                return config.uploadColumnMeta?.[type]?.[header] || { type: 'normal', targetField: '' };
+            }, [config.uploadColumnMeta]);
+
+            const updateUploadColumnMeta = (type, header, patch) => {
+                config.setUploadColumnMeta(prev => ({
+                    ...prev,
+                    [type]: {
+                        ...(prev?.[type] || {}),
+                        [header]: {
+                            ...(prev?.[type]?.[header] || { type: 'normal', targetField: '' }),
+                            ...patch
+                        }
+                    }
+                }));
+            };
+
+            const changeUploadColumnType = (type, header, metaType) => {
+                const patch = { type: metaType };
+                if (metaType === 'comparePrice' || metaType === 'reference') {
+                    patch.targetField = '';
+                    config.setMasterLinks(prev => ({ ...prev, [type]: { ...(prev?.[type] || {}), [header]: '' } }));
+                }
+                updateUploadColumnMeta(type, header, patch);
+                showToast(`✅ ${header} 항목 유형이 변경되었습니다.`);
+            };
+
+            const changeUploadTargetField = (type, header, targetField) => {
+                updateUploadColumnMeta(type, header, { targetField });
+                config.setMasterLinks(prev => ({ ...prev, [type]: { ...(prev?.[type] || {}), [header]: targetField } }));
+            };
+
+            const resetReviewPresets = () => {
+                if (!window.confirm('검증센터 테이블 프리셋을 기본값으로 초기화할까요?')) return;
+                config.setReviewTablePresets(DEFAULT_REVIEW_TABLE_PRESETS);
+                showToast('✅ 검증센터 테이블 프리셋을 초기화했습니다.');
+            };
+
+            const toggleReviewPresetColumn = (presetKey, col) => {
+                config.setReviewTablePresets(prev => {
+                    const current = prev?.[presetKey] || DEFAULT_REVIEW_TABLE_PRESETS[presetKey] || { label: presetKey, description: '', columns: [] };
+                    const list = current.columns || [];
+                    const nextCols = list.includes(col) ? list.filter(x => x !== col) : [...list, col];
+                    return { ...prev, [presetKey]: { ...current, columns: nextCols } };
+                });
+            };
+
+
             const addCustomUploadCol = (type, val, comparePrice = false) => {
                 if(!val || !val.trim()) return;
                 const cleanVal = val.trim();
@@ -218,7 +298,7 @@
                     ...prev,
                     [type]: {
                         ...(prev?.[type] || {}),
-                        [cleanVal]: { type: comparePrice ? 'comparePrice' : 'normal' }
+                        [cleanVal]: { type: comparePrice ? 'comparePrice' : 'normal', targetField: '' }
                     }
                 }));
                 setCustomEstColInput('');
@@ -274,7 +354,8 @@
                         <div className="flex flex-col py-4 gap-1 px-3">
                             <button onClick={() => setActiveTab('display')} className={`px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all ${activeTab === 'display' ? 'bg-indigo-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}><i className="fas fa-desktop w-6 text-center mr-1"></i> 1. 환경 및 클라우드 설정</button>
                             <button onClick={() => setActiveTab('inputMap')} className={`px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all ${activeTab === 'inputMap' ? 'bg-emerald-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}><i className="fas fa-sign-in-alt w-6 text-center mr-1"></i> 2. 입력 데이터 매핑</button>
-                            <button onClick={() => setActiveTab('marginRule')} className={`px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all ${activeTab === 'marginRule' ? 'bg-rose-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}><i className="fas fa-calculator w-6 text-center mr-1"></i> 3. 단가 계산 및 룰</button>
+                            <button onClick={() => setActiveTab('reviewPreset')} className={`px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all ${activeTab === 'reviewPreset' ? 'bg-purple-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}><i className="fas fa-table w-6 text-center mr-1"></i> 3. 검증센터 테이블 프리셋</button>
+                            <button onClick={() => setActiveTab('marginRule')} className={`px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all ${activeTab === 'marginRule' ? 'bg-rose-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}><i className="fas fa-calculator w-6 text-center mr-1"></i> 4. 단가 계산 및 룰</button>
                             <button onClick={() => setActiveTab('tagManager')} className={`px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all ${activeTab === 'tagManager' ? 'bg-amber-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}><i className="fas fa-tags w-6 text-center mr-1"></i> 4. 카탈로그 관리</button>
                         </div>
                         <div className="mt-auto p-6 border-t border-slate-800">
@@ -366,9 +447,31 @@
                                                 return (
                                                     <tr key={`map-e-${h}`} className="hover:bg-slate-50 transition-colors">
                                                         <td className="p-4 font-bold text-slate-800">{h}</td>
-                                                        <td className="p-4 text-center">{isCompare ? <span className="bg-amber-100 text-amber-700 border border-amber-200 px-2 py-1 rounded-full text-[10px] font-black">비교단가</span> : <span className="bg-slate-100 text-slate-500 border border-slate-200 px-2 py-1 rounded-full text-[10px] font-bold">일반</span>}</td>
+                                                        <td className="p-4 text-center">
+                                                            <select
+                                                                value={getColumnMeta('estimate', h).type || (isCompare ? 'comparePrice' : 'normal')}
+                                                                onChange={e=>changeUploadColumnType('estimate', h, e.target.value)}
+                                                                className="w-full border border-slate-300 rounded-lg px-2 py-2 bg-white text-[12px] font-black outline-none focus:border-indigo-500"
+                                                            >
+                                                                <option value="normal">일반</option>
+                                                                <option value="comparePrice">비교단가</option>
+                                                                <option value="masterField">마스터필드</option>
+                                                                <option value="reference">참고값</option>
+                                                            </select>
+                                                        </td>
                                                         <td className="p-4"><input type="text" value={config.mappings['estimate']?.[h]||''} onChange={e=>config.setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500" /></td>
-                                                        <td className="p-4">{isCompare ? <div className="text-[12px] text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg font-bold text-center"><i className="fas fa-ban mr-1.5"></i>DB 저장 안함</div> : <select value={config.masterLinks['estimate']?.[h]||''} onChange={e=>config.setMasterLinks(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 bg-white font-bold text-slate-700"><option value="">-- DB 저장 안함 --</option>{selectableMasterHeaders.map(mh=><option key={mh} value={mh}>{mh}</option>)}</select>}</td>
+                                                        <td className="p-4">
+                                                            {(getColumnMeta('estimate', h).type === 'comparePrice' || getColumnMeta('estimate', h).type === 'reference') ? (
+                                                                <div className={`text-[12px] px-3 py-2 rounded-lg font-bold text-center border ${getColumnMeta('estimate', h).type === 'comparePrice' ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-slate-600 bg-slate-50 border-slate-200'}`}>
+                                                                    <i className="fas fa-ban mr-1.5"></i>{getColumnMeta('estimate', h).type === 'comparePrice' ? '비교단가 / 저장 안함' : '참고값 / 저장 안함'}
+                                                                </div>
+                                                            ) : (
+                                                                <select value={getColumnMeta('estimate', h).targetField || config.masterLinks['estimate']?.[h] || ''} onChange={e=>changeUploadTargetField('estimate', h, e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 bg-white font-bold text-slate-700">
+                                                                    <option value="">-- DB 저장 안함 --</option>
+                                                                    {selectableMasterHeaders.map(mh=><option key={mh} value={mh}>{mh}</option>)}
+                                                                </select>
+                                                            )}
+                                                        </td>
                                                     </tr>
                                                 );
                                             })}
