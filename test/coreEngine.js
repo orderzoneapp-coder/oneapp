@@ -488,8 +488,16 @@
     const stockQty = stockRaw !== undefined && stockRaw !== null && stockRaw !== '' ? parseNum(stockRaw) : 999;
 
     return {
+      품목코드: getStr('품목코드') || getStr('코드'),
       품목명: getStr('품목명'),
       규격: getStr('규격'),
+      '1코드': getStr('1코드'),
+      '1그룹명': getStr('1그룹명'),
+      '2코드': getStr('2코드'),
+      '2그룹명': getStr('2그룹명'),
+      카탈로그: getStr('카탈로그'),
+      견적서: getStr('견적서'),
+      기본: getStr('기본'),
       브랜드: getStr('브랜드'),
       간단설명: getStr('간단설명'),
       입고가: getNum('입고가'),
@@ -517,6 +525,20 @@
   EXPORT.buildBaselineSnapshot = (master = {}) => {
     const salesState = PRICING.getMasterSalesState(master);
     return {
+      품목코드: master['품목코드'] || master['코드'] || '',
+      품목명: master['품목명'] || '',
+      규격: master['규격'] || '',
+      '1코드': master['1코드'] || '',
+      '1그룹명': master['1그룹명'] || '',
+      '2코드': master['2코드'] || '',
+      '2그룹명': master['2그룹명'] || '',
+      '3코드': master['3코드'] || '',
+      '3그룹명': master['3그룹명'] || '',
+      오더즈: master['오더즈'] || '',
+      카탈로그: master['카탈로그'] || '',
+      견적서: master['견적서'] || '',
+      기본: master['기본'] || '',
+      판매여부: master['판매여부'] || '',
       기준입고가: parseNum(master['입고가']),
       기준출고가: parseNum(master['출고가']),
       기준행사가: parseNum(master['행사가']),
@@ -564,6 +586,114 @@
     const invalid = exportDraft.filter(item => !item || !item.코드 || !item.working);
     if (invalid.length > 0) return { ok: false, message: `유효하지 않은 draft ${invalid.length}건이 있습니다.` };
     return { ok: true, message: 'OK', count: exportDraft.length };
+  };
+
+
+  // ============================================================
+  // REVIEW ENGINE
+  // 역할: 최종검증센터에서 merch_export_draft를 1차/2차분류 기준으로 탐색하기 위한 공통 로직.
+  // 원칙: 3차분류는 네비게이션에 사용하지 않는다. master_products 전체를 작업대상으로 만들지 않는다.
+  // ============================================================
+  const REVIEW = ONEAPP.REVIEW = ONEAPP.REVIEW || {};
+
+  REVIEW.getRowCategory = (row = {}) => {
+    const working = row.working || row || {};
+    const base = row.baselineSnapshot || row.baseline || {};
+    const code = String(row.코드 || working.품목코드 || working.코드 || base.품목코드 || base.코드 || '').trim();
+    const fallbackC1 = code ? code.substring(0, 2) : '';
+    const fallbackC2 = code ? code.substring(0, 4) : '';
+
+    let c1Code = String(base['1코드'] || working['1코드'] || row['1코드'] || fallbackC1 || '').trim();
+    let c1Name = String(base['1그룹명'] || working['1그룹명'] || row['1그룹명'] || '').trim();
+    let c2Code = String(base['2코드'] || working['2코드'] || row['2코드'] || fallbackC2 || '').trim();
+    let c2Name = String(base['2그룹명'] || working['2그룹명'] || row['2그룹명'] || '').trim();
+
+    if (!c1Code || !c1Name) { c1Code = 'ZZZ99_기타'; c1Name = '기타'; }
+    if (!c2Code || !c2Name) { c2Code = 'ZZZ9999_기타'; c2Name = '기타'; }
+
+    return { c1Code, c1Name, c2Code, c2Name };
+  };
+
+  REVIEW.buildReviewCategoryTree = (exportDraft = []) => {
+    const rows = Array.isArray(exportDraft) ? exportDraft : [];
+    const tree = {};
+
+    rows.forEach(row => {
+      if (!row) return;
+      const cat = REVIEW.getRowCategory(row);
+      if (!tree[cat.c1Code]) {
+        tree[cat.c1Code] = { code: cat.c1Code, name: cat.c1Name, count: 0, sub: {} };
+      }
+      if (!tree[cat.c1Code].sub[cat.c2Code]) {
+        tree[cat.c1Code].sub[cat.c2Code] = {
+          code: cat.c2Code,
+          name: cat.c2Name,
+          count: 0,
+          items: [],
+          issueSummary: { margin: 0, promo: 0, soldout: 0, stopped: 0, anomaly: 0, lowstock: 0, newItem: 0 }
+        };
+      }
+
+      tree[cat.c1Code].count += 1;
+      const c2 = tree[cat.c1Code].sub[cat.c2Code];
+      c2.count += 1;
+      c2.items.push(row);
+    });
+
+    return tree;
+  };
+
+  REVIEW.getReviewC1List = (categoryTree = {}) => {
+    return Object.values(categoryTree || {}).sort((a, b) => String(a.code).localeCompare(String(b.code), 'ko'));
+  };
+
+  REVIEW.getReviewC2List = (categoryTree = {}, activeC1 = '') => {
+    if (!activeC1 || !categoryTree[activeC1]) return [];
+    return Object.values(categoryTree[activeC1].sub || {}).sort((a, b) => String(a.code).localeCompare(String(b.code), 'ko'));
+  };
+
+  REVIEW.getReviewItems = (categoryTree = {}, activeC1 = '', activeC2 = '') => {
+    if (!activeC1 || !activeC2) return [];
+    return categoryTree?.[activeC1]?.sub?.[activeC2]?.items || [];
+  };
+
+  REVIEW.sortReviewItems = (items = [], sortMode = 'category', helpers = {}) => {
+    const rows = [...(Array.isArray(items) ? items : [])];
+    const getDiffInfo = helpers.getDiffInfo || (() => ({ diff: 0, rate: 0 }));
+    const pNum = helpers.parseNum || parseNum;
+    const byCodeName = (a, b) => String(a.코드 || a.품목코드 || '').localeCompare(String(b.코드 || b.품목코드 || ''), 'ko') || String(a.품목명 || '').localeCompare(String(b.품목명 || ''), 'ko');
+
+    if (sortMode === 'stockAsc') rows.sort((a, b) => pNum(a.재고수량) - pNum(b.재고수량) || byCodeName(a, b));
+    else if (sortMode === 'diffRateDesc') rows.sort((a, b) => Math.abs(getDiffInfo(b).rate) - Math.abs(getDiffInfo(a).rate) || byCodeName(a, b));
+    else if (sortMode === 'diffAbsDesc') rows.sort((a, b) => Math.abs(getDiffInfo(b).diff) - Math.abs(getDiffInfo(a).diff) || byCodeName(a, b));
+    else if (sortMode === 'inPriceDesc') rows.sort((a, b) => pNum(b.입고가) - pNum(a.입고가) || byCodeName(a, b));
+    else if (sortMode === 'outPriceDesc') rows.sort((a, b) => pNum(b.최종출고가) - pNum(a.최종출고가) || byCodeName(a, b));
+    else rows.sort(byCodeName);
+
+    return rows;
+  };
+
+  REVIEW.getReviewIssueSummary = (items = {}, helpers = {}) => {
+    const rows = Array.isArray(items) ? items : [];
+    const isMarginWarning = helpers.isMarginWarning || (() => false);
+    const isAnomaly = helpers.isAnomaly || (() => false);
+    const isLowStock = helpers.isLowStock || (() => false);
+    const isNewItem = helpers.isNewItem || (() => false);
+    const getSaleState = helpers.getSaleState || (() => ({ label: '' }));
+    const summary = { total: rows.length, margin: 0, promo: 0, soldout: 0, stopped: 0, anomaly: 0, lowstock: 0, newItem: 0 };
+
+    rows.forEach(row => {
+      const sale = getSaleState(row);
+      if (isMarginWarning(row)) summary.margin += 1;
+      if (isAnomaly(row)) summary.anomaly += 1;
+      if (isLowStock(row)) summary.lowstock += 1;
+      if (isNewItem(row)) summary.newItem += 1;
+      if (parseNum(row.행사가) > 0) summary.promo += 1;
+      if (sale.label === '품절') summary.soldout += 1;
+      if (sale.label === '정지중') summary.stopped += 1;
+    });
+
+    return summary;
   };
 
   // ============================================================
