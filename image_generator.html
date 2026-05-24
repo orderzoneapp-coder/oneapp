@@ -3,12 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ONEAPP MerchOps - 카톡 공유용 단가표 이미지 생성기</title>
+    <title>ONEAPP MerchOps - 카톡 공유용 단가표 이미지 생성기 [v1.6 통합 버전]</title>
     <!-- Tailwind CSS for UI styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- html2canvas for image generation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', -apple-system, sans-serif; }
+        
         /* =========================================
            [캡처 전용 고정 레이아웃 CSS]
            어떤 데이터가 와도 800x1200 규격이 유지됩니다.
@@ -151,20 +155,33 @@
         ::-webkit-scrollbar-track { background: #f1f1f1; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .fade-in { animation: fadeIn 0.3s ease-out; } 
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
-<body class="bg-slate-100 min-h-screen p-4 md:p-8 font-sans">
+<body class="bg-slate-100 min-h-screen p-4 md:p-8 font-sans fade-in">
 
     <div class="max-w-[1500px] mx-auto space-y-6">
         
-        <!-- Header -->
-        <header class="bg-white p-6 rounded-2xl shadow-sm flex flex-col md:flex-row justify-between items-center gap-4 border border-slate-200">
-            <div>
-                <h1 class="text-2xl font-bold text-slate-800">단가표 ➡️ 하이엔드 이미지 변환기</h1>
-                <p class="text-slate-500 mt-1 text-sm">항목이 많으면 자동으로 페이지가 분할되며 카테고리 수에 제한이 없습니다.</p>
+        <!-- Header (v1.6 통일화 레이아웃) -->
+        <header class="bg-[#0f172a] p-6 rounded-2xl shadow-md flex flex-col md:flex-row justify-between items-center gap-4 border border-slate-800">
+            <div class="flex items-center group shrink-0">
+                <span class="text-xl font-black text-amber-400 mr-3">ONEAPP</span>
+                <div class="flex flex-col border-l-2 border-slate-700 pl-3">
+                    <div class="flex items-center mb-0.5">
+                        <span class="text-[14px] font-black text-slate-200 leading-none">MerchOps</span>
+                        <span class="ml-2 bg-amber-500/20 border border-amber-400/30 text-amber-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.6 통합 버전</span>
+                    </div>
+                    <span class="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">IMAGE GENERATOR</span>
+                </div>
             </div>
-            <div class="text-sm px-4 py-2 bg-emerald-50 text-emerald-700 rounded-lg font-bold border border-emerald-200">
-                멀티 페이지 & 동적 카테고리 v3.0
+            <div class="flex items-center gap-3">
+                <div class="text-sm px-4 py-2 bg-slate-800 text-slate-300 rounded-lg font-bold border border-slate-700 hidden md:block">
+                    카톡 공유용 단가표 이미지 변환기
+                </div>
+                <button onclick="window.location.href = 'MerchOps.html'" class="h-9 px-4 rounded-lg bg-rose-600 text-white shadow-sm hover:bg-rose-700 font-bold text-[13px] transition-colors flex items-center">
+                    <i class="fas fa-home mr-1.5"></i> 메인으로 돌아가기
+                </button>
             </div>
         </header>
 
@@ -174,20 +191,20 @@
             <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[850px]">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-500"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
                         1. 시스템 데이터 (카테고리 구조)
                     </h2>
                 </div>
                 
-                <textarea id="json-input" class="w-full flex-grow p-4 bg-slate-50 border border-slate-200 rounded-xl font-mono text-[13px] focus:ring-2 focus:ring-indigo-500 outline-none resize-none mb-4" spellcheck="false" placeholder="출력 센터에서 전달된 데이터가 이곳에 로드됩니다..."></textarea>
+                <textarea id="json-input" class="w-full flex-grow p-4 bg-slate-50 border border-slate-200 rounded-xl font-mono text-[13px] focus:ring-2 focus:ring-amber-500 outline-none resize-none mb-4" spellcheck="false" placeholder="출력 센터에서 전달된 데이터가 이곳에 로드됩니다..."></textarea>
                 
                 <h3 class="text-sm font-bold text-slate-800 mb-2 flex items-center gap-1">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-500"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                     공지사항 (비워두면 노출 안 됨)
                 </h3>
-                <textarea id="memo-input" class="w-full h-20 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-none" placeholder="내용을 비우면 메모 박스는 깔끔하게 사라집니다."></textarea>
+                <textarea id="memo-input" class="w-full h-20 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-amber-500 outline-none resize-none" placeholder="내용을 비우면 메모 박스는 깔끔하게 사라집니다."></textarea>
 
-                <button onclick="processData()" class="mt-4 w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-colors shadow-sm flex justify-center items-center gap-2 text-lg">
+                <button onclick="processData()" class="mt-4 w-full py-4 bg-amber-500 hover:bg-amber-600 text-white font-black rounded-xl transition-colors shadow-sm flex justify-center items-center gap-2 text-lg">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
                     2. 자동 분할 템플릿 굽기
                 </button>
@@ -297,7 +314,7 @@
 
             document.getElementById('placeholder-msg').style.display = 'none';
             const resultList = document.getElementById('image-results-list');
-            resultList.innerHTML = '<div class="text-indigo-600 font-bold text-lg mt-10 animate-pulse">자동 분할 렌더링 중입니다... 잠시만 기다려주세요.</div>';
+            resultList.innerHTML = '<div class="text-amber-600 font-bold text-lg mt-10 animate-pulse">자동 분할 렌더링 중입니다... 잠시만 기다려주세요.</div>';
             generatedCanvases = [];
 
             // ==========================================
