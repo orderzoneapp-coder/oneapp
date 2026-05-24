@@ -4,39 +4,49 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 시스템 콘트롤 타워</title>
+    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.1 coreEngine 1차 적용]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script src="coreEngine.js"></script>
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', -apple-system, sans-serif; overflow: hidden; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; } 
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; }
+        .fade-in { animation: fadeIn 0.3s ease-out; } 
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
 </head>
 <body class="bg-slate-100 font-sans text-slate-800">
     <div id="root"></div>
 
     <script type="text/babel">
-        // 🚨 coreEngine.js 누락 방어용 폴리필 (미리보기 환경 등에서 파일이 없어도 앱이 터지지 않도록 보호)
-        if (typeof window.getAllIDB !== 'function') {
-            window.initIDB = () => new Promise((resolve, reject) => { const request = indexedDB.open('MerchOpsDB', 2); request.onupgradeneeded = (e) => { const db = e.target.result; if (!db.objectStoreNames.contains('master_products')) db.createObjectStore('master_products', { keyPath: '코드' }); }; request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
-            window.getAllIDB = async (storeName) => { try { const db = await window.initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction(storeName, 'readonly'); const req = tx.objectStore(storeName).getAll(); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); } catch (e) { return []; } };
-            window.bulkPutIDB = async (storeName, items) => { try { const db = await window.initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction(storeName, 'readwrite'); const store = tx.objectStore(storeName); items.forEach(item => store.put(item)); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); } catch (e) { console.warn('IDB put failed'); } };
+        // coreEngine.js 연결 확인 및 공통 엔진 별칭
+        if (!window.ONEAPP || !window.ONEAPP.STORAGE || !window.ONEAPP.CLOUD) {
+            throw new Error('coreEngine.js가 로드되지 않았습니다. ControlTower.html과 같은 경로에 coreEngine.js를 배치하세요.');
         }
+        const STORAGE = window.ONEAPP.STORAGE;
+        const CLOUD = window.ONEAPP.CLOUD;
         if (!window.MASTER_HEADERS) {
-            window.MASTER_HEADERS = ["창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록"];
+            window.MASTER_HEADERS = ["창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "판매여부", "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록"];
         }
 
         const { useState, useMemo, useEffect, useCallback } = React;
 
-        // 🧩 1. 상태 관리 (LocalStorage 실시간 연동)
+        const safeJSONParse = window.ONEAPP.STORAGE.safeJSONParse;
+
         const useMerchConfig = () => {
             const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v870') || '');
-            const [visibleMasterCols, setVisibleMasterCols] = useState(() => JSON.parse(localStorage.getItem('merchVisMaster_v870')) || { estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] });
-            const [visibleUploadCols, setVisibleUploadCols] = useState(() => JSON.parse(localStorage.getItem('merchVisUpload_v870')) || { estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명'] });
-            const [mappings, setMappings] = useState(() => JSON.parse(localStorage.getItem('merchMappings_v870')) || { master: {}, estimate: {} });
-            const [masterLinks, setMasterLinks] = useState(() => JSON.parse(localStorage.getItem('merchMasterLinks_v870')) || { estimate: {} });
+            const [visibleMasterCols, setVisibleMasterCols] = useState(() => safeJSONParse('merchVisMaster_v870', { estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] }));
+            const [visibleUploadCols, setVisibleUploadCols] = useState(() => safeJSONParse('merchVisUpload_v870', { estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명', '행사가'] }));
+            const [mappings, setMappings] = useState(() => safeJSONParse('merchMappings_v870', { master: {}, estimate: {} }));
+            const [masterLinks, setMasterLinks] = useState(() => safeJSONParse('merchMasterLinks_v870', { estimate: {} }));
+            const [uploadColumnMeta, setUploadColumnMeta] = useState(() => safeJSONParse('merchUploadColumnMeta_v870', { estimate: {} }));
             const [marginRules, setMarginRules] = useState(() => {
-                // 하드코딩된 기본 마진 룰
                 const defaultRules = [
                     { id: 'rule_1', whCode: '01', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
                     { id: 'rule_2', whCode: '01', unit: '개, 낱개, 소분, EA, ea,', rate: 15, type: 'divide' },
@@ -46,13 +56,8 @@
                     { id: 'rule_6', whCode: '*', unit: '개, 낱개, 소분, EA, ea,', rate: 15, type: 'divide' },
                     { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }
                 ];
-                const s = localStorage.getItem('merchMarginRules_v878');
-                if (s) {
-                    const parsed = JSON.parse(s);
-                    // 기존에 단순 기본값 1개만 저장되어 있던 상태라면, 새로운 하드코딩 값으로 덮어씀
-                    if (parsed.length <= 1) return defaultRules;
-                    return parsed;
-                }
+                const parsed = safeJSONParse('merchMarginRules_v878', null);
+                if (Array.isArray(parsed) && parsed.length > 1) return parsed;
                 return defaultRules;
             });
 
@@ -63,10 +68,11 @@
                 localStorage.setItem('merchMappings_v870', JSON.stringify(mappings));
                 localStorage.setItem('merchMasterLinks_v870', JSON.stringify(masterLinks));
                 localStorage.setItem('merchMarginRules_v878', JSON.stringify(marginRules));
-                localStorage.setItem('config_sync_trigger', Date.now().toString()); // 다른 앱에 신호 전달
-            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules]);
+                localStorage.setItem('merchUploadColumnMeta_v870', JSON.stringify(uploadColumnMeta));
+                localStorage.setItem('config_sync_trigger', Date.now().toString()); 
+            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules, uploadColumnMeta]);
 
-            return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules };
+            return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules, uploadColumnMeta, setUploadColumnMeta };
         };
 
         const useMerchData = () => {
@@ -75,15 +81,13 @@
 
             useEffect(() => {
                 if (typeof window.getAllIDB === 'function') {
-                    window.getAllIDB('master_products')
-                        .then(items => {
-                            if (items && items.length > 0) {
-                                const dict = {};
-                                items.forEach(i => dict[i.코드] = i);
-                                setMasterProducts(dict);
-                            }
-                        })
-                        .catch(err => console.warn('IDB Data Error:', err));
+                    window.getAllIDB('master_products').then(items => {
+                        if (items && items.length > 0) {
+                            const dict = {};
+                            items.forEach(i => dict[i.코드] = i);
+                            setMasterProducts(dict);
+                        }
+                    }).catch(err => console.warn('IDB Data Error:', err));
                 }
                 try { 
                     const logs = JSON.parse(localStorage.getItem('merchHistory_v870'));
@@ -100,13 +104,13 @@
             
             const [activeTab, setActiveTab] = useState('display');
             const [customEstColInput, setCustomEstColInput] = useState('');
+            const [isComparePriceCol, setIsComparePriceCol] = useState(false);
             const [toast, setToast] = useState('');
             const [isProcessing, setIsProcessing] = useState(false);
             const [processMsg, setProcessMsg] = useState('');
 
             const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
-            // 카탈로그/견적서 목록 계산
             const availableCatalogs = useMemo(() => {
                 const counts = {};
                 Object.values(data.masterProducts).forEach(m => {
@@ -125,109 +129,52 @@
                 return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
             }, [data.masterProducts]);
 
-            // ☁️ 분할 전송 클라우드 동기화 모듈
+            // ☁️ 클라우드 동기화
+            // 상세 fetch/chunk/restore 로직은 coreEngine.js의 ONEAPP.CLOUD가 담당한다.
+            // ControlTower는 백업/복구 버튼과 진행 메시지만 담당한다.
             const handleCloudSync = async (type) => {
                 if (!config.cloudUrl) return showToast("⚠️ 클라우드 URL이 설정되지 않았습니다.");
                 setIsProcessing(true);
                 try {
                     if (type === 'upload') {
                         showToast('☁️ 클라우드 분할 백업 준비 중...');
-                        const masterDataArray = Object.values(data.masterProducts);
-                        const totalRecords = masterDataArray.length;
-                        const CHUNK_SIZE = 500; 
-
-                        const dict = JSON.parse(localStorage.getItem('parserDict_v870') || '{}');
-                        const settingsPayload = {
-                            dict: dict,
-                            rules: config.marginRules,
-                            history: data.historyLogs,
-                            appConfig: {
-                                mappings: config.mappings,
-                                masterLinks: config.masterLinks,
-                                visibleUploadCols: config.visibleUploadCols,
-                                visibleMasterCols: config.visibleMasterCols
-                            }
-                        };
-
-                        setProcessMsg(`환경설정 정보 업로드 중...`);
-                        const settingsRes = await fetch(config.cloudUrl, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                            body: JSON.stringify({ type: "syncSettings", data: settingsPayload })
+                        const result = await CLOUD.pushCloudBackup({
+                            url: config.cloudUrl,
+                            masterProducts: data.masterProducts,
+                            historyLogs: data.historyLogs || [],
+                            config,
+                            onProgress: (p) => setProcessMsg(p.message || '클라우드 백업 중...')
                         });
-                        const settingsResult = await settingsRes.json();
-                        if (settingsResult.status !== 'success') throw new Error(settingsResult.message);
-
-                        for (let i = 0; i < totalRecords; i += CHUNK_SIZE) {
-                            const chunk = masterDataArray.slice(i, i + CHUNK_SIZE);
-                            const chunkData = {};
-                            chunk.forEach(item => chunkData[item.코드] = item);
-                            
-                            const isFirstChunk = (i === 0);
-                            
-                            setProcessMsg(`마스터 데이터 업로드 중... (${Math.min(i + CHUNK_SIZE, totalRecords)} / ${totalRecords}건)`);
-                            
-                            const res = await fetch(config.cloudUrl, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                                body: JSON.stringify({ 
-                                    type: "syncMasterChunk", 
-                                    data: chunkData,
-                                    isFirstChunk: isFirstChunk 
-                                })
-                            });
-                            
-                            const result = await res.json();
-                            if (result.status !== 'success') throw new Error(`청크 업로드 실패: ${result.message}`);
-                        }
-
-                        showToast('✅ 클라우드 분할 백업이 완료되었습니다.');
-
+                        showToast(`✅ 클라우드 백업 완료! (상품: ${(result.masterCount || 0).toLocaleString()}건, 로그: ${(result.historyCount || 0).toLocaleString()}건)`);
                     } else {
                         showToast('☁️ 클라우드에서 데이터를 불러옵니다...');
-                        setProcessMsg(`전체 데이터 다운로드 중...`);
-                        const res = await fetch(config.cloudUrl, { method: 'GET' });
-                        if (!res.ok) throw new Error("Network Error");
-                        const result = await res.json();
-                        if (result.status === 'success' && result.data) { 
-                            if (result.data.master && Object.keys(result.data.master).length > 0) {
-                                data.setMasterProducts(result.data.master);
-                                const requestIdle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
-                                requestIdle(async () => {
-                                    const safeData = Object.values(result.data.master).filter(item => item && item.코드);
-                                    await window.bulkPutIDB('master_products', safeData);
-                                    localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
-                                });
-                            }
-                            if (result.data.dict && Object.keys(result.data.dict).length > 0) localStorage.setItem('parserDict_v870', JSON.stringify(result.data.dict));
-                            if (result.data.rules && result.data.rules.length > 0) config.setMarginRules(result.data.rules);
-                            if (result.data.history && Array.isArray(result.data.history)) {
-                                data.setHistoryLogs(result.data.history);
-                                localStorage.setItem('merchHistory_v870', JSON.stringify(result.data.history));
-                            }
-                            if (result.data.appConfig) {
-                                if (result.data.appConfig.mappings) config.setMappings(result.data.appConfig.mappings);
-                                if (result.data.appConfig.masterLinks) config.setMasterLinks(result.data.appConfig.masterLinks);
-                                if (result.data.appConfig.visibleUploadCols) config.setVisibleUploadCols(result.data.appConfig.visibleUploadCols);
-                                if (result.data.appConfig.visibleMasterCols) config.setVisibleMasterCols(result.data.appConfig.visibleMasterCols);
-                            }
-                            
-                            const masterCount = result.data.master ? Object.keys(result.data.master).length : 0;
-                            showToast(`✅ 데이터 불러오기 성공! (상품: ${masterCount.toLocaleString()}건)`);
-                        } else {
-                            throw new Error("Invalid Data");
-                        }
+                        const result = await CLOUD.pullCloudBackup({
+                            url: config.cloudUrl,
+                            hooks: {
+                                setMasterProducts: data.setMasterProducts,
+                                setHistoryLogs: data.setHistoryLogs,
+                                setMarginRules: config.setMarginRules,
+                                setMappings: config.setMappings,
+                                setMasterLinks: config.setMasterLinks,
+                                setVisibleUploadCols: config.setVisibleUploadCols,
+                                setVisibleMasterCols: config.setVisibleMasterCols,
+                                setUploadColumnMeta: config.setUploadColumnMeta
+                            },
+                            onProgress: (p) => setProcessMsg(p.message || '클라우드 복구 중...')
+                        });
+                        const masterCount = result?.data?.master ? Object.keys(result.data.master).length : 0;
+                        showToast(`✅ 데이터 불러오기 성공! (상품: ${masterCount.toLocaleString()}건)`);
                     }
-                } catch (error) { 
-                    console.error("클라우드 에러:", error);
-                    showToast("❌ 통신 오류 발생. URL이나 권한을 확인하세요.\n" + error.message); 
+                } catch (error) {
+                    console.error('클라우드 에러:', error);
+                    showToast('❌ 통신 오류 발생. URL이나 권한을 확인하세요.
+' + error.message);
                 } finally {
                     setIsProcessing(false);
                     setProcessMsg('');
                 }
             };
 
-            // 카탈로그 태그 삭제
             const handleDeleteTag = async (type, tagName) => {
                 if (!window.confirm(`[${tagName}] 태그를 모든 상품에서 삭제하시겠습니까?`)) return;
                 const fieldKey = type === 'catalog' ? '카탈로그' : '견적서';
@@ -256,14 +203,47 @@
 
             const toggleMasterCol = (tabId, header) => config.setVisibleMasterCols(prev => { const list = prev[tabId] || []; return { ...prev, [tabId]: list.includes(header) ? list.filter(h => h !== header) : [...list, header] }; });
 
-            const addCustomUploadCol = (type, val) => {
-                if(!val || !val.trim()) return; const cleanVal = val.trim();
+            const isComparePriceField = useCallback((type, header) => {
+                return config.uploadColumnMeta?.[type]?.[header]?.type === 'comparePrice';
+            }, [config.uploadColumnMeta]);
+
+            const addCustomUploadCol = (type, val, comparePrice = false) => {
+                if(!val || !val.trim()) return;
+                const cleanVal = val.trim();
                 if ((config.visibleUploadCols[type] || []).includes(cleanVal)) return showToast('⚠️ 이미 추가된 항목입니다.');
                 config.setVisibleUploadCols(prev => ({ ...prev, [type]: [...(prev[type] || []), cleanVal] }));
                 config.setMappings(prev => ({ ...prev, [type]: { ...prev[type], [cleanVal]: cleanVal } }));
                 config.setMasterLinks(prev => ({ ...prev, [type]: { ...prev[type], [cleanVal]: '' } }));
+                config.setUploadColumnMeta(prev => ({
+                    ...prev,
+                    [type]: {
+                        ...(prev?.[type] || {}),
+                        [cleanVal]: { type: comparePrice ? 'comparePrice' : 'normal' }
+                    }
+                }));
                 setCustomEstColInput('');
-                showToast('✅ 항목이 추가되었습니다.');
+                setIsComparePriceCol(false);
+                showToast(comparePrice ? '✅ 비교단가 항목이 추가되었습니다.' : '✅ 항목이 추가되었습니다.');
+            };
+
+            const removeUploadCol = (type, header) => {
+                config.setVisibleUploadCols(prev => ({ ...prev, [type]: (prev[type] || []).filter(x => x !== header) }));
+                config.setMappings(prev => {
+                    const nextType = { ...(prev?.[type] || {}) };
+                    delete nextType[header];
+                    return { ...prev, [type]: nextType };
+                });
+                config.setMasterLinks(prev => {
+                    const nextType = { ...(prev?.[type] || {}) };
+                    delete nextType[header];
+                    return { ...prev, [type]: nextType };
+                });
+                config.setUploadColumnMeta(prev => {
+                    const nextType = { ...(prev?.[type] || {}) };
+                    delete nextType[header];
+                    return { ...prev, [type]: nextType };
+                });
+                showToast('✅ 작업 항목이 삭제되었습니다.');
             };
 
             const addMarginRule = () => config.setMarginRules([...(config.marginRules || []), { id: typeof window.generateUUID === 'function' ? window.generateUUID() : crypto.randomUUID(), whCode: '', unit: '', rate: 10, type: 'divide' }]);
@@ -274,7 +254,7 @@
             const selectableMasterHeaders = useMemo(() => Array.from(new Set([...(window.MASTER_HEADERS || []), ...(config.visibleMasterCols?.['estimate'] || [])])), [config.visibleMasterCols]);
 
             return (
-                <div className="flex h-screen overflow-hidden bg-slate-50 relative">
+                <div className="flex h-screen overflow-hidden bg-slate-50 relative fade-in">
                     {/* 로딩 오버레이 */}
                     {isProcessing && (
                         <div className="absolute inset-0 bg-slate-900/60 z-[2000] flex flex-col justify-center items-center backdrop-blur-sm">
@@ -340,16 +320,26 @@
                                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mt-6">
                                     <h3 className="text-[15px] font-black mb-4 pb-2 border-b flex items-center text-slate-800"><i className="fas fa-edit text-emerald-500 mr-2"></i> 엑셀 작업 항목 노출 설정</h3>
                                     <div className="flex flex-wrap gap-2 mb-5">
-                                        {(config.visibleUploadCols['estimate']||[]).filter(h => h !== '품목코드').map(h => (
-                                            <div key={`u-e-${h}`} className="flex items-center px-4 py-2 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-800 text-[12px] font-bold shadow-sm group">
-                                                {h} <button onClick={()=>config.setVisibleUploadCols(p=>({...p, estimate:p.estimate.filter(x=>x!==h)}))} className="ml-2 text-emerald-400 hover:text-rose-500"><i className="fas fa-times"></i></button>
-                                            </div>
-                                        ))}
+                                        {(config.visibleUploadCols['estimate']||[]).filter(h => h !== '품목코드').map(h => {
+                                            const isCompare = isComparePriceField('estimate', h);
+                                            return (
+                                                <div key={`u-e-${h}`} className={`flex items-center px-4 py-2 rounded-full border text-[12px] font-bold shadow-sm group ${isCompare ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+                                                    <span>{h}</span>
+                                                    {isCompare && <span className="ml-2 px-1.5 py-0.5 rounded-full bg-amber-200/70 text-amber-800 text-[10px] font-black">비교단가</span>}
+                                                    <button onClick={()=>removeUploadCol('estimate', h)} className={`ml-2 ${isCompare ? 'text-amber-400' : 'text-emerald-400'} hover:text-rose-500`}><i className="fas fa-times"></i></button>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
-                                    <div className="flex items-center gap-2 max-w-md">
-                                        <input type="text" value={customEstColInput} onChange={e=>setCustomEstColInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addCustomUploadCol('estimate', customEstColInput)} placeholder="새로운 컬럼명 입력..." className="flex-1 border border-slate-300 rounded-xl px-4 py-2 text-[13px] outline-none focus:border-emerald-500" />
-                                        <button onClick={()=>addCustomUploadCol('estimate', customEstColInput)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-[13px] font-bold transition-colors">추가</button>
+                                    <div className="flex items-center gap-2 max-w-2xl">
+                                        <input type="text" value={customEstColInput} onChange={e=>setCustomEstColInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addCustomUploadCol('estimate', customEstColInput, isComparePriceCol)} placeholder="항목명 입력 예: 청산물류, 동원유통, 파서카탈로그..." className="flex-1 border border-slate-300 rounded-xl px-4 py-2 text-[13px] outline-none focus:border-emerald-500" />
+                                        <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-[12px] font-black cursor-pointer select-none">
+                                            <input type="checkbox" checked={isComparePriceCol} onChange={e=>setIsComparePriceCol(e.target.checked)} className="rounded border-amber-300 text-amber-500" />
+                                            비교단가
+                                        </label>
+                                        <button onClick={()=>addCustomUploadCol('estimate', customEstColInput, isComparePriceCol)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-[13px] font-bold transition-colors">추가</button>
                                     </div>
+                                    <p className="mt-3 text-[11px] text-slate-500 leading-relaxed">비교단가로 체크한 항목은 입고가를 자동으로 덮어쓰지 않으며, 마스터 DB에 직접 저장하지 않는 참고 단가로 사용합니다.</p>
                                 </div>
                             </div>
                         )}
@@ -360,23 +350,28 @@
                                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                                     <table className="w-full text-left text-[13px]">
                                         <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold">
-                                            <tr><th className="p-4 w-[160px]">화면 노출 항목</th><th className="p-4">엑셀 감지 키워드 (콤마 구분)</th><th className="p-4 w-[240px]">마스터 DB 연결</th></tr>
+                                            <tr><th className="p-4 w-[160px]">화면 노출 항목</th><th className="p-4 w-[120px] text-center">항목 유형</th><th className="p-4">엑셀 감지 키워드 (콤마 구분)</th><th className="p-4 w-[240px]">마스터 DB 연결</th></tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
                                             {requiredCoreFields.map(h => (
                                                 <tr key={`map-req-${h}`} className="bg-slate-50/50">
                                                     <td className="p-4 font-bold text-slate-700"><i className="fas fa-lock text-slate-400 mr-2"></i>{h}</td>
+                                                    <td className="p-4 text-center"><span className="bg-slate-200 text-slate-600 px-2 py-1 rounded-full text-[10px] font-black">필수</span></td>
                                                     <td className="p-4"><input type="text" value={config.mappings['estimate']?.[h]||''} onChange={e=>config.setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 bg-white" /></td>
                                                     <td className="p-4"><div className="text-[12px] text-slate-500 bg-slate-200 px-3 py-2 rounded-lg font-bold text-center"><i className="fas fa-key mr-1.5"></i>식별자 고정</div></td>
                                                 </tr>
                                             ))}
-                                            {(config.visibleUploadCols['estimate']||[]).filter(h => !requiredCoreFields.includes(h)).map(h => (
-                                                <tr key={`map-e-${h}`} className="hover:bg-slate-50 transition-colors">
-                                                    <td className="p-4 font-bold text-slate-800">{h}</td>
-                                                    <td className="p-4"><input type="text" value={config.mappings['estimate']?.[h]||''} onChange={e=>config.setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500" /></td>
-                                                    <td className="p-4"><select value={config.masterLinks['estimate']?.[h]||''} onChange={e=>config.setMasterLinks(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 bg-white font-bold text-slate-700"><option value="">-- DB 저장 안함 --</option>{selectableMasterHeaders.map(mh=><option key={mh} value={mh}>{mh}</option>)}</select></td>
-                                                </tr>
-                                            ))}
+                                            {(config.visibleUploadCols['estimate']||[]).filter(h => !requiredCoreFields.includes(h)).map(h => {
+                                                const isCompare = isComparePriceField('estimate', h);
+                                                return (
+                                                    <tr key={`map-e-${h}`} className="hover:bg-slate-50 transition-colors">
+                                                        <td className="p-4 font-bold text-slate-800">{h}</td>
+                                                        <td className="p-4 text-center">{isCompare ? <span className="bg-amber-100 text-amber-700 border border-amber-200 px-2 py-1 rounded-full text-[10px] font-black">비교단가</span> : <span className="bg-slate-100 text-slate-500 border border-slate-200 px-2 py-1 rounded-full text-[10px] font-bold">일반</span>}</td>
+                                                        <td className="p-4"><input type="text" value={config.mappings['estimate']?.[h]||''} onChange={e=>config.setMappings(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500" /></td>
+                                                        <td className="p-4">{isCompare ? <div className="text-[12px] text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg font-bold text-center"><i className="fas fa-ban mr-1.5"></i>DB 저장 안함</div> : <select value={config.masterLinks['estimate']?.[h]||''} onChange={e=>config.setMasterLinks(p=>({...p, estimate:{...p.estimate, [h]:e.target.value}}))} className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 bg-white font-bold text-slate-700"><option value="">-- DB 저장 안함 --</option>{selectableMasterHeaders.map(mh=><option key={mh} value={mh}>{mh}</option>)}</select>}</td>
+                                                    </tr>
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>
@@ -392,7 +387,7 @@
                                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-1">
                                     <table className="w-full text-left text-[13px]">
                                         <thead className="bg-rose-50 border-b border-rose-100 text-rose-800 font-bold rounded-t-xl">
-                                            <tr><th className="p-4 rounded-tl-xl">창고코드 (그룹)</th><th className="p-4">단위 조건</th><th className="p-4 text-center">마진율(%)</th><th className="p-4 text-center">연산 방식</th><th className="p-4 text-center">동작 예시</th><th className="p-4 rounded-tr-xl"></th></tr>
+                                            <tr><th className="p-4 rounded-tl-xl">창고코드 (그룹)</th><th className="p-4">단위 조건</th><th className="p-4 text-center">마진율(%)</th><th className="p-4 text-center">연결 방식</th><th className="p-4 text-center">동작 예시</th><th className="p-4 rounded-tr-xl"></th></tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
                                             {(config.marginRules || []).map(rule => {
