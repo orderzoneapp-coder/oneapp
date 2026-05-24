@@ -18,7 +18,7 @@
   'use strict';
 
   const ONEAPP = global.ONEAPP = global.ONEAPP || {};
-  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.0.0';
+  ONEAPP.VERSION = 'coreEngine-v1.1.0-review-promo';
 
   const DEFAULT_DB_NAME = 'MerchOpsDB';
   const DEFAULT_DB_VERSION = 2;
@@ -460,6 +460,82 @@
   // ============================================================
   const EXPORT = ONEAPP.EXPORT = ONEAPP.EXPORT || {};
 
+
+  EXPORT.collectComparePriceItems = EXPORT.collectComparePriceItems || ((row = {}) => {
+    const finalData = row.finalData || {};
+    const sources = row.sources || {};
+    const inventory = sources.inventory || {};
+    const estimate = sources.estimate || {};
+    const out = [];
+    const pushItem = (name, value) => {
+      const label = String(name || '').trim();
+      const num = parseNum(value);
+      if (!label || !num) return;
+      if (out.some(item => item.name === label)) return;
+      out.push({ name: label, value: num });
+    };
+
+    const scan = (obj = {}) => {
+      Object.keys(obj || {}).forEach(key => {
+        const lower = String(key).toLowerCase();
+        const isCompareLike = /비교|2차|벤더|vendor|compare|시세|견적/.test(String(key)) || /vendor|compare/.test(lower);
+        const isBasePrice = ['입고가', '출고가', '행사가', '시중가', '도매A', '도매B', '입고B', '재고단가', '안전재고', '재고수량'].includes(key);
+        if (isCompareLike && !isBasePrice) pushItem(key, obj[key]);
+      });
+    };
+
+    scan(finalData);
+    scan(inventory);
+    scan(estimate);
+
+    return out.sort((a, b) => a.value - b.value);
+  });
+
+  EXPORT.buildComparePriceSummary = EXPORT.buildComparePriceSummary || ((row = {}, basePrice = 0) => {
+    const items = EXPORT.collectComparePriceItems(row);
+    const base = parseNum(basePrice);
+    const hasDiff = items.some(item => base > 0 && item.value !== base);
+    const summary = items.slice(0, 3).map(item => `${item.name} ${item.value.toLocaleString()}`).join(' / ');
+    const minItem = items.length ? items[0] : null;
+    return {
+      count: items.length,
+      hasDiff,
+      summary,
+      minName: minItem ? minItem.name : '',
+      minValue: minItem ? minItem.value : 0,
+      items
+    };
+  });
+
+  EXPORT.pickDataOpsValue = EXPORT.pickDataOpsValue || ((row = {}, key, fallback = '') => {
+    const finalData = row.finalData || {};
+    const sources = row.sources || {};
+    const dataOps = sources.dataOps || sources.dataops || sources.stockOps || sources.inventoryAnalysis || {};
+    const inventory = sources.inventory || {};
+    const estimate = sources.estimate || {};
+
+    if (finalData[key] !== undefined && finalData[key] !== '') return finalData[key];
+    if (dataOps[key] !== undefined && dataOps[key] !== '') return dataOps[key];
+    if (inventory[key] !== undefined && inventory[key] !== '') return inventory[key];
+    if (estimate[key] !== undefined && estimate[key] !== '') return estimate[key];
+    return fallback;
+  });
+
+  EXPORT.isSubProductRow = EXPORT.isSubProductRow || ((row = {}, master = {}) => {
+    const finalData = row.finalData || {};
+    const values = [
+      finalData['소분상품'], finalData['소분여부'], finalData['원물코드'], finalData['상위코드'],
+      master['소분상품'], master['소분여부'], master['원물코드'], master['상위코드'],
+      finalData['1종코드'], master['1종코드']
+    ].map(v => String(v || '').trim()).filter(Boolean);
+
+    return values.some(v => {
+      const lower = v.toLowerCase();
+      return ['y', 'yes', 'true', '1', '소분'].includes(lower) || lower.includes('소분') || lower.includes('원물');
+    });
+  });
+
+
   const getValueFromRow = (row = {}, master = {}, key, defaultValue = '') => {
     const finalData = row.finalData || {};
     const sources = row.sources || {};
@@ -484,6 +560,12 @@
 
     const inventory = row.sources?.inventory || {};
     const estimate = row.sources?.estimate || {};
+    const compareInfo = EXPORT.buildComparePriceSummary(row, getNum('입고가'));
+    const dataOpsValue = (key, fallback = '') => EXPORT.pickDataOpsValue(row, key, fallback);
+    const isSubProduct = EXPORT.isSubProductRow(row, master);
+    const baseMarketPrice = getNum('기준시세입고가') || getNum('시세입고가') || getNum('견적서입고가') || getNum('기준입고가');
+    const secondVendorPrice = getNum('2차벤더단가') || getNum('2차벤더') || compareInfo.minValue || 0;
+
     const stockRaw = finalData['재고수량'] ?? inventory['재고수량'] ?? inventory['안전재고'] ?? estimate['재고수량'];
     const stockQty = stockRaw !== undefined && stockRaw !== null && stockRaw !== '' ? parseNum(stockRaw) : 999;
 
@@ -515,8 +597,33 @@
       '외주비': getNum('외주비'),
       '노무비': getNum('노무비'),
       재고수량: stockQty,
-      테마1: finalData._theme === 1 ? '1' : (master['테마1'] || ''),
-      테마2: finalData._theme === 2 ? '1' : (master['테마2'] || ''),
+      안전재고: getNum('안전재고'),
+      현재재고: parseNum(dataOpsValue('현재재고', stockQty)),
+      전산잔량: parseNum(dataOpsValue('전산잔량', '')),
+      실사수량: parseNum(dataOpsValue('실사수량', '')),
+      최근출고량: parseNum(dataOpsValue('최근출고량', '')),
+      판매속도: parseNum(dataOpsValue('판매속도', '')),
+      필요발주량: parseNum(dataOpsValue('필요발주량', '')),
+      재고상태: String(dataOpsValue('재고상태', '') || ''),
+      로스수량: parseNum(dataOpsValue('로스수량', dataOpsValue('로스', ''))),
+      수량이슈: String(dataOpsValue('수량이슈', '') || ''),
+      상품등급: getStr('상품등급'),
+      재고단가: getNum('재고단가'),
+      기준시세입고가: baseMarketPrice,
+      '2차벤더단가': secondVendorPrice,
+      비교단가요약: compareInfo.summary,
+      비교단가최저명: compareInfo.minName,
+      비교단가최저가: compareInfo.minValue,
+      비교단가건수: compareInfo.count,
+      소분상품여부: isSubProduct ? 'Y' : '',
+      행사제안사유: '',
+      이슈요약: '', 
+      행사지정: parseNum(finalData['행사지정'] ?? finalData._theme ?? getValue('행사지정', 0)),
+      테마1: (parseNum(finalData['행사지정'] ?? finalData._theme) === 1) ? '1' : '',
+      테마2: (parseNum(finalData['행사지정'] ?? finalData._theme) === 2) ? '1' : '',
+      테마3: (parseNum(finalData['행사지정'] ?? finalData._theme) === 3) ? '1' : '',
+      테마4: (parseNum(finalData['행사지정'] ?? finalData._theme) === 4) ? '1' : '',
+      테마5: (parseNum(finalData['행사지정'] ?? finalData._theme) === 5) ? '1' : '',
       카테고리: getStr('견적서') || getStr('카테고리'),
       검색어등록: getStr('검색어등록')
     };
@@ -555,13 +662,20 @@
     const estimate = sources.estimate || {};
     const tags = row._tags ? Array.from(row._tags) : [];
 
+    const dataOps = sources.dataOps || sources.dataops || sources.stockOps || sources.inventoryAnalysis || {};
+    const compareInfo = EXPORT.buildComparePriceSummary(row, row.finalData?.['입고가']);
+
     return {
       hasInventory: Object.keys(inventory).length > 0,
       hasEstimate: Object.keys(estimate).length > 0,
+      hasDataOps: Object.keys(dataOps).length > 0,
       tags,
       sourceType: tags.join(', '),
       inventoryKeys: Object.keys(inventory),
-      estimateKeys: Object.keys(estimate)
+      estimateKeys: Object.keys(estimate),
+      dataOpsKeys: Object.keys(dataOps),
+      comparePriceSummary: compareInfo.summary,
+      comparePriceItems: compareInfo.items
     };
   };
 
@@ -572,12 +686,21 @@
       .map(row => {
         const code = row.코드;
         const master = masterProducts[code] || {};
-        return {
+        const working = EXPORT.buildWorkingPayload(row, master);
+        const draftRow = {
           코드: code,
-          working: EXPORT.buildWorkingPayload(row, master),
+          working,
           baselineSnapshot: EXPORT.buildBaselineSnapshot(master),
           source: EXPORT.buildSourceSummary(row)
         };
+
+        if (ONEAPP.REVIEW && typeof ONEAPP.REVIEW.buildReviewDecision === 'function') {
+          const decision = ONEAPP.REVIEW.buildReviewDecision(draftRow);
+          draftRow.working.행사제안사유 = Array.isArray(decision.promoReasons) ? decision.promoReasons.join(' / ') : '';
+          draftRow.working.이슈요약 = Array.isArray(decision.tags) ? decision.tags.join(' / ') : '';
+        }
+
+        return draftRow;
       });
   };
 
@@ -694,6 +817,295 @@
     });
 
     return summary;
+  };
+
+
+
+  // ============================================================
+  // REVIEW DECISION / PROMOTION ENGINE
+  // 역할: 검증센터 카드뷰/행사작업/위험체크에 필요한 최소 판단값을 생성한다.
+  // 원칙: 시스템이 최종 결정을 대신하지 않고, 작업자가 볼 수 있는 근거와 태그만 만든다.
+  // ============================================================
+
+  const normalizeBoolFalseText = (v) => {
+    const s = String(v ?? '').trim().toLowerCase();
+    return s === '' || s === '0' || s === 'n' || s === 'no' || s === 'false' || s === 'x' || s === '미사용';
+  };
+
+  REVIEW.normalizeReviewRow = (row = {}) => {
+    const working = row.working || row.finalData || row || {};
+    const base = row.baselineSnapshot || row.baseline || {};
+    const source = row.source || {};
+    const code = String(row.코드 || working.품목코드 || working.코드 || base.품목코드 || base.코드 || '').trim();
+
+    const getRaw = (key, fallback = '') => {
+      if (working[key] !== undefined && working[key] !== '') return working[key];
+      if (row[key] !== undefined && row[key] !== '') return row[key];
+      if (base[key] !== undefined && base[key] !== '') return base[key];
+      return fallback;
+    };
+
+    const inPrice = parseNum(getRaw('입고가', base.기준입고가));
+    const outPrice = parseNum(getRaw('출고가', base.기준출고가));
+    const promoPrice = parseNum(getRaw('행사가', base.기준행사가));
+    const salePrice = promoPrice > 0 ? promoPrice : outPrice;
+    const marginRate = salePrice > 0 ? Math.round(((salePrice - inPrice) / salePrice) * 1000) / 10 : null;
+    const stockQty = parseNum(getRaw('재고수량', 0));
+    const safetyStock = parseNum(getRaw('안전재고', base.안전재고 || 0));
+    const theme = parseNum(getRaw('행사지정', 0));
+
+    return {
+      raw: row,
+      working,
+      base,
+      source,
+      code,
+      name: String(getRaw('품목명', '')).trim(),
+      spec: String(getRaw('규격', '')).trim(),
+      inPrice,
+      outPrice,
+      promoPrice,
+      salePrice,
+      marginRate,
+      stockQty,
+      safetyStock,
+      theme,
+      baselineInPrice: parseNum(base.기준입고가),
+      baselineOutPrice: parseNum(base.기준출고가),
+      baselinePromoPrice: parseNum(base.기준행사가),
+      basicFlag: getRaw('기본', ''),
+      catalog: getRaw('카탈로그', ''),
+      estimate: getRaw('견적서', ''),
+      saleStatus: getRaw('판매여부', base.기준판매여부 || '')
+    };
+  };
+
+  REVIEW.isBasicMarketItem = (row = {}) => {
+    const n = REVIEW.normalizeReviewRow(row);
+    return !normalizeBoolFalseText(n.basicFlag);
+  };
+
+  REVIEW.isSubItem = (row = {}) => {
+    const n = REVIEW.normalizeReviewRow(row);
+    const w = n.working;
+    // 소분상품은 원물 하위 상품으로 보고 행사 후보 분석에서 제외한다.
+    // 현재 데이터 기준에서는 1종코드/1종연산/소분 관련 플래그가 있으면 소분상품으로 판정한다.
+    return Boolean(
+      String(w['1종코드'] || '').trim() ||
+      parseNum(w['1종연산']) > 0 ||
+      String(w['소분여부'] || '').trim() === '1' ||
+      String(w['상품유형'] || '').includes('소분')
+    );
+  };
+
+  REVIEW.isPriceChanged = (row = {}) => {
+    const n = REVIEW.normalizeReviewRow(row);
+    return (
+      (n.baselineInPrice > 0 && n.inPrice !== n.baselineInPrice) ||
+      (n.baselineOutPrice > 0 && n.outPrice !== n.baselineOutPrice) ||
+      (n.baselinePromoPrice > 0 && n.promoPrice !== n.baselinePromoPrice) ||
+      (n.baselinePromoPrice === 0 && n.promoPrice > 0)
+    );
+  };
+
+  REVIEW.getInPriceDiff = (row = {}) => {
+    const n = REVIEW.normalizeReviewRow(row);
+    const diff = n.inPrice - n.baselineInPrice;
+    const rate = n.baselineInPrice > 0 ? Math.round((diff / n.baselineInPrice) * 1000) / 10 : null;
+    return { oldVal: n.baselineInPrice, newVal: n.inPrice, diff, rate };
+  };
+
+  REVIEW.isBigChange = (row = {}, options = {}) => {
+    const thresholdRate = parseNum(options.bigChangeRate ?? 10);
+    const thresholdAmount = parseNum(options.bigChangeAmount ?? 500);
+    const d = REVIEW.getInPriceDiff(row);
+    return Boolean(d.oldVal > 0 && (Math.abs(d.rate || 0) >= thresholdRate || Math.abs(d.diff) >= thresholdAmount));
+  };
+
+  REVIEW.isPromoActive = (row = {}) => REVIEW.normalizeReviewRow(row).promoPrice > 0;
+
+  REVIEW.isReverseMargin = (row = {}) => {
+    const n = REVIEW.normalizeReviewRow(row);
+    return n.inPrice > 0 && n.salePrice > 0 && n.salePrice < n.inPrice;
+  };
+
+  REVIEW.isSoldOut = (row = {}) => REVIEW.normalizeReviewRow(row).stockQty === 0;
+
+  REVIEW.isLowStock = (row = {}) => {
+    const n = REVIEW.normalizeReviewRow(row);
+    return n.stockQty > 0 && n.safetyStock > 0 && n.stockQty <= n.safetyStock;
+  };
+
+  REVIEW.isStockEnoughForPromo = (row = {}, options = {}) => {
+    const n = REVIEW.normalizeReviewRow(row);
+    const ratio = parseNum(options.stockRatio ?? 1.5);
+    return n.safetyStock > 0 && n.stockQty >= n.safetyStock * ratio;
+  };
+
+  REVIEW.isStoppedOrPending = (row = {}) => {
+    const n = REVIEW.normalizeReviewRow(row);
+    const w = n.working;
+    if (w._salesStopRequested === true) return true;
+    const s = String(n.saleStatus ?? '').trim().toLowerCase();
+    return s === '0' || s === 'n' || s === 'false' || s.includes('정지');
+  };
+
+  REVIEW.hasComparePriceIssue = (row = {}) => {
+    const n = REVIEW.normalizeReviewRow(row);
+    const source = n.source || {};
+    const summary = String(n.working.비교단가요약 || source.comparePriceSummary || source.compareSummary || '').trim();
+    if (summary) return true;
+    const keys = Object.keys(n.working || {});
+    return keys.some(k => /비교|2차|벤더|vendor|compare/i.test(k) && parseNum(n.working[k]) > 0);
+  };
+
+  REVIEW.getPromoSuggestionReasons = (row = {}, options = {}) => {
+    const reasons = [];
+    const n = REVIEW.normalizeReviewRow(row);
+    const downRate = parseNum(options.downRate ?? 10);
+    const downAmount = parseNum(options.downAmount ?? 500);
+    const d = REVIEW.getInPriceDiff(row);
+
+    if (REVIEW.isSubItem(row)) return reasons;
+
+    if (d.oldVal > 0 && d.diff < 0 && (Math.abs(d.rate || 0) >= downRate || Math.abs(d.diff) >= downAmount)) {
+      reasons.push('단가하락');
+    }
+
+    if (REVIEW.isStockEnoughForPromo(row, options)) {
+      reasons.push('재고소진');
+    }
+
+    if (REVIEW.hasComparePriceIssue(row)) {
+      reasons.push('단가확인');
+    }
+
+    if (REVIEW.isBasicMarketItem(row)) {
+      reasons.push('기준시세');
+    }
+
+    return Array.from(new Set(reasons));
+  };
+
+  REVIEW.isPromoCandidate = (row = {}, options = {}) => REVIEW.getPromoSuggestionReasons(row, options).length > 0;
+
+  REVIEW.buildReviewDecision = (row = {}, options = {}) => {
+    const n = REVIEW.normalizeReviewRow(row);
+    const tags = [];
+    const warnings = [];
+    const reasons = [];
+    const promoReasons = REVIEW.getPromoSuggestionReasons(row, options);
+
+    if (REVIEW.isPriceChanged(row)) tags.push('가격변동');
+    if (REVIEW.hasComparePriceIssue(row)) tags.push('단가확인');
+    if (REVIEW.isPromoActive(row)) tags.push('행사중');
+    if (promoReasons.length > 0) tags.push('행사후보');
+    if (REVIEW.isReverseMargin(row)) { tags.push('역마진'); warnings.push('역마진'); }
+    if (REVIEW.isSoldOut(row)) { tags.push('품절'); warnings.push('품절'); }
+    else if (REVIEW.isLowStock(row)) { tags.push('품절임박'); warnings.push('품절임박'); }
+    if (REVIEW.isStoppedOrPending(row)) { tags.push('정지대기'); warnings.push('정지대기'); }
+    if (REVIEW.isBigChange(row, options)) tags.push('큰변동');
+
+    reasons.push(...promoReasons);
+
+    return {
+      code: n.code,
+      name: n.name,
+      tags: Array.from(new Set(tags)),
+      warnings: Array.from(new Set(warnings)),
+      promoReasons: Array.from(new Set(promoReasons)),
+      reasons: Array.from(new Set(reasons)),
+      marginRate: n.marginRate,
+      salePrice: n.salePrice,
+      inPrice: n.inPrice,
+      outPrice: n.outPrice,
+      promoPrice: n.promoPrice,
+      stockQty: n.stockQty,
+      safetyStock: n.safetyStock,
+      theme: n.theme
+    };
+  };
+
+  REVIEW.buildReviewCardSummary = (items = [], options = {}) => {
+    const rows = Array.isArray(items) ? items : [];
+    const summary = {
+      promoCandidate: { id: 'promoCandidate', label: '행사 후보', count: 0, sub: { stock: 0, priceDown: 0, compare: 0, market: 0 } },
+      promoActive: { id: 'promoActive', label: '행사중 점검', count: 0, sub: { reverse: 0, soldout: 0, lowstock: 0 } },
+      priceChanged: { id: 'priceChanged', label: '가격변동', count: 0, sub: { up: 0, down: 0, big: 0 } },
+      comparePrice: { id: 'comparePrice', label: '단가확인', count: 0, sub: { compare: 0 } },
+      risk: { id: 'risk', label: '위험상품', count: 0, sub: { reverse: 0, soldout: 0, lowstock: 0, stopped: 0, big: 0 } }
+    };
+
+    rows.forEach(row => {
+      const decision = REVIEW.buildReviewDecision(row, options);
+      const diff = REVIEW.getInPriceDiff(row);
+
+      if (REVIEW.isPromoCandidate(row, options)) {
+        summary.promoCandidate.count += 1;
+        if (decision.promoReasons.includes('재고소진')) summary.promoCandidate.sub.stock += 1;
+        if (decision.promoReasons.includes('단가하락')) summary.promoCandidate.sub.priceDown += 1;
+        if (decision.promoReasons.includes('단가확인')) summary.promoCandidate.sub.compare += 1;
+        if (decision.promoReasons.includes('기준시세')) summary.promoCandidate.sub.market += 1;
+      }
+
+      if (REVIEW.isPromoActive(row)) {
+        summary.promoActive.count += 1;
+        if (REVIEW.isReverseMargin(row)) summary.promoActive.sub.reverse += 1;
+        if (REVIEW.isSoldOut(row)) summary.promoActive.sub.soldout += 1;
+        if (REVIEW.isLowStock(row)) summary.promoActive.sub.lowstock += 1;
+      }
+
+      if (REVIEW.isPriceChanged(row)) {
+        summary.priceChanged.count += 1;
+        if (diff.diff > 0) summary.priceChanged.sub.up += 1;
+        if (diff.diff < 0) summary.priceChanged.sub.down += 1;
+        if (REVIEW.isBigChange(row, options)) summary.priceChanged.sub.big += 1;
+      }
+
+      if (REVIEW.hasComparePriceIssue(row)) {
+        summary.comparePrice.count += 1;
+        summary.comparePrice.sub.compare += 1;
+      }
+
+      const risky = REVIEW.isReverseMargin(row) || REVIEW.isSoldOut(row) || REVIEW.isLowStock(row) || REVIEW.isStoppedOrPending(row) || REVIEW.isBigChange(row, options);
+      if (risky) {
+        summary.risk.count += 1;
+        if (REVIEW.isReverseMargin(row)) summary.risk.sub.reverse += 1;
+        if (REVIEW.isSoldOut(row)) summary.risk.sub.soldout += 1;
+        if (REVIEW.isLowStock(row)) summary.risk.sub.lowstock += 1;
+        if (REVIEW.isStoppedOrPending(row)) summary.risk.sub.stopped += 1;
+        if (REVIEW.isBigChange(row, options)) summary.risk.sub.big += 1;
+      }
+    });
+
+    return summary;
+  };
+
+  REVIEW.filterByReviewCard = (items = [], cardId = 'all', options = {}) => {
+    const rows = Array.isArray(items) ? items : [];
+    if (!cardId || cardId === 'all') return rows;
+    if (cardId === 'promoCandidate') return rows.filter(row => REVIEW.isPromoCandidate(row, options));
+    if (cardId === 'promoActive') return rows.filter(row => REVIEW.isPromoActive(row));
+    if (cardId === 'priceChanged') return rows.filter(row => REVIEW.isPriceChanged(row));
+    if (cardId === 'comparePrice') return rows.filter(row => REVIEW.hasComparePriceIssue(row));
+    if (cardId === 'risk') return rows.filter(row => REVIEW.isReverseMargin(row) || REVIEW.isSoldOut(row) || REVIEW.isLowStock(row) || REVIEW.isStoppedOrPending(row) || REVIEW.isBigChange(row, options));
+    return rows;
+  };
+
+  REVIEW.expandPromoThemeColumns = (themeValue) => {
+    const theme = parseNum(themeValue);
+    return {
+      테마1: theme === 1 ? '1' : '',
+      테마2: theme === 2 ? '1' : '',
+      테마3: theme === 3 ? '1' : '',
+      테마4: theme === 4 ? '1' : '',
+      테마5: theme === 5 ? '1' : ''
+    };
+  };
+
+  REVIEW.applyPromoThemeColumns = (row = {}) => {
+    const theme = parseNum(row.행사지정 || row._theme || row.theme || 0);
+    return { ...row, ...REVIEW.expandPromoThemeColumns(theme) };
   };
 
   // ============================================================
@@ -848,6 +1260,9 @@
   global.setIDB = global.setIDB || STORAGE.setIDB;
   global.getAllIDB = global.getAllIDB || STORAGE.getAllIDB;
   global.bulkPutIDB = global.bulkPutIDB || STORAGE.bulkPutIDB;
+  global.buildReviewDecision = global.buildReviewDecision || REVIEW.buildReviewDecision;
+  global.buildReviewCardSummary = global.buildReviewCardSummary || REVIEW.buildReviewCardSummary;
+  global.expandPromoThemeColumns = global.expandPromoThemeColumns || REVIEW.expandPromoThemeColumns;
   global.calculatePricesEngine = global.calculatePricesEngine || PRICING.calculatePricesEngine;
   global.computeFinalData = global.computeFinalData || PRICING.computeFinalData;
   global.getMasterSalesState = global.getMasterSalesState || PRICING.getMasterSalesState;
