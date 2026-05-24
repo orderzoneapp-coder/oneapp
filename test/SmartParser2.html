@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Smart Parser [v3.0.7 히스토리 안전적용본]</title>
+    <title>ONEAPP MerchOps - Smart Parser [v3.0.8 작업흐름 UX 개선본]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -261,7 +261,7 @@
                         quoteName: '',
                         timestamp: nowStr,
                         timestampISO: nowISO,
-                        version: 'smart-parser-v3.0.7-history-safe-apply'
+                        version: 'smart-parser-v3.0.8-workflow-ux'
                     };
                     const makeHistoryLog = ({ code, row, oldItem, field, oldVal, newVal, memo, extra = {} }) => {
                         const oldNum = parseNum(oldVal);
@@ -428,7 +428,7 @@
                     let mItem = masterProducts[masterCode] || { 코드: masterCode }; const pInNum = row.finalData?.['입고가'] ? parseNum(row.finalData['입고가']) : parseNum(row['입고가']); let recalculatedFinal = row.finalData || {};
                     if(pInNum > 0) recalculatedFinal = calculatePricesEngine(pInNum, mItem, recalculatedFinal, marginRules, false);
                     setParserBuffer(parserBuffer.map(r => r._id === targetId ? { ...r, _matchCode: masterCode, _matchStatus: '🟢 수동일치', _apply: true, finalData: recalculatedFinal } : r));
-                    setTargetId(null); setGlobalSearch(''); showToast(`✅ 수동 연결 완료! (일치 탭에 대기 중입니다)`);
+                    setTargetId(null); setGlobalSearch(''); showToast(`✅ 수동 연결 완료. 아직 저장 전입니다. [마스터 적용 및 학습저장]까지 완료해야 다음 작업에도 반영됩니다.`);
                 } catch(error) { showToast("❌ 수동 매핑 처리 중 오류가 발생했습니다."); }
             }, [targetId, parserBuffer, masterProducts, marginRules, setParserBuffer, setTargetId, setGlobalSearch, showToast]);
 
@@ -445,7 +445,7 @@
                     await saveMaster(newMaster); saveDict({ ...parserDict, [`${normalizeText(row['품목명'])}|${normalizeText(row['규격'])}`]: newCode });
                     const newProcessed = new Set(processedCodes); newProcessed.add(newCode); setProcessedCodes(newProcessed);
                     setParserBuffer(parserBuffer.map(r => r._id === targetId ? { ...r, _matchCode: newCode, _matchStatus: '🟢 신규등록', _apply: true, finalData: recalculatedFinal, 코드: newCode } : r));
-                    setTargetId(null); setGlobalSearch(''); setShowErpModal(false); showToast(`✅ [${newCode}] 신규 마스터 등록 및 매핑이 완료되었습니다!`);
+                    setTargetId(null); setGlobalSearch(''); setShowErpModal(false); showToast(`✅ [${newCode}] 신규 등록/연결 완료. 아직 저장 전입니다. [마스터 적용 및 학습저장]을 눌러 완료하세요.`);
                 } catch(error) { showToast("❌ 신규 등록 처리 중 오류가 발생했습니다."); } finally { setIsProcessing(false); setProcessMsg(''); }
             }, [targetId, parserBuffer, masterProducts, currentTag, marginRules, parserDict, processedCodes, saveMaster, saveDict, setProcessedCodes, setParserBuffer, setTargetId, setGlobalSearch, setShowErpModal, setIsProcessing, setProcessMsg, showToast]);
 
@@ -571,7 +571,7 @@
                 <div className="fixed inset-0 bg-slate-900/80 z-[200] flex justify-center items-center backdrop-blur-sm fade-in" onClick={onClose}>
                     <div className="bg-white w-[800px] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
                         <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
-                            <h2 className="font-black text-[16px]"><i className="fas fa-magic text-indigo-400 mr-2"></i>스마트 텍스트 파서 & 히스토리 강화</h2>
+                            <h2 className="font-black text-[16px]"><i className="fas fa-magic text-indigo-400 mr-2"></i>스마트 텍스트 파서 & 작업흐름 개선</h2>
                             {onClose && <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>}
                         </div>
                         <div className="p-6 flex flex-col bg-slate-50 space-y-4">
@@ -616,7 +616,7 @@
         };
 
         const ParserReviewModal = ({ onClose, onConfirm, state, actions }) => {
-            const [viewMode, setViewMode] = useState('mapping'); const [priceFilter, setPriceFilter] = useState('all'); const [updateText, setUpdateText] = useState(false); 
+            const [viewMode, setViewMode] = useState('price'); const [priceFilter, setPriceFilter] = useState('all'); const [updateText, setUpdateText] = useState(true); 
             const { parserBuffer, masterProducts } = state;
             const targetRows = useMemo(() => parserBuffer.filter(r => r._apply && r._matchCode), [parserBuffer]);
             useEffect(() => { if (targetRows.length === 0) onClose(); }, [targetRows.length, onClose]);
@@ -633,17 +633,26 @@
             }, [targetRows, masterProducts]);
 
             const filteredPriceList = useMemo(() => priceFilter === 'all' ? analysis.priceList : analysis.priceList.filter(item => item.상태 === priceFilter), [analysis.priceList, priceFilter]);
+            const issueSummary = useMemo(() => {
+                const largeChange = analysis.list.filter(item => Math.abs(item.차액 || 0) >= 500 || Math.abs(calcDiffRate(item.기존단가, item.새단가) || 0) >= 10);
+                const noOldPrice = analysis.list.filter(item => !item.기존단가 || item.기존단가 <= 0);
+                const zeroNewPrice = analysis.list.filter(item => !item.새단가 || item.새단가 <= 0);
+                const specChanged = analysis.list.filter(item => String(item.마스터규격 || '').trim() && String(item['규격'] || '').trim() && String(item.마스터규격 || '').trim() !== String(item['규격'] || '').trim());
+                const soldOut = analysis.list.filter(item => item._isSoldOut);
+                const suspicious = [...new Set([...largeChange, ...noOldPrice, ...zeroNewPrice, ...specChanged, ...soldOut].map(item => item._id))].length;
+                return { largeChange, noOldPrice, zeroNewPrice, specChanged, soldOut, suspicious };
+            }, [analysis.list]);
 
             return (
                 <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in" onClick={onClose}>
                     <div className="bg-white w-[900px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
                         <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
-                            <h2 className="font-black text-[16px]"><i className="fas fa-clipboard-check text-indigo-400 mr-2"></i>마스터 적용 전 검증</h2>
+                            <h2 className="font-black text-[16px]"><i className="fas fa-clipboard-check text-indigo-400 mr-2"></i>매핑 완료 · 마스터 적용 전 브리핑</h2>
                             <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>
                         </div>
                         <div className="flex bg-slate-100 border-b border-slate-200 shrink-0 p-2 gap-2">
-                            <button onClick={() => setViewMode('mapping')} className={`flex-1 py-2.5 rounded-lg font-black text-[13px] ${viewMode === 'mapping' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}><i className="fas fa-link mr-2"></i>1. 매핑 검증</button>
-                            <button onClick={() => setViewMode('price')} className={`flex-1 py-2.5 rounded-lg font-black text-[13px] ${viewMode === 'price' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}><i className="fas fa-search-dollar mr-2"></i>2. 단가 변동 브리핑</button>
+                            <button onClick={() => setViewMode('price')} className={`flex-1 py-2.5 rounded-lg font-black text-[13px] ${viewMode === 'price' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}><i className="fas fa-search-dollar mr-2"></i>1. 단가 변동 브리핑</button>
+                            <button onClick={() => setViewMode('mapping')} className={`flex-1 py-2.5 rounded-lg font-black text-[13px] ${viewMode === 'mapping' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}><i className="fas fa-link mr-2"></i>2. 매핑 상세보기</button>
                         </div>
                         <div className="p-5 flex flex-col flex-1 overflow-hidden bg-slate-50">
                             {viewMode === 'mapping' ? (
@@ -667,6 +676,21 @@
                                 </div>
                             ) : (
                                 <div className="flex-1 flex flex-col fade-in">
+                                    <div className={`mb-3 rounded-xl border p-4 shadow-sm ${issueSummary.suspicious > 0 ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div>
+                                                <div className={`text-[13px] font-black mb-1 ${issueSummary.suspicious > 0 ? 'text-amber-800' : 'text-emerald-800'}`}><i className={`fas ${issueSummary.suspicious > 0 ? 'fa-exclamation-triangle' : 'fa-check-circle'} mr-2`}></i>{issueSummary.suspicious > 0 ? '확인필요 이슈가 있습니다' : '큰 이상징후 없이 매핑 작업이 완료되었습니다'}</div>
+                                                <div className="text-[12px] text-slate-600 font-bold leading-relaxed">단가변동이 먼저입니다. 텍스트 좌우 검수는 전체 노가다가 아니라, 아래 이슈 항목과 필요한 상품 검색 중심으로 확인하세요.</div>
+                                            </div>
+                                            <div className="grid grid-cols-5 gap-1.5 text-center shrink-0">
+                                                <div className="bg-white/80 rounded-lg border px-2 py-1.5"><div className="text-[10px] text-slate-500 font-bold">큰변동</div><div className="text-[15px] font-black text-rose-600">{issueSummary.largeChange.length}</div></div>
+                                                <div className="bg-white/80 rounded-lg border px-2 py-1.5"><div className="text-[10px] text-slate-500 font-bold">기존가없음</div><div className="text-[15px] font-black text-slate-700">{issueSummary.noOldPrice.length}</div></div>
+                                                <div className="bg-white/80 rounded-lg border px-2 py-1.5"><div className="text-[10px] text-slate-500 font-bold">0원/이상</div><div className="text-[15px] font-black text-rose-600">{issueSummary.zeroNewPrice.length}</div></div>
+                                                <div className="bg-white/80 rounded-lg border px-2 py-1.5"><div className="text-[10px] text-slate-500 font-bold">규격차이</div><div className="text-[15px] font-black text-amber-600">{issueSummary.specChanged.length}</div></div>
+                                                <div className="bg-white/80 rounded-lg border px-2 py-1.5"><div className="text-[10px] text-slate-500 font-bold">품절감지</div><div className="text-[15px] font-black text-rose-600">{issueSummary.soldOut.length}</div></div>
+                                            </div>
+                                        </div>
+                                    </div>
                                     <div className="grid grid-cols-4 gap-3 mb-3 shrink-0">
                                         <div onClick={() => setPriceFilter('all')} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center shadow-sm ${priceFilter === 'all' ? 'bg-slate-800 text-white' : 'bg-white'}`}><div className="text-[11px] mb-1">전체</div><div className="font-black text-xl">{analysis.total}건</div></div>
                                         <div onClick={() => setPriceFilter('up')} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center shadow-sm ${priceFilter === 'up' ? 'bg-rose-500 text-white' : 'bg-white text-rose-700'}`}><div className="text-[11px] mb-1">인상</div><div className="font-black text-xl">{analysis.up}건</div></div>
@@ -680,8 +704,8 @@
                             )}
                         </div>
                         <div className="bg-white p-4 border-t flex justify-between items-center shrink-0">
-                            <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 text-[12px] font-bold"><input type="checkbox" className="rounded text-indigo-600" checked={updateText} onChange={e => setUpdateText(e.target.checked)} /> 품목명/규격/단위도 파싱값으로 갱신</label>
-                            <div className="flex gap-2"><button onClick={onClose} className="px-5 py-2.5 bg-slate-100 font-bold rounded-lg hover:bg-slate-200">닫기</button><button onClick={() => { onConfirm(updateText); onClose(); }} className="px-6 py-2.5 bg-indigo-600 text-white font-black rounded-lg hover:bg-indigo-700 shadow-sm"><i className="fas fa-save mr-1.5"></i> 마스터 적용</button></div>
+                            <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 text-[12px] font-bold"><input type="checkbox" className="rounded text-indigo-600" checked={updateText} onChange={e => setUpdateText(e.target.checked)} /> 품목명/규격/단위도 파싱값으로 갱신 (공급사 품목명 통일)</label>
+                            <div className="flex gap-2"><button onClick={onClose} className="px-5 py-2.5 bg-slate-100 font-bold rounded-lg hover:bg-slate-200">닫기</button><button onClick={() => { onConfirm(updateText); onClose(); }} className="px-6 py-2.5 bg-indigo-600 text-white font-black rounded-lg hover:bg-indigo-700 shadow-sm"><i className="fas fa-save mr-1.5"></i> 마스터 적용 및 학습저장</button></div>
                         </div>
                     </div>
                 </div>
@@ -735,6 +759,19 @@
                 return missingRows.filter(m => (m.품목명||'').toLowerCase().includes(kw) || (m.코드||'').toLowerCase().includes(kw));
             }, [missingRows, appState.missingSearch]);
 
+            const pendingApplyRows = useMemo(() => matchedRows.filter(r => r._apply && r._matchCode), [matchedRows]);
+            const unresolvedQueueCount = combinedSimilarRows.length + unmatchedRows.length + (currentTag ? missingRows.length : 0);
+            const [autoCompletionShown, setAutoCompletionShown] = useState(false);
+            useEffect(() => {
+                const workDone = parserBuffer.length > 0 && pendingApplyRows.length > 0 && unresolvedQueueCount === 0;
+                if (workDone && !autoCompletionShown && !showReviewModal && !isProcessing) {
+                    setAutoCompletionShown(true);
+                    showToast(`✅ 매핑 작업이 완료되었습니다. 단가변동 브리핑을 확인하고 마스터 적용 및 학습저장을 진행하세요.`);
+                    setShowReviewModal(true);
+                }
+                if (parserBuffer.length === 0 && autoCompletionShown) setAutoCompletionShown(false);
+            }, [parserBuffer.length, pendingApplyRows.length, unresolvedQueueCount, autoCompletionShown, showReviewModal, isProcessing, showToast, setShowReviewModal]);
+
             const handleUpdateMatchedPrice = useCallback((rowId, newVal) => {
                 appState.setParserBuffer(prev => prev.map(r => {
                     if (r._id === rowId) {
@@ -749,10 +786,15 @@
             const safeGoToMain = async () => {
                 const toApply = appState.parserBuffer.filter(r => r._apply && r._matchCode);
                 if (toApply.length > 0) {
-                    appState.showToast("⏳ 미반영된 일치 항목 자동 저장 후 이동합니다...");
-                    const success = await actions.handleApplyMatched();
-                    if (success) setTimeout(() => { window.location.href = 'MerchOps.html'; }, 800);
-                } else { window.location.href = 'MerchOps.html'; }
+                    const go = window.confirm(`아직 저장되지 않은 매핑 ${toApply.length}건이 있습니다.
+저장하지 않으면 오늘 처리한 수동 매핑이 다음 작업에 반영되지 않을 수 있습니다.
+
+[확인] 단가 브리핑/저장 화면으로 이동
+[취소] 현재 화면 유지`);
+                    if (go) setShowReviewModal(true);
+                    return;
+                }
+                window.location.href = 'MerchOps.html';
             };
 
             const memoizedState = useMemo(() => ({ masterProducts, parserBuffer, currentTag, activeTab, targetId, globalSearch, missingRows, selectedMissingCodes, isProcessing, processMsg }), [masterProducts, parserBuffer, currentTag, activeTab, targetId, globalSearch, missingRows, selectedMissingCodes, isProcessing, processMsg]);
@@ -816,13 +858,13 @@
                                         <div className="flex items-center group shrink-0">
                                             <span className="text-xl font-black text-emerald-400 mr-3">ONEAPP</span>
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
-                                                <div className="flex items-center mb-0.5"><span className="text-[14px] font-black text-slate-200 leading-none">Smart Parser</span><span className="ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold">v3.0.2 무결점 통합본</span></div>
+                                                <div className="flex items-center mb-0.5"><span className="text-[14px] font-black text-slate-200 leading-none">Smart Parser</span><span className="ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold">v3.0.8 UX 개선본</span></div>
                                                 <span className="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">TEXT ANALYSIS & DELTA SYNC</span>
                                             </div>
                                         </div>
                                         <div className="flex flex-1 max-w-md xl:max-w-xl mx-4">
                                             {isProcessing ? <div className="w-full bg-amber-400 text-amber-900 px-4 py-1.5 rounded-md font-mono text-[12px] font-bold flex items-center shadow-inner truncate"><i className="fas fa-spinner fa-spin mr-2"></i>{processMsg}</div>
-                                            : parserBuffer.length > 0 ? (currentTag ? <div className="w-full bg-indigo-500 text-white px-4 py-1.5 rounded-md text-[12px] font-bold flex items-center shadow-inner truncate"><i className="fas fa-folder mr-2 opacity-80"></i>작업 카탈로그: {currentTag}</div> : <div className="w-full bg-slate-600 text-slate-100 px-4 py-1.5 rounded-md text-[12px] font-bold flex items-center shadow-inner truncate"><i className="fas fa-bolt mr-2 opacity-80"></i>단순 파싱 모드 (카탈로그 미지정)</div>)
+                                            : parserBuffer.length > 0 ? (currentTag ? <div className="w-full bg-indigo-500 text-white px-4 py-1.5 rounded-md text-[12px] font-bold flex items-center shadow-inner truncate"><i className="fas fa-folder mr-2 opacity-80"></i>작업 카탈로그: {currentTag}</div> : <div className="w-full bg-slate-600 text-slate-100 px-4 py-1.5 rounded-md text-[12px] font-bold flex items-center shadow-inner truncate"><i className="fas fa-bolt mr-2 opacity-80"></i>기준 미지정: 마스터 적용 불가</div>)
                                             : <div className="w-full bg-slate-700 text-slate-300 px-4 py-1.5 rounded-md text-[12px] font-bold flex items-center shadow-inner truncate">텍스트 파서를 실행하여 작업을 시작하세요.</div>}
                                         </div>
                                         <nav className="flex gap-1.5 text-[14px] shrink-0 items-center">
@@ -849,7 +891,7 @@
                                 <div className="flex items-center gap-2 shrink-0">
                                     
                                     {/* ⭐ 비활성화(disabled) 조건 제거하여 언제든 실행되게 수정 */}
-                                    {activeTab === 'matched' && <button onClick={() => setShowReviewModal(true)} disabled={parserBuffer.length === 0} className={`h-9 px-5 rounded-lg text-[12px] font-black shadow-sm flex items-center ${parserBuffer.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400'}`} title="작업 검토 (F7)"><i className="fas fa-check-circle mr-1.5 text-[13px]"></i> 완료 <span className="ml-1.5 text-[9px] text-slate-400 font-normal">F7</span></button>}
+                                    {activeTab === 'matched' && <button onClick={() => setShowReviewModal(true)} disabled={parserBuffer.length === 0} className={`h-9 px-5 rounded-lg text-[12px] font-black shadow-sm flex items-center ${parserBuffer.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400'}`} title="작업 검토 (F7)"><i className="fas fa-check-circle mr-1.5 text-[13px]"></i> 단가 브리핑/저장 <span className="ml-1.5 text-[9px] text-slate-400 font-normal">F7</span></button>}
                                     {activeTab === 'missing' && <button onClick={actions.handleRemoveMissingTags} className={`h-9 px-4 rounded-lg text-[12px] font-bold shadow-sm flex items-center ${selectedMissingCodes.size > 0 ? 'bg-rose-50 border border-rose-200 text-rose-600' : 'bg-white text-slate-400 border border-slate-200'}`}><i className="fas fa-eraser mr-1.5 text-[13px]"></i> 카탈로그 제외</button>}
                                     {(activeTab === 'matched' || activeTab === 'missing') && <div className="w-px h-6 bg-slate-300 mx-1"></div>}
                                     
@@ -860,6 +902,13 @@
                                 </div>
                             </div>
                         </div>
+
+                        {parserBuffer.length > 0 && <div className="px-6 pb-3 bg-white">
+                            <div className={`rounded-xl border px-4 py-2.5 flex items-center justify-between shadow-sm ${pendingApplyRows.length > 0 ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
+                                <div className="text-[12px] font-bold text-slate-700"><i className={`fas ${pendingApplyRows.length > 0 ? 'fa-save text-amber-500' : 'fa-check text-slate-400'} mr-2`}></i>현재 상태: {pendingApplyRows.length > 0 ? '저장 전' : '저장 대기 없음'} · 매핑완료 {matchedRows.length}건 · 미저장 적용대기 {pendingApplyRows.length}건 · 확인필요 {unresolvedQueueCount}건</div>
+                                {pendingApplyRows.length > 0 && <button onClick={() => setShowReviewModal(true)} className="px-3 py-1.5 bg-slate-900 text-white rounded-lg text-[11px] font-black hover:bg-slate-700">단가 브리핑/저장</button>}
+                            </div>
+                        </div>}
 
                         <div className="flex-1 overflow-auto p-5 pt-0 bg-slate-100">
                             {!currentTag && parserBuffer.length === 0 ? (
