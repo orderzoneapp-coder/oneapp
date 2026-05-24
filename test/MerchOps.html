@@ -1134,7 +1134,7 @@
 
                         await window.ONEAPP.STORAGE.setIDB('merch_export_draft', exportDraft);
                         ui.showToast(`✅ ${exportDraft.length}건을 출력검증센터로 전달했습니다.`);
-                        window.location.href = 'export_center.html';
+                        window.location.href = 'FinalReviewCenter.html';
                     } catch (error) {
                         console.error('[Export Draft Error]', error);
                         ui.showToast('❌ 출력검증센터 전달 중 오류가 발생했습니다.');
@@ -1180,13 +1180,13 @@
             return (
                 <div className="bg-black/40 rounded-md border border-slate-700/50 px-4 py-2 flex flex-col flex-1 max-w-md xl:max-w-xl mx-4 overflow-hidden shadow-inner text-[11px] font-mono leading-tight justify-center h-10">
                     {isProcessing ? (
-                        <div className="text-amber-400 flex items-center"><i className="fas fa-spinner fa-spin mr-2"></i> > {processMsg}</div>
+                        <div className="text-amber-400 flex items-center"><i className="fas fa-spinner fa-spin mr-2"></i> &gt; {processMsg}</div>
                     ) : activeTags.length > 0 ? (
                         <div className="text-indigo-300 flex items-center truncate">
-                            > {activeTags.map(t=>`[${t.name}]`).join(' + ')} 표시됨 ({estimateCount}건 작업중) <span className="w-1.5 h-3 bg-indigo-300 ml-1.5 animate-pulse"></span>
+                            &gt; {activeTags.map(t=>`[${t.name}]`).join(' + ')} 표시됨 ({estimateCount}건 작업중) <span className="w-1.5 h-3 bg-indigo-300 ml-1.5 animate-pulse"></span>
                         </div>
                     ) : (
-                        <div className="text-emerald-400 flex items-center">> DB: {itemCount.toLocaleString()}건 로드됨 ({timeStr}) <span className="w-1.5 h-3 bg-emerald-400 ml-1 animate-pulse"></span></div>
+                        <div className="text-emerald-400 flex items-center">&gt; DB: {itemCount.toLocaleString()}건 로드됨 ({timeStr}) <span className="w-1.5 h-3 bg-emerald-400 ml-1 animate-pulse"></span></div>
                     )}
                 </div>
             );
@@ -1289,7 +1289,7 @@
                                 <i className="fas fa-save mr-1.5 text-[13px]"></i> F8
                             </button>
 
-                            <button onClick={handleOpenExportCenter} disabled={fullDisplayRows.length === 0} className={`h-9 px-3 rounded-xl text-[12px] font-black shadow-sm flex items-center shrink-0 ${fullDisplayRows.length > 0 ? 'bg-emerald-600 text-white hover:bg-emerald-700 border border-emerald-700' : 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed'}`} title="통합 출력 센터 진입 (F9)">
+                            <button onClick={handleOpenExportCenter} disabled={fullDisplayRows.length === 0} className={`h-9 px-3 rounded-xl text-[12px] font-black shadow-sm flex items-center shrink-0 ${fullDisplayRows.length > 0 ? 'bg-emerald-600 text-white hover:bg-emerald-700 border border-emerald-700' : 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed'}`} title="최종검증센터 진입 (F9)">
                                 <i className="fas fa-print mr-1.5 text-[14px]"></i> F9
                             </button>
                         </div>
@@ -1870,7 +1870,7 @@
             return (
                 <tr className={`group border-b border-slate-200 transition-all hover:bg-slate-50 relative z-0 hover:z-10 ${isStopped ? 'opacity-70 bg-slate-50' : ''}`}>
                     
-                    <td className={`sticky z-20 px-3 py-2 border-r-2 border-r-slate-300 transition-colors min-w-[280px] w-[280px] max-w-[280px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : 'bg-white group-hover:!bg-slate-50 border-l-4 border-l-transparent group-hover:!border-l-slate-300'}`} style={{left: 0}}>
+                    <td className={`sticky z-20 px-3 py-2 border-r border-r-slate-200 transition-colors min-w-[280px] w-[280px] max-w-[280px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : 'bg-white group-hover:!bg-slate-50 border-l-4 border-l-transparent group-hover:!border-l-slate-300'}`} style={{left: 0}}>
                         <div className="flex gap-2 items-center w-full min-w-0">
                             {isEstimateUploaded && (
                                 <input type="checkbox" className="w-4 h-4 rounded border-slate-300 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500" checked={isSel} onChange={() => {const n = new Set(state.selectedRows); n.has(row.코드)?n.delete(row.코드):n.add(row.코드); actions.setSelectedRows(n);}} />
@@ -1927,7 +1927,7 @@
                                 }
                                 
                                 return (
-                                    <td key={`pm-d-${h}`} className={`px-2 py-1.5 border-r border-slate-200 transition-colors ${getCellWidthClass(h)} ${i === arr.length - 1 ? 'border-r-2 !border-r-slate-300' : ''} ${isChanged ? 'bg-amber-50 text-amber-800' : 'bg-white text-slate-600'} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'} ${isNum ? 'text-right font-bold' : 'text-center'}`}>
+                                    <td key={`pm-d-${h}`} className={`px-2 py-1.5 border-r border-slate-200 transition-colors ${getCellWidthClass(h)}  ${isChanged ? 'bg-amber-50 text-amber-800' : 'bg-white text-slate-600'} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'} ${isNum ? 'text-right font-bold' : 'text-center'}`}>
                                         <div className={`truncate w-full ${h === '판매여부' ? salesClassName : ''}`}>{formattedVal}</div>
                                     </td>
                                 );
@@ -1943,7 +1943,6 @@
                                     <div className="flex items-center justify-center gap-1 min-w-0 max-w-full">
                                         {issueSubText && <span className={`text-[10px] font-bold truncate ${issueSubText.startsWith('마진') ? marginToneClass + ' border px-1.5 py-0.5 rounded-full' : ['품절', '품절임박', '역마진'].includes(issueSubText) ? issueBadgeClass + ' border px-1.5 py-0.5 rounded-full' : 'text-slate-500'}`} title={issueSubText}>{issueSubText}</span>}
                                         {issueSubText && !issueSubText.startsWith('마진') && !['품절', '품절임박', '역마진'].includes(issueSubText) && marginInfo.rate !== null && <span className={`text-[9px] font-black border px-1.5 py-0.5 rounded-full shrink-0 ${marginToneClass}`}>{marginInfo.rate.toFixed(1)}%</span>}
-                                        {marginInfo.isPromo && issueSubText !== '품절' && issueSubText !== '품절임박' && issueSubText !== '역마진' && <span className="text-[9px] font-black bg-violet-50 text-violet-700 border border-violet-200 px-1.5 py-0.5 rounded-full shrink-0">행사</span>}
                                     </div>
                                 </div>
                             </td>
@@ -1988,7 +1987,7 @@
                         <table className="text-left border-collapse text-[13px] whitespace-nowrap relative z-0 w-max bg-white">
                             <thead className="text-[12px] font-extrabold sticky top-0 z-[60] shadow-sm border-b border-slate-200">
                                 <tr>
-                                    <th className="sticky top-0 left-0 z-[70] bg-slate-100 px-3 py-2 border-r-2 border-r-slate-300 text-slate-700 min-w-[280px] w-[280px] max-w-[280px]">
+                                    <th className="sticky top-0 left-0 z-[70] bg-slate-100 px-3 py-2 border-r border-r-slate-200 text-slate-700 min-w-[280px] w-[280px] max-w-[280px]">
                                         <div className="flex items-center gap-2 pl-1">
                                             {isEstimateUploaded && (
                                                 <input type="checkbox" className="rounded w-4 h-4 border-slate-400 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500" checked={selectedRows.size === fullDisplayRows.length && displayRows.length > 0} onChange={actions.toggleAllRows} />
@@ -2004,7 +2003,7 @@
                                     ) : (
                                         <>
                                             {visibleMasterCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map((h, i, arr) => (
-                                                <th key={`pm-${h}`} className={`sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-b text-center text-slate-700 font-bold ${i === arr.length - 1 ? 'border-r-2 border-r-slate-300' : 'border-r border-r-slate-200'}`} style={{width: getCellWidthClass(h)}}>
+                                                <th key={`pm-${h}`} className={`sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-b text-center text-slate-700 font-bold border-r border-r-slate-200`} style={{width: getCellWidthClass(h)}}>
                                                     {h === '판매여부' ? '판매상태' : h}
                                                 </th>
                                             ))}
@@ -2016,7 +2015,7 @@
                                             {visibleUploadCols['estimate']?.filter(h => h !== '품목코드').map((h, i, arr) => {
                                                 const isHighlight = ['입고가', '도매A', '행사가', '출고가'].includes(h);
                                                 return (
-                                                    <th key={`pu-e-${h}`} className={`sticky top-0 z-[60] bg-slate-100 text-slate-700 ${isHighlight ? 'font-black' : 'font-bold'} px-2 py-3 border-b text-center ${i === arr.length - 1 ? 'border-r-2 border-r-slate-300' : 'border-r border-r-slate-200'}`} style={{width: getCellWidthClass(h)}}>
+                                                    <th key={`pu-e-${h}`} className={`sticky top-0 z-[60] bg-slate-100 text-slate-700 ${isHighlight ? 'font-black' : 'font-bold'} px-2 py-3 border-b text-center border-r border-r-slate-200`} style={{width: getCellWidthClass(h)}}>
                                                         {h} {isHighlight && <i className="fas fa-bolt text-amber-500 ml-1 text-[10px]"></i>}
                                                     </th>
                                                 );
@@ -2065,7 +2064,7 @@
                     <i className="fas fa-box-open"></i>
                     <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm"><i className="fas fa-check"></i></div>
                 </div>
-                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v1.10.1 리포트 구간]</h2>
+                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v1.10.2 stage1.5 안정화]</h2>
                 <p className="text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold">
                     현재 등록된 <span className="text-indigo-500">마스터 상품 데이터</span>가 없습니다.<br/>
                     견적 작업 및 파서 연동을 위해 전체 상품 DB를 세팅해주세요.
@@ -2328,8 +2327,8 @@
                                             <button onClick={() => customActions.handleCloudSync('upload')} className={`w-8 h-8 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-slate-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="클라우드에 데이터 백업"><i className="fas fa-cloud-upload-alt text-[13px]"></i></button>
                                             <div className="w-px h-4 bg-slate-700 mx-0.5"></div>
                                             
-                                            <button onClick={() => window.location.href = 'history_viewer.html'} className={`w-8 h-8 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-amber-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-amber-400 hover:border-amber-500/50 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="작업 히스토리 뷰어"><i className="fas fa-history text-[13px]"></i></button>
-                                            <button onClick={() => window.location.href = 'settings.html'} className={`w-8 h-8 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-slate-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="환경설정 콘트롤 타워"><i className="fas fa-cogs opacity-80 text-[13px]"></i></button>
+                                            <button onClick={() => window.location.href = 'HistoryViewer.html'} className={`w-8 h-8 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-amber-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-amber-400 hover:border-amber-500/50 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="작업 히스토리 뷰어"><i className="fas fa-history text-[13px]"></i></button>
+                                            <button onClick={() => window.location.href = 'ControlTower.html'} className={`w-8 h-8 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-slate-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`} title="환경설정 콘트롤 타워"><i className="fas fa-cogs opacity-80 text-[13px]"></i></button>
                                         </nav>
                                     </div>
                                 </div>
