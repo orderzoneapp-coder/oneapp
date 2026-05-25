@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.01 Engine)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.19 Engine)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -45,13 +45,20 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .loader-text { font-family: 'Pretendard', sans-serif; font-size: 14px; font-weight: 700; color: #475569; letter-spacing: -0.5px; animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+
+        @media print {
+            body { background: #fff !important; overflow: visible !important; }
+            .no-print { display: none !important; }
+            table { page-break-inside: auto; }
+            tr { page-break-inside: avoid; page-break-after: auto; }
+        }
     </style>
 </head>
 <body>
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.01 엔진 준비 중...</div>
+        <div class="loader-text">ONEAPP DataOps v8.26 엔진 준비 중...</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -146,7 +153,7 @@
             name: '품명, 품목명(규격), 품목명[규격], 상품명, 제품명, 이름, 품목, 상품',
             spec: '규격, 옵션, 사이즈', 
             qty: '기말실사(이월수량), 기말실사, 기말/실사, 수량, 재고, 기말잔량(실사반영), 기말잔량(실사), 기말잔량, 수량(합계), 입고수량, 출고수량, 판매수량, 잔량, 실사, 합계, 기말, 판매량, 출고량, 입고량',
-            price: '매입단가(원가), 단가, 입고단가, 구매단가, 판매단가, 매입단가, 매입가, 판매가, 공급가액, 공급가, 금액, 원가, 가격, 최종(창고)',
+            price: '매입단가(원가), 입고가, 단가, 입고단가, 구매단가, 판매단가, 매입단가, 매입가, 판매가, 공급가액, 공급가, 금액, 원가, 가격, 최종(창고)',
             date: '결산일자, 매입일자, 일자, 날짜, 구매일자, 판매일자, 입고일자, 출고일자',
             vendor: '매출처명, 매입처(Lot), 매입처(거래처), 거래처명, 거래처, 거래, 매장명, 매장, 고객, 판매처, 공급사, 판매, 청과, 3거래',
             matchVendor: '구매처, 매입처, 매칭정보, 원매입처, lot', 
@@ -154,6 +161,157 @@
             lifoVendor: '2전송, 쿠팡, B2B, 당일우선, 현금판매',
             internalLot: '우리, 공용, 분배, 담당자, 우리농산',
             priorityVendor: '2전송>1창고' 
+        };
+
+
+        /* =======================================================================
+           재고 테이블 표시/정렬/출력 보조 함수 (v8.02 UI 패치)
+           - 기존 테이블 항목과 계산 로직은 변경하지 않고 화면 표시 순서만 제어
+           ======================================================================= */
+        const getRawField = (item, keys) => {
+            const raw = item && item._raw ? item._raw : {};
+            for (const key of keys) {
+                if (item && item[key] !== undefined && item[key] !== null && String(item[key]).trim() !== '') return item[key];
+                if (raw && raw[key] !== undefined && raw[key] !== null && String(raw[key]).trim() !== '') return raw[key];
+            }
+            return '';
+        };
+
+        const normalizeSortText = (v) => safeStr(v, '').toLowerCase().replace(/\s/g, '');
+        const normalizeCodeForSort = (v) => safeStr(v, '').replace(/\D/g, '').padStart(20, '0') || safeStr(v, '');
+
+        const BASE_CATEGORY_MAP = {
+            '10': '채소.과일',
+            '20': '수산.축산',
+            '30': '식품.음료',
+            '40': '양념.소스',
+            '50': '주방.잡화'
+        };
+        const BASE_CATEGORY_CODES = Object.keys(BASE_CATEGORY_MAP);
+        const getItemCodePrefix2 = (item) => {
+            const digits = safeStr(item?.코드 || item?._raw?.['품목코드'] || item?._raw?.['상품코드'] || '', '').replace(/\D/g, '');
+            return digits.length >= 2 ? digits.substring(0, 2) : '';
+        };
+
+        const getCategoryMeta = (item) => {
+            // 카테고리순 기준 정리 (v8.15)
+            // 1) 엑셀에 '분류2명'이 있으면 그것을 최우선 분류명으로 사용한다.
+            // 2) 정렬은 가능하면 분류코드순으로 하되, 분류코드가 없으면 품목코드 흐름을 사용한다.
+            // 3) 화면 구분선에는 코드가 아니라 분류명만 노출한다.
+            // 4) 분류명이 없는 상품만 [미분류]로 보낸다.
+            const c1Code = safeStr(getRawField(item, ['분류1코드', '1코드', '1분류코드', '대분류코드', '카테고리코드1', '분류코드1']), '');
+            const c2Code = safeStr(getRawField(item, ['분류2코드', '2코드', '2분류코드', '중분류코드', '카테고리코드2', '분류코드2']), '');
+            const c1Name = safeStr(getRawField(item, ['분류1명', '1그룹명', '1분류명', '대분류명', '대분류', '카테고리1', '분류명1', '그룹명1']), '');
+            const c2Name = safeStr(getRawField(item, ['분류2명', '2그룹명', '2분류명', '중분류명', '중분류', '카테고리2', '분류명2', '그룹명2']), '');
+            const code = safeStr(item?.코드, '');
+            const codeDigits = safeStr(code, '').replace(/\D/g, '');
+
+            const prefix2 = codeDigits.length >= 2 ? codeDigits.substring(0, 2) : '';
+            const hardcodedCategoryName = BASE_CATEGORY_MAP[prefix2] || '';
+
+            let label = '';
+            if (c1Name && c2Name) label = `${c1Name} / ${c2Name}`;
+            else if (c2Name) label = c2Name;
+            else if (c1Name) label = c1Name;
+            else if (hardcodedCategoryName) label = hardcodedCategoryName;
+            else label = '미분류';
+
+            const hasCategoryName = !!(c1Name || c2Name || hardcodedCategoryName);
+            const groupKey = hasCategoryName ? `cat_${prefix2 || 'etc'}_${normalizeSortText(label)}` : 'zzzzzz_미분류';
+
+            let sortKey = '';
+            if (hasCategoryName) {
+                if (c1Code || c2Code) {
+                    sortKey = `${safeStr(c1Code || prefix2, '').padStart(8, '0')}|${safeStr(c2Code, '').padStart(8, '0')}`;
+                } else if (codeDigits) {
+                    // 기본 카테고리(품목코드 앞 2자리 10/20/30/40/50)는 하드코딩된 분류명으로 노출하고,
+                    // 정렬은 품목코드 체계를 유지한다.
+                    sortKey = `${prefix2.padStart(2, '0')}|${codeDigits.substring(0, 4).padStart(4, '0')}|${normalizeSortText(label)}`;
+                } else {
+                    sortKey = `zzzz_${normalizeSortText(label)}`;
+                }
+            } else {
+                sortKey = `zzzzzz_미분류|${normalizeSortText(item?.품명)}|${normalizeCodeForSort(code)}`;
+            }
+
+            return { sortKey, groupKey, label, isUnclassified: !hasCategoryName };
+        };
+
+        const getCategoryGroup = (item) => getCategoryMeta(item).groupKey;
+        const getCategoryGroupLabel = (item) => getCategoryMeta(item).label;
+        const getCategorySortKey = (item) => getCategoryMeta(item).sortKey;
+
+        const getPurchaseVendor = (item) => {
+            return safeStr(getRawField(item, ['구매처', '매입처', '거래처', '공급사', '매입처매칭', '매입처(Lot)', '매입처(거래처)', '원매입처', 'vendor', 'matchVendor', 'displayVendor']), '구매처 미지정');
+        };
+
+        const getStorageLocation = (item) => {
+            return safeStr(getRawField(item, ['적재위치']), '위치 미지정');
+        };
+
+        const getUnitType = (item) => {
+            // 1순위는 재고 엑셀의 '단위' 컬럼이다.
+            // 다만 '소분'은 EA와 구분해야 하므로 단위/규격/품명에 소분이 있으면 별도 단위로 먼저 판정한다.
+            const rawUnitOriginal = safeStr(getRawField(item, ['단위', 'unit', 'Unit']), '');
+            const rawUnit = rawUnitOriginal.toLowerCase();
+            const unitText = [
+                rawUnitOriginal,
+                item?.품명,
+                item?._raw?.['규격'],
+                item?._raw?.['상품명(규격)'],
+                item?._raw?.['품목명(규격)']
+            ].map(v => safeStr(v, '')).join(' ').toLowerCase();
+
+            if (unitText.includes('소분')) return 'SPLIT';
+            if (rawUnit === 'box' || rawUnit === '박스' || rawUnit === '박') return 'BOX';
+            if (rawUnit === 'ea' || rawUnit === '개' || rawUnit === '낱개') return 'EA';
+            if (/(^|[^a-z])box([^a-z]|$)|박스/.test(unitText) || unitText.split(/\s+/).includes('박')) return 'BOX';
+            if (/(^|[^a-z])ea([^a-z]|$)|낱개/.test(unitText) || unitText.split(/\s+/).includes('개')) return 'EA';
+            return 'OTHER';
+        };
+
+        const hasNegativeBalance = (item) => {
+            const stockBalance = parseNumber(item?.잔량 !== undefined ? item.잔량 : item?.전산잔량);
+            const systemBalance = parseNumber(item?.전산잔량);
+            const lossDiff = parseNumber(item?.로스);
+            return stockBalance < 0 || systemBalance < 0 || lossDiff < 0;
+        };
+
+        const getRawNumberByKeys = (item, keys) => parseNumber(getRawField(item, keys));
+        const hasStockSummaryColumns = (item) => {
+            const raw = item && item._raw ? item._raw : {};
+            return ['재고', '입고', '출고', '잔량', '기초재고', '기초수량', '전산잔량'].some(k =>
+                (raw && raw[k] !== undefined) || (item && item[k] !== undefined)
+            );
+        };
+        const getStockSummaryValues = (item, fallbackQty = 0) => {
+            const raw = item && item._raw ? item._raw : {};
+            // 재고파일에 '재고' 컬럼이 존재하면 빈칸은 0으로 본다. fallback을 쓰면 입고만 있는 행의 기초가 잔량으로 오인될 수 있다.
+            const hasBaseCol = ['재고', '기초재고', '기초수량'].some(k => raw[k] !== undefined || item?.[k] !== undefined);
+            const base = hasBaseCol ? getRawNumberByKeys(item, ['재고', '기초재고', '기초수량']) : safeNum(fallbackQty);
+            const inQty = getRawNumberByKeys(item, ['입고', '입고수량']);
+            const outQty = getRawNumberByKeys(item, ['출고', '출고량', '출고수량']);
+            const hasRemainCol = ['잔량', '전산잔량', '기말잔량'].some(k => raw[k] !== undefined || item?.[k] !== undefined);
+            const remain = hasRemainCol ? getRawNumberByKeys(item, ['잔량', '전산잔량', '기말잔량']) : (base + inQty - outQty);
+            // v8.22: 실사 컬럼은 현장 입력값으로만 반영한다. 기준 잔량은 유지한다.
+            const actualKeys = ['실사입력', '실사', '실사수량', '실사 수량', '실사재고', '실사 재고', '확인수량', '현장수량'];
+            const hasRawActualValue = actualKeys.some(k => raw[k] !== undefined && String(raw[k]).trim() !== '');
+            const hasActualCol = hasRawActualValue || item?.실사입력여부 === true || item?._manualActualInput === true;
+            const actual = hasActualCol ? getRawNumberByKeys(item, actualKeys) : null;
+            return { base, inQty, outQty, remain, actual, hasActualCol };
+        };
+
+        const getSortGroupKey = (item, sortMode) => {
+            if (sortMode === 'category') return getCategoryGroup(item);
+            if (sortMode === 'vendor') return getPurchaseVendor(item);
+            if (sortMode === 'location') return getStorageLocation(item);
+            return '';
+        };
+        const getSortGroupLabel = (item, sortMode) => {
+            if (sortMode === 'category') return getCategoryGroupLabel(item);
+            if (sortMode === 'vendor') return getPurchaseVendor(item);
+            if (sortMode === 'location') return getStorageLocation(item);
+            return '';
         };
 
         /* =======================================================================
@@ -219,12 +377,28 @@
                             return null;
                         };
 
+                        // v8.06: 재고 엑셀처럼 '품목코드'와 '품명'이 함께 있는 파일에서
+                        // name 키워드의 '품목'이 '품목코드'를 먼저 잡아 품명이 코드로 표시되는 문제를 차단한다.
+                        // 명확한 표준 헤더는 사용자 매핑보다 우선하여 직접 읽는다.
+                        const getExactHeaderVal = (obj, headerNames) => {
+                            const keys = Object.keys(obj);
+                            const normalizedKeys = keys.map(k => k.replace(/\s/g, '').toLowerCase());
+                            for (let h of headerNames) {
+                                const target = String(h).replace(/\s/g, '').toLowerCase();
+                                const idx = normalizedKeys.indexOf(target);
+                                if (idx !== -1 && obj[keys[idx]] !== undefined && String(obj[keys[idx]]).trim() !== '') return obj[keys[idx]];
+                            }
+                            return null;
+                        };
+
                         for (let i = headerRowIdx + 1; i < jsonAll.length; i++) {
                             const row = jsonAll[i]; if (!row || row.join('').trim() === '') continue;
                             const rowObj = {}; uniqueHeaders.forEach((h, idx) => { if (h) rowObj[h] = row[idx]; });
                             
-                            const codeRaw = getValByKeywords(rowObj, keywords.code); const codeStr = safeStr(codeRaw, '');
-                            const baseNameRaw = getValByKeywords(rowObj, keywords.name); const baseName = safeStr(baseNameRaw, '');
+                            const codeRaw = getExactHeaderVal(rowObj, ['품목코드', '상품코드', '코드', '품번', '바코드']) ?? getValByKeywords(rowObj, keywords.code);
+                            const codeStr = safeStr(codeRaw, '');
+                            const baseNameRaw = getExactHeaderVal(rowObj, ['품명', '품목명', '상품명', '제품명', '이름', '품목명(규격)', '품목명[규격]', '상품명(규격)']) ?? getValByKeywords(rowObj, keywords.name);
+                            const baseName = safeStr(baseNameRaw, '');
 
                             if (!codeStr && !baseName) continue;
                             if (codeStr.includes('합계') || codeStr.includes('총계') || baseName.includes('합계') || baseName.includes('총계') || baseName.includes('총합')) continue;
@@ -233,14 +407,35 @@
                             if (codeStr.includes('실사등록') || baseName.includes('실사등록')) continue;
                             if (codeStr.includes('기록없음') || baseName.includes('기록없음')) continue;
 
-                            const specValRaw = getValByKeywords(rowObj, keywords.spec); const specVal = safeStr(specValRaw, '');
+                            const specValRaw = getExactHeaderVal(rowObj, ['규격', '옵션', '사이즈']) ?? getValByKeywords(rowObj, keywords.spec);
+                            const specVal = safeStr(specValRaw, '');
                             let fullName = baseName || '이름없음';
-                            if (specVal && baseName !== specVal && !baseName.includes(specVal)) fullName = `${baseName}_${specVal}`;
+                            const hasSeparateNameAndSpec = getExactHeaderVal(rowObj, ['품명', '품목명', '상품명']) !== null && specVal;
+                            // 재고 파일은 '품명'과 '규격'이 별도 컬럼이므로 품명에 규격을 붙이지 않는다.
+                            // 구형 파일처럼 상품명(규격)만 있는 경우에는 기존 동작을 유지한다.
+                            if (!hasSeparateNameAndSpec && specVal && baseName !== specVal && !baseName.includes(specVal)) fullName = `${baseName}_${specVal}`;
+
+                            const priceRaw = getExactHeaderVal(rowObj, ['입고가', '매입단가(원가)', '매입단가', '입고단가', '구매단가', '단가', '원가', '가격']) ?? getValByKeywords(rowObj, keywords.price);
+                            const vendorRaw = getExactHeaderVal(rowObj, ['구매처', '매입처', '거래처', '공급사', '매입처(Lot)', '매입처(거래처)', '원매입처']) ?? getValByKeywords(rowObj, keywords.vendor);
+                            const matchVendorRaw = getExactHeaderVal(rowObj, ['매입처매칭', '매칭정보', '원매입처', 'lot']) ?? getValByKeywords(rowObj, keywords.matchVendor);
+
+                            // v8.06: 재고 요약 파일의 수량 컬럼을 표준 필드로 직접 보존한다.
+                            // 기존에는 _raw['입고'], _raw['출고']만 참조해 특정 파일/헤더 상태에서 화면 입력칸이 0으로 보일 수 있었다.
+                            const unitRaw = getExactHeaderVal(rowObj, ['단위', 'unit', 'Unit']);
+                            const stockBaseRaw = getExactHeaderVal(rowObj, ['재고', '기초재고', '기초수량']);
+                            const stockInRaw = getExactHeaderVal(rowObj, ['입고', '입고수량']);
+                            const stockOutRaw = getExactHeaderVal(rowObj, ['출고', '출고량', '출고수량']);
+                            const stockRemainRaw = getExactHeaderVal(rowObj, ['잔량', '전산잔량', '기말잔량']);
+                            // v8.22: 출력/현장 실사 후 다시 저장한 엑셀의 '실사' 컬럼을 입력값으로 반영한다.
+                            // 실사값은 잔량/재고/입고/출고를 덮어쓰지 않고, 로스 계산에만 사용한다.
+                            const actualStockRaw = getExactHeaderVal(rowObj, ['실사', '실사수량', '실사 수량', '실사재고', '실사 재고', '확인수량', '현장수량']);
+                            const hasActualInput = actualStockRaw !== null && actualStockRaw !== undefined && String(actualStockRaw).trim() !== '';
 
                             const normObj = {
-                                코드: codeStr || 'NO_CODE', 품명: fullName,
-                                수량: parseNumber(getValByKeywords(rowObj, keywords.qty)), 단가: parseNumber(getValByKeywords(rowObj, keywords.price)),
-                                거래처: safeStr(getValByKeywords(rowObj, keywords.vendor), '미지정'), 매입처매칭: safeStr(getValByKeywords(rowObj, keywords.matchVendor), ''),
+                                코드: codeStr || 'NO_CODE', 품명: fullName, 규격: specVal, 단위: safeStr(unitRaw, ''),
+                                수량: parseNumber(getValByKeywords(rowObj, keywords.qty)), 단가: parseNumber(priceRaw),
+                                재고: parseNumber(stockBaseRaw), 입고: parseNumber(stockInRaw), 출고: parseNumber(stockOutRaw), 잔량: parseNumber(stockRemainRaw), 실사입력: hasActualInput ? parseNumber(actualStockRaw) : null, 실사입력여부: hasActualInput,
+                                거래처: safeStr(vendorRaw, '미지정'), 매입처매칭: safeStr(matchVendorRaw, ''),
                                 일자: safeStr(getValByKeywords(rowObj, keywords.date), ''), 메모: '', _raw: rowObj 
                             };
                             parsedData.push(normObj);
@@ -324,7 +519,7 @@
                         
                         newIssues = newIssues.map(msg => msg.replace(/🚨/g, '✅'));
                         if (val !== '' && newLoss !== 0) newIssues.push('실사 수기조정');
-                        return { ...item, 실사: newActual, 로스: newLoss, 이슈: newIssues, 수기확인완료: true }; 
+                        return { ...item, 실사: newActual, 로스: newLoss, 이슈: newIssues, 수기확인완료: true, _manualActualInput: val !== '', 실사입력여부: val !== '' }; 
                     }
                     return item;
                 }));
@@ -512,7 +707,7 @@
                                     기초: parseNumber(item._raw['기초수량']), 입고: parseNumber(item._raw['입고수량']), 출고: parseNumber(item._raw['출고량']),
                                     대체입고: 0, 대체출고: 0, 전산잔량: parseNumber(item._raw['기초수량']) + parseNumber(item._raw['입고수량']) - parseNumber(item._raw['출고량']),
                                     실사: actualQty, 로스: parseNumber(item._raw['로스/조정수량']),
-                                    매출액: tRev, 매출원가: tCogs, 메모: item._raw['수기메모'] || '',
+                                    매출액: tRev, 매출원가: tCogs, 메모: item._raw['수기메모'] || '', _raw: item._raw || {},
                                     이슈: issues.filter(i => !i.includes('🚨')),
                                     출고내역: vendors, _orig: {기초: parseNumber(item._raw['기초수량']), 입고: parseNumber(item._raw['입고수량']), 출고: parseNumber(item._raw['출고량']), 단가: price},
                                     isDummy: (!code || code === 'NO_CODE'), 수기확인완료: true, _fromFile4: true,
@@ -562,7 +757,7 @@
                             pData[batchKey] = { 
                                 batchKey, 코드: code, 품명: name, 단가: price, 일자: date, 거래처: vendor,
                                 기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 
-                                매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig: {기초:0, 입고:0, 출고:0, 단가: price}, 
+                                매출액: 0, 매출원가: 0, 메모: '', _raw: item._raw || {}, 이슈: [], 출고내역: {}, _orig: {기초:0, 입고:0, 출고:0, 단가: price}, 
                                 isDummy: (!code || code === 'NO_CODE'), 수기확인완료: false, _totalCostForAvg: qtyToApply * price, _latestDateNum: extractDateNum(date)
                             };
                             if (code === 'NO_CODE') pData[batchKey].이슈.push('🚨코드없음(수기확인)');
@@ -572,7 +767,33 @@
                             else if (type === 'in' && pData[batchKey].기초 > 0 && pData[batchKey].거래처 === '이월재고') { pData[batchKey].거래처 = item.거래처 || pData[batchKey].거래처; pData[batchKey].일자 = date || pData[batchKey].일자; }
                         }
 
-                        pData[batchKey].기초 += type === 'prev' ? qtyToApply : 0; pData[batchKey].입고 += type === 'in' ? qtyToApply : 0;
+                        if (type === 'prev' && hasStockSummaryColumns(item)) {
+                            // v8.26: 재고변동표를 1번 '기초' 슬롯에 올리면 이전 기준 자료로 본다.
+                            // 이 모드에서는 입고/출고/실사값을 현재 작업값으로 반영하지 않고,
+                            // '재고(기초)'와 '잔량'만 기준값으로 세팅한다.
+                            const stockSummary = getStockSummaryValues(item, qtyToApply);
+                            pData[batchKey].기초 += stockSummary.base;
+                            pData[batchKey].입고 += 0;
+                            pData[batchKey].출고 += 0;
+                            pData[batchKey].전산잔량 = stockSummary.remain;
+                            pData[batchKey].잔량 = stockSummary.remain;
+                            // v8.26: 실사 컬럼이 실제로 입력된 엑셀만 실사값을 반영한다.
+                            // 실사 컬럼이 없거나 빈칸이면 잔량을 실사칸에 자동 대입하지 않는다.
+                            pData[batchKey].실사 = stockSummary.hasActualCol ? stockSummary.actual : null;
+                            pData[batchKey].실사입력여부 = stockSummary.hasActualCol;
+                            pData[batchKey].로스 = stockSummary.hasActualCol ? (stockSummary.actual - stockSummary.remain) : 0;
+                            pData[batchKey]._stockSummaryMode = true;
+                            pData[batchKey]._baselineUploadMode = true;
+                            pData[batchKey].이슈 = pData[batchKey].이슈.filter(msg => !msg.includes('수량변동(실사반영)') && !msg.includes('수량변동(실사누락)'));
+                            if (stockSummary.hasActualCol) {
+                                pData[batchKey].수기확인완료 = true;
+                                if (pData[batchKey].로스 !== 0) pData[batchKey].이슈.push('🚨수량변동(실사반영)');
+                            }
+                            pData[batchKey]._orig = { 기초: pData[batchKey].기초, 입고: 0, 출고: 0, 단가: price };
+                        } else {
+                            pData[batchKey].기초 += type === 'prev' ? qtyToApply : 0;
+                            pData[batchKey].입고 += type === 'in' ? qtyToApply : 0;
+                        }
                         pData[batchKey]._totalCostForAvg += qtyToApply * price; const dNum = extractDateNum(date);
                         if (grouping.priceMode === 'latest' && dNum > pData[batchKey]._latestDateNum) { pData[batchKey].단가 = price; pData[batchKey]._latestDateNum = dNum; } 
                         else if (grouping.priceMode === 'average') { const totalQty = pData[batchKey].기초 + pData[batchKey].입고; if (totalQty > 0) pData[batchKey].단가 = pData[batchKey]._totalCostForAvg / totalQty; }
@@ -688,7 +909,7 @@
                             const bKey = generateBatchKey(code, sale.품명, 0, '매입내역 없음', '');
                             if (!pData[bKey]) {
                                 pData[bKey] = { 
-                                    batchKey: bKey, 코드: code, 품명: sale.품명, 단가: 0, 일자: '', 거래처: '매입내역 없음', 기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig:{기초:0,입고:0,출고:0,단가:0}, isDummy: true, 수기확인완료: false
+                                    batchKey: bKey, 코드: code, 품명: sale.품명, 단가: 0, 일자: '', 거래처: '매입내역 없음', 기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 매출액: 0, 매출원가: 0, 메모: '', _raw: sale._raw || {}, 이슈: [], 출고내역: {}, _orig:{기초:0,입고:0,출고:0,단가:0}, isDummy: true, 수기확인완료: false
                                 };
                                 if (code === 'NO_CODE') pData[bKey].이슈.push('🚨코드없음(수기확인)'); else if (hasClosingEnd) pData[bKey].이슈.push('🚨신규발생(마감자료에없음)');
                             }
@@ -805,14 +1026,66 @@
                     // *** 전산잔량 미리 갱신 (실사 분배 기준용) ***
                     Object.values(pData).forEach(item => {
                         if (!item._fromFile4) {
-                            item.전산잔량 = item.기초 + item.입고 - item.출고;
+                            // v8.26: 재고변동표 업로드 모드에서는 엑셀의 잔량 값을 기준값으로 존중한다.
+                            // 기초 슬롯은 이전 기준 세팅, 실사 슬롯은 현재 작업 상태 복원이므로
+                            // 여기서 기초+입고-출고로 잔량을 다시 덮어쓰지 않는다.
+                            if (!item._stockSummaryMode) {
+                                item.전산잔량 = item.기초 + item.입고 - item.출고;
+                            }
                             item._orig = { 기초: item.기초, 입고: item.입고, 출고: item.출고, 단가: item.단가 };
                         }
                     });
 
                     // 🌟 핵심 수정: 실사 엑셀(4번) 수량을 임의로 쪼개지 않고 1:1로 정확하게 꽂아 넣는 업로드 존중 로직
                     if (!hasClosingEnd && parsedEnd.length > 0) {
-                        const simpleCountEndItems = parsedEnd.filter(item => !isClosingItem(item));
+                        // v8.26: 재고변동표를 4번 '실사' 슬롯에 올리면 현재 작업 자료로 본다.
+                        // 이 경우 기초/입고/출고/잔량/실사를 모두 복원한다.
+                        const stockSummaryEndItems = parsedEnd.filter(item => !isClosingItem(item) && hasStockSummaryColumns(item));
+                        stockSummaryEndItems.forEach(endItem => {
+                            const code = String(endItem.코드 || 'NO_CODE');
+                            const price = parseNumber(endItem.단가);
+                            const vendor = endItem.거래처 && endItem.거래처 !== '미지정' ? endItem.거래처 : '미지정';
+                            const date = endItem.일자 || targetDateStrFromData;
+                            const stockSummary = getStockSummaryValues(endItem, endItem.수량);
+                            const batchKey = generateBatchKey(code, endItem.품명, price, vendor, date);
+                            const targetKeys = Object.keys(pData).filter(k => pData[k].코드 === code);
+                            const keyToUse = pData[batchKey] ? batchKey : (targetKeys.length === 1 ? targetKeys[0] : batchKey);
+
+                            if (!pData[keyToUse]) {
+                                pData[keyToUse] = {
+                                    batchKey: keyToUse, 코드: code, 품명: endItem.품명, 규격: endItem.규격 || '', 단위: endItem.단위 || '', 단가: price, 일자: date, 거래처: vendor,
+                                    기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0,
+                                    매출액: 0, 매출원가: 0, 메모: '', _raw: endItem._raw || {}, 이슈: [], 출고내역: {},
+                                    _orig: {기초:0, 입고:0, 출고:0, 단가: price}, isDummy: (!code || code === 'NO_CODE'), 수기확인완료: false
+                                };
+                            }
+
+                            const target = pData[keyToUse];
+                            target.품명 = target.품명 || endItem.품명;
+                            target.규격 = target.규격 || endItem.규격 || '';
+                            target.단위 = target.단위 || endItem.단위 || '';
+                            target.단가 = price || target.단가;
+                            target.거래처 = vendor || target.거래처;
+                            target._raw = { ...(target._raw || {}), ...(endItem._raw || {}) };
+                            target.기초 = stockSummary.base;
+                            target.입고 = stockSummary.inQty;
+                            target.출고 = stockSummary.outQty;
+                            target.전산잔량 = stockSummary.remain;
+                            target.잔량 = stockSummary.remain;
+                            target.실사 = stockSummary.hasActualCol ? stockSummary.actual : null;
+                            target.실사입력여부 = stockSummary.hasActualCol;
+                            target.로스 = stockSummary.hasActualCol ? (stockSummary.actual - stockSummary.remain) : 0;
+                            target._stockSummaryMode = true;
+                            target._currentUploadMode = true;
+                            target._orig = { 기초: stockSummary.base, 입고: stockSummary.inQty, 출고: stockSummary.outQty, 단가: target.단가 };
+                            target.이슈 = (target.이슈 || []).filter(msg => !msg.includes('수량변동(실사반영)') && !msg.includes('수량변동(실사누락)'));
+                            if (stockSummary.hasActualCol) {
+                                target.수기확인완료 = true;
+                                if (target.로스 !== 0) target.이슈.push('🚨수량변동(실사반영)');
+                            }
+                        });
+
+                        const simpleCountEndItems = parsedEnd.filter(item => !isClosingItem(item) && !hasStockSummaryColumns(item));
                         const unmatchedEndItems = [];
                         
                         simpleCountEndItems.forEach(endItem => {
@@ -828,6 +1101,7 @@
 
                             if (pData[exactKey] && !pData[exactKey].isDummy) {
                                 pData[exactKey].실사 = (pData[exactKey].실사 === null ? 0 : pData[exactKey].실사) + actualQty;
+                                pData[exactKey].실사입력여부 = true;
                                 exactMatchFound = true;
                             } else {
                                 // 2. 정확한 키가 없다면, 동일 코드를 가진 유일한 항목인지 확인 후 대입
@@ -835,6 +1109,7 @@
                                 if (matchingKeys.length === 1) {
                                     const key = matchingKeys[0];
                                     pData[key].실사 = (pData[key].실사 === null ? 0 : pData[key].실사) + actualQty;
+                                    pData[key].실사입력여부 = true;
                                     exactMatchFound = true;
                                 }
                             }
@@ -866,12 +1141,14 @@
                                     
                                     if (isLast) {
                                         pItem.실사 = remainingActual;
+                                        pItem.실사입력여부 = true;
                                     } else {
                                         let assignQty = 0;
                                         if (pItem.전산잔량 > 0) {
                                             assignQty = Math.min(pItem.전산잔량, remainingActual);
                                         }
                                         pItem.실사 = assignQty;
+                                        pItem.실사입력여부 = true;
                                         remainingActual -= assignQty;
                                     }
                                 });
@@ -882,10 +1159,11 @@
                                 
                                 if (!pData[batchKey]) {
                                     pData[batchKey] = { 
-                                        batchKey, 코드: code, 품명: simpleItem.품명, 단가: 0, 일자: targetDateStrFromData, 거래처: '미지정', 기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: totalActualQty, 로스: 0, 매출액: 0, 매출원가: 0, 메모: '', 이슈: ['🚨전산 재고 없음'], 출고내역: {}, _orig: {기초:0, 입고:0, 출고:0, 단가: 0}, isDummy: (!code || code === 'NO_CODE'), 수기확인완료: false 
+                                        batchKey, 코드: code, 품명: simpleItem.품명, 단가: 0, 일자: targetDateStrFromData, 거래처: '미지정', 기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: totalActualQty, 실사입력여부: true, 로스: 0, 매출액: 0, 매출원가: 0, 메모: '', _raw: simpleItem._raw || {}, 이슈: ['🚨전산 재고 없음'], 출고내역: {}, _orig: {기초:0, 입고:0, 출고:0, 단가: 0}, isDummy: (!code || code === 'NO_CODE'), 수기확인완료: false 
                                     };
                                 } else {
                                     pData[batchKey].실사 = (pData[batchKey].실사 === null ? 0 : pData[batchKey].실사) + totalActualQty;
+                                    pData[batchKey].실사입력여부 = true;
                                 }
                             }
                         });
@@ -893,13 +1171,19 @@
                         // 4. 로스/오차(편차 수량) 최종 계산 노출
                         Object.values(pData).forEach(item => {
                             if (!item._fromFile4) {
-                                if (item.실사 === null) {
-                                    // 4번 엑셀에 안 올라온 품목은 조사결과 0개인 것으로 간주
-                                    item.실사 = 0;
+                                // v8.26: 실사 엑셀에 없는 품목 또는 실사칸이 빈 품목은 0으로 간주하지 않는다.
+                                // 일부 품목만 수정해 저장한 엑셀을 다시 올릴 수 있도록 빈 실사는 그대로 공백 유지한다.
+                                if (item.실사 === null || item.실사 === '') {
+                                    item.실사 = null;
+                                    item.실사입력여부 = false;
+                                    item.로스 = 0;
+                                    item.이슈 = (item.이슈 || []).filter(msg => !msg.includes('수량변동(실사반영)') && !msg.includes('수량변동(실사누락)'));
+                                    return;
                                 }
+                                item.실사입력여부 = true;
                                 item.로스 = item.실사 - item.전산잔량;
                                 if (item.로스 !== 0 && !item.이슈.some(i => i.includes('전산 재고 없음'))) {
-                                    const issueMsg = item.실사 === 0 && item.전산잔량 > 0 ? `🚨수량변동(실사누락)` : `🚨수량변동(실사반영)`;
+                                    const issueMsg = `🚨수량변동(실사반영)`;
                                     if (!item.이슈.includes(issueMsg)) {
                                         item.이슈.push(issueMsg);
                                     }
@@ -908,11 +1192,16 @@
                             }
                         });
                     } else if (!hasClosingEnd && parsedEnd.length === 0) {
-                         // 4번 파일이 아예 안 올라온 경우 (1,2,3번만 올림)
+                         // v8.26: 4번 파일이 없거나 실사 컬럼이 비어 있으면 실사칸은 공백으로 유지한다.
+                         // 잔량을 실사량에 자동 대입하지 않는다.
                          Object.values(pData).forEach(item => {
-                             if (item.실사 === null) {
-                                 item.실사 = item.전산잔량;
+                             if (item.실사 === null || item.실사 === '') {
+                                 item.실사 = null;
+                                 item.실사입력여부 = false;
                                  item.로스 = 0;
+                             } else {
+                                 item.실사입력여부 = true;
+                                 item.로스 = item.실사 - item.전산잔량;
                              }
                          });
                     }
@@ -944,6 +1233,10 @@
             }, [grouping, mappings, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep]); 
 
             const runAnalysis = useCallback(async (filesObj) => {
+                // 새 분석 시작 시 이전 productData/작업상태를 먼저 비워서 이전 엑셀 결과가 새 결과처럼 보이지 않게 한다.
+                setProductData([]);
+                setSubstHistory([]);
+                setAckMultiCodes(new Set());
                 setIsProcessing(true); setConfirmModal({ isOpen: false, warnings: [], payload: null });
                 try {
                     let parsedPrev = []; let parsedIn = []; let parsedOut = []; let parsedEnd = [];
@@ -982,10 +1275,11 @@
                     if (endDateNum && maxD !== 0 && maxD > endDateNum) warnings.push(`매입/매출에 실사 파일명 기준일(${formatStrForPeriod(endDateNum)}) 이후의 미래 데이터가 포함되어 있습니다.`);
 
                     const payload = { parsedPrev, parsedIn: validIn, parsedOut: validOut, parsedEnd, periodStr, targetDateStrFromData };
-                    if (warnings.length > 0) { setConfirmModal({ isOpen: true, warnings, payload }); setIsProcessing(false); } 
-                    else { executeAnalysis(payload); }
-                } catch (err) { setAlertMsg('데이터 분석 중 오류가 발생했습니다.'); console.error(err); setIsProcessing(false); }
-            }, [mappings, executeAnalysis, setAlertMsg, setConfirmModal, setIsProcessing]);
+                    // 자동 분석 흐름에서는 기간 경고 팝업을 띄우지 않고 즉시 실행한다.
+                    // 필수 컬럼 누락/파싱 실패 같은 실제 오류만 알림으로 처리한다.
+                    executeAnalysis(payload);
+                } catch (err) { setProductData([]); setSubstHistory([]); setAckMultiCodes(new Set()); setAlertMsg('데이터 분석 중 오류가 발생했습니다.'); console.error(err); setIsProcessing(false); }
+            }, [mappings, executeAnalysis, setAlertMsg, setConfirmModal, setIsProcessing, setProductData, setSubstHistory, setAckMultiCodes]);
 
             const runCostExtraction = useCallback(async (filesObj) => {
                 setIsProcessing(true);
@@ -1009,7 +1303,9 @@
                         const code = String(item.코드 || 'NO_CODE');
                         let origPrice = parseNumber(item._raw?.['매입단가(원가)'] !== undefined ? item._raw['매입단가(원가)'] : item.단가);
                         let actualQty = parseNumber(item.수량);
-                        if (item._raw?.['기말실사(이월수량)'] !== undefined) actualQty = parseNumber(item._raw['기말실사(이월수량)']);
+                        if (hasStockSummaryColumns(item)) {
+                            actualQty = getStockSummaryValues(item, actualQty).remain;
+                        } else if (item._raw?.['기말실사(이월수량)'] !== undefined) actualQty = parseNumber(item._raw['기말실사(이월수량)']);
                         else if (item._raw?.['기말실사'] !== undefined) actualQty = parseNumber(item._raw['기말실사']);
 
                         if (actualQty <= 0) return;
@@ -1345,7 +1641,7 @@
                             </div>
                             <div className="flex items-center justify-end shrink-0 pl-3 border-l border-slate-200">
                                 <span className="text-slate-400 font-semibold text-[10px] mr-1">₩</span>
-                                <input id={`price-input-${idx}`} type="number" className={`${cellInputBase} w-[70px] font-bold ${item.단가 === 0 ? 'border-rose-300 bg-rose-50 text-rose-600' : 'text-slate-800'}`} value={localPrice} onChange={handlePriceChange} onClick={(e) => e.stopPropagation()} onFocus={e => e.target.select()} onKeyDown={(e) => handleKd(e, 'price-input')} placeholder="0" />
+                                <input id={`price-input-${idx}`} data-role="price-input" type="number" className={`${cellInputBase} w-[70px] font-bold ${item.단가 === 0 ? 'border-rose-300 bg-rose-50 text-rose-600' : 'text-slate-800'}`} value={localPrice} onChange={handlePriceChange} onClick={(e) => e.stopPropagation()} onFocus={e => e.target.select()} onKeyDown={(e) => handleKd(e, 'price-input')} placeholder="0" />
                             </div>
                         </div>
                     </td>
@@ -1358,9 +1654,12 @@
                     <td className={`py-2 px-2 text-right border-r border-slate-100 ${topBorderClass}`}>
                         <input id={`base-out-${idx}`} type="number" className={`${cellInputBase} font-bold ${totalOut > 0 ? 'text-rose-600' : 'text-slate-400'}`} value={localOut} onChange={handleOutChange} onFocus={e => e.target.select()} onKeyDown={(e) => handleKd(e, 'base-out')} onWheel={e => e.target.blur()} placeholder="0" />
                     </td>
+                    <td className={`py-2 px-2 text-right border-r border-slate-100 bg-slate-50/70 ${topBorderClass}`}>
+                        <span className={`text-[13px] font-extrabold ${item.전산잔량 < 0 ? 'text-rose-600' : 'text-slate-800'}`}>{formatMoney(item.전산잔량)}</span>
+                    </td>
                     <td className={`py-2 px-2 text-right border-r border-slate-100 ${isLinked ? 'bg-blue-50' : ''} relative ${topBorderClass}`}>
                         {isLinked && <div className="absolute -top-6 right-0 bg-slate-800 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-md whitespace-nowrap animate-bounce">조정 대상</div>}
-                        <input id={`actual-input-${idx}`} type="number" value={localActual} onChange={handleActualChange} onClick={() => onFocusInput(item.batchKey, idx)} onFocus={(e) => { e.target.select(); onFocusInput(item.batchKey, idx); }} onKeyDown={(e) => handleKd(e, 'actual-input')} onWheel={e => e.target.blur()} placeholder={item.전산잔량} className={`w-full text-right bg-white border ${isLinked ? 'border-blue-500 ring-1 ring-blue-500 text-blue-900' : 'border-slate-300 text-slate-800 hover:border-slate-400'} ${isNegativeActual ? 'bg-rose-50 border-rose-400 text-rose-700 font-bold' : 'font-semibold'} rounded text-[13px] px-1.5 py-1 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-sm transition-all cursor-pointer`} />
+                        <input id={`actual-input-${idx}`} data-role="actual-input" type="number" value={localActual} onChange={handleActualChange} onClick={() => onFocusInput(item.batchKey, idx)} onFocus={(e) => { e.target.select(); onFocusInput(item.batchKey, idx); }} onKeyDown={(e) => handleKd(e, 'actual-input')} onWheel={e => e.target.blur()} placeholder={item.전산잔량} className={`w-full text-right bg-white border ${isLinked ? 'border-blue-500 ring-1 ring-blue-500 text-blue-900' : 'border-slate-300 text-slate-800 hover:border-slate-400'} ${isNegativeActual ? 'bg-rose-50 border-rose-400 text-rose-700 font-bold' : 'font-semibold'} rounded text-[13px] px-1.5 py-1 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-sm transition-all cursor-pointer`} />
                     </td>
                     <td className={`py-2 px-2 text-right border-r border-slate-100 ${topBorderClass}`}>
                         {item.로스 !== 0 && <div className="flex flex-col items-end justify-center mb-0.5"><span className={`text-[12px] font-bold ${item.로스 < 0 ? 'text-rose-600' : 'text-blue-600'}`}>{item.로스 > 0 ? '+' : ''}{formatMoney(item.로스)}</span></div>}
@@ -1421,10 +1720,15 @@
             );
         }, (prevProps, nextProps) => prevProps.item === nextProps.item && prevProps.isLinked === nextProps.isLinked && prevProps.idx === nextProps.idx && prevProps.isActiveMulti === nextProps.isActiveMulti && prevProps.isMultiGroupItem === nextProps.isMultiGroupItem && prevProps.targetDateStr === nextProps.targetDateStr && prevProps.internalLotMapping === nextProps.internalLotMapping && prevProps.isGroupStart === nextProps.isGroupStart && prevProps.isNewCategory === nextProps.isNewCategory);
 
-        const FileBox = React.memo(({ title, type, icon, files, setFiles, autoAssignFiles, isCompact }) => {
+        const FileBox = React.memo(({ title, type, icon, files, setFiles, autoAssignFiles, onSingleStockFile, isCompact }) => {
             const inputRef = useRef(null); const [isDragging, setIsDragging] = useState(false);
-            const handleBoxDrop = (e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); const droppedFiles = Array.from(e.dataTransfer.files); if (droppedFiles.length > 1) autoAssignFiles(droppedFiles); else if (droppedFiles.length === 1) setFiles(prev => ({ ...prev, [type]: droppedFiles[0] })); if (document.activeElement) document.activeElement.blur(); window.focus(); };
-            const handleOnChange = (e) => { const selectedFiles = Array.from(e.target.files); if (selectedFiles.length > 1) autoAssignFiles(selectedFiles); else if (selectedFiles.length === 1) setFiles(prev => ({ ...prev, [type]: selectedFiles[0] })); e.target.value = ''; e.target.blur(); if (document.activeElement) document.activeElement.blur(); window.focus(); };
+            const applySingleFile = (file) => {
+                // 1번 재고/기초 슬롯에 단일 파일을 올리면 기존 슬롯과 분석 상태를 비우고 즉시 새 파일 기준으로 자동 분석한다.
+                if (type === 'prev' && onSingleStockFile) onSingleStockFile(file);
+                else setFiles(prev => ({ ...prev, [type]: file }));
+            };
+            const handleBoxDrop = (e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); const droppedFiles = Array.from(e.dataTransfer.files); if (droppedFiles.length > 1) autoAssignFiles(droppedFiles); else if (droppedFiles.length === 1) applySingleFile(droppedFiles[0]); if (document.activeElement) document.activeElement.blur(); window.focus(); };
+            const handleOnChange = (e) => { const selectedFiles = Array.from(e.target.files); if (selectedFiles.length > 1) autoAssignFiles(selectedFiles); else if (selectedFiles.length === 1) applySingleFile(selectedFiles[0]); e.target.value = ''; e.target.blur(); if (document.activeElement) document.activeElement.blur(); window.focus(); };
 
             if (isCompact) {
                 return (
@@ -1449,6 +1753,9 @@
             const [appStep, setAppStep] = useState('closing'); 
             const [files, setFiles] = useState({ prev: null, in: null, out: null, end: null });
             const [filters, setFilters] = useState({ issuesOnly: false, excludeZeroActual: false, search: '', reviewType: null });
+            const [sortMode, setSortMode] = useState('default');
+            const [categoryPrefixFilter, setCategoryPrefixFilter] = useState('all');
+            const [unitFilter, setUnitFilter] = useState({ box: true, ea: true, split: false });
             const [activeIssueMode, setActiveIssueMode] = useState(null); 
             const [activeMultiCode, setActiveMultiCode] = useState(null);
             const [isProcessing, setIsProcessing] = useState(false);
@@ -1510,7 +1817,7 @@
                 if (productData.length > 0) return `분석완료 · 생성 ${productData.length.toLocaleString()}행 · ${uploadedText}`;
                 if (isCostExtractionMode) return `원가추출 준비완료 · ${uploadedText}`;
                 if (files.end && !files.in && !files.out && !files.prev) return `마감복원 준비완료 · ${uploadedText}`;
-                if (files.in || files.out || files.prev || files.end) return `업로드 완료 · ${uploadedText} · 분석 실행 대기`;
+                if (files.in || files.out || files.prev || files.end) return `업로드 완료 · ${uploadedText} · 자동 분석 준비`;
                 return "파일을 업로드하세요";
             }, [files, isProcessing, isCostExtractionMode, productData.length]);
 
@@ -1578,10 +1885,41 @@
 
             const handleFocusInput = useCallback((key, idx) => { focusedInputRef.current = { key, idx }; }, []);
 
+            const clearAnalysisStateForNewFile = useCallback(() => {
+                resetEngine();
+                setLinkSourceKey(null);
+                setActiveIssueMode(null);
+                setActiveMultiCode(null);
+                currentIssueIdxRef.current = -1;
+                focusedInputRef.current = { key: null, idx: -1 };
+                setFilters({ issuesOnly: false, excludeZeroActual: false, search: '', reviewType: null });
+                setSearchInputVal('');
+                setError('');
+                setConfirmModal({ isOpen: false, warnings: [], payload: null });
+                setAlertMsg('');
+                setAppStep('upload');
+            }, [resetEngine]);
+
+            const handleSingleStockFile = useCallback((file) => {
+                // 단일 재고파일 업로드 모드: 이전 파일 슬롯을 모두 비우고 새 파일만 기초/재고로 등록한 뒤 즉시 분석한다.
+                const nextFiles = { prev: file, in: null, out: null, end: null };
+                clearAnalysisStateForNewFile();
+                setFiles(nextFiles);
+                setTimeout(() => latestHandlers.current.runAnalysis(nextFiles), 0);
+            }, [clearAnalysisStateForNewFile]);
+
             const autoAssignFiles = useCallback((fileArray) => {
+                const arr = Array.from(fileArray || []);
+                // 단일 재고파일은 즉시 초기화 + 자동 분석한다.
+                if (arr.length === 1) {
+                    const name = arr[0].name.toLowerCase();
+                    const isTradeFile = name.includes('구매') || name.includes('매입') || name.includes('입고') || name.includes('판매') || name.includes('매출') || name.includes('출고');
+                    const isEndFile = name.includes('기말') || name.includes('실사') || name.includes('마감');
+                    if (!isTradeFile && !isEndFile) { handleSingleStockFile(arr[0]); return; }
+                }
                 setFiles(prev => {
                     let updated = { ...prev }; const stockCandidates = [];
-                    fileArray.forEach(file => { const name = file.name.toLowerCase(); if (name.includes('구매') || name.includes('매입') || name.includes('입고')) updated.in = file; else if (name.includes('판매') || name.includes('매출') || name.includes('출고')) updated.out = file; else stockCandidates.push(file); });
+                    arr.forEach(file => { const name = file.name.toLowerCase(); if (name.includes('구매') || name.includes('매입') || name.includes('입고')) updated.in = file; else if (name.includes('판매') || name.includes('매출') || name.includes('출고')) updated.out = file; else stockCandidates.push(file); });
                     if (stockCandidates.length > 0) {
                         stockCandidates.sort((a, b) => extractDateFromName(a.name) - extractDateFromName(b.name));
                         if (stockCandidates.length === 2) { updated.prev = stockCandidates[0]; updated.end = stockCandidates[1]; } 
@@ -1589,7 +1927,7 @@
                     }
                     return updated;
                 });
-            }, []);
+            }, [handleSingleStockFile]);
 
             const handleGlobalDrop = useCallback((e) => { e.preventDefault(); setIsGlobalDragging(false); const droppedFiles = Array.from(e.dataTransfer.files); if (droppedFiles.length > 0) autoAssignFiles(droppedFiles); window.focus(); }, [autoAssignFiles]);
 
@@ -1667,7 +2005,11 @@
 
             const handleIssueJump = useCallback((type, direction = 'next', fromCardClick = false, acknowledgeCurrent = direction === 'next' && !fromCardClick) => {
                 setActiveIssueMode(type);
+                // 이슈 점프는 '대상 셀로 바로 이동'이 목적이므로, 검색/카테고리/단위 필터 때문에 대상 행이 숨겨지지 않게 화면 조건을 푼다.
                 setFilters(prev => ({ ...prev, search: '', issuesOnly: false, excludeZeroActual: false, reviewType: null }));
+                setSearchInputVal('');
+                setCategoryPrefixFilter('all');
+                setUnitFilter({ box: true, ea: true, split: true });
 
                 const activeEl = document.activeElement;
                 let currentDataIndex = -1;
@@ -1716,8 +2058,9 @@
                     setTimeout(() => {
                         const row = document.querySelector(`tr[data-batch="${targetItem.batchKey}"]`);
                         if (row) {
-                            const input = document.getElementById(type === 'missingPrice' ? `price-input-${targetItem.index}` : `actual-input-${targetItem.index}`);
-                            if (input) { input.focus({ preventScroll: true }); input.select(); }
+                            // 정렬/필터 적용 후 화면상의 idx와 원본 productData index가 달라질 수 있으므로,
+                            // id(actual-input-idx)에 의존하지 않고 해당 행 안의 입력셀을 직접 찾는다.
+                            const input = row.querySelector(type === 'missingPrice' ? 'input[data-role="price-input"]' : 'input[data-role="actual-input"]');
                             const container = document.getElementById('main-scroll-container');
                             if (container) {
                                 const cRect = container.getBoundingClientRect();
@@ -1726,13 +2069,16 @@
                             } else {
                                 row.scrollIntoView({ behavior: 'smooth', block: 'center' });
                             }
+                            if (input) {
+                                setTimeout(() => { input.focus({ preventScroll: true }); input.select(); }, 180);
+                            }
                             const colorClass = type === 'missingPrice' ? 'bg-rose-50' : (type === 'multiPrice' ? 'bg-blue-50' : 'bg-orange-50');
                             row.classList.add(colorClass);
                             setTimeout(() => row.classList.remove(colorClass), 1500);
                         }
-                    }, 150);
+                    }, 220);
                 }
-            }, [productData, getIssueTargetItems, acknowledgeIssueItem, setAlertMsg]);
+            }, [productData, getIssueTargetItems, acknowledgeIssueItem, setAlertMsg, setSearchInputVal, setCategoryPrefixFilter, setUnitFilter]);
 
             const handleAcknowledgeAll = useCallback((type) => {
                 setProductData(prev => {
@@ -1790,8 +2136,27 @@
                     return { '결산일자': targetDateStr, '매입처(Lot)': safeStr(item.거래처, '미지정'), '상품코드': item.코드 === 'NO_CODE' ? '' : item.코드, '상품명(규격)': item.품명, '기초수량': item.기초, '입고수량': item.입고, '출고량': item.출고, '기말실사(이월수량)': qty, '매입단가(원가)': price, '기말재고액(자산가치)': qty * price, '로스/조정수량': adjust, '이슈/결과': [...displayIssues, ...vendorStrs].join(', '), '수기메모': item.메모 || '' };
                 });
 
-                const aggregated = {}; productData.forEach(item => { const actualCode = (!item.코드 || item.코드 === 'NO_CODE' || item.코드 === '-') ? '' : item.코드; const key = actualCode + '|' + item.품명; if (!aggregated[key]) aggregated[key] = { 코드: actualCode, 품명: item.품명, 수량: 0 }; aggregated[key].수량 += (item.실사 === '' || item.실사 === null ? 0 : safeNum(item.실사)); });
-                const exportData2 = []; Object.keys(aggregated).forEach(key => { if (aggregated[key].수량 !== 0) exportData2.push({ '일자': targetDateStr, '순번': '', '담당자': '', '창고': '01', '상품코드': aggregated[key].코드, '상품명(규격)': aggregated[key].품명, '수량': aggregated[key].수량, '적요': '' }); });
+                // v8.28: 실사양식은 일부 입력된 실사값만 내보내는 집계표가 아니라 전체 실사 대상 목록이다.
+                // 기존 로직은 상품코드+품명으로 집계한 뒤 수량이 0인 행을 제외해서, 실사값이 비어 있거나 0인 품목이
+                // 실사양식 시트에서 누락되는 문제가 있었다. 마감 시트는 전체가 나오는데 실사양식만 일부만 나오는 원인이다.
+                // 수정: productData 전체를 품목코드순 흐름 그대로 내보내고, 실사값이 실제로 입력된 경우에만 수량에 표시한다.
+                // 실사값이 비어 있으면 빈칸으로 두어 현장에서 일부 수정/입력 후 재업로드할 수 있게 한다.
+                const exportData2 = productData
+                    .filter(item => item.품명 || item.코드)
+                    .map((item, idx) => {
+                        const actualCode = (!item.코드 || item.코드 === 'NO_CODE' || item.코드 === '-') ? '' : item.코드;
+                        const hasActual = !(item.실사 === '' || item.실사 === null || item.실사 === undefined);
+                        return {
+                            '일자': targetDateStr,
+                            '순번': idx + 1,
+                            '담당자': '',
+                            '창고': '01',
+                            '상품코드': actualCode,
+                            '상품명(규격)': item.품명,
+                            '수량': hasActual ? safeNum(item.실사) : '',
+                            '적요': ''
+                        };
+                    });
 
                 const exportData3 = []; const vendorProductAggregated = {}; const productActualQtyMap = {};
                 productData.forEach(item => {
@@ -1843,7 +2208,7 @@
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a'); a.href = url; a.download = `수불마감_${exportFileNameDate}.xlsx`;
                     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-                    // 정상 엑셀 다운로드 완료 팝업은 작업 흐름을 방해하므로 표시하지 않는다.
+                    // 정상 엑셀 완료 팝업은 작업 흐름을 방해하므로 표시하지 않는다.
                     // 다운로드 결과는 브라우저 다운로드 동작과 System.IO 상태 영역으로 확인한다.
                 } catch (err) { console.error('엑셀 생성 중 오류:', err); setAlertMsg("엑셀 파일 생성 중 오류가 발생했습니다."); }
             }, [productData, analysisPeriod, targetDateStr, closingStats]);
@@ -1889,14 +2254,14 @@
             }, [linkSourceKey, appStep, isProcessing, files, guideModalOpen]);
 
             const filteredProductData = useMemo(() => {
-                let data = productData;
+                let data = productData.map((p, i) => ({ ...p, _displayOrder: i }));
                 if (filters.reviewType === 'loss') data = data.filter(p => p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0) || (p.이슈 && p.이슈.some(i => i.includes('수량변동') || i.includes('신규추가') || i.includes('삭제됨'))));
                 else if (filters.reviewType === 'missingPrice') data = data.filter(p => (p.isDummy && p.단가 === 0) || (p.이슈 && p.이슈.some(i => i.includes('단가변경') || i.includes('단가없음'))));
                 else if (filters.reviewType === 'multiPrice') data = data.filter(p => multiPriceCodes.includes(p.코드) || (p.이슈 && p.이슈.some(i => i.includes('매치변경'))));
                 if (filters.search) {
                     const normalizeText = (v) => String(v ?? '')
                         .toLowerCase()
-                        .replace(/[\s_\-\/\\()[\]{}.,:;|+*~!@#$%^&="'`<>?]/g, '');
+                        .replace(/[^0-9a-zA-Z가-힣ㄱ-ㅎㅏ-ㅣ]/g, '');
                     const buildDateSearchParts = (dateVal) => {
                         const raw = String(dateVal ?? '');
                         const compact = raw.replace(/\D/g, '');
@@ -1913,9 +2278,11 @@
                         const outVendorText = Object.keys(d.출고내역 || {}).join(' ');
                         const outVendorDisplayText = Object.values(d.출고내역 || {}).map(v => v?.displayVendor || '').join(' ');
                         const dateParts = buildDateSearchParts(d.일자).join(' ');
+                        const raw = d._raw || {};
                         return [
                             d.코드, d.품명, d.거래처, d.일자, dateParts,
                             d.단가, d.기초, d.입고, d.출고, d.전산잔량, d.실사, d.로스,
+                            raw['구매처'], raw['매입처'], raw['공급사'], raw['매입처매칭'], raw['매입처(Lot)'], raw['매입처(거래처)'], raw['원매입처'], raw['적재위치'],
                             issueText, d.메모, outVendorText, outVendorDisplayText
                         ].join(' ');
                     };
@@ -1929,57 +2296,225 @@
                 }
                 if (filters.issuesOnly) data = data.filter(d => d.이슈 && d.이슈.length > 0);
                 if (filters.excludeZeroActual) data = data.filter(d => { const act = d.실사 === '' || d.실사 === null || d.실사 === undefined ? 0 : Number(d.실사); return act !== 0; });
+
+                // 기본 카테고리 필터: 품목코드 앞 2자리 기준(10/20/30/40/50)
+                if (categoryPrefixFilter !== 'all') {
+                    data = data.filter(d => getItemCodePrefix2(d) === categoryPrefixFilter);
+                }
+
+                // 단위 필터 정책
+                // 기본값은 BOX + EA 노출이다. EA도 기본 구매 단위 상품이 있으므로 재고실사 대상에 포함한다.
+                // 소분은 별도 단위로 분리하며, 소분 버튼이 꺼져 있어도 잔량/오차가 마이너스인 소분 상품은 강제 노출한다.
+                data = data.filter(d => {
+                    const unit = getUnitType(d);
+                    if (unit === 'BOX') return unitFilter.box;
+                    if (unit === 'EA') return unitFilter.ea;
+                    if (unit === 'SPLIT') return unitFilter.split || hasNegativeBalance(d);
+                    // 기타/단위없음은 모든 단위 버튼이 켜진 전체 보기 상태에서만 노출한다.
+                    return unitFilter.box && unitFilter.ea && unitFilter.split;
+                });
+
+                if (sortMode === 'category') {
+                    // 모든 정렬은 1차 정렬필터(카테고리/구매처/적재위치) 적용 후 품목코드순으로 정렬한다.
+                    // 기본정렬은 기존 표시 순서를 유지한다.
+                    data = [...data].sort((a, b) =>
+                        getCategorySortKey(a).localeCompare(getCategorySortKey(b), 'ko') ||
+                        normalizeCodeForSort(a.코드).localeCompare(normalizeCodeForSort(b.코드)) ||
+                        a._displayOrder - b._displayOrder
+                    );
+                } else if (sortMode === 'vendor') {
+                    data = [...data].sort((a, b) =>
+                        normalizeSortText(getPurchaseVendor(a)).localeCompare(normalizeSortText(getPurchaseVendor(b)), 'ko') ||
+                        normalizeCodeForSort(a.코드).localeCompare(normalizeCodeForSort(b.코드)) ||
+                        a._displayOrder - b._displayOrder
+                    );
+                } else if (sortMode === 'location') {
+                    data = [...data].sort((a, b) =>
+                        normalizeSortText(getStorageLocation(a)).localeCompare(normalizeSortText(getStorageLocation(b)), 'ko') ||
+                        normalizeCodeForSort(a.코드).localeCompare(normalizeCodeForSort(b.코드)) ||
+                        a._displayOrder - b._displayOrder
+                    );
+                }
                 return data;
-            }, [productData, filters, multiPriceCodes]);
+            }, [productData, filters, multiPriceCodes, sortMode, unitFilter, categoryPrefixFilter]);
+
+            const handlePrintCurrentTable = useCallback(() => {
+                if (!filteredProductData.length) { setAlertMsg('출력할 테이블 데이터가 없습니다.'); return; }
+                const sortLabelMap = { default: '기본정렬', category: '카테고리순', vendor: '구매처순', location: '적재위치순' };
+                const escapeHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+                const itemNameSpec = (item) => {
+                    const name = safeStr(item.품명, '');
+                    const spec = safeStr(item.규격 || item._raw?.['규격'], '');
+                    if (!spec || name.includes(spec)) return name;
+                    // 출력물은 코드 삭제, 품명+규격을 1열로 압축 표시한다.
+                    return `${name}${spec}`;
+                };
+
+                // 고정 행 수로 페이지를 강제 분리하면 마지막 영역이 크게 비는 문제가 발생한다.
+                // 따라서 브라우저 인쇄 엔진이 A4 세로 페이지 높이에 맞춰 자연스럽게 페이지를 나누도록
+                // 하나의 연속 테이블로 출력한다. 약 40~50건 기준으로 들어가되 가독성을 우선한다.
+                let globalIndex = 0;
+                let prevGroup = null;
+                const rows = filteredProductData.map(item => {
+                    const group = getSortGroupKey(item, sortMode);
+                    const groupLabel = getSortGroupLabel(item, sortMode);
+                    let divider = '';
+                    if (sortMode !== 'default' && group !== prevGroup) {
+                        divider = `<tr class="divider"><td colspan="8">${escapeHtml(groupLabel || '미분류')}</td></tr>`;
+                    }
+                    prevGroup = group;
+                    globalIndex += 1;
+                    const issues = [...(item.이슈 || []), item.메모 ? `메모: ${item.메모}` : ''].filter(Boolean).join(', ');
+                    const bandClass = globalIndex % 5 === 0 ? ' band-5' : '';
+                    const hasPrintedActual = item.실사입력여부 === true || item._manualActualInput === true;
+                    const actualText = hasPrintedActual && item.실사 !== null && item.실사 !== undefined && item.실사 !== '' ? formatMoney(item.실사) : '';
+                    return `${divider}<tr class="data-row${bandClass}">
+                        <td class="item-name">${escapeHtml(itemNameSpec(item))}</td>
+                        <td class="num qty strong">${formatMoney(item.전산잔량)}</td>
+                        <td class="num qty actual">${actualText}</td>
+                        <td class="num qty">${formatMoney(item.기초)}</td>
+                        <td class="num qty">${formatMoney(item.입고)}</td>
+                        <td class="num qty">${formatMoney(item.출고)}</td>
+                        <td class="num price">${formatMoney(item.단가)}</td>
+                        <td class="memo">${escapeHtml(issues)}</td>
+                    </tr>`;
+                }).join('');
+
+                const printTable = `<section class="print-page">
+                    <h1>ONEAPP DataOps 재고실사표</h1>
+                    <div class="meta">
+                        <span>출력일시: ${escapeHtml(new Date().toLocaleString('ko-KR'))}</span>
+                        <span>정렬기준: ${escapeHtml(sortLabelMap[sortMode] || '기본정렬')}</span>
+                        <span>카테고리: ${escapeHtml(categoryPrefixFilter === 'all' ? '전체' : `${categoryPrefixFilter} ${BASE_CATEGORY_MAP[categoryPrefixFilter] || ''}`)}</span>
+                        <span>BOX: ${unitFilter.box ? '선택' : '해제'}</span>
+                        <span>EA: ${unitFilter.ea ? '선택' : '해제'}</span>
+                        <span>소분: ${unitFilter.split ? '선택' : '마이너스만'}</span>
+                        <span>검색어: ${escapeHtml(filters.search || '-')}</span>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th class="item-name">품명&규격</th>
+                                <th class="qty">잔량</th>
+                                <th class="qty actual">실사</th>
+                                <th class="qty">재고</th>
+                                <th class="qty">입고</th>
+                                <th class="qty">출고</th>
+                                <th class="price">입고가</th>
+                                <th class="memo">이슈/메모</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </section>`;
+
+                const printHtml = `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>ONEAPP DataOps 재고실사표</title><style>
+                    @page { size: A4 portrait; margin: 7mm 7mm 8mm 7mm; }
+                    * { box-sizing: border-box; }
+                    body { font-family: Pretendard, Arial, sans-serif; color: #111827; margin: 0; }
+                    h1 { font-size: 20px; margin: 0 0 6px; font-weight: 900; }
+                    .meta { display: flex; flex-wrap: wrap; gap: 5px 11px; font-size: 12px; color: #475569; margin-bottom: 7px; }
+                    .page-subtitle { font-size: 12px; font-weight: 900; margin-bottom: 5px; color: #334155; }
+                    table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13.2px; }
+                    th, td { border: 1px solid #111827; padding: 3.8px 4px; height: 23px; line-height: 1.22; vertical-align: middle; overflow: hidden; }
+                    th { background: #f1f5f9; font-weight: 900; text-align: center; }
+                    td { word-break: keep-all; white-space: nowrap; }
+                    .item-name { width: 44%; text-align: left; }
+                    .qty { width: 6.7%; text-align: right; }
+                    .actual { background: #fff1f2; }
+                    .price { width: 9.2%; text-align: right; }
+                    .memo { width: 12.6%; text-align: left; white-space: normal; word-break: break-all; }
+                    .num { text-align: right; }
+                    .strong { font-weight: 900; }
+                    .band-5 td { background: #eef2f7; }
+                    .band-5 td.actual { background: #fff1f2; }
+                    .divider td { height: 21px; background: #dbe3ee; color: #111827; font-weight: 900; padding: 3px 6px; border-color: #111827; text-align: left; }
+                    .print-page { width: 100%; }
+                    @media print {
+                        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                        thead { display: table-header-group; }
+                        tfoot { display: table-footer-group; }
+                        tr { page-break-inside: avoid; page-break-after: auto; }
+                    }
+                </style></head><body>
+                    ${printTable}
+                    <script>window.onload = () => { window.focus(); window.print(); }<\/script>
+                </body></html>`;
+                const printWindow = window.open('', '_blank');
+                if (!printWindow) { setAlertMsg('팝업이 차단되어 출력창을 열 수 없습니다. 브라우저 팝업 차단을 해제해주세요.'); return; }
+                printWindow.document.open();
+                printWindow.document.write(printHtml);
+                printWindow.document.close();
+            }, [filteredProductData, sortMode, unitFilter, filters.search, categoryPrefixFilter, setAlertMsg]);
 
             return (
                 <div className="h-screen flex flex-col w-full relative bg-[#f8fafc]" onDragOver={(e) => { e.preventDefault(); setIsGlobalDragging(true); }} onDragLeave={(e) => { e.preventDefault(); setIsGlobalDragging(false); }} onDrop={handleGlobalDrop}>
                     
                     <header className="shrink-0 bg-white border-b border-slate-200 w-full z-[60] relative shadow-sm">
-                        <div className="max-w-7xl mx-auto px-4 md:px-6 py-3 flex justify-between items-center">
-                            <div className="flex flex-col md:flex-row md:items-center gap-4">
-                                <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition" onClick={() => document.getElementById('main-scroll-container')?.scrollTo({top:0, behavior:'smooth'})} title="클릭시 최상단 이동">
+                        <div className="max-w-7xl mx-auto px-3 md:px-4 py-2 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-1.5 shrink-0 min-w-0">
+                                <h1 className="text-xl md:text-xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition" onClick={() => document.getElementById('main-scroll-container')?.scrollTo({top:0, behavior:'smooth'})} title="클릭시 최상단 이동">
                                     <span className="text-blue-600 mr-2">ONEAPP</span> DataOps
-                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">v8.01 Engine</span>
                                 </h1>
                             </div>
 
-                            <div className="flex items-center gap-2 shrink-0">
+                            <div className="flex items-center gap-1.5 shrink-0 min-w-0 whitespace-nowrap">
                                 {productData.length > 0 && (
                                     <>
-                                        {/* 이슈 가이드 F7 (통합된 단일 버튼) */}
-                                        <button onClick={() => setGuideModalOpen(true)} className="px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1">
-                                            이슈 가이드
-                                            <span className="ml-1.5 px-1 py-[1px] rounded text-[9px] font-mono border-b-2 shadow-sm font-black bg-slate-100 border-slate-300 text-slate-500">F7</span>
+                                        {/* 재고 테이블 보기/정렬/출력 패치 v8.02 */}
+                                        <div className="hidden lg:flex items-center gap-0.5 mr-0 bg-slate-100 border border-slate-200 rounded-lg p-0.5">
+                                            {[['default','기본정렬'], ['category','카테고리순'], ['vendor','구매처순'], ['location','적재위치순']].map(([mode, label]) => (
+                                                <button key={mode} onClick={() => setSortMode(mode)} className={`px-2 py-1 rounded text-[11px] font-black transition ${sortMode === mode ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}>{label}</button>
+                                            ))}
+                                        </div>
+                                        <div className="hidden lg:flex items-center gap-0.5 mr-0 bg-slate-100 border border-slate-200 rounded-lg p-0.5">
+                                            <button onClick={() => setCategoryPrefixFilter('all')} title="전체 카테고리" className={`px-2 py-1 rounded text-[11px] font-black border transition ${categoryPrefixFilter === 'all' ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-white text-slate-500 border-slate-200'}`}>전체</button>
+                                            {BASE_CATEGORY_CODES.map(code => (
+                                                <button key={code} onClick={() => setCategoryPrefixFilter(code)} title={`${code} ${BASE_CATEGORY_MAP[code]}`} className={`px-2 py-1 rounded text-[11px] font-black border transition ${categoryPrefixFilter === code ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-white text-slate-500 border-slate-200'}`}>{code}</button>
+                                            ))}
+                                        </div>
+                                        <div className="hidden md:flex items-center gap-0.5 mr-0 bg-slate-100 border border-slate-200 rounded-lg p-0.5">
+                                            <button onClick={() => setUnitFilter(f => ({...f, box: !f.box}))} className={`px-2 py-1 rounded text-[11px] font-black border transition ${unitFilter.box ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-slate-500 border-slate-200'}`}>BOX</button>
+                                            <button onClick={() => setUnitFilter(f => ({...f, ea: !f.ea}))} className={`px-2 py-1 rounded text-[11px] font-black border transition ${unitFilter.ea ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-slate-500 border-slate-200'}`}>EA</button>
+                                            <button onClick={() => setUnitFilter(f => ({...f, split: !f.split}))} title="소분 OFF 상태에서도 마이너스 소분은 강제 노출됩니다" className={`px-2 py-1 rounded text-[11px] font-black border transition ${unitFilter.split ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-slate-500 border-slate-200'}`}>소분</button>
+                                        </div>
+                                        <button onClick={handlePrintCurrentTable} className="px-2.5 py-1.5 bg-white text-slate-700 hover:bg-slate-50 rounded text-[12px] font-bold shadow-sm transition flex items-center border border-slate-300 hidden md:flex">
+                                            <i className="fas fa-print mr-1 text-slate-600"></i>출력
+                                        </button>
+
+                                        {/* 이슈 F7 (통합된 단일 버튼) */}
+                                        <button onClick={() => setGuideModalOpen(true)} className="px-2.5 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-0">
+                                            이슈
+                                            <span className="ml-1 px-1 py-[1px] rounded text-[9px] font-mono border-b-2 shadow-sm font-black bg-slate-100 border-slate-300 text-slate-500">F7</span>
                                         </button>
 
                                         {/* 실사 0 제외 */}
-                                        <button onClick={() => setFilters(f => ({...f, excludeZeroActual: !f.excludeZeroActual}))} className={`px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border ${filters.excludeZeroActual ? 'bg-blue-600 text-white border-blue-700 shadow-sm' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}>
+                                        <button onClick={() => setFilters(f => ({...f, excludeZeroActual: !f.excludeZeroActual}))} className={`px-2.5 py-1.5 rounded text-[12px] font-bold transition flex items-center border ${filters.excludeZeroActual ? 'bg-blue-600 text-white border-blue-700 shadow-sm' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}>
                                             실사 0 제외
-                                            <span className={`ml-1.5 px-1 py-[1px] rounded text-[9px] font-mono border-b-2 shadow-sm font-black ${filters.excludeZeroActual ? 'bg-blue-500 border-blue-800 text-white' : 'bg-slate-100 border-slate-300 text-slate-500'}`}>F8</span>
+                                            <span className={`ml-1 px-1 py-[1px] rounded text-[9px] font-mono border-b-2 shadow-sm font-black ${filters.excludeZeroActual ? 'bg-blue-500 border-blue-800 text-white' : 'bg-slate-100 border-slate-300 text-slate-500'}`}>F8</span>
                                         </button>
                                         
-                                        <div className="w-px h-5 bg-slate-300 mx-1 hidden md:block"></div>
+                                        <div className="w-px h-5 bg-slate-300 mx-0.5 hidden md:block"></div>
                                         
-                                        {/* 엑셀 다운로드 */}
-                                        <button onClick={handleCombinedExport} className="px-3 py-1.5 bg-white text-slate-700 hover:bg-slate-50 rounded text-[12px] font-bold shadow-sm transition flex items-center border border-slate-300 hidden md:flex">
-                                            <i className="fas fa-file-excel mr-1.5 text-emerald-600"></i>엑셀 다운로드
-                                            <span className="ml-1.5 px-1 py-[1px] rounded text-[9px] font-mono border-b-2 border-slate-300 bg-slate-100 text-slate-500 shadow-sm font-black">F9</span>
+                                        {/* 엑셀 */}
+                                        <button onClick={handleCombinedExport} className="px-2.5 py-1.5 bg-white text-slate-700 hover:bg-slate-50 rounded text-[12px] font-bold shadow-sm transition flex items-center border border-slate-300 hidden md:flex">
+                                            <i className="fas fa-file-excel mr-1 text-emerald-600"></i>엑셀
+                                            <span className="ml-1 px-1 py-[1px] rounded text-[9px] font-mono border-b-2 border-slate-300 bg-slate-100 text-slate-500 shadow-sm font-black">F9</span>
                                         </button>
                                     </>
                                 )}
-                                <button onClick={() => setShowSettings(!showSettings)} className="px-3 py-1.5 ml-1 md:ml-2 bg-white border border-slate-300 text-slate-700 rounded text-[12px] font-bold shadow-sm hover:bg-slate-50 transition shrink-0">
-                                    매핑설정
-                                </button>
                                 {(files.prev || files.in || files.out || files.end || productData.length > 0) && (
                                     <button
                                         onClick={handleResetFiles}
                                         title="현재 업로드 파일과 작업 내용을 비우고 새 작업을 시작합니다"
-                                        className="px-3 py-1.5 ml-1 bg-white border border-rose-200 text-rose-600 rounded text-[12px] font-bold shadow-sm hover:bg-rose-50 hover:border-rose-300 transition shrink-0 flex items-center"
+                                        className="px-2.5 py-1.5 ml-0 bg-white border border-rose-200 text-rose-600 rounded text-[12px] font-bold shadow-sm hover:bg-rose-50 hover:border-rose-300 transition shrink-0 flex items-center"
                                     >
-                                        <i className="fas fa-redo-alt mr-1.5"></i>새 작업 시작
+                                        <i className="fas fa-redo-alt mr-1"></i>새작업
                                     </button>
                                 )}
+                                <button onClick={() => setShowSettings(!showSettings)} title="엑셀 컬럼 매핑과 표시 기준을 설정합니다" className="px-2.5 py-1.5 ml-0 bg-white border border-slate-300 text-slate-700 rounded text-[12px] font-bold shadow-sm hover:bg-slate-50 transition shrink-0 flex items-center">
+                                    <i className="fas fa-sliders-h mr-1 text-slate-500"></i>매핑설정
+                                </button>
                             </div>
                         </div>
                     </header>
@@ -2162,13 +2697,13 @@
 
                                             <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-slate-800 border-t border-slate-700 shadow-inner">
                                                 <span className="text-[11px] font-bold text-slate-400 mr-1"><i className="fas fa-file-excel mr-1.5"></i>데이터 소스:</span>
-                                                <FileBox isCompact={true} title="1. 기초" type="prev" icon="fa-history" files={files} setFiles={setFiles} autoAssignFiles={autoAssignFiles} />
+                                                <FileBox isCompact={true} title="1. 기초" type="prev" icon="fa-history" files={files} setFiles={setFiles} autoAssignFiles={autoAssignFiles} onSingleStockFile={handleSingleStockFile} />
                                                 <i className="fas fa-chevron-right text-slate-600 text-[10px]"></i>
-                                                <FileBox isCompact={true} title="2. 매입" type="in" icon="fa-truck-loading" files={files} setFiles={setFiles} autoAssignFiles={autoAssignFiles} />
+                                                <FileBox isCompact={true} title="2. 매입" type="in" icon="fa-truck-loading" files={files} setFiles={setFiles} autoAssignFiles={autoAssignFiles} onSingleStockFile={handleSingleStockFile} />
                                                 <i className="fas fa-chevron-right text-slate-600 text-[10px]"></i>
-                                                <FileBox isCompact={true} title="3. 매출" type="out" icon="fa-receipt" files={files} setFiles={setFiles} autoAssignFiles={autoAssignFiles} />
+                                                <FileBox isCompact={true} title="3. 매출" type="out" icon="fa-receipt" files={files} setFiles={setFiles} autoAssignFiles={autoAssignFiles} onSingleStockFile={handleSingleStockFile} />
                                                 <i className="fas fa-chevron-right text-slate-600 text-[10px]"></i>
-                                                <FileBox isCompact={true} title="4. 실사" type="end" icon="fa-clipboard-check" files={files} setFiles={setFiles} autoAssignFiles={autoAssignFiles} />
+                                                <FileBox isCompact={true} title="4. 실사" type="end" icon="fa-clipboard-check" files={files} setFiles={setFiles} autoAssignFiles={autoAssignFiles} onSingleStockFile={handleSingleStockFile} />
                                                 
                                                 <div className="ml-auto"></div>
                                             </div>
@@ -2340,7 +2875,7 @@
                                                                     <input 
                                                                         id="searchInput"
                                                                         type="text" 
-                                                                        placeholder="품명·코드·거래처·일자·단가·수량·이슈·메모 통합검색 (F3)" 
+                                                                        placeholder="상품명 / 코드 / 구매처 / 거래처 / 적재위치 검색 (F3)" 
                                                                         value={searchInputVal} 
                                                                         onChange={e => setSearchInputVal(e.target.value)} 
                                                                         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.select(); } }}
@@ -2355,6 +2890,7 @@
                                                             <th className="py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]">기초 재고</th>
                                                             <th className="py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]">입고</th>
                                                             <th className="py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]">출고</th>
+                                                            <th className="py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]">잔량</th>
                                                             <th className="py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]">실사 수량</th>
                                                             <th className="py-2.5 px-2 border-r border-slate-200 text-right w-[85px] min-w-[85px]">로스/오차</th>
                                                             
@@ -2386,31 +2922,43 @@
                                                     </thead>
                                                     <tbody className="divide-y divide-slate-100 bg-white">
                                                     {filteredProductData.length === 0 ? (
-                                                        <tr><td colSpan="7" className="p-12 text-center text-slate-400 font-bold bg-slate-50/50"><i className="fas fa-box-open mb-3 text-3xl opacity-50 block"></i>{productData.length === 0 ? "상단 '데이터 소스'에 파일을 업로드하고 [분석 실행]을 눌러주세요." : "조건에 맞는 데이터가 없습니다."}</td></tr>
+                                                        <tr><td colSpan="7" className="p-12 text-center text-slate-400 font-bold bg-slate-50/50"><i className="fas fa-box-open mb-3 text-3xl opacity-50 block"></i>{productData.length === 0 ? "재고파일을 올리면 자동 분석됩니다." : "조건에 맞는 데이터가 없습니다."}</td></tr>
                                                     ) : (
                                                         filteredProductData.map((item, idx) => {
                                                             const isGroupStart = filters.reviewType === 'multiPrice' && idx > 0 && item.코드 !== filteredProductData[idx - 1].코드;
+                                                            const groupKey = getSortGroupKey(item, sortMode);
+                                                            const prevGroupKey = idx > 0 ? getSortGroupKey(filteredProductData[idx - 1], sortMode) : null;
+                                                            const showDivider = sortMode !== 'default' && groupKey !== prevGroupKey;
                                                             
-                                                            // 🌟 품목코드 앞 6자리를 추출하여 카테고리 변경 감지 로직 추가
+                                                            // 기본정렬일 때만 기존 품목코드 앞 6자리 구분선을 유지한다.
                                                             const currCategory = item.코드 && item.코드 !== 'NO_CODE' ? String(item.코드).substring(0, 6) : '';
                                                             const prevCategory = idx > 0 && filteredProductData[idx - 1].코드 && filteredProductData[idx - 1].코드 !== 'NO_CODE' ? String(filteredProductData[idx - 1].코드).substring(0, 6) : currCategory;
-                                                            const isNewCategory = idx > 0 && currCategory !== '' && prevCategory !== '' && currCategory !== prevCategory;
+                                                            const isNewCategory = sortMode === 'default' && idx > 0 && currCategory !== '' && prevCategory !== '' && currCategory !== prevCategory;
 
                                                             return (
-                                                                <ProductRow 
-                                                                    key={item.batchKey} item={item} idx={idx} 
-                                                                    isLinked={linkSourceKey === item.batchKey} 
-                                                                    isActiveMulti={activeMultiCode === item.코드}
-                                                                    isMultiGroupItem={multiPriceCodes.includes(item.코드)} 
-                                                                    targetDateStr={targetDateStr}
-                                                                    onStockChange={handleManualStockChange} onSpacebar={handleSpacebarLink} 
-                                                                    onFocusInput={handleFocusInput} onBaseDataChange={handleBaseDataChange}
-                                                                    onOpenMemo={(key, text) => setMemoModal({ isOpen: true, batchKey: key, text })}
-                                                                    onSalesMove={handleChipDropRequest}
-                                                                    internalLotMapping={mappings.internalLot}
-                                                                    isGroupStart={isGroupStart}
-                                                                    isNewCategory={isNewCategory}
-                                                                />
+                                                                <React.Fragment key={item.batchKey}>
+                                                                    {showDivider && (
+                                                                        <tr className="bg-slate-800 text-white">
+                                                                            <td colSpan="7" className="py-1.5 px-3 text-[12px] font-black tracking-tight border-y border-slate-900">
+                                                                                {getSortGroupLabel(item, sortMode) || '미분류'}
+                                                                            </td>
+                                                                        </tr>
+                                                                    )}
+                                                                    <ProductRow 
+                                                                        item={item} idx={idx} 
+                                                                        isLinked={linkSourceKey === item.batchKey} 
+                                                                        isActiveMulti={activeMultiCode === item.코드}
+                                                                        isMultiGroupItem={multiPriceCodes.includes(item.코드)} 
+                                                                        targetDateStr={targetDateStr}
+                                                                        onStockChange={handleManualStockChange} onSpacebar={handleSpacebarLink} 
+                                                                        onFocusInput={handleFocusInput} onBaseDataChange={handleBaseDataChange}
+                                                                        onOpenMemo={(key, text) => setMemoModal({ isOpen: true, batchKey: key, text })}
+                                                                        onSalesMove={handleChipDropRequest}
+                                                                        internalLotMapping={mappings.internalLot}
+                                                                        isGroupStart={isGroupStart}
+                                                                        isNewCategory={isNewCategory}
+                                                                    />
+                                                                </React.Fragment>
                                                             );
                                                         })
                                                     )}
