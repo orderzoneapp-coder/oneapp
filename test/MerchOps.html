@@ -584,36 +584,22 @@
                 const n = (keys) => window.parseNum(pickDataOpsValue(row, headerCache, keys));
                 const s = (keys) => String(pickDataOpsValue(row, headerCache, keys) || '').trim();
 
-                const currentStock = n(['현재재고', '재고수량', '기말실사(이월수량)', '기말실사', '실사수량', '실사', '기말잔량(실사반영)', '기말잔량(실사)', '기말잔량']);
-                const actualStock = n(['실사수량', '기말실사(이월수량)', '기말실사', '실사', '현재재고', '재고수량']);
-                const bookStock = n(['전산잔량', '장부재고', '계산잔량', '기말잔량', '기말수량']);
-                const todaySales = n(['오늘판매량', '출고량', '출고수량', '판매수량', '최근출고량', '최근판매량']);
-
                 return {
-                    현재재고: currentStock,
-                    재고수량: currentStock,
-                    실사수량: actualStock,
-                    전산잔량: bookStock,
-                    오늘판매량: todaySales,
-                    출고량: todaySales,
-                    최근출고량: todaySales,
+                    현재재고: n(['현재재고', '재고수량', '기말실사', '실사수량', '전산잔량', '기말잔량']),
+                    전산잔량: n(['전산잔량', '장부재고', '기말잔량', '기말수량']),
+                    실사수량: n(['실사수량', '기말실사', '기말실사(이월수량)', '실사']),
+                    최근출고량: n(['최근출고량', '최근판매량', '판매수량', '출고량', '출고수량']),
                     판매속도: n(['판매속도', '일평균판매', '평균판매량', '일평균출고']),
                     안전재고: n(['안전재고', '최소재고', '적정재고']),
                     필요발주량: n(['필요발주량', '발주필요수량', '추천발주량', '부족수량']),
                     재고상태: s(['재고상태', '상태', '재고판정']),
-                    로스수량: n(['로스수량', '로스/조정수량', '로스', '차이수량', '편차수량']),
-                    수량이슈: s(['수량이슈', '이슈/결과', '이슈', '메모']),
-                    수기메모: s(['수기메모', '메모', '비고']),
-                    재고단가: n(['재고단가', '매입단가(원가)', '실사단가', '기초단가', '매입단가', '원가']),
-                    재고자산: n(['기말재고액(자산가치)', '재고자산', '재고금액', '기말재고액']),
-                    기초수량: n(['기초수량']),
-                    입고수량: n(['입고수량']),
-                    매입처Lot: s(['매입처(Lot)', '매입처', 'Lot', '구매처']),
+                    로스수량: n(['로스수량', '로스', '차이수량', '편차수량']),
+                    수량이슈: s(['수량이슈', '이슈', '이슈/결과', '메모']),
+                    재고단가: n(['재고단가', '실사단가', '기초단가', '매입단가', '원가']),
                     상품등급: s(['상품등급', '등급', '품질등급']),
                     소분상품여부: s(['소분상품여부', '소분여부', '소분상품']),
                     DataOps파일: s(['파일명']) || ''
                 };
-            };
             };
 
 
@@ -723,20 +709,17 @@
                             품목코드: '품목코드, 상품코드, 코드, 품번',
                             품목명: '품목명, 품명, 상품명, 제품명',
                             규격: '규격, 옵션',
-                            현재재고: '현재재고, 재고수량, 기말실사(이월수량), 기말실사, 실사수량, 실사, 기말잔량(실사반영), 기말잔량(실사), 기말잔량',
-                            전산잔량: '전산잔량, 장부재고, 계산잔량, 기말잔량',
+                            현재재고: '현재재고, 재고수량, 기말실사, 실사수량, 기말잔량',
+                            전산잔량: '전산잔량, 장부재고, 기말잔량',
                             실사수량: '실사수량, 기말실사, 실사',
-                            오늘판매량: '오늘판매량, 출고량, 출고수량, 판매수량, 최근출고량',
-                            최근출고량: '최근출고량, 오늘판매량, 최근판매량, 판매수량, 출고량, 출고수량',
+                            최근출고량: '최근출고량, 최근판매량, 판매수량, 출고량',
                             판매속도: '판매속도, 일평균판매, 일평균출고',
                             안전재고: '안전재고, 최소재고, 적정재고',
                             필요발주량: '필요발주량, 발주필요수량, 추천발주량, 부족수량',
                             재고상태: '재고상태, 상태, 재고판정',
-                            로스수량: '로스수량, 로스/조정수량, 로스, 차이수량, 편차수량',
+                            로스수량: '로스수량, 로스, 차이수량, 편차수량',
                             수량이슈: '수량이슈, 이슈, 이슈/결과, 메모',
-                            재고단가: '재고단가, 매입단가(원가), 실사단가, 기초단가, 매입단가, 원가',
-                            재고자산: '재고자산, 기말재고액(자산가치), 재고금액, 기말재고액',
-                            매입처Lot: '매입처(Lot), 매입처, Lot, 구매처',
+                            재고단가: '재고단가, 실사단가, 기초단가, 매입단가, 원가',
                             상품등급: '상품등급, 등급, 품질등급',
                             소분상품여부: '소분상품여부, 소분여부, 소분상품'
                         } : {};
@@ -776,13 +759,13 @@
                             if (role === 'dataOps') {
                                 const dataOpsSource = buildDataOpsSource(row, headerCache);
                                 Object.keys(dataOpsSource).forEach(k => {
-                                    if (dataOpsSource[k] !== '' && dataOpsSource[k] !== null && dataOpsSource[k] !== undefined) mItem.sources[role][k] = dataOpsSource[k];
+                                    if (dataOpsSource[k] !== '' && dataOpsSource[k] !== 0) mItem.sources[role][k] = dataOpsSource[k];
                                 });
 
                                 // DataOps 값은 마스터 가격을 바꾸는 값이 아니라 재고/필요수량 참고값이다.
                                 // finalData에도 일부 표시용 값만 올려서 MerchOps/검증센터에서 바로 볼 수 있게 한다.
-                                ['현재재고', '재고수량', '전산잔량', '실사수량', '오늘판매량', '출고량', '최근출고량', '판매속도', '필요발주량', '재고상태', '로스수량', '수량이슈', '수기메모', '재고단가', '재고자산', '기초수량', '입고수량', '매입처Lot', '상품등급', '소분상품여부'].forEach(k => {
-                                    if (dataOpsSource[k] !== '' && dataOpsSource[k] !== null && dataOpsSource[k] !== undefined) mItem.finalData[k] = dataOpsSource[k];
+                                ['현재재고', '전산잔량', '실사수량', '최근출고량', '판매속도', '필요발주량', '재고상태', '로스수량', '수량이슈', '재고단가', '상품등급', '소분상품여부'].forEach(k => {
+                                    if (dataOpsSource[k] !== '' && dataOpsSource[k] !== 0) mItem.finalData[k] = dataOpsSource[k];
                                 });
                             }
 
@@ -1841,84 +1824,48 @@
                 if (String(v) === String(initialVal)) return;
                 data.setManagedItems(prev => {
                     const code = row.코드;
-                    const masterItem = data.masterProducts[code] || {};
-                    const inputVal = isNumeric ? window.parseNum(v) : v;
-                    const actionField = linkedMasterField || field;
                     let currentItem = prev[code] || { 코드: code, sources: {}, finalData: {} };
+                    
+                    if (currentItem.sources.estimate) currentItem.sources.estimate[field] = isNumeric ? window.parseNum(v) : v;
+                    if (currentItem.sources.inventory) currentItem.sources.inventory[field] = isNumeric ? window.parseNum(v) : v;
 
-                    currentItem = {
-                        ...currentItem,
-                        sources: {
-                            ...(currentItem.sources || {}),
-                            estimate: { ...((currentItem.sources || {}).estimate || {}) },
-                            inventory: { ...((currentItem.sources || {}).inventory || {}) },
-                            dataOps: { ...((currentItem.sources || {}).dataOps || {}) }
-                        },
-                        finalData: { ...(currentItem.finalData || {}) }
-                    };
+                    currentItem.finalData = { ...currentItem.finalData, [field]: v };
+                    
+                    if (['입고가', '출고가', '외주비', '노무비', '행사가'].includes(field) || ['입고가', '출고가'].includes(linkedMasterField)) {
+                        const actionField = linkedMasterField || field;
 
-                    const preferredSourceKey = Object.keys(currentItem.sources.estimate || {}).length > 0
-                        ? 'estimate'
-                        : (Object.keys(currentItem.sources.inventory || {}).length > 0 ? 'inventory' : 'estimate');
+                        if (actionField === '입고가' || field === '입고가') {
+                            const preferredSourceKey = currentItem.sources.estimate ? 'estimate' : (currentItem.sources.inventory ? 'inventory' : 'estimate');
+                            currentItem.sources[preferredSourceKey] = { ...(currentItem.sources[preferredSourceKey] || {}), 입고가: window.parseNum(v) };
 
-                    if (!currentItem.sources[preferredSourceKey]) currentItem.sources[preferredSourceKey] = {};
-
-                    // 1) 작업자가 입고가를 직접 변경한 경우
-                    // 정책: 입고가는 오늘 작업자가 보는 운영 기준값이다.
-                    // 따라서 입고가 변경 액션에 반응하여 출고가를 즉시 자동 산출해 보여준다.
-                    if (actionField === '입고가' || field === '입고가') {
-                        currentItem.sources[preferredSourceKey][field] = inputVal;
-                        currentItem.sources[preferredSourceKey]['입고가'] = window.parseNum(inputVal);
-
-                        const recalc = window.recalculateOnInPriceChange
-                            ? window.recalculateOnInPriceChange(masterItem, currentItem.sources, config.marginRules, inputVal, currentItem.finalData, preferredSourceKey)
-                            : null;
-
-                        if (recalc) {
-                            currentItem.sources = recalc.sources;
-                            currentItem.finalData = {
-                                ...currentItem.finalData,
-                                ...recalc.finalData,
-                                [field]: inputVal,
-                                입고가: window.parseNum(inputVal),
-                                출고가: window.parseNum(recalc.autoOutPrice),
-                                _lastAction: '입고가변경_출고가자동연산'
-                            };
-                        } else {
-                            currentItem.finalData = window.computeFinalData(masterItem, currentItem.sources, config.marginRules, true);
-                            currentItem.finalData['입고가'] = window.parseNum(inputVal);
+                            if (window.recalculateOnInPriceChange) {
+                                const recalc = window.recalculateOnInPriceChange(
+                                    data.masterProducts[code] || {},
+                                    currentItem.sources,
+                                    config.marginRules,
+                                    window.parseNum(v),
+                                    currentItem.finalData || {},
+                                    preferredSourceKey
+                                );
+                                currentItem.sources = recalc.sources;
+                                currentItem.finalData = { ...(recalc.finalData || {}), [field]: isNumeric ? window.parseNum(v) : v };
+                            } else {
+                                currentItem.finalData = window.computeFinalData(data.masterProducts[code] || {}, currentItem.sources, config.marginRules, true);
+                                currentItem.finalData['입고가'] = window.parseNum(v);
+                            }
                             currentItem.finalData['_lastAction'] = '입고가변경_출고가자동연산';
-                        }
-
-                        return { ...prev, [code]: currentItem };
-                    }
-
-                    // 2) 입고가 외의 셀은 원본/작업값을 그대로 반영한다.
-                    // 엑셀값 또는 사용자가 입력한 값은 임의 보정하지 않고, 필요한 계산/경고만 보조한다.
-                    if (currentItem.sources.estimate && Object.keys(currentItem.sources.estimate).length > 0) {
-                        currentItem.sources.estimate[field] = inputVal;
-                    }
-                    if (currentItem.sources.inventory && Object.keys(currentItem.sources.inventory).length > 0) {
-                        currentItem.sources.inventory[field] = inputVal;
-                    }
-
-                    currentItem.finalData = { ...currentItem.finalData, [field]: inputVal };
-
-                    if (['출고가', '외주비', '노무비', '행사가'].includes(field) || linkedMasterField === '출고가') {
-                        const previousFinalData = { ...currentItem.finalData };
-                        currentItem.finalData = window.computeFinalData(masterItem, currentItem.sources, config.marginRules);
-                        currentItem.finalData = { ...currentItem.finalData, ...previousFinalData };
-
-                        if (field === '출고가' || linkedMasterField === '출고가') {
-                            currentItem.finalData['출고가'] = window.parseNum(inputVal);
-                            currentItem.finalData['_lastAction'] = '출고가수동수정';
-                        }
-                        if (field === '행사가') {
-                            currentItem.finalData['행사가'] = window.parseNum(inputVal);
-                            currentItem.finalData['_lastAction'] = '행사가수동지정';
+                        } else {
+                            currentItem.finalData = window.computeFinalData(data.masterProducts[code] || {}, currentItem.sources, config.marginRules);
+                            if (field === '출고가' || linkedMasterField === '출고가') {
+                                currentItem.finalData['출고가'] = window.parseNum(v);
+                                currentItem.finalData['_lastAction'] = '출고가수동수정';
+                            }
+                            if (field === '행사가') {
+                                currentItem.finalData['행사가'] = window.parseNum(v);
+                                currentItem.finalData['_lastAction'] = '행사가수동지정';
+                            }
                         }
                     }
-
                     return { ...prev, [code]: currentItem };
                 });
             };
