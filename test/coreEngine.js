@@ -515,35 +515,6 @@
   };
 
 
-  REVIEW.getStockInsight = REVIEW.getStockInsight || ((row = {}) => {
-    const working = row.working || row.finalData || row || {};
-    const stock = parseNum(working.현재재고 ?? working.재고수량 ?? 0);
-    const todaySales = parseNum(working.오늘판매량 ?? working.출고량 ?? working.최근출고량 ?? 0);
-    const safeStock = parseNum(working.안전재고 ?? 0);
-    const asset = parseNum(working.재고자산 ?? 0);
-    const loss = parseNum(working.로스수량 ?? 0);
-    const flags = [];
-    if (todaySales > 0) flags.push('판매반응');
-    if (todaySales === 0 && stock > 0) flags.push('미판매');
-    if (stock === 0) flags.push('품절');
-    else if (safeStock > 0 && stock <= safeStock) flags.push('품절임박');
-    if (safeStock > 0 && stock >= safeStock * 1.5) flags.push('재고소진후보');
-    if (asset > 0) flags.push('재고자산');
-    if (loss !== 0) flags.push('로스/조정');
-    return { stock, todaySales, safeStock, asset, loss, flags, sellThroughRate: stock > 0 ? todaySales / stock : 0 };
-  });
-
-  REVIEW.getPromoActivePerformance = REVIEW.getPromoActivePerformance || ((row = {}) => {
-    const info = REVIEW.getStockInsight(row);
-    const active = REVIEW.isPromoActive ? REVIEW.isPromoActive(row) : parseNum((row.working || row.finalData || row || {}).행사가) > 0;
-    if (!active) return '';
-    if (info.todaySales > 0 && info.safeStock > 0 && info.stock <= info.safeStock) return '행사반응 있음 / 품절임박';
-    if (info.todaySales > 0) return '행사반응 있음';
-    if (info.todaySales === 0 && info.stock > 0) return '행사중이나 판매반응 없음';
-    if (info.stock === 0) return '행사중이나 품절';
-    return '';
-  });
-
   // ============================================================
   // EXPORT DRAFT ENGINE
   // ============================================================
@@ -814,6 +785,36 @@
   // 원칙: 3차분류는 네비게이션에 사용하지 않는다. master_products 전체를 작업대상으로 만들지 않는다.
   // ============================================================
   const REVIEW = ONEAPP.REVIEW = ONEAPP.REVIEW || {};
+
+  REVIEW.getStockInsight = REVIEW.getStockInsight || ((row = {}) => {
+    const working = row.working || row.finalData || row || {};
+    const stock = parseNum(working.현재재고 ?? working.재고수량 ?? 0);
+    const todaySales = parseNum(working.오늘판매량 ?? working.출고량 ?? working.최근출고량 ?? 0);
+    const safeStock = parseNum(working.안전재고 ?? 0);
+    const asset = parseNum(working.재고자산 ?? 0);
+    const loss = parseNum(working.로스수량 ?? 0);
+    const flags = [];
+    if (todaySales > 0) flags.push('판매반응');
+    if (todaySales === 0 && stock > 0) flags.push('미판매');
+    if (stock === 0) flags.push('품절');
+    else if (safeStock > 0 && stock <= safeStock) flags.push('품절임박');
+    if (safeStock > 0 && stock >= safeStock * 1.5) flags.push('재고소진후보');
+    if (asset > 0) flags.push('재고자산');
+    if (loss !== 0) flags.push('로스/조정');
+    return { stock, todaySales, safeStock, asset, loss, flags, sellThroughRate: stock > 0 ? todaySales / stock : 0 };
+  });
+
+  REVIEW.getPromoActivePerformance = REVIEW.getPromoActivePerformance || ((row = {}) => {
+    const info = REVIEW.getStockInsight(row);
+    const active = REVIEW.isPromoActive ? REVIEW.isPromoActive(row) : parseNum((row.working || row.finalData || row || {}).행사가) > 0;
+    if (!active) return '';
+    if (info.todaySales > 0 && info.safeStock > 0 && info.stock <= info.safeStock) return '행사반응 있음 / 품절임박';
+    if (info.todaySales > 0) return '행사반응 있음';
+    if (info.todaySales === 0 && info.stock > 0) return '행사중이나 판매반응 없음';
+    if (info.stock === 0) return '행사중이나 품절';
+    return '';
+  });
+
 
   REVIEW.getRowCategory = (row = {}) => {
     const working = row.working || row || {};
