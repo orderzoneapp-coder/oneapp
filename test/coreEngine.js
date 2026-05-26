@@ -291,6 +291,65 @@
     return targetSource;
   };
 
+
+  /**
+   * 작업자 액션 전용: 입고가 변경 시 출고가 자동 산출
+   *
+   * 정책:
+   * - 엑셀 업로드값은 원본 의미를 보존한다.
+   * - 작업자가 작업테이블의 입고가를 직접 바꾸면 그 액션에 반응해 출고가를 자동 산출한다.
+   * - 이는 자동 의사결정이 아니라 작업자 편의를 위한 계산 보조다.
+   * - 행사가가 이미 있으면 유지한다. 작업자는 이후 출고가/행사가를 다시 직접 수정할 수 있다.
+   */
+  PRICING.recalculateOnInPriceChange = (mItem = {}, sources = {}, marginRules = [], newInPrice = 0, previousFinalData = {}, preferredSourceKey = '') => {
+    const nextSources = {
+      ...(sources || {}),
+      estimate: { ...((sources || {}).estimate || {}) },
+      inventory: { ...((sources || {}).inventory || {}) },
+      dataOps: { ...((sources || {}).dataOps || {}) }
+    };
+
+    const sourceKey = preferredSourceKey
+      || (Object.keys(nextSources.estimate || {}).length > 0 ? 'estimate' : '')
+      || (Object.keys(nextSources.inventory || {}).length > 0 ? 'inventory' : '')
+      || 'estimate';
+
+    nextSources[sourceKey] = {
+      ...(nextSources[sourceKey] || {}),
+      입고가: parseNum(newInPrice)
+    };
+
+    const recalculated = PRICING.computeFinalData(mItem, nextSources, marginRules, true);
+
+    const previousPromo = parseNum(previousFinalData?.['행사가']);
+    const sourcePromo = parseNum(nextSources[sourceKey]?.['행사가']);
+    const masterPromo = parseNum(mItem?.['행사가']);
+    const promoToKeep = previousPromo > 0 ? previousPromo : (sourcePromo > 0 ? sourcePromo : (masterPromo > 0 ? masterPromo : 0));
+
+    const nextFinalData = {
+      ...(previousFinalData || {}),
+      ...(recalculated || {}),
+      입고가: parseNum(newInPrice),
+      출고가: parseNum(recalculated?.['출고가']),
+      _autoOutPrice: parseNum(recalculated?.['출고가']),
+      _lastAction: '입고가변경_출고가자동연산'
+    };
+
+    if (promoToKeep > 0) {
+      nextFinalData['행사가'] = promoToKeep;
+    } else if (previousFinalData && Object.prototype.hasOwnProperty.call(previousFinalData, '행사가')) {
+      nextFinalData['행사가'] = previousFinalData['행사가'];
+    }
+
+    return {
+      sources: nextSources,
+      finalData: nextFinalData,
+      sourceKey,
+      autoOutPrice: parseNum(recalculated?.['출고가'])
+    };
+  };
+
+
   PRICING.calculateReviewOutPrice = (baseInPrice, context = {}, marginRules = []) => {
     return PRICING.calculatePricesEngine(
       parseNum(baseInPrice),
@@ -455,6 +514,36 @@
     return true;
   };
 
+
+  REVIEW.getStockInsight = REVIEW.getStockInsight || ((row = {}) => {
+    const working = row.working || row.finalData || row || {};
+    const stock = parseNum(working.현재재고 ?? working.재고수량 ?? 0);
+    const todaySales = parseNum(working.오늘판매량 ?? working.출고량 ?? working.최근출고량 ?? 0);
+    const safeStock = parseNum(working.안전재고 ?? 0);
+    const asset = parseNum(working.재고자산 ?? 0);
+    const loss = parseNum(working.로스수량 ?? 0);
+    const flags = [];
+    if (todaySales > 0) flags.push('판매반응');
+    if (todaySales === 0 && stock > 0) flags.push('미판매');
+    if (stock === 0) flags.push('품절');
+    else if (safeStock > 0 && stock <= safeStock) flags.push('품절임박');
+    if (safeStock > 0 && stock >= safeStock * 1.5) flags.push('재고소진후보');
+    if (asset > 0) flags.push('재고자산');
+    if (loss !== 0) flags.push('로스/조정');
+    return { stock, todaySales, safeStock, asset, loss, flags, sellThroughRate: stock > 0 ? todaySales / stock : 0 };
+  });
+
+  REVIEW.getPromoActivePerformance = REVIEW.getPromoActivePerformance || ((row = {}) => {
+    const info = REVIEW.getStockInsight(row);
+    const active = REVIEW.isPromoActive ? REVIEW.isPromoActive(row) : parseNum((row.working || row.finalData || row || {}).행사가) > 0;
+    if (!active) return '';
+    if (info.todaySales > 0 && info.safeStock > 0 && info.stock <= info.safeStock) return '행사반응 있음 / 품절임박';
+    if (info.todaySales > 0) return '행사반응 있음';
+    if (info.todaySales === 0 && info.stock > 0) return '행사중이나 판매반응 없음';
+    if (info.stock === 0) return '행사중이나 품절';
+    return '';
+  });
+
   // ============================================================
   // EXPORT DRAFT ENGINE
   // ============================================================
@@ -601,12 +690,19 @@
       현재재고: parseNum(dataOpsValue('현재재고', stockQty)),
       전산잔량: parseNum(dataOpsValue('전산잔량', '')),
       실사수량: parseNum(dataOpsValue('실사수량', '')),
-      최근출고량: parseNum(dataOpsValue('최근출고량', '')),
+      오늘판매량: parseNum(dataOpsValue('오늘판매량', dataOpsValue('출고량', dataOpsValue('최근출고량', '')))),
+      출고량: parseNum(dataOpsValue('출고량', dataOpsValue('오늘판매량', ''))),
+      최근출고량: parseNum(dataOpsValue('최근출고량', dataOpsValue('오늘판매량', ''))),
       판매속도: parseNum(dataOpsValue('판매속도', '')),
       필요발주량: parseNum(dataOpsValue('필요발주량', '')),
       재고상태: String(dataOpsValue('재고상태', '') || ''),
       로스수량: parseNum(dataOpsValue('로스수량', dataOpsValue('로스', ''))),
-      수량이슈: String(dataOpsValue('수량이슈', '') || ''),
+      수량이슈: String(dataOpsValue('수량이슈', dataOpsValue('이슈/결과', '')) || ''),
+      수기메모: String(dataOpsValue('수기메모', '') || ''),
+      재고자산: parseNum(dataOpsValue('재고자산', dataOpsValue('기말재고액(자산가치)', ''))),
+      기초수량: parseNum(dataOpsValue('기초수량', '')),
+      입고수량: parseNum(dataOpsValue('입고수량', '')),
+      매입처Lot: String(dataOpsValue('매입처Lot', dataOpsValue('매입처(Lot)', '')) || ''),
       상품등급: getStr('상품등급'),
       재고단가: getNum('재고단가'),
       기준시세입고가: baseMarketPrice,
