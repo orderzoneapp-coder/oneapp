@@ -1977,6 +1977,13 @@
 
                     currentItem.finalData = { ...currentItem.finalData, [field]: v };
                     
+                    // [업데이트 부분] 입고가가 변경되면, 기존에 입력된 출고가를 초기화하여 자동 계산 엔진이 작동하도록 처리
+                    if (field === '입고가') {
+                        if (currentItem.sources.estimate) currentItem.sources.estimate['출고가'] = 0;
+                        if (currentItem.sources.inventory) currentItem.sources.inventory['출고가'] = 0;
+                        currentItem.finalData['출고가'] = 0;
+                    }
+
                     if (['입고가', '출고가', '외주비', '노무비', '행사가'].includes(field) || ['입고가', '출고가'].includes(linkedMasterField)) {
                         currentItem.finalData = window.computeFinalData(data.masterProducts[code] || {}, currentItem.sources, config.marginRules);
                         if (field === '출고가') {
