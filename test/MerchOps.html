@@ -1282,19 +1282,24 @@
 
                 setTimeout(async () => {
                     try {
+                        if (!window.ONEAPP || !window.ONEAPP.EXPORT || typeof window.ONEAPP.EXPORT.buildExportDraft !== 'function') {
+                            throw new Error('coreEngine EXPORT 엔진이 로드되지 않았습니다. coreEngine.js 캐시 또는 문법 오류를 확인하세요.');
+                        }
+
                         const exportDraft = window.ONEAPP.EXPORT.buildExportDraft({
                             targetRows,
                             masterProducts: data.masterProducts
                         });
                         const validation = window.ONEAPP.EXPORT.validateExportDraft(exportDraft);
                         if (!validation.ok) throw new Error(validation.message);
+                        if (!exportDraft || exportDraft.length === 0) throw new Error('전달할 draft가 0건입니다. 품목코드/코드 매칭을 확인하세요.');
 
                         await window.ONEAPP.STORAGE.setIDB('merch_export_draft', exportDraft);
                         ui.showToast(`✅ ${exportDraft.length}건을 출력검증센터로 전달했습니다.`);
                         window.location.href = 'FinalReviewCenter.html';
                     } catch (error) {
                         console.error('[Export Draft Error]', error);
-                        ui.showToast('❌ 출력검증센터 전달 중 오류가 발생했습니다.');
+                        ui.showToast('❌ 출력검증센터 전달 오류: ' + (error?.message || error));
                     } finally {
                         ui.setIsProcessing(false);
                         ui.setProcessMsg('');
