@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Smart Parser [v3.0.10 메인 이동 버튼 수정본]</title>
+    <title>ONEAPP MerchOps - Smart Parser [v3.0.11 이슈카드 필터 수정본]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -616,7 +616,7 @@
         };
 
         const ParserReviewModal = ({ onClose, onConfirm, state, actions }) => {
-            const [viewMode, setViewMode] = useState('price'); const [priceFilter, setPriceFilter] = useState('all'); const [updateText, setUpdateText] = useState(true); 
+            const [viewMode, setViewMode] = useState('price'); const [priceFilter, setPriceFilter] = useState('all'); const [issueFilter, setIssueFilter] = useState('all'); const [updateText, setUpdateText] = useState(true); 
             const { parserBuffer, masterProducts } = state;
             const targetRows = useMemo(() => parserBuffer.filter(r => r._apply && r._matchCode), [parserBuffer]);
             useEffect(() => { if (targetRows.length === 0) onClose(); }, [targetRows.length, onClose]);
@@ -632,7 +632,6 @@
                 return { up, down, same, total: targetRows.length, list, priceList: [...list].sort((a, b) => Math.abs(b.차액) - Math.abs(a.차액)) };
             }, [targetRows, masterProducts]);
 
-            const filteredPriceList = useMemo(() => priceFilter === 'all' ? analysis.priceList : analysis.priceList.filter(item => item.상태 === priceFilter), [analysis.priceList, priceFilter]);
             const issueSummary = useMemo(() => {
                 const largeChange = analysis.list.filter(item => Math.abs(item.차액 || 0) >= 500 || Math.abs(calcDiffRate(item.기존단가, item.새단가) || 0) >= 10);
                 const noOldPrice = analysis.list.filter(item => !item.기존단가 || item.기존단가 <= 0);
@@ -642,6 +641,43 @@
                 const suspicious = [...new Set([...largeChange, ...noOldPrice, ...zeroNewPrice, ...specChanged, ...soldOut].map(item => item._id))].length;
                 return { largeChange, noOldPrice, zeroNewPrice, specChanged, soldOut, suspicious };
             }, [analysis.list]);
+
+            const issueFilterLabels = {
+                all: '전체',
+                largeChange: '큰변동',
+                noOldPrice: '기존가없음',
+                zeroNewPrice: '0원/이상',
+                specChanged: '규격차이',
+                soldOut: '품절감지'
+            };
+
+            const issueIdSets = useMemo(() => ({
+                largeChange: new Set(issueSummary.largeChange.map(item => item._id)),
+                noOldPrice: new Set(issueSummary.noOldPrice.map(item => item._id)),
+                zeroNewPrice: new Set(issueSummary.zeroNewPrice.map(item => item._id)),
+                specChanged: new Set(issueSummary.specChanged.map(item => item._id)),
+                soldOut: new Set(issueSummary.soldOut.map(item => item._id))
+            }), [issueSummary]);
+
+            const getIssueBadges = useCallback((item) => {
+                const badges = [];
+                if (issueIdSets.largeChange.has(item._id)) badges.push({ label: '큰변동', cls: 'bg-rose-100 text-rose-600 border-rose-200' });
+                if (issueIdSets.noOldPrice.has(item._id)) badges.push({ label: '기존가없음', cls: 'bg-slate-100 text-slate-600 border-slate-200' });
+                if (issueIdSets.zeroNewPrice.has(item._id)) badges.push({ label: '0원/이상', cls: 'bg-red-100 text-red-600 border-red-200' });
+                if (issueIdSets.specChanged.has(item._id)) badges.push({ label: '규격차이', cls: 'bg-amber-100 text-amber-700 border-amber-200' });
+                if (issueIdSets.soldOut.has(item._id)) badges.push({ label: '품절감지', cls: 'bg-pink-100 text-pink-600 border-pink-200' });
+                return badges;
+            }, [issueIdSets]);
+
+            const filteredPriceList = useMemo(() => {
+                let list = priceFilter === 'all' ? analysis.priceList : analysis.priceList.filter(item => item.상태 === priceFilter);
+                if (issueFilter !== 'all' && issueIdSets[issueFilter]) {
+                    list = list.filter(item => issueIdSets[issueFilter].has(item._id));
+                }
+                return list;
+            }, [analysis.priceList, priceFilter, issueFilter, issueIdSets]);
+
+            const activeFilterLabel = `${priceFilter === 'all' ? '전체 단가' : (priceFilter === 'up' ? '인상' : priceFilter === 'down' ? '인하' : '동결/기타')}${issueFilter !== 'all' ? ' · ' + issueFilterLabels[issueFilter] : ''}`;
 
             return (
                 <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in" onClick={onClose}>
@@ -657,6 +693,9 @@
                         <div className="p-5 flex flex-col flex-1 overflow-hidden bg-slate-50">
                             {viewMode === 'mapping' ? (
                                 <div className="flex-1 flex flex-col bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden fade-in">
+                                    <div className="px-4 py-3 bg-indigo-50/60 border-b border-indigo-100 text-[12px] text-indigo-800 font-bold leading-relaxed">
+                                        <i className="fas fa-link mr-2"></i>텍스트 좌우 검수는 전체 반복 검수가 아니라, 매핑이 의심되는 상품·수동 연결 상품·필요한 상품 검색 중심으로 확인하세요.
+                                    </div>
                                     <div className="flex-1 overflow-auto custom-scrollbar">
                                         <table className="w-full text-left text-[12px] whitespace-nowrap">
                                             <thead className="bg-white sticky top-0 border-b border-slate-200 shadow-sm z-10"><tr className="text-slate-500"><th className="px-4 py-2 text-center">분류</th><th className="px-4 py-2 w-1/2 text-emerald-700 bg-emerald-50/50">파싱된 텍스트</th><th className="px-2 py-2"></th><th className="px-4 py-2 w-1/2 text-indigo-700 bg-indigo-50/50">연결된 마스터</th><th className="px-4 py-2 text-center">동작</th></tr></thead>
@@ -680,25 +719,36 @@
                                         <div className="flex items-start justify-between gap-4">
                                             <div>
                                                 <div className={`text-[13px] font-black mb-1 ${issueSummary.suspicious > 0 ? 'text-amber-800' : 'text-emerald-800'}`}><i className={`fas ${issueSummary.suspicious > 0 ? 'fa-exclamation-triangle' : 'fa-check-circle'} mr-2`}></i>{issueSummary.suspicious > 0 ? '확인필요 이슈가 있습니다' : '큰 이상징후 없이 매핑 작업이 완료되었습니다'}</div>
-                                                <div className="text-[12px] text-slate-600 font-bold leading-relaxed">단가변동이 먼저입니다. 텍스트 좌우 검수는 전체 노가다가 아니라, 아래 이슈 항목과 필요한 상품 검색 중심으로 확인하세요.</div>
+                                                <div className="text-[12px] text-slate-600 font-bold leading-relaxed">단가 변동과 이상 단가를 먼저 확인하세요. 이슈 카드를 누르면 해당 상품만 모아봅니다.</div>
                                             </div>
                                             <div className="grid grid-cols-5 gap-1.5 text-center shrink-0">
-                                                <div className="bg-white/80 rounded-lg border px-2 py-1.5"><div className="text-[10px] text-slate-500 font-bold">큰변동</div><div className="text-[15px] font-black text-rose-600">{issueSummary.largeChange.length}</div></div>
-                                                <div className="bg-white/80 rounded-lg border px-2 py-1.5"><div className="text-[10px] text-slate-500 font-bold">기존가없음</div><div className="text-[15px] font-black text-slate-700">{issueSummary.noOldPrice.length}</div></div>
-                                                <div className="bg-white/80 rounded-lg border px-2 py-1.5"><div className="text-[10px] text-slate-500 font-bold">0원/이상</div><div className="text-[15px] font-black text-rose-600">{issueSummary.zeroNewPrice.length}</div></div>
-                                                <div className="bg-white/80 rounded-lg border px-2 py-1.5"><div className="text-[10px] text-slate-500 font-bold">규격차이</div><div className="text-[15px] font-black text-amber-600">{issueSummary.specChanged.length}</div></div>
-                                                <div className="bg-white/80 rounded-lg border px-2 py-1.5"><div className="text-[10px] text-slate-500 font-bold">품절감지</div><div className="text-[15px] font-black text-rose-600">{issueSummary.soldOut.length}</div></div>
+                                                <button type="button" onClick={() => setIssueFilter(issueFilter === 'largeChange' ? 'all' : 'largeChange')} className={`rounded-lg border px-2 py-1.5 transition-all ${issueFilter === 'largeChange' ? 'bg-rose-600 text-white border-rose-600 shadow-sm' : 'bg-white/80 hover:bg-rose-50'}`}><div className={`text-[10px] font-bold ${issueFilter === 'largeChange' ? 'text-white/90' : 'text-slate-500'}`}>큰변동</div><div className={`text-[15px] font-black ${issueFilter === 'largeChange' ? 'text-white' : 'text-rose-600'}`}>{issueSummary.largeChange.length}</div></button>
+                                                <button type="button" onClick={() => setIssueFilter(issueFilter === 'noOldPrice' ? 'all' : 'noOldPrice')} className={`rounded-lg border px-2 py-1.5 transition-all ${issueFilter === 'noOldPrice' ? 'bg-slate-700 text-white border-slate-700 shadow-sm' : 'bg-white/80 hover:bg-slate-50'}`}><div className={`text-[10px] font-bold ${issueFilter === 'noOldPrice' ? 'text-white/90' : 'text-slate-500'}`}>기존가없음</div><div className={`text-[15px] font-black ${issueFilter === 'noOldPrice' ? 'text-white' : 'text-slate-700'}`}>{issueSummary.noOldPrice.length}</div></button>
+                                                <button type="button" onClick={() => setIssueFilter(issueFilter === 'zeroNewPrice' ? 'all' : 'zeroNewPrice')} className={`rounded-lg border px-2 py-1.5 transition-all ${issueFilter === 'zeroNewPrice' ? 'bg-red-600 text-white border-red-600 shadow-sm' : 'bg-white/80 hover:bg-red-50'}`}><div className={`text-[10px] font-bold ${issueFilter === 'zeroNewPrice' ? 'text-white/90' : 'text-slate-500'}`}>0원/이상</div><div className={`text-[15px] font-black ${issueFilter === 'zeroNewPrice' ? 'text-white' : 'text-rose-600'}`}>{issueSummary.zeroNewPrice.length}</div></button>
+                                                <button type="button" onClick={() => setIssueFilter(issueFilter === 'specChanged' ? 'all' : 'specChanged')} className={`rounded-lg border px-2 py-1.5 transition-all ${issueFilter === 'specChanged' ? 'bg-amber-500 text-white border-amber-500 shadow-sm' : 'bg-white/80 hover:bg-amber-50'}`}><div className={`text-[10px] font-bold ${issueFilter === 'specChanged' ? 'text-white/90' : 'text-slate-500'}`}>규격차이</div><div className={`text-[15px] font-black ${issueFilter === 'specChanged' ? 'text-white' : 'text-amber-600'}`}>{issueSummary.specChanged.length}</div></button>
+                                                <button type="button" onClick={() => setIssueFilter(issueFilter === 'soldOut' ? 'all' : 'soldOut')} className={`rounded-lg border px-2 py-1.5 transition-all ${issueFilter === 'soldOut' ? 'bg-pink-600 text-white border-pink-600 shadow-sm' : 'bg-white/80 hover:bg-pink-50'}`}><div className={`text-[10px] font-bold ${issueFilter === 'soldOut' ? 'text-white/90' : 'text-slate-500'}`}>품절감지</div><div className={`text-[15px] font-black ${issueFilter === 'soldOut' ? 'text-white' : 'text-rose-600'}`}>{issueSummary.soldOut.length}</div></button>
                                             </div>
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-4 gap-3 mb-3 shrink-0">
-                                        <div onClick={() => setPriceFilter('all')} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center shadow-sm ${priceFilter === 'all' ? 'bg-slate-800 text-white' : 'bg-white'}`}><div className="text-[11px] mb-1">전체</div><div className="font-black text-xl">{analysis.total}건</div></div>
-                                        <div onClick={() => setPriceFilter('up')} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center shadow-sm ${priceFilter === 'up' ? 'bg-rose-500 text-white' : 'bg-white text-rose-700'}`}><div className="text-[11px] mb-1">인상</div><div className="font-black text-xl">{analysis.up}건</div></div>
-                                        <div onClick={() => setPriceFilter('down')} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center shadow-sm ${priceFilter === 'down' ? 'bg-blue-500 text-white' : 'bg-white text-blue-700'}`}><div className="text-[11px] mb-1">인하</div><div className="font-black text-xl">{analysis.down}건</div></div>
-                                        <div onClick={() => setPriceFilter('same')} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center shadow-sm ${priceFilter === 'same' ? 'bg-slate-500 text-white' : 'bg-white text-slate-700'}`}><div className="text-[11px] mb-1">동결/기타</div><div className="font-black text-xl">{analysis.same}건</div></div>
+                                        <div onClick={() => { setPriceFilter('all'); setIssueFilter('all'); }} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center shadow-sm ${priceFilter === 'all' ? 'bg-slate-800 text-white' : 'bg-white'}`}><div className="text-[11px] mb-1">전체</div><div className="font-black text-xl">{analysis.total}건</div></div>
+                                        <div onClick={() => { setPriceFilter('up'); setIssueFilter('all'); }} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center shadow-sm ${priceFilter === 'up' ? 'bg-rose-500 text-white' : 'bg-white text-rose-700'}`}><div className="text-[11px] mb-1">인상</div><div className="font-black text-xl">{analysis.up}건</div></div>
+                                        <div onClick={() => { setPriceFilter('down'); setIssueFilter('all'); }} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center shadow-sm ${priceFilter === 'down' ? 'bg-blue-500 text-white' : 'bg-white text-blue-700'}`}><div className="text-[11px] mb-1">인하</div><div className="font-black text-xl">{analysis.down}건</div></div>
+                                        <div onClick={() => { setPriceFilter('same'); setIssueFilter('all'); }} className={`cursor-pointer border p-3 rounded-xl flex flex-col items-center shadow-sm ${priceFilter === 'same' ? 'bg-slate-500 text-white' : 'bg-white text-slate-700'}`}><div className="text-[11px] mb-1">동결/기타</div><div className="font-black text-xl">{analysis.same}건</div></div>
+                                    </div>
+                                    <div className="mb-2 flex items-center justify-between bg-white border border-slate-200 rounded-lg px-3 py-2 text-[12px] shadow-sm">
+                                        <div className="font-bold text-slate-600">
+                                            현재 보기: <span className="text-indigo-700 font-black">{activeFilterLabel}</span>
+                                            <span className="ml-2 text-slate-400">({filteredPriceList.length}건)</span>
+                                        </div>
+                                        {(priceFilter !== 'all' || issueFilter !== 'all') && (
+                                            <button type="button" onClick={() => { setPriceFilter('all'); setIssueFilter('all'); }} className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-md text-slate-600 font-bold">
+                                                전체보기
+                                            </button>
+                                        )}
                                     </div>
                                     <div className="flex-1 overflow-auto bg-white border border-slate-200 rounded-xl shadow-sm">
-                                        <table className="w-full text-left text-[12px] whitespace-nowrap"><thead className="bg-white sticky top-0"><tr className="text-slate-500"><th className="px-4 py-2 text-center">상태</th><th className="px-4 py-2">상품코드</th><th className="px-4 py-2 w-full">마스터 품목명 (규격)</th><th className="px-4 py-2 text-right">기존가</th><th className="px-4 py-2 text-right text-indigo-600">새단가</th><th className="px-4 py-2 text-right">차액</th></tr></thead><tbody className="divide-y divide-slate-100">{filteredPriceList.map(item => <tr key={`price-${item._id}`} className="hover:bg-slate-50"><td className="px-4 py-2 text-center">{item.상태 === 'up' && <span className="bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded text-[10px]">인상</span>}{item.상태 === 'down' && <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[10px]">인하</span>}{item.상태 === 'same' && <span className="text-slate-400">-</span>}</td><td className="px-4 py-2 font-mono text-slate-500">{item._matchCode}</td><td className="px-4 py-2"><div className="flex flex-col leading-tight"><span className="font-bold text-slate-800">{item.마스터품명 || item['품목명']}</span>{(item.마스터규격 || item['규격']) && <span className="text-[11px] text-slate-400 mt-0.5">({item.마스터규격 || item['규격']})</span>}</div></td><td className="px-4 py-2 text-right text-slate-500">{item.기존단가>0?item.기존단가.toLocaleString():'-'}</td><td className="px-4 py-2 text-right font-black text-indigo-600">{item.새단가>0?item.새단가.toLocaleString():'-'}</td><td className="px-4 py-2 text-right font-bold">{item.차액>0?<span className="text-rose-500">+{item.차액.toLocaleString()}</span>:item.차액<0?<span className="text-blue-500">{item.차액.toLocaleString()}</span>:<span className="text-slate-300">-</span>}</td></tr>)}</tbody></table>
+                                        <table className="w-full text-left text-[12px] whitespace-nowrap"><thead className="bg-white sticky top-0"><tr className="text-slate-500"><th className="px-4 py-2 text-center">상태</th><th className="px-4 py-2">상품코드</th><th className="px-4 py-2 w-full">마스터 품목명 (규격)</th><th className="px-4 py-2 text-right">기존가</th><th className="px-4 py-2 text-right text-indigo-600">새단가</th><th className="px-4 py-2 text-right">차액</th></tr></thead><tbody className="divide-y divide-slate-100">{filteredPriceList.map(item => <tr key={`price-${item._id}`} className="hover:bg-slate-50"><td className="px-4 py-2 text-center">{item.상태 === 'up' && <span className="bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded text-[10px]">인상</span>}{item.상태 === 'down' && <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[10px]">인하</span>}{item.상태 === 'same' && <span className="text-slate-400">-</span>}</td><td className="px-4 py-2 font-mono text-slate-500">{item._matchCode}</td><td className="px-4 py-2"><div className="flex flex-col leading-tight"><span className="font-bold text-slate-800">{item.마스터품명 || item['품목명']}</span>{(item.마스터규격 || item['규격']) && <span className="text-[11px] text-slate-400 mt-0.5">({item.마스터규격 || item['규격']})</span>}{getIssueBadges(item).length > 0 && <div className="flex flex-wrap gap-1 mt-1">{getIssueBadges(item).map(badge => <span key={`${item._id}-${badge.label}`} className={`border px-1.5 py-0.5 rounded text-[10px] font-black ${badge.cls}`}>{badge.label}</span>)}</div>}</div></td><td className="px-4 py-2 text-right text-slate-500">{item.기존단가>0?item.기존단가.toLocaleString():'-'}</td><td className="px-4 py-2 text-right font-black text-indigo-600">{item.새단가>0?item.새단가.toLocaleString():'-'}</td><td className="px-4 py-2 text-right font-bold">{item.차액>0?<span className="text-rose-500">+{item.차액.toLocaleString()}</span>:item.차액<0?<span className="text-blue-500">{item.차액.toLocaleString()}</span>:<span className="text-slate-300">-</span>}</td></tr>)}</tbody></table>
                                     </div>
                                 </div>
                             )}
