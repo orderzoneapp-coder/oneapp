@@ -2133,6 +2133,7 @@
         const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem }) => {
             const { isEstimateUploaded, visibleMasterCols, visibleUploadCols, config, data } = state;
             const requiredCoreFields = ['품목코드', '품목명', '규격'];
+            const activeUploadRole = row.sources?.sales ? 'sales' : (row.sources?.purchase ? 'purchase' : (row.sources?.inventory ? 'inventory' : 'estimate'));
             
             const uploadName = row.finalData?.['품목명'] !== undefined ? row.finalData['품목명'] : '';
             const uploadSpec = row.finalData?.['규격'] !== undefined ? row.finalData['규격'] : '';
@@ -2327,7 +2328,7 @@
                             </td>
 
                             {visibleUploadCols['estimate']?.filter(h => h !== '품목코드').map((h, i, arr) => {
-                                const linkedMasterField = config.masterLinks[role]?.[h] || config.masterLinks['estimate']?.[h];
+                                const linkedMasterField = config.masterLinks?.[activeUploadRole]?.[h] || config.masterLinks?.['estimate']?.[h];
                                 const mVal = (linkedMasterField && row.코드 ? mItem[linkedMasterField] : undefined) ?? mItem[h];
                                 return (
                                     <EditableCell key={`p-u-e-${h}`} row={row} field={h} linkedMasterField={linkedMasterField} mVal={mVal} config={config} data={data} isSel={isSel} extraClass={i === arr.length - 1 ? 'border-r-2 !border-r-slate-300' : ''} />
