@@ -1117,7 +1117,7 @@
                 if (fullDisplayRows.length === 0) return ui.showToast("⚠️ 그룹으로 저장할 상품이 없습니다.");
 
                 ui.setIsProcessing(true); 
-                ui.setProcessMsg('견적서 저장 중...');
+                ui.setProcessMsg('그룹 저장 중...');
 
                 setTimeout(() => {
                     let newMaster = { ...data.masterProducts }; 
@@ -1163,7 +1163,7 @@
                             id: window.generateUUID(), 
                             timestamp: new Date().toLocaleString('ko-KR'), 
                             code: 'SYSTEM', 
-                            name: `[견적서 그룹 생성] ${safeName}`, 
+                            name: `[작업 그룹 생성] ${safeName}`,  
                             spec: '', 
                             field: '견적서', 
                             oldVal: '-', 
@@ -1175,7 +1175,7 @@
 
                     data.setMasterProducts(newMaster);
                     ui.setShowCategoryModal(false);
-                    ui.showToast(`✅ ${count}개 상품이 [${safeName}] 견적서에 추가/저장되었습니다.`);
+                    ui.showToast(`✅ ${count}개 상품이 [${safeName}] 그룹으로 저장되었습니다. Smart Parser에서 기준자료로 선택할 수 있습니다.`);
                     ui.setIsProcessing(false);
                     ui.setProcessMsg('');
                 }, 100);
@@ -1590,7 +1590,7 @@
 
         const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
             const { activeTags, selectedRows, globalSearch, priceFilter, basicSearch, fullDisplayRows } = state;
-            const { handleStopSales, handleExcludeSelectedFromUpdate, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, setPriceFilter, setSelectedRows, setBasicSearch, handleOpenExportCenter, handleCommitEstimate } = actions;
+            const { handleStopSales, handleExcludeSelectedFromUpdate, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, setPriceFilter, setSelectedRows, setBasicSearch, setShowCategoryModal, handleOpenExportCenter, handleCommitEstimate } = actions;
 
             const applyPriceFilter = (value) => {
                 setPriceFilter(value);
@@ -1650,6 +1650,10 @@
                             <i className="fas fa-box mr-2 text-[14px]"></i> 재고 불러오기
                             <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e, 'inventory')} accept=".xlsx, .xls, .csv" disabled={state.isProcessing} />
                         </label>
+
+                        <button onClick={() => fullDisplayRows.length > 0 ? setShowCategoryModal(true) : alert('먼저 견적/구매/판매/재고 엑셀을 불러오세요.')} className="h-9 px-4 rounded-xl text-[12px] font-black transition-all flex items-center justify-center bg-slate-800 text-white shadow-sm hover:bg-slate-700 border border-slate-800 shrink-0" title="현재 화면 목록을 그룹으로 저장합니다. 저장 후 Smart Parser에서 기준자료로 선택할 수 있습니다.">
+                            <i className="fas fa-save mr-2 text-[14px]"></i> 그룹 저장
+                        </button>
                         
                         <div className="flex-1 min-w-[10px]"></div>
                         
