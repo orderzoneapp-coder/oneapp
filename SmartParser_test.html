@@ -236,6 +236,30 @@
             return results.map(r => r.item);
         };
 
+        const getProductTags = (mItem = {}) => [mItem['카탈로그'], mItem['견적서'], mItem['카테고리']]
+            .join(',')
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean);
+
+        const filterProductsByTag = (productsObj = {}, tag = '') => {
+            if (!tag) return productsObj || {};
+            const dict = {};
+            Object.values(productsObj || {}).forEach(item => {
+                if (item && item.코드 && getProductTags(item).includes(tag)) dict[item.코드] = item;
+            });
+            return dict;
+        };
+
+        const isSettlementReferenceTag = (productsObj = {}, tag = '') => {
+            if (!tag) return false;
+            return Object.values(productsObj || {}).some(item => {
+                if (!item || !getProductTags(item).includes(tag)) return false;
+                const kind = String(item['검증구분'] || '').trim();
+                return kind === '판매' || kind === '구매';
+            });
+        };
+
         const useParserApp = () => {
             const [masterProducts, setMasterProducts] = useState({});
             const [parserDict, setParserDict] = useState(() => { try { return JSON.parse(localStorage.getItem('parserDict_v870')) || {}; } catch(e){ return {}; }});
@@ -276,16 +300,21 @@
                 setShowInputModal(false); setIsProcessing(true); setProcessMsg("AI 분석 및 스마트 매칭 중..."); setCurrentTag(tag); setProcessedCodes(new Set());
                 setTimeout(() => {
                     try {
-                        const parsedData = parseTextSemantically(rawText); const results = []; 
+                        const parsedData = parseTextSemantically(rawText); const results = [];
+                        const referenceProducts = tag ? filterProductsByTag(masterProducts, tag) : masterProducts;
+                        const hasReferenceScope = tag && Object.keys(referenceProducts).length > 0;
                         parsedData.forEach(rowData => {
-                            let matchResult = forceManual ? { code: '', status: '🔴 불일치' } : runSmartMatch(rowData['품목명'] || '', rowData['규격'] || '', masterProducts, parserDict);
+                            let matchResult = forceManual
+                                ? { code: '', status: '🔴 불일치' }
+                                : runSmartMatch(rowData['품목명'] || '', rowData['규격'] || '', hasReferenceScope ? referenceProducts : masterProducts, parserDict);
                             rowData._matchCode = matchResult.code; rowData._matchStatus = matchResult.status; if(matchResult.code) rowData.코드 = matchResult.code;
                             rowData.finalData = {}; const pInNum = rowData['입고가'] ? parseNum(rowData['입고가']) : (rowData['단가'] ? parseNum(rowData['단가']) : 0);
                             if (pInNum > 0 && matchResult.code) rowData.finalData = calculatePricesEngine(pInNum, masterProducts[matchResult.code] || {}, {}, marginRules, true); else rowData.finalData['입고가'] = pInNum;
                             results.push(rowData);
                         });
-                        setParserBuffer(results); setActiveTab(forceManual ? 'unmatched' : 'matched'); setTargetId(null); setGlobalSearch(''); setSelectedMissingCodes(new Set());
-                        showToast(forceManual ? '✅ 수동 매핑 모드로 로드되었습니다.' : '✅ 텍스트 분석 및 매칭이 완료되었습니다.');
+                        const diffCount = results.filter(r => r._matchCode && calcSettlementDiff(r, masterProducts[r._matchCode] || {}).hasDiff).length;
+                        setParserBuffer(results); setActiveTab(diffCount > 0 ? 'unmatched' : (forceManual ? 'extra' : 'matched')); setTargetId(null); setGlobalSearch(''); setSelectedMissingCodes(new Set());
+                        showToast(hasReferenceScope ? `✅ [${tag}] 기준자료와 매핑 완료. 불일치 ${diffCount}건` : (forceManual ? '✅ 수동 매핑 모드로 로드되었습니다.' : '✅ 텍스트 분석 및 매칭이 완료되었습니다.'));
                     } catch (error) { console.error(error); showToast("❌ 텍스트 분석 중 예기치 않은 오류가 발생했습니다."); } finally { setIsProcessing(false); setProcessMsg(''); }
                 }, 100);
             }, [masterProducts, parserDict, marginRules]);
@@ -293,6 +322,7 @@
             const handleApplyMatched = useCallback(async (updateTextData = true) => {
                 const toApply = parserBuffer.filter(r => r._apply && r._matchCode); 
                 if (toApply.length === 0) { showToast("⚠️ 적용할 항목이 없습니다."); return false; }
+                if (isSettlementReferenceTag(masterProducts, currentTag)) { showToast("⚠️ 판매/구매 정산검증 그룹은 마스터 적용하지 않습니다. 불일치 확인만 진행하세요."); return false; }
                 if (!currentTag || !String(currentTag).trim()) { showToast("⚠️ 마스터 적용 전 기준 카탈로그 또는 견적서명을 먼저 선택/생성하세요."); return false; }
                 const catalogLabel = String(currentTag).trim();
                 if (!window.confirm(`분석된 ${toApply.length}건의 데이터를 마스터에 바로 적용하시겠습니까?\n\n※ 카탈로그/견적서 단가는 기존 구조처럼 마스터값으로 반영됩니다.\n※ 변경 전/후 값과 작업 경로는 히스토리에 상세 저장됩니다.\n※ 히스토리 저장에 실패하면 마스터 적용을 중단합니다.`)) return false;
@@ -610,17 +640,70 @@
             const [selectedCatalog, setSelectedCatalog] = useState('');
             const [newCatalogInput, setNewCatalogInput] = useState("");
             const [forceManual, setForceManual] = useState(false);
-            const [pastedImageUrl, setPastedImageUrl] = useState('');
-            const handlePaste = (e) => {
+            const [imageFiles, setImageFiles] = useState([]);
+            const imageInputRef = useRef(null);
+
+            const addImageFiles = (files = [], source = 'upload') => {
+                const safeFiles = Array.from(files || []).filter(file => file && file.type && file.type.startsWith('image/'));
+                if (safeFiles.length === 0) return false;
+                const nextItems = safeFiles.map((file, idx) => ({
+                    id: `${Date.now()}_${Math.random().toString(36).slice(2)}_${idx}`,
+                    file,
+                    name: file.name || `${source}_image_${idx + 1}.png`,
+                    url: URL.createObjectURL(file),
+                    source
+                }));
+                setImageFiles(prev => [...prev, ...nextItems]);
+                showToast(`✅ 이미지 ${nextItems.length}장이 추가되었습니다. OCR 텍스트는 아래 텍스트창에 붙여넣어 파싱하세요.`);
+                return true;
+            };
+
+            const removeImageFile = (id) => {
+                setImageFiles(prev => {
+                    const target = prev.find(item => item.id === id);
+                    if (target?.url) URL.revokeObjectURL(target.url);
+                    return prev.filter(item => item.id !== id);
+                });
+            };
+
+            const clearImageFiles = () => {
+                setImageFiles(prev => {
+                    prev.forEach(item => item?.url && URL.revokeObjectURL(item.url));
+                    return [];
+                });
+            };
+
+            useEffect(() => {
+                return () => { imageFiles.forEach(item => item?.url && URL.revokeObjectURL(item.url)); };
+            }, [imageFiles]);
+
+            const handleImagePaste = (e) => {
                 const items = Array.from(e.clipboardData?.items || []);
-                const imageItem = items.find(item => item.type && item.type.startsWith('image/'));
-                if (imageItem) {
-                    const file = imageItem.getAsFile();
-                    if (file) {
-                        setPastedImageUrl(URL.createObjectURL(file));
-                        showToast('✅ 이미지가 붙여넣기 되었습니다. OCR 텍스트가 있으면 함께 붙여넣어 비교하세요.');
-                    }
+                const files = items.filter(item => item.type && item.type.startsWith('image/')).map(item => item.getAsFile()).filter(Boolean);
+                if (files.length > 0) {
+                    e.preventDefault();
+                    addImageFiles(files, 'paste');
                 }
+            };
+
+            const handleTextPaste = (e) => {
+                const items = Array.from(e.clipboardData?.items || []);
+                const files = items.filter(item => item.type && item.type.startsWith('image/')).map(item => item.getAsFile()).filter(Boolean);
+                if (files.length > 0) {
+                    e.preventDefault();
+                    addImageFiles(files, 'paste');
+                }
+            };
+
+            const handleDrop = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                addImageFiles(Array.from(e.dataTransfer?.files || []), 'drop');
+            };
+
+            const handleFileSelect = (e) => {
+                addImageFiles(Array.from(e.target.files || []), 'file');
+                e.target.value = '';
             };
             
             const handleExecute = () => { 
@@ -632,15 +715,15 @@
 
             return (
                 <div className="fixed inset-0 bg-slate-900/80 z-[200] flex justify-center items-center backdrop-blur-sm fade-in" onClick={onClose}>
-                    <div className="bg-white w-[800px] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                    <div className="bg-white w-[980px] max-w-[96vw] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
                         <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
                             <h2 className="font-black text-[16px]"><i className="fas fa-magic text-indigo-400 mr-2"></i>스마트 파서 / 정산 검증</h2>
                             {onClose && <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>}
                         </div>
-                        <div className="p-6 flex flex-col bg-slate-50 space-y-4">
+                        <div className="p-6 flex flex-col bg-slate-50 space-y-4 max-h-[88vh] overflow-auto custom-scrollbar">
                             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                                 <div className="flex items-center justify-between mb-3">
-                                    <label className="text-[14px] font-black text-slate-800 flex items-center"><i className="fas fa-folder text-emerald-500 mr-2"></i>기준자료 선택 <span className="ml-2 bg-rose-100 text-rose-600 text-[10px] px-1.5 py-0.5 rounded font-bold">마스터 적용 필수</span></label>
+                                    <label className="text-[14px] font-black text-slate-800 flex items-center"><i className="fas fa-folder text-emerald-500 mr-2"></i>기준자료 선택 <span className="ml-2 bg-emerald-100 text-emerald-700 text-[10px] px-1.5 py-0.5 rounded font-bold">기존 그룹 기준 매핑</span></label>
                                     <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
                                         <button onClick={() => setCatalogMode('select')} className={`px-3 py-1.5 text-[12px] font-bold rounded-md transition-all ${catalogMode === 'select' ? 'bg-white text-emerald-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>기존 그룹</button>
                                         <button onClick={() => setCatalogMode('input')} className={`px-3 py-1.5 text-[12px] font-bold rounded-md transition-all ${catalogMode === 'input' ? 'bg-white text-indigo-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>새로 만들기</button>
@@ -658,15 +741,44 @@
                                     <input type="text" value={newCatalogInput} onChange={(e) => setNewCatalogInput(e.target.value)} placeholder="새 그룹 이름" className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-[13px] font-bold outline-none focus:border-indigo-500" />
                                 )}
                             </div>
-                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[350px]">
-                                <label className="text-[13px] font-bold text-slate-800 mb-2 block">이미지/텍스트 붙여넣기</label>
-                                <textarea value={rawText} onPaste={handlePaste} onChange={(e) => setRawText(e.target.value)} className="w-full flex-1 bg-slate-800 text-slate-200 rounded-lg p-4 font-mono text-[13px] outline-none border-none resize-none shadow-inner" placeholder="카카오톡 이미지 복사 후 Ctrl+V 또는 OCR 텍스트/판매현황 텍스트를 붙여넣으세요..." />
-                                {pastedImageUrl && <div className="mt-3 p-2 bg-slate-100 border border-slate-200 rounded-lg flex items-center gap-3"><img src={pastedImageUrl} className="h-16 rounded border border-slate-300"/><span className="text-[12px] font-bold text-slate-600">붙여넣은 이미지 대기중</span></div>}
-                                <div className="mt-3 flex justify-end">
-                                    <label className="flex items-center gap-2 cursor-pointer text-slate-600 text-[12px] font-bold hover:text-slate-800">
-                                        <input type="checkbox" className="rounded border-slate-300 text-rose-500" checked={forceManual} onChange={e => setForceManual(e.target.checked)} />
-                                        <span><i className="fas fa-hand-paper mr-1 text-rose-400"></i>AI 매칭 무시 (강제 수동 연결 모드)</span>
-                                    </label>
+                            <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4">
+                                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <label className="text-[13px] font-black text-slate-800 flex items-center"><i className="fas fa-images text-sky-500 mr-2"></i>이미지 입력</label>
+                                        {imageFiles.length > 0 && <button onClick={clearImageFiles} className="text-[11px] font-bold text-rose-500 hover:text-rose-700">전체삭제</button>}
+                                    </div>
+                                    <div onPaste={handleImagePaste} onDragOver={(e) => e.preventDefault()} onDrop={handleDrop} onClick={() => imageInputRef.current?.click()} className="min-h-[132px] border-2 border-dashed border-slate-300 rounded-xl bg-slate-50 hover:bg-sky-50 hover:border-sky-300 transition-colors cursor-pointer flex flex-col items-center justify-center text-center p-4">
+                                        <i className="fas fa-cloud-arrow-up text-3xl text-slate-300 mb-2"></i>
+                                        <div className="text-[12px] font-black text-slate-700 leading-relaxed">이미지를 여기에 붙여넣기</div>
+                                        <div className="text-[11px] font-bold text-slate-400 mt-1 leading-relaxed">Ctrl+V / 파일 끌어놓기 / 여러 장 선택</div>
+                                        <input ref={imageInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileSelect} />
+                                    </div>
+                                    <div className="mt-3 flex-1 overflow-auto max-h-[210px] pr-1 space-y-2">
+                                        {imageFiles.length === 0 ? (
+                                            <div className="text-[11px] text-slate-400 font-bold text-center py-4">첨부된 이미지가 없습니다.</div>
+                                        ) : imageFiles.map((item, idx) => (
+                                            <div key={item.id} className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                                                <div className="w-12 h-12 rounded-md border border-slate-200 bg-white overflow-hidden shrink-0"><img src={item.url} className="w-full h-full object-cover" /></div>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="text-[11px] font-black text-slate-700 truncate">{idx + 1}. {item.name}</div>
+                                                    <div className="text-[10px] font-bold text-slate-400">{item.source === 'paste' ? '붙여넣기' : item.source === 'drop' ? '드래그' : '파일선택'}</div>
+                                                </div>
+                                                <button onClick={(e) => { e.stopPropagation(); removeImageFile(item.id); }} className="w-7 h-7 rounded-full bg-white border border-slate-200 text-rose-500 hover:bg-rose-50"><i className="fas fa-times text-[11px]"></i></button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="mt-2 text-[10px] text-slate-400 font-bold leading-relaxed">이미지는 참고자료로 보관됩니다. OCR 텍스트는 오른쪽 텍스트창에 붙여넣어 파싱합니다.</div>
+                                </div>
+                                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[390px]">
+                                    <label className="text-[13px] font-black text-slate-800 mb-2 block"><i className="fas fa-align-left text-indigo-500 mr-2"></i>텍스트 파서창</label>
+                                    <textarea value={rawText} onPaste={handleTextPaste} onChange={(e) => setRawText(e.target.value)} className="w-full flex-1 bg-slate-800 text-slate-200 rounded-lg p-4 font-mono text-[13px] outline-none border-none resize-none shadow-inner" placeholder="OCR 결과 텍스트 또는 판매/구매현황 텍스트를 붙여넣으세요. 이미지 붙여넣기(Ctrl+V)는 왼쪽 이미지 목록에 첨부됩니다." />
+                                    <div className="mt-3 flex justify-between items-center">
+                                        <span className="text-[11px] font-bold text-slate-400">텍스트 기준으로 파싱합니다. 이미지 OCR은 1차 범위에서 제외됩니다.</span>
+                                        <label className="flex items-center gap-2 cursor-pointer text-slate-600 text-[12px] font-bold hover:text-slate-800">
+                                            <input type="checkbox" className="rounded border-slate-300 text-rose-500" checked={forceManual} onChange={e => setForceManual(e.target.checked)} />
+                                            <span><i className="fas fa-hand-paper mr-1 text-rose-400"></i>AI 매칭 무시</span>
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
                             <div className="flex gap-3">
@@ -784,6 +896,10 @@
 
             const availableTags = useMemo(() => { const counts = {}; Object.values(masterProducts).forEach(m => { [m['카탈로그'], m['견적서'], m['카테고리']].forEach(src => String(src||'').split(',').forEach(t => { const r = t.trim(); if(r) counts[r]=(counts[r]||0)+1; })); }); return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] })); }, [masterProducts]);
 
+            const referenceProducts = useMemo(() => filterProductsByTag(masterProducts, currentTag), [masterProducts, currentTag]);
+            const searchScopeProducts = currentTag && Object.keys(referenceProducts).length > 0 ? referenceProducts : masterProducts;
+            const isSettlementMode = useMemo(() => isSettlementReferenceTag(masterProducts, currentTag), [masterProducts, currentTag]);
+
             const matchedRows = parserBuffer.filter(r => r._matchCode);
             const similarRows = parserBuffer.filter(r => !r._matchCode && r._matchStatus.includes('유사') && !r._matchStatus.includes('중복'));
             const duplicateRows = parserBuffer.filter(r => !r._matchCode && r._matchStatus.includes('중복품목'));
@@ -806,8 +922,8 @@
 
             const masterSearchResults = useMemo(() => {
                 if ((activeTab !== 'similar' && activeTab !== 'extra') || !globalSearch.trim()) return [];
-                return searchMasterProducts(masterProducts, globalSearch).slice(0, 50);
-            }, [globalSearch, masterProducts, activeTab]);
+                return searchMasterProducts(searchScopeProducts, globalSearch).slice(0, 50);
+            }, [globalSearch, searchScopeProducts, activeTab]);
 
             const displayUnmatchedRows = activeTab === 'similar' ? combinedSimilarRows : extraRows;
             const tableMatchedRows = activeTab === 'unmatched' ? unmatchedRows : matchedRows;
@@ -931,7 +1047,7 @@
                                         </div>
                                         <div className="flex flex-1 max-w-md xl:max-w-xl mx-4">
                                             {isProcessing ? <div className="w-full bg-amber-400 text-amber-900 px-4 py-1.5 rounded-md font-mono text-[12px] font-bold flex items-center shadow-inner truncate"><i className="fas fa-spinner fa-spin mr-2"></i>{processMsg}</div>
-                                            : parserBuffer.length > 0 ? (currentTag ? <div className="w-full bg-indigo-500 text-white px-4 py-1.5 rounded-md text-[12px] font-bold flex items-center shadow-inner truncate"><i className="fas fa-folder mr-2 opacity-80"></i>작업 카탈로그: {currentTag}</div> : <div className="w-full bg-slate-600 text-slate-100 px-4 py-1.5 rounded-md text-[12px] font-bold flex items-center shadow-inner truncate"><i className="fas fa-bolt mr-2 opacity-80"></i>기준 미지정: 마스터 적용 불가</div>)
+                                            : parserBuffer.length > 0 ? (currentTag ? <div className="w-full bg-indigo-500 text-white px-4 py-1.5 rounded-md text-[12px] font-bold flex items-center shadow-inner truncate"><i className="fas fa-folder mr-2 opacity-80"></i>기준 그룹: {currentTag}</div> : <div className="w-full bg-slate-600 text-slate-100 px-4 py-1.5 rounded-md text-[12px] font-bold flex items-center shadow-inner truncate"><i className="fas fa-bolt mr-2 opacity-80"></i>기준 미지정: 마스터 적용 불가</div>)
                                             : <div className="w-full bg-slate-700 text-slate-300 px-4 py-1.5 rounded-md text-[12px] font-bold flex items-center shadow-inner truncate">텍스트 파서를 실행하여 작업을 시작하세요.</div>}
                                         </div>
                                         <nav className="flex gap-1.5 text-[14px] shrink-0 items-center">
@@ -948,7 +1064,7 @@
                             </div>
                             <div className="px-6 py-3 flex items-center justify-between gap-4 w-full">
                                 <div className="flex gap-1.5 shrink-0 bg-slate-100/80 p-1.5 rounded-xl border border-slate-200">
-                                    <button onClick={()=>setActiveTab('matched')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black ${activeTab==='matched' ? 'bg-white text-emerald-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>전체 ({matchedRows.length})</button>
+                                    <button onClick={()=>setActiveTab('matched')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black ${activeTab==='matched' ? 'bg-white text-emerald-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>전체 ({parserBuffer.length})</button>
                                     <button onClick={()=>setActiveTab('similar')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black ${activeTab==='similar' ? 'bg-white text-amber-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>유사 ({combinedSimilarRows.length})</button>
                                     <button onClick={()=>setActiveTab('unmatched')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black ${activeTab==='unmatched' ? 'bg-white text-rose-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>불일치 ({unmatchedRows.length})</button>
                                     <button onClick={()=>setActiveTab('missing')} className={`px-4 py-1.5 rounded-lg text-[12px] font-black flex items-center gap-1.5 ${activeTab==='missing' ? 'bg-white text-slate-800 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>누락 {currentTag && missingRows.length > 0 && <span className="bg-rose-100 text-rose-600 px-1.5 rounded text-[10px]">{missingRows.length}</span>}</button>
@@ -958,7 +1074,7 @@
                                 <div className="flex items-center gap-2 shrink-0">
                                     
                                     {/* ⭐ 비활성화(disabled) 조건 제거하여 언제든 실행되게 수정 */}
-                                    {activeTab === 'matched' && <button onClick={() => setShowReviewModal(true)} disabled={parserBuffer.length === 0} className={`h-9 px-5 rounded-lg text-[12px] font-black shadow-sm flex items-center ${parserBuffer.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400'}`} title="작업 검토 (F7)"><i className="fas fa-check-circle mr-1.5 text-[13px]"></i> 단가 브리핑/저장 <span className="ml-1.5 text-[9px] text-slate-400 font-normal">F7</span></button>}
+                                    {activeTab === 'matched' && !isSettlementMode && <button onClick={() => setShowReviewModal(true)} disabled={parserBuffer.length === 0} className={`h-9 px-5 rounded-lg text-[12px] font-black shadow-sm flex items-center ${parserBuffer.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-slate-200 text-slate-400'}`} title="작업 검토 (F7)"><i className="fas fa-check-circle mr-1.5 text-[13px]"></i> 단가 브리핑/저장 <span className="ml-1.5 text-[9px] text-slate-400 font-normal">F7</span></button>}
                                     {activeTab === 'missing' && <button onClick={actions.handleRemoveMissingTags} className={`h-9 px-4 rounded-lg text-[12px] font-bold shadow-sm flex items-center ${selectedMissingCodes.size > 0 ? 'bg-rose-50 border border-rose-200 text-rose-600' : 'bg-white text-slate-400 border border-slate-200'}`}><i className="fas fa-eraser mr-1.5 text-[13px]"></i> 카탈로그 제외</button>}
                                     {(activeTab === 'matched' || activeTab === 'missing') && <div className="w-px h-6 bg-slate-300 mx-1"></div>}
                                     
@@ -972,8 +1088,8 @@
 
                         {parserBuffer.length > 0 && <div className="px-6 pb-3 bg-white">
                             <div className={`rounded-xl border px-4 py-2.5 flex items-center justify-between shadow-sm ${pendingApplyRows.length > 0 ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
-                                <div className="text-[12px] font-bold text-slate-700"><i className={`fas ${pendingApplyRows.length > 0 ? 'fa-save text-amber-500' : 'fa-check text-slate-400'} mr-2`}></i>현재 상태: {pendingApplyRows.length > 0 ? '저장 전' : '저장 대기 없음'} · 매핑완료 {matchedRows.length}건 · 미저장 적용대기 {pendingApplyRows.length}건 · 확인필요 {unresolvedQueueCount}건</div>
-                                {pendingApplyRows.length > 0 && <button onClick={() => setShowReviewModal(true)} className="px-3 py-1.5 bg-slate-900 text-white rounded-lg text-[11px] font-black hover:bg-slate-700">단가 브리핑/저장</button>}
+                                <div className="text-[12px] font-bold text-slate-700"><i className={`fas ${pendingApplyRows.length > 0 ? 'fa-save text-amber-500' : 'fa-check text-slate-400'} mr-2`}></i>현재 상태: {isSettlementMode ? '정산검증 모드' : (pendingApplyRows.length > 0 ? '저장 전' : '저장 대기 없음')} · 매핑완료 {matchedRows.length}건 · 불일치 {unmatchedRows.length}건 · 확인필요 {unresolvedQueueCount}건</div>
+                                {pendingApplyRows.length > 0 && !isSettlementMode && <button onClick={() => setShowReviewModal(true)} className="px-3 py-1.5 bg-slate-900 text-white rounded-lg text-[11px] font-black hover:bg-slate-700">단가 브리핑/저장</button>}
                             </div>
                         </div>}
 
@@ -1015,7 +1131,7 @@
                                 !currentTag ? <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-white border border-slate-200 rounded-xl shadow-sm fade-in"><i className="fas fa-folder-open text-6xl text-slate-200 mb-4"></i><h2 className="text-xl font-black text-slate-600 mb-2">누락 계산 생략됨</h2></div> : (
                                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm h-full flex flex-col overflow-hidden fade-in">
                                     <div className="bg-slate-50 p-4 border-b border-slate-200 flex items-center justify-between shrink-0">
-                                        <div className="flex items-center gap-2 text-slate-700 text-[13px] font-bold"><i className="fas fa-info-circle text-indigo-500"></i>마스터 DB에는 '{currentTag}' 카탈로그에 등록되어 있지만, 텍스트에는 없는 상품들입니다.</div>
+                                        <div className="flex items-center gap-2 text-slate-700 text-[13px] font-bold"><i className="fas fa-info-circle text-indigo-500"></i>기준자료에는 '{currentTag}' 그룹에 있지만, 파싱 텍스트에는 없는 항목입니다.</div>
                                         <div className="relative">
                                             <input type="text" placeholder="누락 상품 검색..." value={appState.missingSearch} onChange={e=>appState.setMissingSearch(e.target.value)} className="w-[200px] border border-slate-300 rounded-lg px-3 py-1.5 text-[12px] outline-none focus:border-indigo-500" />
                                             <i className="fas fa-search absolute right-2.5 top-2 text-slate-400 text-[12px] pointer-events-none"></i>
