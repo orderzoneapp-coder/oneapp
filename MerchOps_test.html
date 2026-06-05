@@ -1595,6 +1595,7 @@
         const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
             const { activeTags, selectedRows, globalSearch, priceFilter, basicSearch, fullDisplayRows } = state;
             const { handleStopSales, handleExcludeSelectedFromUpdate, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, setPriceFilter, setSelectedRows, setBasicSearch, handleOpenExportCenter, handleCommitEstimate } = actions;
+            const [filterPanelOpen, setFilterPanelOpen] = useState(false);
 
             const applyPriceFilter = (value) => {
                 setPriceFilter(value);
@@ -1672,40 +1673,27 @@
                         </div>
                     </div>
 
-                    <div className="px-6 pt-3 pb-2 flex items-center gap-3 overflow-x-auto w-full">
-                        <div className="flex items-center gap-1.5 shrink-0">
-                            {[
-                                ['all', '전체'],
-                                ['changed', '가격변동'],
-                                ['promo', '행사중'],
-                                ['promoSuggest', '행사제안'],
-                                ['selling', '판매중'],
-                                ['stoppedSoldout', '정지&품절'],
-                                ['safeMinus', '안전(-)']
-                            ].map(([value, label]) => (
-                                <button key={value} onClick={() => applyPriceFilter(value)} className={`h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
-                                    {label}
+                    <div className="px-6 pt-3 pb-2 flex flex-col gap-2 w-full">
+                        <div className="flex items-center gap-3 w-full min-w-0">
+                            <div className="flex items-center gap-1.5 shrink-0">
+                                {[
+                                    ['all', '전체'],
+                                    ['changed', '가격변동'],
+                                    ['promo', '행사중'],
+                                    ['promoSuggest', '행사제안']
+                                ].map(([value, label]) => (
+                                    <button key={value} onClick={() => applyPriceFilter(value)} className={`h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+                                        {label}
+                                    </button>
+                                ))}
+                                <button onClick={() => setFilterPanelOpen(v => !v)} className={`h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all flex items-center ${filterPanelOpen ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`} title="판매상태, 재고, 역마진 등 상세 필터 열기">
+                                    <i className={`fas ${filterPanelOpen ? 'fa-chevron-up' : 'fa-chevron-down'} mr-1.5 text-[11px]`}></i> 상세필터
                                 </button>
-                            ))}
-                            <div className={`h-9 flex items-center rounded-lg border shadow-sm overflow-hidden ${priceFilter === 'basic' ? 'border-slate-800 bg-slate-800' : 'border-slate-300 bg-white'}`}>
-                                <button onClick={applyBasicFilter} className={`h-full px-3 text-[12px] font-black transition-all ${priceFilter === 'basic' ? 'text-white' : 'text-slate-600 hover:bg-slate-50'}`} title="기본값 필터 실행: 빈값=기본상품 전체, 0=기본아님 전체, 그 외=포함검색">
-                                    기본상품
-                                </button>
-                                <input
-                                    type="text"
-                                    value={basicSearch}
-                                    onChange={handleBasicSearchChange}
-                                    onKeyDown={(e) => { if (e.key === 'Enter') applyBasicFilter(); }}
-                                    placeholder="기본값"
-                                    className={`h-full w-[82px] px-2 text-[12px] font-bold outline-none border-l ${priceFilter === 'basic' ? 'bg-white text-slate-800 border-slate-600' : 'bg-slate-50 text-slate-700 border-slate-200 focus:bg-white'}`}
-                                    title="빈값: 기본상품 전체 / 0: 기본아님 전체 / 1,2,Y,필수 등: 포함검색"
-                                />
                             </div>
-                        </div>
 
-                        <div className="flex-1 min-w-[10px]"></div>
-                        
-                        <div className="flex items-center gap-2 shrink-0">
+                            <div className="flex-1 min-w-[10px]"></div>
+                            
+                            <div className="flex items-center gap-2 shrink-0">
                             {selectedRows.size > 0 && (
                                 <>
                                     <button onClick={handleForceApplyMarginRules} className="h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100" title="체크한 상품에 현재 룰을 다시 적용">
@@ -1726,7 +1714,39 @@
                             </button>
 
                             <SearchBar value={globalSearch} onChange={setGlobalSearch} />
+                            </div>
                         </div>
+
+                        {filterPanelOpen && (
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 shadow-inner flex items-center gap-2 flex-wrap">
+                                <span className="text-[11px] font-black text-slate-500 mr-1">상세필터</span>
+                                {[
+                                    ['margin', '역마진'],
+                                    ['selling', '판매중'],
+                                    ['stoppedSoldout', '정지&품절'],
+                                    ['safeMinus', '안전(-)']
+                                ].map(([value, label]) => (
+                                    <button key={value} onClick={() => applyPriceFilter(value)} className={`h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+                                        {label}
+                                    </button>
+                                ))}
+                                <div className={`h-8 flex items-center rounded-lg border shadow-sm overflow-hidden ${priceFilter === 'basic' ? 'border-slate-800 bg-slate-800' : 'border-slate-300 bg-white'}`}>
+                                    <button onClick={applyBasicFilter} className={`h-full px-3 text-[12px] font-black transition-all ${priceFilter === 'basic' ? 'text-white' : 'text-slate-600 hover:bg-slate-50'}`} title="기본값 필터 실행: 빈값=기본상품 전체, 0=기본아님 전체, 그 외=포함검색">
+                                        기본상품
+                                    </button>
+                                    <input
+                                        type="text"
+                                        value={basicSearch}
+                                        onChange={handleBasicSearchChange}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') applyBasicFilter(); }}
+                                        placeholder="기본값"
+                                        className={`h-full w-[82px] px-2 text-[12px] font-bold outline-none border-l ${priceFilter === 'basic' ? 'bg-white text-slate-800 border-slate-600' : 'bg-white text-slate-700 border-slate-200 focus:bg-white'}`}
+                                        title="빈값: 기본상품 전체 / 0: 기본아님 전체 / 1,2,Y,필수 등: 포함검색"
+                                    />
+                                </div>
+                                <span className="text-[11px] text-slate-400 ml-auto">이슈 열에 역마진이 있으면 역마진 필터에서 모아봅니다.</span>
+                            </div>
+                        )}
                     </div>
                 </div>
             );
@@ -2293,9 +2313,11 @@
                         issueSubText = '';
                         issueTextColor = 'text-rose-700';
                     } else {
-                        issueText = '행사';
-                        issueSubText = getPromoThemeLabel(mItem);
-                        issueTextColor = 'text-purple-700';
+                        // 현재 행사 상태는 판매상태/테마 영역에서 확인한다.
+                        // 이슈 열에는 품절, 품절임박, 역마진처럼 조치가 필요한 내용만 표시한다.
+                        issueText = '-';
+                        issueSubText = '';
+                        issueTextColor = 'text-slate-500';
                     }
                     issueCellBg = 'bg-white';
                 } else if (isPromoSuggestion(row, mItem, config)) {
@@ -2684,6 +2706,10 @@
                         }
                         if (ui.priceFilter === 'promo') return isPromoActive(item, mItem);
                         if (ui.priceFilter === 'promoSuggest') return isPromoSuggestion(item, mItem, config);
+                        if (ui.priceFilter === 'margin') {
+                            const marginInfo = getMarginInfo(item, mItem);
+                            return marginInfo.rate !== null && marginInfo.rate < 0;
+                        }
                         if (ui.priceFilter === 'selling') return isSellingItem(item, mItem);
                         if (ui.priceFilter === 'stoppedSoldout') return isStoppedOrSoldoutItem(item, mItem);
                         if (ui.priceFilter === 'safeMinus') return isSafeMinusItem(item, mItem);
@@ -2818,7 +2844,7 @@
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <div className="flex items-center mb-0.5">
                                                     <span className="text-[14px] font-black text-slate-200 leading-none">MerchOps</span>
-                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v1.6 통합 버전</span>
+                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v2.0.7 이슈 행사배지 제거</span>
                                                 </div>
                                                 <span className="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">MAIN WORKSPACE</span>
                                             </div>
