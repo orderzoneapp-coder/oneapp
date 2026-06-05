@@ -194,25 +194,38 @@
         window.computeFinalData = (mItem, sources, marginRules, forceRecalc = false) => {
             const inv = sources['inventory'] || {};
             const est = sources['estimate'] || {};
+            const purchase = sources['purchase'] || {};
+            const sales = sources['sales'] || {};
+            // 구매 파일은 실제 구매/매입 기준으로 입고가 판단에 사용할 수 있다.
+            // 판매 파일은 대상상품/판매현황 확인용으로 보며, 단가가 명확히 들어온 경우에만 보조값으로 참조한다.
+            // 우선순위: 견적/시세 > 구매 > 판매 > 마스터
+            const priceSrc = Object.keys(est).length > 0 ? est : (Object.keys(purchase).length > 0 ? purchase : (Object.keys(sales).length > 0 ? sales : {}));
             
             const invStock = inv['재고수량'] !== undefined ? window.parseNum(inv['재고수량']) : (inv['안전재고'] !== undefined ? window.parseNum(inv['안전재고']) : 999);
             const hasInv = Object.keys(inv).length > 0;
             const hasEst = Object.keys(est).length > 0;
+            const hasPurchase = Object.keys(purchase).length > 0;
+            const hasSales = Object.keys(sales).length > 0;
+            const hasPriceSource = Object.keys(priceSrc).length > 0;
             
             const invPromo = window.parseNum(inv['행사가']);
             const estPromo = window.parseNum(est['행사가']);
+            const pricePromo = window.parseNum(priceSrc['행사가']);
             
             const invInPrice = inv['입고가'] !== undefined ? window.parseNum(inv['입고가']) : window.parseNum(mItem['입고가']);
             const estInPrice = est['입고가'] !== undefined ? window.parseNum(est['입고가']) : window.parseNum(mItem['입고가']);
+            const priceInPrice = priceSrc['입고가'] !== undefined ? window.parseNum(priceSrc['입고가']) : window.parseNum(mItem['입고가']);
             const masterInPrice = window.parseNum(mItem['입고가']);
 
             const invProvidedOut = window.parseNum(inv['출고가']);
             const estProvidedOut = window.parseNum(est['출고가']);
+            const priceProvidedOut = window.parseNum(priceSrc['출고가']);
             const masterProvidedOut = window.parseNum(mItem['출고가']);
             const masterProvidedMarket = window.parseNum(mItem['시중가']);
 
             const invTargetOut = window.calculatePricesEngine(invInPrice, invProvidedOut, mItem, inv, marginRules, forceRecalc);
             const estTargetOut = window.calculatePricesEngine(estInPrice, estProvidedOut, mItem, est, marginRules, forceRecalc);
+            const priceTargetOut = window.calculatePricesEngine(priceInPrice, priceProvidedOut, mItem, priceSrc, marginRules, forceRecalc);
             const masterTargetOut = window.calculatePricesEngine(masterInPrice, masterProvidedOut, mItem, {}, marginRules, forceRecalc);
 
             let finalMarketPrice = 0;
@@ -233,12 +246,18 @@
             } else if (hasEst && estPromo > 0 && !forceRecalc) {
                 targetSource = { ...est, '입고가': estInPrice, '출고가': estTargetOut, '행사가': estPromo }; 
                 theme = 1; isPromo = true; normalPrice = estTargetOut;
+            } else if (hasPriceSource && pricePromo > 0 && !forceRecalc) {
+                targetSource = { ...priceSrc, '입고가': priceInPrice, '출고가': priceTargetOut, '행사가': pricePromo };
+                theme = hasPurchase ? 1 : 0; isPromo = true; normalPrice = priceTargetOut;
             } else if (hasInv && invStock > 0) {
                 targetSource = { ...inv, '입고가': invInPrice, '출고가': invTargetOut }; 
                 theme = 0; normalPrice = invTargetOut;
             } else if (hasEst) {
                 targetSource = { ...est, '입고가': estInPrice, '출고가': estTargetOut }; 
                 theme = 0; normalPrice = estTargetOut;
+            } else if (hasPurchase || hasSales) {
+                targetSource = { ...priceSrc, '입고가': priceInPrice, '출고가': priceTargetOut };
+                theme = 0; normalPrice = priceTargetOut;
             } else {
                 targetSource = { '입고가': masterInPrice, '출고가': masterTargetOut }; 
                 theme = 0; normalPrice = masterTargetOut;
@@ -788,6 +807,16 @@
                 }
             }, [data.masterProducts, data.setMasterProducts, ui]);
 
+            const getUploadRoleMeta = (role = 'estimate') => {
+                const meta = {
+                    estimate: { label: '공급사 견적', tag: '📄 견적/시세 엑셀', icon: '견적', affectsPrice: true },
+                    purchase: { label: '구매현황', tag: '🧾 구매 엑셀', icon: '구매', affectsPrice: true },
+                    sales: { label: '판매현황', tag: '🛒 판매 엑셀', icon: '판매', affectsPrice: false },
+                    inventory: { label: '자사 재고', tag: '📦 자사 재고 엑셀', icon: '재고', affectsPrice: true }
+                };
+                return meta[role] || meta.estimate;
+            };
+
             // ============================================================
             // [M-FLOW-01] 엑셀 업로드/매핑 처리
             // 역할: 업로드 파일을 파싱하고 managedItems.sources 및 finalData를 구성한다.
@@ -800,7 +829,8 @@
                 if (!window.XLSX) return ui.setAlertMsg("엑셀 파서 로드 대기중입니다.");
 
                 ui.setIsProcessing(true); 
-                ui.setProcessMsg(`[${role === 'inventory' ? '자사 재고' : '공급사 견적'}] 엑셀 로딩 및 분석 중...`);
+                const roleMeta = getUploadRoleMeta(role);
+                ui.setProcessMsg(`[${roleMeta.label}] 엑셀 로딩 및 분석 중...`);
                 await new Promise(resolve => setTimeout(resolve, 50)); 
 
                 try {
@@ -839,7 +869,7 @@
                             let mItem = newManaged[code];
                             if (!mItem.sources[role]) mItem.sources[role] = {};
                             
-                            mItem = { ...mItem, _tags: new Set([...(mItem._tags || []), `excel:${role === 'inventory' ? '재고' : '견적'}업로드`]) };
+                            mItem = { ...mItem, _tags: new Set([...(mItem._tags || []), `excel:${roleMeta.icon}업로드`]) };
                             
                             const specKey = headerCache['규격']; 
                             const vendorKey = headerCache['구매처'];
@@ -872,11 +902,11 @@
                     data.setMasterProducts(newMaster);
                     data.setManagedItems(newManaged);
                     ui.setActiveTags(prev => {
-                        const tagLabel = role === 'inventory' ? '📦 자사 재고 엑셀' : '📄 견적/시세 엑셀';
+                        const tagLabel = roleMeta.tag;
                         if (!prev.some(t => t.name === tagLabel)) return [...prev, {type: 'excel', name: tagLabel}];
                         return prev;
                     });
-                    if(totalCount > 0) ui.showToast(`✅ [${role === 'inventory' ? '자사 재고' : '공급사 견적'}] 데이터 로드 완료 (${totalCount}건)`);
+                    if(totalCount > 0) ui.showToast(`✅ [${roleMeta.label}] 데이터 로드 완료 (${totalCount}건)`);
                 } catch(error) { 
                     console.error(error); 
                     ui.setAlertMsg("❌ 파싱 오류 발생. 엑셀 파일 형식을 확인하세요."); 
@@ -1364,6 +1394,8 @@
                     const sources = row.sources || {};
                     const inventory = sources.inventory || {};
                     const estimate = sources.estimate || {};
+                    const purchase = sources.purchase || {};
+                    const sales = sources.sales || {};
                     const master = data.masterProducts[code] || {};
                     const tags = row._tags ? Array.from(row._tags) : [];
 
@@ -1371,6 +1403,8 @@
                         if (finalData[key] !== undefined && finalData[key] !== '') return finalData[key];
                         if (inventory[key] !== undefined && inventory[key] !== '') return inventory[key];
                         if (estimate[key] !== undefined && estimate[key] !== '') return estimate[key];
+                        if (purchase[key] !== undefined && purchase[key] !== '') return purchase[key];
+                        if (sales[key] !== undefined && sales[key] !== '') return sales[key];
                         if (master[key] !== undefined && master[key] !== '') return master[key];
                         return defaultValue;
                     };
@@ -1381,7 +1415,7 @@
                         return val !== undefined && val !== null ? String(val) : defaultValue;
                     };
 
-                    const stockRaw = finalData['재고수량'] ?? inventory['재고수량'] ?? inventory['안전재고'] ?? estimate['재고수량'];
+                    const stockRaw = finalData['재고수량'] ?? inventory['재고수량'] ?? inventory['안전재고'] ?? estimate['재고수량'] ?? purchase['재고수량'] ?? sales['재고수량'];
                     const stockQty = stockRaw !== undefined && stockRaw !== null && stockRaw !== '' ? window.parseNum(stockRaw) : 999;
                     const masterSalesState = window.getMasterSalesState(master);
 
@@ -1416,7 +1450,9 @@
                         source: {
                             hasInventory: Object.keys(inventory).length > 0,
                             hasEstimate: Object.keys(estimate).length > 0,
-                            sourceType: Object.keys(inventory).length > 0 ? 'inventory' : (Object.keys(estimate).length > 0 ? 'estimate' : 'master'),
+                            hasPurchase: Object.keys(purchase).length > 0,
+                            hasSales: Object.keys(sales).length > 0,
+                            sourceType: Object.keys(inventory).length > 0 ? 'inventory' : (Object.keys(estimate).length > 0 ? 'estimate' : (Object.keys(purchase).length > 0 ? 'purchase' : (Object.keys(sales).length > 0 ? 'sales' : 'master'))),
                             tags
                         },
                         baselineSnapshot: {
@@ -1484,13 +1520,13 @@
             return (
                 <div className="bg-black/40 rounded-md border border-slate-700/50 px-4 py-2 flex flex-col flex-1 max-w-md xl:max-w-xl mx-4 overflow-hidden shadow-inner text-[11px] font-mono leading-tight justify-center h-10">
                     {isProcessing ? (
-                        <div className="text-amber-400 flex items-center"><i className="fas fa-spinner fa-spin mr-2"></i> > {processMsg}</div>
+                        <div className="text-amber-400 flex items-center"><i className="fas fa-spinner fa-spin mr-2"></i> {'>'} {processMsg}</div>
                     ) : activeTags.length > 0 ? (
                         <div className="text-indigo-300 flex items-center truncate">
-                            > {activeTags.map(t=>`[${t.name}]`).join(' + ')} 표시됨 ({estimateCount}건 작업중) <span className="w-1.5 h-3 bg-indigo-300 ml-1.5 animate-pulse"></span>
+                            {'>'} {activeTags.map(t=>`[${t.name}]`).join(' + ')} 표시됨 ({estimateCount}건 작업중) <span className="w-1.5 h-3 bg-indigo-300 ml-1.5 animate-pulse"></span>
                         </div>
                     ) : (
-                        <div className="text-emerald-400 flex items-center">> DB: {itemCount.toLocaleString()}건 로드됨 ({timeStr}) <span className="w-1.5 h-3 bg-emerald-400 ml-1 animate-pulse"></span></div>
+                        <div className="text-emerald-400 flex items-center">{'>'} DB: {itemCount.toLocaleString()}건 로드됨 ({timeStr}) <span className="w-1.5 h-3 bg-emerald-400 ml-1 animate-pulse"></span></div>
                     )}
                 </div>
             );
@@ -1572,12 +1608,22 @@
 
                         <div className="w-px h-5 bg-slate-300 mx-1 shrink-0"></div>
 
-                        <label className="cursor-pointer h-9 px-4 rounded-xl text-[12px] font-bold transition-all flex items-center justify-center bg-white text-blue-700 shadow-sm hover:bg-blue-50 border border-blue-200 shrink-0" title="공급사 견적/시세 엑셀을 업로드합니다.">
-                            <i className="fas fa-file-excel mr-2 text-[14px]"></i> 견적서 불러오기
+                        <label className="cursor-pointer h-9 px-3 rounded-xl text-[12px] font-bold transition-all flex items-center justify-center bg-white text-blue-700 shadow-sm hover:bg-blue-50 border border-blue-200 shrink-0" title="공급사 견적/시세 엑셀을 업로드합니다.">
+                            <i className="fas fa-file-excel mr-2 text-[14px]"></i> 견적 불러오기
                             <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e, 'estimate')} accept=".xlsx, .xls, .csv" disabled={state.isProcessing} />
                         </label>
 
-                        <label className="cursor-pointer h-9 px-4 rounded-xl text-[12px] font-bold transition-all flex items-center justify-center bg-white text-emerald-700 shadow-sm hover:bg-emerald-50 border border-emerald-200 shrink-0" title="자사 재고 엑셀을 업로드합니다.">
+                        <label className="cursor-pointer h-9 px-3 rounded-xl text-[12px] font-bold transition-all flex items-center justify-center bg-white text-amber-700 shadow-sm hover:bg-amber-50 border border-amber-200 shrink-0" title="구매현황/매입 엑셀을 업로드합니다.">
+                            <i className="fas fa-receipt mr-2 text-[14px]"></i> 구매 불러오기
+                            <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e, 'purchase')} accept=".xlsx, .xls, .csv" disabled={state.isProcessing} />
+                        </label>
+
+                        <label className="cursor-pointer h-9 px-3 rounded-xl text-[12px] font-bold transition-all flex items-center justify-center bg-white text-purple-700 shadow-sm hover:bg-purple-50 border border-purple-200 shrink-0" title="판매현황 엑셀을 업로드합니다.">
+                            <i className="fas fa-cart-shopping mr-2 text-[14px]"></i> 판매 불러오기
+                            <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e, 'sales')} accept=".xlsx, .xls, .csv" disabled={state.isProcessing} />
+                        </label>
+
+                        <label className="cursor-pointer h-9 px-3 rounded-xl text-[12px] font-bold transition-all flex items-center justify-center bg-white text-emerald-700 shadow-sm hover:bg-emerald-50 border border-emerald-200 shrink-0" title="자사 재고 엑셀을 업로드합니다.">
                             <i className="fas fa-box mr-2 text-[14px]"></i> 재고 불러오기
                             <input type="file" className="hidden" multiple onChange={(e) => handleFileUpload(e, 'inventory')} accept=".xlsx, .xls, .csv" disabled={state.isProcessing} />
                         </label>
@@ -1691,6 +1737,8 @@
             if (finalData[field] !== undefined && finalData[field] !== '') return finalData[field];
             if (sources.inventory && sources.inventory[field] !== undefined && sources.inventory[field] !== '') return sources.inventory[field];
             if (sources.estimate && sources.estimate[field] !== undefined && sources.estimate[field] !== '') return sources.estimate[field];
+            if (sources.purchase && sources.purchase[field] !== undefined && sources.purchase[field] !== '') return sources.purchase[field];
+            if (sources.sales && sources.sales[field] !== undefined && sources.sales[field] !== '') return sources.sales[field];
             if (sources.parser && sources.parser[field] !== undefined && sources.parser[field] !== '') return sources.parser[field];
             return '';
         };
@@ -1761,8 +1809,28 @@
             return window.parseNum(v);
         };
 
+        // ============================================================
+        // [M-PROMO-01] 행사 판정 기준
+        // 확정 정책: 행사중은 현재 진행형 상태이므로 마스터 행사가가 0보다 큰 상품만 해당한다.
+        // 작업파일/업로드/파서의 행사가 값은 미래 적용 후보값이며, 최종 저장 전까지 행사중으로 보지 않는다.
+        // ============================================================
+        const getMasterPromoPrice = (mItem = {}) => window.parseNum(mItem?.['행사가']);
+
+        const getWorkingPromoPrice = (row = {}) => window.parseNum(
+            row.finalData?.['행사가'] ??
+            row.sources?.estimate?.['행사가'] ??
+            row.sources?.inventory?.['행사가'] ??
+            0
+        );
+
+        const getEffectivePromoPriceForMargin = (row = {}, mItem = {}) => {
+            const workingPromo = getWorkingPromoPrice(row);
+            if (workingPromo > 0) return workingPromo;
+            return getMasterPromoPrice(mItem);
+        };
+
         const getMarginInfo = (row = {}, mItem = {}) => {
-            const promoPrice = window.parseNum(row.finalData?.['행사가']);
+            const promoPrice = getEffectivePromoPriceForMargin(row, mItem);
             const outPrice = window.parseNum(row.finalData?.['출고가'] !== undefined ? row.finalData['출고가'] : mItem?.['출고가']);
             const price = promoPrice > 0 ? promoPrice : outPrice;
             const inPrice = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : mItem?.['입고가']);
@@ -1770,7 +1838,7 @@
             return { price, inPrice, rate, isPromo: promoPrice > 0 };
         };
 
-        const isPromoActive = (row = {}) => window.parseNum(row.finalData?.['행사가']) > 0;
+        const isPromoActive = (row = {}, mItem = {}) => getMasterPromoPrice(mItem) > 0;
 
         const getMarginToneClass = (rate) => {
             if (rate === null || rate === undefined || isNaN(rate)) return 'bg-slate-100 text-slate-400 border-slate-200';
@@ -1781,12 +1849,13 @@
         };
 
         const isPromoSuggestion = (row = {}, mItem = {}, config = {}) => {
-            if (isPromoActive(row)) return false;
+            if (isPromoActive(row, mItem)) return false;
+            if (getWorkingPromoPrice(row) > 0) return true;
             const marginInfo = getMarginInfo(row, mItem);
             if (marginInfo.rate !== null && marginInfo.rate < 0) return false;
 
             const oldIn = window.parseNum(mItem?.['입고가']);
-            const newIn = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : (row.sources?.estimate?.['입고가'] ?? row.sources?.inventory?.['입고가']));
+            const newIn = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : (row.sources?.estimate?.['입고가'] ?? row.sources?.purchase?.['입고가'] ?? row.sources?.sales?.['입고가'] ?? row.sources?.inventory?.['입고가']));
             const dropAmount = oldIn > 0 && newIn > 0 ? oldIn - newIn : 0;
             const isLargeDrop = oldIn > 0 && newIn > 0 && newIn < oldIn && (dropAmount >= 500 || (dropAmount / oldIn) >= 0.10);
             if (isLargeDrop) return true;
@@ -1805,7 +1874,7 @@
 
         const getPromoSuggestionReason = (row = {}, mItem = {}, config = {}) => {
             const oldIn = window.parseNum(mItem?.['입고가']);
-            const newIn = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : (row.sources?.estimate?.['입고가'] ?? row.sources?.inventory?.['입고가']));
+            const newIn = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : (row.sources?.estimate?.['입고가'] ?? row.sources?.purchase?.['입고가'] ?? row.sources?.sales?.['입고가'] ?? row.sources?.inventory?.['입고가']));
             const dropAmount = oldIn > 0 && newIn > 0 ? oldIn - newIn : 0;
             if (oldIn > 0 && newIn > 0 && newIn < oldIn && (dropAmount >= 500 || (dropAmount / oldIn) >= 0.10)) return `단가하락 ${Math.round((dropAmount / oldIn) * 100)}%`;
 
@@ -1892,7 +1961,7 @@
         const buildRowReport = ({ row, mItem, issueText, issueSubText, latestHistory, compareSummary, marginInfo, stockQty, safeStock, promoActive }) => {
             const lines = [];
             const oldIn = window.parseNum(mItem?.['입고가']);
-            const newIn = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : (row.sources?.estimate?.['입고가'] ?? row.sources?.inventory?.['입고가'] ?? oldIn));
+            const newIn = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : (row.sources?.estimate?.['입고가'] ?? row.sources?.purchase?.['입고가'] ?? row.sources?.sales?.['입고가'] ?? row.sources?.inventory?.['입고가'] ?? oldIn));
             if (latestHistory) {
                 const catalog = normalizeHistoryCatalog(latestHistory) || '파서';
                 const oldVal = latestHistory.oldVal ?? latestHistory.oldInPrice ?? oldIn;
@@ -1985,6 +2054,8 @@
                         sources: {
                             ...(currentItem.sources || {}),
                             estimate: currentItem.sources?.estimate ? { ...currentItem.sources.estimate } : currentItem.sources?.estimate,
+                            purchase: currentItem.sources?.purchase ? { ...currentItem.sources.purchase } : currentItem.sources?.purchase,
+                            sales: currentItem.sources?.sales ? { ...currentItem.sources.sales } : currentItem.sources?.sales,
                             inventory: currentItem.sources?.inventory ? { ...currentItem.sources.inventory } : currentItem.sources?.inventory
                         },
                         finalData: {
@@ -1999,7 +2070,7 @@
                     }
 
                     // 업로드 source는 원본 역할을 유지하되, 관리자가 셀에서 수정한 값은 현재 작업 source에 반영한다.
-                    ['estimate', 'inventory'].forEach(sourceKey => {
+                    ['estimate', 'purchase', 'sales', 'inventory'].forEach(sourceKey => {
                         if (!nextItem.sources[sourceKey]) return;
                         nextItem.sources[sourceKey][field] = normalizedVal;
                         if (effectiveField && effectiveField !== field) {
@@ -2122,7 +2193,7 @@
             const dSpec = uploadSpec || mItem.규격 || '';
 
             const oldP = window.parseNum(mItem['입고가']);
-            const newP = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : (row.sources?.['estimate']?.['입고가'] ?? row.sources?.['inventory']?.['입고가'] ?? oldP));
+            const newP = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : (row.sources?.['estimate']?.['입고가'] ?? row.sources?.['purchase']?.['입고가'] ?? row.sources?.['sales']?.['입고가'] ?? row.sources?.['inventory']?.['입고가'] ?? oldP));
             const diffAmount = newP - oldP;
             const diffRate = oldP > 0 && newP > 0 ? (diffAmount / oldP) * 100 : 0;
             const marginInfo = getMarginInfo(row, mItem);
@@ -2131,7 +2202,7 @@
             const salesState = window.getMasterSalesState(mItem);
             const isStopPending = row.finalData?._salesStopRequested === true || String(row.finalData?.['판매여부']) === '0';
             const isStopped = salesState.code === '0' || isStopPending;
-            const promoActive = isPromoActive(row);
+            const promoActive = isPromoActive(row, mItem);
             const stockQty = getStockQty(row, mItem);
             const safeStock = getSafeStock(mItem);
 
@@ -2526,16 +2597,16 @@
                     baseList = baseList.filter(item => {
                         const mItem = data.masterProducts[item.코드] || {};
                         const oldIn = window.parseNum(mItem['입고가']);
-                        const newIn = window.parseNum(item.finalData?.['입고가'] !== undefined ? item.finalData['입고가'] : (item.sources?.['estimate']?.['입고가'] ?? item.sources?.['inventory']?.['입고가']));
+                        const newIn = window.parseNum(item.finalData?.['입고가'] !== undefined ? item.finalData['입고가'] : (item.sources?.['estimate']?.['입고가'] ?? item.sources?.['purchase']?.['입고가'] ?? item.sources?.['sales']?.['입고가'] ?? item.sources?.['inventory']?.['입고가']));
                         const oldOut = window.parseNum(mItem['출고가']);
-                        const newOut = window.parseNum(item.finalData?.['출고가'] !== undefined ? item.finalData['출고가'] : (item.sources?.['estimate']?.['출고가'] ?? item.sources?.['inventory']?.['출고가']));
+                        const newOut = window.parseNum(item.finalData?.['출고가'] !== undefined ? item.finalData['출고가'] : (item.sources?.['estimate']?.['출고가'] ?? item.sources?.['purchase']?.['출고가'] ?? item.sources?.['sales']?.['출고가'] ?? item.sources?.['inventory']?.['출고가']));
                         const oldPromo = window.parseNum(mItem['행사가']);
-                        const newPromo = window.parseNum(item.finalData?.['행사가'] !== undefined ? item.finalData['행사가'] : (item.sources?.['estimate']?.['행사가'] ?? item.sources?.['inventory']?.['행사가']));
+                        const newPromo = window.parseNum(item.finalData?.['행사가'] !== undefined ? item.finalData['행사가'] : (item.sources?.['estimate']?.['행사가'] ?? item.sources?.['purchase']?.['행사가'] ?? item.sources?.['sales']?.['행사가'] ?? item.sources?.['inventory']?.['행사가']));
 
                         if (ui.priceFilter === 'changed') {
                             return (oldIn > 0 && newIn > 0 && oldIn !== newIn) || (oldOut > 0 && newOut > 0 && oldOut !== newOut) || oldPromo !== newPromo;
                         }
-                        if (ui.priceFilter === 'promo') return isPromoActive(item);
+                        if (ui.priceFilter === 'promo') return isPromoActive(item, mItem);
                         if (ui.priceFilter === 'promoSuggest') return isPromoSuggestion(item, mItem, config);
                         if (ui.priceFilter === 'basic') return matchBasicFilter(mItem, ui.basicSearch);
                         return true;
