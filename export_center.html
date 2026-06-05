@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 출력검증센터 [v2.5.5 정지처리 연동]</title>
+    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.0 가격컬럼 단순화]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -83,14 +83,19 @@
             });
         };
 
+        const getAppliedPrice = (row) => {
+            const promo = parseNum(row?.행사가);
+            const out = parseNum(row?.출고가);
+            return promo > 0 ? promo : out;
+        };
+
         const getSaleState = (row) => {
             const rawStatus = row?.판매여부;
             if (String(rawStatus).trim() === '0') return { code: '0', label: '정지중', text: '0 정지중', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
-            const baseOut = parseNum(row.출고가);
+            const out = parseNum(row.출고가);
             const promo = parseNum(row.행사가);
-            const finalOut = parseNum(row.최종출고가);
             const stock = row.재고수량 !== undefined && row.재고수량 !== '' ? parseNum(row.재고수량) : 999;
-            const hasSalePrice = baseOut > 0 || promo > 0 || finalOut > 0;
+            const hasSalePrice = out > 0 || promo > 0;
             if (!hasSalePrice) return { code: '0', label: '정지중', text: '0 정지중', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
             if (stock === 0) return { code: '1', label: '품절', text: '1 품절', cls: 'bg-orange-50 text-orange-700 border-orange-200' };
             if (promo > 0) return { code: '1', label: '행사', text: '1 행사', cls: 'bg-purple-50 text-purple-700 border-purple-200' };
@@ -99,22 +104,32 @@
 
         const isMarginWarning = (row) => {
             const sale = getSaleState(row);
-            const finalOut = parseNum(row.최종출고가);
+            const salePrice = getAppliedPrice(row);
             const inPrice = parseNum(row.입고가);
-            return sale.code === '1' && finalOut > 0 && finalOut < inPrice;
+            return sale.code === '1' && salePrice > 0 && salePrice < inPrice;
         };
 
         const getDiffInfo = (row) => {
-            const base = parseNum(row.기준출고가);
-            const finalOut = parseNum(row.최종출고가);
-            const diff = finalOut - base;
+            const base = parseNum(row.기준입고가);
+            const current = parseNum(row.입고가);
+            const diff = current - base;
             const rate = base > 0 ? diff / base : 0;
             return { diff, rate };
         };
 
-        const isAnomaly = (row) => {
+        const isBigChange = (row) => {
+            const sale = getSaleState(row);
+            if (sale.label === '정지중') return false;
             const { diff, rate } = getDiffInfo(row);
-            return parseNum(row.기준출고가) > 0 && Math.abs(rate) >= 0.3 && Math.abs(diff) >= 1000;
+            return parseNum(row.기준입고가) > 0 && parseNum(row.입고가) > 0 && Math.abs(rate) >= 0.3 && Math.abs(diff) >= 1000;
+        };
+
+        const isDigitSuspicion = (row) => {
+            const base = parseNum(row.기준입고가);
+            const current = parseNum(row.입고가);
+            if (base <= 0 || current <= 0) return false;
+            const ratio = current / base;
+            return (ratio >= 9 && ratio <= 11) || (ratio >= 0.09 && ratio <= 0.11);
         };
 
         const isNewItem = (row) => {
@@ -197,9 +212,9 @@
         };
 
         // ============================================================
-        // [E-ENGINE-01] 출력검증센터 계산출고가 엔진
-        // 역할: reviewRows 단계에서 입고가/외주비/노무비/창고/단위/마진룰 기준 계산출고가를 산출한다.
-        // 주의: 행사가가 있으면 최종적용 가격 판단은 후속 최종출고가 계산에서 처리한다.
+        // [E-ENGINE-01] 출력검증센터 출고가 산출 엔진
+        // 역할: 입고가/외주비/노무비/창고/단위/마진룰 기준으로 출고가를 산출한다.
+        // 주의: 화면에는 별도 계산출고가/최종출고가를 노출하지 않고, 출고가와 행사가만 보여준다.
         // ============================================================
         const calculateReviewOutPrice = (baseInPrice, context = {}, marginRules = []) => {
             const inPrice = parseNum(baseInPrice);
@@ -300,10 +315,9 @@
 
                             const 입고가 = parseNum(working.입고가);
                             const 불러온출고가 = parseNum(working.출고가);
-                            const 계산출고가 = calculateReviewOutPrice(입고가, { ...master, ...working }, marginRules);
-                            const 출고가 = 불러온출고가 > 0 ? 불러온출고가 : 계산출고가;
+                            const 산출출고가 = calculateReviewOutPrice(입고가, { ...master, ...working }, marginRules);
+                            const 출고가 = 불러온출고가 > 0 ? 불러온출고가 : 산출출고가;
                             const 행사가 = parseNum(working.행사가);
-                            const 최종출고가 = 행사가 > 0 ? 행사가 : 출고가;
                             const rawStock = working.재고수량;
                             const 재고수량 = (rawStock !== undefined && rawStock !== null && rawStock !== '') ? parseNum(rawStock) : 999;
 
@@ -321,11 +335,8 @@
                                 기준판매여부,
                                 판매여부: working.판매여부 !== undefined && working.판매여부 !== '' ? working.판매여부 : 기준판매여부,
                                 입고가,
-                                불러온출고가,
-                                계산출고가,
                                 출고가,
                                 행사가,
-                                최종출고가,
                                 도매A: parseNum(working.도매A),
                                 도매B: parseNum(working.도매B),
                                 시중가: parseNum(working.시중가 || 기준시중가),
@@ -356,8 +367,8 @@
 
             // ============================================================
             // [E-FLOW-02] 검증센터 단가/작업값 수정
-            // 역할: 입고가/출고가/행사가 수정 시 계산출고가와 최종 적용 가격을 즉시 갱신한다.
-            // 정책: 입고가 변경은 계산출고가를 출고가에 자동 반영하지만, 행사가가 있으면 최종 가격은 행사가가 우선한다.
+            // 역할: 입고가/출고가/행사가 수정 시 작업값을 즉시 갱신한다.
+            // 정책: 입고가·외주비·노무비 변경 시 출고가를 자동 재계산하고, 행사가가 있으면 출력 적용가만 행사가가 우선한다.
             // ============================================================
             const handleEdit = useCallback((code, field, value) => {
                 setReviewRows(prev => prev.map(row => {
@@ -365,22 +376,17 @@
 
                     const next = { ...row, [field]: value };
 
-                    if (field === '입고가') {
-                        const newIn = parseNum(value);
-                        const calcOut = calculateReviewOutPrice(newIn, row, marginRules);
-                        next.입고가 = newIn;
-                        next.계산출고가 = calcOut;
-                        // A안: 관리자는 입고가 기준으로 판단하므로, 입고가 수정 시 계산출고가를 최종 출고가에 자동 반영한다.
-                        next.출고가 = calcOut;
-                        next.최종출고가 = parseNum(row.행사가) > 0 ? parseNum(row.행사가) : calcOut;
+                    if (field === '입고가' || field === '외주비' || field === '노무비') {
+                        const numericValue = parseNum(value);
+                        next[field] = numericValue;
+                        const calcContext = { ...row, ...next };
+                        next.출고가 = calculateReviewOutPrice(parseNum(next.입고가), calcContext, marginRules);
                     } else if (field === '행사가') {
-                        const newPromo = parseNum(value);
-                        next.행사가 = newPromo;
-                        next.최종출고가 = newPromo > 0 ? newPromo : parseNum(row.출고가);
+                        next.행사가 = parseNum(value);
                     } else if (field === '출고가') {
-                        const newOut = parseNum(value);
-                        next.출고가 = newOut;
-                        next.최종출고가 = parseNum(row.행사가) > 0 ? parseNum(row.행사가) : newOut;
+                        next.출고가 = parseNum(value);
+                    } else if (field === '재고수량') {
+                        next.재고수량 = parseNum(value);
                     }
 
                     return next;
@@ -392,12 +398,12 @@
                 reviewRows.forEach(row => {
                     const sale = getSaleState(row);
                     const { diff } = getDiffInfo(row);
-                    if (parseNum(row.기준출고가) > 0 && diff > 0) result.up++;
-                    if (parseNum(row.기준출고가) > 0 && diff < 0) result.down++;
+                    if (parseNum(row.기준입고가) > 0 && diff > 0) result.up++;
+                    if (parseNum(row.기준입고가) > 0 && diff < 0) result.down++;
                     if (parseNum(row.행사가) > 0) result.promo++;
                     if (sale.label === '품절') result.soldout++;
                     if (sale.label === '정지중') result.stopped++;
-                    if (isAnomaly(row)) result.anomaly++;
+                    if (isBigChange(row)) result.anomaly++;
                     if (isMarginWarning(row)) result.margin++;
                     if (isNewItem(row)) result.newItem++;
                     if (isLowStock(row)) result.lowStock++;
@@ -412,23 +418,25 @@
                 { key: 'promo', label: '행사', count: analysis.promo, icon: 'fa-bullhorn', cls: 'border-purple-200 bg-purple-50 text-purple-700' },
                 { key: 'soldout', label: '품절', count: analysis.soldout, icon: 'fa-box-open', cls: 'border-orange-200 bg-orange-50 text-orange-700' },
                 { key: 'stopped', label: '정지중', count: analysis.stopped, icon: 'fa-ban', cls: 'border-slate-300 bg-slate-100 text-slate-700' },
-                { key: 'anomaly', label: '오기의심', count: analysis.anomaly, icon: 'fa-triangle-exclamation', cls: 'border-amber-200 bg-amber-50 text-amber-700' },
+                { key: 'anomaly', label: '큰변동', count: analysis.anomaly, icon: 'fa-triangle-exclamation', cls: 'border-amber-200 bg-amber-50 text-amber-700' },
                 { key: 'margin', label: '역마진', count: analysis.margin, icon: 'fa-circle-exclamation', cls: 'border-red-300 bg-red-50 text-red-700' },
+                { key: 'digit', label: '자릿수확인', count: reviewRows.filter(isDigitSuspicion).length, icon: 'fa-keyboard', cls: 'border-orange-200 bg-orange-50 text-orange-700' },
                 { key: 'new', label: '신규', count: analysis.newItem, icon: 'fa-sparkles', cls: 'border-indigo-200 bg-indigo-50 text-indigo-700' },
                 { key: 'lowstock', label: '재고적음', count: analysis.lowStock, icon: 'fa-layer-group', cls: 'border-teal-200 bg-teal-50 text-teal-700' }
-            ]), [analysis]);
+            ]), [analysis, reviewRows]);
 
             const filteredRows = useMemo(() => {
                 let rows = reviewRows.filter(row => {
                     const sale = getSaleState(row);
                     const { diff } = getDiffInfo(row);
                     switch (activeIssue) {
-                        case 'up': return parseNum(row.기준출고가) > 0 && diff > 0;
-                        case 'down': return parseNum(row.기준출고가) > 0 && diff < 0;
+                        case 'up': return parseNum(row.기준입고가) > 0 && diff > 0;
+                        case 'down': return parseNum(row.기준입고가) > 0 && diff < 0;
                         case 'promo': return parseNum(row.행사가) > 0;
                         case 'soldout': return sale.label === '품절';
                         case 'stopped': return sale.label === '정지중';
-                        case 'anomaly': return isAnomaly(row);
+                        case 'anomaly': return isBigChange(row);
+                        case 'digit': return isDigitSuspicion(row);
                         case 'margin': return isMarginWarning(row);
                         case 'new': return isNewItem(row);
                         case 'lowstock': return isLowStock(row);
@@ -453,7 +461,7 @@
                 else if (sortMode === 'diffRateDesc') sorted.sort((a, b) => Math.abs(getDiffInfo(b).rate) - Math.abs(getDiffInfo(a).rate));
                 else if (sortMode === 'diffAbsDesc') sorted.sort((a, b) => Math.abs(getDiffInfo(b).diff) - Math.abs(getDiffInfo(a).diff));
                 else if (sortMode === 'inPriceDesc') sorted.sort((a, b) => parseNum(b.입고가) - parseNum(a.입고가));
-                else if (sortMode === 'outPriceDesc') sorted.sort((a, b) => parseNum(b.최종출고가) - parseNum(a.최종출고가));
+                else if (sortMode === 'outPriceDesc') sorted.sort((a, b) => getAppliedPrice(b) - getAppliedPrice(a));
                 else sorted.sort(byCategory);
                 return sorted;
             }, [reviewRows, activeIssue, searchTerm, sortMode]);
@@ -481,7 +489,7 @@
             const handleExportExcel = useCallback(() => {
                 if (reviewRows.length === 0) return showToast('⚠️ 출력할 데이터가 없습니다.');
                 if (analysis.margin > 0 || analysis.anomaly > 0) {
-                    if (!window.confirm(`역마진 ${analysis.margin}건, 오기의심 ${analysis.anomaly}건이 있습니다.\n관리자 확인 후 마스터에 반영하고 엑셀을 출력하시겠습니까?`)) return;
+                    if (!window.confirm(`역마진 ${analysis.margin}건, 큰변동 ${analysis.anomaly}건이 있습니다.\n관리자 확인 후 마스터에 반영하고 엑셀을 출력하시겠습니까?`)) return;
                 }
                 setIsProcessing(true);
                 showToast('⏳ 마스터 반영 및 통합 엑셀 조립 중...');
@@ -535,7 +543,7 @@
                         reviewRows.forEach(item => {
                             const sale = getSaleState(item);
                             const inPrice = parseNum(item.입고가);
-                            const finalOut = parseNum(item.최종출고가);
+                            const finalOut = getAppliedPrice(item);
                             const pASale = parseNum(item.도매A);
                             const pMarket = parseNum(item.시중가);
                             const finalStock = parseNum(item.재고수량);
@@ -582,7 +590,7 @@
                             const title = item.카테고리 ? String(item.카테고리).split(',')[0].trim() : '일반 상품목록';
                             const fullName = item.규격 ? `${item.품목명} (${item.규격})` : item.품목명;
                             if (!grouped[title]) grouped[title] = [];
-                            grouped[title].push({ name: fullName, price: parseNum(item.최종출고가), prevPrice: parseNum(item.기준출고가) });
+                            grouped[title].push({ name: fullName, price: getAppliedPrice(item), prevPrice: parseNum(item.기준출고가) });
                         });
                         const exportData = Object.keys(grouped).map(title => ({ title: `📌 ${title}`, items: grouped[title] }));
                         await setIDB('ONEAPP_IMAGE_DATA_TEMP', JSON.stringify(exportData));
@@ -685,7 +693,7 @@
                             <div className="flex items-center justify-between mb-3">
                                 <h3 className="font-bold text-slate-700 text-[14px]"><i className="fas fa-edit mr-2 text-emerald-500"></i>최종 퀵 수정 & 안전 점검표</h3>
                                 <div className="flex items-center gap-3 text-[11px] text-slate-500 font-bold">
-                                    <span className="bg-white px-2 py-1 rounded border border-slate-200 shadow-sm"><span className="text-purple-500">■</span> 행사가는 출고가에 우선 적용</span>
+                                    <span className="bg-white px-2 py-1 rounded border border-slate-200 shadow-sm"><span className="text-purple-500">■</span> 행사가가 있으면 출력 적용가 우선</span>
                                     <span className="bg-white px-2 py-1 rounded border border-slate-200 shadow-sm"><span className="text-teal-500">■</span> 재고적음은 재고수량 오름차순</span>
                                 </div>
                             </div>
@@ -698,30 +706,28 @@
                                             <th className="px-3 py-3 w-24 font-bold">코드</th>
                                             <th className="px-3 py-3 w-28 font-bold">카테고리</th>
                                             <th className="px-3 py-3 font-bold">품목명 (규격)</th>
-                                            <th className="px-3 py-3 w-20 text-right font-bold text-slate-500">기준가</th>
+                                            <th className="px-3 py-3 w-24 text-right font-bold text-slate-500">(M)입고가</th>
                                             <th className="px-3 py-3 w-24 text-right font-bold text-indigo-600">입고가</th>
-                                            <th className="px-3 py-3 w-24 text-right font-bold text-slate-500">출고가</th>
-                                            <th className="px-3 py-3 w-24 text-right font-bold text-emerald-600">계산 출고가</th>
+                                            <th className="px-3 py-3 w-24 text-right font-bold text-rose-600">출고가</th>
                                             <th className="px-3 py-3 w-20 text-right font-bold text-purple-600">행사가</th>
-                                            <th className="px-3 py-3 w-24 text-right font-bold text-rose-600">최종 출고가</th>
                                             <th className="px-3 py-3 w-20 text-center font-bold">재고</th>
                                             <th className="px-3 py-3 w-24 text-center font-bold">상태</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {filteredRows.length === 0 ? (
-                                            <tr><td colSpan="12" className="p-10 text-center text-slate-400 font-bold">표시할 데이터가 없습니다.</td></tr>
+                                            <tr><td colSpan="10" className="p-10 text-center text-slate-400 font-bold">표시할 데이터가 없습니다.</td></tr>
                                         ) : filteredRows.map(item => {
                                             const sale = getSaleState(item);
                                             const promo = parseNum(item.행사가) > 0;
                                             const margin = isMarginWarning(item);
-                                            const anomaly = isAnomaly(item);
+                                            const anomaly = isBigChange(item);
                                             const { diff, rate } = getDiffInfo(item);
                                             return (
                                                 <tr key={item.코드} className={`transition-colors ${margin || anomaly ? 'bg-rose-50/50' : 'hover:bg-slate-50'}`}>
                                                     <td className="px-3 py-2 text-center">
                                                         {margin ? <i className="fas fa-exclamation-triangle text-rose-500" title="역마진"></i> :
-                                                         anomaly ? <i className="fas fa-exclamation-circle text-orange-500" title="오기 의심"></i> :
+                                                         anomaly ? <i className="fas fa-exclamation-circle text-orange-500" title="큰변동"></i> :
                                                          sale.label === '품절' ? <span className="w-2.5 h-2.5 rounded-full bg-orange-400 inline-block" title="품절"></span> :
                                                          sale.label === '정지중' ? <span className="w-2.5 h-2.5 rounded-full bg-slate-300 inline-block" title="정지중"></span> :
                                                          <i className="fas fa-check-circle text-emerald-400"></i>}
@@ -733,23 +739,17 @@
                                                         {isNewItem(item) && <span className="ml-2 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 text-[10px] font-black">신규</span>}
                                                     </td>
                                                     <td className="px-3 py-2 text-right text-slate-400">
-                                                        {fmt(item.기준출고가)}
-                                                        {item.기준출고가 > 0 && <div className={`text-[10px] font-bold ${diff >= 0 ? 'text-rose-400' : 'text-blue-400'}`}>{diff === 0 ? '-' : `${diff > 0 ? '+' : ''}${fmt(diff)} / ${(rate*100).toFixed(1)}%`}</div>}
+                                                        {fmt(item.기준입고가)}
+                                                        {item.기준입고가 > 0 && <div className={`text-[10px] font-bold ${diff >= 0 ? 'text-rose-400' : 'text-blue-400'}`}>{diff === 0 ? '-' : `${diff > 0 ? '+' : ''}${fmt(diff)} / ${(rate*100).toFixed(1)}%`}</div>}
                                                     </td>
                                                     <td className="px-2 py-1 bg-indigo-50/30">
-                                                        <input type="text" value={item.입고가} onChange={(e)=>handleEdit(item.코드, '입고가', e.target.value)} title="입고가 수정 시 계산 출고가가 최종 출고가에 자동 반영됩니다." className="w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 px-1 py-1 text-right font-black text-indigo-600 outline-none" />
-                                                    </td>
-                                                    <td className="px-3 py-2 text-right text-slate-500 font-bold">
-                                                        {parseNum(item.불러온출고가) > 0 ? fmt(item.불러온출고가) : <span className="text-slate-300">-</span>}
-                                                    </td>
-                                                    <td className="px-3 py-2 text-right text-emerald-600 font-black">
-                                                        {parseNum(item.계산출고가) > 0 ? fmt(item.계산출고가) : <span className="text-slate-300">-</span>}
-                                                    </td>
-                                                    <td className="px-3 py-2 text-right">
-                                                        <input type="text" value={item.행사가} onChange={(e)=>handleEdit(item.코드, '행사가', e.target.value)} className="w-20 bg-transparent border-b border-transparent focus:border-purple-400 hover:border-slate-300 px-1 py-1 text-right font-black text-purple-700 outline-none" />
+                                                        <input type="text" value={item.입고가} onChange={(e)=>handleEdit(item.코드, '입고가', e.target.value)} title="입고가 수정 시 출고가가 자동 재계산됩니다." className="w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 px-1 py-1 text-right font-black text-indigo-600 outline-none" />
                                                     </td>
                                                     <td className="px-2 py-1 bg-orange-50/30">
-                                                        <input type="text" value={item.출고가} onChange={(e)=>handleEdit(item.코드, '출고가', e.target.value)} title="최종 저장할 기본 출고가입니다. 행사가가 있으면 행사가가 우선 적용됩니다." className={`w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 rounded-none px-1 py-1 text-right font-black outline-none transition-colors ${margin ? 'text-rose-600' : 'text-slate-800'}`} />
+                                                        <input type="text" value={item.출고가} onChange={(e)=>handleEdit(item.코드, '출고가', e.target.value)} title="저장할 기본 출고가입니다. 행사가가 있으면 출력 적용가는 행사가가 우선합니다." className={`w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 rounded-none px-1 py-1 text-right font-black outline-none transition-colors ${margin ? 'text-rose-600' : 'text-slate-800'}`} />
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right">
+                                                        <input type="text" value={item.행사가} onChange={(e)=>handleEdit(item.코드, '행사가', e.target.value)} title="행사가가 있으면 출력 적용가는 행사가가 우선합니다." className="w-20 bg-transparent border-b border-transparent focus:border-purple-400 hover:border-slate-300 px-1 py-1 text-right font-black text-purple-700 outline-none" />
                                                     </td>
                                                     <td className="px-2 py-1 bg-slate-50/50">
                                                         <input type="text" value={item.재고수량} onChange={(e)=>handleEdit(item.코드, '재고수량', e.target.value)} className="w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 px-1 py-1 text-center font-bold text-slate-600 outline-none" />
