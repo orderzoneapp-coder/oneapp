@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.0.3 재고 계산창고 정책]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.0.6 브랜드·검색어등록 검색]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -1677,8 +1677,11 @@
                             {[
                                 ['all', '전체'],
                                 ['changed', '가격변동'],
-                                ['promo', '행사'],
-                                ['promoSuggest', '행사제안']
+                                ['promo', '행사중'],
+                                ['promoSuggest', '행사제안'],
+                                ['selling', '판매중'],
+                                ['stoppedSoldout', '정지&품절'],
+                                ['safeMinus', '안전(-)']
                             ].map(([value, label]) => (
                                 <button key={value} onClick={() => applyPriceFilter(value)} className={`h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
                                     {label}
@@ -1878,6 +1881,24 @@
         };
 
         const isPromoActive = (row = {}, mItem = {}) => getMasterPromoPrice(mItem) > 0;
+
+        const isSellingItem = (row = {}, mItem = {}) => {
+            const salesState = window.getMasterSalesState(mItem);
+            const isStopPending = row.finalData?._salesStopRequested === true || String(row.finalData?.['판매여부']) === '0';
+            return !isStopPending && salesState.label === '판매';
+        };
+
+        const isStoppedOrSoldoutItem = (row = {}, mItem = {}) => {
+            const salesState = window.getMasterSalesState(mItem);
+            const isStopPending = row.finalData?._salesStopRequested === true || String(row.finalData?.['판매여부']) === '0';
+            return isStopPending || salesState.label === '정지' || salesState.label === '품절';
+        };
+
+        const isSafeMinusItem = (row = {}, mItem = {}) => {
+            const stockQty = getStockQty(row, mItem);
+            const safeStock = getSafeStock(mItem);
+            return stockQty !== null && safeStock > 0 && stockQty <= safeStock;
+        };
 
         const getMarginToneClass = (rate) => {
             if (rate === null || rate === undefined || isNaN(rate)) return 'bg-slate-100 text-slate-400 border-slate-200';
@@ -2612,17 +2633,33 @@
                             const finalItem = item.finalData || {};
                             const getVal = (key) => String(finalItem[key] !== undefined ? finalItem[key] : (mItem[key] || '')).toLowerCase();
                             
-                            const cName = getVal('품목명');
-                            const cSpec = getVal('규격');
-                            const cVendor = getVal('구매처');
+                            const getSourceVals = (key) => [
+                                item.sources?.estimate?.[key],
+                                item.sources?.purchase?.[key],
+                                item.sources?.sales?.[key],
+                                item.sources?.inventory?.[key]
+                            ].map(v => String(v ?? '').toLowerCase()).join(' ');
+                            const cName = [getVal('품목명'), getSourceVals('품목명')].join(' ');
+                            const cSpec = [getVal('규격'), getSourceVals('규격'), getVal('단위'), getSourceVals('단위')].join(' ');
+                            const cVendor = [getVal('구매처'), getSourceVals('구매처')].join(' ');
+                            const cBrand = [getVal('브랜드'), getSourceVals('브랜드')].join(' ');
+                            const cSearchKeywords = [getVal('검색어등록'), getSourceVals('검색어등록')].join(' ');
+                            const cTags = [
+                                getVal('카탈로그'), getVal('견적서'), getVal('카테고리'),
+                                getSourceVals('카탈로그'), getSourceVals('견적서'), getSourceVals('카테고리'),
+                                item._tags ? Array.from(item._tags).join(' ').toLowerCase() : ''
+                            ].join(' ');
                             const cCode = String(item.코드 || '').toLowerCase();
                             
                             let score = 0; 
                             tokens.forEach(token => { 
                                 if (cName.includes(token)) score += 10; 
                                 else if (cCode.includes(token)) score += 8; 
+                                else if (cBrand.includes(token)) score += 7;
+                                else if (cSearchKeywords.includes(token)) score += 7;
                                 else if (cVendor.includes(token)) score += 6; 
-                                else if (cSpec.includes(token)) score += 5; 
+                                else if (cSpec.includes(token)) score += 5;
+                                else if (cTags.includes(token)) score += 4;
                             });
                             return { ...item, _searchScore: score };
                         }).filter(r => r._searchScore > 0);
@@ -2647,6 +2684,9 @@
                         }
                         if (ui.priceFilter === 'promo') return isPromoActive(item, mItem);
                         if (ui.priceFilter === 'promoSuggest') return isPromoSuggestion(item, mItem, config);
+                        if (ui.priceFilter === 'selling') return isSellingItem(item, mItem);
+                        if (ui.priceFilter === 'stoppedSoldout') return isStoppedOrSoldoutItem(item, mItem);
+                        if (ui.priceFilter === 'safeMinus') return isSafeMinusItem(item, mItem);
                         if (ui.priceFilter === 'basic') return matchBasicFilter(mItem, ui.basicSearch);
                         return true;
                     });
