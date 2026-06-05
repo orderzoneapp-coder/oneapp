@@ -18,7 +18,7 @@
   'use strict';
 
   const ONEAPP = global.ONEAPP = global.ONEAPP || {};
-  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.0.0';
+  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.0.1';
 
   const DEFAULT_DB_NAME = 'MerchOpsDB';
   const DEFAULT_DB_VERSION = 2;
@@ -206,8 +206,10 @@
 
     const totalCost = inPrice + outsrc + labor;
     const appliedRule = findBestMarginRule(marginRules, {
-      창고: currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '',
-      단위: currentFinalData?.['단위'] ?? mItem?.['단위'] ?? ''
+      // 계산용 창고/단위는 원본값을 덮어쓰지 않는 보조 컨텍스트다.
+      // 재고 불러오기 상품이 창고 각인이 없을 때만 _calcWarehouse=01이 전달된다.
+      창고: currentFinalData?.['_calcWarehouse'] ?? currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '',
+      단위: currentFinalData?.['_calcUnit'] ?? currentFinalData?.['단위'] ?? mItem?.['단위'] ?? ''
     });
 
     let calcOutPrice = 0;
@@ -465,10 +467,14 @@
     const sources = row.sources || {};
     const inventory = sources.inventory || {};
     const estimate = sources.estimate || {};
+    const purchase = sources.purchase || {};
+    const sales = sources.sales || {};
 
     if (finalData[key] !== undefined && finalData[key] !== '') return finalData[key];
     if (inventory[key] !== undefined && inventory[key] !== '') return inventory[key];
     if (estimate[key] !== undefined && estimate[key] !== '') return estimate[key];
+    if (purchase[key] !== undefined && purchase[key] !== '') return purchase[key];
+    if (sales[key] !== undefined && sales[key] !== '') return sales[key];
     if (master[key] !== undefined && master[key] !== '') return master[key];
     return defaultValue;
   };
@@ -492,6 +498,10 @@
       규격: getStr('규격'),
       브랜드: getStr('브랜드'),
       간단설명: getStr('간단설명'),
+      창고: getStr('창고'),
+      단위: getStr('단위'),
+      _calcWarehouse: getStr('_calcWarehouse'),
+      _calcWarehouseReason: getStr('_calcWarehouseReason'),
       입고가: getNum('입고가'),
       출고가: getNum('출고가'),
       행사가: getNum('행사가'),
@@ -531,15 +541,21 @@
     const sources = row.sources || {};
     const inventory = sources.inventory || {};
     const estimate = sources.estimate || {};
+    const purchase = sources.purchase || {};
+    const sales = sources.sales || {};
     const tags = row._tags ? Array.from(row._tags) : [];
 
     return {
       hasInventory: Object.keys(inventory).length > 0,
       hasEstimate: Object.keys(estimate).length > 0,
+      hasPurchase: Object.keys(purchase).length > 0,
+      hasSales: Object.keys(sales).length > 0,
       tags,
       sourceType: tags.join(', '),
       inventoryKeys: Object.keys(inventory),
-      estimateKeys: Object.keys(estimate)
+      estimateKeys: Object.keys(estimate),
+      purchaseKeys: Object.keys(purchase),
+      salesKeys: Object.keys(sales)
     };
   };
 
