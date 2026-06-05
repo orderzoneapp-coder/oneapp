@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.0.0 가격작업 정책 패치]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.0.3 재고 계산창고 정책]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -136,8 +136,12 @@
                 : window.parseNum(currentFinalData?.['노무비']);
             
             const totalCost = baseInPrice + outsrc + labor;
-            const whCode = String(currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '').trim();
-            const unitStr = String(currentFinalData?.['단위'] ?? mItem?.['단위'] ?? '').trim().toLowerCase();
+            // 계산용 창고 정책:
+            // - 원본 창고값은 덮어쓰지 않는다.
+            // - 재고 불러오기 상품이 창고 각인이 없을 때만 _calcWarehouse(초기값 01)를 사용한다.
+            // - 파일/상품에 실제 창고값이 있으면 그 값이 우선이고, _calcWarehouse는 생성하지 않는다.
+            const whCode = String(currentFinalData?.['_calcWarehouse'] ?? currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '').trim();
+            const unitStr = String(currentFinalData?.['_calcUnit'] ?? currentFinalData?.['단위'] ?? mItem?.['단위'] ?? '').trim().toLowerCase();
             
             const matchWh = (ruleWh, targetWh) => { 
                 if (ruleWh === '*') return true; 
@@ -894,6 +898,21 @@
                                 }
                             });
 
+                            // 재고 불러오기 기본창고 정책:
+                            // 재고파일/마스터에 창고 각인이 없을 때만 계산용 창고 01을 적용한다.
+                            // 원본 sources.inventory['창고'] 값은 임의로 덮어쓰지 않는다.
+                            if (role === 'inventory') {
+                                const sourceWh = String(mItem.sources?.inventory?.['창고'] ?? '').trim();
+                                const masterWh = String(newMaster[code]?.['창고'] ?? '').trim();
+                                if (!sourceWh && !masterWh) {
+                                    mItem.sources.inventory['_calcWarehouse'] = '01';
+                                    mItem.sources.inventory['_calcWarehouseReason'] = '재고 불러오기 기본창고 01 적용';
+                                } else {
+                                    delete mItem.sources.inventory['_calcWarehouse'];
+                                    delete mItem.sources.inventory['_calcWarehouseReason'];
+                                }
+                            }
+
                             mItem.finalData = window.computeFinalData(newMaster[code] || {}, mItem.sources, config.marginRules);
                             newManaged[code] = mItem;
                             totalCount++;
@@ -1426,6 +1445,10 @@
                             규격: getStr('규격'),
                             브랜드: getStr('브랜드'),
                             간단설명: getStr('간단설명'),
+                            창고: getStr('창고'),
+                            단위: getStr('단위'),
+                            _calcWarehouse: getStr('_calcWarehouse'),
+                            _calcWarehouseReason: getStr('_calcWarehouseReason'),
                             입고가: getNum('입고가'),
                             출고가: getNum('출고가'),
                             행사가: getNum('행사가'),
@@ -1520,13 +1543,13 @@
             return (
                 <div className="bg-black/40 rounded-md border border-slate-700/50 px-4 py-2 flex flex-col flex-1 max-w-md xl:max-w-xl mx-4 overflow-hidden shadow-inner text-[11px] font-mono leading-tight justify-center h-10">
                     {isProcessing ? (
-                        <div className="text-amber-400 flex items-center"><i className="fas fa-spinner fa-spin mr-2"></i> {'>'} {processMsg}</div>
+                        <div className="text-amber-400 flex items-center"><i className="fas fa-spinner fa-spin mr-2"></i> > {processMsg}</div>
                     ) : activeTags.length > 0 ? (
                         <div className="text-indigo-300 flex items-center truncate">
-                            {'>'} {activeTags.map(t=>`[${t.name}]`).join(' + ')} 표시됨 ({estimateCount}건 작업중) <span className="w-1.5 h-3 bg-indigo-300 ml-1.5 animate-pulse"></span>
+                            > {activeTags.map(t=>`[${t.name}]`).join(' + ')} 표시됨 ({estimateCount}건 작업중) <span className="w-1.5 h-3 bg-indigo-300 ml-1.5 animate-pulse"></span>
                         </div>
                     ) : (
-                        <div className="text-emerald-400 flex items-center">{'>'} DB: {itemCount.toLocaleString()}건 로드됨 ({timeStr}) <span className="w-1.5 h-3 bg-emerald-400 ml-1 animate-pulse"></span></div>
+                        <div className="text-emerald-400 flex items-center">> DB: {itemCount.toLocaleString()}건 로드됨 ({timeStr}) <span className="w-1.5 h-3 bg-emerald-400 ml-1 animate-pulse"></span></div>
                     )}
                 </div>
             );
