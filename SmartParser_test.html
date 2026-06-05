@@ -4,17 +4,121 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Smart Parser [v3.1 구매판매 검증 통합]</title>
+    <title>ONEAPP MerchOps - Smart Parser [v3.4 image OCR parser]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script src="./coreEngine.js"></script>
     
     <script>
-        // SmartParser v3.0.8 coreEngine 1차 적용
-        // 기존 전역 함수명은 유지하되, 공통 로직은 coreEngine.js로 위임한다.
+        // SmartParser v3.4 이미지 OCR 파서 + 안전 부팅 패치
+        // coreEngine.js가 같은 경로에 없거나 로딩 실패해도 흰화면이 나지 않도록 최소 ONEAPP 엔진을 내부에서 보강한다.
+        window.ONEAPP = window.ONEAPP || {};
+        window.ONEAPP.STORAGE = window.ONEAPP.STORAGE || {};
+        window.ONEAPP.PRICING = window.ONEAPP.PRICING || {};
+        window.ONEAPP.HISTORY = window.ONEAPP.HISTORY || {};
+
+        window.MASTER_HEADERS = window.MASTER_HEADERS || [
+            "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드",
+            "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가",
+            "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가",
+            "행사가", "판매여부", "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산",
+            "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록",
+            "검증수량", "검증단가", "검증금액", "검증구분"
+        ];
+        window.NUMERIC_HEADERS = window.NUMERIC_HEADERS || [
+            "안전재고", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고",
+            "단가H", "단가I", "시중가", "행사가", "1종연산", "2종연산", "외주비", "노무비", "경비",
+            "1구매", "1출고", "2구매", "2출고", "1입고", "2입고", "재고수량", "검증수량", "검증단가", "검증금액"
+        ];
+
+        const __spParseNumFallback = (v) => {
+            if (v === null || v === undefined || v === '') return 0;
+            return Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0;
+        };
+        const __spUUIDFallback = () => {
+            if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+                const r = Math.random() * 16 | 0;
+                return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+            });
+        };
+        const __spInitIDBFallback = () => new Promise((resolve, reject) => {
+            const req = indexedDB.open('MerchOpsDB', 2);
+            req.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains('store')) db.createObjectStore('store');
+                if (!db.objectStoreNames.contains('master_products')) db.createObjectStore('master_products', { keyPath: '코드' });
+            };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+        const __spGetIDBFallback = async (key) => {
+            const db = await __spInitIDBFallback();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('store', 'readonly');
+                const req = tx.objectStore('store').get(key);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error || tx.error);
+            });
+        };
+        const __spSetIDBFallback = async (key, val) => {
+            const db = await __spInitIDBFallback();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('store', 'readwrite');
+                tx.objectStore('store').put(val, key);
+                tx.oncomplete = () => resolve(true);
+                tx.onerror = () => reject(tx.error);
+            });
+        };
+        const __spGetAllIDBFallback = async (storeName) => {
+            const db = await __spInitIDBFallback();
+            return new Promise((resolve, reject) => {
+                if (!db.objectStoreNames.contains(storeName)) return resolve([]);
+                const tx = db.transaction(storeName, 'readonly');
+                const req = tx.objectStore(storeName).getAll();
+                req.onsuccess = () => resolve(req.result || []);
+                req.onerror = () => reject(req.error || tx.error);
+            });
+        };
+        const __spBulkPutIDBFallback = async (storeName, items = []) => {
+            const db = await __spInitIDBFallback();
+            return new Promise((resolve, reject) => {
+                if (!db.objectStoreNames.contains(storeName)) return reject(new Error(`ObjectStore not found: ${storeName}`));
+                const tx = db.transaction(storeName, 'readwrite');
+                const store = tx.objectStore(storeName);
+                (items || []).forEach(item => item && store.put(item));
+                tx.oncomplete = () => resolve(true);
+                tx.onerror = () => reject(tx.error);
+            });
+        };
+
+        window.ONEAPP.STORAGE.initIDB = window.ONEAPP.STORAGE.initIDB || __spInitIDBFallback;
+        window.ONEAPP.STORAGE.setIDB = window.ONEAPP.STORAGE.setIDB || __spSetIDBFallback;
+        window.ONEAPP.STORAGE.getIDB = window.ONEAPP.STORAGE.getIDB || __spGetIDBFallback;
+        window.ONEAPP.STORAGE.bulkPutIDB = window.ONEAPP.STORAGE.bulkPutIDB || __spBulkPutIDBFallback;
+        window.ONEAPP.STORAGE.getAllIDB = window.ONEAPP.STORAGE.getAllIDB || __spGetAllIDBFallback;
+        window.ONEAPP.STORAGE.generateUUID = window.ONEAPP.STORAGE.generateUUID || __spUUIDFallback;
+        window.ONEAPP.PRICING.parseNum = window.ONEAPP.PRICING.parseNum || __spParseNumFallback;
+        window.ONEAPP.PRICING.calculatePricesEngine = window.ONEAPP.PRICING.calculatePricesEngine || ((baseInPrice, providedOutPrice = 0) => {
+            const inPrice = __spParseNumFallback(baseInPrice);
+            const provided = __spParseNumFallback(providedOutPrice);
+            if (provided > 0) return provided;
+            if (!inPrice) return 0;
+            return Math.round((inPrice / 0.8) / 100) * 100;
+        });
+        window.ONEAPP.HISTORY.calcDiffRate = window.ONEAPP.HISTORY.calcDiffRate || ((oldVal, newVal) => {
+            const oldNum = __spParseNumFallback(oldVal);
+            const newNum = __spParseNumFallback(newVal);
+            if (!oldNum) return null;
+            return Math.round(((newNum - oldNum) / oldNum) * 1000) / 10;
+        });
+        window.ONEAPP.HISTORY.getNowISO = window.ONEAPP.HISTORY.getNowISO || (() => new Date().toISOString());
+
+        // 기존 전역 함수명은 유지하되, 공통 로직은 coreEngine.js가 있으면 위임하고 없으면 내부 fallback을 사용한다.
         const MASTER_HEADERS = window.MASTER_HEADERS;
         const NUMERIC_HEADERS = window.NUMERIC_HEADERS;
 
@@ -30,7 +134,13 @@
         const getNowISO = window.ONEAPP.HISTORY.getNowISO;
 
         // Parser 기존 반환 형태 유지: finalData 객체를 반환한다.
-        const calculatePricesEngine = window.ONEAPP.PRICING.calculateParserFinalData;
+        // coreEngine v1.0.0에는 calculateParserFinalData가 없을 수 있으므로 SmartParser 내부 fallback을 둔다.
+        const calculatePricesEngine = window.ONEAPP.PRICING.calculateParserFinalData || ((baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
+            const inPrice = parseNum(baseInPrice);
+            const providedOut = parseNum(currentFinalData?.['출고가'] ?? mItem?.['출고가']);
+            const outPrice = window.ONEAPP.PRICING.calculatePricesEngine(inPrice, providedOut, mItem, currentFinalData, marginRules, forceRecalc);
+            return { ...(currentFinalData || {}), '입고가': inPrice, '출고가': outPrice };
+        });
     </script>
 </head>
 <body>
@@ -641,6 +751,8 @@
             const [newCatalogInput, setNewCatalogInput] = useState("");
             const [forceManual, setForceManual] = useState(false);
             const [imageFiles, setImageFiles] = useState([]);
+            const [isOcrRunning, setIsOcrRunning] = useState(false);
+            const [ocrProgress, setOcrProgress] = useState('');
             const imageInputRef = useRef(null);
 
             const addImageFiles = (files = [], source = 'upload') => {
@@ -654,7 +766,7 @@
                     source
                 }));
                 setImageFiles(prev => [...prev, ...nextItems]);
-                showToast(`✅ 이미지 ${nextItems.length}장이 추가되었습니다. OCR 텍스트는 아래 텍스트창에 붙여넣어 파싱하세요.`);
+                showToast(`✅ 이미지 ${nextItems.length}장이 추가되었습니다. [이미지 OCR 실행] 또는 [분석 시작]을 누르면 텍스트를 추출합니다.`);
                 return true;
             };
 
@@ -705,12 +817,67 @@
                 addImageFiles(Array.from(e.target.files || []), 'file');
                 e.target.value = '';
             };
+
+            const runImageOCR = async () => {
+                if (imageFiles.length === 0) {
+                    showToast("⚠️ OCR할 이미지가 없습니다.");
+                    return '';
+                }
+                if (!window.Tesseract || typeof window.Tesseract.recognize !== 'function') {
+                    showToast("❌ OCR 엔진을 불러오지 못했습니다. 인터넷 연결 또는 CDN 차단 여부를 확인하세요.");
+                    return '';
+                }
+
+                setIsOcrRunning(true);
+                setOcrProgress(`OCR 준비 중... (0 / ${imageFiles.length})`);
+
+                const texts = [];
+                try {
+                    for (let i = 0; i < imageFiles.length; i++) {
+                        const item = imageFiles[i];
+                        setOcrProgress(`OCR 실행 중... (${i + 1} / ${imageFiles.length}) ${item.name}`);
+                        const result = await window.Tesseract.recognize(item.file, 'kor+eng', {
+                            logger: (m) => {
+                                if (m && m.status === 'recognizing text' && typeof m.progress === 'number') {
+                                    setOcrProgress(`OCR 실행 중... (${i + 1} / ${imageFiles.length}) ${Math.round(m.progress * 100)}%`);
+                                }
+                            }
+                        });
+                        const text = result?.data?.text ? String(result.data.text).trim() : '';
+                        if (text) texts.push(`--- IMAGE ${i + 1}: ${item.name} ---\n${text}`);
+                    }
+
+                    const merged = texts.join('\n\n').trim();
+                    if (merged) {
+                        setRawText(prev => {
+                            const before = String(prev || '').trim();
+                            return before ? `${before}\n\n${merged}` : merged;
+                        });
+                        showToast(`✅ 이미지 OCR 완료 (${texts.length}장). 텍스트창을 확인 후 분석하세요.`);
+                    } else {
+                        showToast("⚠️ 이미지에서 텍스트를 추출하지 못했습니다. 이미지 선명도나 각도를 확인하세요.");
+                    }
+                    return merged;
+                } catch (err) {
+                    console.error('[SmartParser OCR Error]', err);
+                    showToast(`❌ OCR 처리 중 오류가 발생했습니다: ${err.message || err}`);
+                    return '';
+                } finally {
+                    setIsOcrRunning(false);
+                    setOcrProgress('');
+                }
+            };
             
-            const handleExecute = () => { 
-                if (!rawText.trim()) return showToast("⚠️ 시세 텍스트를 붙여넣어주세요."); 
+            const handleExecute = async () => { 
+                let inputText = String(rawText || '').trim();
+                if (!inputText && imageFiles.length > 0) {
+                    const ocrText = await runImageOCR();
+                    inputText = String(ocrText || '').trim();
+                }
+                if (!inputText) return showToast("⚠️ 분석할 텍스트가 없습니다. 이미지를 OCR하거나 텍스트를 붙여넣어주세요."); 
                 const finalTag = catalogMode === 'select' ? selectedCatalog : newCatalogInput.trim();
                 if (!finalTag) return showToast("⚠️ 기준 카탈로그 또는 견적서명을 선택/입력하세요.");
-                executeParser(rawText, finalTag, forceManual); 
+                executeParser(inputText, finalTag, forceManual); 
             };
 
             return (
@@ -767,13 +934,19 @@
                                             </div>
                                         ))}
                                     </div>
-                                    <div className="mt-2 text-[10px] text-slate-400 font-bold leading-relaxed">이미지는 참고자료로 보관됩니다. OCR 텍스트는 오른쪽 텍스트창에 붙여넣어 파싱합니다.</div>
+                                    <div className="mt-2 text-[10px] text-slate-400 font-bold leading-relaxed">이미지는 실제 분석 입력입니다. [이미지 OCR 실행] 또는 [분석 시작] 시 텍스트를 추출해 오른쪽 파서창에 넣습니다.</div>
                                 </div>
                                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[390px]">
-                                    <label className="text-[13px] font-black text-slate-800 mb-2 block"><i className="fas fa-align-left text-indigo-500 mr-2"></i>텍스트 파서창</label>
-                                    <textarea value={rawText} onPaste={handleTextPaste} onChange={(e) => setRawText(e.target.value)} className="w-full flex-1 bg-slate-800 text-slate-200 rounded-lg p-4 font-mono text-[13px] outline-none border-none resize-none shadow-inner" placeholder="OCR 결과 텍스트 또는 판매/구매현황 텍스트를 붙여넣으세요. 이미지 붙여넣기(Ctrl+V)는 왼쪽 이미지 목록에 첨부됩니다." />
+                                    <div className="flex items-center justify-between mb-2">
+                                        <label className="text-[13px] font-black text-slate-800 block"><i className="fas fa-align-left text-indigo-500 mr-2"></i>텍스트 파서창 <span className="ml-1 text-[10px] text-slate-400">OCR 결과 확인·수정</span></label>
+                                        <button onClick={runImageOCR} disabled={isOcrRunning || imageFiles.length === 0} className={`px-3 py-1.5 rounded-lg text-[11px] font-black border transition-colors ${isOcrRunning || imageFiles.length === 0 ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-sky-50 text-sky-700 border-sky-200 hover:bg-sky-100'}`}>
+                                            <i className={`fas ${isOcrRunning ? 'fa-spinner fa-spin' : 'fa-eye'} mr-1.5`}></i>{isOcrRunning ? 'OCR 중' : '이미지 OCR 실행'}
+                                        </button>
+                                    </div>
+                                    <textarea value={rawText} onPaste={handleTextPaste} onChange={(e) => setRawText(e.target.value)} className="w-full flex-1 bg-slate-800 text-slate-200 rounded-lg p-4 font-mono text-[13px] outline-none border-none resize-none shadow-inner" placeholder="이미지를 붙인 뒤 [이미지 OCR 실행]을 누르면 추출 텍스트가 여기에 들어옵니다. 직접 텍스트를 붙여넣어도 됩니다." />
+                                    {ocrProgress && <div className="mt-2 text-[11px] font-black text-sky-700 bg-sky-50 border border-sky-100 rounded-lg px-3 py-2"><i className="fas fa-spinner fa-spin mr-1.5"></i>{ocrProgress}</div>}
                                     <div className="mt-3 flex justify-between items-center">
-                                        <span className="text-[11px] font-bold text-slate-400">텍스트 기준으로 파싱합니다. 이미지 OCR은 1차 범위에서 제외됩니다.</span>
+                                        <span className="text-[11px] font-bold text-slate-400">이미지 → OCR → 텍스트 확인·수정 → 기준자료 매핑 순서로 분석합니다.</span>
                                         <label className="flex items-center gap-2 cursor-pointer text-slate-600 text-[12px] font-bold hover:text-slate-800">
                                             <input type="checkbox" className="rounded border-slate-300 text-rose-500" checked={forceManual} onChange={e => setForceManual(e.target.checked)} />
                                             <span><i className="fas fa-hand-paper mr-1 text-rose-400"></i>AI 매칭 무시</span>
@@ -783,7 +956,7 @@
                             </div>
                             <div className="flex gap-3">
                                 {onClose && <button onClick={onClose} className="px-6 py-3.5 rounded-xl font-bold bg-slate-200 text-slate-700 hover:bg-slate-300">닫기</button>}
-                                <button onClick={handleExecute} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-xl font-black shadow-md"><i className="fas fa-cogs mr-2"></i>분석 시작</button>
+                                <button onClick={handleExecute} disabled={isOcrRunning} className={`flex-1 py-3.5 rounded-xl font-black shadow-md ${isOcrRunning ? 'bg-slate-400 text-white cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}><i className={`fas ${isOcrRunning ? 'fa-spinner fa-spin' : 'fa-cogs'} mr-2`}></i>{isOcrRunning ? 'OCR 처리 중...' : '분석 시작'}</button>
                             </div>
                         </div>
                     </div>
