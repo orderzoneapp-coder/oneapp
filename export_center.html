@@ -293,6 +293,7 @@
             const [searchTerm, setSearchTerm] = useState('');
             const [isProcessing, setIsProcessing] = useState(false);
             const [toast, setToast] = useState('');
+            const [bulkTheme, setBulkTheme] = useState(1);
 
             const showToast = useCallback((msg) => {
                 setToast(msg);
@@ -426,7 +427,7 @@
             }, [marginRules]);
 
             const analysis = useMemo(() => {
-                const result = { total: reviewRows.length, up: 0, down: 0, promo: 0, soldout: 0, stopped: 0, anomaly: 0, margin: 0, newItem: 0, lowStock: 0 };
+                const result = { total: reviewRows.length, up: 0, down: 0, promo: 0, soldout: 0, stopped: 0, inactive: 0, anomaly: 0, margin: 0, newItem: 0, lowStock: 0 };
                 reviewRows.forEach(row => {
                     const sale = getSaleState(row);
                     const { diff } = getDiffInfo(row);
@@ -435,6 +436,7 @@
                     if (parseNum(row.행사가) > 0) result.promo++;
                     if (sale.label === '품절') result.soldout++;
                     if (sale.label === '정지') result.stopped++;
+                    if (sale.label === '품절' || sale.label === '정지') result.inactive++;
                     if (isBigChange(row)) result.anomaly++;
                     if (isMarginWarning(row)) result.margin++;
                     if (isNewItem(row)) result.newItem++;
@@ -445,16 +447,10 @@
 
             const issueCards = useMemo(() => ([
                 { key: 'all', label: '전체', count: analysis.total, icon: 'fa-list-check', cls: 'border-slate-200 bg-slate-50 text-slate-700' },
-                { key: 'up', label: '인상', count: analysis.up, icon: 'fa-arrow-trend-up', cls: 'border-rose-200 bg-rose-50 text-rose-700' },
-                { key: 'down', label: '인하', count: analysis.down, icon: 'fa-arrow-trend-down', cls: 'border-blue-200 bg-blue-50 text-blue-700' },
                 { key: 'promo', label: '행사', count: analysis.promo, icon: 'fa-bullhorn', cls: 'border-purple-200 bg-purple-50 text-purple-700' },
-                { key: 'soldout', label: '품절', count: analysis.soldout, icon: 'fa-box-open', cls: 'border-orange-200 bg-orange-50 text-orange-700' },
-                { key: 'stopped', label: '정지', count: analysis.stopped, icon: 'fa-ban', cls: 'border-slate-300 bg-slate-100 text-slate-700' },
                 { key: 'anomaly', label: '큰변동', count: analysis.anomaly, icon: 'fa-triangle-exclamation', cls: 'border-amber-200 bg-amber-50 text-amber-700' },
                 { key: 'margin', label: '역마진', count: analysis.margin, icon: 'fa-circle-exclamation', cls: 'border-red-300 bg-red-50 text-red-700' },
-                { key: 'digit', label: '자릿수확인', count: reviewRows.filter(isDigitSuspicion).length, icon: 'fa-keyboard', cls: 'border-orange-200 bg-orange-50 text-orange-700' },
-                { key: 'new', label: '신규', count: analysis.newItem, icon: 'fa-sparkles', cls: 'border-indigo-200 bg-indigo-50 text-indigo-700' },
-                { key: 'lowstock', label: '재고적음', count: analysis.lowStock, icon: 'fa-layer-group', cls: 'border-teal-200 bg-teal-50 text-teal-700' }
+                { key: 'inactive', label: '정지/품절', count: analysis.inactive, icon: 'fa-ban', cls: 'border-slate-300 bg-slate-100 text-slate-700' }
             ]), [analysis]);
 
             const filteredRows = useMemo(() => {
@@ -467,6 +463,7 @@
                         case 'promo': return parseNum(row.행사가) > 0;
                         case 'soldout': return sale.label === '품절';
                         case 'stopped': return sale.label === '정지';
+                        case 'inactive': return sale.label === '정지' || sale.label === '품절';
                         case 'anomaly': return isBigChange(row);
                         case 'digit': return isDigitSuspicion(row);
                         case 'margin': return isMarginWarning(row);
@@ -517,6 +514,33 @@
                 else if (key === 'margin') setSortMode('diffAbsDesc');
                 else setSortMode('category');
             }, []);
+
+            // ============================================================
+            // [E-ACTION-01] 현재 표시 상품 테마 일괄 지정
+            // 역할: MerchOps 필터/검색으로 선별해 F9 전달된 상품을 한 번에 테마1~5로 지정한다.
+            // 정책: 테마값은 작업값이며, 행사가가 0이면 엑셀 출력 시 테마 열은 비워진다.
+            // ============================================================
+            const handleBulkThemeApply = useCallback(() => {
+                const themeNo = normalizeThemeNo(bulkTheme);
+                if (!themeNo) return showToast('⚠️ 테마1~테마5 중 하나를 선택하세요.');
+                if (!filteredRows || filteredRows.length === 0) return showToast('⚠️ 현재 표시된 상품이 없습니다.');
+                const targetCodes = new Set(filteredRows.map(row => row.코드));
+                const appliedCount = filteredRows.length;
+                const promoCount = filteredRows.filter(row => parseNum(row.행사가) > 0).length;
+                setReviewRows(prev => prev.map(row => {
+                    if (!targetCodes.has(row.코드)) return row;
+                    return {
+                        ...row,
+                        promoTheme: themeNo,
+                        테마1: themeNo === 1 ? '1' : '',
+                        테마2: themeNo === 2 ? '1' : '',
+                        테마3: themeNo === 3 ? '1' : '',
+                        테마4: themeNo === 4 ? '1' : '',
+                        테마5: themeNo === 5 ? '1' : ''
+                    };
+                }));
+                showToast(`✅ 현재 표시 ${appliedCount.toLocaleString()}건에 테마${themeNo} 지정 완료 · 행사 출력대상 ${promoCount.toLocaleString()}건`);
+            }, [bulkTheme, filteredRows, showToast]);
 
             // ============================================================
             // [E-OUTPUT-02] 최종 마스터 반영 + 통합 엑셀 출력
@@ -700,10 +724,10 @@
                                 <h2 className="text-xl font-black text-slate-800 flex items-center">
                                     <i className="fas fa-layer-group text-indigo-500 mr-2"></i>이슈 카드뷰
                                 </h2>
-                                <div className="text-[12px] text-slate-500 font-bold">표시 {filteredRows.length.toLocaleString()}건 / 전체 {reviewRows.length.toLocaleString()}건</div>
+                                <div className="text-[12px] text-slate-500 font-bold">표시 {filteredRows.length.toLocaleString()}건 / 전체 {reviewRows.length.toLocaleString()}건 · 필터 후 테마 일괄지정 가능</div>
                             </div>
 
-                            <div className="grid grid-cols-5 xl:grid-cols-10 gap-2 mb-4">
+                            <div className="grid grid-cols-5 gap-2 mb-4">
                                 {issueCards.map(card => (
                                     <button key={card.key} onClick={() => handleCardClick(card.key)} className={`border p-3 rounded-xl flex flex-col items-center shadow-sm transition-all hover:shadow-md ${card.cls} ${activeIssue === card.key ? 'ring-2 ring-slate-700 scale-[1.02]' : ''}`}>
                                         <span className="text-[11px] font-black mb-1 flex items-center"><i className={`fas ${card.icon} mr-1`}></i>{card.label}</span>
@@ -725,6 +749,16 @@
                                     <option value="inPriceDesc">입고가 높은 순</option>
                                     <option value="outPriceDesc">출고가 높은 순</option>
                                 </select>
+                                <select value={bulkTheme} onChange={(e) => setBulkTheme(e.target.value)} className="h-9 px-3 border border-purple-200 rounded-lg text-[12px] font-black text-purple-700 bg-purple-50 outline-none">
+                                    <option value="1">테마1</option>
+                                    <option value="2">테마2</option>
+                                    <option value="3">테마3</option>
+                                    <option value="4">테마4</option>
+                                    <option value="5">테마5</option>
+                                </select>
+                                <button onClick={handleBulkThemeApply} className="h-9 px-4 rounded-lg bg-purple-600 text-white border border-purple-600 text-[12px] font-black hover:bg-purple-700">
+                                    <i className="fas fa-tags mr-1.5"></i>현재 표시 전체 테마지정
+                                </button>
                                 <button onClick={resetFilters} className="h-9 px-4 rounded-lg bg-slate-100 text-slate-600 border border-slate-300 text-[12px] font-black hover:bg-slate-200">
                                     <i className="fas fa-rotate-left mr-1.5"></i>필터 초기화
                                 </button>
