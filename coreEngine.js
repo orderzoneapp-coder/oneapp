@@ -345,14 +345,14 @@
       return { code: '-', label: '-', text: '-', tone: 'muted', className: 'text-slate-400 font-bold' };
     }
 
-    if (statusStr === '0' || statusStr === '정지중' || statusStr === '판매중단' || (!hasSalePrice && hasStatusValue)) {
-      return { code: '0', label: '정지중', text: '0 정지중', tone: 'stopped', className: 'text-rose-600 font-black' };
+    if (statusStr === '0' || statusStr === '정지' || statusStr === '정지중' || statusStr === '판매중단' || (!hasSalePrice && hasStatusValue)) {
+      return { code: '0', label: '정지', text: '정지', tone: 'stopped', className: 'text-rose-600 font-black' };
     }
 
     if (hasSalePrice) {
-      if (stockQty === 0) return { code: '1', label: '품절', text: '1 품절', tone: 'soldout', className: 'text-orange-600 font-black' };
-      if (promoPrice > 0) return { code: '1', label: '행사중', text: '1 행사중', tone: 'promo', className: 'text-purple-700 font-black' };
-      return { code: '1', label: '판매중', text: '1 판매중', tone: 'selling', className: 'text-emerald-700 font-black' };
+      if (stockQty === 0) return { code: '1', label: '품절', text: '품절', tone: 'soldout', className: 'text-orange-600 font-black' };
+      if (promoPrice > 0) return { code: '1', label: '행사', text: '행사', tone: 'promo', className: 'text-purple-700 font-black' };
+      return { code: '1', label: '판매', text: '판매', tone: 'selling', className: 'text-emerald-700 font-black' };
     }
 
     return { code: '-', label: '-', text: '-', tone: 'muted', className: 'text-slate-400 font-bold' };
@@ -517,8 +517,11 @@
       '외주비': getNum('외주비'),
       '노무비': getNum('노무비'),
       재고수량: stockQty,
-      테마1: finalData._theme === 1 ? '1' : (master['테마1'] || ''),
-      테마2: finalData._theme === 2 ? '1' : (master['테마2'] || ''),
+      테마1: parseNum(finalData._theme) === 1 ? '1' : (parseNum(master['테마1']) === 1 ? '1' : ''),
+      테마2: parseNum(finalData._theme) === 2 ? '1' : (parseNum(master['테마2']) === 1 ? '1' : ''),
+      테마3: parseNum(finalData._theme) === 3 ? '1' : (parseNum(master['테마3']) === 1 ? '1' : ''),
+      테마4: parseNum(finalData._theme) === 4 ? '1' : (parseNum(master['테마4']) === 1 ? '1' : ''),
+      테마5: parseNum(finalData._theme) === 5 ? '1' : (parseNum(master['테마5']) === 1 ? '1' : ''),
       카테고리: getStr('견적서') || getStr('카테고리'),
       검색어등록: getStr('검색어등록')
     };
