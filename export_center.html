@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.0 가격컬럼 단순화]</title>
+    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.3 재고 계산창고 정책]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -89,6 +89,8 @@
             return promo > 0 ? promo : out;
         };
 
+        // 출력검증센터의 행사가 값은 저장/출력 적용 예정값이다.
+        // 현재 행사중 여부 자체는 MerchOps 본체의 마스터 행사가 기준 필터에서 판단한다.
         const getSaleState = (row) => {
             const rawStatus = row?.판매여부;
             if (String(rawStatus).trim() === '0') return { code: '0', label: '정지중', text: '0 정지중', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
@@ -223,8 +225,10 @@
             const outsrc = parseNum(context['외주비']);
             const labor = parseNum(context['노무비']);
             const totalCost = inPrice + outsrc + labor;
-            const whCode = String(context['창고'] ?? '').trim();
-            const unitStr = String(context['단위'] ?? '').trim().toLowerCase();
+            // MerchOps에서 전달한 계산용 창고(_calcWarehouse)를 우선 사용한다.
+            // 이는 원본 창고값을 바꾸는 것이 아니라, 창고 각인이 없는 재고상품에만 01창고 연산룰을 적용하기 위한 계산 컨텍스트다.
+            const whCode = String(context['_calcWarehouse'] ?? context['창고'] ?? '').trim();
+            const unitStr = String(context['_calcUnit'] ?? context['단위'] ?? '').trim().toLowerCase();
 
             const matchWh = (ruleWh, targetWh) => {
                 if (!ruleWh || ruleWh === '*') return true;
@@ -306,6 +310,8 @@
                             const working = draft.working || draft || {};
                             const baseline = draft.baselineSnapshot || {};
                             const source = draft.source || {};
+                            // MerchOps v2.0.2부터 purchase/sales source가 전달된다.
+                            // 출력센터는 sources 전체를 작업대상으로 쓰지 않고, working 값과 source 메타만 참조한다.
                             const master = masterDict[code] || {};
 
                             const 기준입고가 = parseNum(master['입고가'] ?? baseline.기준입고가 ?? 0);
@@ -318,6 +324,8 @@
                             const 산출출고가 = calculateReviewOutPrice(입고가, { ...master, ...working }, marginRules);
                             const 출고가 = 불러온출고가 > 0 ? 불러온출고가 : 산출출고가;
                             const 행사가 = parseNum(working.행사가);
+                            const calcWarehouse = working._calcWarehouse || '';
+                            const calcWarehouseReason = working._calcWarehouseReason || '';
                             const rawStock = working.재고수량;
                             const 재고수량 = (rawStock !== undefined && rawStock !== null && rawStock !== '') ? parseNum(rawStock) : 999;
 
@@ -334,6 +342,10 @@
                                 기준시중가,
                                 기준판매여부,
                                 판매여부: working.판매여부 !== undefined && working.판매여부 !== '' ? working.판매여부 : 기준판매여부,
+                                창고: working.창고 || master['창고'] || '',
+                                단위: working.단위 || master['단위'] || '',
+                                _calcWarehouse: calcWarehouse,
+                                _calcWarehouseReason: calcWarehouseReason,
                                 입고가,
                                 출고가,
                                 행사가,
@@ -423,7 +435,7 @@
                 { key: 'digit', label: '자릿수확인', count: reviewRows.filter(isDigitSuspicion).length, icon: 'fa-keyboard', cls: 'border-orange-200 bg-orange-50 text-orange-700' },
                 { key: 'new', label: '신규', count: analysis.newItem, icon: 'fa-sparkles', cls: 'border-indigo-200 bg-indigo-50 text-indigo-700' },
                 { key: 'lowstock', label: '재고적음', count: analysis.lowStock, icon: 'fa-layer-group', cls: 'border-teal-200 bg-teal-50 text-teal-700' }
-            ]), [analysis, reviewRows]);
+            ]), [analysis]);
 
             const filteredRows = useMemo(() => {
                 let rows = reviewRows.filter(row => {
@@ -449,7 +461,12 @@
                     rows = rows.filter(row => {
                         const haystack = [
                             row.코드, row.품목명, row.규격, row.브랜드, row.카테고리,
-                            row.간단설명, row.검색어등록, row.source?.sourceType, ...(row.source?.tags || [])
+                            row.간단설명, row.검색어등록, row.source?.sourceType,
+                            row.source?.hasPurchase ? '구매 purchase 매입' : '',
+                            row.source?.hasSales ? '판매 sales 매출' : '',
+                            row.source?.hasInventory ? '재고 inventory' : '',
+                            row.source?.hasEstimate ? '견적 estimate 시세' : '',
+                            ...(row.source?.tags || [])
                         ].join(' ').toLowerCase();
                         return terms.every(term => haystack.includes(term));
                     });
@@ -737,6 +754,10 @@
                                                     <td className="px-3 py-2 font-bold text-slate-800">
                                                         {item.품목명} <span className="text-slate-400 font-normal ml-1 text-[11px]">{item.규격 && `(${item.규격})`}</span>
                                                         {isNewItem(item) && <span className="ml-2 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 text-[10px] font-black">신규</span>}
+                                                        {item.source?.hasEstimate && <span className="ml-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 text-[10px] font-black">견적</span>}
+                                                        {item.source?.hasPurchase && <span className="ml-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 text-[10px] font-black">구매</span>}
+                                                        {item.source?.hasSales && <span className="ml-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 text-[10px] font-black">판매</span>}
+                                                        {item.source?.hasInventory && <span className="ml-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-black">재고</span>}
                                                     </td>
                                                     <td className="px-3 py-2 text-right text-slate-400">
                                                         {fmt(item.기준입고가)}
