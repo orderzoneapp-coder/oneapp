@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.0.6 브랜드·검색어등록 검색]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.0.7 입고가 기준 가격변동·연산출고가 적용]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -218,15 +218,17 @@
             const priceInPrice = priceSrc['입고가'] !== undefined ? window.parseNum(priceSrc['입고가']) : window.parseNum(mItem['입고가']);
             const masterInPrice = window.parseNum(mItem['입고가']);
 
+            // 정책 기준: 업로드 엑셀의 출고가는 원본 source에 보존하되, 작업 출고가(finalData)는 입고가 기준 마진룰로 산출한다.
+            // 단, 마스터만 불러온 경우에는 기존 마스터 출고가를 현재 기준값으로 유지하고, 강제 재계산 때만 새 룰로 덮는다.
             const invProvidedOut = window.parseNum(inv['출고가']);
             const estProvidedOut = window.parseNum(est['출고가']);
             const priceProvidedOut = window.parseNum(priceSrc['출고가']);
             const masterProvidedOut = window.parseNum(mItem['출고가']);
             const masterProvidedMarket = window.parseNum(mItem['시중가']);
 
-            const invTargetOut = window.calculatePricesEngine(invInPrice, invProvidedOut, mItem, inv, marginRules, forceRecalc);
-            const estTargetOut = window.calculatePricesEngine(estInPrice, estProvidedOut, mItem, est, marginRules, forceRecalc);
-            const priceTargetOut = window.calculatePricesEngine(priceInPrice, priceProvidedOut, mItem, priceSrc, marginRules, forceRecalc);
+            const invTargetOut = window.calculatePricesEngine(invInPrice, 0, mItem, inv, marginRules, true);
+            const estTargetOut = window.calculatePricesEngine(estInPrice, 0, mItem, est, marginRules, true);
+            const priceTargetOut = window.calculatePricesEngine(priceInPrice, 0, mItem, priceSrc, marginRules, true);
             const masterTargetOut = window.calculatePricesEngine(masterInPrice, masterProvidedOut, mItem, {}, marginRules, forceRecalc);
 
             let finalMarketPrice = 0;
@@ -270,6 +272,8 @@
             targetSource._theme = theme;
             targetSource._isPromo = isPromo;
             targetSource._normalPrice = normalPrice;
+            // 엑셀/소스 출고가는 작업 출고가를 덮지 않고 참고값으로만 보존한다.
+            targetSource._sourceOutPrice = hasInv && invProvidedOut > 0 ? invProvidedOut : (hasPriceSource && priceProvidedOut > 0 ? priceProvidedOut : 0);
             
             return targetSource;
         };
@@ -1929,7 +1933,8 @@
         };
 
         const isPromoSuggestion = (row = {}, mItem = {}, config = {}) => {
-            if (isPromoActive(row, mItem)) return false;
+            // 행사제안 버튼은 현재 행사중 상품과 행사 메리트가 있는 상품을 함께 검토 대상으로 올린다.
+            if (isPromoActive(row, mItem)) return true;
             if (getWorkingPromoPrice(row) > 0) return true;
             const marginInfo = getMarginInfo(row, mItem);
             if (marginInfo.rate !== null && marginInfo.rate < 0) return false;
@@ -1953,6 +1958,7 @@
         };
 
         const getPromoSuggestionReason = (row = {}, mItem = {}, config = {}) => {
+            if (isPromoActive(row, mItem)) return '현재 행사중';
             const oldIn = window.parseNum(mItem?.['입고가']);
             const newIn = window.parseNum(row.finalData?.['입고가'] !== undefined ? row.finalData['입고가'] : (row.sources?.estimate?.['입고가'] ?? row.sources?.purchase?.['입고가'] ?? row.sources?.sales?.['입고가'] ?? row.sources?.inventory?.['입고가']));
             const dropAmount = oldIn > 0 && newIn > 0 ? oldIn - newIn : 0;
@@ -2702,7 +2708,8 @@
                         const newPromo = window.parseNum(item.finalData?.['행사가'] !== undefined ? item.finalData['행사가'] : (item.sources?.['estimate']?.['행사가'] ?? item.sources?.['purchase']?.['행사가'] ?? item.sources?.['sales']?.['행사가'] ?? item.sources?.['inventory']?.['행사가']));
 
                         if (ui.priceFilter === 'changed') {
-                            return (oldIn > 0 && newIn > 0 && oldIn !== newIn) || (oldOut > 0 && newOut > 0 && oldOut !== newOut) || oldPromo !== newPromo;
+                            // 가격변동 버튼은 입고가 변동 확인용이다. 출고가/행사가는 표시 차이로만 보고 필터 조건에서 제외한다.
+                            return oldIn > 0 && newIn > 0 && oldIn !== newIn;
                         }
                         if (ui.priceFilter === 'promo') return isPromoActive(item, mItem);
                         if (ui.priceFilter === 'promoSuggest') return isPromoSuggestion(item, mItem, config);
