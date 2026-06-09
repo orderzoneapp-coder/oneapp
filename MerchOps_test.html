@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.0.7 입고가 기준 가격변동·연산출고가 적용]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.0.9 단위매핑·적용룰 추적]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -168,7 +168,16 @@
                 } 
             });
 
-            const appliedRule = bestRule || { rate: 10, type: 'divide' }; 
+            const appliedRule = bestRule || { whCode: '*', unit: '*', rate: 10, type: 'divide' };
+            currentFinalData._appliedMarginRule = {
+                inputWarehouse: whCode || '-',
+                inputUnit: unitStr || '-',
+                ruleWhCode: appliedRule.whCode || '*',
+                ruleUnit: appliedRule.unit || '*',
+                rate: window.parseNum(appliedRule.rate),
+                type: appliedRule.type || 'divide',
+                totalCost
+            };
             let calcOutPrice = 0;
             
             if (baseInPrice > 0) { 
@@ -299,7 +308,7 @@
         });
         
         const getInitialVisibleUploadCols = () => ({ 
-            estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명', '행사가'] 
+            estimate: ['창고', '구매처', '브랜드', '견적서', '단위', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '검색어등록'] 
         });
         
         const getInitialMappings = () => {
@@ -309,6 +318,9 @@
                 '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', 
                 '품목명': '품목명, 상품명, 품명, 상품이름', 
                 '규격': '규격, 규격명, 사이즈, 단량', 
+                '브랜드': '브랜드, 제조사, 메이커',
+                '단위': '단위, 판매단위, 포장단위, UNIT, unit',
+                '검색어등록': '검색어등록, 검색어, 유사어, 키워드',
                 '출고가': '출고가, 출고, 판매가, 시중가', 
                 '입고가': '입고가, 입고, 매입가' 
             };
@@ -317,6 +329,8 @@
                 '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', 
                 '품목명': '품목명, 상품명, 품명, 상품이름', 
                 '규격': '규격명, 규격, 사이즈, 단량', 
+                '브랜드': '브랜드, 제조사, 메이커',
+                '단위': '단위, 판매단위, 포장단위, UNIT, unit',
                 '구매처': '거래처명, 구매처, 거래처', 
                 '견적서': '견적서, 카테고리, 템플릿, 견적분류', 
                 '행사가': '행사가, 행사, 특가',
@@ -325,7 +339,8 @@
                 '입고B': 'B단가, 입고B', 
                 '도매A': 'A판매, A판매가, 도매A', 
                 '도매B': 'B판매, B판매가, 도매B', 
-                '간단설명': '지시사항, 간단설명, 비고'
+                '간단설명': '지시사항, 간단설명, 비고',
+                '검색어등록': '검색어등록, 검색어, 유사어, 키워드'
             };
             return base;
         };
@@ -334,6 +349,8 @@
             const base = { master: {}, estimate: {} };
             base.estimate = { 
                 '창고': '창고', 
+                '브랜드': '브랜드',
+                '단위': '단위',
                 '구매처': '구매처', 
                 '견적서': '견적서', 
                 '행사가': '행사가', 
@@ -342,7 +359,8 @@
                 '입고B': '입고B', 
                 '도매A': '도매A', 
                 '도매B': '도매B', 
-                '간단설명': '간단설명' 
+                '간단설명': '간단설명',
+                '검색어등록': '검색어등록' 
             };
             return base;
         };
@@ -515,6 +533,42 @@
             const [uploadColumnMeta, setUploadColumnMeta] = useState(() => safeJSONParse('merchUploadColumnMeta_v870', {}));
             const [marginRules, setMarginRules] = useState(() => safeJSONParse('merchMarginRules_v878', [{ id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }]));
             const configHydratedRef = useRef(false);
+
+            // v2.0.9 필수 매핑 보강: 기존 localStorage 설정이 있어도 단위/브랜드/검색어등록을 자동 보강한다.
+            useEffect(() => {
+                const requiredUploadCols = ['창고', '구매처', '브랜드', '견적서', '단위', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '검색어등록'];
+                const requiredMappings = {
+                    '브랜드': '브랜드, 제조사, 메이커',
+                    '단위': '단위, 판매단위, 포장단위, UNIT, unit',
+                    '외주비': '외주비, 외주, 외주가공비',
+                    '노무비': '노무비, 노무, 인건비',
+                    '검색어등록': '검색어등록, 검색어, 유사어, 키워드'
+                };
+                const requiredLinks = {
+                    '브랜드': '브랜드',
+                    '단위': '단위',
+                    '외주비': '외주비',
+                    '노무비': '노무비',
+                    '검색어등록': '검색어등록'
+                };
+
+                setVisibleUploadCols(prev => {
+                    const list = prev?.estimate || [];
+                    const merged = [...list];
+                    requiredUploadCols.forEach(col => { if (!merged.includes(col)) merged.push(col); });
+                    return { ...(prev || {}), estimate: merged };
+                });
+                setMappings(prev => {
+                    const est = { ...(prev?.estimate || {}) };
+                    Object.entries(requiredMappings).forEach(([k, v]) => { if (!est[k]) est[k] = v; });
+                    return { ...(prev || {}), estimate: est };
+                });
+                setMasterLinks(prev => {
+                    const est = { ...(prev?.estimate || {}) };
+                    Object.entries(requiredLinks).forEach(([k, v]) => { if (est[k] === undefined) est[k] = v; });
+                    return { ...(prev || {}), estimate: est };
+                });
+            }, []);
 
             // 환경설정 영속화: localStorage를 1차 저장소로 쓰고 IndexedDB에 백업한다.
             // 기존 코드에는 상태 변경 후 localStorage.setItem이 없어, 재접속 시 하드코딩 기본값으로 돌아갈 수 있었다.
@@ -797,12 +851,11 @@
             }, [config.cloudUrl, data.masterProducts, data.setMasterProducts, config.marginRules, config.setMarginRules, config.mappings, config.masterLinks, config.visibleUploadCols, config.visibleMasterCols, data.historyLogs, data.setHistoryLogs, ui]);
 
             const cleanUpGarbageTags = useCallback(() => {
-                if(window.confirm("마스터 DB에 남아있는 불필요한 엑셀 검색어 찌꺼기를 모두 삭제하여 용량을 최적화하시겠습니까?\n(오직 시스템에서 관리하는 속성만 안전하게 남습니다.)")) {
+                if(window.confirm("마스터 DB에 남아있는 불필요한 상품태그 찌꺼기를 삭제하여 용량을 최적화하시겠습니까?\n(오직 시스템에서 관리하는 속성만 안전하게 남습니다.)")) {
                     let newMaster = { ...data.masterProducts };
                     let count = 0;
                     for (let code in newMaster) {
-                        if (newMaster[code]['검색어등록'] || newMaster[code]['상품태그']) {
-                            delete newMaster[code]['검색어등록'];
+                        if (newMaster[code]['상품태그']) {
                             delete newMaster[code]['상품태그'];
                             count++;
                         }
@@ -885,6 +938,11 @@
                             
                             if (!mItem.sources[role]['품목명'] && newMaster[code]?.['품목명']) mItem.sources[role]['품목명'] = newMaster[code]['품목명'];
                             if (!mItem.sources[role]['규격'] && newMaster[code]?.['규격']) mItem.sources[role]['규격'] = newMaster[code]['규격'];
+                            ['브랜드', '단위', '검색어등록', '외주비', '노무비'].forEach(fallbackField => {
+                                if ((mItem.sources[role][fallbackField] === undefined || mItem.sources[role][fallbackField] === '') && newMaster[code]?.[fallbackField] !== undefined) {
+                                    mItem.sources[role][fallbackField] = newMaster[code][fallbackField];
+                                }
+                            });
 
                             Object.keys(curMap).forEach(h => {
                                 if (!['품목코드', '품목명', '규격', '구매처'].includes(h)) {
@@ -2088,6 +2146,14 @@
                 return ['판매정지 대기', 'F8/출력센터 저장 시 반영'];
             }
 
+            const rule = row.finalData?._appliedMarginRule;
+            if (rule && lines.length < 2) {
+                const typeLabel = rule.type === 'divide' ? '나누기' : '더하기';
+                lines.push(`적용룰 ${rule.ruleWhCode}/${rule.ruleUnit}/${rule.rate}%`);
+                if (rule.inputWarehouse === '-' || rule.inputUnit === '-') lines.push(`입력값 ${rule.inputWarehouse}/${rule.inputUnit} 확인`);
+                else lines.push(`${typeLabel} · 원가 ${window.parseNum(rule.totalCost).toLocaleString()}`);
+            }
+
             if (lines.length === 0) {
                 return ['', ''];
             }
@@ -2851,7 +2917,7 @@
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <div className="flex items-center mb-0.5">
                                                     <span className="text-[14px] font-black text-slate-200 leading-none">MerchOps</span>
-                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v2.0.7 이슈 행사배지 제거</span>
+                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v2.0.9 단위매핑·적용룰 추적</span>
                                                 </div>
                                                 <span className="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">MAIN WORKSPACE</span>
                                             </div>
