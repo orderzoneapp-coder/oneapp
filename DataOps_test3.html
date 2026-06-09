@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99e Deduction Amount Column Fix)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99p Transfer Check Integrated Sales Profit Sheets)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -51,7 +51,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.99e Deduction Amount Column Fix...</div>
+        <div class="loader-text">ONEAPP DataOps v8.99p Transfer Check Integrated Sales Profit Sheets...</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -204,6 +204,100 @@
             return false;
         };
 
+        const TRANSFER_PRICE_GROUP_PRESETS = [
+            {
+                groupName: '청과상장',
+                label: '청과상장',
+                description: '청과/상장 거래처',
+                customers: ['1마산', '2중앙'],
+                rule: ['출고가(공지)', '청과', '상장가'],
+                feeMode: 'LISTING_FEE',
+                profitMode: 'NORMAL',
+                outputCustomerMode: 'GROUP_NAME',
+                tone: 'emerald'
+            },
+            {
+                groupName: '식자재',
+                label: '식자재',
+                description: '식자재 고정단가 거래처',
+                customers: ['4연산', '5온산', '6진주', '7초전', '7남해', '8통영', '9구미'],
+                rule: ['출고가(공지)', '식자재', '출고(외노)'],
+                feeMode: 'NONE',
+                profitMode: 'NORMAL',
+                outputCustomerMode: 'ORIGINAL_CUSTOMER',
+                tone: 'amber'
+            },
+            {
+                groupName: '창고출고',
+                label: '창고출고',
+                description: '9부산 하위 거래처 포함',
+                customers: ['9부산', '금양', '상남식자재', '농협45번', '농협44번', '농협66', '삼진', '진영상회', '창원153번', '창원59번', '농협12번', '농협77번'],
+                rule: ['출고가(공지)', '도매A', '출고(외노)'],
+                feeMode: 'NONE',
+                profitMode: 'NORMAL',
+                outputCustomerMode: 'ORIGINAL_CUSTOMER',
+                tone: 'cyan'
+            },
+            {
+                groupName: '내부이동',
+                label: '내부이동',
+                description: '매입단가 그대로 적용',
+                customers: ['3우리'],
+                rule: ['단가'],
+                feeMode: 'NONE',
+                profitMode: 'ZERO_PROFIT',
+                outputCustomerMode: 'GROUP_NAME',
+                tone: 'slate'
+            }
+        ];
+        const buildDefaultTransferPriceGroupText = () => TRANSFER_PRICE_GROUP_PRESETS
+            .flatMap(group => group.customers.map(customer => `${customer}=${group.groupName}|${group.rule.join('>')}|${group.feeMode}|${group.profitMode}|${group.outputCustomerMode}`))
+            .join('\n');
+        const normalizeTransferGroupName = (name) => {
+            const value = safeStr(name);
+            if (value === '9부산') return '창고출고';
+            return value;
+        };
+        const splitTransferCustomerText = (text) => safeStr(text, '')
+            .split(/[\n,]+/)
+            .map(v => v.trim())
+            .filter(Boolean);
+        const parseTransferPriceGroupCards = (text) => {
+            const cards = TRANSFER_PRICE_GROUP_PRESETS.map(group => ({ ...group, customers: [] }));
+            const byName = Object.fromEntries(cards.map(card => [card.groupName, card]));
+            safeStr(text, buildDefaultTransferPriceGroupText()).split(/\n+/).map(line => line.trim()).filter(Boolean).forEach(line => {
+                const [customerPart, rest = ''] = line.split('=');
+                const customer = safeStr(customerPart);
+                const [rawGroupName = '', rulePart = '', feeMode = '', profitMode = '', outputCustomerMode = ''] = rest.split('|').map(v => safeStr(v));
+                const groupName = normalizeTransferGroupName(rawGroupName);
+                if (!customer || !groupName) return;
+                if (!byName[groupName]) {
+                    byName[groupName] = {
+                        groupName,
+                        label: groupName,
+                        description: '추가 단가그룹',
+                        customers: [],
+                        rule: rulePart ? rulePart.split('>').map(v => v.trim()).filter(Boolean) : ['출고가(공지)'],
+                        feeMode: feeMode || 'NONE',
+                        profitMode: profitMode || 'NORMAL',
+                        outputCustomerMode: outputCustomerMode || 'ORIGINAL_CUSTOMER',
+                        tone: 'purple'
+                    };
+                    cards.push(byName[groupName]);
+                }
+                const card = byName[groupName];
+                if (!card.customers.includes(customer)) card.customers.push(customer);
+                if (rulePart) card.rule = rulePart.split('>').map(v => v.trim()).filter(Boolean);
+                if (feeMode) card.feeMode = feeMode;
+                if (profitMode) card.profitMode = profitMode;
+                if (outputCustomerMode) card.outputCustomerMode = outputCustomerMode;
+            });
+            return cards;
+        };
+        const serializeTransferPriceGroupCards = (cards = []) => (cards || [])
+            .flatMap(card => (card.customers || []).map(customer => `${customer}=${card.groupName}|${(card.rule || []).join('>')}|${card.feeMode || 'NONE'}|${card.profitMode || 'NORMAL'}|${card.outputCustomerMode || 'GROUP_NAME'}`))
+            .join('\n');
+
         const defaultMappings = {
             code: '품목코드, 상품코드, 코드, 품번, 바코드, sku',
             name: '품명, 품목명, 품목명(규격), 품목명[규격], 상품명, 제품명, 이름, 품목, 상품',
@@ -222,7 +316,9 @@
             unitBoxKeywords: 'BOX, 박스, B/O, CT, CARTON',
             unitEaKeywords: 'EA, EACH, 개, 봉, 팩, 병, 캔',
             unitSplitKeywords: '소분, 분할, 낱개',
-            categoryGuide: '10=채소.과일\n20=수산.축산\n30=식품.음료\n40=양념.소스\n50=주방.잡화'
+            categoryGuide: '10=채소.과일\n20=수산.축산\n30=식품.음료\n40=양념.소스\n50=주방.잡화',
+            transferPriceGroups: buildDefaultTransferPriceGroupText(),
+            transferPriceColumns: '수기공지단가=출고가(공지)\n고정상장가=청과\n시세상장가=상장가\n창고출고가=출고(외노)\n식자재가=식자재\n도매A=도매A\n매입원가=단가'
         };
 
 
@@ -232,7 +328,7 @@
            - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
            ======================================================================= */
         const CONFIG_MODULE = Object.freeze({
-            version: 'v8.99e Deduction Amount Column Fix',
+            version: 'v8.99p Transfer Check Integrated Sales Profit Sheets',
             categoryMap: Object.freeze({
                 '10': '채소.과일',
                 '20': '수산.축산',
@@ -1267,7 +1363,10 @@
                         sale._finalRevenue = finalRevenue;
                     });
 
-                    // 2. 🌟 핵심: 동일 상품, 동일 거래처, 동일 매입처를 가진 파편화된 전표 병합 (Pre-Aggregation)
+                    // 2. 🌟 v8.99m: Lot/원가 매칭용 전표 병합 기준 정정.
+                    // 원가 배정 기준은 판매처가 아니라 "상품코드 + 품명 + 판매현황 구매처(Lot)"이다.
+                    // 예: 쌈추_1kg_BOX가 1마산/2중앙으로 나뉘어도 구매처가 같으면 먼저 합산해 같은 Lot에서 차감한다.
+                    // 판매처별 수량/매출은 _salesVendorDetails에 보존하고, 출고내역 표시 단계에서 다시 분리한다.
                     const aggregatedSales = {};
                     outItems.forEach(sale => {
                         const code = String(sale.코드 || 'NO_CODE');
@@ -1277,21 +1376,32 @@
 
                         const vendorKey = safeStr(sale.거래처, '미지정');
                         const matchKey = safeStr(sale.매입처매칭, '미지정');
+                        const qty = sale._computedQty || 0;
+                        const rev = sale._finalRevenue || 0;
                         
-                        // 상품코드, 품명, 거래처명, 매입처태그가 모두 동일하면 하나의 전표로 합침
-                        const aggKey = `${code}|${sale.품명}|${vendorKey}|${matchKey}`;
+                        // 판매거래처는 병합키에서 제외한다. 같은 구매처 Lot이면 판매처가 달라도 원가 배정은 합산 처리한다.
+                        const aggKey = `${code}|${sale.품명}|${matchKey}`;
 
                         if (!aggregatedSales[aggKey]) {
                             aggregatedSales[aggKey] = {
                                 ...sale,
+                                거래처: vendorKey,
                                 _computedQty: 0,
                                 _finalRevenue: 0,
-                                _rawCombinedStr: '' // 텍스트 단서(LIFO 키워드 등)도 잃어버리지 않게 모두 결합
+                                _rawCombinedStr: '', // 텍스트 단서(LIFO 키워드 등)도 잃어버리지 않게 모두 결합
+                                _salesVendorDetails: []
                             };
                         }
-                        aggregatedSales[aggKey]._computedQty += (sale._computedQty || 0);
-                        aggregatedSales[aggKey]._finalRevenue += (sale._finalRevenue || 0);
+                        aggregatedSales[aggKey]._computedQty += qty;
+                        aggregatedSales[aggKey]._finalRevenue += rev;
                         aggregatedSales[aggKey]._rawCombinedStr += ' ' + Object.values(sale._raw || {}).map(v => String(v)).join(' ').toLowerCase();
+                        const existingDetail = aggregatedSales[aggKey]._salesVendorDetails.find(d => d.vendor === vendorKey);
+                        if (existingDetail) {
+                            existingDetail.qty += qty;
+                            existingDetail.rev += rev;
+                        } else {
+                            aggregatedSales[aggKey]._salesVendorDetails.push({ vendor: vendorKey, qty, rev, remainingQty: qty, remainingRev: rev });
+                        }
                     });
 
                     // 3. 병합된 전표 리스트를 우선순위 및 큰 수량부터 차감되도록 정렬
@@ -1344,6 +1454,7 @@
                         
                         // 🌟 당일우선(LIFO) 거래처라도, 내부분배용으로 지정된 전표면 LIFO를 무시하고 FIFO(기존 재고 우선 선출) 적용
                         const effectiveIsLifo = isInternalDistribution ? false : isLifo;
+                        const normalizeLotName = (val) => safeStr(val, '').replace(/\s/g, '').toLowerCase();
 
                         // v8.99c: Lot 이슈는 판매 가능 여부가 아니라 원가/잔량 실사 영향 기준으로만 노출한다.
                         // 2전송/내부분배 계열은 이미 매칭 확인 성격이 강하므로, 수량부족/마이너스가 아니면 Lot 경고에서 제외한다.
@@ -1392,44 +1503,113 @@
                                 if (code === 'NO_CODE') pData[bKey].이슈.push('🚨코드없음(수기확인)'); else if (hasClosingEnd) pData[bKey].이슈.push('🚨신규발생(마감자료에없음)');
                             }
                             pData[bKey].출고 += qtyToDeduct; pData[bKey].매출액 += finalRevenue;
-                            if (!pData[bKey].출고내역[sale.거래처]) pData[bKey].출고내역[sale.거래처] = {qty: 0, rev: 0, cogs: 0, isLifo: effectiveIsLifo, isPerfectMatch: false, displayVendor: sale.거래처};
-                            pData[bKey].출고내역[sale.거래처].qty += qtyToDeduct; pData[bKey].출고내역[sale.거래처].rev += finalRevenue;
+                            (sale._salesVendorDetails && sale._salesVendorDetails.length ? sale._salesVendorDetails : [{ vendor: sale.거래처, qty: qtyToDeduct, rev: finalRevenue }]).forEach(detail => {
+                                const dQty = safeNum(detail.qty);
+                                const dRev = safeNum(detail.rev);
+                                const dVendor = safeStr(detail.vendor, sale.거래처);
+                                if (!pData[bKey].출고내역[dVendor]) pData[bKey].출고내역[dVendor] = {qty: 0, rev: 0, cogs: 0, isLifo: effectiveIsLifo, isPerfectMatch: false, displayVendor: dVendor, matchMode: 'NO_PURCHASE'};
+                                pData[bKey].출고내역[dVendor].qty += dQty;
+                                pData[bKey].출고내역[dVendor].rev += dRev;
+                            });
                             return;
                         }
 
                         let remainingQty = qtyToDeduct;
-                        const deductFromBucket = (bucket, take, isPerfect = false) => {
-                            const cogs = take * bucket.단가; const revShare = qtyToDeduct > 0 ? finalRevenue * (take / qtyToDeduct) : 0;
+                        const deductFromBucket = (bucket, take, isPerfect = false, matchMode = '') => {
+                            const cogs = take * bucket.단가;
+                            const revShare = qtyToDeduct > 0 ? finalRevenue * (take / qtyToDeduct) : 0;
                             if (bucket.수량 !== undefined) bucket.수량 -= take; 
                             pData[bucket.batchKey].출고 += take; pData[bucket.batchKey].매출원가 += cogs; pData[bucket.batchKey].매출액 += revShare;
-                            
-                            const vendorKey = isPerfect ? `${sale.거래처}_perfect` : sale.거래처;
-                            
-                            if (!pData[bucket.batchKey].출고내역[vendorKey]) {
-                                pData[bucket.batchKey].출고내역[vendorKey] = {
-                                    qty: 0, rev: 0, cogs: 0, 
-                                    isLifo: effectiveIsLifo, 
-                                    isPerfectMatch: isPerfect, 
-                                    displayVendor: sale.거래처
-                                };
-                            }
-                            pData[bucket.batchKey].출고내역[vendorKey].qty += take; 
-                            pData[bucket.batchKey].출고내역[vendorKey].rev += revShare; 
-                            pData[bucket.batchKey].출고내역[vendorKey].cogs += cogs;
+
+                            const details = (sale._salesVendorDetails && sale._salesVendorDetails.length)
+                                ? sale._salesVendorDetails
+                                : [{ vendor: sale.거래처, qty: qtyToDeduct, rev: finalRevenue, remainingQty: qtyToDeduct, remainingRev: finalRevenue }];
+                            let remainingTake = Math.abs(take);
+                            const sign = take < 0 ? -1 : 1;
+
+                            details.forEach(detail => {
+                                if (remainingTake <= 0) return;
+                                if (detail.remainingQty === undefined) detail.remainingQty = safeNum(detail.qty);
+                                if (detail.remainingRev === undefined) detail.remainingRev = safeNum(detail.rev);
+                                const available = Math.abs(safeNum(detail.remainingQty));
+                                if (available <= 0) return;
+                                const usedAbs = Math.min(available, remainingTake);
+                                const usedQty = usedAbs * sign;
+                                const revPerUnit = safeNum(detail.qty) !== 0 ? safeNum(detail.rev) / safeNum(detail.qty) : 0;
+                                const usedRev = revPerUnit * usedQty;
+                                const usedCogs = usedQty * bucket.단가;
+                                detail.remainingQty = safeNum(detail.remainingQty) - usedQty;
+                                detail.remainingRev = safeNum(detail.remainingRev) - usedRev;
+                                remainingTake -= usedAbs;
+
+                                const displayVendor = safeStr(detail.vendor, sale.거래처);
+                                const vendorKey = isPerfect ? `${displayVendor}_perfect` : displayVendor;
+                                if (!pData[bucket.batchKey].출고내역[vendorKey]) {
+                                    pData[bucket.batchKey].출고내역[vendorKey] = {
+                                        qty: 0, rev: 0, cogs: 0, 
+                                        isLifo: effectiveIsLifo, 
+                                        isPerfectMatch: isPerfect, 
+                                        displayVendor,
+                                        requestedLot: safeStr(sale.매입처매칭, ''),
+                                        appliedLot: safeStr(bucket.거래처, ''),
+                                        matchMode: matchMode || (matchStr ? 'FIXED_LOT' : (effectiveIsLifo ? 'LIFO' : 'SEQUENTIAL'))
+                                    };
+                                }
+                                pData[bucket.batchKey].출고내역[vendorKey].qty += usedQty; 
+                                pData[bucket.batchKey].출고내역[vendorKey].rev += usedRev; 
+                                pData[bucket.batchKey].출고내역[vendorKey].cogs += usedCogs;
+                            });
                         };
 
-                        if (remainingQty < 0) { deductFromBucket(pool.buckets[pool.buckets.length - 1], remainingQty, false); } 
+                        if (remainingQty < 0) { deductFromBucket(pool.buckets[pool.buckets.length - 1], remainingQty, false, 'RETURN'); } 
                         else if (remainingQty > 0) {
                             let matchedBuckets = []; let matchFailedFlag = false;
 
                             // [1단계] 매입처(Lot) 기반 1차 필터링
+                            // v8.99m: 판매현황에 구매처 정보가 있으면 해당 구매처 Lot에 고정한다.
+                            // 못 찾더라도 전체 Lot으로 자동 FIFO 대체하지 않는다. 포함검색도 금지하고 정확 일치만 허용한다.
                             if (matchStr) {
-                                if (isInternalDistribution) { matchedBuckets = [...pool.buckets]; } 
-                                else {
-                                    pool.buckets.forEach(bucket => { const bVendorStr = String(bucket.거래처 || '').replace(/\s/g, '').toLowerCase(); if (bVendorStr && matchStr && (bVendorStr.includes(matchStr) || matchStr.includes(bVendorStr))) { matchedBuckets.push(bucket); } });
-                                    if (matchedBuckets.length === 0) { matchFailedFlag = true; matchedBuckets = [...pool.buckets]; }
+                                if (isInternalDistribution) {
+                                    matchedBuckets = [...pool.buckets];
+                                } else {
+                                    matchedBuckets = pool.buckets.filter(bucket => normalizeLotName(bucket.거래처) === matchStr);
+                                    if (matchedBuckets.length === 0) matchFailedFlag = true;
                                 }
-                            } else { matchedBuckets = [...pool.buckets]; }
+                            } else {
+                                matchedBuckets = [...pool.buckets];
+                            }
+
+                            if (matchFailedFlag) {
+                                const requestedLot = safeStr(sale.매입처매칭, '미지정');
+                                // v8.99o: Lot 매칭 실패 시 더미 상품행을 새로 만들지 않는다.
+                                // 새 행을 만들면 상품이 추가된 것처럼 보여 업무 혼선을 만든다.
+                                // 실패 정보는 기존 동일 상품 행의 이슈/메모에만 남기고, 다른 구매처 Lot으로 자동 대체하지 않는다.
+                                const failTarget = Object.values(pData).find(p =>
+                                    String(p.코드 || 'NO_CODE') === code &&
+                                    safeStr(p.품명, '') === safeStr(sale.품명, '') &&
+                                    !p.isDummy
+                                ) || Object.values(pData).find(p =>
+                                    String(p.코드 || 'NO_CODE') === code &&
+                                    !p.isDummy
+                                );
+                                const issueMsg = `🚨Lot매치실패(${requestedLot})`;
+                                const memoMsg = `Lot매칭실패: 판매현황 구매처=${requestedLot} / 구매 Lot 정확일치 없음 / 자동대체 금지`;
+                                if (failTarget) {
+                                    if (!Array.isArray(failTarget.이슈)) failTarget.이슈 = [];
+                                    if (!failTarget.이슈.includes(issueMsg)) failTarget.이슈.push(issueMsg);
+                                    failTarget.수기확인완료 = false;
+                                    failTarget._lotMatchFailed = true;
+                                    failTarget._lotMatchFailedRequestedVendor = requestedLot;
+                                    failTarget._lotMatchFailedQty = safeNum(failTarget._lotMatchFailedQty) + remainingQty;
+                                    failTarget._lotMatchFailedRevenue = safeNum(failTarget._lotMatchFailedRevenue) + finalRevenue;
+                                    failTarget.메모 = [safeStr(failTarget.메모, ''), memoMsg].filter(Boolean).join(' / ');
+                                } else {
+                                    // 구매 Lot 자체가 없는 경우에도 더미 행은 만들지 않고 콘솔에만 남긴다.
+                                    console.warn('Lot매칭실패: 표시 대상 기존 상품행 없음', { code, name: sale.품명, requestedLot, remainingQty });
+                                }
+                                remainingQty = 0;
+                                return;
+                            }
 
                             // [2단계] 🌟 단일 버킷 매칭 (정확한 수량 -> 넉넉한 수량)
                             let availableBucketsForPuzzle = matchedBuckets.filter(b => b.수량 > 0);
@@ -1444,7 +1624,7 @@
                             }
                             
                             if (exactMatchBucket) {
-                                deductFromBucket(exactMatchBucket, remainingQty, true);
+                                deductFromBucket(exactMatchBucket, remainingQty, true, matchStr ? 'FIXED_LOT_SINGLE' : 'SINGLE_BUCKET');
                                 remainingQty = 0; // 단일 버킷에서 전량 소화 완료
 
                                 // v8.99c: Lot명 불일치 자체가 아니라 원가/잔량 영향이 있을 때만 이슈로 노출한다.
@@ -1473,7 +1653,7 @@
 
                                 if (!targetBucket) break;
 
-                                deductFromBucket(targetBucket, take, false);
+                                deductFromBucket(targetBucket, take, false, matchStr ? 'FIXED_LOT_SPLIT' : (effectiveIsLifo ? 'LIFO' : 'SEQUENTIAL'));
                                 remainingQty -= take;
 
                                 // v8.99c: Lot명 불일치 자체가 아니라 원가/잔량 영향이 있을 때만 이슈로 노출한다.
@@ -2079,7 +2259,7 @@
                                             return (
                                                 <div key={vendor} draggable onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.setData('text/plain', JSON.stringify({sourceKey: item.batchKey, vendor, qty: data.qty, code: item.코드})); e.currentTarget.classList.add('opacity-40', 'scale-95'); }} onDragEnd={(e) => { e.currentTarget.classList.remove('opacity-40', 'scale-95'); }} 
                                                     className={`flex items-center px-2 py-0.5 rounded text-[10px] font-semibold cursor-grab active:cursor-grabbing border shadow-sm transition-all hover:-translate-y-0.5 ${chipClass}`} 
-                                                    title={`${data.qty}개 출고 ${data.isLifo ? '(당일우선 LIFO)' : '(일반 FIFO)'} - 드래그 이동 (Ctrl+드롭: 분할)`}>
+                                                    title={`${data.qty}개 출고 ${data.matchMode === 'LOT_MATCH_FAILED' ? '(Lot매칭실패)' : (data.matchMode && String(data.matchMode).includes('FIXED_LOT') ? '(구매처Lot고정)' : (data.isLifo ? '(당일우선)' : '(순차차감)'))} - 드래그 이동 (Ctrl+드롭: 분할)`}>
                                                     <span className="truncate max-w-[120px] flex items-center">{safeStr(displayVendor, '미지정')}({data.qty})</span>
                                                 </div>
                                             );
@@ -2328,10 +2508,140 @@
                 };
             }, [appStep, productData.length]);
 
+            const validateTransferPriceGroupText = useCallback((text = mappings.transferPriceGroups) => {
+                const allowedPriceKeys = ['출고가(공지)', '청과', '식자재', '도매A', '상장가', '출고(외노)', '단가'];
+                const allowedOutputModes = ['GROUP_NAME', 'ORIGINAL_CUSTOMER'];
+                const customerOwner = {};
+                const errors = [];
+                safeStr(text, '').split(/\n+/).map(line => line.trim()).filter(Boolean).forEach((line, idx) => {
+                    const [customerPart, rest = ''] = line.split('=');
+                    const customer = safeStr(customerPart);
+                    const [groupName = '', rulePart = '', feeMode = 'NONE', profitMode = 'NORMAL', outputCustomerMode = 'GROUP_NAME'] = rest.split('|').map(v => safeStr(v));
+                    const rule = rulePart.split('>').map(v => v.trim()).filter(Boolean);
+                    const lineNo = idx + 1;
+                    if (!customer) errors.push(`${lineNo}행: 거래처명이 비어 있습니다.`);
+                    if (!groupName) errors.push(`${lineNo}행: 그룹명이 비어 있습니다.`);
+                    if (!rule.length) errors.push(`${lineNo}행: 단가룰이 비어 있습니다.`);
+                    rule.forEach(key => { if (!allowedPriceKeys.includes(key)) errors.push(`${lineNo}행: 허용되지 않은 단가 후보(${key})`); });
+                    if (!allowedOutputModes.includes(outputCustomerMode || 'GROUP_NAME')) errors.push(`${lineNo}행: 출력모드는 GROUP_NAME 또는 ORIGINAL_CUSTOMER만 허용합니다.`);
+                    if (customer) {
+                        if (customerOwner[customer]) errors.push(`${lineNo}행: 거래처 ${customer}이(가) ${customerOwner[customer]}와 중복 등록되었습니다.`);
+                        customerOwner[customer] = groupName || '(그룹명 없음)';
+                    }
+                });
+                return errors;
+            }, [mappings.transferPriceGroups]);
+
+            const detectLegacyTransferPriceGroups = useCallback((text = mappings.transferPriceGroups) => {
+                const raw = safeStr(text, '');
+                if (!raw) return false;
+                const normalized = raw.replace(/\s/g, '');
+                if (normalized.includes('9부산=') && normalized.includes('도매A>출고(외노)>상장가')) return true;
+                if (normalized.includes('식자재>상장가')) return true;
+                if (!(normalized.includes('금양=창고출고') || normalized.includes('금양=9부산'))) return true;
+                if (!(normalized.includes('창원153번=창고출고') || normalized.includes('창원153번=9부산'))) return true;
+                if (!normalized.includes('ORIGINAL_CUSTOMER')) return true;
+                return false;
+            }, [mappings.transferPriceGroups]);
+
+            const resetTransferPriceGroupsToDefault = useCallback(() => {
+                const ok = window.confirm('현재 저장/입력된 2전송 단가그룹·거래처 매핑을 기본값으로 교체합니다.\n관리자가 추가한 거래처 설정이 초기화될 수 있습니다.\n진행하시겠습니까?');
+                if (!ok) return;
+                setMappings(prev => ({ ...prev, transferPriceGroups: defaultMappings.transferPriceGroups, transferPriceColumns: prev.transferPriceColumns || defaultMappings.transferPriceColumns }));
+                setAlertMsg('2전송 단가그룹·거래처 매핑을 기본값으로 복원했습니다. 저장 버튼을 눌러야 브라우저 설정에 반영됩니다.');
+            }, [setAlertMsg]);
+
+            const handleValidateTransferPriceGroups = useCallback(() => {
+                const errors = validateTransferPriceGroupText(mappings.transferPriceGroups || defaultMappings.transferPriceGroups);
+                const legacy = detectLegacyTransferPriceGroups(mappings.transferPriceGroups || defaultMappings.transferPriceGroups);
+                if (!errors.length && !legacy) {
+                    setAlertMsg('✅ 2전송 그룹단가 설정 검증 완료\n\n중복 거래처, 허용되지 않은 단가후보, 구버전 룰이 없습니다.');
+                    return;
+                }
+                const lines = [];
+                if (legacy) lines.push('⚠️ 구버전 단가그룹 설정이 감지되었습니다. 필요 시 [기본값 복원]을 사용하세요.');
+                if (errors.length) lines.push(...errors.slice(0, 20));
+                setAlertMsg(`2전송 그룹단가 설정 확인 필요\n\n${lines.join('\n')}${errors.length > 20 ? '\n...외 추가 오류 있음' : ''}`);
+            }, [mappings.transferPriceGroups, validateTransferPriceGroupText, detectLegacyTransferPriceGroups, setAlertMsg]);
+
+            const transferGroupCards = useMemo(() => parseTransferPriceGroupCards(mappings.transferPriceGroups || defaultMappings.transferPriceGroups), [mappings.transferPriceGroups]);
+
+            const setTransferGroupCards = useCallback((nextCards) => {
+                setMappings(prev => ({ ...prev, transferPriceGroups: serializeTransferPriceGroupCards(nextCards) }));
+            }, [setMappings]);
+
+            const updateTransferGroupCustomers = useCallback((groupName, text) => {
+                const nextCards = parseTransferPriceGroupCards(mappings.transferPriceGroups || defaultMappings.transferPriceGroups).map(card => {
+                    if (card.groupName !== groupName) return card;
+                    const uniqueCustomers = [];
+                    splitTransferCustomerText(text).forEach(customer => {
+                        if (!uniqueCustomers.includes(customer)) uniqueCustomers.push(customer);
+                    });
+                    return { ...card, customers: uniqueCustomers };
+                });
+                setTransferGroupCards(nextCards);
+            }, [mappings.transferPriceGroups, setTransferGroupCards]);
+
+            const promptAddTransferCustomer = useCallback((groupName) => {
+                const customer = safeStr(window.prompt(`${groupName} 그룹에 추가할 거래처명을 입력하세요.`));
+                if (!customer) return;
+                const nextCards = parseTransferPriceGroupCards(mappings.transferPriceGroups || defaultMappings.transferPriceGroups).map(card => {
+                    if (card.groupName !== groupName) return card;
+                    if ((card.customers || []).includes(customer)) return card;
+                    return { ...card, customers: [...(card.customers || []), customer] };
+                });
+                setTransferGroupCards(nextCards);
+            }, [mappings.transferPriceGroups, setTransferGroupCards]);
+
+            const promptAddTransferGroup = useCallback(() => {
+                const groupName = safeStr(window.prompt('추가할 단가그룹명을 입력하세요.'));
+                if (!groupName) return;
+                const customer = safeStr(window.prompt(`${groupName} 그룹에 먼저 등록할 거래처명을 입력하세요.`));
+                if (!customer) return;
+                const ruleText = safeStr(window.prompt('단가순서를 입력하세요. 예: 출고가(공지)>도매A>출고(외노)', '출고가(공지)>출고(외노)'));
+                const rule = ruleText.split('>').map(v => v.trim()).filter(Boolean);
+                if (!rule.length) return;
+                const nextCards = parseTransferPriceGroupCards(mappings.transferPriceGroups || defaultMappings.transferPriceGroups);
+                const existing = nextCards.find(card => card.groupName === groupName);
+                if (existing) {
+                    if (!existing.customers.includes(customer)) existing.customers.push(customer);
+                    existing.rule = rule;
+                } else {
+                    nextCards.push({ groupName, label: groupName, description: '추가 단가그룹', customers: [customer], rule, feeMode: 'NONE', profitMode: 'NORMAL', outputCustomerMode: 'ORIGINAL_CUSTOMER', tone: 'purple' });
+                }
+                setTransferGroupCards(nextCards);
+            }, [mappings.transferPriceGroups, setTransferGroupCards]);
+
             const saveMappings = () => { localStorage.setItem('inventoryMappingsLight', JSON.stringify(mappings)); localStorage.setItem('inventoryGroupingV79', JSON.stringify(grouping)); setShowSettings(false); };
 
             const priceOptionsMap = useMemo(() => { const map = {}; productData.forEach(p => { if (!map[p.코드]) map[p.코드] = new Set(); if (p.단가 > 0 && !p.isDummy) map[p.코드].add(p.단가); }); const result = {}; for(let code in map) { result[code] = Array.from(map[code]); } return result; }, [productData]);
+            // v8.99n: 판매현황 구매처로 원가가 확정된 상품은 Lot 매치 이슈카드에 올리지 않는다.
+            // 다중 원가 코드 자체는 참고 정보일 뿐이며, 이슈카드는 실제 미처리 Lot 문제만 다룬다.
             const multiPriceCodes = useMemo(() => { const codes = new Set(); productData.forEach(p => { if (priceOptionsMap[p.코드] && priceOptionsMap[p.코드].length >= 2 && p.출고 > 0) codes.add(p.코드); }); return Array.from(codes); }, [productData, priceOptionsMap]);
+
+            const hasUnresolvedLotIssue = useCallback((p) => {
+                const issues = Array.isArray(p.이슈) ? p.이슈 : [];
+                return issues.some(i => {
+                    const msg = String(i);
+                    return msg.includes('🚨매치변경') ||
+                        msg.includes('🚨Lot원가확인') ||
+                        msg.includes('🚨Lot불일치') ||
+                        msg.includes('🚨Lot매치실패') ||
+                        msg.includes('🚨매입처없음');
+                });
+            }, []);
+
+            const hasLotIssueTotal = useCallback((p) => {
+                const issues = Array.isArray(p.이슈) ? p.이슈 : [];
+                return issues.some(i => {
+                    const msg = String(i);
+                    return msg.includes('매치변경') ||
+                        msg.includes('Lot원가확인') ||
+                        msg.includes('Lot불일치') ||
+                        msg.includes('Lot매치실패') ||
+                        msg.includes('매입처없음');
+                });
+            }, []);
 
             const hasUnresolvedQtyIssue = useCallback((p) => {
                 const issues = Array.isArray(p.이슈) ? p.이슈 : [];
@@ -2377,15 +2687,16 @@
                     const hasQtyTotal = hasQtyIssueTotal(p);
                     const hasQtyUnresolved = hasUnresolvedQtyIssue(p);
                     if (hasQtyTotal) totalLossCount++; if (hasQtyUnresolved) lossCount++;
-                    const isMultiPriceItem = multiPriceSet.has(p.코드);
-                    const hasMatchTotal = (p.이슈 && p.이슈.some(i => i.includes('매치변경') || i.includes('Lot원가확인') || i.includes('Lot불일치') || i.includes('매입처없음'))) || isMultiPriceItem;
-                    const hasMatchUnresolved = (p.이슈 && p.이슈.some(i => i.includes('🚨매치변경') || i.includes('🚨Lot원가확인') || i.includes('🚨Lot불일치') || i.includes('🚨매입처없음'))) || (isMultiPriceItem && !ackMultiCodes.has(p.코드));
+                    // v8.99n: Lot 카드 카운트는 실제 미처리 Lot 이슈만 센다.
+                    // 판매현황 구매처로 확정 매칭된 다중 원가 코드는 카드 이슈에서 제외한다.
+                    const hasMatchTotal = hasLotIssueTotal(p);
+                    const hasMatchUnresolved = hasUnresolvedLotIssue(p);
                     if (hasMatchTotal) totalMatchCount++; if (hasMatchUnresolved) matchCount++;
                     totalRevenue += (Number(p.매출액) || 0); const actualQty = p.실사 === '' || p.실사 === null ? 0 : Number(p.실사); const price = Number(p.단가) || 0;
                     totalInventoryAsset += (actualQty * price); if (p.로스 !== 0) totalLossValue += Math.abs(Number(p.로스) * price);
                 });
                 return { missingPriceCount, totalMissingPriceCount, lossCount, totalLossCount, multiPriceCount: matchCount, totalMultiPriceCount: totalMatchCount, totalRevenue, totalInventoryAsset, totalLossValue, total: productData.length };
-            }, [productData, multiPriceCodes, ackMultiCodes, hasQtyIssueTotal, hasUnresolvedQtyIssue]);
+            }, [productData, hasQtyIssueTotal, hasUnresolvedQtyIssue, hasLotIssueTotal, hasUnresolvedLotIssue]);
 
             const showCards = useMemo(() => {
                 // v8.61: 카드뷰는 문제 건수가 0이어도 분석 완료 후 항상 표시한다.
@@ -2411,6 +2722,354 @@
             }, [files, isProcessing, buildAnalysisFileLabel, getDefaultFilters, runAnalysis, formatAnalysisTime]);
 
 
+
+            /* =======================================================================
+               v8.99p 2전송 판매업로드 생성 / 통합 판매가·수익 검증 엔진
+               - 단가 생성은 정확한 거래처명 일치 기준만 사용한다.
+               - 별칭/포함검색/미등록 default 자동적용을 하지 않는다.
+               ======================================================================= */
+            const buildTransferPriceConfig = useCallback(() => {
+                const parseGroupLines = (text) => {
+                    const groups = {};
+                    safeStr(text, defaultMappings.transferPriceGroups).split(/\n+/).map(line => line.trim()).filter(Boolean).forEach(line => {
+                        const [customerPart, rest = ''] = line.split('=');
+                        const customer = safeStr(customerPart);
+                        const [rawGroupName = '', rulePart = '', feeMode = 'NONE', profitMode = 'NORMAL', outputCustomerMode = 'GROUP_NAME'] = rest.split('|').map(v => safeStr(v));
+                        const groupName = normalizeTransferGroupName(rawGroupName);
+                        const rule = rulePart.split('>').map(v => v.trim()).filter(Boolean);
+                        if (customer && groupName && rule.length) groups[customer] = { customer, groupName, rule, feeMode: feeMode || 'NONE', profitMode: profitMode || 'NORMAL', outputCustomerMode: outputCustomerMode || 'GROUP_NAME' };
+                    });
+                    return groups;
+                };
+                const parseColumnLines = (text) => {
+                    const columns = {};
+                    safeStr(text, defaultMappings.transferPriceColumns).split(/\n+/).map(line => line.trim()).filter(Boolean).forEach(line => {
+                        const [key, value] = line.split('=');
+                        if (safeStr(key) && safeStr(value)) columns[safeStr(key)] = safeStr(value);
+                    });
+                    return columns;
+                };
+                return {
+                    groups: parseGroupLines(mappings.transferPriceGroups),
+                    columns: parseColumnLines(mappings.transferPriceColumns)
+                };
+            }, [mappings.transferPriceGroups, mappings.transferPriceColumns]);
+
+            const transferStrictNumber = useCallback((value) => {
+                if (typeof value === 'number') return isNaN(value) ? 0 : value;
+                const text = safeStr(value, '').replace(/,/g, '').trim();
+                if (!text) return 0;
+                if (!/^-?\d+(\.\d+)?$/.test(text)) return 0;
+                const n = Number(text);
+                return isNaN(n) ? 0 : n;
+            }, []);
+
+            const getTransferRawValue = useCallback((raw = {}, columnName = '') => {
+                const clean = (v) => safeStr(v, '').replace(/\s/g, '').toLowerCase();
+                const target = clean(columnName);
+                const keys = Object.keys(raw || {});
+                if (!target) return null;
+
+                // 구매현황 F열은 앞으로 '거래처명'(판매업로드 실제 거래처)으로 사용한다.
+                // 과거 파일 호환을 위해 F열 '청과'(실제 출고처)와 T열 '청과'(고정상장가)가 중복될 수 있다.
+                // 단가 생성에서 청과는 반드시 단가용 청과(T열 또는 청과_1/청과.1)를 우선한다.
+                if (target === clean('청과')) {
+                    const secondKey = keys.find(k => clean(k) === clean('청과_1') || clean(k) === clean('청과.1'));
+                    if (secondKey !== undefined) return raw[secondKey];
+                    const exactKey = keys.find(k => clean(k) === clean('청과'));
+                    if (exactKey !== undefined && transferStrictNumber(raw[exactKey]) > 0) return raw[exactKey];
+                    return null;
+                }
+
+                if (target === clean('출고가(공지)')) {
+                    const found = keys.find(k => clean(k) === clean('출고가(공지)') || clean(k) === clean('출고가 (공지)'));
+                    return found !== undefined ? raw[found] : null;
+                }
+
+                const exact = keys.find(k => clean(k) === target);
+                if (exact !== undefined) return raw[exact];
+                return null;
+            }, [transferStrictNumber]);
+
+            const getTransferPriceByKey = useCallback((raw = {}, priceKey = '', config = buildTransferPriceConfig()) => {
+                const columnAlias = {
+                    '수기공지단가': ['출고가(공지)', '출고가 (공지)'],
+                    '고정상장가': ['청과'],
+                    '시세상장가': ['상장가'],
+                    '창고출고가': ['출고(외노)'],
+                    '식자재가': ['식자재'],
+                    '매입원가': ['단가', '입고가', '매입단가'],
+                    '단가': ['단가', '입고가', '매입단가'],
+                    '출고가(공지)': ['출고가(공지)', '출고가 (공지)'],
+                    '청과': ['청과'],
+                    '상장가': ['상장가'],
+                    '출고(외노)': ['출고(외노)'],
+                    '식자재': ['식자재'],
+                    '도매A': ['도매A']
+                };
+                const configured = config.columns[priceKey] ? [config.columns[priceKey]] : [];
+                const candidates = [...configured, ...(columnAlias[priceKey] || [priceKey])];
+                for (const column of candidates) {
+                    const rawValue = getTransferRawValue(raw, column);
+                    const price = transferStrictNumber(rawValue);
+                    if (price > 0) return { price, columnName: column };
+                }
+                return { price: 0, columnName: '' };
+            }, [buildTransferPriceConfig, getTransferRawValue, transferStrictNumber]);
+
+            const getTransferBaseFields = useCallback((item = {}) => {
+                const raw = item._raw || {};
+                const code = safeStr(getRawCell(raw, ['품목코드', '상품코드', '코드']) ?? item.코드, '').replace(/\.0$/, '').trim();
+                const name = safeStr(getRawCell(raw, ['품목명(규격)', '품명', '품목명', '상품명']) ?? item.품명, '').trim();
+                const groupCustomer = safeStr(getRawCell(raw, ['거래처', '거래처명']) ?? item.거래처, '').trim();
+                // F/K 계열 거래처명은 판매업로드의 실제 거래처 보조값이며, 판매업로드 K열 '규격'에도 원본 구매파일 값 그대로 적용한다.
+                // 과거 F열 '청과'는 거래처명으로만 읽고 단가 후보로 쓰지 않는다.
+                let detailCustomer = safeStr(getRawCell(raw, ['거래처명']) ?? '', '').trim();
+                if (!detailCustomer) {
+                    const legacyCheonggwa = getRawCell(raw, ['청과']);
+                    if (legacyCheonggwa !== null && transferStrictNumber(legacyCheonggwa) <= 0) detailCustomer = safeStr(legacyCheonggwa, '').trim();
+                }
+                // v8.99l: 판매업로드 K열 '규격'은 상품명에서 추출하지 않고 구매현황 원본의 거래처명/규격 값을 우선 적용한다.
+                // 현재 2전송 구매현황에서는 '거래처명' 컬럼이 판매업로드 K열 규격 자리에 들어가는 운영값이다.
+                const purchaseSpecValue = safeStr(getRawCell(raw, ['거래처명']) ?? getRawCell(raw, ['규격', '규격명', '포장규격', '상품규격', '옵션', '사이즈']) ?? '', '').trim();
+                const spec = purchaseSpecValue || detailCustomer;
+                const qty = parseNumber(getRawCell(raw, ['수량', '입고수량', '구매수량', '매입수량']) ?? item.수량);
+                const dateValue = safeStr(getRawCell(raw, ['일자', '날짜', '매입일자']) ?? item.일자, '');
+                const purchaseVendor = safeStr(getRawCell(raw, ['구매처', '원구매처', '매입처']) ?? item.거래처, '');
+                const cost = transferStrictNumber(getTransferRawValue(raw, '단가')) || transferStrictNumber(getTransferRawValue(raw, '입고가')) || safeNum(item.단가);
+                const memo = safeStr(getRawCell(raw, ['적요']) ?? '', '');
+                const orderNote = safeStr(getRawCell(raw, ['출고지시']) ?? '', '');
+                const notice = getTransferRawValue(raw, '출고가(공지)');
+                return { raw, code, name, spec, groupCustomer, detailCustomer, qty, dateValue, purchaseVendor, cost, memo, orderNote, notice };
+            }, [getTransferRawValue, transferStrictNumber]);
+
+            const isTransferGenerationValidPurchaseRow = useCallback((item = {}) => {
+                const f = getTransferBaseFields(item);
+                const joined = Object.values(f.raw || {}).map(v => safeStr(v, '')).join(' ').replace(/\s/g, '');
+                if (!f.code || !f.name || !f.groupCustomer || safeNum(f.qty) === 0) return false;
+                if (['총합계', '총계', '합계', '소계', '월계'].some(word => joined.includes(word))) return false;
+                return true;
+            }, [getTransferBaseFields]);
+
+            const resolveTransferSalesPrice = useCallback((purchaseItem = {}) => {
+                const config = buildTransferPriceConfig();
+                const f = getTransferBaseFields(purchaseItem);
+                const group = config.groups[f.groupCustomer];
+                if (!group) {
+                    return { status: 'CUSTOMER_GROUP_MISSING', price: 0, priceKey: '', columnName: '', groupName: '', rulePath: '', feeMode: 'NONE', profitMode: 'NORMAL', outputCustomerMode: 'GROUP_NAME', base: f };
+                }
+                for (const priceKey of group.rule) {
+                    const found = getTransferPriceByKey(f.raw, priceKey, config);
+                    if (found.price > 0) {
+                        return { status: 'MATCHED', price: found.price, priceKey, columnName: found.columnName, groupName: group.groupName, rulePath: group.rule.join(' > '), feeMode: group.feeMode, profitMode: group.profitMode, outputCustomerMode: group.outputCustomerMode || 'GROUP_NAME', group, base: f };
+                    }
+                }
+                return { status: 'PRICE_MISSING', price: 0, priceKey: '', columnName: '', groupName: group.groupName, rulePath: group.rule.join(' > '), feeMode: group.feeMode, profitMode: group.profitMode, outputCustomerMode: group.outputCustomerMode || 'GROUP_NAME', group, base: f };
+            }, [buildTransferPriceConfig, getTransferBaseFields, getTransferPriceByKey]);
+
+            const getTransferOutputCustomerName = useCallback((resolved) => {
+                const f = resolved.base || {};
+                const mode = safeStr(resolved.outputCustomerMode || resolved.group?.outputCustomerMode || '', 'GROUP_NAME');
+                if (mode === 'ORIGINAL_CUSTOMER') return safeStr(f.detailCustomer || f.groupCustomer, '');
+                return safeStr(f.groupCustomer || resolved.groupName, '');
+            }, []);
+
+            const buildTransferSalesUploadRows = useCallback((parsedIn = []) => {
+                const rows = [];
+                const fatalErrors = [];
+                const warnings = [];
+                const addFatal = (info) => fatalErrors.push({ ...info, level: '업로드불가', action: '원본 구매현황을 수정한 뒤 다시 업로드' });
+                const addWarning = (info) => warnings.push({ ...info, level: '확인필요', action: info.action || '판매업로드 후 추가 입력/최종 검증' });
+
+                parsedIn.forEach((item, idx) => {
+                    const f = getTransferBaseFields(item);
+                    const joined = Object.values(f.raw || {}).map(v => safeStr(v, '')).join(' ').replace(/\s/g, '');
+                    const isSummaryRow = ['총합계', '총계', '합계', '소계', '월계'].some(word => joined.includes(word));
+                    if (isSummaryRow) return;
+
+                    const rowNo = idx + 1;
+                    const rowBase = { rowNo, customer: f.groupCustomer, outputCustomer: f.detailCustomer || f.groupCustomer, code: f.code, name: f.name, qty: f.qty };
+                    const fatalReasons = [];
+                    if (!safeStr(f.groupCustomer || f.detailCustomer, '')) fatalReasons.push('거래처명 없음');
+                    if (!f.code) fatalReasons.push('품목코드 없음');
+                    if (safeNum(f.qty) === 0) fatalReasons.push('수량 없음');
+
+                    if (fatalReasons.length) {
+                        addFatal({ ...rowBase, reason: fatalReasons.join(', ') });
+                        return;
+                    }
+
+                    const resolved = resolveTransferSalesPrice(item);
+                    const outputCustomer = getTransferOutputCustomerName(resolved) || f.detailCustomer || f.groupCustomer;
+                    const checkReasons = [];
+                    if (resolved.status === 'CUSTOMER_GROUP_MISSING') checkReasons.push('거래처 단가그룹 없음');
+                    if (resolved.status === 'PRICE_MISSING') checkReasons.push('기준단가 없음');
+                    if (!f.name) checkReasons.push('품명 없음');
+
+                    let price = resolved.status === 'MATCHED' ? safeNum(resolved.price) : '';
+                    let supply = price === '' ? '' : safeNum(f.qty) * safeNum(price);
+
+                    // v8.99k: 치명 에러는 거래처명/품목코드/수량 없음만 막는다.
+                    // 단가그룹 없음·기준단가 없음·단가오염 의심은 실무상 후속 입력 가능성이 있으므로 업로드 행은 생성하고 확인필요로 안내한다.
+                    const unitCandidateKeys = ['출고가(공지)', '도매A', '출고(외노)', '상장가', '식자재', '단가', '청과'];
+                    const unitCandidates = unitCandidateKeys
+                        .map(k => transferStrictNumber(getTransferRawValue(f.raw, k)))
+                        .filter(v => v > 0);
+                    const looksLikeAmount = price !== '' && safeNum(f.qty) > 1 && unitCandidates.some(v => v > 0 && Math.abs(safeNum(price) - (v * safeNum(f.qty))) < 0.0001);
+                    if (looksLikeAmount) {
+                        checkReasons.push('단가 칸에 공급가액성 금액 의심');
+                        price = '';
+                        supply = '';
+                    }
+
+                    if (checkReasons.length) {
+                        addWarning({
+                            ...rowBase,
+                            outputCustomer,
+                            reason: checkReasons.join(', '),
+                            groupName: resolved.groupName || '',
+                            rulePath: resolved.rulePath || '',
+                            priceSource: resolved.priceKey || '',
+                            action: '업로드는 허용하되 단가/매핑 추가 입력 후 최종 통보 또는 재검증'
+                        });
+                    }
+
+                    const costAmount = price === '' ? 0 : safeNum(f.qty) * safeNum(f.cost);
+                    const fee = resolved.feeMode === 'LISTING_FEE' ? 0 : 0;
+                    const profit = price === '' ? '' : (resolved.profitMode === 'ZERO_PROFIT' ? 0 : (safeNum(supply) - fee - costAmount));
+
+                    rows.push({
+                        '일자': '',
+                        '순번': '',
+                        '거래처코드': '',
+                        '거래처명': outputCustomer,
+                        '출하창고': '02',
+                        '거래유형': '',
+                        '전잔액': '',
+                        '전달사항': checkReasons.length ? `확인필요: ${checkReasons.join(', ')}` : '',
+                        '품목코드': f.code,
+                        '품목명': f.name,
+                        // v8.99l: K열 규격은 구매현황 원본 정보값(거래처명/규격)을 그대로 사용한다.
+                        '규격': f.spec,
+                        '수량': f.qty,
+                        '단가': price,
+                        '외화금액': '',
+                        '공급가액': supply,
+                        '적요': f.memo,
+                        '출고지시': f.orderNote,
+                        '공지': safeStr(f.notice, ''),
+                        '구매처': f.purchaseVendor,
+                        '날짜': f.dateValue,
+                        '구매': f.cost,
+                        '생산전표생성': '',
+                        '_적용그룹': resolved.groupName || '',
+                        '_적용단가명': resolved.priceKey || '',
+                        '_단가룰': resolved.rulePath || '',
+                        '_확인필요': checkReasons.join(', '),
+                        '_수익': profit
+                    });
+                });
+                rows.sort((a, b) =>
+                    safeStr(a['거래처명']).localeCompare(safeStr(b['거래처명']), 'ko') ||
+                    safeStr(a['규격']).localeCompare(safeStr(b['규격']), 'ko') ||
+                    safeStr(a['품목코드']).localeCompare(safeStr(b['품목코드']), 'ko')
+                );
+                return { rows, fatalErrors, warnings, excluded: fatalErrors, notices: warnings };
+            }, [getTransferBaseFields, getTransferOutputCustomerName, getTransferRawValue, resolveTransferSalesPrice, transferStrictNumber]);
+
+            const downloadWorkbook = useCallback((wb, filename) => {
+                const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, []);
+
+            const handleGenerateTransferSalesUpload = useCallback(async (targetFiles = files) => {
+                if (isProcessing) return;
+                if (!targetFiles.in) {
+                    setAlertMsg('판매업로드 생성은 구매현황 파일이 필요합니다.');
+                    return;
+                }
+                setIsProcessing(true);
+                try {
+                    const settingErrors = validateTransferPriceGroupText(mappings.transferPriceGroups || defaultMappings.transferPriceGroups);
+                    if (settingErrors.length) {
+                        setAlertMsg(`2전송 그룹단가 설정 오류가 있어 판매업로드를 생성하지 않았습니다.\n\n${settingErrors.slice(0, 20).join('\n')}`);
+                        return;
+                    }
+                    const parsedIn = await parseExcelData(targetFiles.in, mappings);
+                    const { rows, fatalErrors, warnings } = buildTransferSalesUploadRows(parsedIn);
+                    if (fatalErrors.length) {
+                        const reasonCounts = fatalErrors.reduce((acc, e) => {
+                            safeStr(e.reason).split(',').map(v => v.trim()).filter(Boolean).forEach(reason => { acc[reason] = (acc[reason] || 0) + 1; });
+                            return acc;
+                        }, {});
+                        const summary = Object.entries(reasonCounts).map(([reason, count]) => `- ${reason}: ${count}건`).join('\n');
+                        const examples = fatalErrors.slice(0, 12).map((e, i) => `${i + 1}) 원본 ${e.rowNo}행 / 거래처:${e.customer || '-'} / 품목코드:${e.code || '-'} / 품명:${e.name || '-'} / 수량:${e.qty || '-'} / 오류:${e.reason}`).join('\n');
+                        setAlertMsg(`판매업로드를 생성할 수 없습니다.\n\n거래처명, 품목코드, 수량은 판매업로드 필수값입니다.\n아래 업로드 불가 항목을 원본 구매현황에서 모두 수정한 뒤 다시 업로드해주세요.\n\n오류 요약\n${summary || '-'}\n\n예시${fatalErrors.length > 12 ? ` (상위 12건 / 전체 ${fatalErrors.length}건)` : ''}\n${examples || '-'}\n\n※ 거래처 단가그룹 없음, 기준단가 없음, 단가 미확정은 에러로 막지 않고 확인필요로 표시합니다. 그러나 위 필수값 오류가 있으면 엑셀 파일은 생성하지 않습니다.`);
+                        return;
+                    }
+                    const wb = XLSX.utils.book_new();
+                    const uploadColumns = ['일자','순번','거래처코드','거래처명','출하창고','거래유형','전잔액','전달사항','품목코드','품목명','규격','수량','단가','외화금액','공급가액','적요','출고지시','공지','구매처','날짜','구매','생산전표생성'];
+                    const outputRows = rows.map(r => {
+                        const o = {};
+                        uploadColumns.forEach(col => o[col] = r[col] ?? '');
+                        return o;
+                    });
+                    const wsUpload = XLSX.utils.json_to_sheet(outputRows.length ? outputRows : [Object.fromEntries(uploadColumns.map(c => [c, '']))], { header: uploadColumns });
+                    wsUpload['!cols'] = [10,8,12,16,8,10,10,14,14,34,14,10,12,10,14,18,18,12,18,10,12,14].map(wch => ({ wch }));
+                    XLSX.utils.book_append_sheet(wb, wsUpload, '판매입력');
+
+                    const warningRows = warnings.length ? warnings.map(e => ({
+                        '원본행': e.rowNo,
+                        '단가그룹기준': e.customer || '',
+                        '출력거래처': e.outputCustomer || '',
+                        '품목코드': e.code || '',
+                        '품명': e.name || '',
+                        '수량': e.qty || 0,
+                        '확인사유': e.reason || '',
+                        '적용그룹': e.groupName || '',
+                        '단가룰': e.rulePath || '',
+                        '단가출처': e.priceSource || '',
+                        '필요조치': e.action || ''
+                    })) : [{ '메시지': '확인필요 항목 없음' }];
+                    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(warningRows), '확인필요');
+
+                    const fatalRows = [{ '메시지': '업로드 불가 에러 없음', '정책': '거래처명/품목코드/수량 없음만 업로드 불가 에러로 처리' }];
+                    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(fatalRows), '업로드불가_에러');
+
+                    const config = buildTransferPriceConfig();
+                    const groupRows = Object.values(config.groups).map(g => ({
+                        '거래처명': g.customer,
+                        '단가그룹': g.groupName,
+                        '단가적용순서': g.rule.join(' > '),
+                        '수수료모드': g.feeMode,
+                        '수익모드': g.profitMode,
+                        '출력거래처명모드': g.outputCustomerMode || 'GROUP_NAME',
+                        '설정출처': mappings.transferPriceGroups ? '저장/화면설정' : '기본값',
+                        '정확일치': 'Y'
+                    }));
+                    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(groupRows), '거래처단가그룹');
+
+                    const today = new Date();
+                    const ymd = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
+                    downloadWorkbook(wb, `2전송_판매업로드_생성_${ymd}.xlsx`);
+                    setAlertMsg(`✅ 판매업로드 생성 완료\n\n생성 행: ${rows.length}개\n확인필요: ${warnings.length}개\n업로드불가 에러: 0개\n\n거래처 단가그룹 없음, 기준단가 없음, 단가 미확정 항목은 엑셀 생성을 막지 않고 확인필요 시트와 전달사항에 표시했습니다.\n단가가 확정된 항목은 먼저 판매처리하고, 미확정 항목은 추가 입력 후 최종 통보/재검증하세요.`);
+                } catch (err) {
+                    console.error(err);
+                    setAlertMsg(`판매업로드 생성 중 오류가 발생했습니다.\n\n${err && err.message ? err.message : err}`);
+                } finally {
+                    setIsProcessing(false);
+                }
+            }, [files, isProcessing, mappings, validateTransferPriceGroupText, buildTransferSalesUploadRows, buildTransferPriceConfig, downloadWorkbook]);
+
+            // v8.99p: 판매가검증은 별도 버튼/핸들러가 아니라 2전송 검증 엑셀 시트로 통합했다.
             const handleRunTransferCheck = useCallback(async (targetFiles = files) => {
                 if (isProcessing) return;
                 if (!targetFiles.in || !targetFiles.out) {
@@ -2460,6 +3119,14 @@
                         return keys.length ? raw[keys[0]] : '';
                     };
                     const compactText = (value) => safeStr(value, '').replace(/\s/g, '').toLowerCase();
+                    // v8.99f: 판매현황 단가표의 T열 명칭을 '청과'로 확정한다.
+                    // 과거/오타 파일의 '정과' 헤더도 동일 항목으로 호환 인식하되, 내부 판정명은 '청과'로 통일한다.
+                    const salesPriceColumnAliases = ['출고가 (공지)', '출고가(공지)', '식자재', '도매A', '청과', '정과', '상장가', '공지a7', '출고(외노)'];
+                    const normalizeSalesPriceColumnName = (name) => compactText(name) === compactText('정과') ? '청과' : safeStr(name, '');
+                    const getSalesPriceColumnValue = (raw = {}, names = salesPriceColumnAliases) => {
+                        const value = getRawCell(raw, names);
+                        return value;
+                    };
                     const isReportFooterOrSummaryRow = (item = {}) => {
                         const raw = item._raw || {};
                         const code = getCode(item);
@@ -2494,6 +3161,102 @@
                         .filter(([, data]) => safeNum(data.fee) !== 0 || safeNum(data.amount) !== 0)
                         .map(([vendor, data]) => `${vendor}(${formatMoney(safeNum(data.fee) || safeNum(data.amount))})`)
                         .join(', ');
+
+                    // v8.99p: 판매가 검증 버튼을 분리하지 않고 2전송 검증 결과 엑셀 시트로 통합한다.
+                    // 2전송 검증은 수량/Lot/원가/판매가/수익까지 한 번에 확인하는 종합 검증이다.
+                    const createProfitSummaryRows = (detailRows = []) => {
+                        const totals = detailRows.reduce((acc, r) => {
+                            acc.qty += safeNum(r['판매수량']);
+                            acc.supply += safeNum(r['공급가액']);
+                            acc.fee += safeNum(r['공제금액']);
+                            acc.netSales += safeNum(r['실매출']);
+                            acc.cost += safeNum(r['매입원가합계']);
+                            acc.profit += safeNum(r['수익']);
+                            return acc;
+                        }, { qty: 0, supply: 0, fee: 0, netSales: 0, cost: 0, profit: 0 });
+                        const margin = totals.netSales !== 0 ? (totals.profit / totals.netSales) * 100 : 0;
+                        const customerSet = new Set(detailRows.map(r => safeStr(r['거래처명'])).filter(Boolean));
+                        const itemSet = new Set(detailRows.map(r => `${safeStr(r['품목코드'])}|${safeStr(r['품명'])}`).filter(k => k !== '|'));
+                        return [{
+                            '총판매수량': totals.qty,
+                            '총공급가액': Math.round(totals.supply),
+                            '총공제금액': Math.round(totals.fee),
+                            '총실매출': Math.round(totals.netSales),
+                            '총매입원가': Math.round(totals.cost),
+                            '총수익': Math.round(totals.profit),
+                            '수익률(%)': margin.toFixed(1) + '%',
+                            '거래처수': customerSet.size,
+                            '품목수': itemSet.size,
+                            '적자거래처수': '',
+                            '적자품목수': '',
+                            '비고': '실매출=공급가액-공제금액, 수익=실매출-매입원가'
+                        }];
+                    };
+                    const aggregateProfitRows = (detailRows = [], mode = 'customer') => {
+                        const map = {};
+                        detailRows.forEach(r => {
+                            const key = mode === 'customer'
+                                ? safeStr(r['거래처명'], '미지정')
+                                : `${safeStr(r['품목코드'])}|${safeStr(r['품명'])}|${safeStr(r['규격'])}`;
+                            if (!map[key]) {
+                                map[key] = {
+                                    customer: safeStr(r['거래처명'], ''),
+                                    code: safeStr(r['품목코드'], ''),
+                                    name: safeStr(r['품명'], ''),
+                                    spec: safeStr(r['규격'], ''),
+                                    qty: 0, supply: 0, fee: 0, netSales: 0, cost: 0, profit: 0,
+                                    customerSet: new Set(), itemSet: new Set(), purchaseVendorSet: new Set()
+                                };
+                            }
+                            const a = map[key];
+                            a.qty += safeNum(r['판매수량']);
+                            a.supply += safeNum(r['공급가액']);
+                            a.fee += safeNum(r['공제금액']);
+                            a.netSales += safeNum(r['실매출']);
+                            a.cost += safeNum(r['매입원가합계']);
+                            a.profit += safeNum(r['수익']);
+                            if (r['거래처명']) a.customerSet.add(r['거래처명']);
+                            if (r['품목코드'] || r['품명']) a.itemSet.add(`${r['품목코드']}|${r['품명']}`);
+                            if (r['구매처']) a.purchaseVendorSet.add(r['구매처']);
+                        });
+                        return Object.values(map).map(a => {
+                            const margin = a.netSales !== 0 ? (a.profit / a.netSales) * 100 : 0;
+                            if (mode === 'customer') {
+                                return {
+                                    '거래처명': a.customer || Array.from(a.customerSet)[0] || '미지정',
+                                    '판매수량': a.qty,
+                                    '공급가액': Math.round(a.supply),
+                                    '공제금액': Math.round(a.fee),
+                                    '실매출': Math.round(a.netSales),
+                                    '매입원가': Math.round(a.cost),
+                                    '수익': Math.round(a.profit),
+                                    '수익률(%)': margin.toFixed(1) + '%',
+                                    '품목수': a.itemSet.size,
+                                    '비고': a.profit < 0 ? '적자' : ''
+                                };
+                            }
+                            return {
+                                '품목코드': a.code,
+                                '품명': a.name,
+                                '규격': a.spec,
+                                '판매수량': a.qty,
+                                '평균판매단가': a.qty !== 0 ? Math.round(a.supply / a.qty) : 0,
+                                '공급가액': Math.round(a.supply),
+                                '공제금액': Math.round(a.fee),
+                                '실매출': Math.round(a.netSales),
+                                '매입원가': Math.round(a.cost),
+                                '평균원가': a.qty !== 0 ? Math.round(a.cost / a.qty) : 0,
+                                '수익': Math.round(a.profit),
+                                '수익률(%)': margin.toFixed(1) + '%',
+                                '거래처수': a.customerSet.size,
+                                '구매처': Array.from(a.purchaseVendorSet).join(', '),
+                                '비고': a.profit < 0 ? '적자' : ''
+                            };
+                        }).sort((a, b) => {
+                            if (mode === 'customer') return safeStr(a['거래처명']).localeCompare(safeStr(b['거래처명']), 'ko');
+                            return safeStr(a['품목코드']).localeCompare(safeStr(b['품목코드']), 'ko') || safeStr(a['품명']).localeCompare(safeStr(b['품명']), 'ko');
+                        });
+                    };
 
                     const transferMap = {};
                     const transferFeeVendors = {};
@@ -2548,7 +3311,7 @@
                         const code = getCode(item);
                         const name = getName(item);
                         const qty = parseNumber(getRawCell(raw, ['출고수량', '판매수량', '수량', '판매량', '출고량']) ?? item.수량);
-                        const unitPrice = parseNumber(getRawCell(raw, ['판매단가', '단가', '출고가']) ?? item.단가);
+                        const unitPrice = parseNumber(getRawCell(raw, ['판매단가', '단가', '출고가', '출고가 (공지)', '출고가(공지)', '청과', '정과']) ?? item.단가);
                         const supply = parseNumber(getRawCell(raw, ['공급가', '공급가액', '최종공급가액', '최종공급가액(할인적용)', '판매금액', '금액']) ?? 0) || (qty * unitPrice);
                         const explicitFee = parseNumber(getRawCell(raw, ['공제금액', '공제', '수수료', '공제수수료']) ?? 0);
                         // v8.99e: 9602011002/공제금액 행은 수수료 열이 아니라 실제 공제 금액 열을 우선 집계한다.
@@ -2635,13 +3398,154 @@
                         finalRows[0].메모 = [finalRows[0].메모, `공제:${formatMoney(transferCleanStats.feeAmount)} ${summarizeFeeMap(transferFeeVendors)}`].filter(Boolean).join(' | ');
                     }
 
+                    // v8.99p: 2전송 검증 엑셀을 종합검증 파일로 생성한다. 판매가검증은 별도 버튼이 아니라 시트로 제공한다.
+                    const transferPriceConfigForExport = buildTransferPriceConfig();
+                    const purchasePriceRows = [];
+                    const purchaseByCustomerCode = {};
+                    const purchaseByCode = {};
+                    parsedIn.forEach(item => {
+                        if (!isTransferRow(item, targetFiles.in.name) || isReportFooterOrSummaryRow(item) || isTransferFeeRow(item)) return;
+                        if (!isTransferGenerationValidPurchaseRow(item)) return;
+                        const resolved = resolveTransferSalesPrice(item);
+                        const f = resolved.base || getTransferBaseFields(item);
+                        const outputCustomer = getTransferOutputCustomerName(resolved);
+                        const rec = {
+                            code: f.code, name: f.name, spec: f.spec || f.detailCustomer || '', qty: f.qty,
+                            outputCustomer, purchaseVendor: f.purchaseVendor || '', cost: safeNum(f.cost),
+                            status: resolved.status, price: safeNum(resolved.price), priceKey: resolved.priceKey || '',
+                            groupName: resolved.groupName || '', rulePath: resolved.rulePath || '', profitMode: resolved.profitMode || 'NORMAL'
+                        };
+                        purchasePriceRows.push(rec);
+                        const customerCodeKey = `${outputCustomer}|${f.code}`;
+                        if (!purchaseByCustomerCode[customerCodeKey]) purchaseByCustomerCode[customerCodeKey] = [];
+                        if (!purchaseByCode[f.code]) purchaseByCode[f.code] = [];
+                        purchaseByCustomerCode[customerCodeKey].push(rec);
+                        purchaseByCode[f.code].push(rec);
+                    });
+
+                    const priceValidationRows = [];
+                    const profitDetailRows = [];
+                    const checkRows = [];
+                    parsedOut.forEach((item, idx) => {
+                        const raw = item._raw || {};
+                        if (!isTransferRow(item, targetFiles.out.name) || isReportFooterOrSummaryRow(item)) return;
+                        const code = getCode(item);
+                        const name = getName(item);
+                        if (isTransferFeeRow(item)) return;
+                        const customer = safeStr(getRawCell(raw, ['거래처명', '거래처', '매출처명', '판매처', '3거래']) ?? item.거래처, '미지정');
+                        const spec = safeStr(getRawCell(raw, ['거래처명', '규격', '규격명', 'NO.', 'NO', '순번']) ?? '', '');
+                        const qty = parseNumber(getRawCell(raw, ['출고수량', '판매수량', '수량', '판매량', '출고량']) ?? item.수량);
+                        const actualPrice = parseNumber(getRawCell(raw, ['판매단가', '단가', '출고가', '출고가 (공지)', '출고가(공지)', '청과', '정과']) ?? item.단가);
+                        const supply = parseNumber(getRawCell(raw, ['공급가', '공급가액', '최종공급가액', '최종공급가액(할인적용)', '판매금액', '금액']) ?? 0) || (qty * actualPrice);
+                        const fee = parseNumber(getRawCell(raw, ['수수료', '공제금액', '공제', '공제수수료']) ?? 0);
+                        if (!code || !name || safeNum(qty) === 0) return;
+                        const match = (purchaseByCustomerCode[`${customer}|${code}`] || [])[0] || (purchaseByCode[code] || [])[0] || null;
+                        const basePrice = match ? safeNum(match.price) : 0;
+                        const cost = match ? safeNum(match.cost) : 0;
+                        const costAmount = qty * cost;
+                        const netSales = supply - fee;
+                        const profit = match && match.profitMode === 'ZERO_PROFIT' ? 0 : netSales - costAmount;
+                        const reasons = [];
+                        if (!match) reasons.push('구매현황 매칭 없음');
+                        if (match && match.status === 'CUSTOMER_GROUP_MISSING') reasons.push('거래처 단가그룹 없음');
+                        if (match && match.status === 'PRICE_MISSING') reasons.push('기준단가 없음');
+                        if (actualPrice <= 0) reasons.push('판매단가 없음');
+                        if (match && basePrice > 0 && actualPrice > 0 && actualPrice !== basePrice) reasons.push('판매가 확인');
+                        const resultText = reasons.length ? reasons.join(', ') : '확인완료';
+                        const priceRow = {
+                            '거래처명': customer, '거래처그룹': match ? match.groupName : '',
+                            '품목코드': code, '품명': name, '규격': spec, '판매수량': qty,
+                            '실제판매단가': actualPrice, '기준단가': basePrice, '적용단가명': match ? match.priceKey : '',
+                            '단가룰': match ? match.rulePath : '', '단가차이': actualPrice - basePrice,
+                            '공급가액': Math.round(supply), '공제금액': Math.round(fee), '실매출': Math.round(netSales),
+                            '매입원가': cost, '매입원가합계': Math.round(costAmount), '수익': Math.round(profit),
+                            '수익률(%)': netSales !== 0 ? ((profit / netSales) * 100).toFixed(1) + '%' : '0.0%',
+                            '검증결과': resultText
+                        };
+                        priceValidationRows.push(priceRow);
+                        profitDetailRows.push({ ...priceRow, '구매처': match ? match.purchaseVendor : '' });
+                        if (reasons.length) checkRows.push({ '구분': '판매가검증', '원본행': idx + 2, '거래처명': customer, '품목코드': code, '품명': name, '내용': resultText, '필요조치': '구매현황/판매현황/매핑설정 확인' });
+                    });
+
+                    const transferExportRows = finalRows.map(item => {
+                        const t = item._transfer || {};
+                        return {
+                            '품목코드': item.코드 === 'NO_CODE' ? '' : item.코드,
+                            '품명': item.품명,
+                            '구매수량': safeNum(t.purchaseQty),
+                            '판매수량': safeNum(t.salesQty),
+                            '잔량': safeNum(t.balance),
+                            '평균원가': Math.round(safeNum(item.단가)),
+                            '구매금액': Math.round(safeNum(t.purchaseAmount)),
+                            '공급가액': Math.round(safeNum(t.supplyAmount)),
+                            '공제금액': Math.round(safeNum(t.feeAmount)),
+                            '실매출': Math.round(safeNum(t.supplyAmount) - safeNum(t.feeAmount)),
+                            '수익': Math.round(safeNum(t.supplyAmount) - safeNum(t.feeAmount) - safeNum(t.purchaseAmount)),
+                            '구매처요약': t.purchaseSummary || '',
+                            '판매처요약': t.salesSummary || '',
+                            '원가상세': t.costDetail || ''
+                        };
+                    });
+                    const quantityCheckRows = transferExportRows.map(r => ({
+                        '품목코드': r['품목코드'],
+                        '품명': r['품명'],
+                        '구매수량': r['구매수량'],
+                        '판매수량': r['판매수량'],
+                        '잔량': r['잔량'],
+                        '검증결과': safeNum(r['잔량']) === 0 ? '수량 일치' : (safeNum(r['잔량']) < 0 ? '판매수량 초과' : '잔량 발생')
+                    }));
+                    quantityCheckRows.filter(r => safeNum(r['잔량']) !== 0).forEach(r => checkRows.push({ '구분': '수량검증', '거래처명': '', '품목코드': r['품목코드'], '품명': r['품명'], '내용': r['검증결과'], '필요조치': '구매/판매 수량 확인' }));
+                    const profitSummaryRows = createProfitSummaryRows(profitDetailRows);
+                    const customerProfitRows = aggregateProfitRows(profitDetailRows, 'customer');
+                    const itemProfitRows = aggregateProfitRows(profitDetailRows, 'item');
+                    const groupConfigRows = Object.values(transferPriceConfigForExport.groups).map(g => ({
+                        '거래처명': g.customer,
+                        '단가그룹': g.groupName,
+                        '단가룰': g.rule.join(' > '),
+                        '수수료모드': g.feeMode,
+                        '수익모드': g.profitMode,
+                        '출력거래처명모드': g.outputCustomerMode || 'GROUP_NAME'
+                    }));
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([{
+                        '검증구분': '2전송 종합검증',
+                        '상품검증행': finalRows.length,
+                        '구매제외행': transferCleanStats.purchaseSkipped,
+                        '판매제외행': transferCleanStats.salesSkipped,
+                        '공제금액': Math.round(safeNum(transferCleanStats.feeAmount)),
+                        '공제행수': transferCleanStats.feeRows,
+                        '확인필요': checkRows.length,
+                        '비고': '판매가검증은 별도 버튼이 아니라 이 파일의 시트로 제공'
+                    }]), '2전송_요약');
+                    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(transferExportRows.length ? transferExportRows : [{ '메시지': '2전송 검증 데이터 없음' }]), '2전송_잔량현황');
+                    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(quantityCheckRows.length ? quantityCheckRows : [{ '메시지': '수량 검증 대상 없음' }]), '수량검증');
+                    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(priceValidationRows.length ? priceValidationRows : [{ '메시지': '판매가 검증 대상 없음' }]), '판매가검증');
+                    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([{ '공제금액': Math.round(safeNum(transferCleanStats.feeAmount)), '공제행수': transferCleanStats.feeRows, '집계기준': '공급가 > 정산 > 정리 > 단가×수량' }]), '공제금액');
+                    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(profitSummaryRows), '수익브리핑');
+                    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(customerProfitRows.length ? customerProfitRows : [{ '메시지': '거래처별 수익 데이터 없음' }]), '거래처별수익');
+                    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(itemProfitRows.length ? itemProfitRows : [{ '메시지': '품목별 수익 데이터 없음' }]), '품목별수익');
+                    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(profitDetailRows.length ? profitDetailRows : [{ '메시지': '거래처품목별 수익 데이터 없음' }]), '거래처품목별수익');
+                    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(checkRows.length ? checkRows : [{ '메시지': '확인 필요 항목 없음' }]), '확인필요');
+                    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(groupConfigRows.length ? groupConfigRows : [{ '메시지': '단가그룹 설정 없음' }]), '거래처단가그룹');
+                    const exportDate = new Date();
+                    const exportYmd = `${exportDate.getFullYear()}${String(exportDate.getMonth()+1).padStart(2,'0')}${String(exportDate.getDate()).padStart(2,'0')}`;
+                    downloadWorkbook(wb, `2전송_종합검증_${exportYmd}.xlsx`);
+
                     setProductData(finalRows);
                     setAnalysisPeriod('2전송 직접검증');
                     const today = new Date();
                     setTargetDateStr(`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`);
                     setAppStep('closing');
                     setAnalysisMeta({ fileLabel, analyzedAt: formatAnalysisTime(new Date()), status: 'done' });
-                    setAlertMsg(`✅ 2전송 직접검증 완료\n\nERP 합계행/월계행/출력시간/공제금액 행을 상품에서 제외하고 인식했습니다.\n상품 검증 행: ${finalRows.length}개\n구매 제외 행: ${transferCleanStats.purchaseSkipped}개 / 판매 제외 행: ${transferCleanStats.salesSkipped}개\n공제금액: ${formatMoney(transferCleanStats.feeAmount)} (${transferCleanStats.feeRows}행, 공급가/정산/정리 기준)\n\n잔량은 구매수량 - 판매수량 기준으로 표시하며, 공제금액은 상품 잔량 계산에 넣지 않습니다.`);
+                    setAlertMsg(`✅ 2전송 종합검증 완료
+
+상품 검증 행: ${finalRows.length}개
+구매 제외 행: ${transferCleanStats.purchaseSkipped}개 / 판매 제외 행: ${transferCleanStats.salesSkipped}개
+공제금액: ${formatMoney(transferCleanStats.feeAmount)} (${transferCleanStats.feeRows}행, 공급가/정산/정리 기준)
+확인필요: ${checkRows.length}건
+
+판매가검증은 별도 버튼이 아니라 2전송 종합검증 엑셀의 시트로 포함했습니다.
+포함 시트: 2전송_요약 / 수량검증 / 판매가검증 / 공제금액 / 수익브리핑 / 거래처별수익 / 품목별수익 / 거래처품목별수익 / 확인필요`);
                 } catch (err) {
                     console.error(err);
                     setAlertMsg(`2전송 검증 중 오류가 발생했습니다.\n\n${err && err.message ? err.message : err}`);
@@ -2649,7 +3553,7 @@
                 } finally {
                     setIsProcessing(false);
                 }
-            }, [files, isProcessing, mappings, buildAnalysisFileLabel, getDefaultFilters, formatAnalysisTime]);
+            }, [files, isProcessing, mappings, buildAnalysisFileLabel, getDefaultFilters, formatAnalysisTime, buildTransferPriceConfig, downloadWorkbook, getTransferBaseFields, getTransferOutputCustomerName, isTransferGenerationValidPurchaseRow, resolveTransferSalesPrice]);
 
             const handleFileStateChange = useCallback((updater) => {
                 resetAnalysisWorkspace('selected');
@@ -2830,7 +3734,7 @@
                     if (isCurrentIdx) return false;
                     if (type === 'missingPrice') return (!p.수기확인완료 && p.isDummy && p.단가 === 0) || (p.이슈 && p.이슈.some(i => i.includes('🚨단가변경') || i.includes('🚨단가없음')));
                     if (type === 'loss') return hasUnresolvedQtyIssue(p);
-                    if (type === 'multiPrice') return (p.이슈 && p.이슈.some(i => i.includes('🚨매치변경') || i.includes('🚨Lot원가확인') || i.includes('🚨Lot불일치') || i.includes('🚨매입처없음'))) || (multiPriceCodes.includes(p.코드) && !effectivelyAckedCodes.has(p.코드));
+                    if (type === 'multiPrice') return hasUnresolvedLotIssue(p);
                     return false;
                 };
 
@@ -2843,7 +3747,7 @@
 
                 const targetItem = targetItems.find(p => p.index > currIdx) || targetItems[0];
                 focusIssueTargetByItem(targetItem);
-            }, [productData, multiPriceCodes, ackMultiCodes, setProductData, setAckMultiCodes, hasUnresolvedQtyIssue, scrollIssueRowIntoWorkCenter]);
+            }, [productData, multiPriceCodes, ackMultiCodes, setProductData, setAckMultiCodes, hasUnresolvedQtyIssue, hasUnresolvedLotIssue, scrollIssueRowIntoWorkCenter]);
 
             const handleAcknowledgeAll = useCallback((type) => {
                 setProductData(prev => {
@@ -2854,7 +3758,7 @@
                         } else if (type === 'loss') {
                             if (hasUnresolvedQtyIssue(p)) shouldAck = true;
                         } else if (type === 'multiPrice') {
-                            if ((p.이슈 && p.이슈.some(i => i.includes('🚨매치변경') || i.includes('🚨Lot원가확인') || i.includes('🚨Lot불일치') || i.includes('🚨매입처없음'))) || multiPriceCodes.includes(p.코드)) shouldAck = true;
+                            if (hasUnresolvedLotIssue(p)) shouldAck = true;
                         }
                         
                         if (shouldAck) {
@@ -2877,7 +3781,7 @@
                 setAlertMsg("선택한 항목의 모든 이슈가 확인(✅) 처리되었습니다.");
                 setFilters(f => ({...f, reviewType: null}));
                 setActiveIssueMode(null);
-            }, [setProductData, multiPriceCodes, setAckMultiCodes, hasUnresolvedQtyIssue]);
+            }, [setProductData, multiPriceCodes, setAckMultiCodes, hasUnresolvedQtyIssue, hasUnresolvedLotIssue]);
 
             const handleSpacebarLink = useCallback((targetBatchKey, targetIdx) => {
                 setLinkSourceKey(prevKey => {
@@ -2953,13 +3857,13 @@
                 let data = productData;
                 if (filters.reviewType === 'loss') data = data.filter(p => p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0) || (p.이슈 && p.이슈.some(i => i.includes('수량변동') || i.includes('잔량') || i.includes('계산') || i.includes('신규추가') || i.includes('삭제됨'))));
                 else if (filters.reviewType === 'missingPrice') data = data.filter(p => (p.isDummy && p.단가 === 0) || (p.이슈 && p.이슈.some(i => i.includes('단가변경') || i.includes('단가없음'))));
-                else if (filters.reviewType === 'multiPrice') data = data.filter(p => multiPriceCodes.includes(p.코드) || (p.이슈 && p.이슈.some(i => i.includes('매치변경'))));
+                else if (filters.reviewType === 'multiPrice') data = data.filter(p => hasLotIssueTotal(p));
                 data = FILTER_SORT_MODULE.applyFilters(data, filters, { favoriteVendors: CONFIG_MODULE.getFavoriteVendors(mappings), unitRules: CONFIG_MODULE.getUnitRules(mappings) });
                 if (filters.search) { const q = filters.search.toLowerCase(); data = data.filter(d => (d.품명 && d.품명.toLowerCase().includes(q)) || (d.코드 && d.코드.toLowerCase().includes(q)) || (d.거래처 && d.거래처.toLowerCase().includes(q))); }
                 if (filters.issuesOnly) data = data.filter(d => d.이슈 && d.이슈.length > 0);
                 if (filters.excludeZeroActual) data = data.filter(d => { const act = d.실사 === '' || d.실사 === null || d.실사 === undefined ? 0 : Number(d.실사); return act !== 0; });
                 return FILTER_SORT_MODULE.sortRows(data, filters.sortMode);
-            }, [productData, filters, multiPriceCodes, mappings]);
+            }, [productData, filters, multiPriceCodes, mappings, hasLotIssueTotal]);
 
             useEffect(() => {
                 filteredProductDataRef.current = filteredProductData;
@@ -2973,7 +3877,7 @@
                             <div className="flex flex-col md:flex-row md:items-center gap-4">
                                 <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition" onClick={() => document.getElementById('main-scroll-container')?.scrollTo({top:0, behavior:'smooth'})} title="클릭시 최상단 이동">
                                     <span className="text-blue-600 mr-2">ONEAPP</span> DataOps
-                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">v8.99e Deduction Amount Column Fix</span>
+                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">v8.99p Transfer Check Integrated Sales Profit Sheets</span>
                                 </h1>
                             </div>
 
@@ -3056,6 +3960,67 @@
                                             </div>
                                         </div>
                                     </div>
+                                </div>
+
+
+                                <div className="mt-6 pt-5 border-t border-slate-200">
+                                    <div className="mb-4 flex items-start justify-between gap-3 flex-wrap">
+                                        <div>
+                                            <h4 className="text-sm font-bold text-slate-800"><i className="fas fa-tags text-cyan-500 mr-2"></i>2전송 단가그룹 · 거래처 매핑</h4>
+                                            <p className="text-xs text-slate-500 mt-1.5 ml-6">
+                                                ※ 거래처를 단가그룹에 배정하면 판매업로드 생성 시 해당 그룹의 단가순서가 적용됩니다. 거래처명은 정확히 일치할 때만 적용합니다.
+                                            </p>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            <button type="button" onClick={handleValidateTransferPriceGroups} className="px-3 py-1.5 rounded-md bg-cyan-600 text-white text-xs font-bold hover:bg-cyan-700">거래처 매핑 검증</button>
+                                            <button type="button" onClick={resetTransferPriceGroupsToDefault} className="px-3 py-1.5 rounded-md bg-white border border-cyan-300 text-cyan-700 text-xs font-bold hover:bg-cyan-50">기본값 복원</button>
+                                            <button type="button" onClick={promptAddTransferGroup} className="px-3 py-1.5 rounded-md bg-slate-800 text-white text-xs font-bold hover:bg-slate-900">+ 단가그룹 추가</button>
+                                        </div>
+                                    </div>
+
+                                    {detectLegacyTransferPriceGroups(mappings.transferPriceGroups || defaultMappings.transferPriceGroups) && (
+                                        <div className="mb-3 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 font-bold">
+                                            구버전 그룹단가 설정이 감지되었습니다. 9부산/식자재에 상장가 fallback이 남아 있거나 하위 거래처가 부족할 수 있습니다. 필요 시 [기본값 복원]을 사용하세요.
+                                        </div>
+                                    )}
+
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 bg-cyan-50/60 p-4 rounded-lg border border-cyan-200">
+                                        {transferGroupCards.map((group) => (
+                                            <div key={group.groupName} className="bg-white border border-cyan-200 rounded-lg p-3 shadow-sm">
+                                                <div className="flex items-start justify-between gap-2 mb-2">
+                                                    <div>
+                                                        <div className="text-sm font-black text-slate-900 flex items-center gap-2">
+                                                            <span>{group.label || group.groupName}</span>
+                                                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-700 border border-cyan-200">{(group.customers || []).length}개 거래처</span>
+                                                        </div>
+                                                        <div className="text-[11px] text-slate-500 mt-0.5">{group.description}</div>
+                                                    </div>
+                                                    <button type="button" onClick={() => promptAddTransferCustomer(group.groupName)} className="px-2 py-1 rounded-md bg-cyan-600 text-white text-[11px] font-bold hover:bg-cyan-700 whitespace-nowrap">거래처 추가</button>
+                                                </div>
+                                                <div className="text-[11px] text-slate-700 bg-slate-50 border border-slate-200 rounded-md px-2 py-1.5 mb-2">
+                                                    <span className="font-bold">단가순서:</span> {(group.rule || []).join(' > ')}
+                                                    <span className="ml-2 text-slate-400">/ 출력: {group.outputCustomerMode === 'ORIGINAL_CUSTOMER' ? '원본 거래처명' : '그룹명'}</span>
+                                                </div>
+                                                <label className="block text-[11px] font-bold text-slate-600 mb-1">거래처 매핑</label>
+                                                <textarea value={(group.customers || []).join('\n')} onChange={(e) => updateTransferGroupCustomers(group.groupName, e.target.value)} rows="5" className="w-full border border-slate-300 rounded-md px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-cyan-300" placeholder="거래처명을 한 줄에 하나씩 입력"></textarea>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <details className="mt-3 bg-white border border-slate-200 rounded-lg p-3">
+                                        <summary className="cursor-pointer text-xs font-bold text-slate-700">고급 설정 원문 보기 / 단가 컬럼 매핑</summary>
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-3">
+                                            <div className="flex flex-col">
+                                                <label className="text-xs font-bold mb-1 text-slate-700">거래처별 단가그룹 원문</label>
+                                                <textarea value={mappings.transferPriceGroups || defaultMappings.transferPriceGroups} onChange={(e) => setMappings({...mappings, transferPriceGroups: e.target.value})} rows="9" className="border border-slate-300 rounded-md px-3 py-2 text-xs font-mono bg-white focus:outline-none focus:ring-2 focus:ring-slate-300"></textarea>
+                                                <p className="text-[11px] text-slate-500 mt-1.5">형식: 거래처=그룹명|단가1&gt;단가2|수수료모드|수익모드|출력모드</p>
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <label className="text-xs font-bold mb-1 text-slate-700">단가 컬럼 매핑</label>
+                                                <textarea value={mappings.transferPriceColumns || defaultMappings.transferPriceColumns} onChange={(e) => setMappings({...mappings, transferPriceColumns: e.target.value})} rows="9" className="border border-slate-300 rounded-md px-3 py-2 text-xs font-mono bg-white focus:outline-none focus:ring-2 focus:ring-slate-300"></textarea>
+                                            </div>
+                                        </div>
+                                    </details>
                                 </div>
 
                                 <div className="mt-6 pt-5 border-t border-slate-200">
@@ -3214,6 +4179,9 @@
                                                             <button onClick={() => handleRunTransferCheck(files)} disabled={isProcessing || (!files.in || !files.out)} className={`px-4 py-1.5 rounded font-black text-[13px] transition-all flex items-center shadow-md whitespace-nowrap ${isProcessing || (!files.in || !files.out) ? 'bg-slate-700 text-slate-500 border border-slate-600 cursor-not-allowed' : 'bg-emerald-400 text-slate-900 hover:bg-emerald-300 transform hover:-translate-y-0.5'}`}>
                                                                 2전송 검증
                                                             </button>
+                                                            <button onClick={() => handleGenerateTransferSalesUpload(files)} disabled={isProcessing || !files.in} className={`px-4 py-1.5 rounded font-black text-[13px] transition-all flex items-center shadow-md whitespace-nowrap ${isProcessing || !files.in ? 'bg-slate-700 text-slate-500 border border-slate-600 cursor-not-allowed' : 'bg-cyan-300 text-slate-900 hover:bg-cyan-200 transform hover:-translate-y-0.5'}`}>
+                                                                판매업로드 생성
+                                                            </button>
                                                         </>
                                                     )}
                                                 </div>
@@ -3264,16 +4232,16 @@
                                                         className={`p-4 rounded-xl border-[3px] transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${activeIssueMode === 'multiPrice' ? 'bg-blue-50 border-blue-500 shadow-xl ring-4 ring-blue-500/20 scale-[1.02] z-10' : 'bg-white border-blue-200 hover:border-blue-400 hover:shadow-md'}`}
                                                     >
                                                         <div className={`text-xs font-bold mb-1 flex items-center justify-between ${activeIssueMode === 'multiPrice' ? 'text-blue-800' : 'text-slate-600'}`}>
-                                                            <span className="flex items-center"><i className="fas fa-tags text-blue-500 mr-2 text-base"></i>Lot 매치(판매처)</span>
+                                                            <span className="flex items-center"><i className="fas fa-tags text-blue-500 mr-2 text-base"></i>Lot 매치</span>
                                                             {closingStats.multiPriceCount > 0 && <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]"></span>}
                                                         </div>
                                                         <div className="flex items-end justify-between mt-2">
                                                             <div>
                                                                 <div className={`text-3xl font-black ${activeIssueMode === 'multiPrice' ? 'text-blue-900' : 'text-slate-800'}`}>{closingStats.multiPriceCount}<span className="text-sm font-bold text-slate-500 ml-1">건</span></div>
                                                                 {closingStats.multiPriceCount > 0 ? (
-                                                                    <div className="text-[12px] text-blue-600 font-bold mt-1">{hasEndFile ? "새로운 불일치 발견" : "상품의 판매처 확인하세요"}</div>
+                                                                    <div className="text-[12px] text-blue-600 font-bold mt-1">{hasEndFile ? "Lot 확인 필요" : "실제 Lot 이슈 확인"}</div>
                                                                 ) : (
-                                                                    <div className="text-[12px] text-slate-400 font-semibold mt-1">모든 사항 일치함</div>
+                                                                    <div className="text-[12px] text-slate-400 font-semibold mt-1">확정 매칭 제외 · 완료</div>
                                                                 )}
                                                             </div>
                                                             {activeIssueMode === 'multiPrice' ? (
@@ -3298,7 +4266,7 @@
                                                                 <i className="fas fa-check-double mr-1"></i>모두 확인
                                                             </button>
                                                         ) : (
-                                                            <button onClick={(e) => { e.stopPropagation(); setActiveIssueMode(null); setFilters({...filters, reviewType: 'multiPrice', issuesOnly: false}); }} className={`absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded shadow-sm z-10 transition ${activeIssueMode === 'multiPrice' ? 'bg-white text-blue-600 border border-blue-200 hover:bg-blue-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-blue-600'}`} title="해결된 항목을 포함해 전체 대상 리스트를 필터링하여 보여줍니다.">
+                                                            <button onClick={(e) => { e.stopPropagation(); setActiveIssueMode(null); setFilters({...filters, reviewType: 'multiPrice', issuesOnly: false}); }} className={`absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded shadow-sm z-10 transition ${activeIssueMode === 'multiPrice' ? 'bg-white text-blue-600 border border-blue-200 hover:bg-blue-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-blue-600'}`} title="실제 Lot 이슈가 있는 항목만 모아서 보여줍니다.">
                                                                 <i className="fas fa-list mr-1"></i>모아보기
                                                             </button>
                                                         )}
@@ -3344,7 +4312,7 @@
                                                                 <i className="fas fa-check-double mr-1"></i>모두 확인
                                                             </button>
                                                         ) : (
-                                                            <button onClick={(e) => { e.stopPropagation(); setActiveIssueMode(null); setFilters({...filters, reviewType: 'loss', issuesOnly: false}); }} className={`absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded shadow-sm z-10 transition ${activeIssueMode === 'loss' ? 'bg-white text-orange-600 border border-orange-200 hover:bg-orange-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-orange-600'}`} title="해결된 항목을 포함해 전체 대상 리스트를 필터링하여 보여줍니다.">
+                                                            <button onClick={(e) => { e.stopPropagation(); setActiveIssueMode(null); setFilters({...filters, reviewType: 'loss', issuesOnly: false}); }} className={`absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded shadow-sm z-10 transition ${activeIssueMode === 'loss' ? 'bg-white text-orange-600 border border-orange-200 hover:bg-orange-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-orange-600'}`} title="실제 Lot 이슈가 있는 항목만 모아서 보여줍니다.">
                                                                 <i className="fas fa-list mr-1"></i>모아보기
                                                             </button>
                                                         )}
@@ -3390,7 +4358,7 @@
                                                                 <i className="fas fa-check-double mr-1"></i>모두 확인
                                                             </button>
                                                         ) : (
-                                                            <button onClick={(e) => { e.stopPropagation(); setActiveIssueMode(null); setFilters({...filters, reviewType: 'missingPrice', issuesOnly: false}); }} className={`absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded shadow-sm z-10 transition ${activeIssueMode === 'missingPrice' ? 'bg-white text-rose-600 border border-rose-200 hover:bg-rose-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-rose-600'}`} title="해결된 항목을 포함해 전체 대상 리스트를 필터링하여 보여줍니다.">
+                                                            <button onClick={(e) => { e.stopPropagation(); setActiveIssueMode(null); setFilters({...filters, reviewType: 'missingPrice', issuesOnly: false}); }} className={`absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded shadow-sm z-10 transition ${activeIssueMode === 'missingPrice' ? 'bg-white text-rose-600 border border-rose-200 hover:bg-rose-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-rose-600'}`} title="실제 Lot 이슈가 있는 항목만 모아서 보여줍니다.">
                                                                 <i className="fas fa-list mr-1"></i>모아보기
                                                             </button>
                                                         )}
