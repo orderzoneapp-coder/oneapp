@@ -308,11 +308,16 @@
         });
         
         const getInitialVisibleUploadCols = () => ({ 
-            estimate: ['창고', '구매처', '브랜드', '견적서', '단위', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '검색어등록'] 
+            // 화면에 보이는 업로드 작업항목은 사용자가 설정한 항목만 노출한다.
+            // v2.0.9 자동 보강으로 브랜드/단위/외주비/노무비/검색어등록 등이 강제 노출되던 문제를 차단한다.
+            estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명', '행사가'],
+            purchase: ['창고', '구매처', '단위', '입고가', '입고수량'],
+            sales: ['창고', '구매처', '단위', '출고가', '출고량'],
+            inventory: ['창고', '구매처', '단위', '재고수량', '입고가', '재고금액', '오차', '이슈요약']
         });
         
         const getInitialMappings = () => {
-            const base = { master: {}, estimate: {} };
+            const base = { master: {}, estimate: {}, purchase: {}, sales: {}, inventory: {} };
             base.master = { 
                 '창고': '창고, 창고코드', 
                 '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', 
@@ -342,11 +347,50 @@
                 '간단설명': '지시사항, 간단설명, 비고',
                 '검색어등록': '검색어등록, 검색어, 유사어, 키워드'
             };
+            base.purchase = {
+                '창고': '창고, 창고코드',
+                '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드',
+                '품목명': '품목명, 상품명, 품명, 상품이름',
+                '규격': '규격, 규격명, 사이즈, 단량',
+                '구매처': '구매처, 매입처, 거래처명, 거래처',
+                '단위': '단위, 단위유형, 판매단위',
+                '입고가': '입고가, 매입단가, 구매단가, 원가',
+                '입고수량': '입고수량, 구매수량, 수량, 입고',
+                '재고금액': '금액, 구매금액, 매입금액'
+            };
+            base.sales = {
+                '창고': '창고, 창고코드',
+                '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드',
+                '품목명': '품목명, 상품명, 품명, 상품이름',
+                '규격': '규격, 규격명, 사이즈, 단량',
+                '구매처': '거래처명, 판매처, 납품처, 구매처, 거래처',
+                '단위': '단위, 단위유형, 판매단위',
+                '출고가': '출고가, 판매단가, 단가, 판매가',
+                '출고량': '출고량, 판매수량, 수량, 출고',
+                '재고금액': '금액, 판매금액, 공급가액'
+            };
+            base.inventory = {
+                '품목코드': '품목코드, 상품코드, 코드',
+                '품목명': '품명, 상품명, 상품명(규격), 품목명',
+                '규격': '규격, 규격명',
+                '구매처': '구매처, 매입처(Lot), 매입처, Lot, 거래처명',
+                '단위': '단위유형, 단위, 판매단위',
+                '창고': '창고, 창고코드',
+                '재고수량': '잔량, 기말실사(이월수량), 수량, 재고수량',
+                '입고가': '입고가, 매입단가(원가), 매입단가, 원가',
+                '재고금액': '재고금액, 기말재고액(자산가치)',
+                '기초수량': '재고, 기초수량',
+                '입고수량': '입고, 입고수량',
+                '출고량': '출고, 출고량',
+                '오차': '오차, 로스/조정수량, 로스',
+                '이슈요약': '이슈요약, 이슈/결과',
+                '메모': '메모, 수기메모'
+            };
             return base;
         };
 
         const getInitialMasterLinks = () => {
-            const base = { master: {}, estimate: {} };
+            const base = { master: {}, estimate: {}, purchase: {}, sales: {}, inventory: {} };
             base.estimate = { 
                 '창고': '창고', 
                 '브랜드': '브랜드',
@@ -362,6 +406,9 @@
                 '간단설명': '간단설명',
                 '검색어등록': '검색어등록' 
             };
+            base.purchase = { '창고': '창고', '구매처': '구매처', '단위': '단위', '입고가': '입고가' };
+            base.sales = { '창고': '창고', '구매처': '구매처', '단위': '단위', '출고가': '출고가' };
+            base.inventory = { '창고': '창고', '구매처': '구매처', '단위': '단위', '입고가': '입고가', '재고수량': '재고수량' };
             return base;
         };
 
@@ -534,39 +581,34 @@
             const [marginRules, setMarginRules] = useState(() => safeJSONParse('merchMarginRules_v878', [{ id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }]));
             const configHydratedRef = useRef(false);
 
-            // v2.0.9 필수 매핑 보강: 기존 localStorage 설정이 있어도 단위/브랜드/검색어등록을 자동 보강한다.
+            // 설정 오염 방지 패치:
+            // 업로드/견적/재고를 실행할 때 사용자가 설정하지 않은 항목이 환경설정에 자동 노출되지 않도록 한다.
+            // 역할별 기본 매핑은 보강하되 visibleUploadCols는 절대 자동 병합하지 않는다.
             useEffect(() => {
-                const requiredUploadCols = ['창고', '구매처', '브랜드', '견적서', '단위', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '검색어등록'];
-                const requiredMappings = {
-                    '브랜드': '브랜드, 제조사, 메이커',
-                    '단위': '단위, 판매단위, 포장단위, UNIT, unit',
-                    '외주비': '외주비, 외주, 외주가공비',
-                    '노무비': '노무비, 노무, 인건비',
-                    '검색어등록': '검색어등록, 검색어, 유사어, 키워드'
-                };
-                const requiredLinks = {
-                    '브랜드': '브랜드',
-                    '단위': '단위',
-                    '외주비': '외주비',
-                    '노무비': '노무비',
-                    '검색어등록': '검색어등록'
-                };
-
-                setVisibleUploadCols(prev => {
-                    const list = prev?.estimate || [];
-                    const merged = [...list];
-                    requiredUploadCols.forEach(col => { if (!merged.includes(col)) merged.push(col); });
-                    return { ...(prev || {}), estimate: merged };
-                });
+                const defaults = getInitialMappings();
+                const defaultLinks = getInitialMasterLinks();
+                const roles = ['master', 'estimate', 'purchase', 'sales', 'inventory'];
                 setMappings(prev => {
-                    const est = { ...(prev?.estimate || {}) };
-                    Object.entries(requiredMappings).forEach(([k, v]) => { if (!est[k]) est[k] = v; });
-                    return { ...(prev || {}), estimate: est };
+                    const next = { ...(prev || {}) };
+                    roles.forEach(role => {
+                        next[role] = { ...(defaults[role] || {}), ...(next[role] || {}) };
+                    });
+                    return next;
                 });
                 setMasterLinks(prev => {
-                    const est = { ...(prev?.estimate || {}) };
-                    Object.entries(requiredLinks).forEach(([k, v]) => { if (est[k] === undefined) est[k] = v; });
-                    return { ...(prev || {}), estimate: est };
+                    const next = { ...(prev || {}) };
+                    roles.forEach(role => {
+                        next[role] = { ...(defaultLinks[role] || {}), ...(next[role] || {}) };
+                    });
+                    return next;
+                });
+                setVisibleUploadCols(prev => {
+                    const defaultsVisible = getInitialVisibleUploadCols();
+                    const next = { ...(prev || {}) };
+                    ['estimate', 'purchase', 'sales', 'inventory'].forEach(role => {
+                        if (!Array.isArray(next[role])) next[role] = defaultsVisible[role] || [];
+                    });
+                    return next;
                 });
             }, []);
 
@@ -905,8 +947,11 @@
                         }
 
                         const actualHeaders = Object.keys(excelData[0]);
-                        const curMap = config.mappings['estimate'] || {}; 
-                        const headerCache = createHeaderMap(actualHeaders, curMap);
+                        const curMap = config.mappings[role] || config.mappings['estimate'] || {}; 
+                        const activeUploadFields = Array.from(new Set(['품목코드', '품목명', '규격', '구매처', ...((config.visibleUploadCols?.[role] || []))]));
+                        const roleMap = {};
+                        activeUploadFields.forEach(field => { if (curMap[field] !== undefined) roleMap[field] = curMap[field]; });
+                        const headerCache = createHeaderMap(actualHeaders, roleMap);
                         
                         excelData.forEach(row => {
                             const codeKey = headerCache['품목코드'] || '품목코드'; 
@@ -944,14 +989,14 @@
                                 }
                             });
 
-                            Object.keys(curMap).forEach(h => {
+                            Object.keys(roleMap).forEach(h => {
                                 if (!['품목코드', '품목명', '규격', '구매처'].includes(h)) {
                                     const actualKey = headerCache[h];
                                     if (actualHeaders.includes(actualKey)) {
                                         const val = row[actualKey];
                                         const safeVal = (val !== undefined && val !== null) ? val : '';
-                                        const isComparePrice = config.uploadColumnMeta?.[h]?.type === 'comparePrice';
-                                        const isNumeric = isComparePrice || window.NUMERIC_HEADERS.includes(config.masterLinks['estimate']?.[h]) || window.NUMERIC_HEADERS.includes(h);
+                                        const isComparePrice = config.uploadColumnMeta?.[role]?.[h]?.type === 'comparePrice';
+                                        const isNumeric = isComparePrice || window.NUMERIC_HEADERS.includes(config.masterLinks?.[role]?.[h]) || window.NUMERIC_HEADERS.includes(h);
                                         mItem.sources[role][h] = isNumeric ? window.parseNum(safeVal) : safeVal;
                                     }
                                 }
