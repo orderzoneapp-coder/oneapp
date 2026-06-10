@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99q Transfer Report 3 Sheet Briefing)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99r Live Export Sync)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -51,7 +51,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.99q Transfer Report 3 Sheet Briefing...</div>
+        <div class="loader-text">ONEAPP DataOps v8.99r Live Export Sync...</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -328,7 +328,7 @@
            - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
            ======================================================================= */
         const CONFIG_MODULE = Object.freeze({
-            version: 'v8.99q Transfer Report 3 Sheet Briefing',
+            version: 'v8.99r Live Export Sync',
             categoryMap: Object.freeze({
                 '10': '채소.과일',
                 '20': '수산.축산',
@@ -693,11 +693,17 @@
                 const price = safeNum(item.단가) || 0;
                 return { '결산일자': targetDateStr, '매입처(Lot)': safeStr(item.거래처, '미지정'), '상품코드': item.코드 === 'NO_CODE' ? '' : item.코드, '상품명(규격)': item.품명, '기초수량': safeNum(item.기초), '입고수량': safeNum(item.입고), '출고량': safeNum(item.출고), '기말실사(이월수량)': qty, '매입단가(원가)': price, '기말재고액(자산가치)': qty * price, '로스/조정수량': adjust, '이슈/결과': [...displayIssues, ...vendorStrs].join(', '), '수기메모': item.메모 || '' };
             }),
+            normalizeStockCountProductKey: (code = '', name = '') => {
+                const actualCode = (!code || code === 'NO_CODE' || code === '-') ? '' : safeStr(code);
+                return `${actualCode}|${safeStr(name)}`;
+            },
             buildStockCountSheetRows: ({ productData = [], targetDateStr = '' }) => {
+                // v8.99r: 실사양식은 Lot/단가별 행이 아니라 ERP 업로드용 상품별 최종 실사수량이다.
+                // 화면에서 관리자가 수정한 현재 잔량(실사)을 상품코드+품명 기준으로 합산한다.
                 const aggregated = {};
                 productData.forEach(item => {
                     const actualCode = (!item.코드 || item.코드 === 'NO_CODE' || item.코드 === '-') ? '' : item.코드;
-                    const key = actualCode + '|' + item.품명;
+                    const key = EXPORT_MODULE.normalizeStockCountProductKey(actualCode, item.품명);
                     if (!aggregated[key]) aggregated[key] = { 코드: actualCode, 품명: item.품명, 수량: 0 };
                     aggregated[key].수량 += STOCK_ENGINE_MODULE.getActualQty(item);
                 });
@@ -706,6 +712,33 @@
                     if (aggregated[key].수량 !== 0) rows.push({ '일자': targetDateStr, '순번': '', '담당자': '', '창고': '01', '상품코드': aggregated[key].코드, '상품명(규격)': aggregated[key].품명, '수량': aggregated[key].수량, '적요': '' });
                 });
                 return rows;
+            },
+            validateStockCountSheetRows: ({ productData = [], stockCountRows = [] }) => {
+                // v8.99r: 다운로드 직전 안전장치.
+                // 재고수불_마감의 Lot별 기말실사 합계와 실사양식의 상품별 수량이 다르면 다운로드를 막는다.
+                const closingAgg = {};
+                productData.forEach(item => {
+                    const actualCode = (!item.코드 || item.코드 === 'NO_CODE' || item.코드 === '-') ? '' : safeStr(item.코드);
+                    const key = EXPORT_MODULE.normalizeStockCountProductKey(actualCode, item.품명);
+                    if (!closingAgg[key]) closingAgg[key] = { code: actualCode, name: safeStr(item.품명), qty: 0 };
+                    closingAgg[key].qty += STOCK_ENGINE_MODULE.getActualQty(item);
+                });
+                const stockAgg = {};
+                stockCountRows.forEach(row => {
+                    const key = EXPORT_MODULE.normalizeStockCountProductKey(row['상품코드'], row['상품명(규격)']);
+                    if (!stockAgg[key]) stockAgg[key] = { code: safeStr(row['상품코드']), name: safeStr(row['상품명(규격)']), qty: 0 };
+                    stockAgg[key].qty += safeNum(row['수량']);
+                });
+                const keys = new Set([...Object.keys(closingAgg), ...Object.keys(stockAgg)]);
+                const mismatches = [];
+                keys.forEach(key => {
+                    const c = closingAgg[key] || { code: '', name: key.split('|').slice(1).join('|'), qty: 0 };
+                    const s = stockAgg[key] || { code: c.code, name: c.name, qty: 0 };
+                    if (safeNum(c.qty) !== safeNum(s.qty)) {
+                        mismatches.push({ code: c.code || s.code, name: c.name || s.name, closingQty: safeNum(c.qty), stockQty: safeNum(s.qty) });
+                    }
+                });
+                return mismatches;
             },
             buildSalesDetailRows: ({ productData = [], targetDateStr = '' }) => {
                 const rows = [];
@@ -820,6 +853,11 @@
                 const exportFileNameDate = targetDateStr ? targetDateStr.replace(/-/g, '') : (() => { const today = new Date(); return `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`; })();
                 const exportData1 = EXPORT_MODULE.buildClosingSheetRows({ productData, targetDateStr });
                 const exportData2 = EXPORT_MODULE.buildStockCountSheetRows({ productData, targetDateStr });
+                const stockCountMismatches = EXPORT_MODULE.validateStockCountSheetRows({ productData, stockCountRows: exportData2 });
+                if (stockCountMismatches.length > 0) {
+                    const preview = stockCountMismatches.slice(0, 8).map(m => `${m.name}: 마감 ${m.closingQty} / 실사양식 ${m.stockQty}`).join('\n');
+                    throw new Error(`실사양식 수량 불일치가 감지되었습니다.\n${preview}${stockCountMismatches.length > 8 ? '\n...' : ''}`);
+                }
                 const exportData3 = EXPORT_MODULE.buildSalesDetailRows({ productData, targetDateStr });
                 const exportData4 = EXPORT_MODULE.buildSalesSummaryRows({ productData, targetDateStr });
                 const exportData5 = [{ '결산일자': targetDateStr, '분석기간': analysisPeriod, '총 공급가액(매출액 ₩)': closingStats.totalRevenue, '기말 재고자산 총액(₩)': closingStats.totalInventoryAsset, '발생 로스 총액(₩)': closingStats.totalLossValue, '운영 코멘트': '※ 마진/수익률을 제외한 재고 자산 및 로스 관리용 요약 데이터입니다.' }];
@@ -2112,33 +2150,38 @@
             const handlePriceChange = (e) => {
                 const val = e.target.value; setLocalPrice(val);
                 if (priceTimeout.current) clearTimeout(priceTimeout.current);
-                priceTimeout.current = setTimeout(() => onBaseDataChange(item.batchKey, '단가', val), 250);
+                // v8.99r: 엑셀 다운로드 직전 값 누락 방지. 입력 즉시 전역 productData에 반영한다.
+                onBaseDataChange(item.batchKey, '단가', val);
             };
 
             const handlePrevChange = (e) => {
                 const val = e.target.value; setLocalPrev(val);
                 if (prevTimeout.current) clearTimeout(prevTimeout.current);
-                prevTimeout.current = setTimeout(() => onBaseDataChange(item.batchKey, '기초', val), 250);
+                // v8.99r: 화면값과 다운로드값이 갈라지지 않도록 즉시 반영한다.
+                onBaseDataChange(item.batchKey, '기초', val);
             };
 
             const handleInChange = (e) => {
                 const val = e.target.value; setLocalIn(val);
                 if (inTimeout.current) clearTimeout(inTimeout.current);
                 const numVal = (val === '' ? 0 : Number(val)) - item.대체입고;
-                inTimeout.current = setTimeout(() => onBaseDataChange(item.batchKey, '입고', numVal), 250);
+                // v8.99r: 화면값과 다운로드값이 갈라지지 않도록 즉시 반영한다.
+                onBaseDataChange(item.batchKey, '입고', numVal);
             };
 
             const handleOutChange = (e) => {
                 const val = e.target.value; setLocalOut(val);
                 if (outTimeout.current) clearTimeout(outTimeout.current);
                 const numVal = (val === '' ? 0 : Number(val)) - item.대체출고;
-                outTimeout.current = setTimeout(() => onBaseDataChange(item.batchKey, '출고', numVal), 250);
+                // v8.99r: 화면값과 다운로드값이 갈라지지 않도록 즉시 반영한다.
+                onBaseDataChange(item.batchKey, '출고', numVal);
             };
 
             const handleActualChange = (e) => {
                 const val = e.target.value; setLocalActual(val);
                 if (actualTimeout.current) clearTimeout(actualTimeout.current);
-                actualTimeout.current = setTimeout(() => onStockChange(item.batchKey, val), 250);
+                // v8.99r 핵심: 잔량 수정값은 실사양식 업로드 수량의 원천이므로 지연 저장하지 않는다.
+                onStockChange(item.batchKey, val);
             };
 
             const actualQty = localActual === '' ? '' : Number(localActual);
@@ -2358,6 +2401,7 @@
             const focusedInputRef = useRef({ key: null, idx: -1 });
             const activeIssueModeRef = useRef(null);
             const filteredProductDataRef = useRef([]); // v8.82: 프린터 출력은 현재 화면 필터 결과를 그대로 사용한다.
+            const productDataRef = useRef([]); // v8.99r: 엑셀 다운로드는 렌더 클로저가 아니라 최신 productData ref를 기준으로 생성한다.
 
             const normalizeInitialMappings = (baseMappings = {}) => {
                 const merged = { ...defaultMappings, ...baseMappings };
@@ -2397,6 +2441,10 @@
                 productData, setProductData, analysisPeriod, setAnalysisPeriod, targetDateStr, setTargetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes,
                 resetEngine, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction
             } = useInventoryEngine({ mappings, grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep });
+
+            useEffect(() => {
+                productDataRef.current = productData;
+            }, [productData]);
 
             const isCostExtractionMode = !files.prev && files.in && !files.out && files.end;
             const hasEndFile = !!files.end;
@@ -2724,7 +2772,7 @@
 
 
             /* =======================================================================
-               v8.99q 2전송 판매업로드 생성 / 3시트 브리핑 수익 보고서 엔진
+               v8.99r 실사양식 다운로드 동기화 / 3시트 브리핑 수익 보고서 엔진
                - 단가 생성은 정확한 거래처명 일치 기준만 사용한다.
                - 별칭/포함검색/미등록 default 자동적용을 하지 않는다.
                ======================================================================= */
@@ -3293,7 +3341,7 @@
                         .map(([vendor, data]) => `${vendor}(${formatMoney(safeNum(data.fee) || safeNum(data.amount))})`)
                         .join(', ');
 
-                    // v8.99q: 2전송 검증 결과 엑셀은 3개 시트로 단순화한다.
+                    // v8.99r: 2전송 검증 결과 엑셀은 3개 시트로 단순화하고, 실사양식 다운로드는 현재 화면 최신 잔량을 우선한다.
                     // 기본 시트: 2전송_브리핑 / 거래처별수익 / 품목별수익
                     const createProfitSummaryRows = (detailRows = []) => {
                         const totals = detailRows.reduce((acc, r) => {
@@ -3586,7 +3634,7 @@
                         finalRows[0].메모 = [finalRows[0].메모, `공제:${formatMoney(transferCleanStats.feeAmount)} ${summarizeFeeMap(transferFeeVendors)}`].filter(Boolean).join(' | ');
                     }
 
-                    // v8.99q: 2전송 검증 엑셀은 3시트 보고서로 생성한다. 판매가검증은 브리핑/수익 비고에 통합한다.
+                    // v8.99r: 2전송 검증 엑셀은 3시트 보고서로 생성한다. 판매가검증은 브리핑/수익 비고에 통합한다.
                     const transferPriceConfigForExport = buildTransferPriceConfig();
                     const purchasePriceRows = [];
                     const purchaseByCustomerCode = {};
@@ -3995,9 +4043,10 @@
             }, [executeImmediateSubstitution]);
 
             const handleCombinedExport = useCallback(() => {
-                if (productData.length === 0) { setAlertMsg("다운로드할 데이터가 없습니다."); return; }
-                const { wb, exportFileNameDate } = EXPORT_MODULE.createCombinedWorkbook({ productData, analysisPeriod, targetDateStr, closingStats });
+                const exportProductData = productDataRef.current || productData || [];
+                if (exportProductData.length === 0) { setAlertMsg("다운로드할 데이터가 없습니다."); return; }
                 try {
+                    const { wb, exportFileNameDate } = EXPORT_MODULE.createCombinedWorkbook({ productData: exportProductData, analysisPeriod, targetDateStr, closingStats });
                     const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
                     const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
                     const url = URL.createObjectURL(blob);
@@ -4011,7 +4060,8 @@
                     setTimeout(() => { setAlertMsg("✅ 수불부 마감 데이터가 엑셀로 다운로드되었습니다.\n\n[포함 시트]\n출력요약 / 재고수불_마감 / 실사양식 / 판매현황 / 매입현황 / 마감요약 / 시스템누적 / 2전송_잔량현황(2전송검증 시)"); }, 500);
                 } catch (err) {
                     console.error('엑셀 생성 중 오류:', err);
-                    setAlertMsg("엑셀 파일 생성 중 오류가 발생했습니다.");
+                    const detail = err && err.message ? `\n\n${err.message}` : '';
+                    setAlertMsg("엑셀 파일 생성 중 오류가 발생했습니다." + detail);
                 }
             }, [productData, analysisPeriod, targetDateStr, closingStats]);
 
@@ -4080,7 +4130,7 @@
                             <div className="flex flex-col md:flex-row md:items-center gap-4">
                                 <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition" onClick={() => document.getElementById('main-scroll-container')?.scrollTo({top:0, behavior:'smooth'})} title="클릭시 최상단 이동">
                                     <span className="text-blue-600 mr-2">ONEAPP</span> DataOps
-                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">v8.99q Transfer Report 3 Sheet Briefing</span>
+                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">v8.99r Live Export Sync</span>
                                 </h1>
                             </div>
 
