@@ -1519,7 +1519,11 @@
                             도매B: getNum('도매B'),
                             시중가: getNum('시중가'),
                             입고B: getNum('입고B'),
+                            // 명시적 정지 요청 여부를 출력검증센터까지 전달한다.
+                            // 기존 마스터가 정지(0)였더라도 이번 작업에서 출고가가 산출되면 판매여부는 1로 복구되어야 한다.
+                            // 단, 사용자가 '판매정지' 액션을 명시한 경우에는 _salesStopRequested=true로 정지 상태를 유지한다.
                             판매여부: finalData._salesStopRequested === true ? 0 : (finalData['판매여부'] !== undefined ? finalData['판매여부'] : ''),
+                            _salesStopRequested: finalData._salesStopRequested === true,
                             // 소분가 생성을 위한 원물-소분 매칭 정보
                             '1종코드': getStr('1종코드'),
                             '1종규격': getStr('1종규격'),
