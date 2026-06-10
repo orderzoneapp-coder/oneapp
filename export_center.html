@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.3 재고 계산창고 정책]</title>
+    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.6 정지상품 자동판매복구]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -108,14 +108,19 @@
         };
 
         // 출력검증센터의 행사가 값은 저장/출력 적용 예정값이다.
-        // 현재 행사중 여부 자체는 MerchOps 본체의 마스터 행사가 기준 필터에서 판단한다.
+        // 판매상태 정책:
+        // - 기존 마스터 판매여부가 0(정지)이더라도, 이번 작업에서 출고가/행사가가 산출되면 판매여부는 1로 복구한다.
+        // - 단, 사용자가 MerchOps에서 판매정지 액션을 명시한 경우(_salesStopRequested=true)만 정지 0을 유지한다.
+        // - 재고수량 0은 판매여부 1 + 품절 상태이며, 자동 정지 0으로 바꾸지 않는다.
         const getSaleState = (row) => {
-            const rawStatus = row?.판매여부;
-            if (String(rawStatus).trim() === '0') return { code: '0', label: '정지', text: '정지', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
+            const explicitStop = row?._salesStopRequested === true || row?._explicitStopRequested === true;
+            if (explicitStop) return { code: '0', label: '정지', text: '정지', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
+
             const out = parseNum(row.출고가);
             const promo = parseNum(row.행사가);
             const stock = row.재고수량 !== undefined && row.재고수량 !== '' ? parseNum(row.재고수량) : 999;
             const hasSalePrice = out > 0 || promo > 0;
+
             if (!hasSalePrice) return { code: '0', label: '정지', text: '정지', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
             if (stock === 0) return { code: '1', label: '품절', text: '품절', cls: 'bg-orange-50 text-orange-700 border-orange-200' };
             if (promo > 0) return { code: '1', label: '행사', text: '행사', cls: 'bg-purple-50 text-purple-700 border-purple-200' };
@@ -358,7 +363,9 @@
                                 기준출고가,
                                 기준시중가,
                                 기준판매여부,
+                                // 기준판매여부는 참고값이다. 최종 판매여부는 getSaleState()에서 출고가/행사가 기준으로 다시 판정한다.
                                 판매여부: working.판매여부 !== undefined && working.판매여부 !== '' ? working.판매여부 : 기준판매여부,
+                                _salesStopRequested: working._salesStopRequested === true,
                                 창고: working.창고 || master['창고'] || '',
                                 단위: working.단위 || master['단위'] || '',
                                 _calcWarehouse: calcWarehouse,
@@ -525,10 +532,12 @@
                 if (!themeNo) return showToast('⚠️ 테마1~테마5 중 하나를 선택하세요.');
                 if (!filteredRows || filteredRows.length === 0) return showToast('⚠️ 현재 표시된 상품이 없습니다.');
                 const targetCodes = new Set(filteredRows.map(row => row.코드));
-                const appliedCount = filteredRows.length;
-                const promoCount = filteredRows.filter(row => parseNum(row.행사가) > 0).length;
+                let appliedCount = 0;
+                let promoCount = 0;
                 setReviewRows(prev => prev.map(row => {
                     if (!targetCodes.has(row.코드)) return row;
+                    appliedCount++;
+                    if (parseNum(row.행사가) > 0) promoCount++;
                     return {
                         ...row,
                         promoTheme: themeNo,
