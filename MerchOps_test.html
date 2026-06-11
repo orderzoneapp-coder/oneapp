@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.2 F8 즉시 엑셀출력]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.3 재고구매일자 FIFO]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -14,7 +14,7 @@
     
     <script>
         window.MASTER_HEADERS = [ "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "판매여부", "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록" ];
-        window.NUMERIC_HEADERS = [ "안전재고", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "1종연산", "2종연산", "외주비", "노무비", "경비", "1구매", "1출고", "2구매", "2출고", "1입고", "2입고" ];
+        window.NUMERIC_HEADERS = [ "안전재고", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "1종연산", "2종연산", "외주비", "노무비", "경비", "1구매", "1출고", "2구매", "2출고", "1입고", "2입고", "재고수량" ];
         
         window.generateUUID = () => {
             return typeof crypto !== 'undefined' && crypto.randomUUID 
@@ -26,6 +26,40 @@
         };
 
         window.parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
+
+        // 1재고현황 정책: 엑셀의 '기록' 열은 재고상품의 구매일자다.
+        // FIFO 확인을 위해 오래된 구매일자가 위, 최근 구매일자가 아래로 정렬되도록 숫자키를 만든다.
+        window.normalizeInventoryPurchaseDate = (v) => {
+            if (v === undefined || v === null) return '';
+            if (v instanceof Date && !isNaN(v.getTime())) {
+                const mm = String(v.getMonth() + 1).padStart(2, '0');
+                const dd = String(v.getDate()).padStart(2, '0');
+                return `${mm}/${dd}`;
+            }
+            const raw = String(v).trim();
+            if (!raw) return '';
+            const m = raw.match(/(\d{1,4})[.\/\-년\s]+(\d{1,2})(?:[.\/\-월\s]+(\d{1,2}))?/);
+            if (!m) return raw;
+            const hasYear = m[3] !== undefined;
+            const mm = String(hasYear ? m[2] : m[1]).padStart(2, '0');
+            const dd = String(hasYear ? m[3] : m[2]).padStart(2, '0');
+            return `${mm}/${dd}`;
+        };
+
+        window.getInventoryPurchaseDateKey = (v) => {
+            const normalized = window.normalizeInventoryPurchaseDate(v);
+            const m = String(normalized || '').match(/(\d{1,2})[.\/\-](\d{1,2})/);
+            if (!m) return 99999999;
+            const now = new Date();
+            const mm = Number(m[1]);
+            const dd = Number(m[2]);
+            const year = now.getFullYear();
+            if (!mm || !dd) return 99999999;
+            return (year * 10000) + (mm * 100) + dd;
+        };
+
+        window.getManagedRowKey = (row = {}) => row._managedKey || row.코드;
+
 
         // 판매상태는 현재 작업정보가 아니라 마스터에 저장된 결과 상태다.
         // 화면 표시는 숫자와 상태를 섞지 않고 행사/판매/품절/정지 4개로 단순화한다.
@@ -308,7 +342,7 @@
         });
         
         const getInitialVisibleUploadCols = () => ({ 
-            estimate: ['창고', '구매처', '브랜드', '견적서', '단위', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '검색어등록'] 
+            estimate: ['창고', '구매처', '브랜드', '견적서', '단위', '재고수량', '상품 구매일자', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '검색어등록'] 
         });
         
         const getInitialMappings = () => {
@@ -331,10 +365,12 @@
                 '규격': '규격명, 규격, 사이즈, 단량', 
                 '브랜드': '브랜드, 제조사, 메이커',
                 '단위': '단위, 판매단위, 포장단위, UNIT, unit',
-                '구매처': '거래처명, 구매처, 거래처', 
+                '구매처': '거래처명, 구매처, 거래처, 거래', 
+                '재고수량': '재고수량, 재고, 수량, 현재고', 
+                '상품 구매일자': '상품 구매일자, 구매일자, 기록, 일자', 
                 '견적서': '견적서, 카테고리, 템플릿, 견적분류', 
                 '행사가': '행사가, 행사, 특가',
-                '입고가': '입고가, 입고, 매입가', 
+                '입고가': '입고가, 입고, 매입가, 최종(창고), 최종창고, 재고단가', 
                 '출고가': '출고가, 출고, 판매가',
                 '입고B': 'B단가, 입고B', 
                 '도매A': 'A판매, A판매가, 도매A', 
@@ -352,6 +388,8 @@
                 '브랜드': '브랜드',
                 '단위': '단위',
                 '구매처': '구매처', 
+                '재고수량': '재고수량',
+                '상품 구매일자': '상품 구매일자',
                 '견적서': '견적서', 
                 '행사가': '행사가', 
                 '입고가': '입고가', 
@@ -367,7 +405,7 @@
 
         const getCellWidthClass = (h) => {
             if (window.NUMERIC_HEADERS.includes(h)) return 'min-w-[90px] w-[90px] max-w-[90px]';
-            if (h === '구매처' || h === '거래처명' || h === '일자') return 'min-w-[100px] w-[100px] max-w-[100px]';
+            if (h === '구매처' || h === '거래처명' || h === '일자' || h === '상품 구매일자') return 'min-w-[100px] w-[100px] max-w-[100px]';
             if (h === '품목명' || h === '상품명' || h === '카탈로그' || h === '견적서' || h === '판매여부') return 'min-w-[100px] w-[100px] max-w-[100px]';
             if (h === '간단설명' || h === '지시사항' || h === '상품정보' || h === '적요2') return 'min-w-[150px] w-[150px] max-w-[150px]';
             if (h === '단위' || h === '창고') return 'min-w-[60px] w-[60px] max-w-[60px]';
@@ -536,10 +574,12 @@
 
             // v2.0.9 필수 매핑 보강: 기존 localStorage 설정이 있어도 단위/브랜드/검색어등록을 자동 보강한다.
             useEffect(() => {
-                const requiredUploadCols = ['창고', '구매처', '브랜드', '견적서', '단위', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '검색어등록'];
+                const requiredUploadCols = ['창고', '구매처', '브랜드', '견적서', '단위', '재고수량', '상품 구매일자', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '검색어등록'];
                 const requiredMappings = {
                     '브랜드': '브랜드, 제조사, 메이커',
                     '단위': '단위, 판매단위, 포장단위, UNIT, unit',
+                    '재고수량': '재고수량, 재고, 수량, 현재고',
+                    '상품 구매일자': '상품 구매일자, 구매일자, 기록, 일자',
                     '외주비': '외주비, 외주, 외주가공비',
                     '노무비': '노무비, 노무, 인건비',
                     '검색어등록': '검색어등록, 검색어, 유사어, 키워드'
@@ -547,6 +587,8 @@
                 const requiredLinks = {
                     '브랜드': '브랜드',
                     '단위': '단위',
+                    '재고수량': '재고수량',
+                    '상품 구매일자': '상품 구매일자',
                     '외주비': '외주비',
                     '노무비': '노무비',
                     '검색어등록': '검색어등록'
@@ -909,7 +951,7 @@
                         const curMap = config.mappings['estimate'] || {}; 
                         const headerCache = createHeaderMap(actualHeaders, curMap);
                         
-                        excelData.forEach(row => {
+                        excelData.forEach((row, rowIdx) => {
                             const codeKey = headerCache['품목코드'] || '품목코드'; 
                             const nameKey = headerCache['품목명'] || '품목명';
                             const code = row[codeKey]; 
@@ -921,11 +963,23 @@
                             if (!cleanCode || cleanCode.includes('출력') || cleanCode === '코드' || cleanCode === '품목코드' || cleanCode === '상품코드' || cleanCode.includes('예시')) return;
                             if (cleanName.includes('테스트상품') || cleanName.includes('샘플상품') || cleanCode.toLowerCase().includes('test')) return;
 
-                            if (!newManaged[code]) { 
-                                newManaged[code] = { 코드: code, sources: {}, finalData: {}, _tags: new Set() }; 
+                            // 1재고현황은 같은 품목코드라도 구매일자/구매처/단가가 다르면 별도 재고 Lot로 보존한다.
+                            // row.코드는 원 품목코드로 유지하고, 화면/선택용 내부키만 _managedKey로 분리한다.
+                            const purchaseDateKey = headerCache['상품 구매일자'] || headerCache['기록'] || '기록';
+                            const vendorKeyForLot = headerCache['구매처'] || '거래';
+                            const priceKeyForLot = headerCache['입고가'] || '최종(창고)';
+                            const lotDateForKey = window.normalizeInventoryPurchaseDate(row[purchaseDateKey]);
+                            const lotVendorForKey = String(row[vendorKeyForLot] || '').trim();
+                            const lotPriceForKey = window.parseNum(row[priceKeyForLot]);
+                            const managedKey = role === 'inventory'
+                                ? `${cleanCode}__INV__${String(file.name || '').replace(/[^가-힣a-zA-Z0-9_.-]/g, '_')}__${rowIdx}__${lotDateForKey || 'nodate'}__${lotVendorForKey || 'novendor'}__${lotPriceForKey || 0}`
+                                : cleanCode;
+
+                            if (!newManaged[managedKey]) { 
+                                newManaged[managedKey] = { 코드: cleanCode, _managedKey: managedKey, sources: {}, finalData: {}, _tags: new Set() }; 
                             }
                             
-                            let mItem = newManaged[code];
+                            let mItem = newManaged[managedKey];
                             if (!mItem.sources[role]) mItem.sources[role] = {};
                             
                             mItem = { ...mItem, _tags: new Set([...(mItem._tags || []), `excel:${roleMeta.icon}업로드`]) };
@@ -937,11 +991,11 @@
                             mItem.sources[role]['규격'] = specKey ? row[specKey] : '';
                             mItem.sources[role]['구매처'] = vendorKey ? row[vendorKey] : '';
                             
-                            if (!mItem.sources[role]['품목명'] && newMaster[code]?.['품목명']) mItem.sources[role]['품목명'] = newMaster[code]['품목명'];
-                            if (!mItem.sources[role]['규격'] && newMaster[code]?.['규격']) mItem.sources[role]['규격'] = newMaster[code]['규격'];
+                            if (!mItem.sources[role]['품목명'] && newMaster[cleanCode]?.['품목명']) mItem.sources[role]['품목명'] = newMaster[cleanCode]['품목명'];
+                            if (!mItem.sources[role]['규격'] && newMaster[cleanCode]?.['규격']) mItem.sources[role]['규격'] = newMaster[cleanCode]['규격'];
                             ['브랜드', '단위', '검색어등록', '외주비', '노무비'].forEach(fallbackField => {
-                                if ((mItem.sources[role][fallbackField] === undefined || mItem.sources[role][fallbackField] === '') && newMaster[code]?.[fallbackField] !== undefined) {
-                                    mItem.sources[role][fallbackField] = newMaster[code][fallbackField];
+                                if ((mItem.sources[role][fallbackField] === undefined || mItem.sources[role][fallbackField] === '') && newMaster[cleanCode]?.[fallbackField] !== undefined) {
+                                    mItem.sources[role][fallbackField] = newMaster[cleanCode][fallbackField];
                                 }
                             });
 
@@ -958,12 +1012,31 @@
                                 }
                             });
 
+                            // 1재고현황 전용 컬럼 의미 보정:
+                            // - '기록'은 상품 구매일자다.
+                            // - '재고'는 기초재고/재고수량이다.
+                            // - '최종(창고)'는 재고단가/입고가로 참조한다.
+                            if (role === 'inventory') {
+                                const source = mItem.sources.inventory;
+                                const actualPurchaseDateKey = headerCache['상품 구매일자'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '기록');
+                                const actualStockKey = headerCache['재고수량'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '재고');
+                                const actualInventoryPriceKey = headerCache['입고가'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '최종(창고)' || String(h).replace(/\s/g, '') === '최종창고');
+                                const actualMemoKey = actualHeaders.find(h => String(h).replace(/\s/g, '') === '적요' || String(h).replace(/\s/g, '') === '비고');
+
+                                if (actualPurchaseDateKey) source['상품 구매일자'] = window.normalizeInventoryPurchaseDate(row[actualPurchaseDateKey]);
+                                if (actualStockKey) source['재고수량'] = window.parseNum(row[actualStockKey]);
+                                if (actualInventoryPriceKey && source['입고가'] === undefined) source['입고가'] = window.parseNum(row[actualInventoryPriceKey]);
+                                if (actualMemoKey) source['비고'] = row[actualMemoKey] || '';
+                                source['_inventoryFifoKey'] = window.getInventoryPurchaseDateKey(source['상품 구매일자']);
+                                source['_inventorySourceRole'] = '1재고현황_기초재고';
+                            }
+
                             // 재고 불러오기 기본창고 정책:
                             // 재고파일/마스터에 창고 각인이 없을 때만 계산용 창고 01을 적용한다.
                             // 원본 sources.inventory['창고'] 값은 임의로 덮어쓰지 않는다.
                             if (role === 'inventory') {
                                 const sourceWh = String(mItem.sources?.inventory?.['창고'] ?? '').trim();
-                                const masterWh = String(newMaster[code]?.['창고'] ?? '').trim();
+                                const masterWh = String(newMaster[cleanCode]?.['창고'] ?? '').trim();
                                 if (!sourceWh && !masterWh) {
                                     mItem.sources.inventory['_calcWarehouse'] = '01';
                                     mItem.sources.inventory['_calcWarehouseReason'] = '재고 불러오기 기본창고 01 적용';
@@ -973,8 +1046,8 @@
                                 }
                             }
 
-                            mItem.finalData = window.computeFinalData(newMaster[code] || {}, mItem.sources, config.marginRules);
-                            newManaged[code] = mItem;
+                            mItem.finalData = window.computeFinalData(newMaster[cleanCode] || {}, mItem.sources, config.marginRules);
+                            newManaged[managedKey] = mItem;
                             totalCount++;
                         });
                     }
@@ -1287,8 +1360,8 @@
                 const readyCodes = Array.isArray(quickExcelReadyRef.current.codes) ? quickExcelReadyRef.current.codes : [];
                 const readyCodeSet = new Set(readyCodes);
                 const targetRows = readyCodes.length > 0
-                    ? fullDisplayRows.filter(row => readyCodeSet.has(row.코드))
-                    : (ui.selectedRows.size > 0 ? fullDisplayRows.filter(row => ui.selectedRows.has(row.코드)) : fullDisplayRows);
+                    ? fullDisplayRows.filter(row => readyCodeSet.has(window.getManagedRowKey(row)))
+                    : (ui.selectedRows.size > 0 ? fullDisplayRows.filter(row => ui.selectedRows.has(window.getManagedRowKey(row))) : fullDisplayRows);
 
                 if (targetRows.length === 0) return ui.showToast('⚠️ 선택된 빠른 출력 대상이 없습니다.');
 
@@ -1389,7 +1462,7 @@
             }, [fullDisplayRows, ui.selectedRows, data.masterProducts, ui]);
 
             const handleCommitEstimate = useCallback(() => {
-                const targets = ui.selectedRows.size > 0 ? ui.selectedRows : new Set(fullDisplayRows.map(r => r.코드));
+                const targets = ui.selectedRows.size > 0 ? ui.selectedRows : new Set(fullDisplayRows.map(r => window.getManagedRowKey(r)));
                 if (targets.size === 0) return ui.showToast('⚠️ 반영할 항목이 없습니다.');
 
                 const targetModeText = ui.selectedRows.size > 0 ? '선택한 상품' : '현재 화면 전체';
@@ -1495,7 +1568,7 @@
                     ui.setSelectedRows(new Set());
                 } else { 
                     const next = new Set(); 
-                    fullDisplayRows.forEach(r => next.add(r.코드)); 
+                    fullDisplayRows.forEach(r => next.add(window.getManagedRowKey(r))); 
                     ui.setSelectedRows(next); 
                 }
             }, [fullDisplayRows, ui.selectedRows, ui.setSelectedRows]);
@@ -1520,7 +1593,7 @@
                 if (fullDisplayRows.length === 0) return ui.showToast('⚠️ 화면에 적용할 상품이 없습니다.');
 
                 const targetRows = ui.selectedRows.size > 0 
-                    ? fullDisplayRows.filter(r => ui.selectedRows.has(r.코드))
+                    ? fullDisplayRows.filter(r => ui.selectedRows.has(window.getManagedRowKey(r)))
                     : fullDisplayRows;
 
                 const confirmMsg = ui.selectedRows.size > 0 
@@ -1573,7 +1646,7 @@
                 }
 
                 const targetRows = ui.selectedRows.size > 0
-                    ? fullDisplayRows.filter(r => ui.selectedRows.has(r.코드))
+                    ? fullDisplayRows.filter(r => ui.selectedRows.has(window.getManagedRowKey(r)))
                     : fullDisplayRows;
 
                 if (targetRows.length === 0) {
@@ -2644,7 +2717,7 @@
                     <td className={`sticky z-20 px-3 py-2 border-r border-r-slate-200 transition-colors min-w-[280px] w-[280px] max-w-[280px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : 'bg-white group-hover:!bg-slate-50 border-l-4 border-l-transparent group-hover:!border-l-slate-300'}`} style={{left: 0}}>
                         <div className="flex gap-2 items-center w-full min-w-0">
                             {isEstimateUploaded && (
-                                <input type="checkbox" className="w-4 h-4 rounded border-slate-300 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500" checked={isSel} onChange={() => {const n = new Set(state.selectedRows); n.has(row.코드)?n.delete(row.코드):n.add(row.코드); actions.setSelectedRows(n);}} />
+                                <input type="checkbox" className="w-4 h-4 rounded border-slate-300 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500" checked={isSel} onChange={() => {const n = new Set(state.selectedRows); n.has(window.getManagedRowKey(row))?n.delete(window.getManagedRowKey(row)):n.add(window.getManagedRowKey(row)); actions.setSelectedRows(n);}} />
                             )}
                             <div className="flex flex-col min-w-0 w-full overflow-hidden ml-1">
                                 <span className="text-[10px] font-mono mb-0.5 truncate block w-full text-indigo-400">{row.코드}</span>
@@ -2808,8 +2881,8 @@
                                         </td>
                                     </tr>
                                 ) : displayRows.map((row, idx) => {
-                                    const isSel = selectedRows.has(row.코드); 
-                                    return <MemoizedTableRow key={row.코드} row={row} idx={idx} state={state} actions={actions} isSel={isSel} mItem={masterProducts[row.코드] || {}} />;
+                                    const isSel = selectedRows.has(window.getManagedRowKey(row)); 
+                                    return <MemoizedTableRow key={window.getManagedRowKey(row)} row={row} idx={idx} state={state} actions={actions} isSel={isSel} mItem={masterProducts[row.코드] || {}} />;
                                 })}
                                 <tr>
                                     <td colSpan="50" className="h-[80px] bg-slate-50 border-t border-slate-200 text-center align-middle">
@@ -2871,6 +2944,41 @@
             const config = useMerchConfig();
             const data = useMerchData();
             const ui = useMerchUI();
+            const [systemUiCollapsed, setSystemUiCollapsed] = useState(false);
+            const contentScrollRef = useRef(null);
+            const scrollMetaRef = useRef({ lastTop: 0, lastDirectionTop: 0, ticking: false });
+
+            // ============================================================
+            // [M-UX-02] 시스템 UI 스크롤 자동 접힘/복귀
+            // 역할: 작업 테이블을 아래로 스크롤하면 상단 시스템 UI를 접고, 살짝 위로 올리면 즉시 다시 보이게 한다.
+            // 주의: 맨 위까지 올라가야만 복귀하는 기존 UX를 쓰지 않는다.
+            // ============================================================
+            const handleWorkspaceScroll = useCallback((e) => {
+                const target = e.currentTarget;
+                const currentTop = target.scrollTop || 0;
+                const meta = scrollMetaRef.current;
+                if (meta.ticking) return;
+                meta.ticking = true;
+
+                window.requestAnimationFrame(() => {
+                    const lastTop = meta.lastTop || 0;
+                    const delta = currentTop - lastTop;
+
+                    if (currentTop <= 12) {
+                        setSystemUiCollapsed(false);
+                        meta.lastDirectionTop = currentTop;
+                    } else if (delta > 14 && currentTop > 80) {
+                        setSystemUiCollapsed(true);
+                        meta.lastDirectionTop = currentTop;
+                    } else if (delta < -8) {
+                        setSystemUiCollapsed(false);
+                        meta.lastDirectionTop = currentTop;
+                    }
+
+                    meta.lastTop = currentTop;
+                    meta.ticking = false;
+                });
+            }, []);
 
             const isEstimateUploaded = Object.keys(data.managedItems).length > 0;
             const isMasterEmpty = Object.keys(data.masterProducts).length === 0;
@@ -2976,6 +3084,21 @@
                         return true;
                     });
                 }
+                // 1재고현황 기초재고는 FIFO 확인 기준으로 정렬한다.
+                // 2전송/판매현황 알고리즘에는 적용하지 않고, inventory source가 있는 행에만 구매일자 정렬을 보조 적용한다.
+                if (baseList.some(item => item.sources?.inventory)) {
+                    baseList.sort((a, b) => {
+                        const aInv = a.sources?.inventory || {};
+                        const bInv = b.sources?.inventory || {};
+                        const codeCompare = String(a.코드 || '').localeCompare(String(b.코드 || ''), 'ko-KR', { numeric: true });
+                        if (codeCompare !== 0) return codeCompare;
+                        const aDate = aInv['_inventoryFifoKey'] ?? window.getInventoryPurchaseDateKey(aInv['상품 구매일자']);
+                        const bDate = bInv['_inventoryFifoKey'] ?? window.getInventoryPurchaseDateKey(bInv['상품 구매일자']);
+                        if (aDate !== bDate) return aDate - bDate;
+                        return String(window.getManagedRowKey(a)).localeCompare(String(window.getManagedRowKey(b)), 'ko-KR', { numeric: true });
+                    });
+                }
+
                 return baseList;
             }, [isEstimateUploaded, data.managedItems, data.masterProducts, ui.globalSearch, ui.priceFilter, ui.basicSearch, config.uploadColumnMeta]);
 
@@ -3076,6 +3199,9 @@
                         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; } 
                         .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; } 
                         .fade-in { animation: fadeIn 0.3s ease-out; } 
+                        .system-ui-shell { transition: max-height 180ms ease, opacity 160ms ease, transform 180ms ease, border-color 180ms ease; will-change: max-height, opacity, transform; }
+                        .system-ui-shell.is-collapsed { max-height: 0 !important; opacity: 0; transform: translateY(-10px); pointer-events: none; border-color: transparent; }
+                        .system-ui-shell.is-expanded { max-height: 260px; opacity: 1; transform: translateY(0); }
                         @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
                     `}</style>
 
@@ -3094,7 +3220,7 @@
                     )}
 
                     <div className="w-full max-w-[1500px] h-full flex flex-col bg-slate-50 shadow-2xl overflow-hidden mx-auto">
-                        <div className="shrink-0 flex flex-col bg-white border-b border-slate-200 z-40">
+                        <div className={`system-ui-shell shrink-0 flex flex-col bg-white border-b border-slate-200 z-40 overflow-hidden ${systemUiCollapsed ? 'is-collapsed' : 'is-expanded'}`}>
                             <div className="p-5 pb-0 pt-6">
                                 <div className="bg-[#0f172a] rounded-xl shadow-lg border border-slate-800 flex flex-col overflow-hidden">
                                     <div className="px-5 py-3 flex justify-between items-center border-b border-slate-800/80 bg-[#0b1120] gap-4">
@@ -3103,7 +3229,7 @@
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <div className="flex items-center mb-0.5">
                                                     <span className="text-[14px] font-black text-slate-200 leading-none">MerchOps</span>
-                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v2.1.2 F8 즉시출력·테이블 단축버튼</span>
+                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v2.1.4 FIFO·스크롤 UI 자동접힘</span>
                                                 </div>
                                                 <span className="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">MAIN WORKSPACE</span>
                                             </div>
@@ -3132,7 +3258,7 @@
                             <MainToolbar state={appState} actions={appActions} availableCatalogs={availableCatalogs} availableCategories={availableCategories} />
                         </div>
 
-                        <div className="flex-1 overflow-auto p-5 pt-0 bg-slate-100 mt-4">
+                        <div ref={contentScrollRef} onScroll={handleWorkspaceScroll} className={`flex-1 overflow-auto p-5 pt-0 bg-slate-100 transition-all duration-200 ${systemUiCollapsed ? 'mt-0 pt-4' : 'mt-4'}`}>
                             {isMasterEmpty ? (
                                 <WelcomeGuide onUpload={(e) => customActions.handleFileUpload(e, 'master')} onCloudSync={customActions.handleCloudSync} />
                             ) : (
