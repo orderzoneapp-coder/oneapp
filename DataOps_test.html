@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99v Closing Base Price Fix)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99w Transfer Check Simple Report)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -51,7 +51,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.99v Closing Base Price Fix...</div>
+        <div class="loader-text">ONEAPP DataOps v8.99w Transfer Check Simple Report...</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -328,7 +328,7 @@
            - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
            ======================================================================= */
         const CONFIG_MODULE = Object.freeze({
-            version: 'v8.99v Closing Base Price Fix',
+            version: 'v8.99w Transfer Check Simple Report',
             categoryMap: Object.freeze({
                 '10': '채소.과일',
                 '20': '수산.축산',
@@ -3385,8 +3385,8 @@
                         .map(([vendor, data]) => `${vendor}(${formatMoney(safeNum(data.fee) || safeNum(data.amount))})`)
                         .join(', ');
 
-                    // v8.99q: 2전송 검증 결과 엑셀은 3개 시트로 단순화한다.
-                    // 기본 시트: 2전송_브리핑 / 거래처별수익 / 품목별수익
+                    // v8.99w: 2전송검증은 버튼 클릭 팝업 브리핑 + 엑셀 3시트로 단순화한다.
+                    // 엑셀 시트: 단가변동 / 거래처별수익 / 품목별수익. 2전송_브리핑 시트는 생성하지 않는다.
                     const createProfitSummaryRows = (detailRows = []) => {
                         const totals = detailRows.reduce((acc, r) => {
                             acc.qty += safeNum(r['판매수량']);
@@ -3503,20 +3503,70 @@
                         (detailRows.length ? detailRows : [{ '메시지': '데이터 없음' }]).forEach(row => aoa.push(detailColumns.map(col => row[col] ?? '')));
                         return aoa;
                     };
-                    const makeBriefingSheet = ({ summaryRows = [], issueSummaryRows = [], checkRows = [] }) => {
-                        const summary = summaryRows[0] || {};
-                        const aoa = [['2전송_브리핑'], [], ['전체 요약', '값']];
-                        [
-                            '총판매수량','총공급가액','총공제금액','총실매출','총매입원가','총수익','수익률(%)','판매제외행','확인필요건수','거래처수','품목수'
-                        ].forEach(k => aoa.push([k, summary[k] ?? 0]));
-                        aoa.push([], ['주요 이슈 요약', '건수']);
-                        (issueSummaryRows.length ? issueSummaryRows : [{ '이슈': '주요 이슈 없음', '건수': 0 }]).forEach(r => aoa.push([r['이슈'], r['건수']]));
-                        const detailColumns = ['구분','심각도','거래처명','품목코드','품명','규격','수량','공급가액','매입원가','수익','수익률','사유','필요조치'];
-                        aoa.push([], ['확인필요 상세'], detailColumns);
-                        (checkRows.length ? checkRows : [{ '구분': '확인완료', '심각도': '정상', '사유': '확인 필요 항목 없음', '필요조치': '' }]).forEach(row => {
-                            aoa.push(detailColumns.map(col => row[col] ?? ''));
-                        });
+                    const makeSimpleSheet = (title, columns = [], rows = []) => {
+                        const aoa = [[title], [], columns];
+                        if (rows.length) rows.forEach(row => aoa.push(columns.map(col => row[col] ?? '')));
+                        else aoa.push(['데이터 없음']);
                         return aoa;
+                    };
+                    const aggregateTransferPriceChanges = (rows = []) => {
+                        const map = {};
+                        rows.forEach(r => {
+                            const qty = safeNum(r['판매수량']);
+                            const systemPrice = safeNum(r['실제판매단가']);
+                            const uploadPrice = safeNum(r['기준단가']);
+                            if (qty === 0) return;
+                            const systemAmount = safeNum(r['공급가액']) || (qty * systemPrice);
+                            const uploadAmount = qty * uploadPrice;
+                            const diffAmount = uploadAmount - systemAmount;
+                            if (diffAmount === 0 && systemPrice === uploadPrice) return;
+                            const customer = safeStr(r['거래처명'], '미지정');
+                            const detailCustomer = safeStr(r['규격'], '');
+                            const code = safeStr(r['품목코드'], '');
+                            const name = safeStr(r['품명'], '');
+                            const key = `${customer}|${detailCustomer}|${code}|${name}`;
+                            if (!map[key]) {
+                                map[key] = {
+                                    '거래처': customer,
+                                    '세부거래처': detailCustomer,
+                                    '상품': name,
+                                    '총수량': 0,
+                                    '전산금액': 0,
+                                    '업로드금액': 0,
+                                    '변동금액': 0,
+                                    _systemPriceSum: 0,
+                                    _uploadPriceSum: 0,
+                                    _priceCount: 0
+                                };
+                            }
+                            const a = map[key];
+                            a['총수량'] += qty;
+                            a['전산금액'] += systemAmount;
+                            a['업로드금액'] += uploadAmount;
+                            a['변동금액'] += diffAmount;
+                            a._systemPriceSum += systemPrice;
+                            a._uploadPriceSum += uploadPrice;
+                            a._priceCount += 1;
+                        });
+                        return Object.values(map).map(a => {
+                            const systemAvg = a._priceCount ? Math.round(a._systemPriceSum / a._priceCount) : 0;
+                            const uploadAvg = a._priceCount ? Math.round(a._uploadPriceSum / a._priceCount) : 0;
+                            let type = '확인필요';
+                            if (safeNum(a['업로드금액']) > safeNum(a['전산금액'])) type = '인상';
+                            else if (safeNum(a['업로드금액']) < safeNum(a['전산금액'])) type = '인하';
+                            if (systemAvg <= 0 || uploadAvg <= 0) type = '확인필요';
+                            return {
+                                '거래처': a['거래처'],
+                                '세부거래처': a['세부거래처'],
+                                '상품': a['상품'],
+                                '총수량': a['총수량'],
+                                '전산금액': Math.round(a['전산금액']),
+                                '업로드금액': Math.round(a['업로드금액']),
+                                '변동금액': Math.round(a['변동금액']),
+                                '구분': type
+                            };
+                        }).filter(r => safeNum(r['변동금액']) !== 0 || r['구분'] === '확인필요')
+                          .sort((a, b) => Math.abs(safeNum(b['변동금액'])) - Math.abs(safeNum(a['변동금액'])) || safeStr(a['거래처']).localeCompare(safeStr(b['거래처']), 'ko'));
                     };
 
                     const transferMap = {};
@@ -3678,7 +3728,8 @@
                         finalRows[0].메모 = [finalRows[0].메모, `공제:${formatMoney(transferCleanStats.feeAmount)} ${summarizeFeeMap(transferFeeVendors)}`].filter(Boolean).join(' | ');
                     }
 
-                    // v8.99q: 2전송 검증 엑셀은 3시트 보고서로 생성한다. 판매가검증은 브리핑/수익 비고에 통합한다.
+                    // v8.99w: 판매가검증은 단가변동 시트로만 단순 출력한다.
+                    // 단가변동은 행단위가 아니라 거래처+세부거래처+상품 기준 합계로 출력한다.
                     const transferPriceConfigForExport = buildTransferPriceConfig();
                     const purchasePriceRows = [];
                     const purchaseByCustomerCode = {};
@@ -3827,8 +3878,11 @@
                         '저마진품목수': itemProfitRows.filter(r => safeNum(r['수익']) >= 0 && parseNumber(String(r['수익률(%)']).replace('%','')) < 5).length,
                         '확인필요품목수': itemProfitRows.filter(r => safeNum(r['확인필요건수']) > 0).length
                     }];
+                    const priceChangeRows = aggregateTransferPriceChanges(priceValidationRows);
+                    const priceChangeColumns = ['거래처','세부거래처','상품','총수량','전산금액','업로드금액','변동금액','구분'];
+                    const totalChangeAmount = priceChangeRows.reduce((sum, r) => sum + safeNum(r['변동금액']), 0);
                     const wb = XLSX.utils.book_new();
-                    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(makeBriefingSheet({ summaryRows: [totalSummary], issueSummaryRows, checkRows })), '2전송_브리핑');
+                    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(makeSimpleSheet('단가변동', priceChangeColumns, priceChangeRows)), '단가변동');
                     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(makeReportSheet('거래처별수익', customerSummary, ['거래처명','단가그룹','판매수량','공급가액','공제금액','실매출','매입원가','수익','수익률(%)','품목수','확인필요건수','비고'], customerProfitRows)), '거래처별수익');
                     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(makeReportSheet('품목별수익', itemSummary, ['품목코드','품명','규격','판매수량','평균판매단가','공급가액','공제금액','실매출','매입원가','평균원가','수익','수익률(%)','판매처수','주요판매처','구매처','확인필요건수','비고'], itemProfitRows)), '품목별수익');
                     const today = new Date();
@@ -3840,7 +3894,25 @@
                     setTargetDateStr(`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`);
                     setAppStep('closing');
                     setAnalysisMeta({ fileLabel, analyzedAt: formatAnalysisTime(new Date()), status: 'done' });
-                    setAlertMsg(`✅ 2전송 직접검증 완료\n\nERP 합계행/월계행/출력시간/공제금액 행을 상품에서 제외하고 인식했습니다.\n상품 검증 행: ${finalRows.length}개\n구매 제외 행: ${transferCleanStats.purchaseSkipped}개 / 판매 제외 행: ${transferCleanStats.salesSkipped}개\n공제금액: ${formatMoney(transferCleanStats.feeAmount)} (${transferCleanStats.feeRows}행, 공급가/정산/정리 기준)\n판매현황 T열 단가 항목명은 청과로 인식합니다. (정과 헤더는 청과로 호환)\n\n잔량은 구매수량 - 판매수량 기준으로 표시하며, 공제금액은 상품 잔량 계산에 넣지 않습니다.`);
+                    const customerNeedCount = customerSummary[0] ? safeNum(customerSummary[0]['확인필요거래처수']) : 0;
+                    const itemNeedCount = itemSummary[0] ? safeNum(itemSummary[0]['확인필요품목수']) : 0;
+                    const deficitItemCount = itemSummary[0] ? safeNum(itemSummary[0]['적자품목수']) : 0;
+                    const lowMarginItemCount = itemSummary[0] ? safeNum(itemSummary[0]['저마진품목수']) : 0;
+                    const changeText = priceChangeRows.length > 0
+                        ? `단가변동: 있음
+변동건수: ${priceChangeRows.length}건
+총 변동금액: ${totalChangeAmount >= 0 ? '+' : ''}${formatMoney(totalChangeAmount)}원`
+                        : '단가변동: 없음';
+                    setAlertMsg(`✅ 2전송검증 완료
+
+${changeText}
+
+거래처별 수익률 확인필요: ${customerNeedCount}건
+품목별 수익률 확인필요: ${itemNeedCount}건
+적자 품목: ${deficitItemCount}건 / 저마진 품목: ${lowMarginItemCount}건
+
+엑셀 보고서를 생성했습니다.
+시트: 단가변동 / 거래처별수익 / 품목별수익`);
                 } catch (err) {
                     console.error(err);
                     setAlertMsg(`2전송 검증 중 오류가 발생했습니다.\n\n${err && err.message ? err.message : err}`);
@@ -4172,7 +4244,7 @@
                             <div className="flex flex-col md:flex-row md:items-center gap-4">
                                 <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition" onClick={() => document.getElementById('main-scroll-container')?.scrollTo({top:0, behavior:'smooth'})} title="클릭시 최상단 이동">
                                     <span className="text-blue-600 mr-2">ONEAPP</span> DataOps
-                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">v8.99v Closing Base Price Fix</span>
+                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">v8.99w Transfer Check Simple Report</span>
                                 </h1>
                             </div>
 
