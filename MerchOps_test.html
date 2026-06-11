@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.0 F8 빠른 엑셀출력]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.2 F8 즉시 엑셀출력]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -1277,7 +1277,7 @@
 
             // ============================================================
             // [M-OUTPUT-01] F8 빠른 엑셀 출력
-            // 역할: F8 마스터 적용 직후 한 번 더 F8을 누르면 출력검증센터 이동 없이 현재 화면 기준 엑셀을 즉시 생성한다.
+            // 역할: F8을 누르면 확인 팝업 후 마스터 적용과 엑셀 출력을 한 번에 즉시 실행한다.
             // 정책: 빠른 출력은 검증센터의 수동 검수 단계를 건너뛰는 운영 편의 기능이다. 도매/ERP 용어는 출력센터 v2.6.7 기준을 따른다.
             // ============================================================
             const handleQuickExcelExport = useCallback(() => {
@@ -1392,15 +1392,8 @@
                 const targets = ui.selectedRows.size > 0 ? ui.selectedRows : new Set(fullDisplayRows.map(r => r.코드));
                 if (targets.size === 0) return ui.showToast('⚠️ 반영할 항목이 없습니다.');
 
-                const nowMs = Date.now();
-                if (quickExcelReadyRef.current.ready && (nowMs - quickExcelReadyRef.current.at) <= 15000) {
-                    handleQuickExcelExport();
-                    return;
-                }
-                
-                if (ui.selectedRows.size === 0) {
-                    if (!window.confirm(`F8 마스터 적용\n\n현재 화면 전체 ${targets.size}건을 마스터에 저장합니다.\n저장 후 15초 안에 F8을 한 번 더 누르면 출력검증센터를 거치지 않고 엑셀을 바로 출력합니다.\n\n계속 진행하시겠습니까?`)) return;
-                }
+                const targetModeText = ui.selectedRows.size > 0 ? '선택한 상품' : '현재 화면 전체';
+                if (!window.confirm(`F8 마스터 적용 + 즉시 엑셀 출력\n\n${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증센터를 거치지 않고 엑셀을 바로 생성합니다.\n\n계속 진행하시겠습니까?`)) return;
                 
                 let newMaster = { ...data.masterProducts }, commitCount = 0;
                 let localLogs = [];
@@ -1491,9 +1484,10 @@
                 }
 
                 data.setMasterProducts(newMaster); 
-                ui.setSelectedRows(new Set()); 
                 quickExcelReadyRef.current = { ready: true, at: Date.now(), count: commitCount, codes: Array.from(targets) };
-                ui.showToast(`✅ ${commitCount}건 마스터 업데이트 완료. F8을 한 번 더 누르면 엑셀을 바로 출력합니다.`);
+                handleQuickExcelExport();
+                ui.setSelectedRows(new Set()); 
+                ui.showToast(`✅ ${commitCount}건 마스터 적용 후 엑셀을 바로 출력했습니다.`);
             }, [ui.selectedRows, fullDisplayRows, data.masterProducts, data.managedItems, data.setMasterProducts, data.addHistoryLogs, config.masterLinks, ui, handleQuickExcelExport]);
 
             const toggleAllRows = useCallback(() => {
@@ -1783,6 +1777,51 @@
             const { activeTags, selectedRows, globalSearch, priceFilter, basicSearch, fullDisplayRows } = state;
             const { handleStopSales, handleExcludeSelectedFromUpdate, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, setPriceFilter, setSelectedRows, setBasicSearch, handleOpenExportCenter, handleCommitEstimate } = actions;
             const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+            const [tableShortcuts, setTableShortcuts] = useState(() => {
+                try {
+                    const raw = localStorage.getItem('merchTableShortcuts_v870');
+                    const parsed = raw ? JSON.parse(raw) : [];
+                    return Array.isArray(parsed) ? parsed.filter(s => s && s.enabled !== false).slice(0, 5) : [];
+                } catch (e) {
+                    return [];
+                }
+            });
+            const [activeTableShortcutId, setActiveTableShortcutId] = useState(() => localStorage.getItem('merchActiveTableShortcut_v870') || '');
+
+            useEffect(() => {
+                const reloadShortcuts = () => {
+                    try {
+                        const raw = localStorage.getItem('merchTableShortcuts_v870');
+                        const parsed = raw ? JSON.parse(raw) : [];
+                        setTableShortcuts(Array.isArray(parsed) ? parsed.filter(s => s && s.enabled !== false).slice(0, 5) : []);
+                    } catch (e) {
+                        setTableShortcuts([]);
+                    }
+                };
+                const onStorage = (e) => { if (e.key === 'merchTableShortcuts_v870' || e.key === 'config_sync_trigger') reloadShortcuts(); };
+                window.addEventListener('storage', onStorage);
+                return () => window.removeEventListener('storage', onStorage);
+            }, []);
+
+            const applyTableShortcut = (shortcut) => {
+                if (!shortcut) return;
+                const role = shortcut.role || 'estimate';
+                const cols = Array.isArray(shortcut.columns) ? shortcut.columns.filter(Boolean) : [];
+                if (cols.length === 0) {
+                    actions.showToast?.('⚠️ 단축버튼에 등록된 노출 항목이 없습니다.');
+                    return;
+                }
+                const normalizedCols = ['품목코드', ...cols.filter(col => col !== '품목코드')];
+                state.config.setVisibleUploadCols(prev => ({
+                    ...(prev || {}),
+                    [role]: normalizedCols
+                }));
+                const id = shortcut.id || shortcut.name || '';
+                setActiveTableShortcutId(id);
+                try { localStorage.setItem('merchActiveTableShortcut_v870', id); } catch (e) {}
+                setSelectedRows(new Set());
+                actions.showToast?.(`✅ [${shortcut.name || '테이블'}] 테이블 노출 설정 적용`);
+            };
 
             const applyPriceFilter = (value) => {
                 setPriceFilter(value);
@@ -1850,8 +1889,8 @@
                                 <i className="fas fa-magic mr-2 text-[14px]"></i> 스마트 파서
                             </button>
 
-                            <button onClick={handleCommitEstimate} disabled={fullDisplayRows.length === 0} className={`h-9 px-3 rounded-xl text-[12px] font-black shadow-sm flex items-center shrink-0 ${fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700 border border-slate-800' : 'bg-slate-200 text-slate-400 border border-slate-200 cursor-not-allowed'}`} title="마스터 DB 저장 / 저장 직후 F8 재입력 시 빠른 엑셀 출력">
-                                <i className="fas fa-save mr-1.5 text-[13px]"></i> F8 저장/빠른출력
+                            <button onClick={handleCommitEstimate} disabled={fullDisplayRows.length === 0} className={`h-9 px-3 rounded-xl text-[12px] font-black shadow-sm flex items-center shrink-0 ${fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700 border border-slate-800' : 'bg-slate-200 text-slate-400 border border-slate-200 cursor-not-allowed'}`} title="마스터 DB 저장 후 즉시 엑셀 출력">
+                                <i className="fas fa-save mr-1.5 text-[13px]"></i> F8 저장+엑셀출력
                             </button>
 
                             <button onClick={handleOpenExportCenter} disabled={fullDisplayRows.length === 0} className={`h-9 px-3 rounded-xl text-[12px] font-black shadow-sm flex items-center shrink-0 ${fullDisplayRows.length > 0 ? 'bg-emerald-600 text-white hover:bg-emerald-700 border border-emerald-700' : 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed'}`} title="통합 출력 센터 진입 (F9)">
@@ -1878,7 +1917,29 @@
                                 </button>
                             </div>
 
-                            <div className="flex-1 min-w-[10px]"></div>
+                            {tableShortcuts.length > 0 && (
+                                <div className="flex-1 min-w-[260px] flex justify-center">
+                                    <div className="flex items-center justify-center gap-1.5 px-2 py-1 rounded-xl border border-dashed border-slate-300 bg-white/80 shadow-sm max-w-full overflow-x-auto custom-scrollbar">
+                                        <span className="text-[10px] font-black text-slate-400 mr-1 shrink-0">테이블</span>
+                                        {tableShortcuts.map(shortcut => {
+                                            const id = shortcut.id || shortcut.name || '';
+                                            const active = activeTableShortcutId === id;
+                                            return (
+                                                <button
+                                                    key={id || shortcut.name}
+                                                    onClick={() => applyTableShortcut(shortcut)}
+                                                    className={`h-7 px-2.5 rounded-lg text-[11px] font-black border shadow-sm transition-all shrink-0 ${active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200'}`}
+                                                    title={`테이블 노출 항목: ${(shortcut.columns || []).join(', ')}`}
+                                                >
+                                                    <i className="fas fa-table-columns mr-1 text-[10px]"></i>{shortcut.name}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {tableShortcuts.length === 0 && <div className="flex-1 min-w-[10px]"></div>}
                             
                             <div className="flex items-center gap-2 shrink-0">
                             {selectedRows.size > 0 && (
@@ -3042,7 +3103,7 @@
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <div className="flex items-center mb-0.5">
                                                     <span className="text-[14px] font-black text-slate-200 leading-none">MerchOps</span>
-                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v2.0.9 단위매핑·적용룰 추적</span>
+                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v2.1.2 F8 즉시출력·테이블 단축버튼</span>
                                                 </div>
                                                 <span className="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">MAIN WORKSPACE</span>
                                             </div>
