@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99u Lot Issue Visibility Fix)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99v Closing Base Price Fix)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -51,7 +51,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.99u Lot Issue Visibility Fix...</div>
+        <div class="loader-text">ONEAPP DataOps v8.99v Closing Base Price Fix...</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -328,7 +328,7 @@
            - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
            ======================================================================= */
         const CONFIG_MODULE = Object.freeze({
-            version: 'v8.99u Lot Issue Visibility Fix',
+            version: 'v8.99v Closing Base Price Fix',
             categoryMap: Object.freeze({
                 '10': '채소.과일',
                 '20': '수산.축산',
@@ -1011,6 +1011,24 @@
                                 _sourceSheet: sheetName || '', _sourceFileName: file.name || '', _uploadRole: role, _fileType: isClosingRestoreRow ? 'CLOSING_RESTORE' : 'RAW_DATA'
                             };
 
+                            // v8.99v: 수불마감/시스템누적을 기초재고 슬롯에서 읽을 때는 전용 해석을 강제한다.
+                            // - 수불마감의 입고/출고는 현재 입출고가 아니므로 무시한다.
+                            // - 기초재고는 잔량/기말실사만 사용한다.
+                            // - 입고가는 입고가/매입단가(원가)만 사용하고 재고금액/기말재고액은 단가 후보에서 제외한다.
+                            if (role === 'prev' && isClosingRestoreRow) {
+                                const closingQty = getExactRawVal(rowObj, ['잔량', '기말실사(이월수량)', '기말실사', '수량']);
+                                const closingPrice = getExactRawVal(rowObj, ['입고가', '매입단가(원가)', '매입단가', '입고단가']);
+                                const closingVendor = getExactRawVal(rowObj, ['구매처', '매입처(Lot)', '매입처', '원구매처', '거래처명']);
+                                const closingName = getExactRawVal(rowObj, ['품명', '상품명(규격)', '품목명', '상품명']);
+                                if (closingQty !== null) normObj.수량 = parseNumber(closingQty);
+                                if (closingPrice !== null) normObj.단가 = parseNumber(closingPrice);
+                                else normObj.단가 = 0;
+                                if (closingVendor !== null) normObj.거래처 = safeStr(closingVendor, '미지정');
+                                if (closingName !== null) normObj.품명 = safeStr(closingName, normObj.품명);
+                                normObj.매입처매칭 = '';
+                                normObj._closingBaseOnly = true;
+                            }
+
                             // v8.99s: 역할별 거래처 의미를 강제 분리한다.
                             // 구매현황의 거래처명 = 매입처/Lot, 판매현황의 거래처명 = 판매처, 판매현황의 구매처 = 매입처/Lot 매칭값.
                             // 공통 vendor 매핑을 그대로 쓰면 판매처와 구매처가 뒤섞여 Lot 매칭/출고내역이 깨진다.
@@ -1272,16 +1290,15 @@
                         if (item?._uploadRole === 'in' || item?._uploadRole === 'out') return false;
                         return item?._fileType === 'CLOSING_RESTORE' || rawHas(raw, '로스/조정수량') || rawHas(raw, '기초수량') || rawHas(raw, '기말실사(이월수량)') || isStockLedgerItem(item);
                     };
-                    const getClosingBaseQty = (item) => rawNumStrict(item._raw, ['기초수량', '재고'], 0);
-                    const getClosingInQty = (item) => 0; // 수불마감의 입고는 현재 입고가 아니므로 DataOps 현재 수불 계산에 사용하지 않는다.
-                    const getClosingOutQty = (item) => 0; // 수불마감의 출고는 현재 출고가 아니므로 DataOps 현재 수불 계산에 사용하지 않는다.
-                    const getClosingFinalQty = (item) => rawNumStrict(item._raw, ['기말실사(이월수량)', '기말실사', '잔량'], item.수량 || 0);
-                    const getClosingPrice = (item) => rawNumStrict(item._raw, ['매입단가(원가)', '입고가', '단가'], item.단가 || 0);
-                    const getClosingAdjustQty = (item) => {
-                        // v8.65: 오차는 파일의 문구나 과거 조정값을 믿지 않고 현재 테이블 수학으로만 계산한다.
-                        // 오차 = 잔량 - (재고 + 입고 - 출고)
-                        return getClosingFinalQty(item) - (getClosingBaseQty(item) + getClosingInQty(item) - getClosingOutQty(item));
-                    };
+                    // v8.99v: 수불마감은 기초재고 자료다.
+                    // 수불마감 내부의 과거 재고/입고/출고/계산잔량은 현재 작업의 입출고 계산에 사용하지 않는다.
+                    // 기초재고는 마감 시점의 최종 보유수량(잔량/기말실사)만 사용한다.
+                    const getClosingFinalQty = (item) => rawNumStrict(item._raw, ['잔량', '기말실사(이월수량)', '기말실사', '수량'], item.수량 || 0);
+                    const getClosingBaseQty = (item) => getClosingFinalQty(item);
+                    const getClosingInQty = (item) => 0;
+                    const getClosingOutQty = (item) => 0;
+                    const getClosingPrice = (item) => rawNumStrict(item._raw, ['입고가', '매입단가(원가)', '매입단가', '입고단가'], item.단가 || 0);
+                    const getClosingAdjustQty = (item) => 0;
                     const closingEndItems = parsedEnd.filter(isClosingItem); const hasClosingEnd = closingEndItems.length > 0;
                     // v8.99r: 수불마감/시스템누적은 기초재고 자료로만 사용한다.
                     // 파일 내부의 입고/출고는 현재 구매/판매 수량이 아니므로 계산에 사용하지 않는다.
@@ -1317,6 +1334,8 @@
                             const outQty = getClosingOutQty(item);
                             let actualQty = getClosingFinalQty(item);
                             const adjustQty = getClosingAdjustQty(item);
+                            // v8.99v: 수불마감 기초재고는 잔량 0 이하 행을 현재 기준재고로 올리지 않는다.
+                            if (baseQty <= 0) return;
 
                             if (!pData[batchKey]) {
                                 let tRev = 0, tCogs = 0; Object.values(vendors).forEach(v => { tRev += v.rev; tCogs += v.cogs; });
@@ -1371,6 +1390,9 @@
                     };
 
                     const addStock = (item, type, qtyToApply) => {
+                        // v8.99v: 수불마감/시스템누적 기초재고는 잔량 0 이하 행을 제외한다.
+                        // 과거 입출고 흔적만 있고 최종 보유재고가 없는 Lot의 입고가가 화면에 뜨는 문제를 차단한다.
+                        if (type === 'prev' && isClosingItem(item) && safeNum(qtyToApply) <= 0) return;
                         // 제외거래처는 외부 구매/판매 계산에서 제외한다. v8.71 기준 3우리도 확인용 내부전표라 입고 계산에서 제외한다.
                         if (type === 'in' && isExcluded(item.거래처)) return;
                         const code = String(item.코드 || 'NO_CODE'); const price = parseNumber(item.단가); const date = String(item.일자 || ''); const name = item.품명; const vendor = item.거래처 || (type === 'prev' ? '이월재고' : '미지정');
@@ -4150,7 +4172,7 @@
                             <div className="flex flex-col md:flex-row md:items-center gap-4">
                                 <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition" onClick={() => document.getElementById('main-scroll-container')?.scrollTo({top:0, behavior:'smooth'})} title="클릭시 최상단 이동">
                                     <span className="text-blue-600 mr-2">ONEAPP</span> DataOps
-                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">v8.99u Lot Issue Visibility Fix</span>
+                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">v8.99v Closing Base Price Fix</span>
                                 </h1>
                             </div>
 
