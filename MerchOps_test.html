@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.0.9 단위매핑·적용룰 추적]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.0 F8 빠른 엑셀출력]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -758,6 +758,7 @@
         };
 
         const useMerchActions = (config, data, ui, fullDisplayRows) => {
+            const quickExcelReadyRef = useRef({ ready: false, at: 0, count: 0, codes: [] });
             
             const handleCloudSync = useCallback(async (type) => { 
                 if (!config.cloudUrl) return ui.setAlertMsg("클라우드 URL이 설정되지 않았습니다. 우측 상단 톱니바퀴에서 URL을 세팅해주세요.");
@@ -1274,12 +1275,131 @@
                 ui.showToast(`✅ ${count}개의 상품에서 [${tagName}] 태그를 삭제했습니다.`);
             }, [data.masterProducts, data.setMasterProducts, data.addHistoryLogs, ui, handleRemoveFilter]);
 
+            // ============================================================
+            // [M-OUTPUT-01] F8 빠른 엑셀 출력
+            // 역할: F8 마스터 적용 직후 한 번 더 F8을 누르면 출력검증센터 이동 없이 현재 화면 기준 엑셀을 즉시 생성한다.
+            // 정책: 빠른 출력은 검증센터의 수동 검수 단계를 건너뛰는 운영 편의 기능이다. 도매/ERP 용어는 출력센터 v2.6.7 기준을 따른다.
+            // ============================================================
+            const handleQuickExcelExport = useCallback(() => {
+                if (!window.XLSX) return ui.showToast('⚠️ 엑셀 라이브러리 로드 대기 중입니다.');
+                if (!fullDisplayRows || fullDisplayRows.length === 0) return ui.showToast('⚠️ 빠른 출력할 데이터가 없습니다.');
+
+                const readyCodes = Array.isArray(quickExcelReadyRef.current.codes) ? quickExcelReadyRef.current.codes : [];
+                const readyCodeSet = new Set(readyCodes);
+                const targetRows = readyCodes.length > 0
+                    ? fullDisplayRows.filter(row => readyCodeSet.has(row.코드))
+                    : (ui.selectedRows.size > 0 ? fullDisplayRows.filter(row => ui.selectedRows.has(row.코드)) : fullDisplayRows);
+
+                if (targetRows.length === 0) return ui.showToast('⚠️ 선택된 빠른 출력 대상이 없습니다.');
+
+                const getBestValue = (row, key, defaultValue = '') => {
+                    const finalData = row.finalData || {};
+                    const sources = row.sources || {};
+                    const inventory = sources.inventory || {};
+                    const estimate = sources.estimate || {};
+                    const purchase = sources.purchase || {};
+                    const sales = sources.sales || {};
+                    const master = data.masterProducts[row.코드] || {};
+                    if (finalData[key] !== undefined && finalData[key] !== '') return finalData[key];
+                    if (inventory[key] !== undefined && inventory[key] !== '') return inventory[key];
+                    if (estimate[key] !== undefined && estimate[key] !== '') return estimate[key];
+                    if (purchase[key] !== undefined && purchase[key] !== '') return purchase[key];
+                    if (sales[key] !== undefined && sales[key] !== '') return sales[key];
+                    if (master[key] !== undefined && master[key] !== '') return master[key];
+                    return defaultValue;
+                };
+
+                const getBestNum = (row, key, defaultValue = 0) => window.parseNum(getBestValue(row, key, defaultValue));
+                const getBestStr = (row, key, defaultValue = '') => {
+                    const value = getBestValue(row, key, defaultValue);
+                    return value !== undefined && value !== null ? String(value) : defaultValue;
+                };
+                const isValidSubItemCode = (code) => {
+                    const s = String(code || '').trim();
+                    return s && s !== '0' && s !== '00' && s !== '-' && s.toLowerCase() !== 'undefined' && s.toLowerCase() !== 'null';
+                };
+                const buildThemeFlags = (row) => {
+                    const promo = getBestNum(row, '행사가') > 0;
+                    const themeNo = promo ? window.parseNum(getBestValue(row, '_theme') || getBestValue(row, 'promoTheme')) : 0;
+                    return [1, 2, 3, 4, 5].map(n => themeNo === n ? '1' : '');
+                };
+                const getSaleCode = (row) => {
+                    const finalData = row.finalData || {};
+                    if (finalData._salesStopRequested === true || String(finalData['판매여부']) === '0') return '0';
+                    const out = getBestNum(row, '출고가');
+                    const promo = getBestNum(row, '행사가');
+                    return (out > 0 || promo > 0) ? '1' : '0';
+                };
+                const getAppliedPrice = (row) => {
+                    const promo = getBestNum(row, '행사가');
+                    const out = getBestNum(row, '출고가');
+                    return promo > 0 ? promo : out;
+                };
+                const calculateSubInfo = (row) => {
+                    const subCode = getBestStr(row, '1종코드');
+                    const div1 = getBestNum(row, '1종연산');
+                    if (!isValidSubItemCode(subCode) || div1 <= 0) return null;
+                    const ROUND_UNIT = 100;
+                    const inPrice = getBestNum(row, '입고가');
+                    const outPrice = getBestNum(row, '출고가');
+                    const outsrc = getBestNum(row, '외주비');
+                    const extraCost = getBestNum(row, '경비');
+                    const subIn = inPrice > 0 ? Math.round(((inPrice + outsrc) / div1) / ROUND_UNIT) * ROUND_UNIT : 0;
+                    const rawSubOut = outPrice > 0 ? Math.round((outPrice / div1) + extraCost) : 0;
+                    const subOut = rawSubOut > 0 ? Math.round(rawSubOut / 10) * 10 : 0;
+                    return { code: subCode, spec: getBestStr(row, '1종규격'), subIn, subOut };
+                };
+
+                const wb = window.XLSX.utils.book_new();
+                const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', 'A판매', 'n', 'B판매', 'n', '최종(전송)', 'n', '행사', 'n', '1']];
+                const shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', 'B도매가', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
+                let subOutputCount = 0;
+
+                targetRows.forEach(row => {
+                    const code = row.코드;
+                    const saleCode = getSaleCode(row);
+                    const inPrice = getBestNum(row, '입고가');
+                    const finalOut = getAppliedPrice(row);
+                    const erpASale = getBestNum(row, 'A판매') || getBestNum(row, '도매A');
+                    const erpBSale = getBestNum(row, 'B판매') || getBestNum(row, '도매B');
+                    const pMarket = getBestNum(row, '시중가');
+                    const shopBPrice = getBestNum(row, 'B판매가');
+                    const shopBWholesale = getBestNum(row, 'B도매가');
+                    const finalStockRaw = getBestValue(row, '재고수량', '');
+                    const finalStock = finalStockRaw !== '' ? window.parseNum(finalStockRaw) : 999;
+                    const themeFlags = buildThemeFlags(row);
+
+                    erpData.push([code, inPrice, '0', finalOut, '0', getBestNum(row, '입고B') || '', 'n', erpASale || '', 'n', erpBSale || '', 'n', inPrice, 'n', getBestNum(row, '행사가') || '', 'n', saleCode]);
+                    shopData.push([code, getBestStr(row, '품목명'), getBestStr(row, '규격'), finalOut, (erpASale > 0 ? erpASale : finalOut), (pMarket > 0 ? pMarket : finalOut), shopBPrice || '', shopBWholesale || '', 0, 0, 0, 0, getBestStr(row, '브랜드'), getBestStr(row, '간단설명'), saleCode, finalStock, ...themeFlags, getBestStr(row, '검색어등록')]);
+
+                    const subInfo = calculateSubInfo(row);
+                    if (subInfo) {
+                        const subMaster = data.masterProducts[subInfo.code] || {};
+                        erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', subInfo.subIn, 'n', '', 'n', saleCode]);
+                        shopData.push([subInfo.code, subMaster['품목명'] || `${getBestStr(row, '품목명')} (소분)`, subMaster['규격'] || subInfo.spec || '', subInfo.subOut, subInfo.subOut, subInfo.subOut, '', '', 0, 0, 0, 0, subMaster['브랜드'] || getBestStr(row, '브랜드'), subMaster['간단설명'] || getBestStr(row, '간단설명'), saleCode, finalStock, ...themeFlags, subMaster['검색어등록'] || getBestStr(row, '검색어등록')]);
+                        subOutputCount++;
+                    }
+                });
+
+                window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shopData), '쇼핑몰업로드');
+                window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), 'ERP업데이트');
+                window.XLSX.writeFile(wb, `통합업로드용_QuickF8_${new Date().toISOString().slice(0,10)}.xlsx`);
+                quickExcelReadyRef.current = { ready: false, at: 0, count: 0, codes: [] };
+                ui.showToast(`✅ F8 빠른 엑셀 출력 완료: 원물 ${targetRows.length}건 + 소분 ${subOutputCount}건`);
+            }, [fullDisplayRows, ui.selectedRows, data.masterProducts, ui]);
+
             const handleCommitEstimate = useCallback(() => {
                 const targets = ui.selectedRows.size > 0 ? ui.selectedRows : new Set(fullDisplayRows.map(r => r.코드));
                 if (targets.size === 0) return ui.showToast('⚠️ 반영할 항목이 없습니다.');
+
+                const nowMs = Date.now();
+                if (quickExcelReadyRef.current.ready && (nowMs - quickExcelReadyRef.current.at) <= 15000) {
+                    handleQuickExcelExport();
+                    return;
+                }
                 
                 if (ui.selectedRows.size === 0) {
-                    if (!window.confirm(`선택된 항목이 없습니다.\n현재 화면에 있는 전체 ${targets.size}건의 데이터를 모두 저장하시겠습니까?`)) return;
+                    if (!window.confirm(`F8 마스터 적용\n\n현재 화면 전체 ${targets.size}건을 마스터에 저장합니다.\n저장 후 15초 안에 F8을 한 번 더 누르면 출력검증센터를 거치지 않고 엑셀을 바로 출력합니다.\n\n계속 진행하시겠습니까?`)) return;
                 }
                 
                 let newMaster = { ...data.masterProducts }, commitCount = 0;
@@ -1372,8 +1492,9 @@
 
                 data.setMasterProducts(newMaster); 
                 ui.setSelectedRows(new Set()); 
-                ui.showToast(`✅ ${commitCount}건 마스터 업데이트 완료.`);
-            }, [ui.selectedRows, fullDisplayRows, data.masterProducts, data.managedItems, data.setMasterProducts, data.addHistoryLogs, config.masterLinks, ui]);
+                quickExcelReadyRef.current = { ready: true, at: Date.now(), count: commitCount, codes: Array.from(targets) };
+                ui.showToast(`✅ ${commitCount}건 마스터 업데이트 완료. F8을 한 번 더 누르면 엑셀을 바로 출력합니다.`);
+            }, [ui.selectedRows, fullDisplayRows, data.masterProducts, data.managedItems, data.setMasterProducts, data.addHistoryLogs, config.masterLinks, ui, handleQuickExcelExport]);
 
             const toggleAllRows = useCallback(() => {
                 if (ui.selectedRows.size === fullDisplayRows.length && fullDisplayRows.length > 0) {
@@ -1729,8 +1850,8 @@
                                 <i className="fas fa-magic mr-2 text-[14px]"></i> 스마트 파서
                             </button>
 
-                            <button onClick={handleCommitEstimate} disabled={fullDisplayRows.length === 0} className={`h-9 px-3 rounded-xl text-[12px] font-black shadow-sm flex items-center shrink-0 ${fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700 border border-slate-800' : 'bg-slate-200 text-slate-400 border border-slate-200 cursor-not-allowed'}`} title="마스터 DB 저장 (F8)">
-                                <i className="fas fa-save mr-1.5 text-[13px]"></i> F8
+                            <button onClick={handleCommitEstimate} disabled={fullDisplayRows.length === 0} className={`h-9 px-3 rounded-xl text-[12px] font-black shadow-sm flex items-center shrink-0 ${fullDisplayRows.length > 0 ? 'bg-slate-800 text-white hover:bg-slate-700 border border-slate-800' : 'bg-slate-200 text-slate-400 border border-slate-200 cursor-not-allowed'}`} title="마스터 DB 저장 / 저장 직후 F8 재입력 시 빠른 엑셀 출력">
+                                <i className="fas fa-save mr-1.5 text-[13px]"></i> F8 저장/빠른출력
                             </button>
 
                             <button onClick={handleOpenExportCenter} disabled={fullDisplayRows.length === 0} className={`h-9 px-3 rounded-xl text-[12px] font-black shadow-sm flex items-center shrink-0 ${fullDisplayRows.length > 0 ? 'bg-emerald-600 text-white hover:bg-emerald-700 border border-emerald-700' : 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed'}`} title="통합 출력 센터 진입 (F9)">
