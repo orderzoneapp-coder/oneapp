@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.6 정지상품 자동판매복구]</title>
+    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.7 ERP A판매/B판매·쇼핑몰 B판매가/B도매가]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -373,8 +373,15 @@
                                 입고가,
                                 출고가,
                                 행사가,
-                                도매A: parseNum(working.도매A),
-                                도매B: parseNum(working.도매B),
+                                // ERP 단가: 기존 내부 필드 도매A/도매B는 ERP 출력 시 A판매/B판매로 명칭만 변경한다.
+                                // 값은 견적서 원본값을 그대로 보존하고, 쇼핑몰 B판매가/B도매가와 혼용하지 않는다.
+                                A판매: parseNum(working.A판매 ?? working['A판매'] ?? working.도매A ?? master['A판매'] ?? master['도매A']),
+                                B판매: parseNum(working.B판매 ?? working['B판매'] ?? working.도매B ?? master['B판매'] ?? master['도매B']),
+                                도매A: parseNum(working.도매A ?? working.A판매 ?? master['도매A'] ?? master['A판매']),
+                                도매B: parseNum(working.도매B ?? working.B판매 ?? master['도매B'] ?? master['B판매']),
+                                // 쇼핑몰 단가: 일반유저용 B판매가와 유통사용 B도매가는 별도 필드로 관리한다.
+                                B판매가: parseNum(working.B판매가 ?? working['B판매가'] ?? working['B 판매가'] ?? master['B판매가'] ?? master['B 판매가']),
+                                B도매가: parseNum(working.B도매가 ?? working['B도매가'] ?? working['B 도매가'] ?? master['B도매가'] ?? master['B 도매가']),
                                 시중가: parseNum(working.시중가 || 기준시중가),
                                 입고B: parseNum(working.입고B),
                                 '1종코드': working['1종코드'] || master['1종코드'] || '',
@@ -586,8 +593,14 @@
                             mItem['경비'] = parseNum(item['경비']);
                             mItem['외주비'] = parseNum(item['외주비']);
                             mItem['노무비'] = parseNum(item['노무비']);
-                            mItem['도매A'] = parseNum(item.도매A);
-                            mItem['도매B'] = parseNum(item.도매B);
+                            // ERP A판매/B판매은 기존 도매A/도매B 원본값과 호환 저장한다.
+                            mItem['A판매'] = parseNum(item.A판매 ?? item.도매A);
+                            mItem['B판매'] = parseNum(item.B판매 ?? item.도매B);
+                            mItem['도매A'] = parseNum(item.도매A ?? item.A판매);
+                            mItem['도매B'] = parseNum(item.도매B ?? item.B판매);
+                            // 쇼핑몰 B단가는 일반유저/유통사용 필드로 분리한다.
+                            mItem['B판매가'] = parseNum(item.B판매가);
+                            mItem['B도매가'] = parseNum(item.B도매가);
                             mItem['시중가'] = parseNum(item.시중가);
                             mItem['재고수량'] = parseNum(item.재고수량);
                             mItem['판매여부'] = sale.code;
@@ -610,20 +623,26 @@
                         localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
 
                         const wb = window.XLSX.utils.book_new();
-                        const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '최종(전송)', 'n', '행사', 'n', '1']];
-                        const shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', '도매B', '도매B', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
+                        // ERP와 쇼핑몰은 거래대상이 다르므로 단가 컬럼명을 분리한다.
+                        // ERP: 기존 도매A/도매B 원본값을 A판매/B판매로 출력한다.
+                        // 쇼핑몰: 중복 도매B 컬럼을 B판매가(일반유저) / B도매가(유통사)로 출력한다.
+                        const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', 'A판매', 'n', 'B판매', 'n', '최종(전송)', 'n', '행사', 'n', '1']];
+                        const shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', 'B도매가', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
 
                         let subOutputCount = 0;
                         reviewRows.forEach(item => {
                             const sale = getSaleState(item);
                             const inPrice = parseNum(item.입고가);
                             const finalOut = getAppliedPrice(item);
-                            const pASale = parseNum(item.도매A);
+                            const erpASale = parseNum(item.A판매 ?? item.도매A);
+                            const erpBSale = parseNum(item.B판매 ?? item.도매B);
+                            const shopBPrice = parseNum(item.B판매가);
+                            const shopBWholesale = parseNum(item.B도매가);
                             const pMarket = parseNum(item.시중가);
                             const finalStock = parseNum(item.재고수량);
-                            erpData.push([item.코드, inPrice, '0', finalOut, '0', parseNum(item.입고B)||'', 'n', pASale||'', 'n', parseNum(item.도매B)||'', 'n', inPrice, 'n', parseNum(item.행사가)||'', 'n', sale.code]);
+                            erpData.push([item.코드, inPrice, '0', finalOut, '0', parseNum(item.입고B)||'', 'n', erpASale||'', 'n', erpBSale||'', 'n', inPrice, 'n', parseNum(item.행사가)||'', 'n', sale.code]);
                             const themeFlags = buildThemeFlags(item);
-                            shopData.push([item.코드, item.품목명, item.규격, finalOut, (pASale>0?pASale:finalOut), (pMarket>0?pMarket:finalOut), 0, 0, 0, 0, 0, 0, item.브랜드||'', item.간단설명||'', sale.code, finalStock, ...themeFlags, item.검색어등록||'']);
+                            shopData.push([item.코드, item.품목명, item.규격, finalOut, (erpASale>0?erpASale:finalOut), (pMarket>0?pMarket:finalOut), shopBPrice||'', shopBWholesale||'', 0, 0, 0, 0, item.브랜드||'', item.간단설명||'', sale.code, finalStock, ...themeFlags, item.검색어등록||'']);
 
                             const subInfo = calculateSubPriceInfo(item);
                             if (subInfo) {
