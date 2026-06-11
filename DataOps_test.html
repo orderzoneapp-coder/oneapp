@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99t Lot Match Policy Fix)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99u Lot Issue Visibility Fix)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -51,7 +51,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.99t Lot Match Policy Fix...</div>
+        <div class="loader-text">ONEAPP DataOps v8.99u Lot Issue Visibility Fix...</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -155,7 +155,7 @@
             if (!str) return { issues: [], vendors: {} };
             const parts = str.match(/[^,]+(?:\([^)]+\))*/g) || [];
             const issues = []; const vendors = {};
-            const knownIssues = ['과다로스', '원가수정', '수기조정', '매입내역 없음', '전산 재고 부족', '재고 부족', '변동됨', '변경됨', '삭제됨', '신규추가', '수량변동', '단가변경', '매치변경', '원가추출됨', '원가추출', '단가없음', 'Lot불일치', 'Lot원가확인', 'Lot매치실패', '매입처없음', '수량부족', '🔄', '🚨', '✅'];
+            const knownIssues = ['과다로스', '원가수정', '수기조정', '매입내역 없음', '전산 재고 부족', '재고 부족', '변동됨', '변경됨', '삭제됨', '신규추가', '수량변동', '단가변경', '매치변경', '원가추출됨', '원가추출', '단가없음', 'Lot불일치', 'Lot원가확인', 'Lot매치실패', 'Lot확인필요', 'Lot매치확인', '1창고FIFO', '매입처없음', '수량부족', '🔄', '🚨', '✅'];
 
             parts.forEach(p => {
                 const part = p.trim(); if (!part) return;
@@ -328,7 +328,7 @@
            - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
            ======================================================================= */
         const CONFIG_MODULE = Object.freeze({
-            version: 'v8.99t Lot Match Policy Fix',
+            version: 'v8.99u Lot Issue Visibility Fix',
             categoryMap: Object.freeze({
                 '10': '채소.과일',
                 '20': '수산.축산',
@@ -477,7 +477,7 @@
                 if (safeNum(item.실사) < 0) issues.push(ISSUE_MODULE.createIssue('NEGATIVE_FINAL_QTY', item.수기확인완료));
                 if (safeNum(item.전산잔량) < 0 || legacy.includes('수량부족')) issues.push(ISSUE_MODULE.createIssue('NEGATIVE_SYSTEM_QTY', item.수기확인완료));
                 if (safeNum(item.단가) <= 0 || legacy.includes('단가없음')) issues.push(ISSUE_MODULE.createIssue('PRICE_ZERO', item.수기확인완료));
-                if (legacy.includes('Lot불일치') || legacy.includes('Lot원가확인')) issues.push(ISSUE_MODULE.createIssue('LOT_MISMATCH', item.수기확인완료));
+                if (legacy.includes('Lot불일치') || legacy.includes('Lot원가확인') || legacy.includes('Lot확인필요') || legacy.includes('Lot매치확인') || legacy.includes('1창고FIFO')) issues.push(ISSUE_MODULE.createIssue('LOT_MISMATCH', item.수기확인완료));
                 if (legacy.includes('매입처없음')) issues.push(ISSUE_MODULE.createIssue('NO_PURCHASE_VENDOR', item.수기확인완료));
                 if (legacy.includes('전산 재고 없음')) issues.push(ISSUE_MODULE.createIssue('NO_SYSTEM_STOCK', item.수기확인완료));
                 if (multiPriceCodes.includes(item.코드)) issues.push(ISSUE_MODULE.createIssue('MULTI_PRICE_SAME_CODE', item.수기확인완료));
@@ -530,7 +530,7 @@
                 else if (item._orig && price !== safeNum(item._orig.단가)) issues.push('원가수정(수기)');
                 return DATAOPS_ISSUE_HELPER.unique(issues);
             },
-            hasUnresolved: (issues = []) => (issues || []).some(msg => safeStr(msg).includes('🚨'))
+            hasUnresolved: (issues = []) => (issues || []).some(msg => { const s = safeStr(msg); return s.includes('🚨') || s.includes('Lot확인필요') || s.includes('Lot매치확인') || s.includes('1창고FIFO'); })
         });
 
 
@@ -1546,7 +1546,7 @@
                             const requestedLot = safeStr(sale.매입처매칭, '미지정');
                             const appliedLot = safeStr(bucket.거래처, '미지정');
 
-                            // v8.99t 정책 확정:
+                            // v8.99u 정책 확정:
                             // - 2전송: 판매현황의 구매처를 기준으로 매핑한다. Lot 확인 이슈는 만들지 않는다.
                             // - 1창고: 구매처 정보가 부족하므로 FIFO 차감하되, Lot 확인 메모/이슈를 남긴다.
                             if (isTransferLotContext) {
@@ -1563,7 +1563,7 @@
                             if (options.matchFailed || options.fifoReview) {
                                 const memoPrefix = options.matchFailed ? '1창고FIFO_Lot대체' : '1창고FIFO_Lot확인';
                                 appendLotMemo(row, `${memoPrefix}: 요청=${requestedLot} / 적용=${appliedLot} / 원가=${formatMoney(bucket.단가)}`);
-                                const issueMsg = options.matchFailed ? `🚨Lot매치확인(${requestedLot})` : 'Lot확인필요(1창고FIFO)';
+                                const issueMsg = options.matchFailed ? `🚨Lot매치확인(${requestedLot})` : '🚨Lot확인필요(1창고FIFO)';
                                 if (!row.이슈.includes(issueMsg)) {
                                     row.이슈.push(issueMsg);
                                     row.수기확인완료 = false;
@@ -1643,7 +1643,7 @@
                             let matchedBuckets = []; let matchFailedFlag = false;
 
                             // [1단계] 창고별 Lot 매칭 정책
-                            // v8.99t:
+                            // v8.99u:
                             // 2전송은 판매현황의 구매처를 신뢰해서 우선 매핑하되, 매칭 실패해도 판매처리를 막지 않는다.
                             // 1창고는 구매처 정보가 거의 없으므로 FIFO 처리한다. 단, Lot 확인 이슈/메모는 남긴다.
                             let fifoReviewFlag = false;
@@ -1998,8 +1998,8 @@
             let tooltip = msg;
             let colorClass = "bg-slate-100 text-slate-700 border-slate-200";
 
-            if (msg.includes('Lot원가확인') || msg.includes('Lot불일치') || msg.includes('Lot매치실패') || msg.includes('매입처없음') || msg.includes('매치변경')) {
-                shortMsg = msg.includes('✅') ? "✅Lot" : "🚨Lot"; tooltip = msg.includes('Lot원가확인') ? `원가 영향 Lot 확인: ${msg}` : `매입처 불일치: ${msg}`;
+            if (msg.includes('Lot원가확인') || msg.includes('Lot불일치') || msg.includes('Lot매치실패') || msg.includes('Lot확인필요') || msg.includes('Lot매치확인') || msg.includes('1창고FIFO') || msg.includes('매입처없음') || msg.includes('매치변경')) {
+                shortMsg = msg.includes('✅') ? "✅Lot" : "🚨Lot"; tooltip = (msg.includes('Lot확인필요') || msg.includes('1창고FIFO')) ? `1창고 FIFO Lot 확인 필요: ${msg}` : (msg.includes('Lot원가확인') ? `원가 영향 Lot 확인: ${msg}` : `매입처 불일치: ${msg}`);
                 colorClass = shortMsg.includes('🚨') ? "bg-rose-100 text-rose-700 border-rose-200 font-bold shadow-sm" : "bg-blue-100 text-blue-700 border-blue-200 font-bold shadow-sm";
             } else if (msg.includes('단가없음') || msg.includes('단가변경')) {
                 shortMsg = msg.includes('✅') ? "✅단가" : "🚨단가"; tooltip = `매입 단가 누락 또는 변경: ${msg}`;
@@ -2691,6 +2691,9 @@
                         msg.includes('🚨Lot원가확인') ||
                         msg.includes('🚨Lot불일치') ||
                         msg.includes('🚨Lot매치실패') ||
+                        msg.includes('🚨Lot확인필요') ||
+                        msg.includes('🚨Lot매치확인') ||
+                        msg.includes('1창고FIFO') ||
                         msg.includes('🚨매입처없음');
                 });
             }, []);
@@ -2703,6 +2706,9 @@
                         msg.includes('Lot원가확인') ||
                         msg.includes('Lot불일치') ||
                         msg.includes('Lot매치실패') ||
+                        msg.includes('Lot확인필요') ||
+                        msg.includes('Lot매치확인') ||
+                        msg.includes('1창고FIFO') ||
                         msg.includes('매입처없음');
                 });
             }, []);
@@ -4144,7 +4150,7 @@
                             <div className="flex flex-col md:flex-row md:items-center gap-4">
                                 <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition" onClick={() => document.getElementById('main-scroll-container')?.scrollTo({top:0, behavior:'smooth'})} title="클릭시 최상단 이동">
                                     <span className="text-blue-600 mr-2">ONEAPP</span> DataOps
-                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">v8.99t Lot Match Policy Fix</span>
+                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">v8.99u Lot Issue Visibility Fix</span>
                                 </h1>
                             </div>
 
