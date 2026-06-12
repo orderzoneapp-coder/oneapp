@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99y FIFO Flow Patch)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zg ERP Basis Header Fix)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -51,7 +51,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.99y FIFO Flow Patch...</div>
+        <div class="loader-text">ONEAPP DataOps v8.99zg ERP Basis Header Fix...</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -204,6 +204,33 @@
             return false;
         };
 
+        // v8.99ze: 재고현황/수불마감 기본여부 그룹 정책.
+        // 기본=1은 농산류, 기본=2 이상(3·5·7 등)은 식자재, 기본=0/공백은 기타로 분류한다.
+        const getBasicRawValue = (item = {}) => {
+            if (item.기본 !== undefined && item.기본 !== null && safeStr(item.기본, '') !== '') return item.기본;
+            if (item._basicValue !== undefined && item._basicValue !== null && safeStr(item._basicValue, '') !== '') return item._basicValue;
+            const raw = item._raw || item.raw || {};
+            const v = getRawCell(raw, ['구분(기본)', '기본여부', '기본', '관리기본', '기본구분']);
+            return v === null || v === undefined ? '' : v;
+        };
+        const getBasicNumber = (item = {}) => {
+            const raw = getBasicRawValue(item);
+            if (raw === '' || raw === null || raw === undefined) return 0;
+            return parseNumber(raw);
+        };
+        const getStockManageGroup = (item = {}) => {
+            const n = getBasicNumber(item);
+            if (n === 1) return '농산류';
+            if (n > 1) return '식자재';
+            return '기타';
+        };
+        const getBasicDisplayValue = (item = {}) => {
+            const raw = getBasicRawValue(item);
+            if (raw === null || raw === undefined || safeStr(raw, '') === '') return '';
+            const n = parseNumber(raw);
+            return n === 0 ? 0 : n;
+        };
+
         const TRANSFER_PRICE_GROUP_PRESETS = [
             {
                 groupName: '청과상장',
@@ -306,6 +333,7 @@
             qty: '기말실사(이월수량), 기말실사, 기말/실사, 수량, 재고, 기말잔량(실사반영), 기말잔량(실사), 기말잔량, 수량(합계), 입고수량, 출고수량, 판매수량, 잔량, 실사, 합계, 기말, 판매량, 출고량, 입고량',
             price: '매입단가(원가), 단가, 입고가, 입고단가, 구매단가, 판매단가, 매입단가, 매입가, 판매가, 공급가액, 공급가, 금액, 원가, 가격, 최종(창고)',
             date: '결산일자, 매입일자, 일자, 날짜, 구매일자, 판매일자, 입고일자, 출고일자, 기록, 최종기록, 재고기록, 등록일, 등록일자, 기준일',
+            basic: '구분(기본), 기본여부, 기본, 관리기본, 기본구분',
             vendor: '원구매처, 구매처, 매출처명, 매입처(Lot), 매입처(거래처), 거래처명, 거래처, 거래, 매장명, 매장, 고객, 판매처, 공급사, 판매, 청과, 3거래',
             matchVendor: '구매처, 매입처', 
             excludeVendor: '우리농산, 1전송, 3우리',
@@ -328,7 +356,7 @@
            - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
            ======================================================================= */
         const CONFIG_MODULE = Object.freeze({
-            version: 'v8.99y FIFO Flow Patch',
+            version: 'v8.99zg ERP Basis Header Fix',
             categoryMap: Object.freeze({
                 '10': '채소.과일',
                 '20': '수산.축산',
@@ -679,6 +707,105 @@
                 });
                 return rows;
             },
+            buildNextBaseStockRows: ({ productData = [], targetDateStr = '' }) => productData
+                .filter(item => STOCK_ENGINE_MODULE.getActualQty(item) > 0)
+                .sort((a, b) => getStockManageGroup(a).localeCompare(getStockManageGroup(b)) || safeStr(a.품명).localeCompare(safeStr(b.품명)))
+                .map(item => {
+                    const qty = STOCK_ENGINE_MODULE.getActualQty(item);
+                    const raw = item._raw || {};
+                    const unit = safeStr(item.단위 || raw['단위'] || raw['규격단위'] || raw['포장단위'], '');
+                    const spec = safeStr(raw['규격'] || item.규격 || unit, '');
+                    return {
+                        '단위': unit,
+                        '품목코드': item.코드 === 'NO_CODE' ? '' : item.코드,
+                        '품명': safeStr(raw['품명'] || raw['상품명'] || item.품명),
+                        '규격': spec,
+                        '주문': '',
+                        '재고': qty,
+                        '기록': safeStr(item.일자, ''),
+                        '거래': safeStr(item.거래처, ''),
+                        '최종(창고)': Math.round(safeNum(item.단가)),
+                        '적요': safeStr(item.메모 || raw['적요'] || raw['비고'] || '')
+                    };
+                }),
+            buildNextBaseStockSheet: ({ productData = [], targetDateStr = '' }) => {
+                const rows = EXPORT_MODULE.buildNextBaseStockRows({ productData, targetDateStr });
+                const displayDate = safeStr(targetDateStr, '').replace(/-/g, '/');
+                const title = `회사명 : 원앱 / 1창고 / ${displayDate || '기준일미상'} / 재고현황`;
+                const headers = ['단위', '품목코드', '품명', '규격', '주문', '재고', '기록', '거래', '최종(창고)', '적요'];
+                const aoa = [
+                    [title, '', '', '', '', '', '', '', '', ''],
+                    headers,
+                    ...rows.map(row => headers.map(h => row[h] ?? ''))
+                ];
+                const ws = XLSX.utils.aoa_to_sheet(aoa);
+                ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 9 } }];
+                ws['!cols'] = [10, 14, 34, 10, 8, 10, 12, 14, 14, 18].map(wch => ({ wch }));
+                ws['!autofilter'] = { ref: `A2:J${Math.max(2, aoa.length)}` };
+                return ws;
+            },
+            buildManagementGroupRows: ({ productData = [], groupName = '', targetDateStr = '' }) => productData
+                .filter(item => STOCK_ENGINE_MODULE.getActualQty(item) > 0 && getStockManageGroup(item) === groupName)
+                .sort((a, b) => safeStr(a.품명).localeCompare(safeStr(b.품명)))
+                .map(item => {
+                    const raw = item._raw || {};
+                    const unit = safeStr(item.단위 || raw['단위'] || raw['규격단위'] || raw['포장단위'], '');
+                    const spec = safeStr(raw['규격'] || item.규격 || unit, '');
+                    const qty = STOCK_ENGINE_MODULE.getActualQty(item);
+                    const price = Math.round(safeNum(item.단가));
+                    return {
+                        '관리구분': getStockManageGroup(item),
+                        '기본': getBasicDisplayValue(item),
+                        '품목코드': item.코드 === 'NO_CODE' ? '' : item.코드,
+                        '품명': safeStr(raw['품명'] || raw['상품명'] || item.품명),
+                        '규격': spec,
+                        '단위': unit,
+                        '재고': qty,
+                        '구매일': safeStr(item.일자, ''),
+                        '구매처': safeStr(item.거래처, ''),
+                        '원가': price,
+                        '재고금액': qty * price,
+                        '기준일': safeStr(targetDateStr, ''),
+                        '확인내용': (item.이슈 || []).join(', ')
+                    };
+                }),
+            buildManagementBriefingRows: ({ productData = [], targetDateStr = '', analysisPeriod = '', closingStats = {} }) => {
+                const rows = [
+                    { '구분': '마감일자', '상품수': targetDateStr || '-', '재고수량': '', '재고금액': '', '단가0': '', '구매Lot미확정': '', '마이너스': '', '비고': analysisPeriod || '' },
+                    { '구분': '전체', '상품수': productData.length, '재고수량': productData.reduce((s, i) => s + STOCK_ENGINE_MODULE.getActualQty(i), 0), '재고금액': Math.round(productData.reduce((s, i) => s + STOCK_ENGINE_MODULE.getActualQty(i) * safeNum(i.단가), 0)), '단가0': productData.filter(i => safeNum(i.단가) <= 0).length, '구매Lot미확정': productData.filter(i => safeStr(i.일자).includes('미확정') || (i.이슈 || []).some(msg => safeStr(msg).includes('Lot'))).length, '마이너스': productData.filter(i => STOCK_ENGINE_MODULE.getActualQty(i) < 0 || safeNum(i.전산잔량) < 0).length, '비고': '전체 재고 기준' }
+                ];
+                ['농산류', '식자재', '기타'].forEach(group => {
+                    const items = productData.filter(i => getStockManageGroup(i) === group);
+                    rows.push({
+                        '구분': group,
+                        '상품수': items.length,
+                        '재고수량': items.reduce((s, i) => s + STOCK_ENGINE_MODULE.getActualQty(i), 0),
+                        '재고금액': Math.round(items.reduce((s, i) => s + STOCK_ENGINE_MODULE.getActualQty(i) * safeNum(i.단가), 0)),
+                        '단가0': items.filter(i => safeNum(i.단가) <= 0).length,
+                        '구매Lot미확정': items.filter(i => safeStr(i.일자).includes('미확정') || (i.이슈 || []).some(msg => safeStr(msg).includes('Lot'))).length,
+                        '마이너스': items.filter(i => STOCK_ENGINE_MODULE.getActualQty(i) < 0 || safeNum(i.전산잔량) < 0).length,
+                        '비고': group === '농산류' ? '기본=1' : (group === '식자재' ? '기본=2 이상(3·5·7 등)' : '기본=0 또는 공백')
+                    });
+                });
+                return rows;
+            },
+            buildManagementIssueRows: ({ productData = [] }) => productData
+                .filter(item => safeNum(item.단가) <= 0 || STOCK_ENGINE_MODULE.getActualQty(item) < 0 || safeNum(item.전산잔량) < 0 || safeStr(item.일자).includes('미확정') || (item.이슈 || []).length > 0)
+                .map(item => ({
+                    '관리구분': getStockManageGroup(item),
+                    '기본': getBasicDisplayValue(item),
+                    '품목코드': item.코드 === 'NO_CODE' ? '' : item.코드,
+                    '품명': item.품명,
+                    '재고': STOCK_ENGINE_MODULE.getActualQty(item),
+                    '입고': safeNum(item.입고),
+                    '출고': safeNum(item.출고),
+                    '잔량': STOCK_ENGINE_MODULE.getActualQty(item),
+                    '오차': STOCK_ENGINE_MODULE.getAdjustmentQty(item),
+                    '원가': safeNum(item.단가),
+                    '구매일': safeStr(item.일자, ''),
+                    '구매처': safeStr(item.거래처, ''),
+                    '확인내용': (item.이슈 || []).join(', ') || (safeNum(item.단가) <= 0 ? '단가 0원' : '확인필요')
+                })),
             buildClosingSheetRows: ({ productData = [], targetDateStr = '' }) => productData.filter(item => item.품명 || item.코드).map(item => {
                 let displayIssues = item.이슈 ? [...item.이슈] : [];
                 displayIssues = displayIssues.filter(msg => !msg.includes('매입내역 없음'));
@@ -691,7 +818,7 @@
                 const qty = STOCK_ENGINE_MODULE.getActualQty(item);
                 const adjust = STOCK_ENGINE_MODULE.getAdjustmentQty(item);
                 const price = safeNum(item.단가) || 0;
-                return { '결산일자': targetDateStr, '매입처(Lot)': safeStr(item.거래처, '미지정'), '상품코드': item.코드 === 'NO_CODE' ? '' : item.코드, '상품명(규격)': item.품명, '기초수량': safeNum(item.기초), '입고수량': safeNum(item.입고), '출고량': safeNum(item.출고), '기말실사(이월수량)': qty, '매입단가(원가)': price, '기말재고액(자산가치)': qty * price, '로스/조정수량': adjust, '이슈/결과': [...displayIssues, ...vendorStrs].join(', '), '수기메모': item.메모 || '' };
+                return { '결산일자': targetDateStr, '매입처(Lot)': safeStr(item.거래처, '미지정'), '상품코드': item.코드 === 'NO_CODE' ? '' : item.코드, '상품명(규격)': item.품명, '기초수량': safeNum(item.기초), '입고수량': safeNum(item.입고), '출고량': safeNum(item.출고), '기말실사(이월수량)': qty, '매입단가(원가)': price, '기말재고액(자산가치)': qty * price, '로스/조정수량': adjust, '기본': getBasicDisplayValue(item), '관리구분': getStockManageGroup(item), '이슈/결과': [...displayIssues, ...vendorStrs].join(', '), '수기메모': item.메모 || '' };
             }),
             buildStockCountSheetRows: ({ productData = [], targetDateStr = '' }) => {
                 const aggregated = {};
@@ -826,15 +953,25 @@
                 const exportData6 = EXPORT_MODULE.buildPurchaseRows({ productData, targetDateStr });
                 const exportData7 = EXPORT_MODULE.buildSystemAccumRows({ productData, targetDateStr });
                 const exportData8 = EXPORT_MODULE.buildOutputSummaryRows({ productData, targetDateStr, analysisPeriod, closingStats });
+                const briefingRows = EXPORT_MODULE.buildManagementBriefingRows({ productData, targetDateStr, analysisPeriod, closingStats });
+                const farmRows = EXPORT_MODULE.buildManagementGroupRows({ productData, groupName: '농산류', targetDateStr });
+                const foodRows = EXPORT_MODULE.buildManagementGroupRows({ productData, groupName: '식자재', targetDateStr });
+                const etcRows = EXPORT_MODULE.buildManagementGroupRows({ productData, groupName: '기타', targetDateStr });
+                const confirmRows = EXPORT_MODULE.buildManagementIssueRows({ productData });
                 const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(exportData8, [16, 24], { emptyMessage: '요약 데이터가 없습니다.' }), '출력요약');
+                XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.buildNextBaseStockSheet({ productData, targetDateStr }), '다음날_기초재고');
+                XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(briefingRows, [14, 12, 12, 16, 10, 14, 10, 34], { emptyMessage: '마감브리핑 데이터가 없습니다.' }), '마감브리핑');
+                XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(farmRows, [12, 10, 14, 34, 10, 10, 10, 14, 14, 18, 14, 12, 42], { emptyMessage: '농산류 재고가 없습니다.' }), '농산류');
+                XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(foodRows, [12, 10, 14, 34, 10, 10, 10, 14, 14, 18, 14, 12, 42], { emptyMessage: '식자재 재고가 없습니다.' }), '식자재');
+                XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(etcRows, [12, 10, 14, 34, 10, 10, 10, 14, 14, 18, 14, 12, 42], { emptyMessage: '기타 재고가 없습니다.' }), '기타');
+                XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(confirmRows, [12, 10, 14, 34, 10, 10, 10, 10, 10, 12, 14, 18, 42], { emptyMessage: '확인필요 항목이 없습니다.' }), '확인필요');
                 if (productData.some(item => item._analysisMode === 'TRANSFER_DIRECT_CHECK')) {
                     const transferRows = EXPORT_MODULE.buildTransferBalanceRows({ productData, targetDateStr });
                     const transferSalesRows = EXPORT_MODULE.buildTransferCustomerSalesRows({ productData, targetDateStr });
                     XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(transferRows, [12, 14, 34, 12, 12, 12, 12, 14, 14, 14, 16, 14, 28, 28, 42], { emptyMessage: '2전송 검증 데이터가 없습니다.' }), '2전송_잔량현황');
                     XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(transferSalesRows, [12, 18, 14, 34, 12, 14, 14, 14], { emptyMessage: '거래처별 판매 데이터가 없습니다.' }), '2전송_거래처별판매');
                 }
-                XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(exportData1, [12, 18, 13, 34, 10, 10, 10, 16, 14, 18, 15, 42, 32], { emptyMessage: '유효한 데이터가 없습니다.' }), '재고수불_마감');
+                XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(exportData1, [12, 18, 13, 34, 10, 10, 10, 16, 14, 18, 15, 10, 12, 42, 32], { emptyMessage: '유효한 데이터가 없습니다.' }), '재고수불_마감');
                 if (exportData2.length > 0) {
                     const ws2 = EXPORT_MODULE.jsonSheet(exportData2, [12, 8, 10, 8, 14, 34, 10, 18], { emptyMessage: '실사양식 데이터가 없습니다.' });
                     Object.keys(ws2).forEach(cellAddress => {
@@ -887,13 +1024,15 @@
                                 matchVendor: currentMappings.matchVendor ? currentMappings.matchVendor.split(',').map(s => s.trim().toLowerCase()) : [], 
                                 spec: currentMappings.spec ? currentMappings.spec.split(',').map(s => s.trim().toLowerCase()) : [],
                                 unit: currentMappings.unit ? currentMappings.unit.split(',').map(s => s.trim().toLowerCase()) : ['단위', '규격단위', '포장단위', '단위명', '판매단위'],
-                                date: currentMappings.date ? currentMappings.date.split(',').map(s => s.trim().toLowerCase()) : []
+                                date: currentMappings.date ? currentMappings.date.split(',').map(s => s.trim().toLowerCase()) : [],
+                                basic: currentMappings.basic ? currentMappings.basic.split(',').map(s => s.trim().toLowerCase()) : ['구분(기본)', '기본여부', '기본']
                             };
                             const closingColumns = ['기초수량', '입고수량', '출고량', '기말실사(이월수량)', '매입단가(원가)', '로스/조정수량', '이슈/결과', '수기메모'];
                             const stockLedgerColumns = ['재고', '입고', '출고', '잔량', '입고가'];
                             const getRoleSheetBonus = (sheetName, roleName) => {
                                 const n = safeStr(sheetName, '').replace(/\s/g, '');
                                 if (roleName === 'prev') {
+                                    if (n === '다음날_기초재고' || n === '기초재고_재고현황형' || n === '재고현황형') return 120;
                                     if (n === 'MerchOps_기초재고') return 90;
                                     if (n === '시스템누적') return 80;
                                     if (n === '재고수불_마감') return 70;
@@ -954,6 +1093,36 @@
                         }
                         if (headerRowIdx === -1 || maxScore < 2) return resolve([]); 
 
+                        // v8.99zg: ERP 재고현황은 1행 제목줄에 기준일이 들어간다.
+                        // 예: 회사명 : 원앱 / 1창고 / 2026/06/11 / 재고현황
+                        // 이 날짜는 파일/재고현황 기준일이며, 상품별 기록(구매일)과 분리해서 보관한다.
+                        const extractBasisDateFromTitleRows = (rows = []) => {
+                            const scanRows = rows.slice(0, Math.max(1, Math.min(headerRowIdx, 10)));
+                            for (let r = 0; r < scanRows.length; r++) {
+                                const titleText = (scanRows[r] || []).map(v => safeStr(v, '')).filter(Boolean).join(' / ');
+                                if (!titleText || !/재고현황|수불|마감|회사명|창고/.test(titleText)) continue;
+
+                                // 제목줄에는 '1창고' 같은 숫자가 날짜 앞에 올 수 있으므로
+                                // 전체 문자열을 바로 formatItemDate에 넣지 않고 20xx/yyyy 날짜 패턴만 먼저 추출한다.
+                                const ymdMatch = titleText.match(/(20\d{2})\s*[\/\-.년]\s*(\d{1,2})\s*[\/\-.월]\s*(\d{1,2})/);
+                                if (ymdMatch) {
+                                    const y = parseInt(ymdMatch[1], 10);
+                                    const m = parseInt(ymdMatch[2], 10);
+                                    const d = parseInt(ymdMatch[3], 10);
+                                    if (y >= 2000 && y < 2100 && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+                                        return { dateNum: y * 10000 + m * 100 + d, raw: titleText, source: `${r + 1}행 제목` };
+                                    }
+                                }
+                                const compactMatch = titleText.match(/(20\d{6})/);
+                                if (compactMatch) {
+                                    const d = parseInt(compactMatch[1], 10);
+                                    if (d > 20000101 && d < 21000101) return { dateNum: d, raw: titleText, source: `${r + 1}행 제목` };
+                                }
+                            }
+                            return { dateNum: 0, raw: '', source: '' };
+                        };
+                        const sheetBasisDate = extractBasisDateFromTitleRows(jsonAll);
+
                         const rawHeaders = jsonAll[headerRowIdx];
                         const uniqueHeaders = []; const headerCounts = {};
                         for (let j = 0; j < rawHeaders.length; j++) {
@@ -1004,6 +1173,7 @@
                             const specValRaw = getValByKeywords(rowObj, keywords.spec); const specVal = safeStr(specValRaw, '');
                             const unitValRaw = getValByKeywords(rowObj, keywords.unit); const unitVal = safeStr(unitValRaw, '');
                             const dateCell = getValWithKeyByKeywords(rowObj, keywords.date);
+                            const basicCell = getValWithKeyByKeywords(rowObj, keywords.basic || ['구분(기본)', '기본여부', '기본']);
                             let fullName = baseName || '이름없음';
                             if (specVal && baseName !== specVal && !baseName.includes(specVal)) fullName = `${baseName}_${specVal}`;
 
@@ -1014,8 +1184,9 @@
                                 코드: codeStr || 'NO_CODE', 품명: fullName, 단위: unitVal,
                                 수량: parseNumber(getValByKeywords(rowObj, keywords.qty)), 단가: parseNumber(getValByKeywords(rowObj, keywords.price)),
                                 거래처: safeStr(getValByKeywords(rowObj, keywords.vendor), '미지정'), 매입처매칭: safeStr(getValByKeywords(rowObj, keywords.matchVendor), ''),
-                                일자: safeStr(dateCell.value, ''), _dateSource: safeStr(dateCell.key, ''), 메모: '', _raw: rowObj,
-                                _sourceSheet: sheetName || '', _sourceFileName: file.name || '', _uploadRole: role, _fileType: isClosingRestoreRow ? 'CLOSING_RESTORE' : 'RAW_DATA'
+                                일자: safeStr(dateCell.value, ''), _dateSource: safeStr(dateCell.key, ''), 기본: safeStr(basicCell.value, ''), _basicSource: safeStr(basicCell.key, ''), 메모: '', _raw: rowObj,
+                                _sourceSheet: sheetName || '', _sourceFileName: file.name || '', _uploadRole: role, _fileType: isClosingRestoreRow ? 'CLOSING_RESTORE' : 'RAW_DATA',
+                                _sheetBasisDate: sheetBasisDate.dateNum || 0, _sheetBasisDateSource: sheetBasisDate.source || '', _sheetBasisDateRaw: sheetBasisDate.raw || ''
                             };
 
                             // v8.99v: 수불마감/시스템누적을 기초재고 슬롯에서 읽을 때는 전용 해석을 강제한다.
@@ -1028,7 +1199,9 @@
                                 const closingVendor = getExactRawVal(rowObj, ['구매처', '매입처(Lot)', '매입처', '원구매처', '거래처명']);
                                 const closingName = getExactRawVal(rowObj, ['품명', '상품명(규격)', '품목명', '상품명']);
                                 const closingDateCell = getValWithKeyByKeywords(rowObj, ['기록', '최종기록', '재고기록', '구매일자', '매입일자', '일자', '날짜', '등록일', '등록일자', '기준일']);
+                                const closingBasic = getExactRawVal(rowObj, ['구분(기본)', '기본여부', '기본', '관리기본', '기본구분']);
                                 if (closingDateCell.value !== null) { normObj.일자 = safeStr(closingDateCell.value, ''); normObj._dateSource = safeStr(closingDateCell.key, '기록'); }
+                                if (closingBasic !== null) { normObj.기본 = safeStr(closingBasic, ''); normObj._basicSource = '구분(기본)'; }
                                 if (closingQty !== null) normObj.수량 = parseNumber(closingQty);
                                 if (closingPrice !== null) normObj.단가 = parseNumber(closingPrice);
                                 else normObj.단가 = 0;
@@ -1384,7 +1557,7 @@
                                     매출액: tRev, 매출원가: tCogs, 메모: item._raw['수기메모'] || '',
                                     이슈: issues.filter(i => !i.includes('🚨')),
                                     출고내역: vendors, _orig: {기초: baseQty, 입고: inQty, 출고: outQty, 단가: price},
-                                    isDummy: (!code || code === 'NO_CODE'), 수기확인완료: true, _fromFile4: true,
+                                    isDummy: (!code || code === 'NO_CODE'), 수기확인완료: true, _fromFile4: true, 기본: getBasicRawValue(item),
                                     _totalCostForAvg: price * (baseQty + inQty), _latestDateNum: extractDateNum(date), _lotSortDate: getLotDateNum(date), _lotSourceRank: 0, _dateDisplayMemo: getDateDisplayMemo(item, 'prev')
                                 };
                             } else {
@@ -1451,7 +1624,7 @@
                                 batchKey, 코드: code, 품명: name, 단가: price, 일자: date, 거래처: vendor,
                                 기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0, 
                                 매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig: {기초:0, 입고:0, 출고:0, 단가: price}, 
-                                isDummy: (!code || code === 'NO_CODE'), 수기확인완료: false, _fromClosingBase: (type === 'prev' && isClosingItem(item)), _totalCostForAvg: qtyToApply * price, _latestDateNum: extractDateNum(date), _lotSortDate: getLotDateNum(date), _lotSourceRank: getLotSourceRank(type, item), _dateDisplayMemo: getDateDisplayMemo(item, type)
+                                isDummy: (!code || code === 'NO_CODE'), 수기확인완료: false, _fromClosingBase: (type === 'prev' && isClosingItem(item)), 기본: getBasicRawValue(item), _totalCostForAvg: qtyToApply * price, _latestDateNum: extractDateNum(date), _lotSortDate: getLotDateNum(date), _lotSourceRank: getLotSourceRank(type, item), _dateDisplayMemo: getDateDisplayMemo(item, type)
                             };
                             if (code === 'NO_CODE') pData[batchKey].이슈.push('🚨코드없음(수기확인)');
                             else if (hasClosingEnd) pData[batchKey].이슈.push('🚨신규발생(마감자료에없음)');
@@ -1469,6 +1642,7 @@
                             pData[batchKey]._dateDisplayMemo = getDateDisplayMemo(item, type);
                         }
                         if (type === 'prev' && isClosingItem(item)) pData[batchKey]._fromClosingBase = true;
+                        if (type === 'prev' && safeStr(getBasicRawValue(item), '') !== '') pData[batchKey].기본 = getBasicRawValue(item);
                         pData[batchKey]._totalCostForAvg += qtyToApply * price; const dNum = extractDateNum(date);
                         if (grouping.priceMode === 'latest' && dNum > pData[batchKey]._latestDateNum) { pData[batchKey].단가 = price; pData[batchKey]._latestDateNum = dNum; } 
                         else if (grouping.priceMode === 'average') { const totalQty = pData[batchKey].기초 + pData[batchKey].입고; if (totalQty > 0) pData[batchKey].단가 = pData[batchKey]._totalCostForAvg / totalQty; }
@@ -2006,22 +2180,114 @@
                 setIsProcessing(true);
                 try {
                     const parsedIn = await parseExcelData(filesObj.in, mappings, 'in');
-                    const parsedEnd = await parseExcelData(filesObj.end, mappings, 'end');
+                    const stockSourceFile = filesObj.end || filesObj.prev;
+                    if (!stockSourceFile) {
+                        setAlertMsg('원가추출용 재고/수불마감 파일이 없습니다.');
+                        return;
+                    }
+
+                    // v8.99zc: 원가추출의 재고 소스는 1재고현황이든 수불마감이든 모두 "기초재고"로 해석한다.
+                    // 수불마감 파일을 실사/마감 슬롯으로 넣어도 결산일자를 구매일처럼 표시하지 않고,
+                    // 구매현황 Lot의 실제 구매일자/구매처/구매단가를 화면 기준값으로 우선 적용한다.
+                    const parsedEnd = await parseExcelData(stockSourceFile, mappings, 'prev');
 
                     let refYear = new Date().getFullYear();
-                    const endDateNum = extractDateFromName(filesObj.end.name);
+                    const endDateNum = extractDateFromName(stockSourceFile.name);
                     if (endDateNum) refYear = Math.floor(endDateNum / 10000);
 
-                    const sortedIn = [...parsedIn].map(item => ({ ...item, _dateNum: formatItemDate(item.일자, refYear) })).filter(item => item._dateNum > 0 && (!endDateNum || item._dateNum <= endDateNum)).sort((a, b) => b._dateNum - a._dateNum);
-                    const inPoolByCode = {}; sortedIn.forEach(item => { const code = String(item.코드); if (!inPoolByCode[code]) inPoolByCode[code] = []; inPoolByCode[code].push(item); });
+                    // v8.99zd: 원가추출 날짜는 재고/수불마감 기준일이 아니라 "구매현황의 실제 구매일자"만 사용한다.
+                    // 수불마감의 결산일자, 재고현황의 기록일자, 오늘 날짜는 상품 구매일로 표시하지 않는다.
+                    const normalizeKeyText = (val) => safeStr(val, '').replace(/\s/g, '').replace(/[\-_()（）\[\]{}]/g, '').toLowerCase();
+                    const normalizeCodeKey = (val) => safeStr(val, '').replace(/\s/g, '').replace(/\.0$/, '').toUpperCase();
+                    const getRawExactWithKey = (raw = {}, names = []) => {
+                        const keys = Object.keys(raw || {});
+                        const norm = (v) => safeStr(v, '').replace(/\s/g, '').replace(/[()（）]/g, '').toLowerCase();
+                        for (const name of names) {
+                            const target = norm(name);
+                            const found = keys.find(k => norm(k) === target);
+                            if (found !== undefined && raw[found] !== undefined && raw[found] !== null && String(raw[found]).trim() !== '') return { value: raw[found], key: found };
+                        }
+                        return { value: null, key: '' };
+                    };
+                    const toDateDisplay = (dateNum) => dateNum > 0 ? `${Math.floor(dateNum/10000)}-${String(Math.floor((dateNum%10000)/100)).padStart(2,'0')}-${String(dateNum%100).padStart(2,'0')}` : '';
+                    const resolvePurchaseDate = (item = {}) => {
+                        const raw = item._raw || {};
+                        const rawDate = getRawExactWithKey(raw, ['매입일자', '구매일자', '입고일자', '일자', '날짜', '기록']);
+                        const candidates = [rawDate.value, item.일자, raw['일자'], raw['매입일자'], raw['구매일자'], raw['입고일자'], raw['날짜'], raw['기록']];
+                        for (const cand of candidates) {
+                            const d = formatItemDate(cand, refYear);
+                            if (d > 0) return { dateNum: d, source: rawDate.key || item._dateSource || '매입일자', rawValue: cand };
+                        }
+                        return { dateNum: 0, source: rawDate.key || item._dateSource || '', rawValue: '' };
+                    };
 
-                    let targetDateStrFromData = endDateNum ? `${Math.floor(endDateNum/10000)}-${String(Math.floor((endDateNum%10000)/100)).padStart(2,'0')}-${String(endDateNum%100).padStart(2,'0')}` : (() => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`; })();
-                    setTargetDateStr(targetDateStrFromData); setAnalysisPeriod('초기 재고 자산화 모드');
+                    // v8.99zg: 원가추출 파일 기준일은 재고/수불마감 스냅샷 기준일이다.
+                    // ERP 재고현황은 1행 제목줄의 날짜가 기준일이다.
+                    // 상품별 구매일(기록)이나 오늘 날짜를 기준일/파일명으로 쓰지 않는다.
+                    // 우선순위: 1행 제목 기준일 > 파일명 날짜 > 기준일/마감일자/결산일자 컬럼 > 미상.
+                    const resolveStockBasisDate = () => {
+                        for (const stockItem of parsedEnd) {
+                            if (safeNum(stockItem._sheetBasisDate) > 0) {
+                                return { dateNum: safeNum(stockItem._sheetBasisDate), source: stockItem._sheetBasisDateSource || '1행 제목' };
+                            }
+                        }
+                        if (endDateNum) return { dateNum: endDateNum, source: '파일명' };
+                        const basisNames = ['기준일', '마감일자', '결산일자', '재고기준일', '재고일자', '재고현황일자'];
+                        for (const stockItem of parsedEnd) {
+                            const raw = stockItem._raw || {};
+                            const cell = getRawExactWithKey(raw, basisNames);
+                            const candidates = [cell.value, raw['기준일'], raw['마감일자'], raw['결산일자'], raw['재고기준일'], raw['재고일자'], raw['재고현황일자']];
+                            for (const cand of candidates) {
+                                const d = formatItemDate(cand, refYear);
+                                if (d > 0) return { dateNum: d, source: cell.key || '기준일' };
+                            }
+                        }
+                        return { dateNum: 0, source: '' };
+                    };
+                    const stockBasisDate = resolveStockBasisDate();
+                    const stockBasisDateNum = stockBasisDate.dateNum || 0;
+                    const targetDateStrFromData = stockBasisDateNum ? toDateDisplay(stockBasisDateNum) : '기준일미상';
+                    setTargetDateStr(targetDateStrFromData);
+                    setAnalysisPeriod(stockBasisDateNum ? `초기 재고 자산화 모드 / 기준일 ${targetDateStrFromData}` : '초기 재고 자산화 모드 / 기준일미상');
+
+                    // v8.99z/zd: 원가추출은 현재 재고를 최신 구매분부터 역순으로 자산화한다.
+                    // 단, 화면 표시일은 구매 Lot의 구매일자만 허용한다. 매칭 실패 시 오늘 날짜로 대체하지 않는다.
+                    const sortedIn = [...parsedIn]
+                        .map((item, idx) => {
+                            const resolvedDate = resolvePurchaseDate(item);
+                            return {
+                                ...item,
+                                _purchaseDateNum: resolvedDate.dateNum,
+                                _purchaseDateSource: resolvedDate.source,
+                                _purchaseDateRaw: resolvedDate.rawValue,
+                                _seq: idx,
+                                _remainQty: parseNumber(item.수량),
+                                _codeKey: normalizeCodeKey(item.코드),
+                                _nameKey: normalizeKeyText(item.품명)
+                            };
+                        })
+                        .filter(item => item._purchaseDateNum > 0 && (!stockBasisDateNum || item._purchaseDateNum <= stockBasisDateNum) && item._remainQty > 0 && parseNumber(item.단가) > 0)
+                        .sort((a, b) => (b._purchaseDateNum - a._purchaseDateNum) || (b._seq - a._seq));
+                    const inPoolByCode = {};
+                    const inPoolByName = {};
+                    sortedIn.forEach(item => {
+                        const codeKey = item._codeKey;
+                        const nameKey = item._nameKey;
+                        if (codeKey) {
+                            if (!inPoolByCode[codeKey]) inPoolByCode[codeKey] = [];
+                            inPoolByCode[codeKey].push(item);
+                        }
+                        if (nameKey) {
+                            if (!inPoolByName[nameKey]) inPoolByName[nameKey] = [];
+                            if (!inPoolByName[nameKey].includes(item)) inPoolByName[nameKey].push(item);
+                        }
+                    });
 
                     const pData = {}; let uniqueIdCounter = 0;
 
                     parsedEnd.forEach((item) => {
                         const code = String(item.코드 || 'NO_CODE');
+                        const stockName = item._raw?.['상품명(규격)'] || item.품명;
                         let origPrice = parseNumber(item._raw?.['매입단가(원가)'] !== undefined ? item._raw['매입단가(원가)'] : item.단가);
                         let actualQty = parseNumber(item.수량);
                         if (item._raw?.['기말실사(이월수량)'] !== undefined) actualQty = parseNumber(item._raw['기말실사(이월수량)']);
@@ -2029,44 +2295,50 @@
 
                         if (actualQty <= 0) return;
 
-                        if (origPrice > 0 || !inPoolByCode[code] || inPoolByCode[code].length === 0) {
-                            const groupKey = `${code}|${origPrice}|${uniqueIdCounter++}`;
+                        let remainingQty = actualQty;
+                        const codeKey = normalizeCodeKey(code);
+                        const nameKey = normalizeKeyText(stockName);
+                        const inList = inPoolByCode[codeKey] || inPoolByName[nameKey] || [];
+                        for (let i = 0; i < inList.length && remainingQty > 0; i++) {
+                            const inItem = inList[i];
+                            const availableQty = parseNumber(inItem._remainQty);
+                            const unitPrice = parseNumber(inItem.단가);
+                            if (availableQty <= 0 || unitPrice <= 0) continue;
+                            const takeQty = Math.min(remainingQty, availableQty);
+                            remainingQty -= takeQty;
+                            inItem._remainQty = availableQty - takeQty;
+                            const purchaseDate = toDateDisplay(inItem._purchaseDateNum);
+                            const purchaseVendor = safeStr(inItem.거래처, '구매처미상');
+                            const groupKey = `${code}|${unitPrice}|${purchaseDate}|${purchaseVendor}|${uniqueIdCounter++}`;
+                            const priceMismatchIssue = (origPrice > 0 && origPrice !== unitPrice) ? `⚠️재고가${formatMoney(origPrice)}≠구매가${formatMoney(unitPrice)}` : '';
                             pData[groupKey] = {
-                                batchKey: groupKey, 코드: code, 품명: item._raw?.['상품명(규격)'] || item.품명, 단가: origPrice, 일자: targetDateStrFromData, 거래처: '초기재고',
-                                기초: actualQty, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: actualQty, 실사: actualQty, 로스: 0,
-                                매출액: 0, 매출원가: 0, 메모: item._raw?.['수기메모'] || '', 이슈: (origPrice === 0 && actualQty > 0) ? ['🚨단가없음'] : [], 
-                                출고내역: {}, _orig: {기초: actualQty, 입고: 0, 출고: 0, 단가: origPrice}, isDummy: (!code || code === 'NO_CODE'), 수기확인완료: (origPrice > 0)
+                                batchKey: groupKey, 코드: code, 품명: stockName, 단가: unitPrice, 일자: purchaseDate, 거래처: purchaseVendor,
+                                기초: takeQty, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: takeQty, 실사: takeQty, 로스: 0,
+                                매출액: 0, 매출원가: 0, 메모: item._raw?.['수기메모'] || '', 이슈: [`✅${purchaseDate}(${purchaseVendor})원가추출`, priceMismatchIssue].filter(Boolean),
+                                출고내역: {}, _orig: {기초: takeQty, 입고: 0, 출고: 0, 단가: unitPrice}, isDummy: false, 수기확인완료: true,
+                                _costExtractMode: 'REVERSE_PURCHASE', _stockRecordDate: item.일자 || '', _stockRecordVendor: item.거래처 || '', _stockRecordPrice: origPrice, 기본: getBasicRawValue(item),
+                                _dateDisplayMemo: `${purchaseDate}(${inItem._purchaseDateSource || '구매현황'})`, _matchedBy: inPoolByCode[codeKey] ? 'code' : 'name'
                             };
-                        } else {
-                            let remainingQty = actualQty; const inList = inPoolByCode[code];
-                            for (let i = 0; i < inList.length && remainingQty > 0; i++) {
-                                const inItem = inList[i]; if (inItem.수량 <= 0 || inItem.단가 <= 0) continue;
-                                const takeQty = Math.min(remainingQty, inItem.수량); remainingQty -= takeQty;
-                                const groupKey = `${code}|${inItem.단가}|${uniqueIdCounter++}`;
-                                pData[groupKey] = {
-                                    batchKey: groupKey, 코드: code, 품명: item._raw?.['상품명(규격)'] || item.품명, 단가: inItem.단가, 일자: targetDateStrFromData, 거래처: '초기재고',
-                                    기초: takeQty, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: takeQty, 실사: takeQty, 로스: 0,
-                                    매출액: 0, 매출원가: 0, 메모: item._raw?.['수기메모'] || '', 이슈: [`✅${formatStrForPeriod(inItem._dateNum)}(${inItem.거래처})원가추출`], 
-                                    출고내역: {}, _orig: {기초: takeQty, 입고: 0, 출고: 0, 단가: inItem.단가}, isDummy: false, 수기확인완료: true
-                                };
-                            }
-                            if (remainingQty > 0) {
-                                const validInList = inList.filter(i => i.단가 > 0); const fallbackPrice = validInList.length > 0 ? validInList[validInList.length - 1].단가 : 0;
-                                const fallbackLabel = validInList.length > 0 ? `✅${formatStrForPeriod(validInList[validInList.length - 1]._dateNum)}(${validInList[validInList.length - 1].거래처})원가추출` : '🚨단가없음';
-                                const groupKey = `${code}|${fallbackPrice}|${uniqueIdCounter++}`;
-                                pData[groupKey] = {
-                                    batchKey: groupKey, 코드: code, 품명: item._raw?.['상품명(규격)'] || item.품명, 단가: fallbackPrice, 일자: targetDateStrFromData, 거래처: '초기재고',
-                                    기초: remainingQty, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: remainingQty, 실사: remainingQty, 로스: 0,
-                                    매출액: 0, 매출원가: 0, 메모: item._raw?.['수기메모'] || '', 이슈: [fallbackLabel], 
-                                    출고내역: {}, _orig: {기초: remainingQty, 입고: 0, 출고: 0, 단가: fallbackPrice}, isDummy: false, 수기확인완료: (fallbackPrice > 0)
-                                };
-                            }
+                        }
+                        if (remainingQty > 0) {
+                            // 구매현황으로 배정하지 못한 잔여 수량은 오늘 날짜나 수불마감 결산일자를 구매일처럼 표시하지 않는다.
+                            const fallbackPrice = origPrice;
+                            const fallbackVendor = safeStr(item.거래처, '구매Lot미확정');
+                            const fallbackLabel = fallbackPrice > 0 ? `⚠️구매Lot미확정_재고/수불마감값보조(${fallbackVendor})` : '🚨구매Lot없음/단가없음';
+                            const groupKey = `${code}|${fallbackPrice}|FALLBACK|${uniqueIdCounter++}`;
+                            pData[groupKey] = {
+                                batchKey: groupKey, 코드: code, 품명: stockName, 단가: fallbackPrice, 일자: '구매일자미확정', 거래처: fallbackVendor,
+                                기초: remainingQty, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: remainingQty, 실사: remainingQty, 로스: 0,
+                                매출액: 0, 매출원가: 0, 메모: item._raw?.['수기메모'] || '', 이슈: [fallbackLabel],
+                                출고내역: {}, _orig: {기초: remainingQty, 입고: 0, 출고: 0, 단가: fallbackPrice}, isDummy: (!code || code === 'NO_CODE'), 수기확인완료: (fallbackPrice > 0),
+                                _costExtractMode: 'STOCK_FALLBACK', 기본: getBasicRawValue(item), _dateDisplayMemo: '구매현황에서 해당 재고수량에 배정할 구매일자를 찾지 못했습니다. 오늘 날짜로 보정하지 않았습니다.'
+                            };
                         }
                     });
 
                     const finalProductData = Object.values(pData).filter(item => !isSummaryOrInvalidProductRow({ code: item.코드, name: item.품명, raw: item._raw })).filter(item => !(item.기초 === 0 && item.입고 === 0 && item.출고 === 0 && item.실사 === 0 && item.로스 === 0)).sort((a, b) => a.품명.localeCompare(b.품명));
                     setProductData(finalProductData); setAppStep('closing'); 
-                    setTimeout(() => { setAlertMsg("✨ [초기 재고 셋업 완료]\n\n현재 물리 재고(4번)를 매입 내역(2번)을 바탕으로 분할하여 자산화 데이터를 추출했습니다."); }, 800);
+                    setTimeout(() => { setAlertMsg("✨ [초기 재고 셋업 완료]\n\n재고/수불마감 자료를 현재 보유수량으로 보고, 매입 내역(2번)의 최신 구매분부터 역순 적용하여 실제 구매일·구매처·구매단가 기준으로 자산화 데이터를 추출했습니다.\n\n수불마감 기준일은 상품별 구매일이 아니라 재고/수불마감 파일의 기준일로 설정했습니다."); }, 800);
                 } catch (err) { setAlertMsg('원가 추출 중 오류가 발생했습니다.'); console.error(err); } finally { setIsProcessing(false); }
             }, [mappings, setAlertMsg, setIsProcessing, setAppStep]);
 
@@ -2510,6 +2782,17 @@
             const focusedInputRef = useRef({ key: null, idx: -1 });
             const activeIssueModeRef = useRef(null);
             const filteredProductDataRef = useRef([]); // v8.82: 프린터 출력은 현재 화면 필터 결과를 그대로 사용한다.
+            const systemUiCollapsedRef = useRef(false); // v8.99zb: 스크롤 중 헤더 깜박임 방지용 현재 접힘 상태 참조
+            const scrollUiGuardRef = useRef({
+                lastTop: 0,
+                accDown: 0,
+                accUp: 0,
+                ignoreUntil: 0,
+                rafId: 0,
+                pendingTop: 0,
+                lastUserUpAt: 0,
+                lastTouchY: null
+            });
 
             const normalizeInitialMappings = (baseMappings = {}) => {
                 const merged = { ...defaultMappings, ...baseMappings };
@@ -2610,30 +2893,96 @@
 
             useEffect(() => { activeIssueModeRef.current = activeIssueMode; }, [activeIssueMode]);
 
-            // v8.99x: 아래로 스크롤하면 System.IO 영역을 접고, 살짝만 위로 올려도 다시 펼친다.
+            // v8.99zb: 아래 스크롤 정지 시 상단이동바가 깜박이지 않도록 스크롤 UI 전환을 안정화한다.
+            useEffect(() => { systemUiCollapsedRef.current = systemUiCollapsed; }, [systemUiCollapsed]);
+
             useEffect(() => {
                 const container = document.getElementById('main-scroll-container');
                 if (!container) return;
-                let lastTop = container.scrollTop;
-                let accDown = 0;
-                let accUp = 0;
-                const onScroll = () => {
-                    const currentTop = container.scrollTop;
-                    const delta = currentTop - lastTop;
-                    if (currentTop <= 80) {
-                        accDown = 0; accUp = 0;
-                        setSystemUiCollapsed(false);
-                    } else if (delta > 0) {
-                        accDown += delta; accUp = 0;
-                        if (accDown >= 30) setSystemUiCollapsed(true);
-                    } else if (delta < 0) {
-                        accUp += Math.abs(delta); accDown = 0;
-                        if (accUp >= 10) setSystemUiCollapsed(false);
-                    }
-                    lastTop = currentTop;
+                const guard = scrollUiGuardRef.current;
+                guard.lastTop = container.scrollTop;
+                guard.accDown = 0;
+                guard.accUp = 0;
+                guard.ignoreUntil = 0;
+                guard.rafId = 0;
+                guard.pendingTop = container.scrollTop;
+                guard.lastUserUpAt = 0;
+                guard.lastTouchY = null;
+
+                const now = () => (window.performance && performance.now ? performance.now() : Date.now());
+                const markUserUpIntent = () => { guard.lastUserUpAt = now(); };
+
+                const onWheel = (event) => {
+                    if (event.deltaY < -3) markUserUpIntent();
                 };
+                const onTouchStart = (event) => {
+                    guard.lastTouchY = event.touches && event.touches[0] ? event.touches[0].clientY : null;
+                };
+                const onTouchMove = (event) => {
+                    const y = event.touches && event.touches[0] ? event.touches[0].clientY : null;
+                    if (y !== null && guard.lastTouchY !== null && y - guard.lastTouchY > 5) markUserUpIntent();
+                    guard.lastTouchY = y;
+                };
+
+                const setCollapsedStable = (next) => {
+                    if (systemUiCollapsedRef.current === next) return;
+                    systemUiCollapsedRef.current = next;
+                    setSystemUiCollapsed(next);
+                    // System.IO 높이가 바뀌며 발생하는 보정 scroll 이벤트를 무시해 깜박임을 막는다.
+                    guard.ignoreUntil = now() + 520;
+                    guard.accDown = 0;
+                    guard.accUp = 0;
+                };
+
+                const processScroll = () => {
+                    guard.rafId = 0;
+                    const currentTop = guard.pendingTop;
+                    const delta = currentTop - guard.lastTop;
+                    const t = now();
+
+                    if (t < guard.ignoreUntil) {
+                        guard.lastTop = currentTop;
+                        return;
+                    }
+
+                    if (currentTop <= 80) {
+                        setCollapsedStable(false);
+                        guard.lastTop = currentTop;
+                        return;
+                    }
+
+                    if (delta > 0.5) {
+                        guard.accDown += delta;
+                        guard.accUp = 0;
+                        // 접힘은 충분히 아래로 이동했을 때만 실행해 미세 흔들림을 차단한다.
+                        if (!systemUiCollapsedRef.current && currentTop > 160 && guard.accDown >= 64) setCollapsedStable(true);
+                    } else if (delta < -0.5) {
+                        guard.accUp += Math.abs(delta);
+                        guard.accDown = 0;
+                        // 펼침은 실제 사용자 위방향 입력이 있을 때만 실행한다. 레이아웃 보정으로 인한 역스크롤은 무시한다.
+                        const hasRecentUserUpIntent = (t - guard.lastUserUpAt) < 700;
+                        if (systemUiCollapsedRef.current && hasRecentUserUpIntent && guard.accUp >= 18) setCollapsedStable(false);
+                    }
+
+                    guard.lastTop = currentTop;
+                };
+
+                const onScroll = () => {
+                    guard.pendingTop = container.scrollTop;
+                    if (!guard.rafId) guard.rafId = requestAnimationFrame(processScroll);
+                };
+
+                container.addEventListener('wheel', onWheel, { passive: true });
+                container.addEventListener('touchstart', onTouchStart, { passive: true });
+                container.addEventListener('touchmove', onTouchMove, { passive: true });
                 container.addEventListener('scroll', onScroll, { passive: true });
-                return () => container.removeEventListener('scroll', onScroll);
+                return () => {
+                    container.removeEventListener('wheel', onWheel);
+                    container.removeEventListener('touchstart', onTouchStart);
+                    container.removeEventListener('touchmove', onTouchMove);
+                    container.removeEventListener('scroll', onScroll);
+                    if (guard.rafId) cancelAnimationFrame(guard.rafId);
+                };
             }, [appStep]);
 
             // 🌟 성능 최적화: 검색 입력 시 타이핑 딜레이 방지 (0.25초 뒤 필터링 적용)
@@ -4197,7 +4546,9 @@ ${changeText}
 
                 const condition = (p, isCurrentIdx = false) => {
                     if (isCurrentIdx) return false;
-                    if (type === 'missingPrice') return (!p.수기확인완료 && p.isDummy && p.단가 === 0) || (p.이슈 && p.이슈.some(i => i.includes('🚨단가변경') || i.includes('🚨단가없음')));
+                    // v8.99za: 단가 검증 카운트와 점프 조건을 통일한다.
+                    // 실제 단가 0원 행은 더미/확인완료 여부와 관계없이 검토 대상이다.
+                    if (type === 'missingPrice') return safeNum(p.단가) <= 0 || (p.이슈 && p.이슈.some(i => i.includes('🚨단가변경') || i.includes('🚨단가없음')));
                     if (type === 'loss') return hasUnresolvedQtyIssue(p);
                     if (type === 'multiPrice') return hasUnresolvedLotIssue(p);
                     return false;
@@ -4219,7 +4570,7 @@ ${changeText}
                     return prev.map(p => {
                         let shouldAck = false;
                         if (type === 'missingPrice') {
-                            if ((!p.수기확인완료 && p.isDummy && p.단가 === 0) || (p.이슈 && p.이슈.some(i => i.includes('🚨단가변경') || i.includes('🚨단가없음')))) shouldAck = true;
+                            if ((safeNum(p.단가) <= 0) || (p.이슈 && p.이슈.some(i => i.includes('🚨단가변경') || i.includes('🚨단가없음')))) shouldAck = true;
                         } else if (type === 'loss') {
                             if (hasUnresolvedQtyIssue(p)) shouldAck = true;
                         } else if (type === 'multiPrice') {
@@ -4321,7 +4672,7 @@ ${changeText}
             const filteredProductData = useMemo(() => {
                 let data = productData;
                 if (filters.reviewType === 'loss') data = data.filter(p => p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0) || (p.이슈 && p.이슈.some(i => i.includes('수량변동') || i.includes('잔량') || i.includes('계산') || i.includes('신규추가') || i.includes('삭제됨'))));
-                else if (filters.reviewType === 'missingPrice') data = data.filter(p => (p.isDummy && p.단가 === 0) || (p.이슈 && p.이슈.some(i => i.includes('단가변경') || i.includes('단가없음'))));
+                else if (filters.reviewType === 'missingPrice') data = data.filter(p => safeNum(p.단가) <= 0 || (p.이슈 && p.이슈.some(i => i.includes('단가변경') || i.includes('단가없음'))));
                 else if (filters.reviewType === 'multiPrice') data = data.filter(p => hasLotIssueTotal(p));
                 data = FILTER_SORT_MODULE.applyFilters(data, filters, { favoriteVendors: CONFIG_MODULE.getFavoriteVendors(mappings), unitRules: CONFIG_MODULE.getUnitRules(mappings) });
                 if (filters.search) { const q = filters.search.toLowerCase(); data = data.filter(d => (d.품명 && d.품명.toLowerCase().includes(q)) || (d.코드 && d.코드.toLowerCase().includes(q)) || (d.거래처 && d.거래처.toLowerCase().includes(q))); }
@@ -4342,7 +4693,7 @@ ${changeText}
                             <div className="flex flex-col md:flex-row md:items-center gap-4">
                                 <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition" onClick={() => document.getElementById('main-scroll-container')?.scrollTo({top:0, behavior:'smooth'})} title="클릭시 최상단 이동">
                                     <span className="text-blue-600 mr-2">ONEAPP</span> DataOps
-                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">v8.99y FIFO Flow Patch</span>
+                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">v8.99zg ERP Basis Header Fix</span>
                                 </h1>
                             </div>
 
