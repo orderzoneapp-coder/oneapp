@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.4 재고현황 1행 메타]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.5 재고현황 파서 보정]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -14,7 +14,7 @@
     
     <script>
         window.MASTER_HEADERS = [ "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "판매여부", "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록" ];
-        window.NUMERIC_HEADERS = [ "안전재고", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "1종연산", "2종연산", "외주비", "노무비", "경비", "1구매", "1출고", "2구매", "2출고", "1입고", "2입고", "재고수량" ];
+        window.NUMERIC_HEADERS = [ "안전재고", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "1종연산", "2종연산", "외주비", "노무비", "경비", "1구매", "1출고", "2구매", "2출고", "1입고", "2입고", "재고수량", "최신단가" ];
         
         window.generateUUID = () => {
             return typeof crypto !== 'undefined' && crypto.randomUUID 
@@ -82,6 +82,33 @@
             const m = raw.match(/(20\d{2})[.\/\-년\s]+(\d{1,2})[.\/\-월\s]+(\d{1,2})/);
             if (!m) return '';
             return `${m[1]}/${String(Number(m[2])).padStart(2, '0')}/${String(Number(m[3])).padStart(2, '0')}`;
+        };
+
+        window.cleanHeaderKey = (v) => String(v ?? '').toLowerCase().replace(/\s/g, '');
+
+        // ERP 재고현황의 "최종(창고)"는 창고명이 아니라 해당 창고의 최신/최종 단가다.
+        // 컬럼명에 창고가 포함되어도 창고 매핑 후보에서 제외하고 입고가/최신단가로만 사용한다.
+        window.isInventoryLatestPriceHeader = (h) => {
+            const cleanH = window.cleanHeaderKey(h);
+            return cleanH === '최종(창고)' || cleanH === '최종창고' || cleanH === '창고최종' || cleanH === '최신단가' || cleanH === '재고단가' || (cleanH.includes('최종') && cleanH.includes('창고'));
+        };
+
+        window.isDisallowedHeaderForField = (field, header) => {
+            const cleanH = window.cleanHeaderKey(header);
+            if (!cleanH) return true;
+
+            if (field === '창고') {
+                // 최종(창고)는 가격 컬럼이므로 창고로 잡으면 안 된다.
+                if (window.isInventoryLatestPriceHeader(header)) return true;
+                if (cleanH.includes('단가') || cleanH.includes('금액') || cleanH.includes('가격')) return true;
+            }
+
+            if (field === '기준일자') {
+                // 기준일자는 1행 메타가 원칙이다. 구매일자/기록 컬럼과 혼동하지 않는다.
+                if (cleanH.includes('구매일자') || cleanH.includes('상품구매일자') || cleanH === '기록') return true;
+            }
+
+            return false;
         };
 
         window.extractInventorySheetMeta = (jsonAll = [], headerRowIdx = 0, sheetName = '') => {
@@ -434,7 +461,7 @@
                 '상품 구매일자': '상품 구매일자, 구매일자, 기록, 일자', 
                 '견적서': '견적서, 카테고리, 템플릿, 견적분류', 
                 '행사가': '행사가, 행사, 특가',
-                '입고가': '입고가, 입고, 매입가, 최종(창고), 최종창고, 재고단가', 
+                '입고가': '입고가, 입고, 매입가, 최종(창고), 최종창고, 최신단가, 재고단가', 
                 '출고가': '출고가, 출고, 판매가',
                 '입고B': 'B단가, 입고B', 
                 '도매A': 'A판매, A판매가, 도매A', 
@@ -480,25 +507,46 @@
         const createHeaderMap = (actualHeaders, mappingConfig) => {
             const headerMap = {};
             if(!mappingConfig) return headerMap;
-            
-            Object.keys(mappingConfig).forEach(field => {
-                const keywords = String(mappingConfig[field]).split(',').map(s => s.trim().toLowerCase().replace(/\s/g, '')).filter(Boolean);
-                
-                let matchedKey = actualHeaders.find(h => { 
-                    if(!h) return false; 
-                    const cleanH = String(h).toLowerCase().replace(/\s/g, ''); 
-                    return keywords.includes(cleanH); 
+
+            const clean = (v) => window.cleanHeaderKey ? window.cleanHeaderKey(v) : String(v ?? '').toLowerCase().replace(/\s/g, '');
+            const isDisallowed = (field, header) => window.isDisallowedHeaderForField ? window.isDisallowedHeaderForField(field, header) : false;
+            const safeHeaders = Array.isArray(actualHeaders) ? actualHeaders : [];
+            const findHeader = (field, keywords, exactOnly = false) => {
+                let matchedKey = safeHeaders.find(h => {
+                    if(!h || isDisallowed(field, h)) return false;
+                    const cleanH = clean(h);
+                    return keywords.includes(cleanH);
                 });
-                
-                if (!matchedKey) {
-                    matchedKey = actualHeaders.find(h => {
-                        if(!h) return false; 
-                        const cleanH = String(h).toLowerCase().replace(/\s/g, '');
-                        return keywords.some(kw => { 
-                            if (kw === '코드' && (cleanH.includes('1') || cleanH.includes('2') || cleanH.includes('3') || cleanH.includes('종'))) return false; 
-                            return cleanH.includes(kw); 
+
+                if (!matchedKey && !exactOnly) {
+                    matchedKey = safeHeaders.find(h => {
+                        if(!h || isDisallowed(field, h)) return false;
+                        const cleanH = clean(h);
+                        return keywords.some(kw => {
+                            if (kw === '코드' && (cleanH.includes('1') || cleanH.includes('2') || cleanH.includes('3') || cleanH.includes('종'))) return false;
+                            return cleanH.includes(kw);
                         });
                     });
+                }
+
+                return matchedKey;
+            };
+            
+            Object.keys(mappingConfig).forEach(field => {
+                const keywords = String(mappingConfig[field]).split(',').map(s => clean(s)).filter(Boolean);
+                let matchedKey = '';
+
+                if (field === '창고') {
+                    // 창고는 가격성 컬럼의 부분일치(예: 최종(창고))를 허용하지 않는다.
+                    // 1재고현황의 실제 창고는 1행 메타에서 별도 주입한다.
+                    const warehouseKeywords = Array.from(new Set([...keywords, '창고', '창고코드', '창고명']));
+                    matchedKey = findHeader(field, warehouseKeywords, false);
+                } else if (field === '기준일자') {
+                    // 기준일자는 구매일자/기록과 구분한다. 실제 파일 헤더에 기준일자가 있을 때만 매핑한다.
+                    const baseDateKeywords = ['기준일자', '기준일', '기준일시', '재고기준일', '재고기준일자'];
+                    matchedKey = findHeader(field, baseDateKeywords, true);
+                } else {
+                    matchedKey = findHeader(field, keywords, false);
                 }
                 
                 if(matchedKey) {
@@ -1102,6 +1150,11 @@
                                 const metaWarehouseCode = window.normalizeWarehouseCode(sheetMeta.warehouseCode || sheetMeta.warehouseRaw || '');
                                 const metaBaseDate = sheetMeta.baseDate || '';
 
+                                // 기존 일반 매핑에서 '창고'가 '최종(창고)'에 부분일치되어 들어온 경우를 방어적으로 제거한다.
+                                if (headerCache['창고'] && window.isInventoryLatestPriceHeader && window.isInventoryLatestPriceHeader(headerCache['창고'])) {
+                                    delete source['창고'];
+                                }
+
                                 if (metaWarehouseCode) source['창고'] = metaWarehouseCode;
                                 if (sheetMeta.warehouseRaw) source['_warehouseRaw'] = sheetMeta.warehouseRaw;
                                 if (metaBaseDate) source['기준일자'] = metaBaseDate;
@@ -1110,7 +1163,16 @@
                                 if (sheetMeta.docType) source['_inventorySheetType'] = sheetMeta.docType;
                                 if (actualPurchaseDateKey) source['상품 구매일자'] = window.normalizeInventoryPurchaseDate(row[actualPurchaseDateKey]);
                                 if (actualStockKey) source['재고수량'] = window.parseNum(row[actualStockKey]);
-                                if (actualInventoryPriceKey && source['입고가'] === undefined) source['입고가'] = window.parseNum(row[actualInventoryPriceKey]);
+
+                                if (actualInventoryPriceKey) {
+                                    const latestWarehousePrice = window.parseNum(row[actualInventoryPriceKey]);
+                                    source['최신단가'] = latestWarehousePrice;
+                                    source['_latestWarehousePrice'] = latestWarehousePrice;
+                                    source['_latestWarehousePriceHeader'] = actualInventoryPriceKey;
+                                    // ERP 재고현황에서 최종(창고)는 최신단가이며, 현재 작업 입고가의 기준으로 사용한다.
+                                    if (source['입고가'] === undefined || source['입고가'] === '') source['입고가'] = latestWarehousePrice;
+                                }
+
                                 if (actualMemoKey) source['비고'] = row[actualMemoKey] || '';
                                 source['_inventoryFifoKey'] = window.getInventoryPurchaseDateKey(source['상품 구매일자'], metaBaseDate);
                                 source['_inventorySourceRole'] = '1재고현황_기초재고';
@@ -2994,7 +3056,7 @@
                     <i className="fas fa-box-open"></i>
                     <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm"><i className="fas fa-check"></i></div>
                 </div>
-                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v1.10.2 구간/이슈 정리]</h2>
+                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v2.1.5 재고현황 파서 보정]</h2>
                 <p className="text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold">
                     현재 등록된 <span className="text-indigo-500">마스터 상품 데이터</span>가 없습니다.<br/>
                     견적 작업 및 파서 연동을 위해 전체 상품 DB를 세팅해주세요.
@@ -3314,7 +3376,7 @@
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <div className="flex items-center mb-0.5">
                                                     <span className="text-[14px] font-black text-slate-200 leading-none">MerchOps</span>
-                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v2.1.4 FIFO·스크롤 UI 자동접힘</span>
+                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v2.1.5 재고현황 파서 보정</span>
                                                 </div>
                                                 <span className="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">MAIN WORKSPACE</span>
                                             </div>
