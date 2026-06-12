@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.5 재고현황 파서 보정]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.6 품목코드 텍스트 정렬]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -138,6 +138,17 @@
         };
 
         window.getManagedRowKey = (row = {}) => row._managedKey || row.코드;
+
+        // 품목코드 정렬 정책:
+        // 품목코드는 숫자가 아니라 ERP의 텍스트 코드다.
+        // 숫자 정렬(numeric:true)을 쓰면 8자리 코드가 10자리 코드보다 먼저 올라와 목록 순서가 깨진다.
+        window.normalizeProductCodeText = (v) => String(v ?? '').trim().replace(/\s/g, '');
+        window.compareProductCodeText = (a, b) => {
+            const av = window.normalizeProductCodeText(a);
+            const bv = window.normalizeProductCodeText(b);
+            if (av === bv) return 0;
+            return av.localeCompare(bv, 'ko-KR', { numeric: false, sensitivity: 'base' });
+        };
 
 
         // 판매상태는 현재 작업정보가 아니라 마스터에 저장된 결과 상태다.
@@ -1576,7 +1587,7 @@
                 let subOutputCount = 0;
 
                 targetRows.forEach(row => {
-                    const code = row.코드;
+                    const code = window.normalizeProductCodeText(row.코드);
                     const saleCode = getSaleCode(row);
                     const inPrice = getBestNum(row, '입고가');
                     const finalOut = getAppliedPrice(row);
@@ -3056,7 +3067,7 @@
                     <i className="fas fa-box-open"></i>
                     <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm"><i className="fas fa-check"></i></div>
                 </div>
-                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v2.1.5 재고현황 파서 보정]</h2>
+                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v2.1.6 품목코드 텍스트 정렬]</h2>
                 <p className="text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold">
                     현재 등록된 <span className="text-indigo-500">마스터 상품 데이터</span>가 없습니다.<br/>
                     견적 작업 및 파서 연동을 위해 전체 상품 DB를 세팅해주세요.
@@ -3198,10 +3209,10 @@
                             });
                             return { ...item, _searchScore: score };
                         }).filter(r => r._searchScore > 0);
-                        baseList.sort((a, b) => b._searchScore - a._searchScore);
+                        baseList.sort((a, b) => (b._searchScore - a._searchScore) || window.compareProductCodeText(a.코드, b.코드));
                     }
                 } else { 
-                    baseList.sort((a, b) => String(a.코드).localeCompare(String(b.코드))); 
+                    baseList.sort((a, b) => window.compareProductCodeText(a.코드, b.코드)); 
                 }
 
                 if (ui.priceFilter !== 'all') {
@@ -3237,12 +3248,12 @@
                     baseList.sort((a, b) => {
                         const aInv = a.sources?.inventory || {};
                         const bInv = b.sources?.inventory || {};
-                        const codeCompare = String(a.코드 || '').localeCompare(String(b.코드 || ''), 'ko-KR', { numeric: true });
+                        const codeCompare = window.compareProductCodeText(a.코드, b.코드);
                         if (codeCompare !== 0) return codeCompare;
                         const aDate = aInv['_inventoryFifoKey'] ?? window.getInventoryPurchaseDateKey(aInv['상품 구매일자']);
                         const bDate = bInv['_inventoryFifoKey'] ?? window.getInventoryPurchaseDateKey(bInv['상품 구매일자']);
                         if (aDate !== bDate) return aDate - bDate;
-                        return String(window.getManagedRowKey(a)).localeCompare(String(window.getManagedRowKey(b)), 'ko-KR', { numeric: true });
+                        return String(window.getManagedRowKey(a)).localeCompare(String(window.getManagedRowKey(b)), 'ko-KR', { numeric: false, sensitivity: 'base' });
                     });
                 }
 
@@ -3376,7 +3387,7 @@
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <div className="flex items-center mb-0.5">
                                                     <span className="text-[14px] font-black text-slate-200 leading-none">MerchOps</span>
-                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v2.1.5 재고현황 파서 보정</span>
+                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v2.1.6 품목코드 텍스트 정렬</span>
                                                 </div>
                                                 <span className="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">MAIN WORKSPACE</span>
                                             </div>
