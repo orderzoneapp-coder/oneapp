@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.3 재고구매일자 FIFO]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.4 재고현황 1행 메타]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -46,16 +46,68 @@
             return `${mm}/${dd}`;
         };
 
-        window.getInventoryPurchaseDateKey = (v) => {
+        window.getInventoryPurchaseDateKey = (v, baseDate = '') => {
             const normalized = window.normalizeInventoryPurchaseDate(v);
             const m = String(normalized || '').match(/(\d{1,2})[.\/\-](\d{1,2})/);
             if (!m) return 99999999;
+            const baseYearMatch = String(baseDate || '').match(/(\d{4})[.\/\-](\d{1,2})[.\/\-](\d{1,2})/);
             const now = new Date();
             const mm = Number(m[1]);
             const dd = Number(m[2]);
-            const year = now.getFullYear();
+            const year = baseYearMatch ? Number(baseYearMatch[1]) : now.getFullYear();
             if (!mm || !dd) return 99999999;
             return (year * 10000) + (mm * 100) + dd;
+        };
+
+        // 1재고현황 1행 메타 정책:
+        // ERP 재고현황은 실제 헤더 위 1행에 "회사명 / 창고 / 기준일 / 재고현황" 정보가 들어온다.
+        // 이 값은 행 데이터가 아니므로 파싱 단계에서 별도 메타로 읽고, 재고 source에 창고/기준일자로 주입한다.
+        window.normalizeWarehouseCode = (v) => {
+            const raw = String(v ?? '').trim();
+            if (!raw) return '';
+            const m = raw.match(/(\d{1,3})\s*(?:창고)?/);
+            if (!m) return raw;
+            return String(Number(m[1])).padStart(2, '0');
+        };
+
+        window.normalizeInventoryBaseDate = (v) => {
+            if (v === undefined || v === null) return '';
+            if (v instanceof Date && !isNaN(v.getTime())) {
+                const yyyy = v.getFullYear();
+                const mm = String(v.getMonth() + 1).padStart(2, '0');
+                const dd = String(v.getDate()).padStart(2, '0');
+                return `${yyyy}/${mm}/${dd}`;
+            }
+            const raw = String(v).trim();
+            const m = raw.match(/(20\d{2})[.\/\-년\s]+(\d{1,2})[.\/\-월\s]+(\d{1,2})/);
+            if (!m) return '';
+            return `${m[1]}/${String(Number(m[2])).padStart(2, '0')}/${String(Number(m[3])).padStart(2, '0')}`;
+        };
+
+        window.extractInventorySheetMeta = (jsonAll = [], headerRowIdx = 0, sheetName = '') => {
+            const metaRows = jsonAll.slice(0, Math.max(0, headerRowIdx));
+            const metaText = metaRows
+                .flatMap(row => Array.isArray(row) ? row : [])
+                .map(v => String(v ?? '').trim())
+                .filter(Boolean)
+                .join(' / ');
+            if (!metaText) return { sheetName, titleText: '', companyName: '', warehouseRaw: '', warehouseCode: '', baseDate: '', docType: '' };
+
+            const parts = metaText.split('/').map(s => s.trim()).filter(Boolean);
+            const companyMatch = metaText.match(/회사명\s*[:：]\s*([^/]+)/);
+            const warehouseRaw = (parts.find(p => /\d+\s*창고/.test(p)) || '').trim();
+            const baseDate = window.normalizeInventoryBaseDate(metaText);
+            const docType = parts.find(p => p.includes('재고현황')) || (metaText.includes('재고현황') ? '재고현황' : '');
+
+            return {
+                sheetName,
+                titleText: metaText,
+                companyName: companyMatch ? companyMatch[1].trim() : '',
+                warehouseRaw,
+                warehouseCode: window.normalizeWarehouseCode(warehouseRaw),
+                baseDate,
+                docType
+            };
         };
 
         window.getManagedRowKey = (row = {}) => row._managedKey || row.코드;
@@ -174,10 +226,21 @@
             const whCode = String(currentFinalData?.['_calcWarehouse'] ?? currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '').trim();
             const unitStr = String(currentFinalData?.['_calcUnit'] ?? currentFinalData?.['단위'] ?? mItem?.['단위'] ?? '').trim().toLowerCase();
             
+            const normalizeWhForMatch = (v) => {
+                const raw = String(v ?? '').trim();
+                if (!raw) return '';
+                const m = raw.match(/\d+/);
+                return m ? String(Number(m[0])) : raw;
+            };
+
             const matchWh = (ruleWh, targetWh) => { 
                 if (ruleWh === '*') return true; 
+                const targetNorm = normalizeWhForMatch(targetWh);
                 const targets = String(ruleWh).split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean); 
-                return targets.some(s => s === targetWh || (targetWh !== '' && !isNaN(s) && !isNaN(targetWh) && Number(s) === Number(targetWh))); 
+                return targets.some(s => {
+                    const ruleNorm = normalizeWhForMatch(s);
+                    return s === targetWh || (targetNorm !== '' && ruleNorm !== '' && ruleNorm === targetNorm);
+                }); 
             };
             
             const matchUnit = (ruleUnit, targetUnit) => { 
@@ -342,7 +405,7 @@
         });
         
         const getInitialVisibleUploadCols = () => ({ 
-            estimate: ['창고', '구매처', '브랜드', '견적서', '단위', '재고수량', '상품 구매일자', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '검색어등록'] 
+            estimate: ['창고', '기준일자', '구매처', '브랜드', '견적서', '단위', '재고수량', '상품 구매일자', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '검색어등록'] 
         });
         
         const getInitialMappings = () => {
@@ -367,6 +430,7 @@
                 '단위': '단위, 판매단위, 포장단위, UNIT, unit',
                 '구매처': '거래처명, 구매처, 거래처, 거래', 
                 '재고수량': '재고수량, 재고, 수량, 현재고', 
+                '기준일자': '기준일자, 기준일, 기준일시, 일자',
                 '상품 구매일자': '상품 구매일자, 구매일자, 기록, 일자', 
                 '견적서': '견적서, 카테고리, 템플릿, 견적분류', 
                 '행사가': '행사가, 행사, 특가',
@@ -389,6 +453,7 @@
                 '단위': '단위',
                 '구매처': '구매처', 
                 '재고수량': '재고수량',
+                '기준일자': '기준일자',
                 '상품 구매일자': '상품 구매일자',
                 '견적서': '견적서', 
                 '행사가': '행사가', 
@@ -475,6 +540,9 @@
                         
                         if (headerRowIdx === -1) return null; 
 
+                        const sheetMeta = window.extractInventorySheetMeta
+                            ? window.extractInventorySheetMeta(jsonAll, headerRowIdx, wb.SheetNames[0])
+                            : {};
                         const headers = jsonAll[headerRowIdx] || [];
                         let endIdx = jsonAll.length - 1;
                         
@@ -529,6 +597,11 @@
                                 parsedData.push(obj);
                             }
                         }
+                        Object.defineProperty(parsedData, '_sheetMeta', {
+                            value: sheetMeta,
+                            enumerable: false,
+                            configurable: true
+                        });
                         return parsedData;
                     } catch(err) { 
                         return null; 
@@ -574,11 +647,12 @@
 
             // v2.0.9 필수 매핑 보강: 기존 localStorage 설정이 있어도 단위/브랜드/검색어등록을 자동 보강한다.
             useEffect(() => {
-                const requiredUploadCols = ['창고', '구매처', '브랜드', '견적서', '단위', '재고수량', '상품 구매일자', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '검색어등록'];
+                const requiredUploadCols = ['창고', '기준일자', '구매처', '브랜드', '견적서', '단위', '재고수량', '상품 구매일자', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '검색어등록'];
                 const requiredMappings = {
                     '브랜드': '브랜드, 제조사, 메이커',
                     '단위': '단위, 판매단위, 포장단위, UNIT, unit',
                     '재고수량': '재고수량, 재고, 수량, 현재고',
+                    '기준일자': '기준일자, 기준일, 기준일시, 일자',
                     '상품 구매일자': '상품 구매일자, 구매일자, 기록, 일자',
                     '외주비': '외주비, 외주, 외주가공비',
                     '노무비': '노무비, 노무, 인건비',
@@ -588,6 +662,7 @@
                     '브랜드': '브랜드',
                     '단위': '단위',
                     '재고수량': '재고수량',
+                    '기준일자': '기준일자',
                     '상품 구매일자': '상품 구매일자',
                     '외주비': '외주비',
                     '노무비': '노무비',
@@ -947,6 +1022,7 @@
                             continue; 
                         }
 
+                        const sheetMeta = excelData._sheetMeta || {};
                         const actualHeaders = Object.keys(excelData[0]);
                         const curMap = config.mappings['estimate'] || {}; 
                         const headerCache = createHeaderMap(actualHeaders, curMap);
@@ -1013,6 +1089,7 @@
                             });
 
                             // 1재고현황 전용 컬럼 의미 보정:
+                            // - 1행의 창고/기준일자는 실제 행 데이터가 아니므로 sheetMeta에서 읽어 재고 source에 주입한다.
                             // - '기록'은 상품 구매일자다.
                             // - '재고'는 기초재고/재고수량이다.
                             // - '최종(창고)'는 재고단가/입고가로 참조한다.
@@ -1022,12 +1099,20 @@
                                 const actualStockKey = headerCache['재고수량'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '재고');
                                 const actualInventoryPriceKey = headerCache['입고가'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '최종(창고)' || String(h).replace(/\s/g, '') === '최종창고');
                                 const actualMemoKey = actualHeaders.find(h => String(h).replace(/\s/g, '') === '적요' || String(h).replace(/\s/g, '') === '비고');
+                                const metaWarehouseCode = window.normalizeWarehouseCode(sheetMeta.warehouseCode || sheetMeta.warehouseRaw || '');
+                                const metaBaseDate = sheetMeta.baseDate || '';
 
+                                if (metaWarehouseCode) source['창고'] = metaWarehouseCode;
+                                if (sheetMeta.warehouseRaw) source['_warehouseRaw'] = sheetMeta.warehouseRaw;
+                                if (metaBaseDate) source['기준일자'] = metaBaseDate;
+                                if (sheetMeta.companyName) source['_inventoryCompanyName'] = sheetMeta.companyName;
+                                if (sheetMeta.titleText) source['_inventorySheetTitle'] = sheetMeta.titleText;
+                                if (sheetMeta.docType) source['_inventorySheetType'] = sheetMeta.docType;
                                 if (actualPurchaseDateKey) source['상품 구매일자'] = window.normalizeInventoryPurchaseDate(row[actualPurchaseDateKey]);
                                 if (actualStockKey) source['재고수량'] = window.parseNum(row[actualStockKey]);
                                 if (actualInventoryPriceKey && source['입고가'] === undefined) source['입고가'] = window.parseNum(row[actualInventoryPriceKey]);
                                 if (actualMemoKey) source['비고'] = row[actualMemoKey] || '';
-                                source['_inventoryFifoKey'] = window.getInventoryPurchaseDateKey(source['상품 구매일자']);
+                                source['_inventoryFifoKey'] = window.getInventoryPurchaseDateKey(source['상품 구매일자'], metaBaseDate);
                                 source['_inventorySourceRole'] = '1재고현황_기초재고';
                             }
 
