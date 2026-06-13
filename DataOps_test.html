@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zn Notice Price Change Fix)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zp Transfer Profit Issue Fix)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -51,7 +51,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.99zn Notice Price Change Fix...</div>
+        <div class="loader-text">ONEAPP DataOps v8.99zp Transfer Profit Issue Fix...</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -356,7 +356,7 @@
            - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
            ======================================================================= */
         const CONFIG_MODULE = Object.freeze({
-            version: 'v8.99zn Notice Price Change Fix',
+            version: 'v8.99zp Transfer Profit Issue Fix',
             categoryMap: Object.freeze({
                 '10': '채소.과일',
                 '20': '수산.축산',
@@ -3916,21 +3916,33 @@
                             '품목수': itemSet.size
                         }];
                     };
+                    const normalizeTransferIssueLabel = (text = '') => {
+                        const s = safeStr(text, '');
+                        if (!s || s === '확인완료') return '';
+                        if (s.includes('판매가 확인') || s.includes('단가변동')) return '단가변동';
+                        if (s.includes('구매현황 매칭 없음')) return '매칭없음';
+                        if (s.includes('거래처 단가그룹 없음')) return '그룹없음';
+                        if (s.includes('기준단가 없음')) return '단가없음';
+                        if (s.includes('판매단가 없음')) return '판매가없음';
+                        return s;
+                    };
                     const aggregateProfitRows = (detailRows = [], mode = 'customer') => {
                         const map = {};
                         detailRows.forEach(r => {
+                            const reportCustomer = safeStr(r['보고거래처'] || r['거래처명'], '미지정');
+                            const groupName = safeStr(r['거래처그룹'], '');
                             const key = mode === 'customer'
-                                ? safeStr(r['거래처명'], '미지정')
+                                ? `${groupName}|${reportCustomer}`
                                 : `${safeStr(r['품목코드'])}|${safeStr(r['품명'])}|${safeStr(r['규격'])}`;
                             if (!map[key]) {
                                 map[key] = {
-                                    customer: safeStr(r['거래처명'], ''),
-                                    groupName: safeStr(r['거래처그룹'], ''),
+                                    customer: reportCustomer,
+                                    groupName,
                                     code: safeStr(r['품목코드'], ''),
                                     name: safeStr(r['품명'], ''),
                                     spec: safeStr(r['규격'], ''),
                                     qty: 0, supply: 0, fee: 0, netSales: 0, cost: 0, profit: 0,
-                                    customerSet: new Set(), itemSet: new Set(), purchaseVendorSet: new Set(), issueSet: new Set()
+                                    customerSet: new Set(), itemSet: new Set(), purchaseVendorSet: new Set(), issueSet: new Set(), issueCustomerSet: new Set()
                                 };
                             }
                             const a = map[key];
@@ -3940,62 +3952,59 @@
                             a.netSales += safeNum(r['실매출']);
                             a.cost += safeNum(r['매입원가합계'] ?? r['매입원가']);
                             a.profit += safeNum(r['수익']);
-                            if (r['거래처명']) a.customerSet.add(r['거래처명']);
+                            if (reportCustomer) a.customerSet.add(reportCustomer);
                             if (r['품목코드'] || r['품명']) a.itemSet.add(`${r['품목코드']}|${r['품명']}`);
                             if (r['구매처']) a.purchaseVendorSet.add(r['구매처']);
-                            if (r['검증결과'] && r['검증결과'] !== '확인완료') a.issueSet.add(r['검증결과']);
+                            const issueLabel = normalizeTransferIssueLabel(r['검증결과']);
+                            if (issueLabel) {
+                                a.issueSet.add(issueLabel);
+                                if (reportCustomer) a.issueCustomerSet.add(reportCustomer);
+                            }
                         });
                         return Object.values(map).map(a => {
-                            const margin = a.netSales !== 0 ? (a.profit / a.netSales) * 100 : 0;
-                            const lowMargin = a.netSales !== 0 && margin < 5 && a.profit >= 0;
-                            const issueMemo = Array.from(a.issueSet).join(', ');
-                            const note = [a.profit < 0 ? '적자' : '', lowMargin ? '저마진' : '', issueMemo].filter(Boolean).join(' / ');
+                            const margin = a.netSales !== 0 ? (a.profit / a.netSales) : 0;
+                            const isInternalMove = safeStr(a.groupName) === '내부이동';
+                            const lowMargin = !isInternalMove && a.netSales !== 0 && margin < 0.05 && a.profit >= 0;
+                            const issueLabels = [];
+                            if (!isInternalMove && a.profit < 0) issueLabels.push('역마진');
+                            if (lowMargin) issueLabels.push('저마진');
+                            Array.from(a.issueSet).forEach(issue => { if (issue && !issueLabels.includes(issue)) issueLabels.push(issue); });
+                            const issueText = issueLabels.join(' / ');
+                            const issueCustomers = Array.from(a.issueCustomerSet).filter(Boolean).join(', ');
                             if (mode === 'customer') {
                                 return {
-                                    '거래처명': a.customer || Array.from(a.customerSet)[0] || '미지정',
-                                    '단가그룹': a.groupName,
-                                    '판매수량': a.qty,
-                                    '공급가액': Math.round(a.supply),
-                                    '공제금액': Math.round(a.fee),
-                                    '실매출': Math.round(a.netSales),
-                                    '매입원가': Math.round(a.cost),
-                                    '수익': Math.round(a.profit),
-                                    '수익률(%)': margin.toFixed(1) + '%',
+                                    '그룹': a.groupName,
+                                    '거래처': a.customer || Array.from(a.customerSet)[0] || '미지정',
                                     '품목수': a.itemSet.size,
-                                    '확인필요건수': a.issueSet.size,
-                                    '비고': note
+                                    '수량': a.qty,
+                                    '공급가': Math.round(a.supply),
+                                    '공제': Math.round(a.fee),
+                                    '실매출': Math.round(a.netSales),
+                                    '매입가': Math.round(a.cost),
+                                    '수익': Math.round(a.profit),
+                                    '수익률': margin,
+                                    '확인': issueText,
+                                    '비고': issueText
                                 };
                             }
                             return {
-                                '품목코드': a.code,
-                                '품명': a.name,
-                                '규격': a.spec,
-                                '판매수량': a.qty,
-                                '평균판매단가': a.qty !== 0 ? Math.round(a.supply / a.qty) : 0,
-                                '공급가액': Math.round(a.supply),
-                                '공제금액': Math.round(a.fee),
+                                '상품': a.spec ? `${a.name} ${a.spec}`.trim() : a.name,
+                                '수량': a.qty,
+                                '공급가': Math.round(a.supply),
+                                '공제': Math.round(a.fee),
                                 '실매출': Math.round(a.netSales),
-                                '매입원가': Math.round(a.cost),
-                                '평균원가': a.qty !== 0 ? Math.round(a.cost / a.qty) : 0,
+                                '매입가': Math.round(a.cost),
                                 '수익': Math.round(a.profit),
-                                '수익률(%)': margin.toFixed(1) + '%',
-                                '판매처수': a.customerSet.size,
-                                '주요판매처': Array.from(a.customerSet).slice(0, 5).join(', '),
-                                '구매처': Array.from(a.purchaseVendorSet).join(', '),
-                                '확인필요건수': a.issueSet.size,
-                                '비고': note
+                                '수익률': margin,
+                                '확인': issueText,
+                                '비고': issueCustomers ? `확인거래처: ${issueCustomers}` : ''
                             };
                         }).sort((a, b) => {
-                            const issueDiff = safeNum(b['확인필요건수']) - safeNum(a['확인필요건수']);
-                            if (issueDiff) return issueDiff;
-                            const profitA = safeNum(a['수익']);
-                            const profitB = safeNum(b['수익']);
-                            if ((profitA < 0) !== (profitB < 0)) return profitA < 0 ? -1 : 1;
-                            const marginA = parseNumber(String(a['수익률(%)']).replace('%',''));
-                            const marginB = parseNumber(String(b['수익률(%)']).replace('%',''));
-                            if (marginA !== marginB) return marginA - marginB;
-                            if (mode === 'customer') return safeStr(a['거래처명']).localeCompare(safeStr(b['거래처명']), 'ko');
-                            return safeStr(a['품목코드']).localeCompare(safeStr(b['품목코드']), 'ko') || safeStr(a['품명']).localeCompare(safeStr(b['품명']), 'ko');
+                            if (mode === 'customer') {
+                                return safeStr(a['그룹']).localeCompare(safeStr(b['그룹']), 'ko') ||
+                                    safeStr(a['거래처']).localeCompare(safeStr(b['거래처']), 'ko');
+                            }
+                            return safeStr(a['상품']).localeCompare(safeStr(b['상품']), 'ko');
                         });
                     };
                     const isListingFeeCustomer = (customerName = '') => ['1마산', '2중앙'].includes(safeStr(customerName, '').trim());
@@ -4014,59 +4023,39 @@
                         return aoa;
                     };
                     const aggregateTransferPriceChanges = (rows = []) => {
-                        // v8.99zn: 단가변동은 금액 합계가 아니라 "단가 차이" 보고서로 출력한다.
-                        // 목적은 관리자가 "누구에게 / 무엇을 / 전산단가에서 업로드단가로 어떻게 바뀌었는지" 빠르게 확인하는 것이다. 단가공지가 있고 판매단가가 공지와 같으면 변동으로 보지 않는다.
-                        // 같은 거래처+세부거래처+상품이라도 전산단가/업로드단가 조합이 다르면 별도 행으로 분리한다.
+                        // 단가변동은 공지가(단가공지 우선, 없으면 그룹 기준가)와 판매현황 판매가를 비교한다.
+                        // 공지가와 판매가가 같거나, 비교 기준가가 없으면 단가변동 시트에 노출하지 않는다.
                         const map = {};
                         rows.forEach(r => {
                             const qty = safeNum(r['판매수량']);
-                            const systemPrice = safeNum(r['실제판매단가']);
-                            const uploadPrice = safeNum(r['기준단가']);
+                            const groupName = safeStr(r['거래처그룹'], '미지정');
+                            const customer = safeStr(r['보고거래처'] || r['거래처명'], '미지정');
+                            const itemName = safeStr(r['품명'], '');
+                            const noticePrice = safeNum(r['기준단가']);
+                            const salesPrice = safeNum(r['실제판매단가']);
                             if (qty === 0) return;
-                            if (systemPrice === uploadPrice && systemPrice > 0 && uploadPrice > 0) return;
-
-                            const customer = safeStr(r['거래처명'], '미지정');
-                            const detailCustomer = safeStr(r['규격'], '');
-                            const code = safeStr(r['품목코드'], '');
-                            const name = safeStr(r['품명'], '');
-                            const appliedKey = safeStr(r['적용단가명'], '');
-                            const rulePath = safeStr(r['단가룰'], '');
-                            const priceDiff = uploadPrice - systemPrice;
-                            const key = `${customer}|${detailCustomer}|${code}|${name}|${systemPrice}|${uploadPrice}|${appliedKey}`;
+                            if (noticePrice <= 0 || salesPrice <= 0) return;
+                            if (noticePrice === salesPrice) return;
+                            const diff = salesPrice - noticePrice;
+                            const key = `${groupName}|${customer}|${itemName}|${noticePrice}|${salesPrice}`;
                             if (!map[key]) {
                                 map[key] = {
+                                    '그룹': groupName,
                                     '거래처': customer,
-                                    '세부거래처': detailCustomer,
-                                    '상품': name,
-                                    '총수량': 0,
-                                    '전산단가': systemPrice,
-                                    '업로드단가': uploadPrice,
-                                    '단가차이': priceDiff,
-                                    '적용기준': appliedKey,
-                                    '단가룰': rulePath
+                                    '상품': itemName,
+                                    '수량': 0,
+                                    '공지가': Math.round(noticePrice),
+                                    '판매가': Math.round(salesPrice),
+                                    '차이': Math.round(diff)
                                 };
                             }
-                            map[key]['총수량'] += qty;
+                            map[key]['수량'] += qty;
                         });
-                        return Object.values(map).map(a => {
-                            let type = '확인필요';
-                            if (safeNum(a['업로드단가']) > safeNum(a['전산단가'])) type = '인상';
-                            else if (safeNum(a['업로드단가']) < safeNum(a['전산단가'])) type = '인하';
-                            if (safeNum(a['전산단가']) <= 0 || safeNum(a['업로드단가']) <= 0) type = '확인필요';
-                            return {
-                                '거래처': a['거래처'],
-                                '세부거래처': a['세부거래처'],
-                                '상품': a['상품'],
-                                '총수량': a['총수량'],
-                                '전산단가': Math.round(safeNum(a['전산단가'])),
-                                '업로드단가': Math.round(safeNum(a['업로드단가'])),
-                                '단가차이': Math.round(safeNum(a['단가차이'])),
-                                '구분': type,
-                                '적용기준': a['적용기준'],
-                                '단가룰': a['단가룰']
-                            };
-                        }).filter(r => safeNum(r['단가차이']) !== 0 || r['구분'] === '확인필요')
-                          .sort((a, b) => Math.abs(safeNum(b['단가차이'])) - Math.abs(safeNum(a['단가차이'])) || safeStr(a['거래처']).localeCompare(safeStr(b['거래처']), 'ko'));
+                        return Object.values(map).sort((a, b) =>
+                            safeStr(a['그룹']).localeCompare(safeStr(b['그룹']), 'ko') ||
+                            safeStr(a['거래처']).localeCompare(safeStr(b['거래처']), 'ko') ||
+                            safeStr(a['상품']).localeCompare(safeStr(b['상품']), 'ko')
+                        );
                     };
 
                     const transferMap = {};
@@ -4233,6 +4222,7 @@
                     const transferPriceConfigForExport = buildTransferPriceConfig();
                     const purchasePriceRows = [];
                     const purchaseByCustomerCode = {};
+                    const purchaseByDetailCustomerCode = {};
                     const purchaseByCode = {};
                     parsedIn.forEach(item => {
                         if (!isTransferRow(item, targetFiles.in.name) || isReportFooterOrSummaryRow(item) || isTransferFeeRow(item)) return;
@@ -4250,9 +4240,12 @@
                         };
                         purchasePriceRows.push(rec);
                         const customerCodeKey = `${outputCustomer}|${f.code}`;
+                        const detailCustomerCodeKey = `${f.detailCustomer || outputCustomer}|${f.code}`;
                         if (!purchaseByCustomerCode[customerCodeKey]) purchaseByCustomerCode[customerCodeKey] = [];
+                        if (!purchaseByDetailCustomerCode[detailCustomerCodeKey]) purchaseByDetailCustomerCode[detailCustomerCodeKey] = [];
                         if (!purchaseByCode[f.code]) purchaseByCode[f.code] = [];
                         purchaseByCustomerCode[customerCodeKey].push(rec);
+                        purchaseByDetailCustomerCode[detailCustomerCodeKey].push(rec);
                         purchaseByCode[f.code].push(rec);
                     });
 
@@ -4266,6 +4259,8 @@
                         const name = getName(item);
                         if (isTransferFeeRow(item)) return;
                         const customer = safeStr(getRawCell(raw, ['거래처명', '거래처', '매출처명', '판매처', '3거래']) ?? item.거래처, '미지정');
+                        const detailCustomer = safeStr(getRawCell(raw, ['NO.', 'NO', 'No.', '세부거래처', '거래처세부']) ?? '', '');
+                        const reportCustomer = detailCustomer || customer;
                         const spec = safeStr(getRawCell(raw, ['규격', '규격명', '포장규격', '상품규격']) ?? '', '');
                         const qty = parseNumber(getRawCell(raw, ['출고수량', '판매수량', '수량', '판매량', '출고량']) ?? item.수량);
                         const actualPrice = parseNumber(getRawCell(raw, ['판매단가', '단가', '출고가', '출고가 (공지)', '출고가(공지)', '청과', '정과']) ?? item.단가);
@@ -4284,9 +4279,10 @@
                             }
                             return list[0] || null;
                         };
+                        const detailCandidates = purchaseByDetailCustomerCode[`${reportCustomer}|${code}`] || [];
                         const customerCandidates = purchaseByCustomerCode[`${customer}|${code}`] || [];
                         const codeCandidates = purchaseByCode[code] || [];
-                        const match = chooseTransferPriceMatch(customerCandidates) || chooseTransferPriceMatch(codeCandidates);
+                        const match = chooseTransferPriceMatch(detailCandidates) || chooseTransferPriceMatch(customerCandidates) || chooseTransferPriceMatch(codeCandidates);
                         const noticePrice = match ? safeNum(match.noticePrice) : 0;
                         const basePrice = match ? (noticePrice > 0 ? noticePrice : safeNum(match.price)) : 0;
                         const appliedPriceKey = match ? (noticePrice > 0 ? '단가공지' : safeStr(match.priceKey, '')) : '';
@@ -4299,10 +4295,10 @@
                         if (match && match.status === 'CUSTOMER_GROUP_MISSING') reasons.push('거래처 단가그룹 없음');
                         if (match && match.status === 'PRICE_MISSING') reasons.push('기준단가 없음');
                         if (actualPrice <= 0) reasons.push('판매단가 없음');
-                        if (match && basePrice > 0 && actualPrice > 0 && actualPrice !== basePrice) reasons.push('판매가 확인');
+                        if (match && basePrice > 0 && actualPrice > 0 && actualPrice !== basePrice) reasons.push('단가변동');
                         const resultText = reasons.length ? reasons.join(', ') : '확인완료';
                         const priceRow = {
-                            '거래처명': customer, '거래처그룹': match ? match.groupName : '',
+                            '거래처명': customer, '보고거래처': reportCustomer, '세부거래처': detailCustomer, '거래처그룹': match ? match.groupName : '',
                             '품목코드': code, '품명': name, '규격': spec, '판매수량': qty,
                             '실제판매단가': actualPrice, '기준단가': basePrice, '적용단가명': appliedPriceKey,
                             '단가룰': match ? match.rulePath : '', '단가차이': actualPrice - basePrice,
@@ -4380,8 +4376,8 @@
                         '총수익': totalSummary['총수익'] || 0,
                         '수익률(%)': totalSummary['수익률(%)'] || '0.0%',
                         '적자거래처수': customerProfitRows.filter(r => safeNum(r['수익']) < 0).length,
-                        '저마진거래처수': customerProfitRows.filter(r => safeNum(r['수익']) >= 0 && parseNumber(String(r['수익률(%)']).replace('%','')) < 5).length,
-                        '확인필요거래처수': customerProfitRows.filter(r => safeNum(r['확인필요건수']) > 0).length
+                        '저마진거래처수': customerProfitRows.filter(r => safeNum(r['수익']) >= 0 && safeNum(r['수익률']) < 0.05).length,
+                        '확인필요거래처수': customerProfitRows.filter(r => safeStr(r['확인'])).length
                     }];
                     const itemSummary = [{
                         '품목수': itemProfitRows.length,
@@ -4393,18 +4389,59 @@
                         '총수익': totalSummary['총수익'] || 0,
                         '수익률(%)': totalSummary['수익률(%)'] || '0.0%',
                         '적자품목수': itemProfitRows.filter(r => safeNum(r['수익']) < 0).length,
-                        '저마진품목수': itemProfitRows.filter(r => safeNum(r['수익']) >= 0 && parseNumber(String(r['수익률(%)']).replace('%','')) < 5).length,
-                        '확인필요품목수': itemProfitRows.filter(r => safeNum(r['확인필요건수']) > 0).length
+                        '저마진품목수': itemProfitRows.filter(r => safeNum(r['수익']) >= 0 && safeNum(r['수익률']) < 0.05).length,
+                        '확인필요품목수': itemProfitRows.filter(r => safeStr(r['확인'])).length
                     }];
                     const priceChangeRows = aggregateTransferPriceChanges(priceValidationRows);
-                    const priceChangeColumns = ['거래처','세부거래처','상품','총수량','전산단가','업로드단가','단가차이','구분','적용기준','단가룰'];
-                    const priceChangeUpCount = priceChangeRows.filter(r => safeNum(r['단가차이']) > 0).length;
-                    const priceChangeDownCount = priceChangeRows.filter(r => safeNum(r['단가차이']) < 0).length;
-                    const maxPriceDiff = priceChangeRows.reduce((max, r) => Math.max(max, Math.abs(safeNum(r['단가차이']))), 0);
+                    const priceChangeColumns = ['그룹','거래처','상품','수량','공지가','판매가','차이'];
+                    const customerProfitColumns = ['그룹','거래처','품목수','수량','공급가','공제','실매출','매입가','수익','수익률','확인','비고'];
+                    const itemProfitColumns = ['상품','수량','공급가','공제','실매출','매입가','수익','수익률','확인','비고'];
+                    const priceChangeUpCount = priceChangeRows.filter(r => safeNum(r['차이']) > 0).length;
+                    const priceChangeDownCount = priceChangeRows.filter(r => safeNum(r['차이']) < 0).length;
+                    const maxPriceDiff = priceChangeRows.reduce((max, r) => Math.max(max, Math.abs(safeNum(r['차이']))), 0);
+                    const customerNeedCount = customerProfitRows.filter(r => safeStr(r['확인'])).length;
+                    const itemNeedCount = itemProfitRows.filter(r => safeStr(r['확인'])).length;
+                    const deficitItemCount = itemProfitRows.filter(r => safeStr(r['확인']).includes('역마진')).length;
+                    const lowMarginItemCount = itemProfitRows.filter(r => safeStr(r['확인']).includes('저마진')).length;
+                    const makeFlatSheet = (columns = [], rows = []) => {
+                        const aoa = [columns];
+                        if (rows.length) rows.forEach(row => aoa.push(columns.map(col => row[col] ?? '')));
+                        else aoa.push(['데이터 없음']);
+                        return aoa;
+                    };
+                    const applyTransferReportNumberFormat = (ws, columns = []) => {
+                        if (!ws || !ws['!ref']) return ws;
+                        const range = XLSX.utils.decode_range(ws['!ref']);
+                        const moneyCols = new Set(['공지가','판매가','차이','공급가','공제','실매출','매입가','수익']);
+                        const qtyCols = new Set(['수량','품목수','거래처수']);
+                        const pctCols = new Set(['수익률']);
+                        for (let c = range.s.c; c <= range.e.c; c++) {
+                            const header = columns[c] || '';
+                            for (let r = range.s.r + 1; r <= range.e.r; r++) {
+                                const addr = XLSX.utils.encode_cell({ r, c });
+                                const cell = ws[addr];
+                                if (!cell) continue;
+                                if (moneyCols.has(header) || qtyCols.has(header)) {
+                                    if (typeof cell.v === 'number') cell.z = '#,##0';
+                                }
+                                if (pctCols.has(header)) {
+                                    if (typeof cell.v === 'number') cell.z = '0.0%';
+                                }
+                            }
+                        }
+                        ws['!cols'] = columns.map(col => ({ wch: Math.max(10, String(col).length + 4) }));
+                        ws['!autofilter'] = { ref: ws['!ref'] };
+                        return ws;
+                    };
+                    const appendFlatSheet = (wb, name, columns, rows) => {
+                        const ws = XLSX.utils.aoa_to_sheet(makeFlatSheet(columns, rows));
+                        applyTransferReportNumberFormat(ws, columns);
+                        XLSX.utils.book_append_sheet(wb, ws, name);
+                    };
                     const wb = XLSX.utils.book_new();
-                    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(makeSimpleSheet('단가변동', priceChangeColumns, priceChangeRows)), '단가변동');
-                    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(makeReportSheet('거래처별수익', customerSummary, ['거래처명','단가그룹','판매수량','공급가액','공제금액','실매출','매입원가','수익','수익률(%)','품목수','확인필요건수','비고'], customerProfitRows)), '거래처별수익');
-                    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(makeReportSheet('품목별수익', itemSummary, ['품목코드','품명','규격','판매수량','평균판매단가','공급가액','공제금액','실매출','매입원가','평균원가','수익','수익률(%)','판매처수','주요판매처','구매처','확인필요건수','비고'], itemProfitRows)), '품목별수익');
+                    appendFlatSheet(wb, '단가변동', priceChangeColumns, priceChangeRows);
+                    appendFlatSheet(wb, '거래처별수익', customerProfitColumns, customerProfitRows);
+                    appendFlatSheet(wb, '품목별수익', itemProfitColumns, itemProfitRows);
                     const today = new Date();
                     const exportYmd = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
                     downloadWorkbook(wb, `2전송검증_${exportYmd}.xlsx`);
@@ -4414,16 +4451,11 @@
                     setTargetDateStr(`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`);
                     setAppStep('closing');
                     setAnalysisMeta({ fileLabel, analyzedAt: formatAnalysisTime(new Date()), status: 'done' });
-                    const customerNeedCount = customerSummary[0] ? safeNum(customerSummary[0]['확인필요거래처수']) : 0;
-                    const itemNeedCount = itemSummary[0] ? safeNum(itemSummary[0]['확인필요품목수']) : 0;
-                    const deficitItemCount = itemSummary[0] ? safeNum(itemSummary[0]['적자품목수']) : 0;
-                    const lowMarginItemCount = itemSummary[0] ? safeNum(itemSummary[0]['저마진품목수']) : 0;
                     const changeText = priceChangeRows.length > 0
-                        ? `단가변동: 있음
-변동건수: ${priceChangeRows.length}건
-인상 ${priceChangeUpCount}건 / 인하 ${priceChangeDownCount}건
-최대 단가차이: ${formatMoney(maxPriceDiff)}원`
-                        : '단가변동: 없음';
+                        ? `단가변동 ${priceChangeRows.length}건
+판매가↑ ${priceChangeUpCount}건 / 판매가↓ ${priceChangeDownCount}건
+최대 차이: ${formatMoney(maxPriceDiff)}원`
+                        : '단가변동 없음';
                     setAlertMsg(`✅ 2전송검증 완료
 
 ${changeText}
@@ -4767,7 +4799,7 @@ ${changeText}
                             <div className="flex flex-col md:flex-row md:items-center gap-4">
                                 <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition" onClick={() => document.getElementById('main-scroll-container')?.scrollTo({top:0, behavior:'smooth'})} title="클릭시 최상단 이동">
                                     <span className="text-blue-600 mr-2">ONEAPP</span> DataOps
-                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">v8.99zn Notice Price Change Fix</span>
+                                    <span className="text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3">v8.99zp Transfer Profit Issue Fix</span>
                                 </h1>
                             </div>
 
