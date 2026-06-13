@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.6 품목코드 텍스트 정렬]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.7 테이블양식 자동적용]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -445,6 +445,150 @@
         const getInitialVisibleUploadCols = () => ({ 
             estimate: ['창고', '기준일자', '구매처', '브랜드', '견적서', '단위', '재고수량', '상품 구매일자', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '검색어등록'] 
         });
+
+        // ============================================================
+        // [M-TABLE-01] 테이블 양식 자동 적용 정책
+        // 역할: 사용자가 어떤 엑셀을 불러왔는지에 따라 화면 테이블 양식을 즉시 전환한다.
+        // - 재고 불러오기만 있으면 재고 양식
+        // - 견적/구매/판매 중 단일 역할이면 해당 양식
+        // - 두 가지 이상 엑셀 역할이 섞이면 최종 양식
+        // - 관리자가 테이블 버튼을 직접 누르면 현재 세션에서는 수동 양식을 우선한다.
+        // - 초기화하면 수동 우선권을 해제하고 다음 업로드부터 기본 순서를 다시 적용한다.
+        // ============================================================
+        window.getMerchTableTemplates = () => ({
+            estimate: {
+                id: 'system-estimate',
+                name: '견적',
+                role: 'estimate',
+                system: true,
+                columns: ['입고가', '출고가', '행사가', '간단설명', '창고', '단위', '구매처', '브랜드', '견적서', '도매A', '검색어등록']
+            },
+            purchase: {
+                id: 'system-purchase',
+                name: '구매',
+                role: 'purchase',
+                system: true,
+                columns: ['구매처', '상품 구매일자', '입고가', '출고가', '외주비', '노무비', '단위', '창고', '재고수량', '간단설명']
+            },
+            sales: {
+                id: 'system-sales',
+                name: '판매',
+                role: 'sales',
+                system: true,
+                columns: ['구매처', '단위', '재고수량', '입고가', '출고가', '행사가', '간단설명', '창고']
+            },
+            inventory: {
+                id: 'system-inventory',
+                name: '재고',
+                role: 'inventory',
+                system: true,
+                columns: ['창고', '기준일자', '재고수량', '상품 구매일자', '구매처', '단위', '입고가', '출고가', '행사가', '간단설명']
+            },
+            final: {
+                id: 'system-final',
+                name: '최종',
+                role: 'final',
+                system: true,
+                columns: ['창고', '기준일자', '구매처', '브랜드', '견적서', '단위', '재고수량', '상품 구매일자', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '행사가', '간단설명', '검색어등록']
+            }
+        });
+
+        window.normalizeMerchTableColumns = (columns = []) => {
+            const clean = Array.isArray(columns) ? columns.map(c => String(c || '').trim()).filter(Boolean) : [];
+            const deduped = [];
+            ['품목코드', ...clean.filter(c => c !== '품목코드')].forEach(col => {
+                if (!deduped.includes(col)) deduped.push(col);
+            });
+            return deduped;
+        };
+
+        window.getSavedMerchTableShortcuts = () => {
+            try {
+                const raw = localStorage.getItem('merchTableShortcuts_v870');
+                const parsed = raw ? JSON.parse(raw) : [];
+                return Array.isArray(parsed)
+                    ? parsed.filter(s => s && s.enabled !== false && Array.isArray(s.columns) && s.columns.length > 0)
+                    : [];
+            } catch (e) {
+                return [];
+            }
+        };
+
+        window.getMergedMerchTableShortcuts = () => {
+            const templates = window.getMerchTableTemplates();
+            const merged = Object.values(templates).map(t => ({ ...t }));
+            const saved = window.getSavedMerchTableShortcuts();
+            saved.forEach((shortcut, idx) => {
+                const name = String(shortcut.name || shortcut.label || shortcut.role || `양식${idx + 1}`).trim();
+                const normalized = {
+                    ...shortcut,
+                    id: shortcut.id || `custom-${name}-${idx}`,
+                    name,
+                    role: shortcut.role || 'custom',
+                    system: false,
+                    columns: Array.isArray(shortcut.columns) ? shortcut.columns.filter(Boolean) : []
+                };
+                const sameIdx = merged.findIndex(t => t.name === normalized.name || t.id === normalized.id);
+                if (sameIdx >= 0) {
+                    // 기본 양식명(예: 재고)과 같은 사용자 저장 양식은 버튼 위치/활성 id를 유지하고 컬럼만 사용자값으로 대체한다.
+                    const base = merged[sameIdx];
+                    merged[sameIdx] = { ...base, ...normalized, id: base.id, name: base.name, role: base.role, system: false, customSourceId: normalized.id };
+                } else {
+                    merged.push(normalized);
+                }
+            });
+            return merged;
+        };
+
+        window.getLoadedExcelRolesFromManagedItems = (managedItems = {}) => {
+            const roleSet = new Set();
+            Object.values(managedItems || {}).forEach(item => {
+                Object.keys(item?.sources || {}).forEach(role => {
+                    if (['estimate', 'purchase', 'sales', 'inventory'].includes(role)) roleSet.add(role);
+                });
+            });
+            return ['estimate', 'purchase', 'sales', 'inventory'].filter(role => roleSet.has(role));
+        };
+
+        window.getAutoTableTemplateKey = (managedItems = {}, fallbackRole = 'estimate') => {
+            const roles = window.getLoadedExcelRolesFromManagedItems(managedItems);
+            if (roles.length >= 2) return 'final';
+            if (roles.length === 1) return roles[0];
+            return ['estimate', 'purchase', 'sales', 'inventory'].includes(fallbackRole) ? fallbackRole : 'estimate';
+        };
+
+        window.applyMerchTableTemplate = (setVisibleUploadCols, templateKey = 'estimate', options = {}) => {
+            const templates = window.getMerchTableTemplates();
+            const saved = window.getMergedMerchTableShortcuts();
+            const template = saved.find(t => t.id === templateKey || t.name === templateKey || t.role === templateKey) || templates[templateKey] || templates.estimate;
+            const normalizedCols = window.normalizeMerchTableColumns(template.columns);
+            if (normalizedCols.length <= 1) return null;
+
+            setVisibleUploadCols(prev => ({
+                ...(prev || {}),
+                // 현재 메인 그리드는 estimate 키를 공통 화면 노출 양식으로 사용한다.
+                // 역할별 저장값도 같이 남겨 Settings/기존 설정과의 호환성을 유지한다.
+                estimate: normalizedCols,
+                [template.role || templateKey || 'estimate']: normalizedCols
+            }));
+
+            const activeId = template.id || template.name || templateKey;
+            try {
+                localStorage.setItem('merchActiveTableShortcut_v870', activeId);
+                localStorage.setItem('merchActiveTableTemplateKey_v870', templateKey);
+                localStorage.setItem('merchTableTemplateManualOverride_v870', options.manual ? '1' : '0');
+            } catch (e) {}
+
+            try {
+                window.dispatchEvent(new CustomEvent('merch_table_template_changed', { detail: { id: activeId, templateKey, manual: !!options.manual } }));
+            } catch (e) {}
+            return template;
+        };
+
+        window.shouldAutoApplyMerchTableTemplate = () => {
+            try { return localStorage.getItem('merchTableTemplateManualOverride_v870') !== '1'; }
+            catch (e) { return true; }
+        };
         
         const getInitialMappings = () => {
             const base = { master: {}, estimate: {} };
@@ -1211,12 +1355,23 @@
                     }
                     data.setMasterProducts(newMaster);
                     data.setManagedItems(newManaged);
+
+                    // 업로드한 엑셀 역할에 맞춰 테이블 양식을 즉시 적용한다.
+                    // 단, 관리자가 이미 다른 양식 버튼을 직접 누른 세션에서는 수동 선택을 보존한다.
+                    const autoTemplateKey = window.getAutoTableTemplateKey ? window.getAutoTableTemplateKey(newManaged, role) : role;
+                    const autoAppliedTemplate = (window.shouldAutoApplyMerchTableTemplate?.() !== false && window.applyMerchTableTemplate)
+                        ? window.applyMerchTableTemplate(config.setVisibleUploadCols, autoTemplateKey, { manual: false })
+                        : null;
+
                     ui.setActiveTags(prev => {
                         const tagLabel = roleMeta.tag;
                         if (!prev.some(t => t.name === tagLabel)) return [...prev, {type: 'excel', name: tagLabel}];
                         return prev;
                     });
-                    if(totalCount > 0) ui.showToast(`✅ [${roleMeta.label}] 데이터 로드 완료 (${totalCount}건)`);
+                    if(totalCount > 0) {
+                        const templateMsg = autoAppliedTemplate ? ` / 테이블: ${autoAppliedTemplate.name}` : '';
+                        ui.showToast(`✅ [${roleMeta.label}] 데이터 로드 완료 (${totalCount}건)${templateMsg}`);
+                    }
                 } catch(error) { 
                     console.error(error); 
                     ui.setAlertMsg("❌ 파싱 오류 발생. 엑셀 파일 형식을 확인하세요."); 
@@ -1225,7 +1380,7 @@
                     ui.setIsProcessing(false); 
                     ui.setProcessMsg(''); 
                 }
-            }, [data.masterProducts, data.managedItems, config.mappings, config.masterLinks, config.uploadColumnMeta, config.marginRules, ui]);
+            }, [data.masterProducts, data.managedItems, config.mappings, config.masterLinks, config.uploadColumnMeta, config.marginRules, config.setVisibleUploadCols, ui]);
 
             // ============================================================
             // [M-FLOW-02] 카탈로그/견적서 필터 불러오기
@@ -1738,9 +1893,16 @@
                 ui.setActiveTags([]); 
                 ui.setPriceFilter('all');
                 if (ui.setBasicSearch) ui.setBasicSearch('');
+                if (config.setVisibleUploadCols) config.setVisibleUploadCols(getInitialVisibleUploadCols());
+                try {
+                    localStorage.removeItem('merchTableTemplateManualOverride_v870');
+                    localStorage.removeItem('merchActiveTableTemplateKey_v870');
+                    localStorage.setItem('merchActiveTableShortcut_v870', 'system-estimate');
+                    window.dispatchEvent(new CustomEvent('merch_table_template_changed', { detail: { id: 'system-estimate', templateKey: 'estimate', manual: false } }));
+                } catch (e) {}
                 window.setIDB('merchops_session', null); 
-                ui.showToast('작업 데이터가 초기화 되었습니다.');
-            }, [data.setManagedItems, ui]);
+                ui.showToast('작업 데이터가 초기화 되었습니다. 다음 업로드부터 역할별 기본 테이블 양식이 다시 적용됩니다.');
+            }, [data.setManagedItems, config.setVisibleUploadCols, ui]);
 
             // ============================================================
             // [M-FLOW-03] 현재 작업범위 마진룰 재계산
@@ -2008,50 +2170,43 @@
             const { activeTags, selectedRows, globalSearch, priceFilter, basicSearch, fullDisplayRows } = state;
             const { handleStopSales, handleExcludeSelectedFromUpdate, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, setPriceFilter, setSelectedRows, setBasicSearch, handleOpenExportCenter, handleCommitEstimate } = actions;
             const [filterPanelOpen, setFilterPanelOpen] = useState(false);
-            const [tableShortcuts, setTableShortcuts] = useState(() => {
-                try {
-                    const raw = localStorage.getItem('merchTableShortcuts_v870');
-                    const parsed = raw ? JSON.parse(raw) : [];
-                    return Array.isArray(parsed) ? parsed.filter(s => s && s.enabled !== false).slice(0, 5) : [];
-                } catch (e) {
-                    return [];
-                }
-            });
-            const [activeTableShortcutId, setActiveTableShortcutId] = useState(() => localStorage.getItem('merchActiveTableShortcut_v870') || '');
+            const [tableShortcuts, setTableShortcuts] = useState(() => window.getMergedMerchTableShortcuts ? window.getMergedMerchTableShortcuts() : []);
+            const [activeTableShortcutId, setActiveTableShortcutId] = useState(() => localStorage.getItem('merchActiveTableShortcut_v870') || 'system-estimate');
 
             useEffect(() => {
-                const reloadShortcuts = () => {
-                    try {
-                        const raw = localStorage.getItem('merchTableShortcuts_v870');
-                        const parsed = raw ? JSON.parse(raw) : [];
-                        setTableShortcuts(Array.isArray(parsed) ? parsed.filter(s => s && s.enabled !== false).slice(0, 5) : []);
-                    } catch (e) {
-                        setTableShortcuts([]);
+                const reloadShortcuts = () => setTableShortcuts(window.getMergedMerchTableShortcuts ? window.getMergedMerchTableShortcuts() : []);
+                const onStorage = (e) => {
+                    if (e.key === 'merchTableShortcuts_v870' || e.key === 'config_sync_trigger' || e.key === 'merchActiveTableShortcut_v870') {
+                        reloadShortcuts();
+                        setActiveTableShortcutId(localStorage.getItem('merchActiveTableShortcut_v870') || 'system-estimate');
                     }
                 };
-                const onStorage = (e) => { if (e.key === 'merchTableShortcuts_v870' || e.key === 'config_sync_trigger') reloadShortcuts(); };
+                const onTemplateChanged = (e) => {
+                    reloadShortcuts();
+                    setActiveTableShortcutId(e?.detail?.id || localStorage.getItem('merchActiveTableShortcut_v870') || 'system-estimate');
+                };
                 window.addEventListener('storage', onStorage);
-                return () => window.removeEventListener('storage', onStorage);
+                window.addEventListener('merch_table_template_changed', onTemplateChanged);
+                return () => {
+                    window.removeEventListener('storage', onStorage);
+                    window.removeEventListener('merch_table_template_changed', onTemplateChanged);
+                };
             }, []);
 
             const applyTableShortcut = (shortcut) => {
                 if (!shortcut) return;
-                const role = shortcut.role || 'estimate';
                 const cols = Array.isArray(shortcut.columns) ? shortcut.columns.filter(Boolean) : [];
                 if (cols.length === 0) {
                     actions.showToast?.('⚠️ 단축버튼에 등록된 노출 항목이 없습니다.');
                     return;
                 }
-                const normalizedCols = ['품목코드', ...cols.filter(col => col !== '품목코드')];
-                state.config.setVisibleUploadCols(prev => ({
-                    ...(prev || {}),
-                    [role]: normalizedCols
-                }));
-                const id = shortcut.id || shortcut.name || '';
+                const template = window.applyMerchTableTemplate
+                    ? window.applyMerchTableTemplate(state.config.setVisibleUploadCols, shortcut.id || shortcut.name || shortcut.role || 'estimate', { manual: true })
+                    : null;
+                const id = template?.id || shortcut.id || shortcut.name || '';
                 setActiveTableShortcutId(id);
-                try { localStorage.setItem('merchActiveTableShortcut_v870', id); } catch (e) {}
                 setSelectedRows(new Set());
-                actions.showToast?.(`✅ [${shortcut.name || '테이블'}] 테이블 노출 설정 적용`);
+                actions.showToast?.(`✅ [${template?.name || shortcut.name || '테이블'}] 테이블 양식 적용`);
             };
 
             const applyPriceFilter = (value) => {
@@ -2160,7 +2315,7 @@
                                                     key={id || shortcut.name}
                                                     onClick={() => applyTableShortcut(shortcut)}
                                                     className={`h-7 px-2.5 rounded-lg text-[11px] font-black border shadow-sm transition-all shrink-0 ${active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200'}`}
-                                                    title={`테이블 노출 항목: ${(shortcut.columns || []).join(', ')}`}
+                                                    title={`${shortcut.system ? '기본 양식' : '사용자 양식'}: ${(shortcut.columns || []).join(', ')}`}
                                                 >
                                                     <i className="fas fa-table-columns mr-1 text-[10px]"></i>{shortcut.name}
                                                 </button>
@@ -3067,7 +3222,7 @@
                     <i className="fas fa-box-open"></i>
                     <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm"><i className="fas fa-check"></i></div>
                 </div>
-                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v2.1.6 품목코드 텍스트 정렬]</h2>
+                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v2.1.7 테이블양식 자동적용]</h2>
                 <p className="text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold">
                     현재 등록된 <span className="text-indigo-500">마스터 상품 데이터</span>가 없습니다.<br/>
                     견적 작업 및 파서 연동을 위해 전체 상품 DB를 세팅해주세요.
@@ -3387,7 +3542,7 @@
                                             <div className="flex flex-col border-l-2 border-slate-700 pl-3">
                                                 <div className="flex items-center mb-0.5">
                                                     <span className="text-[14px] font-black text-slate-200 leading-none">MerchOps</span>
-                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v2.1.6 품목코드 텍스트 정렬</span>
+                                                    <span className="ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider">v2.1.7 테이블양식 자동적용</span>
                                                 </div>
                                                 <span className="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">MAIN WORKSPACE</span>
                                             </div>
