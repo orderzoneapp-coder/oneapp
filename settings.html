@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.3 테이블보기프리셋 2차]</title>
+    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.4 테이블보기 저장방식]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -94,104 +94,37 @@
 
         const createTableView = (target, name, masterColumns = ['입고가'], workColumns = [], options = {}) => ({
             id: options.id || `${target}_view_${Date.now()}`,
-            name: name || '맞춤보기',
-            system: !!options.system,
+            name: String(name || '맞춤보기').trim(),
+            // 시스템 기본보기는 두지 않는다. 최상단 사용자 보기가 기본 적용 보기다.
+            system: false,
             masterColumns: normalizeMasterColumns(masterColumns),
             workColumns: normalizeTableColumns(workColumns).filter(c => c !== '품목코드'),
             updatedAt: options.updatedAt || new Date().toISOString()
         });
 
         const getDefaultTableViewPresets = () => {
-            const m = getDefaultVisibleMasterCols();
-            const w = getDefaultVisibleUploadCols();
             const result = {};
-            TABLE_VIEW_TARGETS.forEach(target => {
-                const defaultView = createTableView(target.id, '기본보기', m[target.id], w[target.id], { id: `${target.id}_default`, system: true });
-                result[target.id] = { defaultViewId: defaultView.id, views: [defaultView] };
-            });
+            TABLE_VIEW_TARGETS.forEach(target => { result[target.id] = { views: [] }; });
             return result;
         };
 
         const sanitizeTableViewPresets = (raw = {}) => {
-            const defaults = getDefaultTableViewPresets();
             const result = {};
             TABLE_VIEW_TARGETS.forEach(target => {
-                const base = defaults[target.id];
                 const sourceViews = Array.isArray(raw?.[target.id]?.views) ? raw[target.id].views : [];
-                const oldDefault = sourceViews.find(v => v && (v.system === true || v.id === base.defaultViewId));
-                const defaultView = oldDefault
-                    ? createTableView(target.id, '기본보기', oldDefault.masterColumns || base.views[0].masterColumns, oldDefault.workColumns || oldDefault.columns || base.views[0].workColumns, { id: base.defaultViewId, system: true, updatedAt: oldDefault.updatedAt })
-                    : base.views[0];
-                const customViews = sourceViews
-                    .filter(v => v && v.system !== true && v.id !== base.defaultViewId)
+                const views = sourceViews
+                    .filter(v => v && v.system !== true && String(v.name || '').trim() !== '기본보기')
                     .slice(0, 5)
-                    .map((v, idx) => createTableView(target.id, String(v.name || `맞춤보기 ${idx + 1}`).trim(), v.masterColumns || ['입고가'], v.workColumns || v.columns || [], { id: v.id || `${target.id}_custom_${idx + 1}`, system: false, updatedAt: v.updatedAt }));
-                result[target.id] = { defaultViewId: base.defaultViewId, views: [defaultView, ...customViews] };
+                    .map((v, idx) => createTableView(
+                        target.id,
+                        String(v.name || `맞춤보기 ${idx + 1}`).trim(),
+                        v.masterColumns || ['입고가'],
+                        v.workColumns || v.columns || [],
+                        { id: v.id || `${target.id}_custom_${idx + 1}`, updatedAt: v.updatedAt }
+                    ));
+                result[target.id] = { views };
             });
             return result;
-        };
-
-
-        const migrateLegacyTableViewPresets = (storedPresets = null) => {
-            const hasStoredPresets = !!storedPresets;
-            let next = sanitizeTableViewPresets(storedPresets || getDefaultTableViewPresets());
-            const legacyMaster = safeJSONParse('merchVisMaster_v870', null);
-            const legacyUpload = safeJSONParse('merchVisUpload_v870', null);
-
-            // 신규 프리셋이 없던 사용자는 기존 노출 설정을 기본보기로 승계한다.
-            if (!hasStoredPresets) {
-                TABLE_VIEW_TARGETS.forEach(target => {
-                    const group = next[target.id];
-                    const baseView = group?.views?.[0];
-                    if (!baseView) return;
-                    group.views[0] = createTableView(
-                        target.id,
-                        '기본보기',
-                        legacyMaster?.[target.id] || baseView.masterColumns || ['입고가'],
-                        legacyUpload?.[target.id] || baseView.workColumns || [],
-                        { id: `${target.id}_default`, system: true, updatedAt: baseView.updatedAt }
-                    );
-                });
-            }
-
-            // 기존 테이블 단축버튼은 1회만 맞춤보기로 이관한다. 최종/파서/역할불명은 제외한다.
-            try {
-                if (localStorage.getItem('merchTableViewPresets_v1_migrated') !== '1') {
-                    [
-                        ['merchTableShortcuts_v870', 'merchTableShortcuts_v870_backup'],
-                        ['merchVisMaster_v870', 'merchVisMaster_v870_backup'],
-                        ['merchVisUpload_v870', 'merchVisUpload_v870_backup']
-                    ].forEach(([src, dst]) => {
-                        if (!localStorage.getItem(dst)) {
-                            const value = localStorage.getItem(src);
-                            if (value !== null) localStorage.setItem(dst, value);
-                        }
-                    });
-
-                    const shortcuts = safeJSONParse('merchTableShortcuts_v870', []);
-                    (Array.isArray(shortcuts) ? shortcuts : []).filter(s => s && s.enabled !== false && Array.isArray(s.columns)).forEach((shortcut, idx) => {
-                        const target = TABLE_VIEW_TARGET_IDS.includes(shortcut.role) ? shortcut.role : 'estimate';
-                        const group = next[target];
-                        if (!group) return;
-                        if (group.views.filter(v => !v.system).length >= 5) return;
-                        const name = String(shortcut.name || shortcut.label || `이전보기 ${idx + 1}`).trim();
-                        if (!name || group.views.some(v => String(v.name).trim() === name)) return;
-                        group.views.push(createTableView(
-                            target,
-                            name,
-                            shortcut.masterColumns || legacyMaster?.[target] || ['입고가'],
-                            shortcut.workColumns || shortcut.columns || legacyUpload?.[target] || [],
-                            { id: `${target}_legacy_${idx}_${Date.now()}`, system: false, updatedAt: shortcut.updatedAt }
-                        ));
-                    });
-                    localStorage.setItem('merchTableViewPresets_v1_migrated', '1');
-                }
-            } catch (e) {
-                console.warn('[TableView Legacy Migration]', e);
-            }
-            const sanitized = sanitizeTableViewPresets(next);
-            try { localStorage.setItem('merchTableViewPresets_v1', JSON.stringify(sanitized)); } catch (e) {}
-            return sanitized;
         };
 
         const getDefaultMappings = () => ({
@@ -237,7 +170,7 @@
             const [masterLinks, setMasterLinks] = useState(() => safeJSONParse('merchMasterLinks_v870', getDefaultMasterLinks()));
             const [uploadColumnMeta, setUploadColumnMeta] = useState(() => safeJSONParse('merchUploadColumnMeta_v870', { catalog: {}, estimate: {}, purchase: {}, sales: {}, inventory: {} }));
             const [tableShortcuts, setTableShortcuts] = useState(() => safeJSONParse('merchTableShortcuts_v870', []));
-            const [tableViewPresets, setTableViewPresets] = useState(() => migrateLegacyTableViewPresets(safeJSONParse('merchTableViewPresets_v1', null)));
+            const [tableViewPresets, setTableViewPresets] = useState(() => sanitizeTableViewPresets(safeJSONParse('merchTableViewPresets_v1', getDefaultTableViewPresets())));
             const [marginRules, setMarginRules] = useState(() => {
                 const defaultRules = [
                     { id: 'rule_1', whCode: '01', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
@@ -298,8 +231,11 @@
             
             const [activeTab, setActiveTab] = useState('display');
             const [activeUploadRole, setActiveUploadRole] = useState('catalog');
-            const [activeTableViewId, setActiveTableViewId] = useState('catalog_default');
+            const [activeTableViewId, setActiveTableViewId] = useState('');
             const [newViewName, setNewViewName] = useState('');
+            const [draftTableView, setDraftTableView] = useState(null);
+            const [isTableViewDirty, setIsTableViewDirty] = useState(false);
+            const [isNewTableViewDraft, setIsNewTableViewDraft] = useState(false);
             const [customEstColInput, setCustomEstColInput] = useState('');
             const [isComparePriceCol, setIsComparePriceCol] = useState(false);
             const [shortcutDraft, setShortcutDraft] = useState({ name: '', role: 'estimate', columns: [], enabled: true });
@@ -472,11 +408,10 @@
 
             const addCustomUploadCol = (type, val, comparePrice = false) => {
                 if(!val || !val.trim()) return;
-                const cleanVal = val.trim();
-                if ((config.visibleUploadCols[type] || []).includes(cleanVal)) return showToast('⚠️ 이미 추가된 항목입니다.');
-                config.setVisibleUploadCols(prev => ({ ...prev, [type]: [...(prev[type] || []), cleanVal] }));
-                config.setMappings(prev => ({ ...prev, [type]: { ...prev[type], [cleanVal]: cleanVal } }));
-                config.setMasterLinks(prev => ({ ...prev, [type]: { ...prev[type], [cleanVal]: '' } }));
+                const cleanVal = canonicalMerchFieldName(val.trim());
+                const list = activeView?.workColumns || [];
+                if (list.includes(cleanVal)) return showToast('⚠️ 이미 선택된 항목입니다.');
+                markDraftView({ workColumns: normalizeTableColumns([...(list || []), cleanVal]).filter(c => c !== '품목코드') });
                 config.setUploadColumnMeta(prev => ({
                     ...prev,
                     [type]: {
@@ -486,7 +421,7 @@
                 }));
                 setCustomEstColInput('');
                 setIsComparePriceCol(false);
-                showToast(comparePrice ? '✅ 비교단가 항목이 추가되었습니다.' : '✅ 항목이 추가되었습니다.');
+                showToast(comparePrice ? '✅ 비교단가 항목을 편집 목록에 추가했습니다. 저장을 눌러 반영하세요.' : '✅ 항목을 편집 목록에 추가했습니다. 저장을 눌러 반영하세요.');
             };
 
             const removeUploadCol = (type, header) => {
@@ -509,21 +444,8 @@
                 showToast('✅ 작업 항목이 삭제되었습니다.');
             };
 
-            const resetUploadRoleToDefault = (type) => {
-                const label = UPLOAD_ROLES.find(r => r.id === type)?.label || type;
-                if (!window.confirm(`[${label}] 작업 항목 노출 설정을 기본값으로 정리하시겠습니까?\n이미 자동 보강으로 섞인 항목을 정리할 때 사용하세요.`)) return;
-                const defaults = getDefaultVisibleUploadCols();
-                config.setVisibleUploadCols(prev => ({ ...prev, [type]: [...(defaults[type] || [])] }));
-                config.setUploadColumnMeta(prev => {
-                    const allowed = new Set(defaults[type] || []);
-                    const nextType = {};
-                    Object.entries(prev?.[type] || {}).forEach(([k, v]) => { if (allowed.has(k)) nextType[k] = v; });
-                    return { ...prev, [type]: nextType };
-                });
-                showToast(`✅ [${label}] 자동 생성 항목을 기본값으로 정리했습니다.`);
-            };
+            // 기본정리/기본항목 복원 기능은 혼동을 유발하므로 제거한다.
 
-            
             const shortcutList = Array.isArray(config.tableShortcuts) ? config.tableShortcuts : [];
             const getShortcutRoleLabel = (roleId) => UPLOAD_ROLES.find(r => r.id === roleId)?.label || roleId || '견적';
             const getShortcutColumns = (roleId) => Array.from(new Set([...(config.visibleUploadCols?.[roleId] || [])])).filter(Boolean);
@@ -580,116 +502,171 @@
             };
 
 
-            const getActiveViewGroup = () => sanitizeTableViewPresets(config.tableViewPresets || getDefaultTableViewPresets())?.[activeUploadRole] || { defaultViewId: `${activeUploadRole}_default`, views: [] };
+            const getActiveViewGroup = () => sanitizeTableViewPresets(config.tableViewPresets || getDefaultTableViewPresets())?.[activeUploadRole] || { views: [] };
             const activeViewGroup = getActiveViewGroup();
             const activeViews = activeViewGroup.views || [];
-            const activeView = activeViews.find(v => v.id === activeTableViewId) || activeViews[0] || createTableView(activeUploadRole, '기본보기', ['입고가'], [], { id: `${activeUploadRole}_default`, system: true });
+            const savedActiveView = activeViews.find(v => v.id === activeTableViewId) || activeViews[0] || null;
+            const activeView = draftTableView || savedActiveView || createTableView(activeUploadRole, newViewName || '새 보기', ['입고가'], [], { id: '__empty_draft__' });
             const activeRoleLabel = UPLOAD_ROLES.find(r => r.id === activeUploadRole)?.label || '카탈로그';
 
-            const updateActiveView = (patch = {}) => {
-                config.setTableViewPresets(prev => {
-                    const safe = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
-                    const group = safe[activeUploadRole] || { defaultViewId: `${activeUploadRole}_default`, views: [] };
-                    const views = group.views.map(v => v.id === activeView.id ? { ...v, ...patch, updatedAt: new Date().toISOString() } : v);
-                    return { ...safe, [activeUploadRole]: { ...group, views } };
+            useEffect(() => {
+                const safe = sanitizeTableViewPresets(config.tableViewPresets || getDefaultTableViewPresets());
+                const views = safe?.[activeUploadRole]?.views || [];
+                const selected = views.find(v => v.id === activeTableViewId) || views[0] || null;
+                if (!selected) {
+                    setActiveTableViewId('');
+                    setDraftTableView(null);
+                    setIsTableViewDirty(false);
+                    setIsNewTableViewDraft(false);
+                    return;
+                }
+                if (activeTableViewId !== selected.id) setActiveTableViewId(selected.id);
+                setDraftTableView({ ...selected, masterColumns: [...(selected.masterColumns || [])], workColumns: [...(selected.workColumns || [])] });
+                setIsTableViewDirty(false);
+                setIsNewTableViewDraft(false);
+            }, [activeUploadRole, activeTableViewId, config.tableViewPresets]);
+
+            const markDraftView = (patch = {}) => {
+                setDraftTableView(prev => {
+                    const base = prev || savedActiveView || createTableView(activeUploadRole, newViewName || '새 보기', ['입고가'], [], { id: `draft_${Date.now()}` });
+                    return { ...base, ...patch, updatedAt: new Date().toISOString() };
                 });
-                localStorage.setItem('config_sync_trigger', Date.now().toString());
+                setIsTableViewDirty(true);
             };
 
             const toggleActiveMasterColumn = (header) => {
                 if (requiredCoreFields.includes(header)) return;
                 const list = activeView.masterColumns || [];
                 const next = list.includes(header) ? list.filter(h => h !== header) : [...list, header];
-                updateActiveView({ masterColumns: normalizeMasterColumns(next) });
-                config.setVisibleMasterCols(prev => ({ ...(prev || {}), [activeUploadRole]: normalizeMasterColumns(next) }));
+                markDraftView({ masterColumns: normalizeMasterColumns(next) });
             };
 
             const toggleActiveWorkColumn = (header) => {
                 const list = activeView.workColumns || [];
                 const next = list.includes(header) ? list.filter(h => h !== header) : [...list, header];
-                updateActiveView({ workColumns: normalizeTableColumns(next).filter(c => c !== '품목코드') });
-                config.setVisibleUploadCols(prev => ({ ...(prev || {}), [activeUploadRole]: normalizeTableColumns(next).filter(c => c !== '품목코드') }));
+                markDraftView({ workColumns: normalizeTableColumns(next).filter(c => c !== '품목코드') });
             };
 
             const selectTableView = (target, viewId) => {
+                if (isTableViewDirty && !window.confirm('저장하지 않은 변경사항이 있습니다. 다른 보기로 이동할까요?')) return;
                 setActiveUploadRole(target);
-                setActiveTableViewId(viewId || `${target}_default`);
+                setActiveTableViewId(viewId || '');
             };
 
             const addCustomTableView = () => {
-                const name = String(newViewName || '').trim();
-                if (!name) return showToast('⚠️ 보기 이름을 입력하세요.');
                 const safe = sanitizeTableViewPresets(config.tableViewPresets || getDefaultTableViewPresets());
-                const group = safe[activeUploadRole];
-                const customCount = (group.views || []).filter(v => !v.system).length;
-                if (customCount >= 5) return showToast('⚠️ 맞춤보기는 대상별 최대 5개까지 생성할 수 있습니다.');
+                const group = safe[activeUploadRole] || { views: [] };
+                if ((group.views || []).length >= 5) return showToast('⚠️ 보기는 대상별 최대 5개까지 생성할 수 있습니다.');
+                const name = String(newViewName || '').trim() || '새 보기';
                 if ((group.views || []).some(v => String(v.name).trim() === name)) return showToast('⚠️ 같은 이름의 보기가 이미 있습니다.');
-                const newView = createTableView(activeUploadRole, name, activeView.masterColumns || ['입고가'], activeView.workColumns || [], { id: `${activeUploadRole}_custom_${Date.now()}`, system: false });
-                config.setTableViewPresets(prev => {
-                    const next = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
-                    const g = next[activeUploadRole];
-                    return { ...next, [activeUploadRole]: { ...g, views: [...g.views, newView].slice(0, 6) } };
-                });
+                const newView = createTableView(activeUploadRole, name, activeView.masterColumns || ['입고가'], activeView.workColumns || [], { id: `draft_${Date.now()}` });
+                setDraftTableView(newView);
                 setActiveTableViewId(newView.id);
+                setIsNewTableViewDraft(true);
+                setIsTableViewDirty(true);
                 setNewViewName('');
-                showToast('✅ 맞춤보기를 추가했습니다.');
+                showToast('✏️ 새 보기를 편집 중입니다. 완료 후 보기 저장을 누르세요.');
             };
 
-            const renameActiveView = (name) => {
-                if (activeView.system) return;
-                updateActiveView({ name: String(name || '').trim() || activeView.name });
+            const renameActiveView = (name) => markDraftView({ name: String(name || '') });
+
+            const saveActiveTableView = () => {
+                const draft = draftTableView || activeView;
+                const name = String(draft?.name || '').trim();
+                if (!name) return showToast('⚠️ 보기 이름을 입력하세요.');
+                if (!draft?.workColumns || draft.workColumns.length === 0) return showToast('⚠️ 작업테이블 노출항목을 1개 이상 선택하세요.');
+                const safe = sanitizeTableViewPresets(config.tableViewPresets || getDefaultTableViewPresets());
+                const group = safe[activeUploadRole] || { views: [] };
+                const isNew = isNewTableViewDraft || !group.views.some(v => v.id === draft.id);
+                if (isNew && (group.views || []).length >= 5) return showToast('⚠️ 보기는 대상별 최대 5개까지 생성할 수 있습니다.');
+                if ((group.views || []).some(v => v.id !== draft.id && String(v.name).trim() === name)) return showToast('⚠️ 같은 이름의 보기가 이미 있습니다.');
+                const savedId = isNew || String(draft.id || '').startsWith('draft_') || draft.id === '__empty_draft__' ? `${activeUploadRole}_view_${Date.now()}` : draft.id;
+                const saved = createTableView(activeUploadRole, name, draft.masterColumns || ['입고가'], draft.workColumns || [], { id: savedId, updatedAt: new Date().toISOString() });
+                const nextViews = isNew ? [...(group.views || []), saved] : (group.views || []).map(v => v.id === draft.id ? saved : v);
+                config.setTableViewPresets(prev => {
+                    const next = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
+                    return { ...next, [activeUploadRole]: { views: nextViews.slice(0, 5) } };
+                });
+                config.setVisibleMasterCols(prev => ({ ...(prev || {}), [activeUploadRole]: normalizeMasterColumns(saved.masterColumns || []) }));
+                config.setVisibleUploadCols(prev => ({ ...(prev || {}), [activeUploadRole]: normalizeTableColumns(saved.workColumns || []).filter(c => c !== '품목코드') }));
+                config.setMappings(prev => {
+                    const cur = { ...(prev?.[activeUploadRole] || {}) };
+                    (saved.workColumns || []).forEach(col => { if (!cur[col]) cur[col] = col; });
+                    return { ...(prev || {}), [activeUploadRole]: cur };
+                });
+                config.setMasterLinks(prev => {
+                    const cur = { ...(prev?.[activeUploadRole] || {}) };
+                    (saved.workColumns || []).forEach(col => { if (cur[col] === undefined) cur[col] = ''; });
+                    return { ...(prev || {}), [activeUploadRole]: cur };
+                });
+                setActiveTableViewId(saved.id);
+                setDraftTableView({ ...saved, masterColumns: [...(saved.masterColumns || [])], workColumns: [...(saved.workColumns || [])] });
+                setIsNewTableViewDraft(false);
+                setIsTableViewDirty(false);
+                localStorage.setItem('config_sync_trigger', Date.now().toString());
+                showToast('✅ 보기를 저장했습니다.');
+            };
+
+            const cancelActiveViewEdit = () => {
+                if (isNewTableViewDraft) {
+                    const first = activeViews[0] || null;
+                    setActiveTableViewId(first?.id || '');
+                    setDraftTableView(first ? { ...first, masterColumns: [...(first.masterColumns || [])], workColumns: [...(first.workColumns || [])] } : null);
+                } else if (savedActiveView) {
+                    setDraftTableView({ ...savedActiveView, masterColumns: [...(savedActiveView.masterColumns || [])], workColumns: [...(savedActiveView.workColumns || [])] });
+                }
+                setIsTableViewDirty(false);
+                setIsNewTableViewDraft(false);
+                showToast('↩️ 변경사항을 취소했습니다.');
             };
 
             const deleteActiveView = () => {
-                if (activeView.system) return showToast('⚠️ 기본보기는 삭제할 수 없습니다.');
-                if (!window.confirm(`[${activeView.name}] 보기를 삭제할까요?`)) return;
+                if (!savedActiveView && isNewTableViewDraft) return cancelActiveViewEdit();
+                if (!savedActiveView) return showToast('⚠️ 삭제할 보기가 없습니다.');
+                if (!window.confirm(`[${savedActiveView.name}] 보기를 삭제할까요?`)) return;
                 config.setTableViewPresets(prev => {
                     const safe = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
-                    const group = safe[activeUploadRole];
-                    return { ...safe, [activeUploadRole]: { ...group, views: group.views.filter(v => v.id !== activeView.id) } };
+                    const group = safe[activeUploadRole] || { views: [] };
+                    return { ...safe, [activeUploadRole]: { views: (group.views || []).filter(v => v.id !== savedActiveView.id) } };
                 });
-                setActiveTableViewId(`${activeUploadRole}_default`);
-                showToast('✅ 맞춤보기를 삭제했습니다.');
+                const remaining = activeViews.filter(v => v.id !== savedActiveView.id);
+                setActiveTableViewId(remaining[0]?.id || '');
+                setDraftTableView(remaining[0] ? { ...remaining[0], masterColumns: [...(remaining[0].masterColumns || [])], workColumns: [...(remaining[0].workColumns || [])] } : null);
+                setIsTableViewDirty(false);
+                setIsNewTableViewDraft(false);
+                showToast('✅ 보기를 삭제했습니다.');
             };
-
 
             const copyActiveView = () => {
                 const safe = sanitizeTableViewPresets(config.tableViewPresets || getDefaultTableViewPresets());
-                const group = safe[activeUploadRole];
-                const customCount = (group.views || []).filter(v => !v.system).length;
-                if (customCount >= 5) return showToast('⚠️ 맞춤보기는 대상별 최대 5개까지 생성할 수 있습니다.');
-                let baseName = activeView.system ? `${activeRoleLabel} 맞춤보기` : `${activeView.name} 복사`;
-                let name = baseName;
-                let n = 2;
-                while ((group.views || []).some(v => String(v.name).trim() === name)) {
-                    name = `${baseName} ${n++}`;
-                }
-                const copied = createTableView(activeUploadRole, name, activeView.masterColumns || ['입고가'], activeView.workColumns || [], { id: `${activeUploadRole}_copy_${Date.now()}`, system: false });
-                config.setTableViewPresets(prev => {
-                    const next = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
-                    const g = next[activeUploadRole];
-                    return { ...next, [activeUploadRole]: { ...g, views: [...g.views, copied].slice(0, 6) } };
-                });
+                const group = safe[activeUploadRole] || { views: [] };
+                if ((group.views || []).length >= 5) return showToast('⚠️ 보기는 대상별 최대 5개까지 생성할 수 있습니다.');
+                const source = draftTableView || activeView;
+                let baseName = `${String(source?.name || activeRoleLabel).trim()} 복사`;
+                let name = baseName, n = 2;
+                while ((group.views || []).some(v => String(v.name).trim() === name)) name = `${baseName} ${n++}`;
+                const copied = createTableView(activeUploadRole, name, source.masterColumns || ['입고가'], source.workColumns || [], { id: `draft_${Date.now()}` });
+                setDraftTableView(copied);
                 setActiveTableViewId(copied.id);
-                showToast('✅ 현재 보기를 복사했습니다.');
+                setIsNewTableViewDraft(true);
+                setIsTableViewDirty(true);
+                showToast('✏️ 복사본을 편집 중입니다. 완료 후 보기 저장을 누르세요.');
             };
 
             const moveActiveView = (direction) => {
-                if (activeView.system) return showToast('⚠️ 기본보기는 순서를 변경하지 않습니다.');
+                if (!savedActiveView) return showToast('⚠️ 저장된 보기만 순서를 변경할 수 있습니다.');
                 config.setTableViewPresets(prev => {
                     const safe = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
-                    const group = safe[activeUploadRole];
-                    const base = (group.views || []).filter(v => v.system);
-                    const customs = (group.views || []).filter(v => !v.system);
-                    const idx = customs.findIndex(v => v.id === activeView.id);
+                    const group = safe[activeUploadRole] || { views: [] };
+                    const views = [...(group.views || [])];
+                    const idx = views.findIndex(v => v.id === savedActiveView.id);
                     const nextIdx = idx + direction;
-                    if (idx < 0 || nextIdx < 0 || nextIdx >= customs.length) return safe;
-                    const moved = [...customs];
-                    const [item] = moved.splice(idx, 1);
-                    moved.splice(nextIdx, 0, item);
-                    return { ...safe, [activeUploadRole]: { ...group, views: [...base, ...moved] } };
+                    if (idx < 0 || nextIdx < 0 || nextIdx >= views.length) return safe;
+                    const [item] = views.splice(idx, 1);
+                    views.splice(nextIdx, 0, item);
+                    return { ...safe, [activeUploadRole]: { views } };
                 });
-                showToast('✅ 보기 순서를 변경했습니다.');
+                showToast(direction < 0 ? '✅ 위로 이동했습니다.' : '✅ 아래로 이동했습니다.');
             };
 
             const addMarginRule = () => config.setMarginRules([...(config.marginRules || []), { id: typeof window.generateUUID === 'function' ? window.generateUUID() : crypto.randomUUID(), whCode: '', unit: '', rate: 10, type: 'divide' }]);
@@ -698,6 +675,12 @@
 
             const requiredCoreFields = ['품목코드', '품목명', '규격'];
             const selectableMasterHeaders = useMemo(() => Array.from(new Set([...(window.MASTER_HEADERS || []), ...(config.visibleMasterCols?.[activeUploadRole] || [])])), [config.visibleMasterCols, activeUploadRole]);
+            const selectableWorkHeaders = useMemo(() => Array.from(new Set([
+                ...(window.MASTER_HEADERS || []),
+                ...(getDefaultVisibleUploadCols()?.[activeUploadRole] || []),
+                ...(config.visibleUploadCols?.[activeUploadRole] || []),
+                ...(activeView?.workColumns || [])
+            ])).filter(h => h && h !== '품목코드'), [config.visibleUploadCols, activeUploadRole, activeView?.id, activeView?.workColumns?.join('|')]);
 
             return (
                 <div className="flex h-screen overflow-hidden bg-slate-50 relative fade-in">
@@ -756,12 +739,12 @@
                                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mt-6">
                                     <div className="flex items-center justify-between mb-4 pb-2 border-b">
                                         <h3 className="text-[15px] font-black flex items-center text-slate-800"><i className="fas fa-table-columns text-indigo-500 mr-2"></i> 테이블 보기 설정</h3>
-                                        <span className="text-[11px] text-slate-500 font-bold">대상별 기본보기 + 맞춤보기 최대 5개</span>
+                                        <span className="text-[11px] text-slate-500 font-bold">대상별 보기 최대 5개 · 최상단 자동 적용</span>
                                     </div>
 
                                     <div className="flex flex-wrap gap-2 mb-4">
                                         {UPLOAD_ROLES.map(role => (
-                                            <button key={`role-view-${role.id}`} onClick={() => selectTableView(role.id, `${role.id}_default`)} className={`px-4 py-2 rounded-xl border text-[12px] font-black transition-all ${activeUploadRole === role.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                                            <button key={`role-view-${role.id}`} onClick={() => selectTableView(role.id, '')} className={`px-4 py-2 rounded-xl border text-[12px] font-black transition-all ${activeUploadRole === role.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
                                                 {role.label}
                                             </button>
                                         ))}
@@ -771,19 +754,20 @@
                                         <div className="border border-slate-200 rounded-xl bg-slate-50 p-3">
                                             <div className="flex items-center justify-between mb-2">
                                                 <div className="text-[12px] font-black text-slate-700">{activeRoleLabel} 보기</div>
-                                                <div className="text-[11px] text-slate-400 font-bold">{activeViews.filter(v=>!v.system).length}/5</div>
+                                                <div className="text-[11px] text-slate-400 font-bold">{activeViews.length}/5</div>
                                             </div>
                                             <div className="space-y-2 mb-3">
-                                                {activeViews.map(view => (
-                                                    <button key={view.id} onClick={() => setActiveTableViewId(view.id)} className={`w-full text-left px-3 py-2 rounded-lg border text-[12px] font-black transition-all ${activeTableViewId === view.id ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-indigo-50 hover:text-indigo-700'}`}>
+                                                {activeViews.length === 0 && <div className="px-3 py-8 text-center text-[12px] font-bold text-slate-400 border border-dashed border-slate-200 rounded-lg bg-white">저장된 보기가 없습니다.<br/>이름 입력 후 새 보기를 만드세요.</div>}
+                                                {activeViews.map((view, idx) => (
+                                                    <button key={view.id} onClick={() => selectTableView(activeUploadRole, view.id)} className={`w-full text-left px-3 py-2 rounded-lg border text-[12px] font-black transition-all ${activeTableViewId === view.id && !isNewTableViewDraft ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-indigo-50 hover:text-indigo-700'}`}>
                                                         {view.name}
-                                                        {view.system && <span className="ml-1 text-[10px] opacity-70">기본</span>}
+                                                        {idx === 0 && <span className="ml-1 text-[10px] opacity-70">기본</span>}
                                                     </button>
                                                 ))}
                                             </div>
                                             <div className="flex gap-1.5">
                                                 <input type="text" value={newViewName} onChange={e=>setNewViewName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addCustomTableView()} placeholder="보기 이름" className="min-w-0 flex-1 border border-slate-300 rounded-lg px-2 py-2 text-[12px] outline-none focus:border-indigo-500 bg-white" />
-                                                <button onClick={addCustomTableView} className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-[12px] font-black hover:bg-indigo-700">추가</button>
+                                                <button onClick={addCustomTableView} className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-[12px] font-black hover:bg-indigo-700">새 보기</button>
                                             </div>
                                         </div>
 
@@ -791,15 +775,17 @@
                                             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
                                                 <div className="flex items-center justify-between mb-3">
                                                     <div>
-                                                        <div className="text-[13px] font-black text-slate-800">{activeRoleLabel} / {activeView.name}</div>
-                                                        <div className="text-[11px] text-slate-500 font-bold mt-0.5">코드·상품명·규격은 마스터정보 기본 고정값입니다.</div>
+                                                        <div className="text-[13px] font-black text-slate-800">{activeRoleLabel} / {activeView?.name || '보기 없음'} {isTableViewDirty && <span className="ml-2 text-[11px] text-amber-600">변경사항 있음</span>}</div>
+                                                        <div className="text-[11px] text-slate-500 font-bold mt-0.5">코드·상품명·규격은 마스터정보 기본 고정값입니다. 보기 목록 최상단이 자동 적용 보기입니다.</div>
                                                     </div>
-                                                    <div className="flex items-center gap-2">
-                                                        {!activeView.system && <input type="text" value={activeView.name} onChange={e=>renameActiveView(e.target.value)} className="border border-slate-300 rounded-lg px-3 py-2 text-[12px] font-bold outline-none focus:border-indigo-500 bg-white" />}
+                                                    <div className="flex items-center gap-2 flex-wrap justify-end">
+                                                        <input type="text" value={activeView?.name || ''} onChange={e=>renameActiveView(e.target.value)} placeholder="보기 이름" className="border border-slate-300 rounded-lg px-3 py-2 text-[12px] font-bold outline-none focus:border-indigo-500 bg-white" />
+                                                        <button onClick={saveActiveTableView} className="px-3 py-2 rounded-lg bg-indigo-600 text-white border border-indigo-600 text-[12px] font-black hover:bg-indigo-700">보기 저장</button>
+                                                        <button onClick={cancelActiveViewEdit} disabled={!isTableViewDirty} className={`px-3 py-2 rounded-lg border text-[12px] font-black ${isTableViewDirty ? 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50' : 'bg-slate-100 text-slate-300 border-slate-100 cursor-not-allowed'}`}>변경 취소</button>
                                                         <button onClick={copyActiveView} className="px-3 py-2 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-200 text-[12px] font-black hover:bg-indigo-100">복사</button>
-                                                        {!activeView.system && <button onClick={()=>moveActiveView(-1)} className="px-3 py-2 rounded-lg bg-white text-slate-600 border border-slate-200 text-[12px] font-black hover:bg-slate-50">↑</button>}
-                                                        {!activeView.system && <button onClick={()=>moveActiveView(1)} className="px-3 py-2 rounded-lg bg-white text-slate-600 border border-slate-200 text-[12px] font-black hover:bg-slate-50">↓</button>}
-                                                        {!activeView.system && <button onClick={deleteActiveView} className="px-3 py-2 rounded-lg bg-rose-50 text-rose-600 border border-rose-200 text-[12px] font-black hover:bg-rose-100">삭제</button>}
+                                                        <button onClick={()=>moveActiveView(-1)} className="px-3 py-2 rounded-lg bg-white text-slate-600 border border-slate-200 text-[12px] font-black hover:bg-slate-50">↑</button>
+                                                        <button onClick={()=>moveActiveView(1)} className="px-3 py-2 rounded-lg bg-white text-slate-600 border border-slate-200 text-[12px] font-black hover:bg-slate-50">↓</button>
+                                                        <button onClick={deleteActiveView} className="px-3 py-2 rounded-lg bg-rose-50 text-rose-600 border border-rose-200 text-[12px] font-black hover:bg-rose-100">삭제</button>
                                                     </div>
                                                 </div>
                                             </div>
@@ -818,10 +804,9 @@
                                             <div className="bg-white border border-slate-200 rounded-xl p-4">
                                                 <div className="flex items-center justify-between mb-3">
                                                     <div className="text-[12px] font-black text-slate-700"><i className="fas fa-edit text-emerald-500 mr-1.5"></i>작업테이블 노출항목</div>
-                                                    <button onClick={() => resetUploadRoleToDefault(activeUploadRole)} className="px-3 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-[11px] font-black hover:bg-rose-100">기본정리</button>
                                                 </div>
                                                 <div className="flex flex-wrap gap-2 mb-4">
-                                                    {(config.visibleUploadCols[activeUploadRole]||[]).filter(h => h !== '품목코드').map(h => {
+                                                    {selectableWorkHeaders.map(h => {
                                                         const selected = (activeView.workColumns || []).includes(h);
                                                         const isCompare = isComparePriceField(activeUploadRole, h);
                                                         return <button key={`view-work-${activeUploadRole}-${activeView.id}-${h}`} onClick={() => toggleActiveWorkColumn(h)} className={`px-3 py-1.5 rounded-full border text-[12px] font-bold transition-all ${selected ? 'bg-emerald-100 border-emerald-300 text-emerald-800 shadow-inner' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>{selected && <i className="fas fa-check mr-1"></i>}{h}{isCompare && <span className="ml-1 text-[10px] text-amber-600">비교</span>}</button>;
