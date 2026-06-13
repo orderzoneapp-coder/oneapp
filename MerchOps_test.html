@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.11 ERP 최종전송열 삭제]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.12 테이블보기프리셋 2차]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -453,64 +453,37 @@
             }
         };
 
-        const getInitialVisibleMasterCols = () => ({ 
-            estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A', '판매여부'] 
+        const TABLE_VIEW_TARGETS = [
+            { id: 'catalog', label: '카탈로그' },
+            { id: 'estimate', label: '견적' },
+            { id: 'purchase', label: '구매' },
+            { id: 'sales', label: '판매' },
+            { id: 'inventory', label: '재고' }
+        ];
+        const TABLE_VIEW_TARGET_IDS = TABLE_VIEW_TARGETS.map(t => t.id);
+        const REQUIRED_MASTER_CORE_FIELDS = ['품목코드', '품목명', '규격'];
+
+        const getInitialVisibleMasterCols = () => ({
+            catalog: ['입고가'],
+            estimate: ['입고가'],
+            purchase: ['입고가'],
+            sales: ['입고가'],
+            inventory: ['입고가']
         });
         
-        const getInitialVisibleUploadCols = () => ({ 
-            estimate: ['창고', '기준일자', '구매처', '브랜드', '견적서', '단위', '재고수량', '상품 구매일자', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '검색어등록'] 
+        const getInitialVisibleUploadCols = () => ({
+            catalog: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A', '행사가'],
+            estimate: ['창고', '기준일자', '구매처', '브랜드', '견적서', '단위', '재고수량', '상품 구매일자', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '검색어등록'],
+            purchase: ['창고', '구매처', '단위', '입고가', '입고수량'],
+            sales: ['창고', '구매처', '단위', '출고가', '출고량'],
+            inventory: ['창고', '기준일자', '재고수량', '상품 구매일자', '구매처', '단위', '입고가', '출고가', '행사가', '간단설명']
         });
 
         // ============================================================
-        // [M-TABLE-01] 테이블 양식 자동 적용 정책
-        // 역할: 사용자가 어떤 엑셀을 불러왔는지에 따라 화면 테이블 양식을 즉시 전환한다.
-        // - 재고 불러오기만 있으면 재고 양식
-        // - 견적/구매/판매 중 단일 역할이면 해당 양식
-        // - 두 가지 이상 엑셀 역할이 섞이면 최종 양식
-        // - 관리자가 테이블 버튼을 직접 누르면 현재 세션에서는 수동 양식을 우선한다.
-        // - 초기화하면 수동 우선권을 해제하고 다음 업로드부터 기본 순서를 다시 적용한다.
+        // [M-TABLE-01] 테이블 보기 프리셋 정책
+        // 역할: 카탈로그/견적/구매/판매/재고 불러오기 목적별로 마스터 노출항목과 작업테이블 노출항목을 함께 적용한다.
+        // 제외: 최종/파서는 메인 테이블 보기 설정 대상이 아니다.
         // ============================================================
-        window.getMerchTableTemplates = () => ({
-            estimate: {
-                id: 'system-estimate',
-                name: '견적',
-                role: 'estimate',
-                system: true,
-                columns: ['입고가', '출고가', '행사가', '간단설명', '창고', '단위', '구매처', '브랜드', '견적서', '도매A', '검색어등록']
-            },
-            purchase: {
-                id: 'system-purchase',
-                name: '구매',
-                role: 'purchase',
-                system: true,
-                columns: ['구매처', '상품 구매일자', '입고가', '출고가', '외주비', '노무비', '단위', '창고', '재고수량', '간단설명']
-            },
-            sales: {
-                id: 'system-sales',
-                name: '판매',
-                role: 'sales',
-                system: true,
-                columns: ['구매처', '단위', '재고수량', '입고가', '출고가', '행사가', '간단설명', '창고']
-            },
-            inventory: {
-                id: 'system-inventory',
-                name: '재고',
-                role: 'inventory',
-                system: true,
-                columns: ['창고', '기준일자', '재고수량', '상품 구매일자', '구매처', '단위', '입고가', '출고가', '행사가', '간단설명']
-            },
-            final: {
-                id: 'system-final',
-                name: '최종',
-                role: 'final',
-                system: true,
-                columns: ['창고', '기준일자', '구매처', '브랜드', '견적서', '단위', '재고수량', '상품 구매일자', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '행사가', '간단설명', '검색어등록']
-            }
-        });
-
-        // 항목명 표준화 정책:
-        // 입력/작업 기준은 도매A·도매B로 통일한다.
-        // 과거 A판매/B판매/B도매가 계열 명칭은 저장된 양식에 남아 있어도 화면 컬럼명으로 재사용하지 않는다.
         window.canonicalMerchFieldName = (field) => {
             const clean = String(field || '').trim();
             if (['A판매', 'A판매가'].includes(clean)) return '도매A';
@@ -523,10 +496,188 @@
                 ? columns.map(c => window.canonicalMerchFieldName(c)).filter(Boolean)
                 : [];
             const deduped = [];
-            ['품목코드', ...clean.filter(c => c !== '품목코드')].forEach(col => {
+            clean.forEach(col => {
                 if (!deduped.includes(col)) deduped.push(col);
             });
             return deduped;
+        };
+
+        window.normalizeMerchMasterColumns = (columns = []) => {
+            return window.normalizeMerchTableColumns(columns).filter(c => !REQUIRED_MASTER_CORE_FIELDS.includes(c));
+        };
+
+        window.createMerchTableView = (target, name, masterColumns = ['입고가'], workColumns = [], options = {}) => ({
+            id: options.id || `${target}_${options.system ? 'default' : `view_${Date.now()}`}`,
+            name: name || (options.system ? '기본보기' : '맞춤보기'),
+            system: !!options.system,
+            masterColumns: window.normalizeMerchMasterColumns(masterColumns),
+            workColumns: window.normalizeMerchTableColumns(workColumns).filter(c => c !== '품목코드'),
+            updatedAt: options.updatedAt || new Date().toISOString()
+        });
+
+        window.getDefaultMerchTableViewPresets = () => {
+            const masterDefaults = getInitialVisibleMasterCols();
+            const workDefaults = getInitialVisibleUploadCols();
+            const presets = {};
+            TABLE_VIEW_TARGETS.forEach(target => {
+                const defaultView = window.createMerchTableView(
+                    target.id,
+                    '기본보기',
+                    masterDefaults[target.id] || ['입고가'],
+                    workDefaults[target.id] || [],
+                    { id: `${target.id}_default`, system: true }
+                );
+                presets[target.id] = {
+                    defaultViewId: defaultView.id,
+                    views: [defaultView]
+                };
+            });
+            return presets;
+        };
+
+        window.sanitizeMerchTableViewPresets = (raw = {}) => {
+            const defaults = window.getDefaultMerchTableViewPresets();
+            const result = {};
+            TABLE_VIEW_TARGETS.forEach(target => {
+                const base = defaults[target.id];
+                const source = raw?.[target.id] || {};
+                const sourceViews = Array.isArray(source.views) ? source.views : [];
+                const customViews = sourceViews
+                    .filter(v => v && v.system !== true && v.id !== base.defaultViewId)
+                    .slice(0, 5)
+                    .map((v, idx) => window.createMerchTableView(
+                        target.id,
+                        String(v.name || `맞춤보기 ${idx + 1}`).trim(),
+                        v.masterColumns || ['입고가'],
+                        v.workColumns || v.columns || [],
+                        { id: v.id || `${target.id}_custom_${idx + 1}`, system: false, updatedAt: v.updatedAt }
+                    ));
+                let defaultView = sourceViews.find(v => v && (v.system === true || v.id === source.defaultViewId || v.id === base.defaultViewId));
+                defaultView = defaultView
+                    ? window.createMerchTableView(target.id, '기본보기', defaultView.masterColumns || base.views[0].masterColumns, defaultView.workColumns || defaultView.columns || base.views[0].workColumns, { id: base.defaultViewId, system: true, updatedAt: defaultView.updatedAt })
+                    : base.views[0];
+                result[target.id] = {
+                    defaultViewId: base.defaultViewId,
+                    views: [defaultView, ...customViews]
+                };
+            });
+            return result;
+        };
+
+
+        window.migrateLegacyMerchTableViewPresets = (storedPresets = null) => {
+            const hasStoredPresets = !!storedPresets;
+            let next = window.sanitizeMerchTableViewPresets(storedPresets || window.getDefaultMerchTableViewPresets());
+            const legacyMaster = safeJSONParse('merchVisMaster_v870', null);
+            const legacyUpload = safeJSONParse('merchVisUpload_v870', null);
+
+            // 신규 프리셋이 아직 없으면 기존 역할별 노출항목을 기본보기로 흡수한다.
+            if (!hasStoredPresets) {
+                TABLE_VIEW_TARGETS.forEach(target => {
+                    const group = next[target.id];
+                    const baseView = group?.views?.[0];
+                    if (!baseView) return;
+                    const masterCols = legacyMaster?.[target.id] || baseView.masterColumns || ['입고가'];
+                    const workCols = legacyUpload?.[target.id] || baseView.workColumns || [];
+                    group.views[0] = window.createMerchTableView(target.id, '기본보기', masterCols, workCols, { id: `${target.id}_default`, system: true, updatedAt: baseView.updatedAt });
+                });
+            }
+
+            // 기존 테이블 단축버튼은 1회만 맞춤보기 후보로 이관한다. 최종/파서/역할불명은 제외한다.
+            try {
+                if (localStorage.getItem('merchTableViewPresets_v1_migrated') !== '1') {
+                    const backupPairs = [
+                        ['merchTableShortcuts_v870', 'merchTableShortcuts_v870_backup'],
+                        ['merchVisMaster_v870', 'merchVisMaster_v870_backup'],
+                        ['merchVisUpload_v870', 'merchVisUpload_v870_backup']
+                    ];
+                    backupPairs.forEach(([src, dst]) => {
+                        if (!localStorage.getItem(dst)) {
+                            const value = localStorage.getItem(src);
+                            if (value !== null) localStorage.setItem(dst, value);
+                        }
+                    });
+
+                    const shortcuts = window.getSavedMerchTableShortcuts();
+                    shortcuts.forEach((shortcut, idx) => {
+                        const target = TABLE_VIEW_TARGET_IDS.includes(shortcut.role) ? shortcut.role : 'estimate';
+                        const group = next[target];
+                        if (!group) return;
+                        const customViews = group.views.filter(v => !v.system);
+                        if (customViews.length >= 5) return;
+                        const name = String(shortcut.name || shortcut.label || `이전보기 ${idx + 1}`).trim();
+                        if (!name || group.views.some(v => String(v.name).trim() === name)) return;
+                        const newView = window.createMerchTableView(
+                            target,
+                            name,
+                            shortcut.masterColumns || legacyMaster?.[target] || ['입고가'],
+                            shortcut.workColumns || shortcut.columns || legacyUpload?.[target] || [],
+                            { id: `${target}_legacy_${idx}_${Date.now()}`, system: false, updatedAt: shortcut.updatedAt }
+                        );
+                        group.views.push(newView);
+                    });
+                    localStorage.setItem('merchTableViewPresets_v1_migrated', '1');
+                }
+            } catch (e) {
+                console.warn('[TableView Legacy Migration]', e);
+            }
+            const sanitized = window.sanitizeMerchTableViewPresets(next);
+            try { localStorage.setItem('merchTableViewPresets_v1', JSON.stringify(sanitized)); } catch (e) {}
+            return sanitized;
+        };
+
+        window.findMerchTableView = (presets = {}, target = 'estimate', viewId = '') => {
+            const safeTarget = TABLE_VIEW_TARGET_IDS.includes(target) ? target : 'estimate';
+            const safePresets = window.sanitizeMerchTableViewPresets(presets);
+            const group = safePresets[safeTarget];
+            return group.views.find(v => v.id === viewId || v.name === viewId) || group.views.find(v => v.id === group.defaultViewId) || group.views[0];
+        };
+
+        window.getMerchTableViewsForTarget = (presets = {}, target = 'estimate') => {
+            const safeTarget = TABLE_VIEW_TARGET_IDS.includes(target) ? target : 'estimate';
+            return window.sanitizeMerchTableViewPresets(presets)?.[safeTarget]?.views || [];
+        };
+
+        window.getAutoTableViewTarget = (managedItems = {}, fallbackRole = 'estimate') => {
+            const roles = window.getLoadedExcelRolesFromManagedItems(managedItems);
+            if (roles.length === 1) return roles[0];
+            if (TABLE_VIEW_TARGET_IDS.includes(fallbackRole)) return fallbackRole;
+            return 'estimate';
+        };
+
+        window.applyMerchTableView = (config, target = 'estimate', viewId = '', options = {}) => {
+            if (!config) return null;
+            const safeTarget = TABLE_VIEW_TARGET_IDS.includes(target) ? target : 'estimate';
+            const presets = window.sanitizeMerchTableViewPresets(config.tableViewPresets || window.getDefaultMerchTableViewPresets());
+            const view = window.findMerchTableView(presets, safeTarget, viewId || presets[safeTarget]?.defaultViewId);
+            if (!view) return null;
+
+            config.setVisibleMasterCols?.(prev => ({
+                ...(prev || {}),
+                [safeTarget]: window.normalizeMerchMasterColumns(view.masterColumns || ['입고가'])
+            }));
+            config.setVisibleUploadCols?.(prev => ({
+                ...(prev || {}),
+                [safeTarget]: window.normalizeMerchTableColumns(view.workColumns || []).filter(c => c !== '품목코드')
+            }));
+            config.setActiveTableTarget?.(safeTarget);
+            config.setActiveTableViewId?.(view.id);
+            try {
+                localStorage.setItem('merchActiveTableTarget_v1', safeTarget);
+                localStorage.setItem('merchActiveTableViewId_v1', view.id);
+                window.dispatchEvent(new CustomEvent('merch_table_view_changed', { detail: { target: safeTarget, viewId: view.id, name: view.name, manual: !!options.manual } }));
+            } catch (e) {}
+            return { ...view, target: safeTarget };
+        };
+
+        // 구버전 단축버튼 호출 호환용. 신규 기능은 applyMerchTableView를 사용한다.
+        window.applyMerchTableTemplate = (setVisibleUploadCols, templateKey = 'estimate', options = {}) => {
+            const target = TABLE_VIEW_TARGET_IDS.includes(templateKey) ? templateKey : 'estimate';
+            const defaults = window.getDefaultMerchTableViewPresets();
+            const view = window.findMerchTableView(defaults, target);
+            const cols = window.normalizeMerchTableColumns(view.workColumns || []);
+            setVisibleUploadCols?.(prev => ({ ...(prev || {}), [target]: cols }));
+            return { ...view, role: target, target };
         };
 
         window.getSavedMerchTableShortcuts = () => {
@@ -542,29 +693,16 @@
         };
 
         window.getMergedMerchTableShortcuts = () => {
-            const templates = window.getMerchTableTemplates();
-            const merged = Object.values(templates).map(t => ({ ...t }));
-            const saved = window.getSavedMerchTableShortcuts();
-            saved.forEach((shortcut, idx) => {
-                const name = String(shortcut.name || shortcut.label || shortcut.role || `양식${idx + 1}`).trim();
-                const normalized = {
-                    ...shortcut,
-                    id: shortcut.id || `custom-${name}-${idx}`,
-                    name,
-                    role: shortcut.role || 'custom',
-                    system: false,
-                    columns: Array.isArray(shortcut.columns) ? shortcut.columns.filter(Boolean) : []
-                };
-                const sameIdx = merged.findIndex(t => t.name === normalized.name || t.id === normalized.id);
-                if (sameIdx >= 0) {
-                    // 기본 양식명(예: 재고)과 같은 사용자 저장 양식은 버튼 위치/활성 id를 유지하고 컬럼만 사용자값으로 대체한다.
-                    const base = merged[sameIdx];
-                    merged[sameIdx] = { ...base, ...normalized, id: base.id, name: base.name, role: base.role, system: false, customSourceId: normalized.id };
-                } else {
-                    merged.push(normalized);
-                }
-            });
-            return merged;
+            const presets = window.sanitizeMerchTableViewPresets(safeJSONParse('merchTableViewPresets_v1', window.getDefaultMerchTableViewPresets()));
+            return TABLE_VIEW_TARGETS.flatMap(target => (presets[target.id]?.views || []).map(v => ({
+                id: v.id,
+                name: `${target.label}:${v.name}`,
+                role: target.id,
+                target: target.id,
+                system: v.system,
+                columns: v.workColumns || [],
+                masterColumns: v.masterColumns || []
+            })));
         };
 
         window.getLoadedExcelRolesFromManagedItems = (managedItems = {}) => {
@@ -577,45 +715,8 @@
             return ['estimate', 'purchase', 'sales', 'inventory'].filter(role => roleSet.has(role));
         };
 
-        window.getAutoTableTemplateKey = (managedItems = {}, fallbackRole = 'estimate') => {
-            const roles = window.getLoadedExcelRolesFromManagedItems(managedItems);
-            if (roles.length >= 2) return 'final';
-            if (roles.length === 1) return roles[0];
-            return ['estimate', 'purchase', 'sales', 'inventory'].includes(fallbackRole) ? fallbackRole : 'estimate';
-        };
-
-        window.applyMerchTableTemplate = (setVisibleUploadCols, templateKey = 'estimate', options = {}) => {
-            const templates = window.getMerchTableTemplates();
-            const saved = window.getMergedMerchTableShortcuts();
-            const template = saved.find(t => t.id === templateKey || t.name === templateKey || t.role === templateKey) || templates[templateKey] || templates.estimate;
-            const normalizedCols = window.normalizeMerchTableColumns(template.columns);
-            if (normalizedCols.length <= 1) return null;
-
-            setVisibleUploadCols(prev => ({
-                ...(prev || {}),
-                // 현재 메인 그리드는 estimate 키를 공통 화면 노출 양식으로 사용한다.
-                // 역할별 저장값도 같이 남겨 Settings/기존 설정과의 호환성을 유지한다.
-                estimate: normalizedCols,
-                [template.role || templateKey || 'estimate']: normalizedCols
-            }));
-
-            const activeId = template.id || template.name || templateKey;
-            try {
-                localStorage.setItem('merchActiveTableShortcut_v870', activeId);
-                localStorage.setItem('merchActiveTableTemplateKey_v870', templateKey);
-                localStorage.setItem('merchTableTemplateManualOverride_v870', options.manual ? '1' : '0');
-            } catch (e) {}
-
-            try {
-                window.dispatchEvent(new CustomEvent('merch_table_template_changed', { detail: { id: activeId, templateKey, manual: !!options.manual } }));
-            } catch (e) {}
-            return template;
-        };
-
-        window.shouldAutoApplyMerchTableTemplate = () => {
-            try { return localStorage.getItem('merchTableTemplateManualOverride_v870') !== '1'; }
-            catch (e) { return true; }
-        };
+        window.getAutoTableTemplateKey = (managedItems = {}, fallbackRole = 'estimate') => window.getAutoTableViewTarget(managedItems, fallbackRole);
+        window.shouldAutoApplyMerchTableTemplate = () => true;
         
         const getInitialMappings = () => {
             const base = { master: {}, estimate: {} };
@@ -869,6 +970,9 @@
             const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v870') || '');
             const [visibleMasterCols, setVisibleMasterCols] = useState(() => safeJSONParse('merchVisMaster_v870', getInitialVisibleMasterCols()));
             const [visibleUploadCols, setVisibleUploadCols] = useState(() => safeJSONParse('merchVisUpload_v870', getInitialVisibleUploadCols()));
+            const [tableViewPresets, setTableViewPresets] = useState(() => window.migrateLegacyMerchTableViewPresets(safeJSONParse('merchTableViewPresets_v1', null)));
+            const [activeTableTarget, setActiveTableTarget] = useState(() => localStorage.getItem('merchActiveTableTarget_v1') || 'estimate');
+            const [activeTableViewId, setActiveTableViewId] = useState(() => localStorage.getItem('merchActiveTableViewId_v1') || 'estimate_default');
             const [mappings, setMappings] = useState(() => safeJSONParse('merchMappings_v870', getInitialMappings()));
             const [masterLinks, setMasterLinks] = useState(() => safeJSONParse('merchMasterLinks_v870', getInitialMasterLinks()));
             const [uploadColumnMeta, setUploadColumnMeta] = useState(() => safeJSONParse('merchUploadColumnMeta_v870', {}));
@@ -900,15 +1004,17 @@
                 };
 
                 setVisibleUploadCols(prev => {
-                    const list = prev?.estimate || [];
+                    const list = window.normalizeMerchTableColumns(prev?.estimate || []);
                     const merged = [...list];
-                    requiredUploadCols.forEach(col => { if (!merged.includes(col)) merged.push(col); });
+                    requiredUploadCols.forEach(col => {
+                        const canonical = window.canonicalMerchFieldName(col);
+                        if (!merged.includes(canonical)) merged.push(canonical);
+                    });
                     return { ...(prev || {}), estimate: merged };
                 });
                 setMappings(prev => {
                     const est = { ...(prev?.estimate || {}) };
                     // v2.1.10 항목명 정리: 과거 A판매/B판매 계열 파서명은 삭제하고 도매A·도매B만 표준 입력명으로 사용한다.
-                    // v2.1.11 ERP업데이트 시트: 최종(전송) 열 삭제.
                     ['A판매', 'A판매가', 'B판매', 'B판매가', 'B도매가'].forEach(k => { delete est[k]; });
                     est['도매A'] = '도매A';
                     est['도매B'] = '도매B';
@@ -936,6 +1042,9 @@
                             if (saved.cloudUrl !== undefined && !localStorage.getItem('merchCloudUrl_v870')) setCloudUrl(saved.cloudUrl || '');
                             if (saved.visibleMasterCols && !localStorage.getItem('merchVisMaster_v870')) setVisibleMasterCols(saved.visibleMasterCols);
                             if (saved.visibleUploadCols && !localStorage.getItem('merchVisUpload_v870')) setVisibleUploadCols(saved.visibleUploadCols);
+                            if (saved.tableViewPresets && !localStorage.getItem('merchTableViewPresets_v1')) setTableViewPresets(window.sanitizeMerchTableViewPresets(saved.tableViewPresets));
+                            if (saved.activeTableTarget && !localStorage.getItem('merchActiveTableTarget_v1')) setActiveTableTarget(saved.activeTableTarget);
+                            if (saved.activeTableViewId && !localStorage.getItem('merchActiveTableViewId_v1')) setActiveTableViewId(saved.activeTableViewId);
                             if (saved.mappings && !localStorage.getItem('merchMappings_v870')) setMappings(saved.mappings);
                             if (saved.masterLinks && !localStorage.getItem('merchMasterLinks_v870')) setMasterLinks(saved.masterLinks);
                             if (saved.uploadColumnMeta && !localStorage.getItem('merchUploadColumnMeta_v870')) setUploadColumnMeta(saved.uploadColumnMeta);
@@ -957,6 +1066,9 @@
                     cloudUrl,
                     visibleMasterCols,
                     visibleUploadCols,
+                    tableViewPresets,
+                    activeTableTarget,
+                    activeTableViewId,
                     mappings,
                     masterLinks,
                     uploadColumnMeta,
@@ -967,6 +1079,9 @@
                     localStorage.setItem('merchCloudUrl_v870', cloudUrl || '');
                     localStorage.setItem('merchVisMaster_v870', JSON.stringify(visibleMasterCols));
                     localStorage.setItem('merchVisUpload_v870', JSON.stringify(visibleUploadCols));
+                    localStorage.setItem('merchTableViewPresets_v1', JSON.stringify(window.sanitizeMerchTableViewPresets(tableViewPresets)));
+                    localStorage.setItem('merchActiveTableTarget_v1', activeTableTarget || 'estimate');
+                    localStorage.setItem('merchActiveTableViewId_v1', activeTableViewId || `${activeTableTarget || 'estimate'}_default`);
                     localStorage.setItem('merchMappings_v870', JSON.stringify(mappings));
                     localStorage.setItem('merchMasterLinks_v870', JSON.stringify(masterLinks));
                     localStorage.setItem('merchUploadColumnMeta_v870', JSON.stringify(uploadColumnMeta || {}));
@@ -976,13 +1091,14 @@
                 } catch (e) {
                     console.warn('[MerchOps Config Persist]', e);
                 }
-            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, uploadColumnMeta, marginRules]);
+            }, [cloudUrl, visibleMasterCols, visibleUploadCols, tableViewPresets, activeTableTarget, activeTableViewId, mappings, masterLinks, uploadColumnMeta, marginRules]);
 
             useEffect(() => {
                 const handleConfigSync = (e) => {
                     if (e.key === 'config_sync_trigger') {
                         const fVisMaster = safeJSONParse('merchVisMaster_v870', null); 
                         const fVisUpload = safeJSONParse('merchVisUpload_v870', null); 
+                        const fTableViewPresets = safeJSONParse('merchTableViewPresets_v1', null);
                         const fMappings = safeJSONParse('merchMappings_v870', null); 
                         const fMasterLinks = safeJSONParse('merchMasterLinks_v870', null); 
                         const fUploadColumnMeta = safeJSONParse('merchUploadColumnMeta_v870', null);
@@ -990,6 +1106,11 @@
                         
                         if(fVisMaster) setVisibleMasterCols(fVisMaster); 
                         if(fVisUpload) setVisibleUploadCols(fVisUpload); 
+                        if(fTableViewPresets) setTableViewPresets(window.sanitizeMerchTableViewPresets(fTableViewPresets));
+                        const fActiveTableTarget = localStorage.getItem('merchActiveTableTarget_v1');
+                        const fActiveTableViewId = localStorage.getItem('merchActiveTableViewId_v1');
+                        if(fActiveTableTarget) setActiveTableTarget(fActiveTableTarget);
+                        if(fActiveTableViewId) setActiveTableViewId(fActiveTableViewId);
                         if(fMappings) setMappings(fMappings); 
                         if(fMasterLinks) setMasterLinks(fMasterLinks); 
                         if(fUploadColumnMeta) setUploadColumnMeta(fUploadColumnMeta);
@@ -1004,6 +1125,7 @@
                 cloudUrl, setCloudUrl, 
                 visibleMasterCols, setVisibleMasterCols, 
                 visibleUploadCols, setVisibleUploadCols, 
+                tableViewPresets, setTableViewPresets, activeTableTarget, setActiveTableTarget, activeTableViewId, setActiveTableViewId,
                 mappings, setMappings, 
                 masterLinks, setMasterLinks, 
                 uploadColumnMeta, setUploadColumnMeta,
@@ -1152,7 +1274,10 @@
                                     mappings: config.mappings, 
                                     masterLinks: config.masterLinks, 
                                     visibleUploadCols: config.visibleUploadCols, 
-                                    visibleMasterCols: config.visibleMasterCols 
+                                    visibleMasterCols: config.visibleMasterCols,
+                                    tableViewPresets: config.tableViewPresets,
+                                    activeTableTarget: config.activeTableTarget,
+                                    activeTableViewId: config.activeTableViewId
                                 }
                             }
                         };
@@ -1186,6 +1311,9 @@
                                 if (result.data.appConfig.masterLinks) config.setMasterLinks(result.data.appConfig.masterLinks);
                                 if (result.data.appConfig.visibleUploadCols) config.setVisibleUploadCols(result.data.appConfig.visibleUploadCols);
                                 if (result.data.appConfig.visibleMasterCols) config.setVisibleMasterCols(result.data.appConfig.visibleMasterCols);
+                                if (result.data.appConfig.tableViewPresets) config.setTableViewPresets(window.sanitizeMerchTableViewPresets(result.data.appConfig.tableViewPresets));
+                                if (result.data.appConfig.activeTableTarget) config.setActiveTableTarget(result.data.appConfig.activeTableTarget);
+                                if (result.data.appConfig.activeTableViewId) config.setActiveTableViewId(result.data.appConfig.activeTableViewId);
                             }
 
                             if (ui.setHasUnsavedChanges) ui.setHasUnsavedChanges(false);
@@ -1386,11 +1514,11 @@
                     data.setMasterProducts(newMaster);
                     data.setManagedItems(newManaged);
 
-                    // 업로드한 엑셀 역할에 맞춰 테이블 양식을 즉시 적용한다.
-                    // 단, 관리자가 이미 다른 양식 버튼을 직접 누른 세션에서는 수동 선택을 보존한다.
-                    const autoTemplateKey = window.getAutoTableTemplateKey ? window.getAutoTableTemplateKey(newManaged, role) : role;
-                    const autoAppliedTemplate = (window.shouldAutoApplyMerchTableTemplate?.() !== false && window.applyMerchTableTemplate)
-                        ? window.applyMerchTableTemplate(config.setVisibleUploadCols, autoTemplateKey, { manual: false })
+                    // 업로드한 엑셀 역할에 맞춰 목적별 테이블 보기를 즉시 적용한다.
+                    // 최종/파서 템플릿은 사용하지 않고, 불러오기 버튼의 목적값만 적용한다.
+                    const autoTableTarget = window.getAutoTableViewTarget ? window.getAutoTableViewTarget(newManaged, role) : role;
+                    const autoAppliedTemplate = window.applyMerchTableView
+                        ? window.applyMerchTableView(config, autoTableTarget, null, { manual: false })
                         : null;
 
                     ui.setActiveTags(prev => {
@@ -1410,7 +1538,7 @@
                     ui.setIsProcessing(false); 
                     ui.setProcessMsg(''); 
                 }
-            }, [data.masterProducts, data.managedItems, config.mappings, config.masterLinks, config.uploadColumnMeta, config.marginRules, config.setVisibleUploadCols, ui]);
+            }, [data.masterProducts, data.managedItems, config.mappings, config.masterLinks, config.uploadColumnMeta, config.marginRules, config.tableViewPresets, ui]);
 
             // ============================================================
             // [M-FLOW-02] 카탈로그/견적서 필터 불러오기
@@ -1453,7 +1581,8 @@
                             
                             data.setManagedItems(newManaged); 
                             ui.setSelectedRows(new Set()); 
-                            ui.showToast(`✅ 모든 카탈로그 병합 완료! (신규 ${addedCount}건 추가됨)`);
+                            const appliedView = window.applyMerchTableView ? window.applyMerchTableView(config, 'catalog', null, { manual: false }) : null;
+                            ui.showToast(`✅ 모든 카탈로그 병합 완료! (신규 ${addedCount}건 추가됨)${appliedView ? ` / 보기: ${appliedView.name}` : ''}`);
                         } catch (e) { 
                             ui.showToast("❌ 데이터 병합 중 오류가 발생했습니다."); 
                         } finally { 
@@ -1505,7 +1634,9 @@
                         
                         data.setManagedItems(newManaged); 
                         ui.setSelectedRows(new Set()); 
-                        ui.showToast(`✅ [${name}] 병합 완료! (신규 ${addedCount}건 추가됨)`);
+                        const targetViewKey = type === 'catalog' ? 'catalog' : 'estimate';
+                        const appliedView = window.applyMerchTableView ? window.applyMerchTableView(config, targetViewKey, null, { manual: false }) : null;
+                        ui.showToast(`✅ [${name}] 병합 완료! (신규 ${addedCount}건 추가됨)${appliedView ? ` / 보기: ${appliedView.name}` : ''}`);
                     } catch (error) { 
                         ui.showToast("❌ 데이터 병합 중 오류가 발생했습니다."); 
                     } finally { 
@@ -1513,7 +1644,7 @@
                         ui.setProcessMsg(''); 
                     }
                 }, 100);
-            }, [data.masterProducts, data.managedItems, data.setManagedItems, config.marginRules, ui]);
+            }, [data.masterProducts, data.managedItems, data.setManagedItems, config.marginRules, config.tableViewPresets, ui]);
 
             const handleRemoveFilter = useCallback((type, name) => {
                 ui.setActiveTags(prev => prev.filter(t => !(t.type === type && t.name === name)));
@@ -1759,7 +1890,7 @@
                 };
 
                 const wb = window.XLSX.utils.book_new();
-                const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '행사', 'n', '1']];
+                const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '최종(전송)', 'n', '행사', 'n', '1']];
                 const shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', '도매B', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
                 let subOutputCount = 0;
 
@@ -1776,19 +1907,20 @@
                     const pMarket = getBestNum(row, '시중가');
                     const shopBPrice = getBestNum(row, 'B판매가');
                     const shopBWholesale = getBestNum(row, '도매B');
+                    const finalTransmission = getBestNumByAliases(row, ['최종전송', '최종(전송)'], inPrice);
                     const finalStockRaw = getBestValue(row, '재고수량', '');
                     const finalStock = finalStockRaw !== '' ? window.parseNum(finalStockRaw) : '';
                     const themeFlags = buildThemeFlags(row);
 
                     // ERP는 기초정보 셋팅용이다. 출고가는 정상 출고가, 행사는 행사 컬럼으로 분리한다.
-                    erpData.push([code, inPrice, '0', erpOutPrice, '0', inPriceB, 'n', erpASale, 'n', erpBSale, 'n', promoPrice, 'n', saleCode]);
+                    erpData.push([code, inPrice, '0', erpOutPrice, '0', inPriceB, 'n', erpASale, 'n', erpBSale, 'n', finalTransmission, 'n', promoPrice, 'n', saleCode]);
                     // 쇼핑몰은 실제 판매가 설정용이다. 행사가가 있으면 기존 쇼핑몰 양식의 출고가 칸에 행사 우선가를 넣는다.
                     shopData.push([code, getBestStr(row, '품목명'), getBestStr(row, '규격'), shopSalePrice, erpASale, (pMarket !== '' && pMarket > 0 ? pMarket : shopSalePrice), shopBPrice, shopBWholesale, 0, 0, 0, 0, getBestStr(row, '브랜드'), getBestStr(row, '간단설명'), saleCode, finalStock, ...themeFlags, getBestStr(row, '검색어등록')]);
 
                     const subInfo = calculateSubInfo(row);
                     if (subInfo) {
                         const subMaster = data.masterProducts[subInfo.code] || {};
-                        erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', '', 'n', saleCode]);
+                        erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', subInfo.subIn, 'n', '', 'n', saleCode]);
                         shopData.push([subInfo.code, subMaster['품목명'] || `${getBestStr(row, '품목명')} (소분)`, subMaster['규격'] || subInfo.spec || '', subInfo.subOut, subInfo.subOut, subInfo.subOut, '', '', 0, 0, 0, 0, subMaster['브랜드'] || getBestStr(row, '브랜드'), subMaster['간단설명'] || getBestStr(row, '간단설명'), saleCode, finalStock, ...themeFlags, subMaster['검색어등록'] || getBestStr(row, '검색어등록')]);
                         subOutputCount++;
                     }
@@ -1922,11 +2054,14 @@
                 ui.setPriceFilter('all');
                 if (ui.setBasicSearch) ui.setBasicSearch('');
                 if (config.setVisibleUploadCols) config.setVisibleUploadCols(getInitialVisibleUploadCols());
+                if (config.setVisibleMasterCols) config.setVisibleMasterCols(getInitialVisibleMasterCols());
+                if (window.applyMerchTableView) window.applyMerchTableView(config, 'estimate', 'estimate_default', { manual: false });
                 try {
                     localStorage.removeItem('merchTableTemplateManualOverride_v870');
                     localStorage.removeItem('merchActiveTableTemplateKey_v870');
-                    localStorage.setItem('merchActiveTableShortcut_v870', 'system-estimate');
-                    window.dispatchEvent(new CustomEvent('merch_table_template_changed', { detail: { id: 'system-estimate', templateKey: 'estimate', manual: false } }));
+                    localStorage.setItem('merchActiveTableTarget_v1', 'estimate');
+                    localStorage.setItem('merchActiveTableViewId_v1', 'estimate_default');
+                    window.dispatchEvent(new CustomEvent('merch_table_view_changed', { detail: { target: 'estimate', viewId: 'estimate_default', manual: false } }));
                 } catch (e) {}
                 window.setIDB('merchops_session', null); 
                 ui.showToast('작업 데이터가 초기화 되었습니다. 다음 업로드부터 역할별 기본 테이블 양식이 다시 적용됩니다.');
@@ -2199,46 +2334,33 @@
         };
 
         const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
-            const { activeTags, selectedRows, globalSearch, priceFilter, basicSearch, fullDisplayRows } = state;
+            const { activeTags, selectedRows, globalSearch, priceFilter, basicSearch, fullDisplayRows, config } = state;
             const { handleStopSales, handleExcludeSelectedFromUpdate, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, setPriceFilter, setSelectedRows, setBasicSearch, handleOpenExportCenter, handleCommitEstimate } = actions;
             const [filterPanelOpen, setFilterPanelOpen] = useState(false);
-            const [tableShortcuts, setTableShortcuts] = useState(() => window.getMergedMerchTableShortcuts ? window.getMergedMerchTableShortcuts() : []);
-            const [activeTableShortcutId, setActiveTableShortcutId] = useState(() => localStorage.getItem('merchActiveTableShortcut_v870') || 'system-estimate');
+            const activeTableTarget = config?.activeTableTarget || 'estimate';
+            const activeTableViewId = config?.activeTableViewId || `${activeTableTarget}_default`;
+            const tableViewList = useMemo(() => window.getMerchTableViewsForTarget
+                ? window.getMerchTableViewsForTarget(config?.tableViewPresets, activeTableTarget)
+                : [], [config?.tableViewPresets, activeTableTarget]);
 
             useEffect(() => {
-                const reloadShortcuts = () => setTableShortcuts(window.getMergedMerchTableShortcuts ? window.getMergedMerchTableShortcuts() : []);
                 const onStorage = (e) => {
-                    if (e.key === 'merchTableShortcuts_v870' || e.key === 'config_sync_trigger' || e.key === 'merchActiveTableShortcut_v870') {
-                        reloadShortcuts();
-                        setActiveTableShortcutId(localStorage.getItem('merchActiveTableShortcut_v870') || 'system-estimate');
+                    if (e.key === 'merchTableViewPresets_v1' || e.key === 'config_sync_trigger') {
+                        const stored = safeJSONParse('merchTableViewPresets_v1', null);
+                        if (stored && config?.setTableViewPresets) config.setTableViewPresets(window.sanitizeMerchTableViewPresets(stored));
                     }
                 };
-                const onTemplateChanged = (e) => {
-                    reloadShortcuts();
-                    setActiveTableShortcutId(e?.detail?.id || localStorage.getItem('merchActiveTableShortcut_v870') || 'system-estimate');
-                };
                 window.addEventListener('storage', onStorage);
-                window.addEventListener('merch_table_template_changed', onTemplateChanged);
-                return () => {
-                    window.removeEventListener('storage', onStorage);
-                    window.removeEventListener('merch_table_template_changed', onTemplateChanged);
-                };
-            }, []);
+                return () => window.removeEventListener('storage', onStorage);
+            }, [config]);
 
-            const applyTableShortcut = (shortcut) => {
-                if (!shortcut) return;
-                const cols = Array.isArray(shortcut.columns) ? shortcut.columns.filter(Boolean) : [];
-                if (cols.length === 0) {
-                    actions.showToast?.('⚠️ 단축버튼에 등록된 노출 항목이 없습니다.');
-                    return;
-                }
-                const template = window.applyMerchTableTemplate
-                    ? window.applyMerchTableTemplate(state.config.setVisibleUploadCols, shortcut.id || shortcut.name || shortcut.role || 'estimate', { manual: true })
+            const applyTableShortcut = (view) => {
+                if (!view) return;
+                const applied = window.applyMerchTableView
+                    ? window.applyMerchTableView(config, activeTableTarget, view.id, { manual: true })
                     : null;
-                const id = template?.id || shortcut.id || shortcut.name || '';
-                setActiveTableShortcutId(id);
                 setSelectedRows(new Set());
-                actions.showToast?.(`✅ [${template?.name || shortcut.name || '테이블'}] 테이블 양식 적용`);
+                actions.showToast?.(`✅ [${applied?.name || view.name || '보기'}] 테이블 보기 적용`);
             };
 
             const applyPriceFilter = (value) => {
@@ -2335,21 +2457,20 @@
                                 </button>
                             </div>
 
-                            {tableShortcuts.length > 0 && (
+                            {tableViewList.length > 0 && (
                                 <div className="flex-1 min-w-[260px] flex justify-center">
                                     <div className="flex items-center justify-center gap-1.5 px-2 py-1 rounded-xl border border-dashed border-slate-300 bg-white/80 shadow-sm max-w-full overflow-x-auto custom-scrollbar">
-                                        <span className="text-[10px] font-black text-slate-400 mr-1 shrink-0">테이블</span>
-                                        {tableShortcuts.map(shortcut => {
-                                            const id = shortcut.id || shortcut.name || '';
-                                            const active = activeTableShortcutId === id;
+                                        <span className="text-[10px] font-black text-slate-400 mr-1 shrink-0">보기</span>
+                                        {tableViewList.map(view => {
+                                            const active = activeTableViewId === view.id;
                                             return (
                                                 <button
-                                                    key={id || shortcut.name}
-                                                    onClick={() => applyTableShortcut(shortcut)}
+                                                    key={view.id || view.name}
+                                                    onClick={() => applyTableShortcut(view)}
                                                     className={`h-7 px-2.5 rounded-lg text-[11px] font-black border shadow-sm transition-all shrink-0 ${active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200'}`}
-                                                    title={`${shortcut.system ? '기본 양식' : '사용자 양식'}: ${(shortcut.columns || []).join(', ')}`}
+                                                    title={`${view.system ? '기본보기' : '맞춤보기'}: 마스터 ${(view.masterColumns || []).join(', ')} / 작업 ${(view.workColumns || []).join(', ')}`}
                                                 >
-                                                    <i className="fas fa-table-columns mr-1 text-[10px]"></i>{shortcut.name}
+                                                    <i className="fas fa-table-columns mr-1 text-[10px]"></i>{view.name}
                                                 </button>
                                             );
                                         })}
@@ -2357,7 +2478,7 @@
                                 </div>
                             )}
 
-                            {tableShortcuts.length === 0 && <div className="flex-1 min-w-[10px]"></div>}
+                            {tableViewList.length === 0 && <div className="flex-1 min-w-[10px]"></div>}
                             
                             <div className="flex items-center gap-2 shrink-0">
                             {selectedRows.size > 0 && (
@@ -2939,8 +3060,10 @@
         });
 
         const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem }) => {
-            const { isEstimateUploaded, visibleMasterCols, visibleUploadCols, config, data } = state;
+            const { isEstimateUploaded, visibleMasterCols, visibleUploadCols, config, data, activeTableTarget = 'estimate' } = state;
             const requiredCoreFields = ['품목코드', '품목명', '규격'];
+            const currentMasterCols = (visibleMasterCols?.[activeTableTarget] || visibleMasterCols?.estimate || []).filter(h => !requiredCoreFields.includes(h));
+            const currentWorkCols = (visibleUploadCols?.[activeTableTarget] || visibleUploadCols?.estimate || []).filter(h => h !== '품목코드');
             
             const uploadName = row.finalData?.['품목명'] !== undefined ? row.finalData['품목명'] : '';
             const uploadSpec = row.finalData?.['규격'] !== undefined ? row.finalData['규격'] : '';
@@ -3074,7 +3197,7 @@
                     </td>
 
                     {!isEstimateUploaded ? (
-                        visibleMasterCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map(h => {
+                        currentMasterCols.map(h => {
                             let mVal = mItem[h];
                             let salesClassName = '';
                             if (h === '판매여부') {
@@ -3094,7 +3217,7 @@
                         })
                     ) : (
                         <>
-                            {visibleMasterCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map((h, i, arr) => {
+                            {currentMasterCols.map((h, i, arr) => {
                                 const isNum = window.NUMERIC_HEADERS.includes(h); 
                                 let mVal = mItem[h]; 
                                 let isChanged = false;
@@ -3136,8 +3259,8 @@
                                 </div>
                             </td>
 
-                            {visibleUploadCols['estimate']?.filter(h => h !== '품목코드').map((h, i, arr) => {
-                                const linkedMasterField = config.masterLinks['estimate']?.[h];
+                            {currentWorkCols.map((h, i, arr) => {
+                                const linkedMasterField = config.masterLinks?.[activeTableTarget]?.[h] ?? config.masterLinks?.estimate?.[h];
                                 const mVal = (linkedMasterField && row.코드 ? mItem[linkedMasterField] : undefined) ?? mItem[h];
                                 return (
                                     <EditableCell key={`p-u-e-${h}`} row={row} field={h} linkedMasterField={linkedMasterField} mVal={mVal} config={config} data={data} isSel={isSel} extraClass={i === arr.length - 1 ? 'border-r-2 !border-r-slate-300' : ''} />
@@ -3156,7 +3279,7 @@
         });
 
         const ExcelDataGrid = ({ state, actions }) => {
-            const { isEstimateUploaded, selectedRows, fullDisplayRows, visibleMasterCols, visibleUploadCols, masterProducts } = state;
+            const { isEstimateUploaded, selectedRows, fullDisplayRows, visibleMasterCols, visibleUploadCols, masterProducts, activeTableTarget = 'estimate' } = state;
             const [visibleCount, setVisibleCount] = useState(100);
 
             useEffect(() => { setVisibleCount(100); }, [fullDisplayRows]);
@@ -3169,6 +3292,8 @@
             const displayRows = fullDisplayRows.slice(0, visibleCount);
             const hiddenCount = fullDisplayRows.length - displayRows.length;
             const requiredCoreFields = ['품목코드', '품목명', '규격'];
+            const currentMasterCols = (visibleMasterCols?.[activeTableTarget] || visibleMasterCols?.estimate || []).filter(h => !requiredCoreFields.includes(h));
+            const currentWorkCols = (visibleUploadCols?.[activeTableTarget] || visibleUploadCols?.estimate || []).filter(h => h !== '품목코드');
 
             return (
                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm h-full flex flex-col relative overflow-hidden">
@@ -3186,12 +3311,12 @@
                                     </th>
 
                                     {!isEstimateUploaded ? (
-                                        visibleMasterCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map(h => (
+                                        currentMasterCols.map(h => (
                                             <th key={`idle-th-${h}`} className="sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-r border-b border-slate-200 text-center text-slate-700 font-bold" style={{width: getCellWidthClass(h)}}>{h === '판매여부' ? '판매상태' : h}</th>
                                         ))
                                     ) : (
                                         <>
-                                            {visibleMasterCols['estimate']?.filter(h => !requiredCoreFields.includes(h)).map((h, i, arr) => (
+                                            {currentMasterCols.map((h, i, arr) => (
                                                 <th key={`pm-${h}`} className={`sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-b text-center text-slate-700 font-bold ${i === arr.length - 1 ? 'border-r-2 border-r-slate-300' : 'border-r border-r-slate-200'}`} style={{width: getCellWidthClass(h)}}>
                                                     {h === '판매여부' ? '판매상태' : h}
                                                 </th>
@@ -3201,7 +3326,7 @@
                                                 이슈
                                             </th>
 
-                                            {visibleUploadCols['estimate']?.filter(h => h !== '품목코드').map((h, i, arr) => {
+                                            {currentWorkCols.map((h, i, arr) => {
                                                 const isHighlight = ['입고가', '도매A', '행사가', '출고가'].includes(h);
                                                 return (
                                                     <th key={`pu-e-${h}`} className={`sticky top-0 z-[60] bg-slate-100 text-slate-700 ${isHighlight ? 'font-black' : 'font-bold'} px-2 py-3 border-b text-center ${i === arr.length - 1 ? 'border-r-2 border-r-slate-300' : 'border-r border-r-slate-200'}`} style={{width: getCellWidthClass(h)}}>
@@ -3450,8 +3575,8 @@
             
             const appState = useMemo(() => ({
                 config, data, activeTags: ui.activeTags, isEstimateUploaded, selectedRows: ui.selectedRows, globalSearch: ui.globalSearch, isProcessing: ui.isProcessing, processMsg: ui.processMsg,
-                visibleMasterCols: config.visibleMasterCols, visibleUploadCols: config.visibleUploadCols, masterProducts: data.masterProducts, fullDisplayRows, priceFilter: ui.priceFilter, basicSearch: ui.basicSearch
-            }), [config, data, ui.activeTags, isEstimateUploaded, ui.selectedRows, ui.globalSearch, ui.isProcessing, ui.processMsg, config.visibleMasterCols, config.visibleUploadCols, data.masterProducts, fullDisplayRows, ui.priceFilter, ui.basicSearch]);
+                visibleMasterCols: config.visibleMasterCols, visibleUploadCols: config.visibleUploadCols, activeTableTarget: config.activeTableTarget, activeTableViewId: config.activeTableViewId, masterProducts: data.masterProducts, fullDisplayRows, priceFilter: ui.priceFilter, basicSearch: ui.basicSearch
+            }), [config, data, ui.activeTags, isEstimateUploaded, ui.selectedRows, ui.globalSearch, ui.isProcessing, ui.processMsg, config.visibleMasterCols, config.visibleUploadCols, config.activeTableTarget, config.activeTableViewId, config.tableViewPresets, data.masterProducts, fullDisplayRows, ui.priceFilter, ui.basicSearch]);
             
             const appActions = useMemo(() => ({
                 setShowCategoryModal: ui.setShowCategoryModal, setSelectedRows: ui.setSelectedRows, setGlobalSearch: ui.setGlobalSearch, showToast: ui.showToast, setPriceFilter: ui.setPriceFilter, setBasicSearch: ui.setBasicSearch, ...customActions
