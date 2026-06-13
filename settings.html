@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.2 테이블 단축버튼]</title>
+    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.3 테이블보기프리셋 2차]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -50,22 +50,156 @@
             }
         };
 
-        const UPLOAD_ROLES = [
+        const TABLE_VIEW_TARGETS = [
+            { id: 'catalog', label: '카탈로그', tone: 'indigo' },
             { id: 'estimate', label: '견적', tone: 'emerald' },
             { id: 'purchase', label: '구매', tone: 'sky' },
             { id: 'sales', label: '판매', tone: 'purple' },
             { id: 'inventory', label: '재고', tone: 'amber' }
         ];
+        const UPLOAD_ROLES = TABLE_VIEW_TARGETS;
+        const TABLE_VIEW_TARGET_IDS = TABLE_VIEW_TARGETS.map(t => t.id);
+        const requiredCoreFields = ['품목코드', '품목명', '규격'];
+
+        const canonicalMerchFieldName = (field) => {
+            const clean = String(field || '').trim();
+            if (['A판매', 'A판매가'].includes(clean)) return '도매A';
+            if (['B판매', 'B판매가', 'B도매가'].includes(clean)) return '도매B';
+            return clean;
+        };
+        const normalizeTableColumns = (columns = []) => {
+            const result = [];
+            (Array.isArray(columns) ? columns : []).map(canonicalMerchFieldName).filter(Boolean).forEach(col => {
+                if (!result.includes(col)) result.push(col);
+            });
+            return result;
+        };
+        const normalizeMasterColumns = (columns = []) => normalizeTableColumns(columns).filter(c => !requiredCoreFields.includes(c));
+
+        const getDefaultVisibleMasterCols = () => ({
+            catalog: ['입고가'],
+            estimate: ['입고가'],
+            purchase: ['입고가'],
+            sales: ['입고가'],
+            inventory: ['입고가']
+        });
 
         const getDefaultVisibleUploadCols = () => ({
+            catalog: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A', '행사가'],
             estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명', '행사가'],
             purchase: ['창고', '구매처', '단위', '입고가', '입고수량'],
             sales: ['창고', '구매처', '단위', '출고가', '출고량'],
             inventory: ['창고', '구매처', '단위', '재고수량', '입고가', '재고금액', '오차', '이슈요약']
         });
 
+        const createTableView = (target, name, masterColumns = ['입고가'], workColumns = [], options = {}) => ({
+            id: options.id || `${target}_view_${Date.now()}`,
+            name: name || '맞춤보기',
+            system: !!options.system,
+            masterColumns: normalizeMasterColumns(masterColumns),
+            workColumns: normalizeTableColumns(workColumns).filter(c => c !== '품목코드'),
+            updatedAt: options.updatedAt || new Date().toISOString()
+        });
+
+        const getDefaultTableViewPresets = () => {
+            const m = getDefaultVisibleMasterCols();
+            const w = getDefaultVisibleUploadCols();
+            const result = {};
+            TABLE_VIEW_TARGETS.forEach(target => {
+                const defaultView = createTableView(target.id, '기본보기', m[target.id], w[target.id], { id: `${target.id}_default`, system: true });
+                result[target.id] = { defaultViewId: defaultView.id, views: [defaultView] };
+            });
+            return result;
+        };
+
+        const sanitizeTableViewPresets = (raw = {}) => {
+            const defaults = getDefaultTableViewPresets();
+            const result = {};
+            TABLE_VIEW_TARGETS.forEach(target => {
+                const base = defaults[target.id];
+                const sourceViews = Array.isArray(raw?.[target.id]?.views) ? raw[target.id].views : [];
+                const oldDefault = sourceViews.find(v => v && (v.system === true || v.id === base.defaultViewId));
+                const defaultView = oldDefault
+                    ? createTableView(target.id, '기본보기', oldDefault.masterColumns || base.views[0].masterColumns, oldDefault.workColumns || oldDefault.columns || base.views[0].workColumns, { id: base.defaultViewId, system: true, updatedAt: oldDefault.updatedAt })
+                    : base.views[0];
+                const customViews = sourceViews
+                    .filter(v => v && v.system !== true && v.id !== base.defaultViewId)
+                    .slice(0, 5)
+                    .map((v, idx) => createTableView(target.id, String(v.name || `맞춤보기 ${idx + 1}`).trim(), v.masterColumns || ['입고가'], v.workColumns || v.columns || [], { id: v.id || `${target.id}_custom_${idx + 1}`, system: false, updatedAt: v.updatedAt }));
+                result[target.id] = { defaultViewId: base.defaultViewId, views: [defaultView, ...customViews] };
+            });
+            return result;
+        };
+
+
+        const migrateLegacyTableViewPresets = (storedPresets = null) => {
+            const hasStoredPresets = !!storedPresets;
+            let next = sanitizeTableViewPresets(storedPresets || getDefaultTableViewPresets());
+            const legacyMaster = safeJSONParse('merchVisMaster_v870', null);
+            const legacyUpload = safeJSONParse('merchVisUpload_v870', null);
+
+            // 신규 프리셋이 없던 사용자는 기존 노출 설정을 기본보기로 승계한다.
+            if (!hasStoredPresets) {
+                TABLE_VIEW_TARGETS.forEach(target => {
+                    const group = next[target.id];
+                    const baseView = group?.views?.[0];
+                    if (!baseView) return;
+                    group.views[0] = createTableView(
+                        target.id,
+                        '기본보기',
+                        legacyMaster?.[target.id] || baseView.masterColumns || ['입고가'],
+                        legacyUpload?.[target.id] || baseView.workColumns || [],
+                        { id: `${target.id}_default`, system: true, updatedAt: baseView.updatedAt }
+                    );
+                });
+            }
+
+            // 기존 테이블 단축버튼은 1회만 맞춤보기로 이관한다. 최종/파서/역할불명은 제외한다.
+            try {
+                if (localStorage.getItem('merchTableViewPresets_v1_migrated') !== '1') {
+                    [
+                        ['merchTableShortcuts_v870', 'merchTableShortcuts_v870_backup'],
+                        ['merchVisMaster_v870', 'merchVisMaster_v870_backup'],
+                        ['merchVisUpload_v870', 'merchVisUpload_v870_backup']
+                    ].forEach(([src, dst]) => {
+                        if (!localStorage.getItem(dst)) {
+                            const value = localStorage.getItem(src);
+                            if (value !== null) localStorage.setItem(dst, value);
+                        }
+                    });
+
+                    const shortcuts = safeJSONParse('merchTableShortcuts_v870', []);
+                    (Array.isArray(shortcuts) ? shortcuts : []).filter(s => s && s.enabled !== false && Array.isArray(s.columns)).forEach((shortcut, idx) => {
+                        const target = TABLE_VIEW_TARGET_IDS.includes(shortcut.role) ? shortcut.role : 'estimate';
+                        const group = next[target];
+                        if (!group) return;
+                        if (group.views.filter(v => !v.system).length >= 5) return;
+                        const name = String(shortcut.name || shortcut.label || `이전보기 ${idx + 1}`).trim();
+                        if (!name || group.views.some(v => String(v.name).trim() === name)) return;
+                        group.views.push(createTableView(
+                            target,
+                            name,
+                            shortcut.masterColumns || legacyMaster?.[target] || ['입고가'],
+                            shortcut.workColumns || shortcut.columns || legacyUpload?.[target] || [],
+                            { id: `${target}_legacy_${idx}_${Date.now()}`, system: false, updatedAt: shortcut.updatedAt }
+                        ));
+                    });
+                    localStorage.setItem('merchTableViewPresets_v1_migrated', '1');
+                }
+            } catch (e) {
+                console.warn('[TableView Legacy Migration]', e);
+            }
+            const sanitized = sanitizeTableViewPresets(next);
+            try { localStorage.setItem('merchTableViewPresets_v1', JSON.stringify(sanitized)); } catch (e) {}
+            return sanitized;
+        };
+
         const getDefaultMappings = () => ({
             master: {},
+            catalog: {
+                '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격명, 규격, 사이즈, 단량',
+                '카탈로그': '카탈로그, 카테고리, 분류', '견적서': '견적서, 카테고리, 템플릿, 견적분류', '행사가': '행사가, 행사, 특가', '입고가': '입고가, 입고, 매입가', '출고가': '출고가, 출고, 판매가', '입고B': 'B단가, 입고B', '도매A': '도매A', '도매B': '도매B'
+            },
             estimate: {
                 '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격명, 규격, 사이즈, 단량',
                 '구매처': '거래처명, 구매처, 거래처', '견적서': '견적서, 카테고리, 템플릿, 견적분류', '행사가': '행사가, 행사, 특가', '입고가': '입고가, 입고, 매입가', '출고가': '출고가, 출고, 판매가',
@@ -88,6 +222,7 @@
         });
 
         const getDefaultMasterLinks = () => ({
+            catalog: { '카탈로그': '카탈로그', '견적서': '견적서', '행사가': '행사가', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B' },
             estimate: { '창고': '창고', '구매처': '구매처', '견적서': '견적서', '행사가': '행사가', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B', '간단설명': '간단설명' },
             purchase: { '창고': '창고', '구매처': '구매처', '단위': '단위', '입고가': '입고가' },
             sales: { '창고': '창고', '구매처': '구매처', '단위': '단위', '출고가': '출고가' },
@@ -96,12 +231,13 @@
 
         const useMerchConfig = () => {
             const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v870') || '');
-            const [visibleMasterCols, setVisibleMasterCols] = useState(() => safeJSONParse('merchVisMaster_v870', { estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] }));
+            const [visibleMasterCols, setVisibleMasterCols] = useState(() => safeJSONParse('merchVisMaster_v870', getDefaultVisibleMasterCols()));
             const [visibleUploadCols, setVisibleUploadCols] = useState(() => safeJSONParse('merchVisUpload_v870', getDefaultVisibleUploadCols()));
             const [mappings, setMappings] = useState(() => safeJSONParse('merchMappings_v870', getDefaultMappings()));
             const [masterLinks, setMasterLinks] = useState(() => safeJSONParse('merchMasterLinks_v870', getDefaultMasterLinks()));
-            const [uploadColumnMeta, setUploadColumnMeta] = useState(() => safeJSONParse('merchUploadColumnMeta_v870', { estimate: {}, purchase: {}, sales: {}, inventory: {} }));
+            const [uploadColumnMeta, setUploadColumnMeta] = useState(() => safeJSONParse('merchUploadColumnMeta_v870', { catalog: {}, estimate: {}, purchase: {}, sales: {}, inventory: {} }));
             const [tableShortcuts, setTableShortcuts] = useState(() => safeJSONParse('merchTableShortcuts_v870', []));
+            const [tableViewPresets, setTableViewPresets] = useState(() => migrateLegacyTableViewPresets(safeJSONParse('merchTableViewPresets_v1', null)));
             const [marginRules, setMarginRules] = useState(() => {
                 const defaultRules = [
                     { id: 'rule_1', whCode: '01', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
@@ -126,10 +262,11 @@
                 localStorage.setItem('merchMarginRules_v878', JSON.stringify(marginRules));
                 localStorage.setItem('merchUploadColumnMeta_v870', JSON.stringify(uploadColumnMeta));
                 localStorage.setItem('merchTableShortcuts_v870', JSON.stringify(tableShortcuts));
+                localStorage.setItem('merchTableViewPresets_v1', JSON.stringify(sanitizeTableViewPresets(tableViewPresets)));
                 localStorage.setItem('config_sync_trigger', Date.now().toString()); 
-            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules, uploadColumnMeta, tableShortcuts]);
+            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules, uploadColumnMeta, tableShortcuts, tableViewPresets]);
 
-            return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules, uploadColumnMeta, setUploadColumnMeta, tableShortcuts, setTableShortcuts };
+            return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules, uploadColumnMeta, setUploadColumnMeta, tableShortcuts, setTableShortcuts, tableViewPresets, setTableViewPresets };
         };
 
         const useMerchData = () => {
@@ -160,7 +297,9 @@
             const data = useMerchData();
             
             const [activeTab, setActiveTab] = useState('display');
-            const [activeUploadRole, setActiveUploadRole] = useState('estimate');
+            const [activeUploadRole, setActiveUploadRole] = useState('catalog');
+            const [activeTableViewId, setActiveTableViewId] = useState('catalog_default');
+            const [newViewName, setNewViewName] = useState('');
             const [customEstColInput, setCustomEstColInput] = useState('');
             const [isComparePriceCol, setIsComparePriceCol] = useState(false);
             const [shortcutDraft, setShortcutDraft] = useState({ name: '', role: 'estimate', columns: [], enabled: true });
@@ -236,7 +375,8 @@
                                     visibleUploadCols: config.visibleUploadCols,
                                     visibleMasterCols: config.visibleMasterCols,
                                     uploadColumnMeta: config.uploadColumnMeta,
-                                    tableShortcuts: config.tableShortcuts
+                                    tableShortcuts: config.tableShortcuts,
+                                    tableViewPresets: config.tableViewPresets
                                 }
                             }
                         };
@@ -280,6 +420,7 @@
                                 if (result.data.appConfig.visibleMasterCols) config.setVisibleMasterCols(result.data.appConfig.visibleMasterCols);
                                 if (result.data.appConfig.uploadColumnMeta) config.setUploadColumnMeta(result.data.appConfig.uploadColumnMeta);
                                 if (result.data.appConfig.tableShortcuts) config.setTableShortcuts(result.data.appConfig.tableShortcuts);
+                                if (result.data.appConfig.tableViewPresets) config.setTableViewPresets(sanitizeTableViewPresets(result.data.appConfig.tableViewPresets));
                             }
                             
                             const masterCount = result.data.master ? Object.keys(result.data.master).length : 0;
@@ -438,13 +579,125 @@
                 localStorage.setItem('table_shortcuts_sync_trigger', Date.now().toString());
             };
 
+
+            const getActiveViewGroup = () => sanitizeTableViewPresets(config.tableViewPresets || getDefaultTableViewPresets())?.[activeUploadRole] || { defaultViewId: `${activeUploadRole}_default`, views: [] };
+            const activeViewGroup = getActiveViewGroup();
+            const activeViews = activeViewGroup.views || [];
+            const activeView = activeViews.find(v => v.id === activeTableViewId) || activeViews[0] || createTableView(activeUploadRole, '기본보기', ['입고가'], [], { id: `${activeUploadRole}_default`, system: true });
+            const activeRoleLabel = UPLOAD_ROLES.find(r => r.id === activeUploadRole)?.label || '카탈로그';
+
+            const updateActiveView = (patch = {}) => {
+                config.setTableViewPresets(prev => {
+                    const safe = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
+                    const group = safe[activeUploadRole] || { defaultViewId: `${activeUploadRole}_default`, views: [] };
+                    const views = group.views.map(v => v.id === activeView.id ? { ...v, ...patch, updatedAt: new Date().toISOString() } : v);
+                    return { ...safe, [activeUploadRole]: { ...group, views } };
+                });
+                localStorage.setItem('config_sync_trigger', Date.now().toString());
+            };
+
+            const toggleActiveMasterColumn = (header) => {
+                if (requiredCoreFields.includes(header)) return;
+                const list = activeView.masterColumns || [];
+                const next = list.includes(header) ? list.filter(h => h !== header) : [...list, header];
+                updateActiveView({ masterColumns: normalizeMasterColumns(next) });
+                config.setVisibleMasterCols(prev => ({ ...(prev || {}), [activeUploadRole]: normalizeMasterColumns(next) }));
+            };
+
+            const toggleActiveWorkColumn = (header) => {
+                const list = activeView.workColumns || [];
+                const next = list.includes(header) ? list.filter(h => h !== header) : [...list, header];
+                updateActiveView({ workColumns: normalizeTableColumns(next).filter(c => c !== '품목코드') });
+                config.setVisibleUploadCols(prev => ({ ...(prev || {}), [activeUploadRole]: normalizeTableColumns(next).filter(c => c !== '품목코드') }));
+            };
+
+            const selectTableView = (target, viewId) => {
+                setActiveUploadRole(target);
+                setActiveTableViewId(viewId || `${target}_default`);
+            };
+
+            const addCustomTableView = () => {
+                const name = String(newViewName || '').trim();
+                if (!name) return showToast('⚠️ 보기 이름을 입력하세요.');
+                const safe = sanitizeTableViewPresets(config.tableViewPresets || getDefaultTableViewPresets());
+                const group = safe[activeUploadRole];
+                const customCount = (group.views || []).filter(v => !v.system).length;
+                if (customCount >= 5) return showToast('⚠️ 맞춤보기는 대상별 최대 5개까지 생성할 수 있습니다.');
+                if ((group.views || []).some(v => String(v.name).trim() === name)) return showToast('⚠️ 같은 이름의 보기가 이미 있습니다.');
+                const newView = createTableView(activeUploadRole, name, activeView.masterColumns || ['입고가'], activeView.workColumns || [], { id: `${activeUploadRole}_custom_${Date.now()}`, system: false });
+                config.setTableViewPresets(prev => {
+                    const next = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
+                    const g = next[activeUploadRole];
+                    return { ...next, [activeUploadRole]: { ...g, views: [...g.views, newView].slice(0, 6) } };
+                });
+                setActiveTableViewId(newView.id);
+                setNewViewName('');
+                showToast('✅ 맞춤보기를 추가했습니다.');
+            };
+
+            const renameActiveView = (name) => {
+                if (activeView.system) return;
+                updateActiveView({ name: String(name || '').trim() || activeView.name });
+            };
+
+            const deleteActiveView = () => {
+                if (activeView.system) return showToast('⚠️ 기본보기는 삭제할 수 없습니다.');
+                if (!window.confirm(`[${activeView.name}] 보기를 삭제할까요?`)) return;
+                config.setTableViewPresets(prev => {
+                    const safe = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
+                    const group = safe[activeUploadRole];
+                    return { ...safe, [activeUploadRole]: { ...group, views: group.views.filter(v => v.id !== activeView.id) } };
+                });
+                setActiveTableViewId(`${activeUploadRole}_default`);
+                showToast('✅ 맞춤보기를 삭제했습니다.');
+            };
+
+
+            const copyActiveView = () => {
+                const safe = sanitizeTableViewPresets(config.tableViewPresets || getDefaultTableViewPresets());
+                const group = safe[activeUploadRole];
+                const customCount = (group.views || []).filter(v => !v.system).length;
+                if (customCount >= 5) return showToast('⚠️ 맞춤보기는 대상별 최대 5개까지 생성할 수 있습니다.');
+                let baseName = activeView.system ? `${activeRoleLabel} 맞춤보기` : `${activeView.name} 복사`;
+                let name = baseName;
+                let n = 2;
+                while ((group.views || []).some(v => String(v.name).trim() === name)) {
+                    name = `${baseName} ${n++}`;
+                }
+                const copied = createTableView(activeUploadRole, name, activeView.masterColumns || ['입고가'], activeView.workColumns || [], { id: `${activeUploadRole}_copy_${Date.now()}`, system: false });
+                config.setTableViewPresets(prev => {
+                    const next = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
+                    const g = next[activeUploadRole];
+                    return { ...next, [activeUploadRole]: { ...g, views: [...g.views, copied].slice(0, 6) } };
+                });
+                setActiveTableViewId(copied.id);
+                showToast('✅ 현재 보기를 복사했습니다.');
+            };
+
+            const moveActiveView = (direction) => {
+                if (activeView.system) return showToast('⚠️ 기본보기는 순서를 변경하지 않습니다.');
+                config.setTableViewPresets(prev => {
+                    const safe = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
+                    const group = safe[activeUploadRole];
+                    const base = (group.views || []).filter(v => v.system);
+                    const customs = (group.views || []).filter(v => !v.system);
+                    const idx = customs.findIndex(v => v.id === activeView.id);
+                    const nextIdx = idx + direction;
+                    if (idx < 0 || nextIdx < 0 || nextIdx >= customs.length) return safe;
+                    const moved = [...customs];
+                    const [item] = moved.splice(idx, 1);
+                    moved.splice(nextIdx, 0, item);
+                    return { ...safe, [activeUploadRole]: { ...group, views: [...base, ...moved] } };
+                });
+                showToast('✅ 보기 순서를 변경했습니다.');
+            };
+
             const addMarginRule = () => config.setMarginRules([...(config.marginRules || []), { id: typeof window.generateUUID === 'function' ? window.generateUUID() : crypto.randomUUID(), whCode: '', unit: '', rate: 10, type: 'divide' }]);
             const updateMarginRule = (id, field, value) => config.setMarginRules((config.marginRules || []).map(r => r.id === id ? { ...r, [field]: value } : r));
             const deleteMarginRule = (id) => config.setMarginRules((config.marginRules || []).filter(r => r.id !== id));
 
             const requiredCoreFields = ['품목코드', '품목명', '규격'];
-            const selectableMasterHeaders = useMemo(() => Array.from(new Set([...(window.MASTER_HEADERS || []), ...(config.visibleMasterCols?.['estimate'] || [])])), [config.visibleMasterCols]);
-            const activeRoleLabel = UPLOAD_ROLES.find(r => r.id === activeUploadRole)?.label || '견적';
+            const selectableMasterHeaders = useMemo(() => Array.from(new Set([...(window.MASTER_HEADERS || []), ...(config.visibleMasterCols?.[activeUploadRole] || [])])), [config.visibleMasterCols, activeUploadRole]);
 
             return (
                 <div className="flex h-screen overflow-hidden bg-slate-50 relative fade-in">
@@ -501,114 +754,91 @@
                                 </div>
 
                                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mt-6">
-                                    <h3 className="text-[15px] font-black mb-4 pb-2 border-b flex items-center text-slate-800"><i className="fas fa-columns text-blue-500 mr-2"></i> 마스터 항목 노출 설정</h3>
-                                    <div className="flex flex-wrap gap-2">
-                                        {(window.MASTER_HEADERS || []).filter(h => !requiredCoreFields.includes(h)).map(h => (
-                                            <button key={`m-${h}`} onClick={() => toggleMasterCol('estimate', h)} className={`px-4 py-2 rounded-full border text-[12px] font-bold transition-all ${config.visibleMasterCols['estimate']?.includes(h) ? 'bg-blue-100 border-blue-300 text-blue-700 shadow-inner' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
-                                                {h}
-                                            </button>
-                                        ))}
+                                    <div className="flex items-center justify-between mb-4 pb-2 border-b">
+                                        <h3 className="text-[15px] font-black flex items-center text-slate-800"><i className="fas fa-table-columns text-indigo-500 mr-2"></i> 테이블 보기 설정</h3>
+                                        <span className="text-[11px] text-slate-500 font-bold">대상별 기본보기 + 맞춤보기 최대 5개</span>
                                     </div>
-                                </div>
-                                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mt-6">
-                                    <h3 className="text-[15px] font-black mb-4 pb-2 border-b flex items-center text-slate-800"><i className="fas fa-edit text-emerald-500 mr-2"></i> 엑셀 작업 항목 노출 설정</h3>
+
                                     <div className="flex flex-wrap gap-2 mb-4">
                                         {UPLOAD_ROLES.map(role => (
-                                            <button key={`role-display-${role.id}`} onClick={() => setActiveUploadRole(role.id)} className={`px-4 py-2 rounded-xl border text-[12px] font-black transition-all ${activeUploadRole === role.id ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                                            <button key={`role-view-${role.id}`} onClick={() => selectTableView(role.id, `${role.id}_default`)} className={`px-4 py-2 rounded-xl border text-[12px] font-black transition-all ${activeUploadRole === role.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
                                                 {role.label}
                                             </button>
                                         ))}
-                                        <button onClick={() => resetUploadRoleToDefault(activeUploadRole)} className="ml-auto px-4 py-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-[12px] font-black hover:bg-rose-100">
-                                            <i className="fas fa-broom mr-1.5"></i>현재 역할 기본정리
-                                        </button>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2 mb-5">
-                                        {(config.visibleUploadCols[activeUploadRole]||[]).filter(h => h !== '품목코드').map(h => {
-                                            const isCompare = isComparePriceField(activeUploadRole, h);
-                                            return (
-                                                <div key={`u-${activeUploadRole}-${h}`} className={`flex items-center px-4 py-2 rounded-full border text-[12px] font-bold shadow-sm group ${isCompare ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
-                                                    <span>{h}</span>
-                                                    {isCompare && <span className="ml-2 px-1.5 py-0.5 rounded-full bg-amber-200/70 text-amber-800 text-[10px] font-black">비교단가</span>}
-                                                    <button onClick={()=>removeUploadCol(activeUploadRole, h)} className={`ml-2 ${isCompare ? 'text-amber-400' : 'text-emerald-400'} hover:text-rose-500`}><i className="fas fa-times"></i></button>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                    <div className="flex items-center gap-2 max-w-2xl">
-                                        <input type="text" value={customEstColInput} onChange={e=>setCustomEstColInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addCustomUploadCol(activeUploadRole, customEstColInput, isComparePriceCol)} placeholder={`${activeRoleLabel} 항목명 입력`} className="flex-1 border border-slate-300 rounded-xl px-4 py-2 text-[13px] outline-none focus:border-emerald-500" />
-                                        <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-[12px] font-black cursor-pointer select-none">
-                                            <input type="checkbox" checked={isComparePriceCol} onChange={e=>setIsComparePriceCol(e.target.checked)} className="rounded border-amber-300 text-amber-500" />
-                                            비교단가
-                                        </label>
-                                        <button onClick={()=>addCustomUploadCol(activeUploadRole, customEstColInput, isComparePriceCol)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-[13px] font-bold transition-colors">추가</button>
-                                    </div>
-                                    <p className="mt-3 text-[11px] text-slate-500 leading-relaxed">현재 선택 역할: <b>{activeRoleLabel}</b>. 항목은 선택한 역할에만 추가되며, 견적/구매/판매/재고 설정이 서로 섞이지 않습니다.</p>
-                                </div>
-
-
-                                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mt-6">
-                                    <div className="flex items-center justify-between mb-4 pb-2 border-b">
-                                        <h3 className="text-[15px] font-black flex items-center text-slate-800"><i className="fas fa-bolt text-purple-500 mr-2"></i> 테이블 설정 단축버튼</h3>
-                                        <span className="text-[11px] text-slate-500 font-bold">메인 화면 상단 단축버튼 영역에 최대 5개 노출</span>
                                     </div>
 
-                                    <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-5">
-                                        <div>
-                                            <div className="grid grid-cols-1 md:grid-cols-[1fr_140px_110px] gap-2 mb-3">
-                                                <input type="text" value={shortcutDraft.name} onChange={e=>setShortcutDraft(prev=>({...prev, name:e.target.value}))} placeholder="단축버튼명 예: 견적 기본 / 가격검수 / 재고확인" className="border border-slate-300 rounded-xl px-4 py-2 text-[13px] outline-none focus:border-purple-500" />
-                                                <select value={shortcutDraft.role} onChange={e=>setShortcutDraft(prev=>({...prev, role:e.target.value, columns:[]}))} className="border border-slate-300 rounded-xl px-3 py-2 text-[13px] font-bold outline-none focus:border-purple-500 bg-white">
-                                                    {UPLOAD_ROLES.map(role => <option key={`sc-role-${role.id}`} value={role.id}>{role.label}</option>)}
-                                                </select>
-                                                <label className="flex items-center justify-center gap-2 border border-slate-200 rounded-xl px-3 py-2 text-[12px] font-black text-slate-600 bg-slate-50 cursor-pointer select-none">
-                                                    <input type="checkbox" checked={shortcutDraft.enabled !== false} onChange={e=>setShortcutDraft(prev=>({...prev, enabled:e.target.checked}))} />
-                                                    노출
-                                                </label>
-                                            </div>
-
-                                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-3">
-                                                <div className="text-[11px] text-slate-500 font-black mb-2">노출 항목 선택 · {getShortcutRoleLabel(shortcutDraft.role)}</div>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {getShortcutColumns(shortcutDraft.role).length === 0 ? (
-                                                        <span className="text-[12px] text-slate-400 font-bold">선택 가능한 작업 항목이 없습니다.</span>
-                                                    ) : getShortcutColumns(shortcutDraft.role).map(col => {
-                                                        const selected = (shortcutDraft.columns || []).includes(col);
-                                                        return <button key={`shortcut-col-${shortcutDraft.role}-${col}`} onClick={()=>toggleShortcutColumn(col)} className={`px-3 py-1.5 rounded-full border text-[12px] font-bold transition-all ${selected ? 'bg-purple-100 border-purple-300 text-purple-700 shadow-inner' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-100'}`}>{selected && <i className="fas fa-check mr-1"></i>}{col}</button>;
-                                                    })}
-                                                </div>
-                                            </div>
-
-                                            <div className="flex gap-2">
-                                                <button onClick={saveTableShortcut} className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2.5 rounded-xl text-[13px] font-black transition-colors"><i className="fas fa-save mr-1.5"></i>{editingShortcutId ? '수정 저장' : '단축버튼 저장'}</button>
-                                                {editingShortcutId && <button onClick={resetShortcutDraft} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2.5 rounded-xl text-[13px] font-black border border-slate-200">취소</button>}
-                                            </div>
-                                        </div>
-
-                                        <div className="border border-slate-200 rounded-xl p-3 bg-slate-50">
+                                    <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-5">
+                                        <div className="border border-slate-200 rounded-xl bg-slate-50 p-3">
                                             <div className="flex items-center justify-between mb-2">
-                                                <div className="text-[12px] font-black text-slate-700">저장된 단축버튼</div>
-                                                <div className="text-[11px] text-slate-400 font-bold">{shortcutList.length}/5</div>
+                                                <div className="text-[12px] font-black text-slate-700">{activeRoleLabel} 보기</div>
+                                                <div className="text-[11px] text-slate-400 font-bold">{activeViews.filter(v=>!v.system).length}/5</div>
                                             </div>
-                                            <div className="space-y-2 max-h-[260px] overflow-y-auto custom-scrollbar pr-1">
-                                                {shortcutList.length === 0 ? <div className="text-[12px] text-slate-400 font-bold bg-white border border-dashed rounded-lg p-4 text-center">저장된 단축버튼 없음</div> : shortcutList.map(sc => (
-                                                    <div key={sc.id} className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
-                                                        <div className="flex items-center justify-between gap-2 mb-2">
-                                                            <div className="min-w-0">
-                                                                <div className="font-black text-[13px] text-slate-800 truncate">{sc.name}</div>
-                                                                <div className="text-[10px] text-slate-400 font-bold">{getShortcutRoleLabel(sc.role)} · {(sc.columns || []).length}개 항목</div>
-                                                            </div>
-                                                            <button onClick={()=>toggleTableShortcutEnabled(sc.id)} className={`px-2 py-1 rounded-full text-[10px] font-black border ${sc.enabled === false ? 'bg-slate-100 text-slate-400 border-slate-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>{sc.enabled === false ? '숨김' : '노출'}</button>
-                                                        </div>
-                                                        <div className="text-[11px] text-slate-500 leading-relaxed line-clamp-2 mb-2">{(sc.columns || []).join(', ')}</div>
-                                                        <div className="flex gap-1.5 justify-end">
-                                                            <button onClick={()=>editTableShortcut(sc)} className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-bold hover:bg-slate-200">수정</button>
-                                                            <button onClick={()=>deleteTableShortcut(sc.id)} className="px-2 py-1 rounded-lg bg-rose-50 text-rose-600 text-[11px] font-bold hover:bg-rose-100">삭제</button>
-                                                        </div>
-                                                    </div>
+                                            <div className="space-y-2 mb-3">
+                                                {activeViews.map(view => (
+                                                    <button key={view.id} onClick={() => setActiveTableViewId(view.id)} className={`w-full text-left px-3 py-2 rounded-lg border text-[12px] font-black transition-all ${activeTableViewId === view.id ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-indigo-50 hover:text-indigo-700'}`}>
+                                                        {view.name}
+                                                        {view.system && <span className="ml-1 text-[10px] opacity-70">기본</span>}
+                                                    </button>
                                                 ))}
                                             </div>
+                                            <div className="flex gap-1.5">
+                                                <input type="text" value={newViewName} onChange={e=>setNewViewName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addCustomTableView()} placeholder="보기 이름" className="min-w-0 flex-1 border border-slate-300 rounded-lg px-2 py-2 text-[12px] outline-none focus:border-indigo-500 bg-white" />
+                                                <button onClick={addCustomTableView} className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-[12px] font-black hover:bg-indigo-700">추가</button>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-5">
+                                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <div>
+                                                        <div className="text-[13px] font-black text-slate-800">{activeRoleLabel} / {activeView.name}</div>
+                                                        <div className="text-[11px] text-slate-500 font-bold mt-0.5">코드·상품명·규격은 마스터정보 기본 고정값입니다.</div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        {!activeView.system && <input type="text" value={activeView.name} onChange={e=>renameActiveView(e.target.value)} className="border border-slate-300 rounded-lg px-3 py-2 text-[12px] font-bold outline-none focus:border-indigo-500 bg-white" />}
+                                                        <button onClick={copyActiveView} className="px-3 py-2 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-200 text-[12px] font-black hover:bg-indigo-100">복사</button>
+                                                        {!activeView.system && <button onClick={()=>moveActiveView(-1)} className="px-3 py-2 rounded-lg bg-white text-slate-600 border border-slate-200 text-[12px] font-black hover:bg-slate-50">↑</button>}
+                                                        {!activeView.system && <button onClick={()=>moveActiveView(1)} className="px-3 py-2 rounded-lg bg-white text-slate-600 border border-slate-200 text-[12px] font-black hover:bg-slate-50">↓</button>}
+                                                        {!activeView.system && <button onClick={deleteActiveView} className="px-3 py-2 rounded-lg bg-rose-50 text-rose-600 border border-rose-200 text-[12px] font-black hover:bg-rose-100">삭제</button>}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-white border border-slate-200 rounded-xl p-4">
+                                                <div className="text-[12px] font-black text-slate-700 mb-3"><i className="fas fa-database text-blue-500 mr-1.5"></i>마스터 노출항목</div>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {(window.MASTER_HEADERS || []).filter(h => !requiredCoreFields.includes(h)).map(h => (
+                                                        <button key={`view-master-${activeUploadRole}-${activeView.id}-${h}`} onClick={() => toggleActiveMasterColumn(h)} className={`px-3 py-1.5 rounded-full border text-[12px] font-bold transition-all ${(activeView.masterColumns || []).includes(h) ? 'bg-blue-100 border-blue-300 text-blue-700 shadow-inner' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                                                            {h}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-white border border-slate-200 rounded-xl p-4">
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <div className="text-[12px] font-black text-slate-700"><i className="fas fa-edit text-emerald-500 mr-1.5"></i>작업테이블 노출항목</div>
+                                                    <button onClick={() => resetUploadRoleToDefault(activeUploadRole)} className="px-3 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-[11px] font-black hover:bg-rose-100">기본정리</button>
+                                                </div>
+                                                <div className="flex flex-wrap gap-2 mb-4">
+                                                    {(config.visibleUploadCols[activeUploadRole]||[]).filter(h => h !== '품목코드').map(h => {
+                                                        const selected = (activeView.workColumns || []).includes(h);
+                                                        const isCompare = isComparePriceField(activeUploadRole, h);
+                                                        return <button key={`view-work-${activeUploadRole}-${activeView.id}-${h}`} onClick={() => toggleActiveWorkColumn(h)} className={`px-3 py-1.5 rounded-full border text-[12px] font-bold transition-all ${selected ? 'bg-emerald-100 border-emerald-300 text-emerald-800 shadow-inner' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>{selected && <i className="fas fa-check mr-1"></i>}{h}{isCompare && <span className="ml-1 text-[10px] text-amber-600">비교</span>}</button>;
+                                                    })}
+                                                </div>
+                                                <div className="flex items-center gap-2 max-w-2xl">
+                                                    <input type="text" value={customEstColInput} onChange={e=>setCustomEstColInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addCustomUploadCol(activeUploadRole, customEstColInput, isComparePriceCol)} placeholder={`${activeRoleLabel} 항목명 입력`} className="flex-1 border border-slate-300 rounded-xl px-4 py-2 text-[13px] outline-none focus:border-emerald-500" />
+                                                    <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-[12px] font-black cursor-pointer select-none">
+                                                        <input type="checkbox" checked={isComparePriceCol} onChange={e=>setIsComparePriceCol(e.target.checked)} className="rounded border-amber-300 text-amber-500" />
+                                                        비교단가
+                                                    </label>
+                                                    <button onClick={()=>addCustomUploadCol(activeUploadRole, customEstColInput, isComparePriceCol)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-[13px] font-bold transition-colors">항목추가</button>
+                                                </div>
+                                                <p className="mt-3 text-[11px] text-slate-500 leading-relaxed">이슈와 리포트는 시스템 고정 영역입니다. 여기서는 마스터정보와 작업테이블 컬럼만 설정합니다.</p>
+                                            </div>
                                         </div>
                                     </div>
-                                    <p className="mt-3 text-[11px] text-slate-500 leading-relaxed">저장된 단축버튼은 메인 화면의 검색창 왼쪽 단축버튼 영역에 표시됩니다. 클릭 시 해당 역할의 테이블 노출 항목이 즉시 교체됩니다.</p>
                                 </div>
                             </div>
                         )}
