@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.9 업로드값·통합출력 정책정리]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.10 도매A도매B 항목정리]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -508,8 +508,20 @@
             }
         });
 
+        // 항목명 표준화 정책:
+        // 입력/작업 기준은 도매A·도매B로 통일한다.
+        // 과거 A판매/B판매/B도매가 계열 명칭은 저장된 양식에 남아 있어도 화면 컬럼명으로 재사용하지 않는다.
+        window.canonicalMerchFieldName = (field) => {
+            const clean = String(field || '').trim();
+            if (['A판매', 'A판매가'].includes(clean)) return '도매A';
+            if (['B판매', 'B판매가', 'B도매가'].includes(clean)) return '도매B';
+            return clean;
+        };
+
         window.normalizeMerchTableColumns = (columns = []) => {
-            const clean = Array.isArray(columns) ? columns.map(c => String(c || '').trim()).filter(Boolean) : [];
+            const clean = Array.isArray(columns)
+                ? columns.map(c => window.canonicalMerchFieldName(c)).filter(Boolean)
+                : [];
             const deduped = [];
             ['품목코드', ...clean.filter(c => c !== '품목코드')].forEach(col => {
                 if (!deduped.includes(col)) deduped.push(col);
@@ -634,8 +646,8 @@
                 '입고가': '입고가, 입고, 매입가, 최종(창고), 최종창고, 최신단가, 재고단가', 
                 '출고가': '출고가, 출고, 판매가',
                 '입고B': 'B단가, 입고B', 
-                '도매A': 'A판매, A판매가, 도매A', 
-                '도매B': 'B판매, B판매가, 도매B', 
+                '도매A': '도매A', 
+                '도매B': '도매B', 
                 '간단설명': '지시사항, 간단설명, 비고',
                 '검색어등록': '검색어등록, 검색어, 유사어, 키워드'
             };
@@ -888,18 +900,28 @@
                 };
 
                 setVisibleUploadCols(prev => {
-                    const list = prev?.estimate || [];
+                    const list = window.normalizeMerchTableColumns(prev?.estimate || []);
                     const merged = [...list];
-                    requiredUploadCols.forEach(col => { if (!merged.includes(col)) merged.push(col); });
+                    requiredUploadCols.forEach(col => {
+                        const canonical = window.canonicalMerchFieldName(col);
+                        if (!merged.includes(canonical)) merged.push(canonical);
+                    });
                     return { ...(prev || {}), estimate: merged };
                 });
                 setMappings(prev => {
                     const est = { ...(prev?.estimate || {}) };
+                    // v2.1.10 항목명 정리: 과거 A판매/B판매 계열 파서명은 삭제하고 도매A·도매B만 표준 입력명으로 사용한다.
+                    ['A판매', 'A판매가', 'B판매', 'B판매가', 'B도매가'].forEach(k => { delete est[k]; });
+                    est['도매A'] = '도매A';
+                    est['도매B'] = '도매B';
                     Object.entries(requiredMappings).forEach(([k, v]) => { if (!est[k]) est[k] = v; });
                     return { ...(prev || {}), estimate: est };
                 });
                 setMasterLinks(prev => {
                     const est = { ...(prev?.estimate || {}) };
+                    ['A판매', 'A판매가', 'B판매', 'B판매가', 'B도매가'].forEach(k => { delete est[k]; });
+                    est['도매A'] = '도매A';
+                    est['도매B'] = '도매B';
                     Object.entries(requiredLinks).forEach(([k, v]) => { if (est[k] === undefined) est[k] = v; });
                     return { ...(prev || {}), estimate: est };
                 });
@@ -1739,8 +1761,8 @@
                 };
 
                 const wb = window.XLSX.utils.book_new();
-                const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', 'A판매', 'n', 'B판매', 'n', '최종(전송)', 'n', '행사', 'n', '1']];
-                const shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', 'B도매가', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
+                const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '최종(전송)', 'n', '행사', 'n', '1']];
+                const shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', '도매B', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
                 let subOutputCount = 0;
 
                 targetRows.forEach(row => {
@@ -1751,11 +1773,11 @@
                     const promoPrice = getBestNum(row, '행사가');
                     const shopSalePrice = getShopSalePrice(row);
                     const inPriceB = getBestNum(row, '입고B');
-                    const erpASale = getBestNumByAliases(row, ['A판매', '도매A']);
-                    const erpBSale = getBestNumByAliases(row, ['B판매', '도매B']);
+                    const erpASale = getBestNum(row, '도매A');
+                    const erpBSale = getBestNum(row, '도매B');
                     const pMarket = getBestNum(row, '시중가');
                     const shopBPrice = getBestNum(row, 'B판매가');
-                    const shopBWholesale = getBestNum(row, 'B도매가');
+                    const shopBWholesale = getBestNum(row, '도매B');
                     const finalTransmission = getBestNumByAliases(row, ['최종전송', '최종(전송)'], inPrice);
                     const finalStockRaw = getBestValue(row, '재고수량', '');
                     const finalStock = finalStockRaw !== '' ? window.parseNum(finalStockRaw) : '';
@@ -1764,7 +1786,7 @@
                     // ERP는 기초정보 셋팅용이다. 출고가는 정상 출고가, 행사는 행사 컬럼으로 분리한다.
                     erpData.push([code, inPrice, '0', erpOutPrice, '0', inPriceB, 'n', erpASale, 'n', erpBSale, 'n', finalTransmission, 'n', promoPrice, 'n', saleCode]);
                     // 쇼핑몰은 실제 판매가 설정용이다. 행사가가 있으면 기존 쇼핑몰 양식의 출고가 칸에 행사 우선가를 넣는다.
-                    shopData.push([code, getBestStr(row, '품목명'), getBestStr(row, '규격'), shopSalePrice, (erpASale !== '' && erpASale > 0 ? erpASale : shopSalePrice), (pMarket !== '' && pMarket > 0 ? pMarket : shopSalePrice), shopBPrice, shopBWholesale, 0, 0, 0, 0, getBestStr(row, '브랜드'), getBestStr(row, '간단설명'), saleCode, finalStock, ...themeFlags, getBestStr(row, '검색어등록')]);
+                    shopData.push([code, getBestStr(row, '품목명'), getBestStr(row, '규격'), shopSalePrice, erpASale, (pMarket !== '' && pMarket > 0 ? pMarket : shopSalePrice), shopBPrice, shopBWholesale, 0, 0, 0, 0, getBestStr(row, '브랜드'), getBestStr(row, '간단설명'), saleCode, finalStock, ...themeFlags, getBestStr(row, '검색어등록')]);
 
                     const subInfo = calculateSubInfo(row);
                     if (subInfo) {
