@@ -507,43 +507,35 @@
         };
 
         window.createMerchTableView = (target, name, masterColumns = ['입고가'], workColumns = [], options = {}) => ({
-            id: options.id || `${target}_${options.system ? 'default' : `view_${Date.now()}`}`,
-            name: name || (options.system ? '기본보기' : '맞춤보기'),
-            system: !!options.system,
+            id: options.id || `${target}_view_${Date.now()}`,
+            name: name || '맞춤보기',
+            system: false,
             masterColumns: window.normalizeMerchMasterColumns(masterColumns),
             workColumns: window.normalizeMerchTableColumns(workColumns).filter(c => c !== '품목코드'),
             updatedAt: options.updatedAt || new Date().toISOString()
         });
 
         window.getDefaultMerchTableViewPresets = () => {
-            const masterDefaults = getInitialVisibleMasterCols();
-            const workDefaults = getInitialVisibleUploadCols();
             const presets = {};
             TABLE_VIEW_TARGETS.forEach(target => {
-                const defaultView = window.createMerchTableView(
-                    target.id,
-                    '기본보기',
-                    masterDefaults[target.id] || ['입고가'],
-                    workDefaults[target.id] || [],
-                    { id: `${target.id}_default`, system: true }
-                );
-                presets[target.id] = {
-                    defaultViewId: defaultView.id,
-                    views: [defaultView]
-                };
+                presets[target.id] = { views: [] };
             });
             return presets;
         };
 
+        window.isSystemDefaultTableView = (view = {}) => {
+            const name = String(view?.name || '').trim();
+            const id = String(view?.id || '').trim();
+            return view?.system === true || name === '기본보기' || id.endsWith('_default') || id.includes('_default');
+        };
+
         window.sanitizeMerchTableViewPresets = (raw = {}) => {
-            const defaults = window.getDefaultMerchTableViewPresets();
             const result = {};
             TABLE_VIEW_TARGETS.forEach(target => {
-                const base = defaults[target.id];
                 const source = raw?.[target.id] || {};
                 const sourceViews = Array.isArray(source.views) ? source.views : [];
-                const customViews = sourceViews
-                    .filter(v => v && v.system !== true && v.id !== base.defaultViewId)
+                const views = sourceViews
+                    .filter(v => v && !window.isSystemDefaultTableView(v))
                     .slice(0, 5)
                     .map((v, idx) => window.createMerchTableView(
                         target.id,
@@ -552,14 +544,7 @@
                         v.workColumns || v.columns || [],
                         { id: v.id || `${target.id}_custom_${idx + 1}`, system: false, updatedAt: v.updatedAt }
                     ));
-                let defaultView = sourceViews.find(v => v && (v.system === true || v.id === source.defaultViewId || v.id === base.defaultViewId));
-                defaultView = defaultView
-                    ? window.createMerchTableView(target.id, '기본보기', defaultView.masterColumns || base.views[0].masterColumns, defaultView.workColumns || defaultView.columns || base.views[0].workColumns, { id: base.defaultViewId, system: true, updatedAt: defaultView.updatedAt })
-                    : base.views[0];
-                result[target.id] = {
-                    defaultViewId: base.defaultViewId,
-                    views: [defaultView, ...customViews]
-                };
+                result[target.id] = { views };
             });
             return result;
         };
@@ -568,7 +553,7 @@
             const safeTarget = TABLE_VIEW_TARGET_IDS.includes(target) ? target : 'estimate';
             const safePresets = window.sanitizeMerchTableViewPresets(presets);
             const group = safePresets[safeTarget];
-            return group.views.find(v => v.id === viewId || v.name === viewId) || group.views.find(v => v.id === group.defaultViewId) || group.views[0];
+            return (group?.views || []).find(v => v.id === viewId || v.name === viewId) || (group?.views || [])[0] || null;
         };
 
         window.getMerchTableViewsForTarget = (presets = {}, target = 'estimate') => {
@@ -586,9 +571,20 @@
         window.applyMerchTableView = (config, target = 'estimate', viewId = '', options = {}) => {
             if (!config) return null;
             const safeTarget = TABLE_VIEW_TARGET_IDS.includes(target) ? target : 'estimate';
-            const presets = window.sanitizeMerchTableViewPresets(config.tableViewPresets || window.getDefaultMerchTableViewPresets());
-            const view = window.findMerchTableView(presets, safeTarget, viewId || presets[safeTarget]?.defaultViewId);
-            if (!view) return null;
+            const presets = window.sanitizeMerchTableViewPresets(config.tableViewPresets || {});
+            const view = window.findMerchTableView(presets, safeTarget, viewId || '');
+            config.setActiveTableTarget?.(safeTarget);
+
+            if (!view) {
+                // 저장된 보기가 없으면 보기 버튼은 숨기고, 테이블은 대상별 기본 컬럼 fallback만 사용한다.
+                config.setActiveTableViewId?.('');
+                try {
+                    localStorage.setItem('merchActiveTableTarget_v1', safeTarget);
+                    localStorage.removeItem('merchActiveTableViewId_v1');
+                    window.dispatchEvent(new CustomEvent('merch_table_view_changed', { detail: { target: safeTarget, viewId: '', name: '', manual: !!options.manual } }));
+                } catch (e) {}
+                return null;
+            }
 
             config.setVisibleMasterCols?.(prev => ({
                 ...(prev || {}),
@@ -598,7 +594,6 @@
                 ...(prev || {}),
                 [safeTarget]: window.normalizeMerchTableColumns(view.workColumns || []).filter(c => c !== '품목코드')
             }));
-            config.setActiveTableTarget?.(safeTarget);
             config.setActiveTableViewId?.(view.id);
             try {
                 localStorage.setItem('merchActiveTableTarget_v1', safeTarget);
@@ -613,7 +608,7 @@
             const target = TABLE_VIEW_TARGET_IDS.includes(templateKey) ? templateKey : 'estimate';
             const defaults = window.getDefaultMerchTableViewPresets();
             const view = window.findMerchTableView(defaults, target);
-            const cols = window.normalizeMerchTableColumns(view.workColumns || []);
+            const cols = window.normalizeMerchTableColumns(view?.workColumns || getInitialVisibleUploadCols()[target] || []);
             setVisibleUploadCols?.(prev => ({ ...(prev || {}), [target]: cols }));
             return { ...view, role: target, target };
         };
@@ -637,7 +632,7 @@
                 name: `${target.label}:${v.name}`,
                 role: target.id,
                 target: target.id,
-                system: v.system,
+                system: false,
                 columns: v.workColumns || [],
                 masterColumns: v.masterColumns || []
             })));
@@ -909,8 +904,8 @@
             const [visibleMasterCols, setVisibleMasterCols] = useState(() => safeJSONParse('merchVisMaster_v870', getInitialVisibleMasterCols()));
             const [visibleUploadCols, setVisibleUploadCols] = useState(() => safeJSONParse('merchVisUpload_v870', getInitialVisibleUploadCols()));
             const [tableViewPresets, setTableViewPresets] = useState(() => window.sanitizeMerchTableViewPresets(safeJSONParse('merchTableViewPresets_v1', window.getDefaultMerchTableViewPresets())));
-            const [activeTableTarget, setActiveTableTarget] = useState(() => localStorage.getItem('merchActiveTableTarget_v1') || 'estimate');
-            const [activeTableViewId, setActiveTableViewId] = useState(() => localStorage.getItem('merchActiveTableViewId_v1') || 'estimate_default');
+            const [activeTableTarget, setActiveTableTarget] = useState(() => localStorage.getItem('merchActiveTableTarget_v1') || '');
+            const [activeTableViewId, setActiveTableViewId] = useState(() => localStorage.getItem('merchActiveTableViewId_v1') || '');
             const [mappings, setMappings] = useState(() => safeJSONParse('merchMappings_v870', getInitialMappings()));
             const [masterLinks, setMasterLinks] = useState(() => safeJSONParse('merchMasterLinks_v870', getInitialMasterLinks()));
             const [uploadColumnMeta, setUploadColumnMeta] = useState(() => safeJSONParse('merchUploadColumnMeta_v870', {}));
@@ -1018,8 +1013,8 @@
                     localStorage.setItem('merchVisMaster_v870', JSON.stringify(visibleMasterCols));
                     localStorage.setItem('merchVisUpload_v870', JSON.stringify(visibleUploadCols));
                     localStorage.setItem('merchTableViewPresets_v1', JSON.stringify(window.sanitizeMerchTableViewPresets(tableViewPresets)));
-                    localStorage.setItem('merchActiveTableTarget_v1', activeTableTarget || 'estimate');
-                    localStorage.setItem('merchActiveTableViewId_v1', activeTableViewId || `${activeTableTarget || 'estimate'}_default`);
+                    if (activeTableTarget) localStorage.setItem('merchActiveTableTarget_v1', activeTableTarget); else localStorage.removeItem('merchActiveTableTarget_v1');
+                    if (activeTableViewId) localStorage.setItem('merchActiveTableViewId_v1', activeTableViewId); else localStorage.removeItem('merchActiveTableViewId_v1');
                     localStorage.setItem('merchMappings_v870', JSON.stringify(mappings));
                     localStorage.setItem('merchMasterLinks_v870', JSON.stringify(masterLinks));
                     localStorage.setItem('merchUploadColumnMeta_v870', JSON.stringify(uploadColumnMeta || {}));
@@ -1993,16 +1988,17 @@
                 if (ui.setBasicSearch) ui.setBasicSearch('');
                 if (config.setVisibleUploadCols) config.setVisibleUploadCols(getInitialVisibleUploadCols());
                 if (config.setVisibleMasterCols) config.setVisibleMasterCols(getInitialVisibleMasterCols());
-                if (window.applyMerchTableView) window.applyMerchTableView(config, 'estimate', 'estimate_default', { manual: false });
+                config.setActiveTableTarget?.('');
+                config.setActiveTableViewId?.('');
                 try {
                     localStorage.removeItem('merchTableTemplateManualOverride_v870');
                     localStorage.removeItem('merchActiveTableTemplateKey_v870');
-                    localStorage.setItem('merchActiveTableTarget_v1', 'estimate');
-                    localStorage.setItem('merchActiveTableViewId_v1', 'estimate_default');
-                    window.dispatchEvent(new CustomEvent('merch_table_view_changed', { detail: { target: 'estimate', viewId: 'estimate_default', manual: false } }));
+                    localStorage.removeItem('merchActiveTableTarget_v1');
+                    localStorage.removeItem('merchActiveTableViewId_v1');
+                    window.dispatchEvent(new CustomEvent('merch_table_view_changed', { detail: { target: '', viewId: '', manual: false } }));
                 } catch (e) {}
                 window.setIDB('merchops_session', null); 
-                ui.showToast('작업 데이터가 초기화 되었습니다. 다음 업로드부터 역할별 기본 테이블 양식이 다시 적용됩니다.');
+                ui.showToast('작업 데이터가 초기화 되었습니다. 다음 불러오기 후 해당 대상 보기만 표시됩니다.');
             }, [data.setManagedItems, config.setVisibleUploadCols, ui]);
 
             // ============================================================
@@ -2275,9 +2271,9 @@
             const { activeTags, selectedRows, globalSearch, priceFilter, basicSearch, fullDisplayRows, config } = state;
             const { handleStopSales, handleExcludeSelectedFromUpdate, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, setPriceFilter, setSelectedRows, setBasicSearch, handleOpenExportCenter, handleCommitEstimate } = actions;
             const [filterPanelOpen, setFilterPanelOpen] = useState(false);
-            const activeTableTarget = config?.activeTableTarget || 'estimate';
-            const activeTableViewId = config?.activeTableViewId || `${activeTableTarget}_default`;
-            const tableViewList = useMemo(() => window.getMerchTableViewsForTarget
+            const activeTableTarget = config?.activeTableTarget || '';
+            const activeTableViewId = config?.activeTableViewId || '';
+            const tableViewList = useMemo(() => (activeTableTarget && window.getMerchTableViewsForTarget)
                 ? window.getMerchTableViewsForTarget(config?.tableViewPresets, activeTableTarget)
                 : [], [config?.tableViewPresets, activeTableTarget]);
 
@@ -2406,7 +2402,7 @@
                                                     key={view.id || view.name}
                                                     onClick={() => applyTableShortcut(view)}
                                                     className={`h-7 px-2.5 rounded-lg text-[11px] font-black border shadow-sm transition-all shrink-0 ${active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200'}`}
-                                                    title={`${view.system ? '기본보기' : '맞춤보기'}: 마스터 ${(view.masterColumns || []).join(', ')} / 작업 ${(view.workColumns || []).join(', ')}`}
+                                                    title={`보기: 마스터 ${(view.masterColumns || []).join(', ')} / 작업 ${(view.workColumns || []).join(', ')}`}
                                                 >
                                                     <i className="fas fa-table-columns mr-1 text-[10px]"></i>{view.name}
                                                 </button>
