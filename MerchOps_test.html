@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.10 도매A도매B 항목정리]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.11 ERP 최종전송열 삭제]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -900,17 +900,15 @@
                 };
 
                 setVisibleUploadCols(prev => {
-                    const list = window.normalizeMerchTableColumns(prev?.estimate || []);
+                    const list = prev?.estimate || [];
                     const merged = [...list];
-                    requiredUploadCols.forEach(col => {
-                        const canonical = window.canonicalMerchFieldName(col);
-                        if (!merged.includes(canonical)) merged.push(canonical);
-                    });
+                    requiredUploadCols.forEach(col => { if (!merged.includes(col)) merged.push(col); });
                     return { ...(prev || {}), estimate: merged };
                 });
                 setMappings(prev => {
                     const est = { ...(prev?.estimate || {}) };
                     // v2.1.10 항목명 정리: 과거 A판매/B판매 계열 파서명은 삭제하고 도매A·도매B만 표준 입력명으로 사용한다.
+                    // v2.1.11 ERP업데이트 시트: 최종(전송) 열 삭제.
                     ['A판매', 'A판매가', 'B판매', 'B판매가', 'B도매가'].forEach(k => { delete est[k]; });
                     est['도매A'] = '도매A';
                     est['도매B'] = '도매B';
@@ -1761,7 +1759,7 @@
                 };
 
                 const wb = window.XLSX.utils.book_new();
-                const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '최종(전송)', 'n', '행사', 'n', '1']];
+                const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '행사', 'n', '1']];
                 const shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', '도매B', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
                 let subOutputCount = 0;
 
@@ -1778,20 +1776,19 @@
                     const pMarket = getBestNum(row, '시중가');
                     const shopBPrice = getBestNum(row, 'B판매가');
                     const shopBWholesale = getBestNum(row, '도매B');
-                    const finalTransmission = getBestNumByAliases(row, ['최종전송', '최종(전송)'], inPrice);
                     const finalStockRaw = getBestValue(row, '재고수량', '');
                     const finalStock = finalStockRaw !== '' ? window.parseNum(finalStockRaw) : '';
                     const themeFlags = buildThemeFlags(row);
 
                     // ERP는 기초정보 셋팅용이다. 출고가는 정상 출고가, 행사는 행사 컬럼으로 분리한다.
-                    erpData.push([code, inPrice, '0', erpOutPrice, '0', inPriceB, 'n', erpASale, 'n', erpBSale, 'n', finalTransmission, 'n', promoPrice, 'n', saleCode]);
+                    erpData.push([code, inPrice, '0', erpOutPrice, '0', inPriceB, 'n', erpASale, 'n', erpBSale, 'n', promoPrice, 'n', saleCode]);
                     // 쇼핑몰은 실제 판매가 설정용이다. 행사가가 있으면 기존 쇼핑몰 양식의 출고가 칸에 행사 우선가를 넣는다.
                     shopData.push([code, getBestStr(row, '품목명'), getBestStr(row, '규격'), shopSalePrice, erpASale, (pMarket !== '' && pMarket > 0 ? pMarket : shopSalePrice), shopBPrice, shopBWholesale, 0, 0, 0, 0, getBestStr(row, '브랜드'), getBestStr(row, '간단설명'), saleCode, finalStock, ...themeFlags, getBestStr(row, '검색어등록')]);
 
                     const subInfo = calculateSubInfo(row);
                     if (subInfo) {
                         const subMaster = data.masterProducts[subInfo.code] || {};
-                        erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', subInfo.subIn, 'n', '', 'n', saleCode]);
+                        erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', '', 'n', saleCode]);
                         shopData.push([subInfo.code, subMaster['품목명'] || `${getBestStr(row, '품목명')} (소분)`, subMaster['규격'] || subInfo.spec || '', subInfo.subOut, subInfo.subOut, subInfo.subOut, '', '', 0, 0, 0, 0, subMaster['브랜드'] || getBestStr(row, '브랜드'), subMaster['간단설명'] || getBestStr(row, '간단설명'), saleCode, finalStock, ...themeFlags, subMaster['검색어등록'] || getBestStr(row, '검색어등록')]);
                         subOutputCount++;
                     }
