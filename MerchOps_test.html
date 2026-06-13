@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.12 테이블보기프리셋 2차]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.11 테이블보기프리셋]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -564,68 +564,6 @@
             return result;
         };
 
-
-        window.migrateLegacyMerchTableViewPresets = (storedPresets = null) => {
-            const hasStoredPresets = !!storedPresets;
-            let next = window.sanitizeMerchTableViewPresets(storedPresets || window.getDefaultMerchTableViewPresets());
-            const legacyMaster = safeJSONParse('merchVisMaster_v870', null);
-            const legacyUpload = safeJSONParse('merchVisUpload_v870', null);
-
-            // 신규 프리셋이 아직 없으면 기존 역할별 노출항목을 기본보기로 흡수한다.
-            if (!hasStoredPresets) {
-                TABLE_VIEW_TARGETS.forEach(target => {
-                    const group = next[target.id];
-                    const baseView = group?.views?.[0];
-                    if (!baseView) return;
-                    const masterCols = legacyMaster?.[target.id] || baseView.masterColumns || ['입고가'];
-                    const workCols = legacyUpload?.[target.id] || baseView.workColumns || [];
-                    group.views[0] = window.createMerchTableView(target.id, '기본보기', masterCols, workCols, { id: `${target.id}_default`, system: true, updatedAt: baseView.updatedAt });
-                });
-            }
-
-            // 기존 테이블 단축버튼은 1회만 맞춤보기 후보로 이관한다. 최종/파서/역할불명은 제외한다.
-            try {
-                if (localStorage.getItem('merchTableViewPresets_v1_migrated') !== '1') {
-                    const backupPairs = [
-                        ['merchTableShortcuts_v870', 'merchTableShortcuts_v870_backup'],
-                        ['merchVisMaster_v870', 'merchVisMaster_v870_backup'],
-                        ['merchVisUpload_v870', 'merchVisUpload_v870_backup']
-                    ];
-                    backupPairs.forEach(([src, dst]) => {
-                        if (!localStorage.getItem(dst)) {
-                            const value = localStorage.getItem(src);
-                            if (value !== null) localStorage.setItem(dst, value);
-                        }
-                    });
-
-                    const shortcuts = window.getSavedMerchTableShortcuts();
-                    shortcuts.forEach((shortcut, idx) => {
-                        const target = TABLE_VIEW_TARGET_IDS.includes(shortcut.role) ? shortcut.role : 'estimate';
-                        const group = next[target];
-                        if (!group) return;
-                        const customViews = group.views.filter(v => !v.system);
-                        if (customViews.length >= 5) return;
-                        const name = String(shortcut.name || shortcut.label || `이전보기 ${idx + 1}`).trim();
-                        if (!name || group.views.some(v => String(v.name).trim() === name)) return;
-                        const newView = window.createMerchTableView(
-                            target,
-                            name,
-                            shortcut.masterColumns || legacyMaster?.[target] || ['입고가'],
-                            shortcut.workColumns || shortcut.columns || legacyUpload?.[target] || [],
-                            { id: `${target}_legacy_${idx}_${Date.now()}`, system: false, updatedAt: shortcut.updatedAt }
-                        );
-                        group.views.push(newView);
-                    });
-                    localStorage.setItem('merchTableViewPresets_v1_migrated', '1');
-                }
-            } catch (e) {
-                console.warn('[TableView Legacy Migration]', e);
-            }
-            const sanitized = window.sanitizeMerchTableViewPresets(next);
-            try { localStorage.setItem('merchTableViewPresets_v1', JSON.stringify(sanitized)); } catch (e) {}
-            return sanitized;
-        };
-
         window.findMerchTableView = (presets = {}, target = 'estimate', viewId = '') => {
             const safeTarget = TABLE_VIEW_TARGET_IDS.includes(target) ? target : 'estimate';
             const safePresets = window.sanitizeMerchTableViewPresets(presets);
@@ -970,7 +908,7 @@
             const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v870') || '');
             const [visibleMasterCols, setVisibleMasterCols] = useState(() => safeJSONParse('merchVisMaster_v870', getInitialVisibleMasterCols()));
             const [visibleUploadCols, setVisibleUploadCols] = useState(() => safeJSONParse('merchVisUpload_v870', getInitialVisibleUploadCols()));
-            const [tableViewPresets, setTableViewPresets] = useState(() => window.migrateLegacyMerchTableViewPresets(safeJSONParse('merchTableViewPresets_v1', null)));
+            const [tableViewPresets, setTableViewPresets] = useState(() => window.sanitizeMerchTableViewPresets(safeJSONParse('merchTableViewPresets_v1', window.getDefaultMerchTableViewPresets())));
             const [activeTableTarget, setActiveTableTarget] = useState(() => localStorage.getItem('merchActiveTableTarget_v1') || 'estimate');
             const [activeTableViewId, setActiveTableViewId] = useState(() => localStorage.getItem('merchActiveTableViewId_v1') || 'estimate_default');
             const [mappings, setMappings] = useState(() => safeJSONParse('merchMappings_v870', getInitialMappings()));
@@ -2288,13 +2226,13 @@
             return (
                 <div className="bg-black/40 rounded-md border border-slate-700/50 px-4 py-2 flex flex-col flex-1 max-w-md xl:max-w-xl mx-4 overflow-hidden shadow-inner text-[11px] font-mono leading-tight justify-center h-10">
                     {isProcessing ? (
-                        <div className="text-amber-400 flex items-center"><i className="fas fa-spinner fa-spin mr-2"></i> > {processMsg}</div>
+                        <div className="text-amber-400 flex items-center"><i className="fas fa-spinner fa-spin mr-2"></i> <span>&gt;</span> {processMsg}</div>
                     ) : activeTags.length > 0 ? (
                         <div className="text-indigo-300 flex items-center truncate">
-                            > {activeTags.map(t=>`[${t.name}]`).join(' + ')} 표시됨 ({estimateCount}건 작업중) <span className="w-1.5 h-3 bg-indigo-300 ml-1.5 animate-pulse"></span>
+                            &gt; {activeTags.map(t=>`[${t.name}]`).join(' + ')} 표시됨 ({estimateCount}건 작업중) <span className="w-1.5 h-3 bg-indigo-300 ml-1.5 animate-pulse"></span>
                         </div>
                     ) : (
-                        <div className="text-emerald-400 flex items-center">> DB: {itemCount.toLocaleString()}건 로드됨 ({timeStr}) <span className="w-1.5 h-3 bg-emerald-400 ml-1 animate-pulse"></span></div>
+                        <div className="text-emerald-400 flex items-center">&gt; DB: {itemCount.toLocaleString()}건 로드됨 ({timeStr}) <span className="w-1.5 h-3 bg-emerald-400 ml-1 animate-pulse"></span></div>
                     )}
                 </div>
             );
