@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.11 테이블보기프리셋]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.12 카탈로그생성_상세필터]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -1140,6 +1140,7 @@
             const [globalSearch, setGlobalSearch] = useState(''); 
             const [activeTags, setActiveTags] = useState([]);
             const [showCategoryModal, setShowCategoryModal] = useState(false);
+            const [showCatalogModal, setShowCatalogModal] = useState(false);
             const [alertMsg, setAlertMsg] = useState('');
             const [toastMsg, setToastMsg] = useState('');
             const [isProcessing, setIsProcessing] = useState(false);
@@ -1157,6 +1158,7 @@
                 globalSearch, setGlobalSearch, 
                 activeTags, setActiveTags,
                 showCategoryModal, setShowCategoryModal,
+                showCatalogModal, setShowCatalogModal,
                 alertMsg, setAlertMsg, 
                 toastMsg, setToastMsg, 
                 isProcessing, setIsProcessing, 
@@ -1711,6 +1713,57 @@
                 }, 100);
             }, [fullDisplayRows, data.masterProducts, data.setMasterProducts, data.addHistoryLogs, ui]);
 
+            const handleSaveAsCatalog = useCallback((catalogName) => {
+                if (!catalogName || !catalogName.trim()) return;
+                if (fullDisplayRows.length === 0) return ui.showToast("⚠️ 카탈로그로 묶을 상품이 없습니다.");
+
+                ui.setIsProcessing(true);
+                ui.setProcessMsg('카탈로그 생성 중...');
+
+                setTimeout(() => {
+                    let newMaster = { ...data.masterProducts };
+                    let count = 0;
+                    const safeName = catalogName.trim();
+
+                    fullDisplayRows.forEach(row => {
+                        const code = row.코드;
+                        if (!newMaster[code]) return;
+
+                        newMaster[code] = { ...newMaster[code] };
+                        const currentCatalogs = newMaster[code]['카탈로그'] || '';
+                        const tags = String(currentCatalogs).split(',').map(s => s.trim()).filter(Boolean);
+
+                        if (!tags.includes(safeName)) {
+                            tags.push(safeName);
+                            newMaster[code]['카탈로그'] = tags.join(', ');
+                            count++;
+                        }
+                    });
+
+                    if (count > 0) {
+                        const localLogs = [{
+                            id: window.generateUUID(),
+                            timestamp: new Date().toLocaleString('ko-KR'),
+                            code: 'SYSTEM',
+                            name: `[카탈로그 생성] ${safeName}`,
+                            spec: '',
+                            field: '카탈로그',
+                            oldVal: '-',
+                            newVal: `${count}개 상품 추가됨`,
+                            diff: 0
+                        }];
+                        data.addHistoryLogs(localLogs);
+                    }
+
+                    data.setMasterProducts(newMaster);
+                    ui.setShowCatalogModal(false);
+                    localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+                    ui.showToast(`✅ ${count}개 상품이 [${safeName}] 카탈로그에 추가/저장되었습니다.`);
+                    ui.setIsProcessing(false);
+                    ui.setProcessMsg('');
+                }, 100);
+            }, [fullDisplayRows, data.masterProducts, data.setMasterProducts, data.addHistoryLogs, ui]);
+
             const handleDeleteTag = useCallback((type, tagName) => {
                 if (!tagName) return;
                 const confirmMsg = `[${tagName}] ${type === 'catalog' ? '카탈로그' : '견적서'}를 정말 삭제하시겠습니까?\n해당 꼬리표가 달린 모든 상품에서 이 태그가 일괄 제거됩니다.\n(※ 마스터 상품 자체가 삭제되지는 않으니 안심하세요!)`;
@@ -2206,8 +2259,8 @@
             }, [data.managedItems, ui.activeTags, ui.selectedRows]);
 
             return useMemo(() => ({
-                handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleSaveAsCategory, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleOpenExportCenter
-            }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleSaveAsCategory, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleOpenExportCenter]);
+                handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleOpenExportCenter
+            }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleOpenExportCenter]);
         };
 
         // --- UI Components ---
@@ -2269,7 +2322,7 @@
 
         const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
             const { activeTags, selectedRows, globalSearch, priceFilter, basicSearch, fullDisplayRows, config } = state;
-            const { handleStopSales, handleExcludeSelectedFromUpdate, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, setPriceFilter, setSelectedRows, setBasicSearch, handleOpenExportCenter, handleCommitEstimate } = actions;
+            const { handleStopSales, handleExcludeSelectedFromUpdate, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, setPriceFilter, setSelectedRows, setBasicSearch, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate } = actions;
             const [filterPanelOpen, setFilterPanelOpen] = useState(false);
             const activeTableTarget = config?.activeTableTarget || '';
             const activeTableViewId = config?.activeTableViewId || '';
@@ -2324,6 +2377,10 @@
                             </select>
                             <i className="fas fa-chevron-down absolute right-3 top-3 text-slate-400 text-[10px] pointer-events-none"></i>
                         </div>
+
+                        <button onClick={() => setShowCatalogModal(true)} disabled={fullDisplayRows.length === 0} className={`h-9 px-3 rounded-xl text-[12px] font-black shadow-sm flex items-center shrink-0 ${fullDisplayRows.length > 0 ? 'bg-indigo-600 text-white hover:bg-indigo-700 border border-indigo-700' : 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed'}`} title="현재 화면 또는 선택된 작업목록 기준으로 새 카탈로그를 생성합니다. 삭제/이름변경은 환경설정에서 관리합니다.">
+                            <i className="fas fa-plus-circle mr-1.5 text-[13px]"></i> 카탈로그 생성
+                        </button>
 
                         <div className="relative shrink-0">
                             <i className="fas fa-folder absolute left-3 top-2.5 text-blue-500 pointer-events-none text-[13px]"></i>
@@ -2465,13 +2522,48 @@
                                         title="빈값: 기본상품 전체 / 0: 기본아님 전체 / 1,2,Y,필수 등: 포함검색"
                                     />
                                 </div>
-                                <span className="text-[11px] text-slate-400 ml-auto">이슈 열에 역마진이 있으면 역마진 필터에서 모아봅니다.</span>
+                                <button onClick={() => applyPriceFilter('basicExclude')} className={`h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${priceFilter === 'basicExclude' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`} title="기본값이 공백/0/N/false인 기타상품만 노출합니다.">
+                                    기본상품 제외
+                                </button>
+                                <div className="w-px h-5 bg-slate-300 mx-1"></div>
+                                {[
+                                    ['unitBox', 'BOX'],
+                                    ['unitEa', 'EA'],
+                                    ['unitSub', '소분']
+                                ].map(([value, label]) => (
+                                    <button key={value} onClick={() => applyPriceFilter(value)} className={`h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+                                        {label}
+                                    </button>
+                                ))}
+                                <span className="text-[11px] text-slate-400 ml-auto">기본상품 제외는 기타상품 작업용, BOX/EA/소분은 단위 기준 모아보기입니다.</span>
                             </div>
                         )}
                     </div>
                 </div>
             );
         });
+
+        const CatalogSaveModal = ({ onClose, onSave }) => {
+            const [name, setName] = useState('');
+            return (
+                <div className="fixed inset-0 bg-slate-900/80 z-[100] flex justify-center items-center backdrop-blur-sm fade-in" onClick={onClose}>
+                    <div className="bg-white w-[400px] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                        <div className="bg-[#0f172a] p-4 text-white flex justify-between shrink-0 border-b border-slate-700">
+                            <h2 className="font-black text-[16px]"><i className="fas fa-layer-group text-indigo-400 mr-2"></i>카탈로그 생성</h2>
+                            <button onClick={onClose}><i className="fas fa-times text-slate-400 hover:text-white"></i></button>
+                        </div>
+                        <div className="p-6 flex flex-col gap-4">
+                            <div className="text-[13px] text-slate-600 font-bold mb-2">현재 화면의 상품 목록을 새 카탈로그로 묶어 저장합니다. 카탈로그 삭제/이름변경은 환경설정에서 관리합니다.</div>
+                            <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="생성할 카탈로그 이름 입력" className="w-full border border-slate-300 rounded-lg px-4 py-3 text-[13px] font-bold outline-none focus:border-indigo-500" autoFocus onKeyDown={(e) => e.key === 'Enter' && onSave(name)} />
+                            <div className="flex justify-end gap-2 pt-2">
+                                <button onClick={onClose} className="px-4 py-2 rounded-lg bg-slate-100 text-slate-600 text-[13px] font-bold hover:bg-slate-200">취소</button>
+                                <button onClick={() => onSave(name)} className="px-5 py-2 rounded-lg bg-indigo-600 text-white text-[13px] font-bold hover:bg-indigo-700 shadow-md">카탈로그 생성</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
 
         const CategorySaveModal = ({ onClose, onSave }) => {
             const [name, setName] = useState('');
@@ -2558,6 +2650,28 @@
 
             // 0이 아닌 값만 포함검색으로 처리한다. 예: 1, 2, 10, Y, 필수
             return basicVal.includes(q);
+        };
+
+        const normalizeUnitText = (v) => String(v ?? '').trim().toLowerCase().replace(/\\s/g, '');
+
+        const getItemUnitText = (row = {}, mItem = {}) => normalizeUnitText([
+            row.finalData?.['단위'],
+            row.finalData?.['_calcUnit'],
+            row.sources?.estimate?.['단위'],
+            row.sources?.purchase?.['단위'],
+            row.sources?.sales?.['단위'],
+            row.sources?.inventory?.['단위'],
+            mItem?.['단위'],
+            mItem?.['규격']
+        ].filter(v => v !== undefined && v !== null && String(v).trim() !== '').join(' '));
+
+        const matchUnitFilter = (row = {}, mItem = {}, filter = '') => {
+            const unitText = getItemUnitText(row, mItem);
+            if (!unitText) return false;
+            if (filter === 'unitBox') return /box|박스|상자|bx/.test(unitText);
+            if (filter === 'unitEa') return /ea|개|낱개|낱|each/.test(unitText) && !/소분/.test(unitText);
+            if (filter === 'unitSub') return /소분|분할|절단|컷|소포장|묶음/.test(unitText);
+            return true;
         };
 
         const getStockQty = (row = {}, mItem = {}) => {
@@ -3484,6 +3598,8 @@
                         if (ui.priceFilter === 'stoppedSoldout') return isStoppedOrSoldoutItem(item, mItem);
                         if (ui.priceFilter === 'safeMinus') return isSafeMinusItem(item, mItem);
                         if (ui.priceFilter === 'basic') return matchBasicFilter(mItem, ui.basicSearch);
+                        if (ui.priceFilter === 'basicExclude') return isNonBasicValue(normalizeBasicValue(mItem));
+                        if (['unitBox', 'unitEa', 'unitSub'].includes(ui.priceFilter)) return matchUnitFilter(item, mItem, ui.priceFilter);
                         return true;
                     });
                 }
@@ -3513,8 +3629,8 @@
             }), [config, data, ui.activeTags, isEstimateUploaded, ui.selectedRows, ui.globalSearch, ui.isProcessing, ui.processMsg, config.visibleMasterCols, config.visibleUploadCols, config.activeTableTarget, config.activeTableViewId, config.tableViewPresets, data.masterProducts, fullDisplayRows, ui.priceFilter, ui.basicSearch]);
             
             const appActions = useMemo(() => ({
-                setShowCategoryModal: ui.setShowCategoryModal, setSelectedRows: ui.setSelectedRows, setGlobalSearch: ui.setGlobalSearch, showToast: ui.showToast, setPriceFilter: ui.setPriceFilter, setBasicSearch: ui.setBasicSearch, ...customActions
-            }), [ui.setShowCategoryModal, ui.setSelectedRows, ui.setGlobalSearch, ui.showToast, ui.setPriceFilter, ui.setBasicSearch, customActions]);
+                setShowCategoryModal: ui.setShowCategoryModal, setShowCatalogModal: ui.setShowCatalogModal, setSelectedRows: ui.setSelectedRows, setGlobalSearch: ui.setGlobalSearch, showToast: ui.showToast, setPriceFilter: ui.setPriceFilter, setBasicSearch: ui.setBasicSearch, ...customActions
+            }), [ui.setShowCategoryModal, ui.setShowCatalogModal, ui.setSelectedRows, ui.setGlobalSearch, ui.showToast, ui.setPriceFilter, ui.setBasicSearch, customActions]);
 
             useEffect(() => {
                 // ============================================================
@@ -3670,6 +3786,7 @@
                         </div>
                     </div>
                     
+                    {ui.showCatalogModal && <CatalogSaveModal onClose={() => ui.setShowCatalogModal(false)} onSave={customActions.handleSaveAsCatalog} />}
                     {ui.showCategoryModal && <CategorySaveModal onClose={() => ui.setShowCategoryModal(false)} onSave={customActions.handleSaveAsCategory} />}
                 </div>
             );
