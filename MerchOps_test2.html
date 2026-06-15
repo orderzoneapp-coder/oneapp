@@ -3360,7 +3360,7 @@
         });
 
         const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem }) => {
-            const { isEstimateUploaded, visibleMasterCols, visibleUploadCols, config, data, activeTableTarget = 'estimate' } = state;
+            const { isEstimateUploaded, visibleMasterCols, visibleUploadCols, config, data, activeTableTarget = 'estimate', registrationMode = false } = state;
             const requiredCoreFields = ['품목코드', '품목명', '규격'];
             const currentMasterCols = registrationMode ? [] : (visibleMasterCols?.[activeTableTarget] || visibleMasterCols?.estimate || []).filter(h => !requiredCoreFields.includes(h));
             const currentWorkCols = registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : (visibleUploadCols?.[activeTableTarget] || visibleUploadCols?.estimate || []).filter(h => h !== '품목코드');
@@ -3694,7 +3694,7 @@
                     <i className="fas fa-box-open"></i>
                     <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm"><i className="fas fa-check"></i></div>
                 </div>
-                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v2.1.14 미등록간편등록]</h2>
+                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v2.1.15 미등록간편등록_흰화면수정]</h2>
                 <p className="text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold">
                     현재 등록된 <span className="text-indigo-500">마스터 상품 데이터</span>가 없습니다.<br/>
                     견적 작업 및 파서 연동을 위해 전체 상품 DB를 세팅해주세요.
