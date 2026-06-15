@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.13 파서리스트_양식선택_토글]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.16 미등록간편등록_초기화_부가세]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -458,9 +458,9 @@
         // 역할: 엑셀 불러오기 중 마스터에 없는 품목코드를 현재 작업테이블에서 바로 등록할 수 있게 한다.
         // 정책: 모달을 만들지 않고 현재 테이블을 신규등록용 양식으로 전환한다.
         // ============================================================
-        window.MERCH_REGISTRATION_WORK_COLS = ['품목코드', '품목명', '규격', '단위', '입고가', '구매처', '수량', '기준일자', '창고', '기본', '확인'];
+        window.MERCH_REGISTRATION_WORK_COLS = ['품목코드', '품목명', '규격', '단위', '입고가', '구매처', '수량', '기준일자', '창고', '기본', '부가세여부', '확인'];
         window.MERCH_REGISTRATION_REQUIRED = ['품목코드', '품목명', '규격', '단위'];
-        window.MERCH_REGISTRATION_RECOMMENDED = ['입고가', '구매처', '수량', '기준일자', '창고', '기본'];
+        window.MERCH_REGISTRATION_RECOMMENDED = ['입고가', '구매처', '수량', '기준일자', '창고', '기본', '부가세여부'];
 
         window.getFirstNonBlankValue = (obj = {}, keys = []) => {
             for (const key of keys) {
@@ -470,14 +470,25 @@
             return '';
         };
 
-        window.inferMerchUnit = (source = {}) => {
-            const direct = window.getFirstNonBlankValue(source, ['단위', '포장단위', '판매단위', '매입단위', 'UNIT', 'unit']);
-            if (direct) return direct;
-            const text = `${source['품목명'] || ''} ${source['규격'] || ''}`.toUpperCase();
-            if (text.includes('소분')) return '소분';
-            if (/\bBOX\b|_BOX|\(BOX\)/.test(text)) return 'BOX';
-            if (/\bEA\b|_EA|\(EA\)/.test(text)) return 'EA';
-            return '';
+        // 신규등록용 양식은 항목명이 있는 값만 매핑한다. 품명 문자열에서 단위/규격을 추론하지 않는다.
+        window.getMerchUnitByHeaderOnly = (source = {}) => {
+            return window.getFirstNonBlankValue(source, ['단위', '포장단위', '판매단위', '매입단위', 'UNIT', 'unit']);
+        };
+
+        // ERP 원본 정책: 엑셀 '과세' 값이 1이면 비과세, 0이면 과세로 표시한다.
+        window.normalizeMerchTaxFlag = (val, headerName = '') => {
+            if (val === undefined || val === null || String(val).trim() === '') return '';
+            const raw = String(val).trim();
+            const header = String(headerName || '').replace(/\s/g, '');
+            if (header === '과세' || header === '부가세여부') {
+                if (raw === '1') return '비과세';
+                if (raw === '0') return '과세';
+            }
+            if (raw === '1') return '비과세';
+            if (raw === '0') return '과세';
+            if (raw.includes('비과세') || raw.includes('면세')) return '비과세';
+            if (raw.includes('과세')) return '과세';
+            return raw;
         };
 
         window.getRegistrationSource = (row = {}, preferredRole = '') => {
@@ -495,7 +506,7 @@
             const code = window.getFirstNonBlankValue(finalData, ['품목코드']) || window.getFirstNonBlankValue(source, ['품목코드', '상품코드', '코드', '바코드']) || row.코드 || '';
             const name = window.getFirstNonBlankValue(finalData, ['품목명']) || window.getFirstNonBlankValue(source, ['품목명', '상품명', '품명']) || '';
             const spec = window.getFirstNonBlankValue(finalData, ['규격']) || window.getFirstNonBlankValue(source, ['규격', '규격명', '단량', '사이즈']) || '';
-            const unit = window.getFirstNonBlankValue(finalData, ['단위']) || window.inferMerchUnit({ ...source, 품목명: name, 규격: spec });
+            const unit = window.getFirstNonBlankValue(finalData, ['단위']) || window.getMerchUnitByHeaderOnly(source) || '';
             const inPrice = window.getFirstNonBlankValue(finalData, ['입고가']) || window.getFirstNonBlankValue(source, ['입고가', '매입가', '구매단가', '단가', '최신단가', '재고단가', '최종(창고)']);
             const vendor = window.getFirstNonBlankValue(finalData, ['구매처']) || window.getFirstNonBlankValue(source, ['구매처', '거래처', '거래처명', '거래']);
             const qty = window.getFirstNonBlankValue(finalData, ['수량']) || window.getFirstNonBlankValue(source, ['수량', '재고수량', '재고', '현재고', '구매수량', '입고수량']);
@@ -503,6 +514,8 @@
             const baseDate = window.getFirstNonBlankValue(finalData, ['기준일자']) || window.getFirstNonBlankValue(source, ['상품 구매일자', '기록', '구매일자', '입고일자', '일자', '기준일자']);
             const warehouse = window.getFirstNonBlankValue(finalData, ['창고']) || window.getFirstNonBlankValue(source, ['창고', '창고코드', '_calcWarehouse']);
             const basic = window.getFirstNonBlankValue(finalData, ['기본']) || window.getFirstNonBlankValue(source, ['기본', '기본여부', '구분', '관리구분']);
+            const rawTax = window.getFirstNonBlankValue(finalData, ['과세', '부가세여부']) || window.getFirstNonBlankValue(source, ['과세', '부가세여부', '부가세', '면세', '비과세']);
+            const taxFlag = window.normalizeMerchTaxFlag(rawTax, source?._taxHeader || (source['과세'] !== undefined ? '과세' : '부가세여부'));
 
             const draft = {
                 품목코드: String(code || '').replace(/\s/g, ''),
@@ -514,7 +527,9 @@
                 수량: qty,
                 기준일자: baseDate,
                 창고: warehouse,
-                기본: basic
+                기본: basic,
+                과세: source['과세'] !== undefined ? source['과세'] : rawTax,
+                부가세여부: taxFlag
             };
             const validation = window.validateMerchRegistrationCandidate(draft);
             return { ...draft, 상태: validation.status, 확인: validation.message, _registrationCandidate: true };
@@ -1427,8 +1442,10 @@
                         const headerCache = createHeaderMap(actualHeaders, curMap);
                         
                         excelData.forEach((row, rowIdx) => {
-                            const codeKey = headerCache['품목코드'] || '품목코드'; 
-                            const nameKey = headerCache['품목명'] || '품목명';
+                            const cleanHeader = (h) => String(h || '').replace(/\s/g, '');
+                            const findActualHeader = (candidates = []) => actualHeaders.find(h => candidates.includes(cleanHeader(h)));
+                            const codeKey = headerCache['품목코드'] || findActualHeader(['품목코드', '상품코드', '코드', '바코드']) || '품목코드'; 
+                            const nameKey = headerCache['품목명'] || findActualHeader(['품목명', '상품명', '품명']) || '품목명';
                             const code = row[codeKey]; 
                             const name = row[nameKey];
                             
@@ -1459,13 +1476,21 @@
                             
                             mItem = { ...mItem, _tags: new Set([...(mItem._tags || []), `excel:${roleMeta.icon}업로드`]) };
                             
-                            const specKey = headerCache['규격']; 
-                            const vendorKey = headerCache['구매처'];
+                            const specKey = headerCache['규격'] || findActualHeader(['규격', '규격명', '단량', '사이즈']); 
+                            const vendorKey = headerCache['구매처'] || findActualHeader(['구매처', '거래처', '거래처명', '거래']);
+                            const unitKey = headerCache['단위'] || findActualHeader(['단위', '포장단위', '판매단위', '매입단위', 'UNIT', 'unit']);
+                            const taxKey = headerCache['부가세여부'] || headerCache['과세'] || findActualHeader(['과세', '부가세여부', '부가세', '면세', '비과세']);
                             
                             mItem.sources[role]['품목코드'] = cleanCode;
                             mItem.sources[role]['품목명'] = nameKey ? row[nameKey] : '';
                             mItem.sources[role]['규격'] = specKey ? row[specKey] : '';
+                            mItem.sources[role]['단위'] = unitKey ? row[unitKey] : '';
                             mItem.sources[role]['구매처'] = vendorKey ? row[vendorKey] : '';
+                            if (taxKey) {
+                                mItem.sources[role]['과세'] = row[taxKey];
+                                mItem.sources[role]['부가세여부'] = window.normalizeMerchTaxFlag(row[taxKey], taxKey);
+                                mItem.sources[role]['_taxHeader'] = taxKey;
+                            }
                             
                             // 엑셀 source에는 엑셀에 실제로 들어온 값만 보존한다.
                             // 마스터값 자동보강은 테이블/통합업로드 원본정책과 충돌하므로 적용하지 않는다.
@@ -2187,6 +2212,7 @@
                 ui.setGlobalSearch(''); 
                 ui.setActiveTags([]); 
                 ui.setPriceFilter('all');
+                ui.setRegistrationMode?.(false);
                 if (ui.setBasicSearch) ui.setBasicSearch('');
                 if (config.setVisibleUploadCols) config.setVisibleUploadCols(getInitialVisibleUploadCols());
                 if (config.setVisibleMasterCols) config.setVisibleMasterCols(getInitialVisibleMasterCols());
@@ -3694,7 +3720,7 @@
                     <i className="fas fa-box-open"></i>
                     <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm"><i className="fas fa-check"></i></div>
                 </div>
-                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v2.1.15 미등록간편등록_흰화면수정]</h2>
+                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v2.1.16 미등록간편등록_초기화_부가세]</h2>
                 <p className="text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold">
                     현재 등록된 <span className="text-indigo-500">마스터 상품 데이터</span>가 없습니다.<br/>
                     견적 작업 및 파서 연동을 위해 전체 상품 DB를 세팅해주세요.
