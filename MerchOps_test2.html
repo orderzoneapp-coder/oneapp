@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.16 미등록간편등록_초기화_부가세]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.19 명칭만변경_목록원복]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -183,19 +183,11 @@
         window.getManagedRowKey = (row = {}) => row._managedKey || row.코드;
 
 
-        // Smart Parser에서 마스터에 각인한 리스트명을 읽는다.
-        // 파서리스트는 MerchOps에서 생성/삭제하는 카탈로그와 분리한다.
+        // Smart Parser에서 마스터에 각인한 전용 리스트명을 읽는다.
+        // 파서리스트는 카탈로그/견적서/카테고리와 완전히 분리한다.
+        // 전용 필드가 없으면 다른 필드로 대체하지 않고 빈 값으로 둔다.
         window.getMerchParserListValue = (item = {}) => {
-            const fields = ['파서리스트', '파서목록', '파서', '견적서', '카테고리'];
-            const values = [];
-            fields.forEach(field => {
-                const raw = item?.[field];
-                if (raw === undefined || raw === null) return;
-                String(raw).split(',').map(s => s.trim()).filter(Boolean).forEach(v => {
-                    if (!values.includes(v)) values.push(v);
-                });
-            });
-            return values.join(', ');
+            return String(item?.['파서리스트'] || '').trim();
         };
 
         // 품목코드 정렬 정책:
@@ -1620,18 +1612,20 @@
 
             // ============================================================
             // [M-FLOW-02] 파서리스트/카탈로그 필터 불러오기
-            // 역할: 파서리스트(Smart Parser 각인값) 또는 카탈로그(MerchOps 생성값) 범위만 managedItems에 올린다.
-            // 주의: 선택한 범위는 작업범위가 되지만, masterProducts 전체를 출력대상으로 보내면 안 된다.
+            // 역할: 기존 기능의 데이터 source는 그대로 두고, 화면 표시명만 변경한다.
+            // - 기존 카달로그(파서)  → 파서리스트: 내부 type/catalog, 마스터 '카탈로그' 필드 기준
+            // - 기존 카달로그(견적)  → 카탈로그: 내부 type/category, 마스터 '견적서/카테고리' 필드 기준
+            // 주의: 목록 안의 폴더/항목 source를 섞거나 변경하지 않는다.
             // ============================================================
             const handleLoadFilter = useCallback((type, name) => {
                 if (!name) return;
-                const normalizedType = type === 'category' ? 'parserlist' : type;
-                const filterName = (normalizedType === 'catalog' && name === 'all_catalogs') ? '모든 카탈로그' : name;
-                const tagKey = `${normalizedType}:${filterName}`;
-                const typeLabel = normalizedType === 'parserlist' ? '파서리스트' : '카탈로그';
+                const isAllCatalogs = type === 'catalog' && name === 'all_catalogs';
+                const filterName = isAllCatalogs ? '전체리스트' : name;
+                const tagKey = `${type}:${filterName}`;
+                const typeLabel = type === 'catalog' ? '파서리스트' : '카탈로그';
 
                 const removeLoadedFilter = () => {
-                    ui.setActiveTags(prev => prev.filter(t => !(t.type === normalizedType && t.name === filterName)));
+                    ui.setActiveTags(prev => prev.filter(t => !(t.type === type && t.name === filterName)));
                     data.setManagedItems(prev => {
                         let newManaged = { ...prev };
                         let removedCount = 0;
@@ -1654,18 +1648,18 @@
                     ui.setSelectedRows(new Set());
                 };
 
-                if (ui.activeTags.some(t => t.type === normalizedType && t.name === filterName)) {
+                if (ui.activeTags.some(t => t.type === type && t.name === filterName)) {
                     removeLoadedFilter();
                     return;
                 }
                 
-                if (normalizedType === 'catalog' && name === 'all_catalogs') {
+                if (isAllCatalogs) {
                     ui.setIsProcessing(true); 
-                    ui.setProcessMsg(`모든 카탈로그 데이터 병합 중...`);
+                    ui.setProcessMsg(`전체리스트 데이터 병합 중...`);
                     
                     setTimeout(() => {
                         try {
-                            ui.setActiveTags(prev => [...prev, {type: 'catalog', name: '모든 카탈로그'}]);
+                            ui.setActiveTags(prev => [...prev, {type: 'catalog', name: '전체리스트'}]);
                             let newManaged = { ...data.managedItems }; 
                             let addedCount = 0;
                             const safeMarginRules = Array.isArray(config.marginRules) ? config.marginRules : [];
@@ -1677,13 +1671,13 @@
                                             코드: mItem.코드, 
                                             sources: { estimate: {} },
                                             finalData: window.computeFinalData(mItem, { estimate: {} }, safeMarginRules, false),
-                                            _tags: new Set([`catalog:모든 카탈로그`])
+                                            _tags: new Set([`catalog:전체리스트`])
                                         };
                                         addedCount++;
                                     } else {
                                         newManaged[mItem.코드] = { 
                                             ...newManaged[mItem.코드], 
-                                            _tags: new Set([...(newManaged[mItem.코드]._tags || []), `catalog:모든 카탈로그`]) 
+                                            _tags: new Set([...(newManaged[mItem.코드]._tags || []), `catalog:전체리스트`]) 
                                         };
                                     }
                                 }
@@ -1692,7 +1686,7 @@
                             data.setManagedItems(newManaged); 
                             ui.setSelectedRows(new Set()); 
                             const appliedView = window.applyMerchTableView ? window.applyMerchTableView(config, 'catalog', null, { manual: false }) : null;
-                            ui.showToast(`✅ 모든 카탈로그 병합 완료! (신규 ${addedCount}건 추가됨)${appliedView ? ` / 양식선택: ${appliedView.name}` : ''}`);
+                            ui.showToast(`✅ 전체리스트 병합 완료! (신규 ${addedCount}건 추가됨)${appliedView ? ` / 양식선택: ${appliedView.name}` : ''}`);
                         } catch (e) { 
                             ui.showToast("❌ 데이터 병합 중 오류가 발생했습니다."); 
                         } finally { 
@@ -1708,16 +1702,18 @@
                 
                 setTimeout(() => {
                     try {
-                        ui.setActiveTags(prev => [...prev, {type: normalizedType, name: filterName}]);
+                        ui.setActiveTags(prev => [...prev, {type, name: filterName}]);
                         let newManaged = { ...data.managedItems }; 
                         let addedCount = 0;
                         const safeMarginRules = Array.isArray(config.marginRules) ? config.marginRules : [];
 
                         Object.values(data.masterProducts).forEach(mItem => {
-                            const sourceStr = normalizedType === 'parserlist'
-                                ? (window.getMerchParserListValue ? window.getMerchParserListValue(mItem) : (mItem['견적서'] || mItem['카테고리'] || ''))
-                                : (mItem['카탈로그'] || '');
-                            const isMatch = String(sourceStr).split(',').map(c => c.trim()).includes(filterName);
+                            let isMatch = false;
+                            // source 원복: catalog는 기존 카달로그(파서) 목록, category는 기존 카달로그(견적) 목록.
+                            const catStr = type === 'category' ? (mItem['견적서'] || mItem['카테고리'] || '') : (mItem['카탈로그'] || '');
+                            if (String(catStr).split(',').map(c => c.trim()).includes(filterName)) {
+                                isMatch = true;
+                            }
 
                             if (isMatch) {
                                 if (!newManaged[mItem.코드]) {
@@ -1727,13 +1723,13 @@
                                         코드: mItem.코드, 
                                         sources: { estimate: mockSource },
                                         finalData: finalData,
-                                        _tags: new Set([`${normalizedType}:${filterName}`])
+                                        _tags: new Set([`${type}:${filterName}`])
                                     };
                                     addedCount++;
                                 } else {
                                     newManaged[mItem.코드] = { 
                                         ...newManaged[mItem.코드], 
-                                        _tags: new Set([...(newManaged[mItem.코드]._tags || []), `${normalizedType}:${filterName}`]) 
+                                        _tags: new Set([...(newManaged[mItem.코드]._tags || []), `${type}:${filterName}`]) 
                                     };
                                 }
                             }
@@ -1741,9 +1737,9 @@
                         
                         data.setManagedItems(newManaged); 
                         ui.setSelectedRows(new Set()); 
-                        const targetViewKey = normalizedType === 'catalog' ? 'catalog' : 'estimate';
+                        const targetViewKey = type === 'catalog' ? 'catalog' : 'estimate';
                         const appliedView = window.applyMerchTableView ? window.applyMerchTableView(config, targetViewKey, null, { manual: false }) : null;
-                        ui.showToast(`✅ [${filterName}] ${typeLabel} 병합 완료! (신규 ${addedCount}건 추가됨)${appliedView ? ` / 양식선택: ${appliedView.name}` : ''}`);
+                        ui.showToast(`✅ [${filterName}] 병합 완료! (신규 ${addedCount}건 추가됨)${appliedView ? ` / 양식선택: ${appliedView.name}` : ''}`);
                     } catch (error) { 
                         ui.showToast("❌ 데이터 병합 중 오류가 발생했습니다."); 
                     } finally { 
@@ -1754,9 +1750,8 @@
             }, [data.masterProducts, data.managedItems, data.setManagedItems, config.marginRules, config.tableViewPresets, ui]);
 
             const handleRemoveFilter = useCallback((type, name) => {
-                const normalizedType = type === 'category' ? 'parserlist' : type;
-                const tagKey = `${normalizedType}:${name}`;
-                ui.setActiveTags(prev => prev.filter(t => !(t.type === normalizedType && t.name === name)));
+                const tagKey = `${type}:${name}`;
+                ui.setActiveTags(prev => prev.filter(t => !(t.type === type && t.name === name)));
                 
                 data.setManagedItems(prev => {
                     let newManaged = { ...prev }; 
@@ -2584,7 +2579,7 @@
             );
         };
 
-        const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableParserLists }) => {
+        const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
             const { activeTags, selectedRows, globalSearch, priceFilter, basicSearch, fullDisplayRows, config, registrationMode } = state;
             const { handleStopSales, handleExcludeSelectedFromUpdate, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, setPriceFilter, setSelectedRows, setBasicSearch, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode } = actions;
             const [filterPanelOpen, setFilterPanelOpen] = useState(false);
@@ -2633,20 +2628,20 @@
                 <div className="flex flex-col w-full border-b border-slate-200 bg-white pb-2 shadow-sm relative z-10">
                     <div className="px-6 py-3 bg-slate-50 border-b border-slate-200 flex items-center gap-3 overflow-x-auto w-full custom-scrollbar">
                         <div className="relative shrink-0">
-                            <i className="fas fa-wand-magic-sparkles absolute left-3 top-2.5 text-purple-500 pointer-events-none text-[13px]"></i>
-                            <select value="" onChange={(e) => handleLoadFilter('parserlist', e.target.value)} className="appearance-none bg-white border border-slate-300 text-slate-700 font-bold text-[12px] py-2 pl-8 pr-8 rounded-xl shadow-sm outline-none focus:border-purple-400 w-[180px] cursor-pointer h-9">
+                            <i className="fas fa-bolt absolute left-3 top-2.5 text-indigo-500 pointer-events-none text-[13px]"></i>
+                            <select value="" onChange={(e) => handleLoadFilter('catalog', e.target.value)} className="appearance-none bg-white border border-slate-300 text-slate-700 font-bold text-[12px] py-2 pl-8 pr-8 rounded-xl shadow-sm outline-none focus:border-indigo-400 w-[180px] cursor-pointer h-9">
                                 <option value="" disabled>파서리스트</option>
-                                {availableParserLists.map(cat => <option key={cat.name} value={cat.name}>{cat.name} ({cat.count}건)</option>)}
+                                <option value="all_catalogs">전체리스트</option>
+                                {availableCatalogs.map(cat => <option key={cat.name} value={cat.name}>{cat.name} ({cat.count}건)</option>)}
                             </select>
                             <i className="fas fa-chevron-down absolute right-3 top-3 text-slate-400 text-[10px] pointer-events-none"></i>
                         </div>
 
                         <div className="relative shrink-0">
-                            <i className="fas fa-layer-group absolute left-3 top-2.5 text-indigo-500 pointer-events-none text-[13px]"></i>
-                            <select value="" onChange={(e) => handleLoadFilter('catalog', e.target.value)} className="appearance-none bg-white border border-slate-300 text-slate-700 font-bold text-[12px] py-2 pl-8 pr-8 rounded-xl shadow-sm outline-none focus:border-indigo-400 w-[180px] cursor-pointer h-9">
+                            <i className="fas fa-folder absolute left-3 top-2.5 text-blue-500 pointer-events-none text-[13px]"></i>
+                            <select value="" onChange={(e) => handleLoadFilter('category', e.target.value)} className="appearance-none bg-white border border-slate-300 text-slate-700 font-bold text-[12px] py-2 pl-8 pr-8 rounded-xl shadow-sm outline-none focus:border-indigo-400 w-[180px] cursor-pointer h-9">
                                 <option value="" disabled>카탈로그</option>
-                                <option value="all_catalogs">전체 카탈로그</option>
-                                {availableCatalogs.map(cat => <option key={cat.name} value={cat.name}>{cat.name} ({cat.count}건)</option>)}
+                                {availableCategories.map(cat => <option key={cat.name} value={cat.name}>{cat.name} ({cat.count}건)</option>)}
                             </select>
                             <i className="fas fa-chevron-down absolute right-3 top-3 text-slate-400 text-[10px] pointer-events-none"></i>
                         </div>
@@ -3720,7 +3715,7 @@
                     <i className="fas fa-box-open"></i>
                     <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm"><i className="fas fa-check"></i></div>
                 </div>
-                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v2.1.16 미등록간편등록_초기화_부가세]</h2>
+                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v2.1.19 명칭만변경_목록원복]</h2>
                 <p className="text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold">
                     현재 등록된 <span className="text-indigo-500">마스터 상품 데이터</span>가 없습니다.<br/>
                     견적 작업 및 파서 연동을 위해 전체 상품 DB를 세팅해주세요.
@@ -3805,10 +3800,10 @@
                 return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] })); 
             }, [data.masterProducts]);
             
-            const availableParserLists = useMemo(() => { 
+            const availableCategories = useMemo(() => { 
                 const counts = {}; 
                 Object.values(data.masterProducts).forEach(m => {
-                    const str = window.getMerchParserListValue ? window.getMerchParserListValue(m) : String(m['견적서']||m['카테고리']||'').trim();
+                    const str = String(m['견적서']||m['카테고리']||'').trim();
                     if(str) {
                         str.split(',').map(s=>s.trim()).filter(Boolean).forEach(t => counts[t] = (counts[t] || 0) + 1);
                     }
@@ -4072,7 +4067,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <MainToolbar state={appState} actions={appActions} availableCatalogs={availableCatalogs} availableParserLists={availableParserLists} />
+                            <MainToolbar state={appState} actions={appActions} availableCatalogs={availableCatalogs} availableCategories={availableCategories} />
                         </div>
 
                         <div ref={contentScrollRef} onScroll={handleWorkspaceScroll} className={`flex-1 overflow-auto p-5 pt-0 bg-slate-100 transition-all duration-200 ${systemUiCollapsed ? 'mt-0 pt-4' : 'mt-4'}`}>
