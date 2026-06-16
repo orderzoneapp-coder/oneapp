@@ -18,7 +18,7 @@
   'use strict';
 
   const ONEAPP = global.ONEAPP = global.ONEAPP || {};
-  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.0.1';
+  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.0.2 MarginRuleSync';
 
   const DEFAULT_DB_NAME = 'MerchOpsDB';
   const DEFAULT_DB_VERSION = 2;
@@ -84,32 +84,106 @@
     return Math.round(((newNum - oldNum) / oldNum) * 1000) / 10;
   };
 
+  // ============================================================
+  // MARGIN RULE ENGINE
+  // MerchOps / ControlTower 공통 기본 마진룰.
+  // 핵심 정책: 01창고 BOX는 10%가 우선이며, 과거 단일 기본룰(*/*/20%)만 남아 있으면 자동 복구한다.
+  // ============================================================
+  const getDefaultMerchMarginRules = () => ([
+    { id: 'rule_1', whCode: '01', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
+    { id: 'rule_2', whCode: '01', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' },
+    { id: 'rule_3', whCode: '03,05', unit: 'box, 박스, BOX', rate: 15, type: 'divide' },
+    { id: 'rule_4', whCode: '03,05', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 10, type: 'divide' },
+    { id: 'rule_5', whCode: '77,99', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
+    { id: 'rule_6', whCode: '77,99', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' },
+    { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }
+  ]);
+
+  const normalizeMerchWarehouseForRule = (v) => {
+    const raw = String(v ?? '').trim();
+    if (!raw || raw === '*') return raw || '';
+    const m = raw.match(/\d+/);
+    return m ? String(Number(m[0])).padStart(2, '0') : raw;
+  };
+
+  const getMerchUnitRuleCandidates = (v) => {
+    const raw = String(v ?? '').trim().toLowerCase();
+    if (!raw || raw === '*') return raw === '*' ? ['*'] : [];
+    const compact = raw.replace(/\s/g, '');
+    const parts = [compact, ...raw.split(/[,./|\s()_\-]+/).map(s => s.trim()).filter(Boolean)];
+    const cands = [];
+    const push = (x) => { if (x && !cands.includes(x)) cands.push(x); };
+    parts.forEach(part => {
+      const p = String(part || '').toLowerCase().replace(/\s/g, '');
+      if (!p) return;
+      if (/box|박스|상자|bx/.test(p)) push('box');
+      if (/소분|분할|절단|컷|소포장|묶음/.test(p)) push('sub');
+      if (/ea|each|개|낱개|낱|kg|킬로|단|봉|포/.test(p)) push('ea');
+      push(p);
+    });
+    return cands;
+  };
+
+  const isLegacyDefaultOnlyMarginRules = (rules = []) => {
+    if (!Array.isArray(rules) || rules.length !== 1) return false;
+    const r = rules[0] || {};
+    return String(r.whCode ?? '*').trim() === '*'
+      && String(r.unit ?? '*').trim() === '*'
+      && parseNum(r.rate) === 20;
+  };
+
+  const sanitizeMerchMarginRules = (rules = []) => {
+    const defaults = getDefaultMerchMarginRules();
+    if (!Array.isArray(rules) || rules.length === 0 || isLegacyDefaultOnlyMarginRules(rules)) {
+      return defaults.map(r => ({ ...r }));
+    }
+    const cleaned = rules
+      .filter(r => r && typeof r === 'object')
+      .map((r, idx) => ({
+        id: r.id || `rule_${idx + 1}`,
+        whCode: String(r.whCode ?? '*').trim() || '*',
+        unit: String(r.unit ?? '*').trim() || '*',
+        rate: parseNum(r.rate),
+        type: r.type === 'multiply' ? 'multiply' : 'divide'
+      }));
+    const hasDefault = cleaned.some(r => String(r.whCode).trim() === '*' && String(r.unit).trim() === '*');
+    if (!hasDefault) cleaned.push({ ...defaults[defaults.length - 1] });
+    return cleaned;
+  };
+
   const matchWh = (ruleWh, targetWh) => {
-    if (!ruleWh || ruleWh === '*') return true;
-    const target = String(targetWh || '').trim();
-    const targets = String(ruleWh).split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean);
-    return targets.some(s => s === target || (target !== '' && !isNaN(s) && !isNaN(target) && Number(s) === Number(target)));
+    if (!ruleWh || String(ruleWh).trim() === '*') return true;
+    const target = normalizeMerchWarehouseForRule(targetWh);
+    const targets = String(ruleWh).split(/[,./|\s]+/).map(s => normalizeMerchWarehouseForRule(s)).filter(Boolean);
+    return targets.some(s => s !== '' && target !== '' && s === target);
   };
 
   const matchUnit = (ruleUnit, targetUnit) => {
-    if (!ruleUnit || ruleUnit === '*') return true;
-    const target = String(targetUnit || '').trim().toLowerCase();
-    const targets = String(ruleUnit).toLowerCase().split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean);
-    return targets.some(s => target === s || target.includes(s));
+    if (!ruleUnit || String(ruleUnit).trim() === '*') return true;
+    const targetUnits = Array.isArray(targetUnit) ? targetUnit : getMerchUnitRuleCandidates(targetUnit);
+    const targets = String(ruleUnit)
+      .split(/[,./|\s]+/)
+      .flatMap(s => getMerchUnitRuleCandidates(s))
+      .filter(Boolean);
+    return targets.some(ruleUnitNorm => targetUnits.some(targetUnitNorm => targetUnitNorm === ruleUnitNorm || targetUnitNorm.includes(ruleUnitNorm) || ruleUnitNorm.includes(targetUnitNorm)));
   };
 
   const findBestMarginRule = (marginRules = [], context = {}) => {
-    const whCode = String(context['창고'] ?? context.whCode ?? '').trim();
-    const unitStr = String(context['단위'] ?? context.unit ?? '').trim().toLowerCase();
+    const whCode = normalizeMerchWarehouseForRule(context['창고'] ?? context.whCode ?? '');
+    const unitRaw = [context['단위'], context.unit, context['규격'], context.spec, context['품목명'], context.name]
+      .filter(v => v !== undefined && v !== null && String(v).trim() !== '')
+      .join(' ');
+    const unitCandidates = getMerchUnitRuleCandidates(unitRaw);
     let bestRule = null;
     let bestScore = -1;
-    const safeRules = Array.isArray(marginRules) ? marginRules : [];
+    const safeRules = sanitizeMerchMarginRules(marginRules);
 
-    safeRules.forEach(rule => {
-      if (matchWh(rule.whCode, whCode) && matchUnit(rule.unit, unitStr)) {
+    safeRules.forEach((rule, ruleIdx) => {
+      if (matchWh(rule.whCode, whCode) && matchUnit(rule.unit, unitCandidates)) {
         let score = 0;
-        if (rule.whCode && rule.whCode !== '*') score += 2;
-        if (rule.unit && rule.unit !== '*') score += 1;
+        if (rule.whCode && String(rule.whCode).trim() !== '*') score += 20;
+        if (rule.unit && String(rule.unit).trim() !== '*') score += 10;
+        score -= ruleIdx / 1000;
         if (score > bestScore) {
           bestScore = score;
           bestRule = rule;
@@ -192,6 +266,10 @@
 
   PRICING.parseNum = parseNum;
   PRICING.findBestMarginRule = findBestMarginRule;
+  PRICING.getDefaultMerchMarginRules = getDefaultMerchMarginRules;
+  PRICING.sanitizeMerchMarginRules = sanitizeMerchMarginRules;
+  PRICING.normalizeMerchWarehouseForRule = normalizeMerchWarehouseForRule;
+  PRICING.getMerchUnitRuleCandidates = getMerchUnitRuleCandidates;
 
   PRICING.calculatePricesEngine = (baseInPrice, providedOutPrice = 0, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
     const ROUND_UNIT = 100;
@@ -737,6 +815,10 @@
   global.setIDB = global.setIDB || STORAGE.setIDB;
   global.getAllIDB = global.getAllIDB || STORAGE.getAllIDB;
   global.bulkPutIDB = global.bulkPutIDB || STORAGE.bulkPutIDB;
+  global.getDefaultMerchMarginRules = global.getDefaultMerchMarginRules || getDefaultMerchMarginRules;
+  global.sanitizeMerchMarginRules = global.sanitizeMerchMarginRules || sanitizeMerchMarginRules;
+  global.normalizeMerchWarehouseForRule = global.normalizeMerchWarehouseForRule || normalizeMerchWarehouseForRule;
+  global.getMerchUnitRuleCandidates = global.getMerchUnitRuleCandidates || getMerchUnitRuleCandidates;
   global.calculatePricesEngine = global.calculatePricesEngine || PRICING.calculatePricesEngine;
   global.computeFinalData = global.computeFinalData || PRICING.computeFinalData;
   global.getMasterSalesState = global.getMasterSalesState || PRICING.getMasterSalesState;
