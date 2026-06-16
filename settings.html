@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.4 작업항목버튼선택]</title>
+    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.5 마진룰동기화]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -169,15 +169,21 @@
             const [marginRules, setMarginRules] = useState(() => {
                 const defaultRules = [
                     { id: 'rule_1', whCode: '01', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
-                    { id: 'rule_2', whCode: '01', unit: '개, 낱개, 소분, EA, ea,', rate: 15, type: 'divide' },
-                    { id: 'rule_3', whCode: '03, 05', unit: 'box, 박스, BOX', rate: 15, type: 'divide' },
-                    { id: 'rule_4', whCode: '03, 05', unit: '개, 낱개, 소분, EA, ea,', rate: 20, type: 'divide' },
-                    { id: 'rule_5', whCode: '*', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
-                    { id: 'rule_6', whCode: '*', unit: '개, 낱개, 소분, EA, ea,', rate: 15, type: 'divide' },
+                    { id: 'rule_2', whCode: '01', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' },
+                    { id: 'rule_3', whCode: '03,05', unit: 'box, 박스, BOX', rate: 15, type: 'divide' },
+                    { id: 'rule_4', whCode: '03,05', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 10, type: 'divide' },
+                    { id: 'rule_5', whCode: '77,99', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
+                    { id: 'rule_6', whCode: '77,99', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' },
                     { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }
                 ];
                 const parsed = safeJSONParse('merchMarginRules_v878', null);
+                const isLegacyDefaultOnly = Array.isArray(parsed)
+                    && parsed.length === 1
+                    && String(parsed[0]?.whCode ?? '*').trim() === '*'
+                    && String(parsed[0]?.unit ?? '*').trim() === '*'
+                    && Number(parsed[0]?.rate) === 20;
                 if (Array.isArray(parsed) && parsed.length > 1) return parsed;
+                if (isLegacyDefaultOnly) return defaultRules;
                 return defaultRules;
             });
 
