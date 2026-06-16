@@ -4,12 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.7 ERP A판매/B판매·쇼핑몰 B판매가/B도매가]</title>
+    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.8 Runtime Open Fix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
@@ -24,881 +24,927 @@
 <body class="text-slate-800">
     <div id="root"></div>
 
-    <script type="text/babel">
-        const { useState, useEffect, useMemo, useCallback } = React;
-
-        const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
-        const fmt = (v) => parseNum(v).toLocaleString('ko-KR');
-
-        const initIDB = () => new Promise((resolve, reject) => {
-            const request = indexedDB.open('MerchOpsDB', 2);
-            request.onupgradeneeded = (e) => {
-                const db = e.target.result;
-                if (!db.objectStoreNames.contains('store')) db.createObjectStore('store');
-                if (!db.objectStoreNames.contains('master_products')) db.createObjectStore('master_products', { keyPath: '코드' });
-            };
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
+    <script>
+const { useState, useEffect, useMemo, useCallback } = React;
+const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
+const fmt = (v) => parseNum(v).toLocaleString('ko-KR');
+const initIDB = () => new Promise((resolve, reject) => {
+    const request = indexedDB.open('MerchOpsDB', 2);
+    request.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('store'))
+            db.createObjectStore('store');
+        if (!db.objectStoreNames.contains('master_products'))
+            db.createObjectStore('master_products', { keyPath: '코드' });
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+});
+const getAllIDB = async (storeName) => {
+    const db = await initIDB();
+    return new Promise((resolve, reject) => {
+        if (!db.objectStoreNames.contains(storeName))
+            return resolve([]);
+        const tx = db.transaction(storeName, 'readonly');
+        const req = tx.objectStore(storeName).getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(tx.error);
+    });
+};
+const getIDB = async (key) => {
+    const db = await initIDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('store', 'readonly');
+        const req = tx.objectStore('store').get(key);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(tx.error);
+    });
+};
+const setIDB = async (key, val) => {
+    const db = await initIDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('store', 'readwrite');
+        tx.objectStore('store').put(val, key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+};
+const bulkPutIDB = async (storeName, items) => {
+    const db = await initIDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        items.forEach(item => store.put(item));
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+};
+const getAppliedPrice = (row) => {
+    const promo = parseNum(row === null || row === void 0 ? void 0 : row.행사가);
+    const out = parseNum(row === null || row === void 0 ? void 0 : row.출고가);
+    return promo > 0 ? promo : out;
+};
+const normalizeThemeNo = (value) => {
+    const n = parseNum(value);
+    return n >= 1 && n <= 5 ? n : 0;
+};
+const getThemeNoFromFlags = (item = {}) => {
+    for (let i = 1; i <= 5; i++) {
+        if (parseNum(item === null || item === void 0 ? void 0 : item[`테마${i}`]) === 1)
+            return i;
+    }
+    return 0;
+};
+const buildThemeFlags = (row = {}) => {
+    const promo = parseNum(row.행사가) > 0;
+    const themeNo = promo ? normalizeThemeNo(row.promoTheme || getThemeNoFromFlags(row)) : 0;
+    return [1, 2, 3, 4, 5].map(n => themeNo === n ? '1' : '');
+};
+// 출력검증센터의 행사가 값은 저장/출력 적용 예정값이다.
+// 판매상태 정책:
+// - 기존 마스터 판매여부가 0(정지)이더라도, 이번 작업에서 출고가/행사가가 산출되면 판매여부는 1로 복구한다.
+// - 단, 사용자가 MerchOps에서 판매정지 액션을 명시한 경우(_salesStopRequested=true)만 정지 0을 유지한다.
+// - 재고수량 0은 판매여부 1 + 품절 상태이며, 자동 정지 0으로 바꾸지 않는다.
+const getSaleState = (row) => {
+    const explicitStop = (row === null || row === void 0 ? void 0 : row._salesStopRequested) === true || (row === null || row === void 0 ? void 0 : row._explicitStopRequested) === true;
+    if (explicitStop)
+        return { code: '0', label: '정지', text: '정지', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
+    const out = parseNum(row.출고가);
+    const promo = parseNum(row.행사가);
+    const stock = row.재고수량 !== undefined && row.재고수량 !== '' ? parseNum(row.재고수량) : 999;
+    const hasSalePrice = out > 0 || promo > 0;
+    if (!hasSalePrice)
+        return { code: '0', label: '정지', text: '정지', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
+    if (stock === 0)
+        return { code: '1', label: '품절', text: '품절', cls: 'bg-orange-50 text-orange-700 border-orange-200' };
+    if (promo > 0)
+        return { code: '1', label: '행사', text: '행사', cls: 'bg-purple-50 text-purple-700 border-purple-200' };
+    return { code: '1', label: '판매', text: '판매', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+};
+const isMarginWarning = (row) => {
+    const sale = getSaleState(row);
+    const salePrice = getAppliedPrice(row);
+    const inPrice = parseNum(row.입고가);
+    return sale.code === '1' && salePrice > 0 && salePrice < inPrice;
+};
+const getDiffInfo = (row) => {
+    const base = parseNum(row.기준입고가);
+    const current = parseNum(row.입고가);
+    const diff = current - base;
+    const rate = base > 0 ? diff / base : 0;
+    return { diff, rate };
+};
+const isBigChange = (row) => {
+    const sale = getSaleState(row);
+    if (sale.label === '정지')
+        return false;
+    const { diff, rate } = getDiffInfo(row);
+    return parseNum(row.기준입고가) > 0 && parseNum(row.입고가) > 0 && Math.abs(rate) >= 0.3 && Math.abs(diff) >= 1000;
+};
+const isDigitSuspicion = (row) => {
+    const base = parseNum(row.기준입고가);
+    const current = parseNum(row.입고가);
+    if (base <= 0 || current <= 0)
+        return false;
+    const ratio = current / base;
+    return (ratio >= 9 && ratio <= 11) || (ratio >= 0.09 && ratio <= 0.11);
+};
+const isNewItem = (row) => {
+    const hasBase = parseNum(row.기준입고가) > 0 || parseNum(row.기준출고가) > 0;
+    const hasWork = parseNum(row.입고가) > 0 || parseNum(row.출고가) > 0 || parseNum(row.행사가) > 0;
+    return !hasBase && hasWork;
+};
+const isLowStock = (row) => {
+    const stock = parseNum(row.재고수량);
+    // 현재 단계: 안전재고 기준은 보류. 999는 일반 판매 기본값으로 보고 제외한다.
+    return stock > 0 && stock < 999;
+};
+const isValidSubItemCode = (code) => {
+    if (!code)
+        return false;
+    const s = String(code).trim();
+    return s !== '' && s !== '0' && s !== '00' && s !== '-' && s.toLowerCase() !== 'undefined' && s.toLowerCase() !== 'null';
+};
+// ============================================================
+// [E-ENGINE-02] 소분가 계산 엔진
+// 역할: 원물코드에 연결된 1종코드의 입고/출고 소분가를 계산한다.
+// 확정 정책: 1출고 = 원물 기본 출고가 / 1종연산 + 경비. 행사가/최종적용가 기준이 아니다.
+// ============================================================
+const calculateSubPriceInfo = (row) => {
+    const div1 = parseNum(row['1종연산']);
+    if (!isValidSubItemCode(row['1종코드']) || div1 <= 0)
+        return null;
+    const ROUND_UNIT = 100;
+    const inPrice = parseNum(row.입고가);
+    const outPrice = parseNum(row.출고가); // 정책 확정: 소분 1출고는 행사가/최종적용가가 아닌 원물 기본 출고가 기준
+    const outsrc = parseNum(row['외주비']);
+    const extraCost = parseNum(row['경비']);
+    const subIn = inPrice > 0 ? Math.round(((inPrice + outsrc) / div1) / ROUND_UNIT) * ROUND_UNIT : 0;
+    const rawSubOut = outPrice > 0 ? Math.round((outPrice / div1) + extraCost) : 0;
+    const subOut = rawSubOut > 0 ? Math.round(rawSubOut / 10) * 10 : 0;
+    return { code: String(row['1종코드']).trim(), spec: row['1종규격'] || '', div1, subIn, subOut };
+};
+// ============================================================
+// [E-OUTPUT-01] 소분품목 쇼핑몰 행 생성
+// 역할: 1종코드가 있는 경우 ERP뿐 아니라 쇼핑몰업로드 시트에도 별도 출력 행을 추가한다.
+// 주의: masterProducts[1종코드]가 있으면 상품명/규격을 우선 사용하고, 없으면 원물명 기반 보조명을 사용한다.
+// ============================================================
+const buildSubShopRow = (parentRow, subInfo, masterProducts, sale) => {
+    if (!subInfo)
+        return null;
+    const subMaster = masterProducts[subInfo.code] || {};
+    const subName = subMaster['품목명'] || `${parentRow.품목명 || ''} (소분)`;
+    const subSpec = subMaster['규격'] || subInfo.spec || parentRow['1종규격'] || '';
+    const subBrand = subMaster['브랜드'] || parentRow.브랜드 || '';
+    const subDesc = subMaster['간단설명'] || parentRow.간단설명 || '';
+    const subTags = subMaster['검색어등록'] || parentRow.검색어등록 || '';
+    const subStock = parentRow.재고수량 !== undefined && parentRow.재고수량 !== '' ? parseNum(parentRow.재고수량) : 999;
+    return [
+        subInfo.code,
+        subName,
+        subSpec,
+        subInfo.subOut,
+        subInfo.subOut,
+        subInfo.subOut,
+        0, 0, 0, 0, 0, 0,
+        subBrand,
+        subDesc,
+        sale.code,
+        subStock,
+        ...buildThemeFlags(parentRow),
+        subTags
+    ];
+};
+const safeJSONParse = (key, defaultVal) => {
+    try {
+        const raw = localStorage.getItem(key);
+        return raw && raw !== 'undefined' ? JSON.parse(raw) : defaultVal;
+    }
+    catch (e) {
+        return defaultVal;
+    }
+};
+// ============================================================
+// [E-ENGINE-01] 출력검증센터 출고가 산출 엔진
+// 역할: 입고가/외주비/노무비/창고/단위/마진룰 기준으로 출고가를 산출한다.
+// 주의: 화면에는 별도 계산출고가/최종출고가를 노출하지 않고, 출고가와 행사가만 보여준다.
+// ============================================================
+const calculateReviewOutPrice = (baseInPrice, context = {}, marginRules = []) => {
+    var _a, _b, _c, _d;
+    const inPrice = parseNum(baseInPrice);
+    if (inPrice <= 0)
+        return 0;
+    const outsrc = parseNum(context['외주비']);
+    const labor = parseNum(context['노무비']);
+    const totalCost = inPrice + outsrc + labor;
+    // MerchOps에서 전달한 계산용 창고(_calcWarehouse)를 우선 사용한다.
+    // 이는 원본 창고값을 바꾸는 것이 아니라, 창고 각인이 없는 재고상품에만 01창고 연산룰을 적용하기 위한 계산 컨텍스트다.
+    const whCode = String((_b = (_a = context['_calcWarehouse']) !== null && _a !== void 0 ? _a : context['창고']) !== null && _b !== void 0 ? _b : '').trim();
+    const unitStr = String((_d = (_c = context['_calcUnit']) !== null && _c !== void 0 ? _c : context['단위']) !== null && _d !== void 0 ? _d : '').trim().toLowerCase();
+    const matchWh = (ruleWh, targetWh) => {
+        if (!ruleWh || ruleWh === '*')
+            return true;
+        const targets = String(ruleWh).split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean);
+        return targets.some(s => s === targetWh || (targetWh !== '' && !isNaN(s) && !isNaN(targetWh) && Number(s) === Number(targetWh)));
+    };
+    const matchUnit = (ruleUnit, targetUnit) => {
+        if (!ruleUnit || ruleUnit === '*')
+            return true;
+        const targets = String(ruleUnit).toLowerCase().split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean);
+        return targets.some(s => targetUnit === s || targetUnit.includes(s));
+    };
+    let bestRule = null;
+    let bestScore = -1;
+    const safeRules = Array.isArray(marginRules) ? marginRules : [];
+    safeRules.forEach(rule => {
+        if (matchWh(rule.whCode, whCode) && matchUnit(rule.unit, unitStr)) {
+            let score = 0;
+            if (rule.whCode && rule.whCode !== '*')
+                score += 2;
+            if (rule.unit && rule.unit !== '*')
+                score += 1;
+            if (score > bestScore) {
+                bestScore = score;
+                bestRule = rule;
+            }
+        }
+    });
+    const applied = bestRule || { rate: 20, type: 'divide' };
+    let calc = 0;
+    if (applied.type === 'divide') {
+        calc = totalCost / (1 - (parseNum(applied.rate) / 100));
+    }
+    else {
+        calc = totalCost * (1 + (parseNum(applied.rate) / 100));
+    }
+    return Math.round(calc / 100) * 100;
+};
+// ============================================================
+// [E-RUNTIME-01] Runtime/Open Fix + 마진룰 동기화
+// - Babel 런타임을 제거하고 사전 컴파일된 JS로 실행한다.
+// - 설정/메인과 동일한 기본 마진룰을 사용한다.
+// ============================================================
+const getDefaultExportMarginRules = () => ([
+    { id: 'rule_1', whCode: '01', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
+    { id: 'rule_2', whCode: '01', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' },
+    { id: 'rule_3', whCode: '03,05', unit: 'box, 박스, BOX', rate: 15, type: 'divide' },
+    { id: 'rule_4', whCode: '03,05', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 10, type: 'divide' },
+    { id: 'rule_5', whCode: '77,99', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
+    { id: 'rule_6', whCode: '77,99', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' },
+    { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }
+]);
+const isLegacyDefaultOnlyMarginRules = (rules = []) => {
+    var _a, _b, _c, _d, _e;
+    return Array.isArray(rules)
+        && rules.length === 1
+        && String((_b = (_a = rules[0]) === null || _a === void 0 ? void 0 : _a.whCode) !== null && _b !== void 0 ? _b : '*').trim() === '*'
+        && String((_d = (_c = rules[0]) === null || _c === void 0 ? void 0 : _c.unit) !== null && _d !== void 0 ? _d : '*').trim() === '*'
+        && parseNum((_e = rules[0]) === null || _e === void 0 ? void 0 : _e.rate) === 20;
+};
+const sanitizeExportMarginRules = (rules = []) => {
+    const defaults = getDefaultExportMarginRules();
+    if (!Array.isArray(rules) || rules.length === 0 || isLegacyDefaultOnlyMarginRules(rules))
+        return defaults.map(r => ({ ...r }));
+    const cleaned = rules.filter(r => r && typeof r === 'object').map((r, idx) => {
+        var _a, _b;
+        return ({
+            id: r.id || `rule_${idx + 1}`,
+            whCode: String((_a = r.whCode) !== null && _a !== void 0 ? _a : '*').trim() || '*',
+            unit: String((_b = r.unit) !== null && _b !== void 0 ? _b : '*').trim() || '*',
+            rate: parseNum(r.rate),
+            type: r.type === 'multiply' ? 'multiply' : 'divide'
         });
-
-        const getAllIDB = async (storeName) => {
-            const db = await initIDB();
-            return new Promise((resolve, reject) => {
-                if (!db.objectStoreNames.contains(storeName)) return resolve([]);
-                const tx = db.transaction(storeName, 'readonly');
-                const req = tx.objectStore(storeName).getAll();
-                req.onsuccess = () => resolve(req.result || []);
-                req.onerror = () => reject(tx.error);
-            });
-        };
-
-        const getIDB = async (key) => {
-            const db = await initIDB();
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction('store', 'readonly');
-                const req = tx.objectStore('store').get(key);
-                req.onsuccess = () => resolve(req.result);
-                req.onerror = () => reject(tx.error);
-            });
-        };
-
-        const setIDB = async (key, val) => {
-            const db = await initIDB();
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction('store', 'readwrite');
-                tx.objectStore('store').put(val, key);
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error);
-            });
-        };
-
-        const bulkPutIDB = async (storeName, items) => {
-            const db = await initIDB();
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction(storeName, 'readwrite');
-                const store = tx.objectStore(storeName);
-                items.forEach(item => store.put(item));
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error);
-            });
-        };
-
-        const getAppliedPrice = (row) => {
-            const promo = parseNum(row?.행사가);
-            const out = parseNum(row?.출고가);
-            return promo > 0 ? promo : out;
-        };
-
-        const normalizeThemeNo = (value) => {
-            const n = parseNum(value);
-            return n >= 1 && n <= 5 ? n : 0;
-        };
-
-        const getThemeNoFromFlags = (item = {}) => {
-            for (let i = 1; i <= 5; i++) {
-                if (parseNum(item?.[`테마${i}`]) === 1) return i;
-            }
-            return 0;
-        };
-
-        const buildThemeFlags = (row = {}) => {
-            const promo = parseNum(row.행사가) > 0;
-            const themeNo = promo ? normalizeThemeNo(row.promoTheme || getThemeNoFromFlags(row)) : 0;
-            return [1, 2, 3, 4, 5].map(n => themeNo === n ? '1' : '');
-        };
-
-        // 출력검증센터의 행사가 값은 저장/출력 적용 예정값이다.
-        // 판매상태 정책:
-        // - 기존 마스터 판매여부가 0(정지)이더라도, 이번 작업에서 출고가/행사가가 산출되면 판매여부는 1로 복구한다.
-        // - 단, 사용자가 MerchOps에서 판매정지 액션을 명시한 경우(_salesStopRequested=true)만 정지 0을 유지한다.
-        // - 재고수량 0은 판매여부 1 + 품절 상태이며, 자동 정지 0으로 바꾸지 않는다.
-        const getSaleState = (row) => {
-            const explicitStop = row?._salesStopRequested === true || row?._explicitStopRequested === true;
-            if (explicitStop) return { code: '0', label: '정지', text: '정지', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
-
-            const out = parseNum(row.출고가);
-            const promo = parseNum(row.행사가);
-            const stock = row.재고수량 !== undefined && row.재고수량 !== '' ? parseNum(row.재고수량) : 999;
-            const hasSalePrice = out > 0 || promo > 0;
-
-            if (!hasSalePrice) return { code: '0', label: '정지', text: '정지', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
-            if (stock === 0) return { code: '1', label: '품절', text: '품절', cls: 'bg-orange-50 text-orange-700 border-orange-200' };
-            if (promo > 0) return { code: '1', label: '행사', text: '행사', cls: 'bg-purple-50 text-purple-700 border-purple-200' };
-            return { code: '1', label: '판매', text: '판매', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
-        };
-
-        const isMarginWarning = (row) => {
-            const sale = getSaleState(row);
-            const salePrice = getAppliedPrice(row);
-            const inPrice = parseNum(row.입고가);
-            return sale.code === '1' && salePrice > 0 && salePrice < inPrice;
-        };
-
-        const getDiffInfo = (row) => {
-            const base = parseNum(row.기준입고가);
-            const current = parseNum(row.입고가);
-            const diff = current - base;
-            const rate = base > 0 ? diff / base : 0;
-            return { diff, rate };
-        };
-
-        const isBigChange = (row) => {
-            const sale = getSaleState(row);
-            if (sale.label === '정지') return false;
-            const { diff, rate } = getDiffInfo(row);
-            return parseNum(row.기준입고가) > 0 && parseNum(row.입고가) > 0 && Math.abs(rate) >= 0.3 && Math.abs(diff) >= 1000;
-        };
-
-        const isDigitSuspicion = (row) => {
-            const base = parseNum(row.기준입고가);
-            const current = parseNum(row.입고가);
-            if (base <= 0 || current <= 0) return false;
-            const ratio = current / base;
-            return (ratio >= 9 && ratio <= 11) || (ratio >= 0.09 && ratio <= 0.11);
-        };
-
-        const isNewItem = (row) => {
-            const hasBase = parseNum(row.기준입고가) > 0 || parseNum(row.기준출고가) > 0;
-            const hasWork = parseNum(row.입고가) > 0 || parseNum(row.출고가) > 0 || parseNum(row.행사가) > 0;
-            return !hasBase && hasWork;
-        };
-
-        const isLowStock = (row) => {
-            const stock = parseNum(row.재고수량);
-            // 현재 단계: 안전재고 기준은 보류. 999는 일반 판매 기본값으로 보고 제외한다.
-            return stock > 0 && stock < 999;
-        };
-
-        const isValidSubItemCode = (code) => {
-            if (!code) return false;
-            const s = String(code).trim();
-            return s !== '' && s !== '0' && s !== '00' && s !== '-' && s.toLowerCase() !== 'undefined' && s.toLowerCase() !== 'null';
-        };
-
+    });
+    if (!cleaned.some(r => String(r.whCode).trim() === '*' && String(r.unit).trim() === '*'))
+        cleaned.push({ ...defaults[defaults.length - 1] });
+    return cleaned;
+};
+const normalizeExportWarehouseForRule = (v) => {
+    const raw = String(v !== null && v !== void 0 ? v : '').trim();
+    if (!raw || raw === '*')
+        return raw || '';
+    const m = raw.match(/\d+/);
+    return m ? String(Number(m[0])).padStart(2, '0') : raw;
+};
+const getExportUnitRuleCandidates = (v) => {
+    const raw = String(v !== null && v !== void 0 ? v : '').trim().toLowerCase();
+    if (!raw || raw === '*')
+        return raw === '*' ? ['*'] : [];
+    const compact = raw.replace(/\s/g, '');
+    const parts = [compact, ...raw.split(/[,./|\s()_\-]+/).map(s => s.trim()).filter(Boolean)];
+    const cands = [];
+    const push = (x) => { if (x && !cands.includes(x))
+        cands.push(x); };
+    parts.forEach(part => {
+        const p = String(part || '').toLowerCase().replace(/\s/g, '');
+        if (!p)
+            return;
+        if (/box|박스|상자|bx/.test(p))
+            push('box');
+        if (/소분|분할|절단|컷|소포장|묶음/.test(p))
+            push('sub');
+        if (/ea|each|개|낱개|낱|kg|킬로|단|봉|포/.test(p))
+            push('ea');
+        push(p);
+    });
+    return cands;
+};
+const ExportApp = () => {
+    const [masterProducts, setMasterProducts] = useState({});
+    const [reviewRows, setReviewRows] = useState([]);
+    const [marginRules] = useState(() => sanitizeExportMarginRules(safeJSONParse('merchMarginRules_v878', null)));
+    const [activeIssue, setActiveIssue] = useState('all');
+    const [sortMode, setSortMode] = useState('category');
+    const [searchInput, setSearchInput] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [toast, setToast] = useState('');
+    const [bulkTheme, setBulkTheme] = useState(1);
+    const showToast = useCallback((msg) => {
+        setToast(msg);
+        setTimeout(() => setToast(''), 3000);
+    }, []);
+    useEffect(() => {
+        const timer = setTimeout(() => setSearchTerm(searchInput.trim()), 250);
+        return () => clearTimeout(timer);
+    }, [searchInput]);
+    useEffect(() => {
         // ============================================================
-        // [E-ENGINE-02] 소분가 계산 엔진
-        // 역할: 원물코드에 연결된 1종코드의 입고/출고 소분가를 계산한다.
-        // 확정 정책: 1출고 = 원물 기본 출고가 / 1종연산 + 경비. 행사가/최종적용가 기준이 아니다.
+        // [E-FLOW-01] 출력검증센터 데이터 로드
+        // 역할: merch_export_draft만 작업 대상으로 읽고, 해당 code에 대해서만 masterProducts를 기준정보로 참조한다.
+        // 금지: master_products 전체를 reviewRows 작업대상으로 전환하지 않는다.
         // ============================================================
-        const calculateSubPriceInfo = (row) => {
-            const div1 = parseNum(row['1종연산']);
-            if (!isValidSubItemCode(row['1종코드']) || div1 <= 0) return null;
-            const ROUND_UNIT = 100;
-            const inPrice = parseNum(row.입고가);
-            const outPrice = parseNum(row.출고가); // 정책 확정: 소분 1출고는 행사가/최종적용가가 아닌 원물 기본 출고가 기준
-            const outsrc = parseNum(row['외주비']);
-            const extraCost = parseNum(row['경비']);
-            const subIn = inPrice > 0 ? Math.round(((inPrice + outsrc) / div1) / ROUND_UNIT) * ROUND_UNIT : 0;
-            const rawSubOut = outPrice > 0 ? Math.round((outPrice / div1) + extraCost) : 0;
-            const subOut = rawSubOut > 0 ? Math.round(rawSubOut / 10) * 10 : 0;
-            return { code: String(row['1종코드']).trim(), spec: row['1종규격'] || '', div1, subIn, subOut };
-        };
-
-        // ============================================================
-        // [E-OUTPUT-01] 소분품목 쇼핑몰 행 생성
-        // 역할: 1종코드가 있는 경우 ERP뿐 아니라 쇼핑몰업로드 시트에도 별도 출력 행을 추가한다.
-        // 주의: masterProducts[1종코드]가 있으면 상품명/규격을 우선 사용하고, 없으면 원물명 기반 보조명을 사용한다.
-        // ============================================================
-        const buildSubShopRow = (parentRow, subInfo, masterProducts, sale) => {
-            if (!subInfo) return null;
-            const subMaster = masterProducts[subInfo.code] || {};
-            const subName = subMaster['품목명'] || `${parentRow.품목명 || ''} (소분)`;
-            const subSpec = subMaster['규격'] || subInfo.spec || parentRow['1종규격'] || '';
-            const subBrand = subMaster['브랜드'] || parentRow.브랜드 || '';
-            const subDesc = subMaster['간단설명'] || parentRow.간단설명 || '';
-            const subTags = subMaster['검색어등록'] || parentRow.검색어등록 || '';
-            const subStock = parentRow.재고수량 !== undefined && parentRow.재고수량 !== '' ? parseNum(parentRow.재고수량) : 999;
-            return [
-                subInfo.code,
-                subName,
-                subSpec,
-                subInfo.subOut,
-                subInfo.subOut,
-                subInfo.subOut,
-                0, 0, 0, 0, 0, 0,
-                subBrand,
-                subDesc,
-                sale.code,
-                subStock,
-                ...buildThemeFlags(parentRow),
-                subTags
-            ];
-        };
-
-        const safeJSONParse = (key, defaultVal) => {
+        const loadData = async () => {
+            setIsProcessing(true);
             try {
-                const raw = localStorage.getItem(key);
-                return raw && raw !== 'undefined' ? JSON.parse(raw) : defaultVal;
-            } catch (e) {
-                return defaultVal;
-            }
-        };
-
-        // ============================================================
-        // [E-ENGINE-01] 출력검증센터 출고가 산출 엔진
-        // 역할: 입고가/외주비/노무비/창고/단위/마진룰 기준으로 출고가를 산출한다.
-        // 주의: 화면에는 별도 계산출고가/최종출고가를 노출하지 않고, 출고가와 행사가만 보여준다.
-        // ============================================================
-        const calculateReviewOutPrice = (baseInPrice, context = {}, marginRules = []) => {
-            const inPrice = parseNum(baseInPrice);
-            if (inPrice <= 0) return 0;
-
-            const outsrc = parseNum(context['외주비']);
-            const labor = parseNum(context['노무비']);
-            const totalCost = inPrice + outsrc + labor;
-            // MerchOps에서 전달한 계산용 창고(_calcWarehouse)를 우선 사용한다.
-            // 이는 원본 창고값을 바꾸는 것이 아니라, 창고 각인이 없는 재고상품에만 01창고 연산룰을 적용하기 위한 계산 컨텍스트다.
-            const whCode = String(context['_calcWarehouse'] ?? context['창고'] ?? '').trim();
-            const unitStr = String(context['_calcUnit'] ?? context['단위'] ?? '').trim().toLowerCase();
-
-            const matchWh = (ruleWh, targetWh) => {
-                if (!ruleWh || ruleWh === '*') return true;
-                const targets = String(ruleWh).split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean);
-                return targets.some(s => s === targetWh || (targetWh !== '' && !isNaN(s) && !isNaN(targetWh) && Number(s) === Number(targetWh)));
-            };
-
-            const matchUnit = (ruleUnit, targetUnit) => {
-                if (!ruleUnit || ruleUnit === '*') return true;
-                const targets = String(ruleUnit).toLowerCase().split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean);
-                return targets.some(s => targetUnit === s || targetUnit.includes(s));
-            };
-
-            let bestRule = null;
-            let bestScore = -1;
-            const safeRules = Array.isArray(marginRules) ? marginRules : [];
-            safeRules.forEach(rule => {
-                if (matchWh(rule.whCode, whCode) && matchUnit(rule.unit, unitStr)) {
-                    let score = 0;
-                    if (rule.whCode && rule.whCode !== '*') score += 2;
-                    if (rule.unit && rule.unit !== '*') score += 1;
-                    if (score > bestScore) {
-                        bestScore = score;
-                        bestRule = rule;
-                    }
-                }
-            });
-
-            const applied = bestRule || { rate: 20, type: 'divide' };
-            let calc = 0;
-            if (applied.type === 'divide') {
-                calc = totalCost / (1 - (parseNum(applied.rate) / 100));
-            } else {
-                calc = totalCost * (1 + (parseNum(applied.rate) / 100));
-            }
-            return Math.round(calc / 100) * 100;
-        };
-
-        const ExportApp = () => {
-            const [masterProducts, setMasterProducts] = useState({});
-            const [reviewRows, setReviewRows] = useState([]);
-            const [marginRules] = useState(() => safeJSONParse('merchMarginRules_v878', [{ id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }]));
-            const [activeIssue, setActiveIssue] = useState('all');
-            const [sortMode, setSortMode] = useState('category');
-            const [searchInput, setSearchInput] = useState('');
-            const [searchTerm, setSearchTerm] = useState('');
-            const [isProcessing, setIsProcessing] = useState(false);
-            const [toast, setToast] = useState('');
-            const [bulkTheme, setBulkTheme] = useState(1);
-
-            const showToast = useCallback((msg) => {
-                setToast(msg);
-                setTimeout(() => setToast(''), 3000);
-            }, []);
-
-            useEffect(() => {
-                const timer = setTimeout(() => setSearchTerm(searchInput.trim()), 250);
-                return () => clearTimeout(timer);
-            }, [searchInput]);
-
-            useEffect(() => {
-                // ============================================================
-                // [E-FLOW-01] 출력검증센터 데이터 로드
-                // 역할: merch_export_draft만 작업 대상으로 읽고, 해당 code에 대해서만 masterProducts를 기준정보로 참조한다.
-                // 금지: master_products 전체를 reviewRows 작업대상으로 전환하지 않는다.
-                // ============================================================
-                const loadData = async () => {
-                    setIsProcessing(true);
-                    try {
-                        const items = await getAllIDB('master_products');
-                        const masterDict = {};
-                        items.forEach(i => { if (i && i.코드) masterDict[i.코드] = i; });
-                        setMasterProducts(masterDict);
-
-                        const rawDraft = await getIDB('merch_export_draft') || [];
-                        const exportDraft = Array.isArray(rawDraft) ? rawDraft : [];
-
-                        const rows = exportDraft.map(draft => {
-                            const code = draft.코드;
-                            const working = draft.working || draft || {};
-                            const baseline = draft.baselineSnapshot || {};
-                            const source = draft.source || {};
-                            // MerchOps v2.0.2부터 purchase/sales source가 전달된다.
-                            // 출력센터는 sources 전체를 작업대상으로 쓰지 않고, working 값과 source 메타만 참조한다.
-                            const master = masterDict[code] || {};
-
-                            const 기준입고가 = parseNum(master['입고가'] ?? baseline.기준입고가 ?? 0);
-                            const 기준출고가 = parseNum(master['출고가'] ?? baseline.기준출고가 ?? 0);
-                            const 기준시중가 = parseNum(master['시중가'] ?? baseline.기준시중가 ?? 0);
-                            const 기준판매여부 = String(master['판매여부'] ?? baseline.기준판매여부 ?? '-');
-
-                            const 입고가 = parseNum(working.입고가);
-                            const 불러온출고가 = parseNum(working.출고가);
-                            const 산출출고가 = calculateReviewOutPrice(입고가, { ...master, ...working }, marginRules);
-                            const 출고가 = 불러온출고가 > 0 ? 불러온출고가 : 산출출고가;
-                            const 행사가 = parseNum(working.행사가);
-                            const calcWarehouse = working._calcWarehouse || '';
-                            const calcWarehouseReason = working._calcWarehouseReason || '';
-                            const rawStock = working.재고수량;
-                            const 재고수량 = (rawStock !== undefined && rawStock !== null && rawStock !== '') ? parseNum(rawStock) : 999;
-
-                            return {
-                                코드: code,
-                                품목명: working.품목명 || master['품목명'] || '',
-                                규격: working.규격 || master['규격'] || '',
-                                브랜드: working.브랜드 || master['브랜드'] || '',
-                                간단설명: working.간단설명 || master['간단설명'] || '',
-                                카테고리: working.카테고리 || master['견적서'] || master['카테고리'] || '일반 상품목록',
-                                검색어등록: working.검색어등록 || master['검색어등록'] || '',
-                                기준입고가,
-                                기준출고가,
-                                기준시중가,
-                                기준판매여부,
-                                // 기준판매여부는 참고값이다. 최종 판매여부는 getSaleState()에서 출고가/행사가 기준으로 다시 판정한다.
-                                판매여부: working.판매여부 !== undefined && working.판매여부 !== '' ? working.판매여부 : 기준판매여부,
-                                _salesStopRequested: working._salesStopRequested === true,
-                                창고: working.창고 || master['창고'] || '',
-                                단위: working.단위 || master['단위'] || '',
-                                _calcWarehouse: calcWarehouse,
-                                _calcWarehouseReason: calcWarehouseReason,
-                                입고가,
-                                출고가,
-                                행사가,
-                                // ERP 단가: 기존 내부 필드 도매A/도매B는 ERP 출력 시 A판매/B판매로 명칭만 변경한다.
-                                // 값은 견적서 원본값을 그대로 보존하고, 쇼핑몰 B판매가/B도매가와 혼용하지 않는다.
-                                A판매: parseNum(working.A판매 ?? working['A판매'] ?? working.도매A ?? master['A판매'] ?? master['도매A']),
-                                B판매: parseNum(working.B판매 ?? working['B판매'] ?? working.도매B ?? master['B판매'] ?? master['도매B']),
-                                도매A: parseNum(working.도매A ?? working.A판매 ?? master['도매A'] ?? master['A판매']),
-                                도매B: parseNum(working.도매B ?? working.B판매 ?? master['도매B'] ?? master['B판매']),
-                                // 쇼핑몰 단가: 일반유저용 B판매가와 유통사용 B도매가는 별도 필드로 관리한다.
-                                B판매가: parseNum(working.B판매가 ?? working['B판매가'] ?? working['B 판매가'] ?? master['B판매가'] ?? master['B 판매가']),
-                                B도매가: parseNum(working.B도매가 ?? working['B도매가'] ?? working['B 도매가'] ?? master['B도매가'] ?? master['B 도매가']),
-                                시중가: parseNum(working.시중가 || 기준시중가),
-                                입고B: parseNum(working.입고B),
-                                '1종코드': working['1종코드'] || master['1종코드'] || '',
-                                '1종규격': working['1종규격'] || master['1종규격'] || '',
-                                '1종연산': parseNum(working['1종연산'] ?? master['1종연산']),
-                                '경비': parseNum(working['경비'] ?? master['경비']),
-                                '외주비': parseNum(working['외주비'] ?? master['외주비']),
-                                '노무비': parseNum(working['노무비'] ?? master['노무비']),
-                                재고수량,
-                                테마1: parseNum(working.테마1) === 1 || parseNum(working._theme) === 1 ? '1' : '',
-                                테마2: parseNum(working.테마2) === 1 || parseNum(working._theme) === 2 ? '1' : '',
-                                테마3: parseNum(working.테마3) === 1 || parseNum(working._theme) === 3 ? '1' : '',
-                                테마4: parseNum(working.테마4) === 1 || parseNum(working._theme) === 4 ? '1' : '',
-                                테마5: parseNum(working.테마5) === 1 || parseNum(working._theme) === 5 ? '1' : '',
-                                promoTheme: normalizeThemeNo(working.promoTheme || working._theme) || getThemeNoFromFlags(working),
-                                source
-                            };
-                        }).filter(row => row.코드);
-
-                        setReviewRows(rows);
-                    } catch (e) {
-                        console.error('[Export Center Load Error]', e);
-                        showToast('❌ 출력검증센터 데이터 로드 중 오류가 발생했습니다.');
-                    } finally {
-                        setIsProcessing(false);
-                    }
-                };
-                loadData();
-            }, [showToast, marginRules]);
-
-            // ============================================================
-            // [E-FLOW-02] 검증센터 단가/작업값 수정
-            // 역할: 입고가/출고가/행사가 수정 시 작업값을 즉시 갱신한다.
-            // 정책: 입고가·외주비·노무비 변경 시 출고가를 자동 재계산하고, 행사가가 있으면 출력 적용가만 행사가가 우선한다.
-            // ============================================================
-            const handleEdit = useCallback((code, field, value) => {
-                setReviewRows(prev => prev.map(row => {
-                    if (row.코드 !== code) return row;
-
-                    const next = { ...row, [field]: value };
-
-                    if (field === '입고가' || field === '외주비' || field === '노무비') {
-                        const numericValue = parseNum(value);
-                        next[field] = numericValue;
-                        const calcContext = { ...row, ...next };
-                        next.출고가 = calculateReviewOutPrice(parseNum(next.입고가), calcContext, marginRules);
-                    } else if (field === '행사가') {
-                        next.행사가 = parseNum(value);
-                    } else if (field === '출고가') {
-                        next.출고가 = parseNum(value);
-                    } else if (field === '재고수량') {
-                        next.재고수량 = parseNum(value);
-                    }
-
-                    return next;
-                }));
-            }, [marginRules]);
-
-            const analysis = useMemo(() => {
-                const result = { total: reviewRows.length, up: 0, down: 0, promo: 0, soldout: 0, stopped: 0, inactive: 0, anomaly: 0, margin: 0, newItem: 0, lowStock: 0 };
-                reviewRows.forEach(row => {
-                    const sale = getSaleState(row);
-                    const { diff } = getDiffInfo(row);
-                    if (parseNum(row.기준입고가) > 0 && diff > 0) result.up++;
-                    if (parseNum(row.기준입고가) > 0 && diff < 0) result.down++;
-                    if (parseNum(row.행사가) > 0) result.promo++;
-                    if (sale.label === '품절') result.soldout++;
-                    if (sale.label === '정지') result.stopped++;
-                    if (sale.label === '품절' || sale.label === '정지') result.inactive++;
-                    if (isBigChange(row)) result.anomaly++;
-                    if (isMarginWarning(row)) result.margin++;
-                    if (isNewItem(row)) result.newItem++;
-                    if (isLowStock(row)) result.lowStock++;
-                });
-                return result;
-            }, [reviewRows]);
-
-            const issueCards = useMemo(() => ([
-                { key: 'all', label: '전체', count: analysis.total, icon: 'fa-list-check', cls: 'border-slate-200 bg-slate-50 text-slate-700' },
-                { key: 'promo', label: '행사', count: analysis.promo, icon: 'fa-bullhorn', cls: 'border-purple-200 bg-purple-50 text-purple-700' },
-                { key: 'anomaly', label: '큰변동', count: analysis.anomaly, icon: 'fa-triangle-exclamation', cls: 'border-amber-200 bg-amber-50 text-amber-700' },
-                { key: 'margin', label: '역마진', count: analysis.margin, icon: 'fa-circle-exclamation', cls: 'border-red-300 bg-red-50 text-red-700' },
-                { key: 'inactive', label: '정지/품절', count: analysis.inactive, icon: 'fa-ban', cls: 'border-slate-300 bg-slate-100 text-slate-700' }
-            ]), [analysis]);
-
-            const filteredRows = useMemo(() => {
-                let rows = reviewRows.filter(row => {
-                    const sale = getSaleState(row);
-                    const { diff } = getDiffInfo(row);
-                    switch (activeIssue) {
-                        case 'up': return parseNum(row.기준입고가) > 0 && diff > 0;
-                        case 'down': return parseNum(row.기준입고가) > 0 && diff < 0;
-                        case 'promo': return parseNum(row.행사가) > 0;
-                        case 'soldout': return sale.label === '품절';
-                        case 'stopped': return sale.label === '정지';
-                        case 'inactive': return sale.label === '정지' || sale.label === '품절';
-                        case 'anomaly': return isBigChange(row);
-                        case 'digit': return isDigitSuspicion(row);
-                        case 'margin': return isMarginWarning(row);
-                        case 'new': return isNewItem(row);
-                        case 'lowstock': return isLowStock(row);
-                        default: return true;
-                    }
-                });
-
-                const terms = searchTerm.toLowerCase().split(/\s+/).map(s => s.trim()).filter(Boolean);
-                if (terms.length > 0) {
-                    rows = rows.filter(row => {
-                        const haystack = [
-                            row.코드, row.품목명, row.규격, row.브랜드, row.카테고리,
-                            row.간단설명, row.검색어등록, row.source?.sourceType,
-                            row.source?.hasPurchase ? '구매 purchase 매입' : '',
-                            row.source?.hasSales ? '판매 sales 매출' : '',
-                            row.source?.hasInventory ? '재고 inventory' : '',
-                            row.source?.hasEstimate ? '견적 estimate 시세' : '',
-                            ...(row.source?.tags || [])
-                        ].join(' ').toLowerCase();
-                        return terms.every(term => haystack.includes(term));
-                    });
-                }
-
-                const sorted = [...rows];
-                const byCategory = (a, b) => String(a.카테고리 || '').localeCompare(String(b.카테고리 || ''), 'ko') || String(a.품목명 || '').localeCompare(String(b.품목명 || ''), 'ko');
-                if (sortMode === 'stockAsc') sorted.sort((a, b) => parseNum(a.재고수량) - parseNum(b.재고수량) || byCategory(a, b));
-                else if (sortMode === 'diffRateDesc') sorted.sort((a, b) => Math.abs(getDiffInfo(b).rate) - Math.abs(getDiffInfo(a).rate));
-                else if (sortMode === 'diffAbsDesc') sorted.sort((a, b) => Math.abs(getDiffInfo(b).diff) - Math.abs(getDiffInfo(a).diff));
-                else if (sortMode === 'inPriceDesc') sorted.sort((a, b) => parseNum(b.입고가) - parseNum(a.입고가));
-                else if (sortMode === 'outPriceDesc') sorted.sort((a, b) => getAppliedPrice(b) - getAppliedPrice(a));
-                else sorted.sort(byCategory);
-                return sorted;
-            }, [reviewRows, activeIssue, searchTerm, sortMode]);
-
-            const resetFilters = useCallback(() => {
-                setActiveIssue('all');
-                setSortMode('category');
-                setSearchInput('');
-                setSearchTerm('');
-            }, []);
-
-            const handleCardClick = useCallback((key) => {
-                setActiveIssue(key);
-                if (key === 'lowstock') setSortMode('stockAsc');
-                else if (key === 'anomaly') setSortMode('diffRateDesc');
-                else if (key === 'margin') setSortMode('diffAbsDesc');
-                else setSortMode('category');
-            }, []);
-
-            // ============================================================
-            // [E-ACTION-01] 현재 표시 상품 테마 일괄 지정
-            // 역할: MerchOps 필터/검색으로 선별해 F9 전달된 상품을 한 번에 테마1~5로 지정한다.
-            // 정책: 테마값은 작업값이며, 행사가가 0이면 엑셀 출력 시 테마 열은 비워진다.
-            // ============================================================
-            const handleBulkThemeApply = useCallback(() => {
-                const themeNo = normalizeThemeNo(bulkTheme);
-                if (!themeNo) return showToast('⚠️ 테마1~테마5 중 하나를 선택하세요.');
-                if (!filteredRows || filteredRows.length === 0) return showToast('⚠️ 현재 표시된 상품이 없습니다.');
-                const targetCodes = new Set(filteredRows.map(row => row.코드));
-                let appliedCount = 0;
-                let promoCount = 0;
-                setReviewRows(prev => prev.map(row => {
-                    if (!targetCodes.has(row.코드)) return row;
-                    appliedCount++;
-                    if (parseNum(row.행사가) > 0) promoCount++;
+                const items = await getAllIDB('master_products');
+                const masterDict = {};
+                items.forEach(i => { if (i && i.코드)
+                    masterDict[i.코드] = i; });
+                setMasterProducts(masterDict);
+                const rawDraft = await getIDB('merch_export_draft') || [];
+                const exportDraft = Array.isArray(rawDraft) ? rawDraft : [];
+                const rows = exportDraft.map(draft => {
+                    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9;
+                    const code = draft.코드;
+                    const working = draft.working || draft || {};
+                    const baseline = draft.baselineSnapshot || {};
+                    const source = draft.source || {};
+                    // MerchOps v2.0.2부터 purchase/sales source가 전달된다.
+                    // 출력센터는 sources 전체를 작업대상으로 쓰지 않고, working 값과 source 메타만 참조한다.
+                    const master = masterDict[code] || {};
+                    const 기준입고가 = parseNum((_b = (_a = master['입고가']) !== null && _a !== void 0 ? _a : baseline.기준입고가) !== null && _b !== void 0 ? _b : 0);
+                    const 기준출고가 = parseNum((_d = (_c = master['출고가']) !== null && _c !== void 0 ? _c : baseline.기준출고가) !== null && _d !== void 0 ? _d : 0);
+                    const 기준시중가 = parseNum((_f = (_e = master['시중가']) !== null && _e !== void 0 ? _e : baseline.기준시중가) !== null && _f !== void 0 ? _f : 0);
+                    const 기준판매여부 = String((_h = (_g = master['판매여부']) !== null && _g !== void 0 ? _g : baseline.기준판매여부) !== null && _h !== void 0 ? _h : '-');
+                    const 입고가 = parseNum(working.입고가);
+                    const 불러온출고가 = parseNum(working.출고가);
+                    const 산출출고가 = calculateReviewOutPrice(입고가, { ...master, ...working }, marginRules);
+                    const 출고가 = 불러온출고가 > 0 ? 불러온출고가 : 산출출고가;
+                    const 행사가 = parseNum(working.행사가);
+                    const calcWarehouse = working._calcWarehouse || '';
+                    const calcWarehouseReason = working._calcWarehouseReason || '';
+                    const rawStock = working.재고수량;
+                    const 재고수량 = (rawStock !== undefined && rawStock !== null && rawStock !== '') ? parseNum(rawStock) : 999;
                     return {
-                        ...row,
-                        promoTheme: themeNo,
-                        테마1: themeNo === 1 ? '1' : '',
-                        테마2: themeNo === 2 ? '1' : '',
-                        테마3: themeNo === 3 ? '1' : '',
-                        테마4: themeNo === 4 ? '1' : '',
-                        테마5: themeNo === 5 ? '1' : ''
+                        코드: code,
+                        품목명: working.품목명 || master['품목명'] || '',
+                        규격: working.규격 || master['규격'] || '',
+                        브랜드: working.브랜드 || master['브랜드'] || '',
+                        간단설명: working.간단설명 || master['간단설명'] || '',
+                        카테고리: working.카테고리 || master['견적서'] || master['카테고리'] || '일반 상품목록',
+                        검색어등록: working.검색어등록 || master['검색어등록'] || '',
+                        기준입고가,
+                        기준출고가,
+                        기준시중가,
+                        기준판매여부,
+                        // 기준판매여부는 참고값이다. 최종 판매여부는 getSaleState()에서 출고가/행사가 기준으로 다시 판정한다.
+                        판매여부: working.판매여부 !== undefined && working.판매여부 !== '' ? working.판매여부 : 기준판매여부,
+                        _salesStopRequested: working._salesStopRequested === true,
+                        창고: working.창고 || master['창고'] || '',
+                        단위: working.단위 || master['단위'] || '',
+                        _calcWarehouse: calcWarehouse,
+                        _calcWarehouseReason: calcWarehouseReason,
+                        입고가,
+                        출고가,
+                        행사가,
+                        // ERP 단가: 기존 내부 필드 도매A/도매B는 ERP 출력 시 A판매/B판매로 명칭만 변경한다.
+                        // 값은 견적서 원본값을 그대로 보존하고, 쇼핑몰 B판매가/B도매가와 혼용하지 않는다.
+                        A판매: parseNum((_m = (_l = (_k = (_j = working.A판매) !== null && _j !== void 0 ? _j : working['A판매']) !== null && _k !== void 0 ? _k : working.도매A) !== null && _l !== void 0 ? _l : master['A판매']) !== null && _m !== void 0 ? _m : master['도매A']),
+                        B판매: parseNum((_r = (_q = (_p = (_o = working.B판매) !== null && _o !== void 0 ? _o : working['B판매']) !== null && _p !== void 0 ? _p : working.도매B) !== null && _q !== void 0 ? _q : master['B판매']) !== null && _r !== void 0 ? _r : master['도매B']),
+                        도매A: parseNum((_u = (_t = (_s = working.도매A) !== null && _s !== void 0 ? _s : working.A판매) !== null && _t !== void 0 ? _t : master['도매A']) !== null && _u !== void 0 ? _u : master['A판매']),
+                        도매B: parseNum((_x = (_w = (_v = working.도매B) !== null && _v !== void 0 ? _v : working.B판매) !== null && _w !== void 0 ? _w : master['도매B']) !== null && _x !== void 0 ? _x : master['B판매']),
+                        // 쇼핑몰 단가: 일반유저용 B판매가와 유통사용 B도매가는 별도 필드로 관리한다.
+                        B판매가: parseNum((_1 = (_0 = (_z = (_y = working.B판매가) !== null && _y !== void 0 ? _y : working['B판매가']) !== null && _z !== void 0 ? _z : working['B 판매가']) !== null && _0 !== void 0 ? _0 : master['B판매가']) !== null && _1 !== void 0 ? _1 : master['B 판매가']),
+                        B도매가: parseNum((_5 = (_4 = (_3 = (_2 = working.B도매가) !== null && _2 !== void 0 ? _2 : working['B도매가']) !== null && _3 !== void 0 ? _3 : working['B 도매가']) !== null && _4 !== void 0 ? _4 : master['B도매가']) !== null && _5 !== void 0 ? _5 : master['B 도매가']),
+                        시중가: parseNum(working.시중가 || 기준시중가),
+                        입고B: parseNum(working.입고B),
+                        '1종코드': working['1종코드'] || master['1종코드'] || '',
+                        '1종규격': working['1종규격'] || master['1종규격'] || '',
+                        '1종연산': parseNum((_6 = working['1종연산']) !== null && _6 !== void 0 ? _6 : master['1종연산']),
+                        '경비': parseNum((_7 = working['경비']) !== null && _7 !== void 0 ? _7 : master['경비']),
+                        '외주비': parseNum((_8 = working['외주비']) !== null && _8 !== void 0 ? _8 : master['외주비']),
+                        '노무비': parseNum((_9 = working['노무비']) !== null && _9 !== void 0 ? _9 : master['노무비']),
+                        재고수량,
+                        테마1: parseNum(working.테마1) === 1 || parseNum(working._theme) === 1 ? '1' : '',
+                        테마2: parseNum(working.테마2) === 1 || parseNum(working._theme) === 2 ? '1' : '',
+                        테마3: parseNum(working.테마3) === 1 || parseNum(working._theme) === 3 ? '1' : '',
+                        테마4: parseNum(working.테마4) === 1 || parseNum(working._theme) === 4 ? '1' : '',
+                        테마5: parseNum(working.테마5) === 1 || parseNum(working._theme) === 5 ? '1' : '',
+                        promoTheme: normalizeThemeNo(working.promoTheme || working._theme) || getThemeNoFromFlags(working),
+                        source
                     };
-                }));
-                showToast(`✅ 현재 표시 ${appliedCount.toLocaleString()}건에 테마${themeNo} 지정 완료 · 행사 출력대상 ${promoCount.toLocaleString()}건`);
-            }, [bulkTheme, filteredRows, showToast]);
-
-            // ============================================================
-            // [E-OUTPUT-02] 최종 마스터 반영 + 통합 엑셀 출력
-            // 역할: reviewRows를 기준으로 마스터를 갱신하고 쇼핑몰업로드/ERP업데이트 시트를 생성한다.
-            // 주의: 엑셀만 출력은 추적성이 떨어져 제외한다. 소분품목은 원물과 별도 행으로 건수에 포함한다.
-            // ============================================================
-            const handleExportExcel = useCallback(() => {
-                if (reviewRows.length === 0) return showToast('⚠️ 출력할 데이터가 없습니다.');
-                if (analysis.margin > 0 || analysis.anomaly > 0) {
-                    if (!window.confirm(`역마진 ${analysis.margin}건, 큰변동 ${analysis.anomaly}건이 있습니다.\n관리자 확인 후 마스터에 반영하고 엑셀을 출력하시겠습니까?`)) return;
-                }
-                setIsProcessing(true);
-                showToast('⏳ 마스터 반영 및 통합 엑셀 조립 중...');
-
-                setTimeout(async () => {
-                    try {
-                        if (!window.XLSX) throw new Error('엑셀 라이브러리 없음');
-                        const newMaster = { ...masterProducts };
-                        const updatedItems = [];
-
-                        reviewRows.forEach(item => {
-                            const code = item.코드;
-                            const sale = getSaleState(item);
-                            const mItem = { ...(newMaster[code] || { 코드: code }) };
-                            mItem['품목명'] = item.품목명;
-                            mItem['규격'] = item.규격;
-                            mItem['입고가'] = parseNum(item.입고가);
-                            mItem['출고가'] = parseNum(item.출고가);
-                            mItem['행사가'] = parseNum(item.행사가);
-                            mItem['입고B'] = parseNum(item.입고B);
-                            mItem['1종코드'] = item['1종코드'] || mItem['1종코드'] || '';
-                            mItem['1종규격'] = item['1종규격'] || mItem['1종규격'] || '';
-                            mItem['1종연산'] = parseNum(item['1종연산']);
-                            mItem['경비'] = parseNum(item['경비']);
-                            mItem['외주비'] = parseNum(item['외주비']);
-                            mItem['노무비'] = parseNum(item['노무비']);
-                            // ERP A판매/B판매은 기존 도매A/도매B 원본값과 호환 저장한다.
-                            mItem['A판매'] = parseNum(item.A판매 ?? item.도매A);
-                            mItem['B판매'] = parseNum(item.B판매 ?? item.도매B);
-                            mItem['도매A'] = parseNum(item.도매A ?? item.A판매);
-                            mItem['도매B'] = parseNum(item.도매B ?? item.B판매);
-                            // 쇼핑몰 B단가는 일반유저/유통사용 필드로 분리한다.
-                            mItem['B판매가'] = parseNum(item.B판매가);
-                            mItem['B도매가'] = parseNum(item.B도매가);
-                            mItem['시중가'] = parseNum(item.시중가);
-                            mItem['재고수량'] = parseNum(item.재고수량);
-                            mItem['판매여부'] = sale.code;
-                            mItem['브랜드'] = item.브랜드 || '';
-                            mItem['간단설명'] = item.간단설명 || '';
-                            mItem['검색어등록'] = item.검색어등록 || '';
-                            const themeFlags = buildThemeFlags(item);
-                            mItem['테마1'] = themeFlags[0];
-                            mItem['테마2'] = themeFlags[1];
-                            mItem['테마3'] = themeFlags[2];
-                            mItem['테마4'] = themeFlags[3];
-                            mItem['테마5'] = themeFlags[4];
-                            mItem['견적서'] = item.카테고리 || mItem['견적서'] || mItem['카테고리'] || '';
-                            updatedItems.push(mItem);
-                            newMaster[code] = mItem;
-                        });
-
-                        await bulkPutIDB('master_products', updatedItems);
-                        setMasterProducts(newMaster);
-                        localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
-
-                        const wb = window.XLSX.utils.book_new();
-                        // ERP와 쇼핑몰은 거래대상이 다르므로 단가 컬럼명을 분리한다.
-                        // ERP: 기존 도매A/도매B 원본값을 A판매/B판매로 출력한다.
-                        // 쇼핑몰: 중복 도매B 컬럼을 B판매가(일반유저) / B도매가(유통사)로 출력한다.
-                        const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', 'A판매', 'n', 'B판매', 'n', '최종(전송)', 'n', '행사', 'n', '1']];
-                        const shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', 'B도매가', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
-
-                        let subOutputCount = 0;
-                        reviewRows.forEach(item => {
-                            const sale = getSaleState(item);
-                            const inPrice = parseNum(item.입고가);
-                            const finalOut = getAppliedPrice(item);
-                            const erpASale = parseNum(item.A판매 ?? item.도매A);
-                            const erpBSale = parseNum(item.B판매 ?? item.도매B);
-                            const shopBPrice = parseNum(item.B판매가);
-                            const shopBWholesale = parseNum(item.B도매가);
-                            const pMarket = parseNum(item.시중가);
-                            const finalStock = parseNum(item.재고수량);
-                            erpData.push([item.코드, inPrice, '0', finalOut, '0', parseNum(item.입고B)||'', 'n', erpASale||'', 'n', erpBSale||'', 'n', inPrice, 'n', parseNum(item.행사가)||'', 'n', sale.code]);
-                            const themeFlags = buildThemeFlags(item);
-                            shopData.push([item.코드, item.품목명, item.규격, finalOut, (erpASale>0?erpASale:finalOut), (pMarket>0?pMarket:finalOut), shopBPrice||'', shopBWholesale||'', 0, 0, 0, 0, item.브랜드||'', item.간단설명||'', sale.code, finalStock, ...themeFlags, item.검색어등록||'']);
-
-                            const subInfo = calculateSubPriceInfo(item);
-                            if (subInfo) {
-                                // 소분품목은 원물 행과 별도 출력물로 취급한다. ERP와 쇼핑몰업로드 모두 행 수가 증가해야 한다.
-                                erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', subInfo.subIn, 'n', '', 'n', sale.code]);
-                                const subShopRow = buildSubShopRow(item, subInfo, masterProducts, sale);
-                                if (subShopRow) shopData.push(subShopRow);
-                                subOutputCount++;
-                            }
-                        });
-
-                        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shopData), '쇼핑몰업로드');
-                        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), 'ERP업데이트');
-                        window.XLSX.writeFile(wb, `통합업로드용_Export_${new Date().toISOString().slice(0,10)}.xlsx`);
-                        showToast(`✅ 원물 ${reviewRows.length}건 + 소분 ${subOutputCount}건 = 총 ${reviewRows.length + subOutputCount}건 엑셀 다운로드 완료`);
-                    } catch (e) {
-                        console.error('[Export Excel Error]', e);
-                        showToast('❌ 엑셀 파일 생성 중 오류가 발생했습니다.');
-                    } finally {
-                        setIsProcessing(false);
-                    }
-                }, 300);
-            }, [reviewRows, masterProducts, analysis, showToast]);
-
-            // ============================================================
-            // [E-OUTPUT-03] 이미지 출력 데이터 브릿지
-            // 역할: reviewRows를 이미지 생성기가 읽는 ONEAPP_IMAGE_DATA_TEMP 구조로 변환한다.
-            // 주의: 이미지 가격은 최종 적용 가격 기준이며, 정지 상품은 제외한다.
-            // ============================================================
-            const handleImageExport = useCallback(() => {
-                if (reviewRows.length === 0) return showToast('⚠️ 이미지로 보낼 데이터가 없습니다.');
-                setIsProcessing(true);
-                setTimeout(async () => {
-                    try {
-                        const grouped = {};
-                        reviewRows.forEach(item => {
-                            const sale = getSaleState(item);
-                            if (sale.label === '정지') return;
-                            const title = item.카테고리 ? String(item.카테고리).split(',')[0].trim() : '일반 상품목록';
-                            const fullName = item.규격 ? `${item.품목명} (${item.규격})` : item.품목명;
-                            if (!grouped[title]) grouped[title] = [];
-                            grouped[title].push({ name: fullName, price: getAppliedPrice(item), prevPrice: parseNum(item.기준출고가) });
-                        });
-                        const exportData = Object.keys(grouped).map(title => ({ title: `📌 ${title}`, items: grouped[title] }));
-                        await setIDB('ONEAPP_IMAGE_DATA_TEMP', JSON.stringify(exportData));
-                        showToast('✅ 이미지 데이터 생성 완료. 이미지 뷰어 탭을 확인하세요.');
-                    } catch (e) {
-                        console.error('[Image Export Error]', e);
-                        showToast('❌ 이미지 데이터 준비 중 오류 발생');
-                    } finally {
-                        setIsProcessing(false);
-                    }
-                }, 250);
-            }, [reviewRows, showToast]);
-
-            useEffect(() => {
-                const handleKeyDown = (e) => {
-                    const tag = document.activeElement?.tagName;
-                    const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag);
-                    if (e.key === 'F9') {
-                        e.preventDefault();
-                        if (isInput) document.activeElement.blur();
-                        if (!isProcessing) handleExportExcel();
-                    } else if (e.key === 'F10') {
-                        e.preventDefault();
-                        if (isInput) document.activeElement.blur();
-                        if (!isProcessing) handleImageExport();
-                    }
-                };
-                window.addEventListener('keydown', handleKeyDown);
-                return () => window.removeEventListener('keydown', handleKeyDown);
-            }, [isProcessing, handleExportExcel, handleImageExport]);
-
-            return (
-                <div className="flex h-screen overflow-hidden bg-slate-100 fade-in">
-                    {toast && (
-                        <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-[1000] bg-slate-800 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 text-sm font-bold transition-all">
-                            <i className="fas fa-check-circle text-emerald-400"></i>{toast}
-                        </div>
-                    )}
-
-                    <div className="w-[260px] bg-[#0f172a] flex flex-col text-slate-300 shadow-xl z-10 shrink-0 h-full">
-                        <div className="p-6 border-b border-slate-800 bg-[#0b1120] shrink-0">
-                            <h1 className="text-xl font-black text-emerald-400 tracking-tight flex items-center">
-                                <i className="fas fa-shield-alt mr-3"></i>출력검증센터
-                            </h1>
-                            <p className="text-[10px] text-slate-500 mt-2 font-bold uppercase tracking-widest">Export Verify Center</p>
-                        </div>
-                        <div className="flex flex-col py-4 gap-1 px-3 flex-1">
-                            <div className="px-4 py-3.5 rounded-xl text-left text-[13px] font-bold bg-slate-800/50 text-emerald-400 border border-emerald-900/30 shadow-md flex items-center">
-                                <i className="fas fa-list-check w-5 text-center mr-2"></i> 이슈별 모아보기
-                            </div>
-                            <div className="px-4 py-3 text-[11px] leading-relaxed text-slate-400">
-                                작업 대상은 메인에서 전달된 <b className="text-slate-200">merch_export_draft</b> 기준입니다. 마스터 전체는 작업 대상으로 사용하지 않습니다.
-                            </div>
-                        </div>
-                        <div className="p-6 border-t border-slate-800 shrink-0">
-                            <button onClick={() => window.location.href = 'MerchOps.html'} className="w-full py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[13px] font-bold transition-colors">
-                                <i className="fas fa-arrow-left mr-2"></i> 메인으로 돌아가기
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="flex-1 flex flex-col overflow-hidden">
-                        <div className="bg-white p-5 border-b border-slate-200 shadow-sm shrink-0 z-10">
-                            <div className="flex items-center justify-between mb-4">
-                                <h2 className="text-xl font-black text-slate-800 flex items-center">
-                                    <i className="fas fa-layer-group text-indigo-500 mr-2"></i>이슈 카드뷰
-                                </h2>
-                                <div className="text-[12px] text-slate-500 font-bold">표시 {filteredRows.length.toLocaleString()}건 / 전체 {reviewRows.length.toLocaleString()}건 · 필터 후 테마 일괄지정 가능</div>
-                            </div>
-
-                            <div className="grid grid-cols-5 gap-2 mb-4">
-                                {issueCards.map(card => (
-                                    <button key={card.key} onClick={() => handleCardClick(card.key)} className={`border p-3 rounded-xl flex flex-col items-center shadow-sm transition-all hover:shadow-md ${card.cls} ${activeIssue === card.key ? 'ring-2 ring-slate-700 scale-[1.02]' : ''}`}>
-                                        <span className="text-[11px] font-black mb-1 flex items-center"><i className={`fas ${card.icon} mr-1`}></i>{card.label}</span>
-                                        <span className="text-xl font-black">{card.count.toLocaleString()}</span>
-                                    </button>
-                                ))}
-                            </div>
-
-                            <div className="flex items-center gap-3">
-                                <div className="relative flex-1 max-w-xl">
-                                    <i className="fas fa-search absolute left-3 top-2.5 text-slate-400 text-[13px]"></i>
-                                    <input value={searchInput} onChange={(e) => setSearchInput(e.target.value)} placeholder="코드 / 품목명 / 규격 / 브랜드 / 카테고리 검색 · 예: 양파 15kg" className="w-full h-9 pl-9 pr-3 border border-slate-300 rounded-lg text-[12px] font-bold outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100" />
-                                </div>
-                                <select value={sortMode} onChange={(e) => setSortMode(e.target.value)} className="h-9 px-3 border border-slate-300 rounded-lg text-[12px] font-bold text-slate-700 bg-white outline-none">
-                                    <option value="category">카테고리순</option>
-                                    <option value="stockAsc">재고수량 오름차순</option>
-                                    <option value="diffRateDesc">변동률 큰 순</option>
-                                    <option value="diffAbsDesc">차액 큰 순</option>
-                                    <option value="inPriceDesc">입고가 높은 순</option>
-                                    <option value="outPriceDesc">출고가 높은 순</option>
-                                </select>
-                                <select value={bulkTheme} onChange={(e) => setBulkTheme(e.target.value)} className="h-9 px-3 border border-purple-200 rounded-lg text-[12px] font-black text-purple-700 bg-purple-50 outline-none">
-                                    <option value="1">테마1</option>
-                                    <option value="2">테마2</option>
-                                    <option value="3">테마3</option>
-                                    <option value="4">테마4</option>
-                                    <option value="5">테마5</option>
-                                </select>
-                                <button onClick={handleBulkThemeApply} className="h-9 px-4 rounded-lg bg-purple-600 text-white border border-purple-600 text-[12px] font-black hover:bg-purple-700">
-                                    <i className="fas fa-tags mr-1.5"></i>현재 표시 전체 테마지정
-                                </button>
-                                <button onClick={resetFilters} className="h-9 px-4 rounded-lg bg-slate-100 text-slate-600 border border-slate-300 text-[12px] font-black hover:bg-slate-200">
-                                    <i className="fas fa-rotate-left mr-1.5"></i>필터 초기화
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="flex-1 p-5 overflow-hidden flex flex-col">
-                            <div className="flex items-center justify-between mb-3">
-                                <h3 className="font-bold text-slate-700 text-[14px]"><i className="fas fa-edit mr-2 text-emerald-500"></i>최종 퀵 수정 & 안전 점검표</h3>
-                                <div className="flex items-center gap-3 text-[11px] text-slate-500 font-bold">
-                                    <span className="bg-white px-2 py-1 rounded border border-slate-200 shadow-sm"><span className="text-purple-500">■</span> 행사가가 있으면 출력 적용가 우선</span>
-                                    <span className="bg-white px-2 py-1 rounded border border-slate-200 shadow-sm"><span className="text-teal-500">■</span> 재고적음은 재고수량 오름차순</span>
-                                </div>
-                            </div>
-
-                            <div className="flex-1 bg-white border border-slate-200 rounded-xl overflow-auto custom-scrollbar shadow-sm">
-                                <table className="w-full text-left text-[13px] whitespace-nowrap">
-                                    <thead className="bg-[#f8fafc] sticky top-0 border-b border-slate-200 text-slate-600 z-10 shadow-sm">
-                                        <tr>
-                                            <th className="px-3 py-3 w-16 text-center font-bold">검증</th>
-                                            <th className="px-3 py-3 w-24 font-bold">코드</th>
-                                            <th className="px-3 py-3 w-28 font-bold">카테고리</th>
-                                            <th className="px-3 py-3 font-bold">품목명 (규격)</th>
-                                            <th className="px-3 py-3 w-24 text-right font-bold text-slate-500">(M)입고가</th>
-                                            <th className="px-3 py-3 w-24 text-right font-bold text-indigo-600">입고가</th>
-                                            <th className="px-3 py-3 w-24 text-right font-bold text-rose-600">출고가</th>
-                                            <th className="px-3 py-3 w-20 text-right font-bold text-purple-600">행사가</th>
-                                            <th className="px-3 py-3 w-20 text-center font-bold">재고</th>
-                                            <th className="px-3 py-3 w-24 text-center font-bold">테마</th>
-                                            <th className="px-3 py-3 w-24 text-center font-bold">상태</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {filteredRows.length === 0 ? (
-                                            <tr><td colSpan="11" className="p-10 text-center text-slate-400 font-bold">표시할 데이터가 없습니다.</td></tr>
-                                        ) : filteredRows.map(item => {
-                                            const sale = getSaleState(item);
-                                            const promo = parseNum(item.행사가) > 0;
-                                            const margin = isMarginWarning(item);
-                                            const anomaly = isBigChange(item);
-                                            const { diff, rate } = getDiffInfo(item);
-                                            return (
-                                                <tr key={item.코드} className={`transition-colors ${margin || anomaly ? 'bg-rose-50/50' : 'hover:bg-slate-50'}`}>
-                                                    <td className="px-3 py-2 text-center">
-                                                        {margin ? <i className="fas fa-exclamation-triangle text-rose-500" title="역마진"></i> :
-                                                         anomaly ? <i className="fas fa-exclamation-circle text-orange-500" title="큰변동"></i> :
-                                                         sale.label === '품절' ? <span className="w-2.5 h-2.5 rounded-full bg-orange-400 inline-block" title="품절"></span> :
-                                                         sale.label === '정지' ? <span className="w-2.5 h-2.5 rounded-full bg-slate-300 inline-block" title="정지"></span> :
-                                                         <i className="fas fa-check-circle text-emerald-400"></i>}
-                                                    </td>
-                                                    <td className="px-3 py-2 font-mono text-slate-400 text-[11px]">{item.코드}</td>
-                                                    <td className="px-3 py-2 text-[11px] text-slate-500 max-w-[140px] truncate">{item.카테고리}</td>
-                                                    <td className="px-3 py-2 font-bold text-slate-800">
-                                                        {item.품목명} <span className="text-slate-400 font-normal ml-1 text-[11px]">{item.규격 && `(${item.규격})`}</span>
-                                                        {isNewItem(item) && <span className="ml-2 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 text-[10px] font-black">신규</span>}
-                                                        {item.source?.hasEstimate && <span className="ml-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 text-[10px] font-black">견적</span>}
-                                                        {item.source?.hasPurchase && <span className="ml-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 text-[10px] font-black">구매</span>}
-                                                        {item.source?.hasSales && <span className="ml-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 text-[10px] font-black">판매</span>}
-                                                        {item.source?.hasInventory && <span className="ml-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-black">재고</span>}
-                                                    </td>
-                                                    <td className="px-3 py-2 text-right text-slate-400">
-                                                        {fmt(item.기준입고가)}
-                                                        {item.기준입고가 > 0 && <div className={`text-[10px] font-bold ${diff >= 0 ? 'text-rose-400' : 'text-blue-400'}`}>{diff === 0 ? '-' : `${diff > 0 ? '+' : ''}${fmt(diff)} / ${(rate*100).toFixed(1)}%`}</div>}
-                                                    </td>
-                                                    <td className="px-2 py-1 bg-indigo-50/30">
-                                                        <input type="text" value={item.입고가} onChange={(e)=>handleEdit(item.코드, '입고가', e.target.value)} title="입고가 수정 시 출고가가 자동 재계산됩니다." className="w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 px-1 py-1 text-right font-black text-indigo-600 outline-none" />
-                                                    </td>
-                                                    <td className="px-2 py-1 bg-orange-50/30">
-                                                        <input type="text" value={item.출고가} onChange={(e)=>handleEdit(item.코드, '출고가', e.target.value)} title="저장할 기본 출고가입니다. 행사가가 있으면 출력 적용가는 행사가가 우선합니다." className={`w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 rounded-none px-1 py-1 text-right font-black outline-none transition-colors ${margin ? 'text-rose-600' : 'text-slate-800'}`} />
-                                                    </td>
-                                                    <td className="px-3 py-2 text-right">
-                                                        <input type="text" value={item.행사가} onChange={(e)=>handleEdit(item.코드, '행사가', e.target.value)} title="행사가가 있으면 출력 적용가는 행사가가 우선합니다." className="w-20 bg-transparent border-b border-transparent focus:border-purple-400 hover:border-slate-300 px-1 py-1 text-right font-black text-purple-700 outline-none" />
-                                                    </td>
-                                                    <td className="px-2 py-1 bg-slate-50/50">
-                                                        <input type="text" value={item.재고수량} onChange={(e)=>handleEdit(item.코드, '재고수량', e.target.value)} className="w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 px-1 py-1 text-center font-bold text-slate-600 outline-none" />
-                                                    </td>
-                                                    <td className="px-2 py-1 text-center">
-                                                        <select value={item.promoTheme || 0} onChange={(e)=>handleEdit(item.코드, 'promoTheme', e.target.value)} disabled={parseNum(item.행사가) <= 0} className="w-full border border-slate-200 rounded px-1 py-1 text-[12px] font-bold bg-white disabled:bg-slate-50 disabled:text-slate-300 outline-none">
-                                                            <option value="0">-</option>
-                                                            <option value="1">테마1</option>
-                                                            <option value="2">테마2</option>
-                                                            <option value="3">테마3</option>
-                                                            <option value="4">테마4</option>
-                                                            <option value="5">테마5</option>
-                                                        </select>
-                                                    </td>
-                                                    <td className="px-2 py-1 text-center">
-                                                        <span className={`inline-flex items-center justify-center w-full border rounded px-2 py-1 text-[12px] font-black ${sale.cls}`}>{sale.text}</span>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        <div className="bg-white p-6 border-t border-slate-200 shrink-0 flex gap-4 z-20 shadow-[0_-4px_10px_rgba(0,0,0,0.02)]">
-                            <button onClick={handleExportExcel} disabled={isProcessing || reviewRows.length === 0} className="flex-1 py-4 bg-emerald-600 text-white rounded-xl font-black text-[15px] hover:bg-emerald-700 transition-all shadow-md hover:shadow-lg flex justify-center items-center">
-                                <i className="fas fa-save mr-2 text-lg"></i> 마스터 반영 후 엑셀 출력 (F9)
-                            </button>
-                            <button onClick={handleImageExport} disabled={isProcessing || reviewRows.length === 0} className="px-8 py-4 bg-amber-500 text-white rounded-xl font-black text-[15px] hover:bg-amber-600 transition-all shadow-md hover:shadow-lg flex justify-center items-center">
-                                <i className="fas fa-image mr-2 text-lg"></i> 이미지 (F10)
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            );
+                }).filter(row => row.코드);
+                setReviewRows(rows);
+            }
+            catch (e) {
+                console.error('[Export Center Load Error]', e);
+                showToast('❌ 출력검증센터 데이터 로드 중 오류가 발생했습니다.');
+            }
+            finally {
+                setIsProcessing(false);
+            }
         };
+        loadData();
+    }, [showToast, marginRules]);
+    // ============================================================
+    // [E-FLOW-02] 검증센터 단가/작업값 수정
+    // 역할: 입고가/출고가/행사가 수정 시 작업값을 즉시 갱신한다.
+    // 정책: 입고가·외주비·노무비 변경 시 출고가를 자동 재계산하고, 행사가가 있으면 출력 적용가만 행사가가 우선한다.
+    // ============================================================
+    const handleEdit = useCallback((code, field, value) => {
+        setReviewRows(prev => prev.map(row => {
+            if (row.코드 !== code)
+                return row;
+            const next = { ...row, [field]: value };
+            if (field === '입고가' || field === '외주비' || field === '노무비') {
+                const numericValue = parseNum(value);
+                next[field] = numericValue;
+                const calcContext = { ...row, ...next };
+                next.출고가 = calculateReviewOutPrice(parseNum(next.입고가), calcContext, marginRules);
+            }
+            else if (field === '행사가') {
+                next.행사가 = parseNum(value);
+            }
+            else if (field === '출고가') {
+                next.출고가 = parseNum(value);
+            }
+            else if (field === '재고수량') {
+                next.재고수량 = parseNum(value);
+            }
+            return next;
+        }));
+    }, [marginRules]);
+    const analysis = useMemo(() => {
+        const result = { total: reviewRows.length, up: 0, down: 0, promo: 0, soldout: 0, stopped: 0, inactive: 0, anomaly: 0, margin: 0, newItem: 0, lowStock: 0 };
+        reviewRows.forEach(row => {
+            const sale = getSaleState(row);
+            const { diff } = getDiffInfo(row);
+            if (parseNum(row.기준입고가) > 0 && diff > 0)
+                result.up++;
+            if (parseNum(row.기준입고가) > 0 && diff < 0)
+                result.down++;
+            if (parseNum(row.행사가) > 0)
+                result.promo++;
+            if (sale.label === '품절')
+                result.soldout++;
+            if (sale.label === '정지')
+                result.stopped++;
+            if (sale.label === '품절' || sale.label === '정지')
+                result.inactive++;
+            if (isBigChange(row))
+                result.anomaly++;
+            if (isMarginWarning(row))
+                result.margin++;
+            if (isNewItem(row))
+                result.newItem++;
+            if (isLowStock(row))
+                result.lowStock++;
+        });
+        return result;
+    }, [reviewRows]);
+    const issueCards = useMemo(() => ([
+        { key: 'all', label: '전체', count: analysis.total, icon: 'fa-list-check', cls: 'border-slate-200 bg-slate-50 text-slate-700' },
+        { key: 'promo', label: '행사', count: analysis.promo, icon: 'fa-bullhorn', cls: 'border-purple-200 bg-purple-50 text-purple-700' },
+        { key: 'anomaly', label: '큰변동', count: analysis.anomaly, icon: 'fa-triangle-exclamation', cls: 'border-amber-200 bg-amber-50 text-amber-700' },
+        { key: 'margin', label: '역마진', count: analysis.margin, icon: 'fa-circle-exclamation', cls: 'border-red-300 bg-red-50 text-red-700' },
+        { key: 'inactive', label: '정지/품절', count: analysis.inactive, icon: 'fa-ban', cls: 'border-slate-300 bg-slate-100 text-slate-700' }
+    ]), [analysis]);
+    const filteredRows = useMemo(() => {
+        let rows = reviewRows.filter(row => {
+            const sale = getSaleState(row);
+            const { diff } = getDiffInfo(row);
+            switch (activeIssue) {
+                case 'up': return parseNum(row.기준입고가) > 0 && diff > 0;
+                case 'down': return parseNum(row.기준입고가) > 0 && diff < 0;
+                case 'promo': return parseNum(row.행사가) > 0;
+                case 'soldout': return sale.label === '품절';
+                case 'stopped': return sale.label === '정지';
+                case 'inactive': return sale.label === '정지' || sale.label === '품절';
+                case 'anomaly': return isBigChange(row);
+                case 'digit': return isDigitSuspicion(row);
+                case 'margin': return isMarginWarning(row);
+                case 'new': return isNewItem(row);
+                case 'lowstock': return isLowStock(row);
+                default: return true;
+            }
+        });
+        const terms = searchTerm.toLowerCase().split(/\s+/).map(s => s.trim()).filter(Boolean);
+        if (terms.length > 0) {
+            rows = rows.filter(row => {
+                var _a, _b, _c, _d, _e, _f;
+                const haystack = [
+                    row.코드, row.품목명, row.규격, row.브랜드, row.카테고리,
+                    row.간단설명, row.검색어등록,
+                    (_a = row.source) === null || _a === void 0 ? void 0 : _a.sourceType,
+                    ((_b = row.source) === null || _b === void 0 ? void 0 : _b.hasPurchase) ? '구매 purchase 매입' : '',
+                    ((_c = row.source) === null || _c === void 0 ? void 0 : _c.hasSales) ? '판매 sales 매출' : '',
+                    ((_d = row.source) === null || _d === void 0 ? void 0 : _d.hasInventory) ? '재고 inventory' : '',
+                    ((_e = row.source) === null || _e === void 0 ? void 0 : _e.hasEstimate) ? '견적 estimate 시세' : '',
+                    ...(((_f = row.source) === null || _f === void 0 ? void 0 : _f.tags) || [])
+                ].join(' ').toLowerCase();
+                return terms.every(term => haystack.includes(term));
+            });
+        }
+        const sorted = [...rows];
+        const byCategory = (a, b) => String(a.카테고리 || '').localeCompare(String(b.카테고리 || ''), 'ko') || String(a.품목명 || '').localeCompare(String(b.품목명 || ''), 'ko');
+        if (sortMode === 'stockAsc')
+            sorted.sort((a, b) => parseNum(a.재고수량) - parseNum(b.재고수량) || byCategory(a, b));
+        else if (sortMode === 'diffRateDesc')
+            sorted.sort((a, b) => Math.abs(getDiffInfo(b).rate) - Math.abs(getDiffInfo(a).rate));
+        else if (sortMode === 'diffAbsDesc')
+            sorted.sort((a, b) => Math.abs(getDiffInfo(b).diff) - Math.abs(getDiffInfo(a).diff));
+        else if (sortMode === 'inPriceDesc')
+            sorted.sort((a, b) => parseNum(b.입고가) - parseNum(a.입고가));
+        else if (sortMode === 'outPriceDesc')
+            sorted.sort((a, b) => getAppliedPrice(b) - getAppliedPrice(a));
+        else
+            sorted.sort(byCategory);
+        return sorted;
+    }, [reviewRows, activeIssue, searchTerm, sortMode]);
+    const resetFilters = useCallback(() => {
+        setActiveIssue('all');
+        setSortMode('category');
+        setSearchInput('');
+        setSearchTerm('');
+    }, []);
+    const handleCardClick = useCallback((key) => {
+        setActiveIssue(key);
+        if (key === 'lowstock')
+            setSortMode('stockAsc');
+        else if (key === 'anomaly')
+            setSortMode('diffRateDesc');
+        else if (key === 'margin')
+            setSortMode('diffAbsDesc');
+        else
+            setSortMode('category');
+    }, []);
+    // ============================================================
+    // [E-ACTION-01] 현재 표시 상품 테마 일괄 지정
+    // 역할: MerchOps 필터/검색으로 선별해 F9 전달된 상품을 한 번에 테마1~5로 지정한다.
+    // 정책: 테마값은 작업값이며, 행사가가 0이면 엑셀 출력 시 테마 열은 비워진다.
+    // ============================================================
+    const handleBulkThemeApply = useCallback(() => {
+        const themeNo = normalizeThemeNo(bulkTheme);
+        if (!themeNo)
+            return showToast('⚠️ 테마1~테마5 중 하나를 선택하세요.');
+        if (!filteredRows || filteredRows.length === 0)
+            return showToast('⚠️ 현재 표시된 상품이 없습니다.');
+        const targetCodes = new Set(filteredRows.map(row => row.코드));
+        let appliedCount = 0;
+        let promoCount = 0;
+        setReviewRows(prev => prev.map(row => {
+            if (!targetCodes.has(row.코드))
+                return row;
+            appliedCount++;
+            if (parseNum(row.행사가) > 0)
+                promoCount++;
+            return {
+                ...row,
+                promoTheme: themeNo,
+                테마1: themeNo === 1 ? '1' : '',
+                테마2: themeNo === 2 ? '1' : '',
+                테마3: themeNo === 3 ? '1' : '',
+                테마4: themeNo === 4 ? '1' : '',
+                테마5: themeNo === 5 ? '1' : ''
+            };
+        }));
+        showToast(`✅ 현재 표시 ${appliedCount.toLocaleString()}건에 테마${themeNo} 지정 완료 · 행사 출력대상 ${promoCount.toLocaleString()}건`);
+    }, [bulkTheme, filteredRows, showToast]);
+    // ============================================================
+    // [E-OUTPUT-02] 최종 마스터 반영 + 통합 엑셀 출력
+    // 역할: reviewRows를 기준으로 마스터를 갱신하고 쇼핑몰업로드/ERP업데이트 시트를 생성한다.
+    // 주의: 엑셀만 출력은 추적성이 떨어져 제외한다. 소분품목은 원물과 별도 행으로 건수에 포함한다.
+    // ============================================================
+    const handleExportExcel = useCallback(() => {
+        if (reviewRows.length === 0)
+            return showToast('⚠️ 출력할 데이터가 없습니다.');
+        if (analysis.margin > 0 || analysis.anomaly > 0) {
+            if (!window.confirm(`역마진 ${analysis.margin}건, 큰변동 ${analysis.anomaly}건이 있습니다.\n관리자 확인 후 마스터에 반영하고 엑셀을 출력하시겠습니까?`))
+                return;
+        }
+        setIsProcessing(true);
+        showToast('⏳ 마스터 반영 및 통합 엑셀 조립 중...');
+        setTimeout(async () => {
+            try {
+                if (!window.XLSX)
+                    throw new Error('엑셀 라이브러리 없음');
+                const newMaster = { ...masterProducts };
+                const updatedItems = [];
+                reviewRows.forEach(item => {
+                    var _a, _b, _c, _d;
+                    const code = item.코드;
+                    const sale = getSaleState(item);
+                    const mItem = { ...(newMaster[code] || { 코드: code }) };
+                    mItem['품목명'] = item.품목명;
+                    mItem['규격'] = item.규격;
+                    mItem['입고가'] = parseNum(item.입고가);
+                    mItem['출고가'] = parseNum(item.출고가);
+                    mItem['행사가'] = parseNum(item.행사가);
+                    mItem['입고B'] = parseNum(item.입고B);
+                    mItem['1종코드'] = item['1종코드'] || mItem['1종코드'] || '';
+                    mItem['1종규격'] = item['1종규격'] || mItem['1종규격'] || '';
+                    mItem['1종연산'] = parseNum(item['1종연산']);
+                    mItem['경비'] = parseNum(item['경비']);
+                    mItem['외주비'] = parseNum(item['외주비']);
+                    mItem['노무비'] = parseNum(item['노무비']);
+                    // ERP A판매/B판매은 기존 도매A/도매B 원본값과 호환 저장한다.
+                    mItem['A판매'] = parseNum((_a = item.A판매) !== null && _a !== void 0 ? _a : item.도매A);
+                    mItem['B판매'] = parseNum((_b = item.B판매) !== null && _b !== void 0 ? _b : item.도매B);
+                    mItem['도매A'] = parseNum((_c = item.도매A) !== null && _c !== void 0 ? _c : item.A판매);
+                    mItem['도매B'] = parseNum((_d = item.도매B) !== null && _d !== void 0 ? _d : item.B판매);
+                    // 쇼핑몰 B단가는 일반유저/유통사용 필드로 분리한다.
+                    mItem['B판매가'] = parseNum(item.B판매가);
+                    mItem['B도매가'] = parseNum(item.B도매가);
+                    mItem['시중가'] = parseNum(item.시중가);
+                    mItem['재고수량'] = parseNum(item.재고수량);
+                    mItem['판매여부'] = sale.code;
+                    mItem['브랜드'] = item.브랜드 || '';
+                    mItem['간단설명'] = item.간단설명 || '';
+                    mItem['검색어등록'] = item.검색어등록 || '';
+                    const themeFlags = buildThemeFlags(item);
+                    mItem['테마1'] = themeFlags[0];
+                    mItem['테마2'] = themeFlags[1];
+                    mItem['테마3'] = themeFlags[2];
+                    mItem['테마4'] = themeFlags[3];
+                    mItem['테마5'] = themeFlags[4];
+                    mItem['견적서'] = item.카테고리 || mItem['견적서'] || mItem['카테고리'] || '';
+                    updatedItems.push(mItem);
+                    newMaster[code] = mItem;
+                });
+                await bulkPutIDB('master_products', updatedItems);
+                setMasterProducts(newMaster);
+                localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+                const wb = window.XLSX.utils.book_new();
+                // ERP와 쇼핑몰은 거래대상이 다르므로 단가 컬럼명을 분리한다.
+                // ERP: 기존 도매A/도매B 원본값을 A판매/B판매로 출력한다.
+                // 쇼핑몰: 중복 도매B 컬럼을 B판매가(일반유저) / B도매가(유통사)로 출력한다.
+                const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', 'A판매', 'n', 'B판매', 'n', '최종(전송)', 'n', '행사', 'n', '1']];
+                const shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', 'B도매가', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
+                let subOutputCount = 0;
+                reviewRows.forEach(item => {
+                    var _a, _b;
+                    const sale = getSaleState(item);
+                    const inPrice = parseNum(item.입고가);
+                    const finalOut = getAppliedPrice(item);
+                    const erpASale = parseNum((_a = item.A판매) !== null && _a !== void 0 ? _a : item.도매A);
+                    const erpBSale = parseNum((_b = item.B판매) !== null && _b !== void 0 ? _b : item.도매B);
+                    const shopBPrice = parseNum(item.B판매가);
+                    const shopBWholesale = parseNum(item.B도매가);
+                    const pMarket = parseNum(item.시중가);
+                    const finalStock = parseNum(item.재고수량);
+                    erpData.push([item.코드, inPrice, '0', finalOut, '0', parseNum(item.입고B) || '', 'n', erpASale || '', 'n', erpBSale || '', 'n', inPrice, 'n', parseNum(item.행사가) || '', 'n', sale.code]);
+                    const themeFlags = buildThemeFlags(item);
+                    shopData.push([item.코드, item.품목명, item.규격, finalOut, (erpASale > 0 ? erpASale : finalOut), (pMarket > 0 ? pMarket : finalOut), shopBPrice || '', shopBWholesale || '', 0, 0, 0, 0, item.브랜드 || '', item.간단설명 || '', sale.code, finalStock, ...themeFlags, item.검색어등록 || '']);
+                    const subInfo = calculateSubPriceInfo(item);
+                    if (subInfo) {
+                        // 소분품목은 원물 행과 별도 출력물로 취급한다. ERP와 쇼핑몰업로드 모두 행 수가 증가해야 한다.
+                        erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', subInfo.subIn, 'n', '', 'n', sale.code]);
+                        const subShopRow = buildSubShopRow(item, subInfo, masterProducts, sale);
+                        if (subShopRow)
+                            shopData.push(subShopRow);
+                        subOutputCount++;
+                    }
+                });
+                window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shopData), '쇼핑몰업로드');
+                window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), 'ERP업데이트');
+                window.XLSX.writeFile(wb, `통합업로드용_Export_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                showToast(`✅ 원물 ${reviewRows.length}건 + 소분 ${subOutputCount}건 = 총 ${reviewRows.length + subOutputCount}건 엑셀 다운로드 완료`);
+            }
+            catch (e) {
+                console.error('[Export Excel Error]', e);
+                showToast('❌ 엑셀 파일 생성 중 오류가 발생했습니다.');
+            }
+            finally {
+                setIsProcessing(false);
+            }
+        }, 300);
+    }, [reviewRows, masterProducts, analysis, showToast]);
+    // ============================================================
+    // [E-OUTPUT-03] 이미지 출력 데이터 브릿지
+    // 역할: reviewRows를 이미지 생성기가 읽는 ONEAPP_IMAGE_DATA_TEMP 구조로 변환한다.
+    // 주의: 이미지 가격은 최종 적용 가격 기준이며, 정지 상품은 제외한다.
+    // ============================================================
+    const handleImageExport = useCallback(() => {
+        if (reviewRows.length === 0)
+            return showToast('⚠️ 이미지로 보낼 데이터가 없습니다.');
+        setIsProcessing(true);
+        setTimeout(async () => {
+            try {
+                const grouped = {};
+                reviewRows.forEach(item => {
+                    const sale = getSaleState(item);
+                    if (sale.label === '정지')
+                        return;
+                    const title = item.카테고리 ? String(item.카테고리).split(',')[0].trim() : '일반 상품목록';
+                    const fullName = item.규격 ? `${item.품목명} (${item.규격})` : item.품목명;
+                    if (!grouped[title])
+                        grouped[title] = [];
+                    grouped[title].push({ name: fullName, price: getAppliedPrice(item), prevPrice: parseNum(item.기준출고가) });
+                });
+                const exportData = Object.keys(grouped).map(title => ({ title: `📌 ${title}`, items: grouped[title] }));
+                await setIDB('ONEAPP_IMAGE_DATA_TEMP', JSON.stringify(exportData));
+                showToast('✅ 이미지 데이터 생성 완료. 이미지 뷰어 탭을 확인하세요.');
+            }
+            catch (e) {
+                console.error('[Image Export Error]', e);
+                showToast('❌ 이미지 데이터 준비 중 오류 발생');
+            }
+            finally {
+                setIsProcessing(false);
+            }
+        }, 250);
+    }, [reviewRows, showToast]);
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            var _a;
+            const tag = (_a = document.activeElement) === null || _a === void 0 ? void 0 : _a.tagName;
+            const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag);
+            if (e.key === 'F9') {
+                e.preventDefault();
+                if (isInput)
+                    document.activeElement.blur();
+                if (!isProcessing)
+                    handleExportExcel();
+            }
+            else if (e.key === 'F10') {
+                e.preventDefault();
+                if (isInput)
+                    document.activeElement.blur();
+                if (!isProcessing)
+                    handleImageExport();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isProcessing, handleExportExcel, handleImageExport]);
+    return (React.createElement("div", { className: "flex h-screen overflow-hidden bg-slate-100 fade-in" },
+        toast && (React.createElement("div", { className: "fixed top-6 left-1/2 transform -translate-x-1/2 z-[1000] bg-slate-800 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 text-sm font-bold transition-all" },
+            React.createElement("i", { className: "fas fa-check-circle text-emerald-400" }),
+            toast)),
+        React.createElement("div", { className: "w-[260px] bg-[#0f172a] flex flex-col text-slate-300 shadow-xl z-10 shrink-0 h-full" },
+            React.createElement("div", { className: "p-6 border-b border-slate-800 bg-[#0b1120] shrink-0" },
+                React.createElement("h1", { className: "text-xl font-black text-emerald-400 tracking-tight flex items-center" },
+                    React.createElement("i", { className: "fas fa-shield-alt mr-3" }),
+                    "\uCD9C\uB825\uAC80\uC99D\uC13C\uD130"),
+                React.createElement("p", { className: "text-[10px] text-slate-500 mt-2 font-bold uppercase tracking-widest" }, "Export Verify Center")),
+            React.createElement("div", { className: "flex flex-col py-4 gap-1 px-3 flex-1" },
+                React.createElement("div", { className: "px-4 py-3.5 rounded-xl text-left text-[13px] font-bold bg-slate-800/50 text-emerald-400 border border-emerald-900/30 shadow-md flex items-center" },
+                    React.createElement("i", { className: "fas fa-list-check w-5 text-center mr-2" }),
+                    " \uC774\uC288\uBCC4 \uBAA8\uC544\uBCF4\uAE30"),
+                React.createElement("div", { className: "px-4 py-3 text-[11px] leading-relaxed text-slate-400" },
+                    "\uC791\uC5C5 \uB300\uC0C1\uC740 \uBA54\uC778\uC5D0\uC11C \uC804\uB2EC\uB41C ",
+                    React.createElement("b", { className: "text-slate-200" }, "merch_export_draft"),
+                    " \uAE30\uC900\uC785\uB2C8\uB2E4. \uB9C8\uC2A4\uD130 \uC804\uCCB4\uB294 \uC791\uC5C5 \uB300\uC0C1\uC73C\uB85C \uC0AC\uC6A9\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.")),
+            React.createElement("div", { className: "p-6 border-t border-slate-800 shrink-0" },
+                React.createElement("button", { onClick: () => window.location.href = 'MerchOps.html', className: "w-full py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[13px] font-bold transition-colors" },
+                    React.createElement("i", { className: "fas fa-arrow-left mr-2" }),
+                    " \uBA54\uC778\uC73C\uB85C \uB3CC\uC544\uAC00\uAE30"))),
+        React.createElement("div", { className: "flex-1 flex flex-col overflow-hidden" },
+            React.createElement("div", { className: "bg-white p-5 border-b border-slate-200 shadow-sm shrink-0 z-10" },
+                React.createElement("div", { className: "flex items-center justify-between mb-4" },
+                    React.createElement("h2", { className: "text-xl font-black text-slate-800 flex items-center" },
+                        React.createElement("i", { className: "fas fa-layer-group text-indigo-500 mr-2" }),
+                        "\uC774\uC288 \uCE74\uB4DC\uBDF0"),
+                    React.createElement("div", { className: "text-[12px] text-slate-500 font-bold" },
+                        "\uD45C\uC2DC ",
+                        filteredRows.length.toLocaleString(),
+                        "\uAC74 / \uC804\uCCB4 ",
+                        reviewRows.length.toLocaleString(),
+                        "\uAC74 \u00B7 \uD544\uD130 \uD6C4 \uD14C\uB9C8 \uC77C\uAD04\uC9C0\uC815 \uAC00\uB2A5")),
+                React.createElement("div", { className: "grid grid-cols-5 gap-2 mb-4" }, issueCards.map(card => (React.createElement("button", { key: card.key, onClick: () => handleCardClick(card.key), className: `border p-3 rounded-xl flex flex-col items-center shadow-sm transition-all hover:shadow-md ${card.cls} ${activeIssue === card.key ? 'ring-2 ring-slate-700 scale-[1.02]' : ''}` },
+                    React.createElement("span", { className: "text-[11px] font-black mb-1 flex items-center" },
+                        React.createElement("i", { className: `fas ${card.icon} mr-1` }),
+                        card.label),
+                    React.createElement("span", { className: "text-xl font-black" }, card.count.toLocaleString()))))),
+                React.createElement("div", { className: "flex items-center gap-3" },
+                    React.createElement("div", { className: "relative flex-1 max-w-xl" },
+                        React.createElement("i", { className: "fas fa-search absolute left-3 top-2.5 text-slate-400 text-[13px]" }),
+                        React.createElement("input", { value: searchInput, onChange: (e) => setSearchInput(e.target.value), placeholder: "\uCF54\uB4DC / \uD488\uBAA9\uBA85 / \uADDC\uACA9 / \uBE0C\uB79C\uB4DC / \uCE74\uD14C\uACE0\uB9AC \uAC80\uC0C9 \u00B7 \uC608: \uC591\uD30C 15kg", className: "w-full h-9 pl-9 pr-3 border border-slate-300 rounded-lg text-[12px] font-bold outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100" })),
+                    React.createElement("select", { value: sortMode, onChange: (e) => setSortMode(e.target.value), className: "h-9 px-3 border border-slate-300 rounded-lg text-[12px] font-bold text-slate-700 bg-white outline-none" },
+                        React.createElement("option", { value: "category" }, "\uCE74\uD14C\uACE0\uB9AC\uC21C"),
+                        React.createElement("option", { value: "stockAsc" }, "\uC7AC\uACE0\uC218\uB7C9 \uC624\uB984\uCC28\uC21C"),
+                        React.createElement("option", { value: "diffRateDesc" }, "\uBCC0\uB3D9\uB960 \uD070 \uC21C"),
+                        React.createElement("option", { value: "diffAbsDesc" }, "\uCC28\uC561 \uD070 \uC21C"),
+                        React.createElement("option", { value: "inPriceDesc" }, "\uC785\uACE0\uAC00 \uB192\uC740 \uC21C"),
+                        React.createElement("option", { value: "outPriceDesc" }, "\uCD9C\uACE0\uAC00 \uB192\uC740 \uC21C")),
+                    React.createElement("select", { value: bulkTheme, onChange: (e) => setBulkTheme(e.target.value), className: "h-9 px-3 border border-purple-200 rounded-lg text-[12px] font-black text-purple-700 bg-purple-50 outline-none" },
+                        React.createElement("option", { value: "1" }, "\uD14C\uB9C81"),
+                        React.createElement("option", { value: "2" }, "\uD14C\uB9C82"),
+                        React.createElement("option", { value: "3" }, "\uD14C\uB9C83"),
+                        React.createElement("option", { value: "4" }, "\uD14C\uB9C84"),
+                        React.createElement("option", { value: "5" }, "\uD14C\uB9C85")),
+                    React.createElement("button", { onClick: handleBulkThemeApply, className: "h-9 px-4 rounded-lg bg-purple-600 text-white border border-purple-600 text-[12px] font-black hover:bg-purple-700" },
+                        React.createElement("i", { className: "fas fa-tags mr-1.5" }),
+                        "\uD604\uC7AC \uD45C\uC2DC \uC804\uCCB4 \uD14C\uB9C8\uC9C0\uC815"),
+                    React.createElement("button", { onClick: resetFilters, className: "h-9 px-4 rounded-lg bg-slate-100 text-slate-600 border border-slate-300 text-[12px] font-black hover:bg-slate-200" },
+                        React.createElement("i", { className: "fas fa-rotate-left mr-1.5" }),
+                        "\uD544\uD130 \uCD08\uAE30\uD654"))),
+            React.createElement("div", { className: "flex-1 p-5 overflow-hidden flex flex-col" },
+                React.createElement("div", { className: "flex items-center justify-between mb-3" },
+                    React.createElement("h3", { className: "font-bold text-slate-700 text-[14px]" },
+                        React.createElement("i", { className: "fas fa-edit mr-2 text-emerald-500" }),
+                        "\uCD5C\uC885 \uD035 \uC218\uC815 & \uC548\uC804 \uC810\uAC80\uD45C"),
+                    React.createElement("div", { className: "flex items-center gap-3 text-[11px] text-slate-500 font-bold" },
+                        React.createElement("span", { className: "bg-white px-2 py-1 rounded border border-slate-200 shadow-sm" },
+                            React.createElement("span", { className: "text-purple-500" }, "\u25A0"),
+                            " \uD589\uC0AC\uAC00\uAC00 \uC788\uC73C\uBA74 \uCD9C\uB825 \uC801\uC6A9\uAC00 \uC6B0\uC120"),
+                        React.createElement("span", { className: "bg-white px-2 py-1 rounded border border-slate-200 shadow-sm" },
+                            React.createElement("span", { className: "text-teal-500" }, "\u25A0"),
+                            " \uC7AC\uACE0\uC801\uC74C\uC740 \uC7AC\uACE0\uC218\uB7C9 \uC624\uB984\uCC28\uC21C"))),
+                React.createElement("div", { className: "flex-1 bg-white border border-slate-200 rounded-xl overflow-auto custom-scrollbar shadow-sm" },
+                    React.createElement("table", { className: "w-full text-left text-[13px] whitespace-nowrap" },
+                        React.createElement("thead", { className: "bg-[#f8fafc] sticky top-0 border-b border-slate-200 text-slate-600 z-10 shadow-sm" },
+                            React.createElement("tr", null,
+                                React.createElement("th", { className: "px-3 py-3 w-16 text-center font-bold" }, "\uAC80\uC99D"),
+                                React.createElement("th", { className: "px-3 py-3 w-24 font-bold" }, "\uCF54\uB4DC"),
+                                React.createElement("th", { className: "px-3 py-3 w-28 font-bold" }, "\uCE74\uD14C\uACE0\uB9AC"),
+                                React.createElement("th", { className: "px-3 py-3 font-bold" }, "\uD488\uBAA9\uBA85 (\uADDC\uACA9)"),
+                                React.createElement("th", { className: "px-3 py-3 w-24 text-right font-bold text-slate-500" }, "(M)\uC785\uACE0\uAC00"),
+                                React.createElement("th", { className: "px-3 py-3 w-24 text-right font-bold text-indigo-600" }, "\uC785\uACE0\uAC00"),
+                                React.createElement("th", { className: "px-3 py-3 w-24 text-right font-bold text-rose-600" }, "\uCD9C\uACE0\uAC00"),
+                                React.createElement("th", { className: "px-3 py-3 w-20 text-right font-bold text-purple-600" }, "\uD589\uC0AC\uAC00"),
+                                React.createElement("th", { className: "px-3 py-3 w-20 text-center font-bold" }, "\uC7AC\uACE0"),
+                                React.createElement("th", { className: "px-3 py-3 w-24 text-center font-bold" }, "\uD14C\uB9C8"),
+                                React.createElement("th", { className: "px-3 py-3 w-24 text-center font-bold" }, "\uC0C1\uD0DC"))),
+                        React.createElement("tbody", { className: "divide-y divide-slate-100" }, filteredRows.length === 0 ? (React.createElement("tr", null,
+                            React.createElement("td", { colSpan: "11", className: "p-10 text-center text-slate-400 font-bold" }, "\uD45C\uC2DC\uD560 \uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4."))) : filteredRows.map(item => {
+                            var _a, _b, _c, _d;
+                            const sale = getSaleState(item);
+                            const promo = parseNum(item.행사가) > 0;
+                            const margin = isMarginWarning(item);
+                            const anomaly = isBigChange(item);
+                            const { diff, rate } = getDiffInfo(item);
+                            return (React.createElement("tr", { key: item.코드, className: `transition-colors ${margin || anomaly ? 'bg-rose-50/50' : 'hover:bg-slate-50'}` },
+                                React.createElement("td", { className: "px-3 py-2 text-center" }, margin ? React.createElement("i", { className: "fas fa-exclamation-triangle text-rose-500", title: "\uC5ED\uB9C8\uC9C4" }) :
+                                    anomaly ? React.createElement("i", { className: "fas fa-exclamation-circle text-orange-500", title: "\uD070\uBCC0\uB3D9" }) :
+                                        sale.label === '품절' ? React.createElement("span", { className: "w-2.5 h-2.5 rounded-full bg-orange-400 inline-block", title: "\uD488\uC808" }) :
+                                            sale.label === '정지' ? React.createElement("span", { className: "w-2.5 h-2.5 rounded-full bg-slate-300 inline-block", title: "\uC815\uC9C0" }) :
+                                                React.createElement("i", { className: "fas fa-check-circle text-emerald-400" })),
+                                React.createElement("td", { className: "px-3 py-2 font-mono text-slate-400 text-[11px]" }, item.코드),
+                                React.createElement("td", { className: "px-3 py-2 text-[11px] text-slate-500 max-w-[140px] truncate" }, item.카테고리),
+                                React.createElement("td", { className: "px-3 py-2 font-bold text-slate-800" },
+                                    item.품목명,
+                                    " ",
+                                    React.createElement("span", { className: "text-slate-400 font-normal ml-1 text-[11px]" }, item.규격 && `(${item.규격})`),
+                                    isNewItem(item) && React.createElement("span", { className: "ml-2 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 text-[10px] font-black" }, "\uC2E0\uADDC"),
+                                    ((_a = item.source) === null || _a === void 0 ? void 0 : _a.hasEstimate) && React.createElement("span", { className: "ml-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 text-[10px] font-black" }, "\uACAC\uC801"),
+                                    ((_b = item.source) === null || _b === void 0 ? void 0 : _b.hasPurchase) && React.createElement("span", { className: "ml-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 text-[10px] font-black" }, "\uAD6C\uB9E4"),
+                                    ((_c = item.source) === null || _c === void 0 ? void 0 : _c.hasSales) && React.createElement("span", { className: "ml-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 text-[10px] font-black" }, "\uD310\uB9E4"),
+                                    ((_d = item.source) === null || _d === void 0 ? void 0 : _d.hasInventory) && React.createElement("span", { className: "ml-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-black" }, "\uC7AC\uACE0")),
+                                React.createElement("td", { className: "px-3 py-2 text-right text-slate-400" },
+                                    fmt(item.기준입고가),
+                                    item.기준입고가 > 0 && React.createElement("div", { className: `text-[10px] font-bold ${diff >= 0 ? 'text-rose-400' : 'text-blue-400'}` }, diff === 0 ? '-' : `${diff > 0 ? '+' : ''}${fmt(diff)} / ${(rate * 100).toFixed(1)}%`)),
+                                React.createElement("td", { className: "px-2 py-1 bg-indigo-50/30" },
+                                    React.createElement("input", { type: "text", value: item.입고가, onChange: (e) => handleEdit(item.코드, '입고가', e.target.value), title: "\uC785\uACE0\uAC00 \uC218\uC815 \uC2DC \uCD9C\uACE0\uAC00\uAC00 \uC790\uB3D9 \uC7AC\uACC4\uC0B0\uB429\uB2C8\uB2E4.", className: "w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 px-1 py-1 text-right font-black text-indigo-600 outline-none" })),
+                                React.createElement("td", { className: "px-2 py-1 bg-orange-50/30" },
+                                    React.createElement("input", { type: "text", value: item.출고가, onChange: (e) => handleEdit(item.코드, '출고가', e.target.value), title: "\uC800\uC7A5\uD560 \uAE30\uBCF8 \uCD9C\uACE0\uAC00\uC785\uB2C8\uB2E4. \uD589\uC0AC\uAC00\uAC00 \uC788\uC73C\uBA74 \uCD9C\uB825 \uC801\uC6A9\uAC00\uB294 \uD589\uC0AC\uAC00\uAC00 \uC6B0\uC120\uD569\uB2C8\uB2E4.", className: `w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 rounded-none px-1 py-1 text-right font-black outline-none transition-colors ${margin ? 'text-rose-600' : 'text-slate-800'}` })),
+                                React.createElement("td", { className: "px-3 py-2 text-right" },
+                                    React.createElement("input", { type: "text", value: item.행사가, onChange: (e) => handleEdit(item.코드, '행사가', e.target.value), title: "\uD589\uC0AC\uAC00\uAC00 \uC788\uC73C\uBA74 \uCD9C\uB825 \uC801\uC6A9\uAC00\uB294 \uD589\uC0AC\uAC00\uAC00 \uC6B0\uC120\uD569\uB2C8\uB2E4.", className: "w-20 bg-transparent border-b border-transparent focus:border-purple-400 hover:border-slate-300 px-1 py-1 text-right font-black text-purple-700 outline-none" })),
+                                React.createElement("td", { className: "px-2 py-1 bg-slate-50/50" },
+                                    React.createElement("input", { type: "text", value: item.재고수량, onChange: (e) => handleEdit(item.코드, '재고수량', e.target.value), className: "w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 px-1 py-1 text-center font-bold text-slate-600 outline-none" })),
+                                React.createElement("td", { className: "px-2 py-1 text-center" },
+                                    React.createElement("select", { value: item.promoTheme || 0, onChange: (e) => handleEdit(item.코드, 'promoTheme', e.target.value), disabled: parseNum(item.행사가) <= 0, className: "w-full border border-slate-200 rounded px-1 py-1 text-[12px] font-bold bg-white disabled:bg-slate-50 disabled:text-slate-300 outline-none" },
+                                        React.createElement("option", { value: "0" }, "-"),
+                                        React.createElement("option", { value: "1" }, "\uD14C\uB9C81"),
+                                        React.createElement("option", { value: "2" }, "\uD14C\uB9C82"),
+                                        React.createElement("option", { value: "3" }, "\uD14C\uB9C83"),
+                                        React.createElement("option", { value: "4" }, "\uD14C\uB9C84"),
+                                        React.createElement("option", { value: "5" }, "\uD14C\uB9C85"))),
+                                React.createElement("td", { className: "px-2 py-1 text-center" },
+                                    React.createElement("span", { className: `inline-flex items-center justify-center w-full border rounded px-2 py-1 text-[12px] font-black ${sale.cls}` }, sale.text))));
+                        }))))),
+            React.createElement("div", { className: "bg-white p-6 border-t border-slate-200 shrink-0 flex gap-4 z-20 shadow-[0_-4px_10px_rgba(0,0,0,0.02)]" },
+                React.createElement("button", { onClick: handleExportExcel, disabled: isProcessing || reviewRows.length === 0, className: "flex-1 py-4 bg-emerald-600 text-white rounded-xl font-black text-[15px] hover:bg-emerald-700 transition-all shadow-md hover:shadow-lg flex justify-center items-center" },
+                    React.createElement("i", { className: "fas fa-save mr-2 text-lg" }),
+                    " \uB9C8\uC2A4\uD130 \uBC18\uC601 \uD6C4 \uC5D1\uC140 \uCD9C\uB825 (F9)"),
+                React.createElement("button", { onClick: handleImageExport, disabled: isProcessing || reviewRows.length === 0, className: "px-8 py-4 bg-amber-500 text-white rounded-xl font-black text-[15px] hover:bg-amber-600 transition-all shadow-md hover:shadow-lg flex justify-center items-center" },
+                    React.createElement("i", { className: "fas fa-image mr-2 text-lg" }),
+                    " \uC774\uBBF8\uC9C0 (F10)")))));
+};
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(ExportApp, null));
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<ExportApp />);
     </script>
 </body>
 </html>
