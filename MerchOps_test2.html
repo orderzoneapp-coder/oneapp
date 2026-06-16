@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.19 명칭만변경_목록원복]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.20 마진룰동기화]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -26,6 +26,74 @@
         };
 
         window.parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
+
+
+        // ============================================================
+        // [M-ENGINE-00] 마진룰 기본값/보정
+        // 역할: 메인 작업대와 ControlTower의 기본 룰셋을 동일하게 유지한다.
+        // 핵심: 01창고 BOX는 10%가 우선이며, 과거 단일 기본룰(*/*/20%)만 남아 있으면 자동 복구한다.
+        // ============================================================
+        window.getDefaultMerchMarginRules = () => ([
+            { id: 'rule_1', whCode: '01', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
+            { id: 'rule_2', whCode: '01', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' },
+            { id: 'rule_3', whCode: '03,05', unit: 'box, 박스, BOX', rate: 15, type: 'divide' },
+            { id: 'rule_4', whCode: '03,05', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 10, type: 'divide' },
+            { id: 'rule_5', whCode: '77,99', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
+            { id: 'rule_6', whCode: '77,99', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' },
+            { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }
+        ]);
+
+        window.normalizeMerchWarehouseForRule = (v) => {
+            const raw = String(v ?? '').trim();
+            if (!raw || raw === '*') return raw || '';
+            const m = raw.match(/\d+/);
+            return m ? String(Number(m[0])).padStart(2, '0') : raw;
+        };
+
+        window.getMerchUnitRuleCandidates = (v) => {
+            const raw = String(v ?? '').trim().toLowerCase();
+            if (!raw || raw === '*') return raw === '*' ? ['*'] : [];
+            const compact = raw.replace(/\s/g, '');
+            const parts = [compact, ...raw.split(/[,./|\s()_\-]+/).map(s => s.trim()).filter(Boolean)];
+            const cands = [];
+            const push = (x) => { if (x && !cands.includes(x)) cands.push(x); };
+            parts.forEach(part => {
+                const p = String(part || '').toLowerCase().replace(/\s/g, '');
+                if (!p) return;
+                if (/box|박스|상자|bx/.test(p)) push('box');
+                if (/소분|분할|절단|컷|소포장|묶음/.test(p)) push('sub');
+                if (/ea|each|개|낱개|낱|kg|킬로|단|봉|포/.test(p)) push('ea');
+                push(p);
+            });
+            return cands;
+        };
+
+        window.isLegacyDefaultOnlyMarginRules = (rules = []) => {
+            if (!Array.isArray(rules) || rules.length !== 1) return false;
+            const r = rules[0] || {};
+            return String(r.whCode ?? '*').trim() === '*'
+                && String(r.unit ?? '*').trim() === '*'
+                && window.parseNum(r.rate) === 20;
+        };
+
+        window.sanitizeMerchMarginRules = (rules = []) => {
+            const defaults = window.getDefaultMerchMarginRules();
+            if (!Array.isArray(rules) || rules.length === 0 || window.isLegacyDefaultOnlyMarginRules(rules)) {
+                return defaults.map(r => ({ ...r }));
+            }
+            const cleaned = rules
+                .filter(r => r && typeof r === 'object')
+                .map((r, idx) => ({
+                    id: r.id || `rule_${idx + 1}`,
+                    whCode: String(r.whCode ?? '*').trim() || '*',
+                    unit: String(r.unit ?? '*').trim() || '*',
+                    rate: window.parseNum(r.rate),
+                    type: r.type === 'multiply' ? 'multiply' : 'divide'
+                }));
+            const hasDefault = cleaned.some(r => String(r.whCode).trim() === '*' && String(r.unit).trim() === '*');
+            if (!hasDefault) cleaned.push({ ...defaults[defaults.length - 1] });
+            return cleaned;
+        };
 
         // ============================================================
         // [M-POLICY-01] 엑셀값 원본 우선 정책
@@ -308,45 +376,51 @@
                 : window.parseNum(currentFinalData?.['노무비']);
             
             const totalCost = baseInPrice + outsrc + labor;
-            // 계산용 창고 정책:
-            // - 원본 창고값은 덮어쓰지 않는다.
-            // - 재고 불러오기 상품이 창고 각인이 없을 때만 _calcWarehouse(초기값 01)를 사용한다.
-            // - 파일/상품에 실제 창고값이 있으면 그 값이 우선이고, _calcWarehouse는 생성하지 않는다.
-            const whCode = String(currentFinalData?.['_calcWarehouse'] ?? currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '').trim();
-            const unitStr = String(currentFinalData?.['_calcUnit'] ?? currentFinalData?.['단위'] ?? mItem?.['단위'] ?? '').trim().toLowerCase();
+            // 계산용 창고/단위 정책:
+            // - 창고는 _calcWarehouse → 작업값 창고 → 마스터 창고 순으로 잡는다.
+            // - 단위는 단위 필드가 비어도 규격/품명에 붙은 (BOX)/(EA)/kg/단 표기를 함께 참고한다.
+            // - 환경설정 룰셋이 과거 단일 기본룰(*/*/20%)이면 ControlTower 기본룰로 자동 보정한다.
+            const whRaw = String(currentFinalData?.['_calcWarehouse'] ?? currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '').trim();
+            const whCode = window.normalizeMerchWarehouseForRule ? window.normalizeMerchWarehouseForRule(whRaw) : whRaw;
+            const unitRaw = [
+                currentFinalData?.['_calcUnit'],
+                currentFinalData?.['단위'],
+                currentFinalData?.['규격'],
+                currentFinalData?.['품목명'],
+                mItem?.['단위'],
+                mItem?.['규격'],
+                mItem?.['품목명']
+            ].filter(v => v !== undefined && v !== null && String(v).trim() !== '').join(' ');
+            const unitCandidates = window.getMerchUnitRuleCandidates ? window.getMerchUnitRuleCandidates(unitRaw) : [String(unitRaw).trim().toLowerCase()].filter(Boolean);
             
-            const normalizeWhForMatch = (v) => {
-                const raw = String(v ?? '').trim();
-                if (!raw) return '';
-                const m = raw.match(/\d+/);
-                return m ? String(Number(m[0])) : raw;
-            };
-
             const matchWh = (ruleWh, targetWh) => { 
-                if (ruleWh === '*') return true; 
-                const targetNorm = normalizeWhForMatch(targetWh);
+                if (String(ruleWh).trim() === '*') return true; 
+                const targetNorm = window.normalizeMerchWarehouseForRule ? window.normalizeMerchWarehouseForRule(targetWh) : String(targetWh ?? '').trim();
                 const targets = String(ruleWh).split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean); 
                 return targets.some(s => {
-                    const ruleNorm = normalizeWhForMatch(s);
-                    return s === targetWh || (targetNorm !== '' && ruleNorm !== '' && ruleNorm === targetNorm);
+                    const ruleNorm = window.normalizeMerchWarehouseForRule ? window.normalizeMerchWarehouseForRule(s) : s;
+                    return ruleNorm !== '' && targetNorm !== '' && ruleNorm === targetNorm;
                 }); 
             };
             
-            const matchUnit = (ruleUnit, targetUnit) => { 
-                if (ruleUnit === '*') return true; 
-                const targets = String(ruleUnit).toLowerCase().split(/[,./|\s]+/).map(s => s.trim()).filter(Boolean); 
-                return targets.some(s => targetUnit === s || targetUnit.includes(s)); 
+            const matchUnit = (ruleUnit, targetUnits = []) => { 
+                if (String(ruleUnit).trim() === '*') return true; 
+                const targets = String(ruleUnit).split(/[,./|\s]+/)
+                    .flatMap(s => window.getMerchUnitRuleCandidates ? window.getMerchUnitRuleCandidates(s) : [String(s).trim().toLowerCase()])
+                    .filter(Boolean); 
+                return targets.some(ruleUnitNorm => targetUnits.some(targetUnitNorm => targetUnitNorm === ruleUnitNorm || targetUnitNorm.includes(ruleUnitNorm) || ruleUnitNorm.includes(targetUnitNorm))); 
             };
 
             let bestRule = null; 
             let bestScore = -1;
-            const safeMarginRules = Array.isArray(marginRules) ? marginRules : [];
+            const safeMarginRules = window.sanitizeMerchMarginRules ? window.sanitizeMerchMarginRules(marginRules) : (Array.isArray(marginRules) ? marginRules : []);
             
-            safeMarginRules.forEach(r => { 
-                if (matchWh(r.whCode, whCode) && matchUnit(r.unit, unitStr)) { 
+            safeMarginRules.forEach((r, ruleIdx) => { 
+                if (matchWh(r.whCode, whCode) && matchUnit(r.unit, unitCandidates)) { 
                     let score = 0; 
-                    if (r.whCode !== '*') score += 2; 
-                    if (r.unit !== '*') score += 1; 
+                    if (String(r.whCode).trim() !== '*') score += 20; 
+                    if (String(r.unit).trim() !== '*') score += 10; 
+                    score -= ruleIdx / 1000;
                     if (score > bestScore) { 
                         bestScore = score; 
                         bestRule = r; 
@@ -354,10 +428,11 @@
                 } 
             });
 
-            const appliedRule = bestRule || { whCode: '*', unit: '*', rate: 10, type: 'divide' };
+            const appliedRule = bestRule || { whCode: '*', unit: '*', rate: 20, type: 'divide' };
             currentFinalData._appliedMarginRule = {
                 inputWarehouse: whCode || '-',
-                inputUnit: unitStr || '-',
+                inputUnit: unitCandidates[0] || (unitRaw || '-'),
+                inputUnitRaw: unitRaw || '',
                 ruleWhCode: appliedRule.whCode || '*',
                 ruleUnit: appliedRule.unit || '*',
                 rate: window.parseNum(appliedRule.rate),
@@ -403,7 +478,7 @@
                 0,
                 mItem || {},
                 working,
-                Array.isArray(marginRules) ? marginRules : [],
+                window.sanitizeMerchMarginRules ? window.sanitizeMerchMarginRules(marginRules) : (Array.isArray(marginRules) ? marginRules : []),
                 true
             );
 
@@ -1011,7 +1086,7 @@
             const [mappings, setMappings] = useState(() => safeJSONParse('merchMappings_v870', getInitialMappings()));
             const [masterLinks, setMasterLinks] = useState(() => safeJSONParse('merchMasterLinks_v870', getInitialMasterLinks()));
             const [uploadColumnMeta, setUploadColumnMeta] = useState(() => safeJSONParse('merchUploadColumnMeta_v870', {}));
-            const [marginRules, setMarginRules] = useState(() => safeJSONParse('merchMarginRules_v878', [{ id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }]));
+            const [marginRules, setMarginRules] = useState(() => window.sanitizeMerchMarginRules(safeJSONParse('merchMarginRules_v878', window.getDefaultMerchMarginRules())));
             const configHydratedRef = useRef(false);
 
             // v2.0.9 필수 매핑 보강: 기존 localStorage 설정이 있어도 단위/브랜드/검색어등록을 자동 보강한다.
@@ -1066,6 +1141,16 @@
                 });
             }, []);
 
+
+            // 과거 메인 단독 기본값(*/*/20%)이 localStorage에 남아 있으면 즉시 ControlTower 기본 룰셋으로 복구한다.
+            useEffect(() => {
+                const sanitized = window.sanitizeMerchMarginRules(marginRules);
+                if (JSON.stringify(sanitized) !== JSON.stringify(marginRules)) {
+                    setMarginRules(sanitized);
+                    try { localStorage.setItem('merchMarginRules_v878', JSON.stringify(sanitized)); } catch (e) {}
+                }
+            }, []);
+
             // 환경설정 영속화: localStorage를 1차 저장소로 쓰고 IndexedDB에 백업한다.
             // 기존 코드에는 상태 변경 후 localStorage.setItem이 없어, 재접속 시 하드코딩 기본값으로 돌아갈 수 있었다.
             useEffect(() => {
@@ -1083,7 +1168,7 @@
                             if (saved.mappings && !localStorage.getItem('merchMappings_v870')) setMappings(saved.mappings);
                             if (saved.masterLinks && !localStorage.getItem('merchMasterLinks_v870')) setMasterLinks(saved.masterLinks);
                             if (saved.uploadColumnMeta && !localStorage.getItem('merchUploadColumnMeta_v870')) setUploadColumnMeta(saved.uploadColumnMeta);
-                            if (saved.marginRules && !localStorage.getItem('merchMarginRules_v878')) setMarginRules(saved.marginRules);
+                            if (saved.marginRules && !localStorage.getItem('merchMarginRules_v878')) setMarginRules(window.sanitizeMerchMarginRules(saved.marginRules));
                         }
                     } catch (e) {
                         console.warn('[MerchOps Config Hydrate]', e);
@@ -1149,7 +1234,7 @@
                         if(fMappings) setMappings(fMappings); 
                         if(fMasterLinks) setMasterLinks(fMasterLinks); 
                         if(fUploadColumnMeta) setUploadColumnMeta(fUploadColumnMeta);
-                        if(fMarginRules) setMarginRules(fMarginRules);
+                        if(fMarginRules) setMarginRules(window.sanitizeMerchMarginRules(fMarginRules));
                     }
                 };
                 window.addEventListener('storage', handleConfigSync);
@@ -1338,7 +1423,7 @@
                                 localStorage.setItem('parserDict_v870', JSON.stringify(result.data.dict));
                             }
                             if (result.data.rules && result.data.rules.length > 0) {
-                                config.setMarginRules(result.data.rules);
+                                config.setMarginRules(window.sanitizeMerchMarginRules(result.data.rules));
                             }
                             
                             if (result.data.history && Array.isArray(result.data.history)) {
@@ -1557,7 +1642,7 @@
                                 }
                             }
 
-                            mItem.finalData = window.computeFinalData(newMaster[cleanCode] || {}, mItem.sources, config.marginRules);
+                            mItem.finalData = window.computeFinalData(newMaster[cleanCode] || {}, mItem.sources, window.sanitizeMerchMarginRules(config.marginRules));
                             if (!newMaster[cleanCode]) {
                                 const registrationDraft = window.buildMerchRegistrationDraft
                                     ? window.buildMerchRegistrationDraft(mItem, role)
@@ -1662,7 +1747,7 @@
                             ui.setActiveTags(prev => [...prev, {type: 'catalog', name: '전체리스트'}]);
                             let newManaged = { ...data.managedItems }; 
                             let addedCount = 0;
-                            const safeMarginRules = Array.isArray(config.marginRules) ? config.marginRules : [];
+                            const safeMarginRules = window.sanitizeMerchMarginRules ? window.sanitizeMerchMarginRules(config.marginRules) : (Array.isArray(config.marginRules) ? config.marginRules : []);
 
                             Object.values(data.masterProducts).forEach(mItem => {
                                 if (mItem['카탈로그'] && String(mItem['카탈로그']).trim() !== '') {
@@ -1705,7 +1790,7 @@
                         ui.setActiveTags(prev => [...prev, {type, name: filterName}]);
                         let newManaged = { ...data.managedItems }; 
                         let addedCount = 0;
-                        const safeMarginRules = Array.isArray(config.marginRules) ? config.marginRules : [];
+                        const safeMarginRules = window.sanitizeMerchMarginRules ? window.sanitizeMerchMarginRules(config.marginRules) : (Array.isArray(config.marginRules) ? config.marginRules : []);
 
                         Object.values(data.masterProducts).forEach(mItem => {
                             let isMatch = false;
@@ -2249,7 +2334,7 @@
                     data.setManagedItems(prev => {
                         const next = { ...prev }; 
                         let count = 0;
-                        const safeMarginRules = Array.isArray(config.marginRules) ? config.marginRules : [];
+                        const safeMarginRules = window.sanitizeMerchMarginRules ? window.sanitizeMerchMarginRules(config.marginRules) : (Array.isArray(config.marginRules) ? config.marginRules : []);
 
                         targetRows.forEach(row => {
                             const code = row.코드;
@@ -3715,7 +3800,7 @@
                     <i className="fas fa-box-open"></i>
                     <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm"><i className="fas fa-check"></i></div>
                 </div>
-                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v2.1.19 명칭만변경_목록원복]</h2>
+                <h2 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">MerchOps 메인 워크스페이스 [v2.1.20 마진룰동기화]</h2>
                 <p className="text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold">
                     현재 등록된 <span className="text-indigo-500">마스터 상품 데이터</span>가 없습니다.<br/>
                     견적 작업 및 파서 연동을 위해 전체 상품 DB를 세팅해주세요.
