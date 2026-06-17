@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.9 Return Route Fix]</title>
+    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.10 Return Back Hard Fix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -36,34 +36,72 @@ const fmt = (v) => parseNum(v).toLocaleString('ko-KR');
 // - 운영 도메인에서는 /MerchOps clean URL을 우선 사용한다.
 // - 로컬 파일 또는 GitHub 파일 직접 실행은 MerchOps.html로 복귀한다.
 // ============================================================
-const navigateToMerchOps = () => {
+const getStoredMerchReturnUrl = () => {
+    const candidates = [];
+    try { candidates.push(sessionStorage.getItem('merch_export_return_url')); } catch (e) {}
+    try { candidates.push(localStorage.getItem('merch_export_return_url')); } catch (e) {}
+    candidates.push(document.referrer || '');
+
+    const isValid = (url) => {
+        if (!url) return false;
+        try {
+            const u = new URL(url, window.location.href);
+            if (u.origin !== window.location.origin && window.location.protocol !== 'file:') return false;
+            return /MerchOps/i.test(u.pathname + u.search + u.hash);
+        } catch (e) {
+            return /MerchOps/i.test(String(url));
+        }
+    };
+
+    return candidates.find(isValid) || '';
+};
+
+const getFallbackMerchUrls = () => {
+    const urls = [];
+    const push = (url) => { if (url && !urls.includes(url)) urls.push(url); };
+    const stored = getStoredMerchReturnUrl();
+    push(stored);
     try {
-        localStorage.setItem('merch_export_return_trigger', String(Date.now()));
-    } catch (e) {}
-
-    const ref = String(document.referrer || '');
-    if (/MerchOps(?:\.html|_test\d*\.html)?(?:$|[?#])/i.test(ref) || /\/MerchOps(?:$|[?#/])/i.test(ref)) {
-        window.location.assign(ref);
-        return;
-    }
-
-    const protocol = String(window.location.protocol || '');
-    const origin = String(window.location.origin || '');
-    if (protocol === 'file:') {
-        window.location.assign('MerchOps.html');
-        return;
-    }
-
-    if (origin && /oneapp\.orderz\.co\.kr/i.test(origin)) {
-        window.location.assign(origin + '/MerchOps');
-        return;
-    }
-
-    try {
-        window.location.assign(new URL('MerchOps.html', window.location.href).href);
+        if (window.location.protocol === 'file:') {
+            push('MerchOps.html');
+        } else {
+            push(new URL('MerchOps.html', window.location.href).href);
+            if (/oneapp\.orderz\.co\.kr/i.test(window.location.origin || '')) {
+                // 운영 clean URL보다 .html 파일을 먼저 시도한다.
+                // clean URL이 서버 rewrite/cache 문제로 흰화면이 되는 경우를 피하기 위함이다.
+                push(window.location.origin + '/MerchOps.html');
+                push(window.location.origin + '/MerchOps');
+            }
+        }
     } catch (e) {
-        window.location.assign('MerchOps.html');
+        push('MerchOps.html');
     }
+    return urls;
+};
+
+// ============================================================
+// [E-NAV-02] MerchOps 복귀 하드픽스
+// 정책:
+// 1) MerchOps가 저장해 둔 실제 진입 URL을 최우선 사용한다.
+// 2) history.back()으로 브라우저가 보존한 이전 MerchOps 화면을 먼저 복구한다.
+// 3) back이 동작하지 않는 직접실행/새탭 상황은 저장 URL → MerchOps.html → /MerchOps 순으로 이동한다.
+// ============================================================
+const navigateToMerchOps = () => {
+    try { localStorage.setItem('merch_export_return_trigger', String(Date.now())); } catch (e) {}
+
+    const storedReturnUrl = getStoredMerchReturnUrl();
+    const ref = String(document.referrer || '');
+    const canBackToMerch = /MerchOps/i.test(storedReturnUrl || ref) && window.history && window.history.length > 1;
+
+    if (canBackToMerch) {
+        // assign(ref)로 강제 reload하면 /MerchOps clean URL에서 흰화면이 날 수 있다.
+        // history.back()은 직전 MerchOps 문서를 그대로 복원할 가능성이 가장 높다.
+        window.history.back();
+        return;
+    }
+
+    const candidates = getFallbackMerchUrls();
+    window.location.href = candidates[0] || 'MerchOps.html';
 };
 const initIDB = () => new Promise((resolve, reject) => {
     const request = indexedDB.open('MerchOpsDB', 2);
