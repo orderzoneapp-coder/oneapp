@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zza Lot Price Match Fix)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzd Today Purchase Lot Match Fix)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.99zza Lot Price Match Fix.....</div>
+        <div class="loader-text">ONEAPP DataOps v8.99zzd Today Purchase Lot Match Fix.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -526,7 +526,7 @@ const defaultMappings = {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'v8.99zza Lot Price Match Fix',
+    version: 'v8.99zzd Today Purchase Lot Match Fix',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -1756,9 +1756,14 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                     else if (role === 'out') {
                         const salesVendor = getExactRawVal(rowObj, ['거래처명', '판매처', '매출처명', '매장명', '매장', '고객']);
                         const lotVendor = getExactRawVal(rowObj, ['구매처', '매입처', '원구매처', '매입처(Lot)', '매입처(거래처)']);
-                        // v8.99zza: 판매현황 Lot 매핑은 구매처명만으로 확정하지 않는다.
+                        // v8.99zzc: 판매현황 Lot 매핑은 구매처명만으로 확정하지 않는다.
+                        // 판매현황의 '구매' 컬럼은 판매가가 아니라 매핑 원가이므로 Lot 단가 조건에 포함한다.
                         // 동일 구매처라도 매핑 원가/입고가가 다르면 서로 다른 Lot으로 분리해야 한다.
-                        const lotMatchPrice = getExactRawVal(rowObj, ['매입단가(원가)', '매입원가', '입고가', '입고단가', '매입단가', '구매단가', '원가', '원가단가', '적용원가', '매칭단가', 'Lot단가', '로트단가', '기준원가', '기준단가', '최종(창고)', '최종창고', '창고단가']);
+                        const lotMatchPrice = getExactRawVal(rowObj, ['매입단가(원가)', '매입원가', '입고가', '입고단가', '매입단가', '구매', '구매가', '구매단가', '원가', '원가단가', '적용원가', '매칭단가', 'Lot단가', '로트단가', '기준원가', '기준단가', '최종(창고)', '최종창고', '창고단가']);
+                        // v8.99zzc: 판매현황 Lot 매핑 조건에 구매일자를 추가한다.
+                        // 주의: 판매현황의 '일자'는 판매/출고일자이므로 Lot 구매일자 조건으로 사용하지 않는다.
+                        // 판매 파일에 구매일자/매입일자/Lot일자 등이 있을 때만 특정 구매일자 Lot으로 고정한다.
+                        const lotMatchDateCell = getValWithKeyByKeywords(rowObj, ['구매일자', '매입일자', '입고일자', '구매기록', '매입기록', '입고기록', 'Lot일자', 'LOT일자', '로트일자', 'Lot구매일자', '로트구매일자', '매칭일자', '기준구매일자']);
                         const salesQty = getExactRawVal(rowObj, ['수량', '출고량', '판매수량']);
                         const salesPrice = getExactRawVal(rowObj, ['단가', '판매단가', '출고가', '출고가(공지)', '출고가 (공지)']);
                         const salesDate = getExactRawVal(rowObj, ['판매일자', '출고일자', '일자', '날짜', '기록']);
@@ -1776,6 +1781,10 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                             normObj.단가 = parseNumber(salesPrice);
                         if (lotMatchPrice !== null)
                             normObj._lotMatchPrice = parseNumber(lotMatchPrice);
+                        if (lotMatchDateCell.value !== null) {
+                            normObj._lotMatchDate = safeStr(lotMatchDateCell.value, '');
+                            normObj._lotMatchDateSource = safeStr(lotMatchDateCell.key, '구매일자');
+                        }
                     }
                     parsedData.push(normObj);
                 }
@@ -2332,8 +2341,22 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 if (direct > 0)
                     return direct;
                 const raw = sale._raw || {};
-                const aliases = ['매입단가(원가)', '매입원가', '입고가', '입고단가', '매입단가', '구매단가', '원가', '원가단가', '적용원가', '매칭단가', 'Lot단가', '로트단가', '기준원가', '기준단가', '최종(창고)', '최종창고', '창고단가'];
-                for (const alias of aliases) {
+                const normalizeHeader = (v) => safeStr(v, '').replace(/\s/g, '').replace(/[()（）]/g, '').toLowerCase();
+                // v8.99zzc: 판매현황의 '구매' 컬럼은 단가 조건용 원가다.
+                // 단, '구매합계'는 총액이므로 '구매'를 fuzzy 매칭하면 안 된다. 우선 정확한 헤더만 찾는다.
+                const exactAliases = ['매입단가(원가)', '매입원가', '입고가', '입고단가', '매입단가', '구매', '구매가', '구매단가', '원가', '원가단가', '적용원가', '매칭단가', 'Lot단가', '로트단가', '기준원가', '기준단가', '최종(창고)', '최종창고', '창고단가'];
+                const rawKeys = Object.keys(raw || {});
+                for (const alias of exactAliases) {
+                    const target = normalizeHeader(alias);
+                    const found = rawKeys.find(k => normalizeHeader(k) === target);
+                    if (found !== undefined) {
+                        const price = parseNumber(raw[found]);
+                        if (price > 0)
+                            return price;
+                    }
+                }
+                const fuzzyAliases = exactAliases.filter(alias => !['구매'].includes(alias));
+                for (const alias of fuzzyAliases) {
                     const value = getRawCell(raw, [alias]);
                     const price = parseNumber(value);
                     if (price > 0)
@@ -2345,9 +2368,24 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 const n = safeNum(price);
                 return n > 0 ? String(Math.round(n * 1000) / 1000) : 'NO_PRICE';
             };
-            // 2. 🌟 v8.99m/v8.99zza: Lot/원가 매칭용 전표 병합 기준 정정.
+            const getSalesLotMatchDate = (sale = {}) => {
+                const direct = safeStr(sale._lotMatchDate, '');
+                if (direct)
+                    return direct;
+                const raw = sale._raw || {};
+                const dateCell = getValWithKeyByKeywords(raw, ['구매일자', '매입일자', '입고일자', '구매기록', '매입기록', '입고기록', 'Lot일자', 'LOT일자', '로트일자', 'Lot구매일자', '로트구매일자', '매칭일자', '기준구매일자']);
+                return dateCell.value !== null ? safeStr(dateCell.value, '') : '';
+            };
+            const makeLotDateKey = (date) => {
+                const raw = safeStr(date, '');
+                if (!raw)
+                    return 'NO_DATE';
+                const d = getLotDateNum(raw);
+                return d && d !== UNKNOWN_LOT_SORT_DATE ? String(d) : raw.replace(/\s/g, '');
+            };
+            // 2. 🌟 v8.99zzd: Lot/원가 매칭용 전표 병합 기준 정정.
             // 원가 배정 기준은 판매처가 아니라 "상품코드 + 품명 + 판매현황 구매처(Lot) + 매핑단가"이다.
-            // 같은 구매처라도 판매현황의 매핑단가가 16,000 / 18,000처럼 다르면 서로 다른 Lot로 분리한다.
+            // 판매현황의 구매처 정보는 금일 구매분 매칭 신호이며, 판매현황 일자는 구매일자로 사용하지 않는다.
             // 판매처별 수량/매출은 _salesVendorDetails에 보존하고, 출고내역 표시 단계에서 다시 분리한다.
             const aggregatedSales = {};
             outItems.forEach(sale => {
@@ -2358,9 +2396,11 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 const matchKey = safeStr(sale.매입처매칭, '미지정');
                 const matchPrice = getSalesLotMatchPrice(sale);
                 const matchPriceKey = makeLotPriceKey(matchPrice);
+                const matchDate = getSalesLotMatchDate(sale);
+                const matchDateKey = makeLotDateKey(matchDate);
                 const qty = sale._computedQty || 0;
                 const rev = sale._finalRevenue || 0;
-                // 판매거래처는 병합키에서 제외한다. 같은 구매처 Lot이어도 매핑단가가 다르면 원가 배정은 분리한다.
+                // 판매거래처는 병합키에서 제외한다. 구매일자는 판매현황에 정확 정보가 없으므로 병합키에 넣지 않는다.
                 const aggKey = `${code}|${sale.품명}|${matchKey}|${matchPriceKey}`;
                 if (!aggregatedSales[aggKey]) {
                     aggregatedSales[aggKey] = {
@@ -2374,7 +2414,10 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         _minRowIndex: safeNum(sale._sourceRowIndex),
                         _matchKey: matchKey,
                         _lotMatchPrice: matchPrice,
-                        _matchPriceKey: matchPriceKey
+                        _matchPriceKey: matchPriceKey,
+                        _lotMatchDate: matchDate,
+                        _lotMatchDateKey: matchDateKey,
+                        _lotMatchDateNum: getLotDateNum(matchDate)
                     };
                 }
                 aggregatedSales[aggKey]._computedQty += qty;
@@ -2382,18 +2425,23 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 aggregatedSales[aggKey]._rawCombinedStr += ' ' + Object.values(sale._raw || {}).map(v => String(v)).join(' ').toLowerCase();
                 if (!safeNum(aggregatedSales[aggKey]._lotMatchPrice) && matchPrice > 0)
                     aggregatedSales[aggKey]._lotMatchPrice = matchPrice;
+                if (!safeStr(aggregatedSales[aggKey]._lotMatchDate, '') && matchDate) {
+                    aggregatedSales[aggKey]._lotMatchDate = matchDate;
+                    aggregatedSales[aggKey]._lotMatchDateKey = matchDateKey;
+                    aggregatedSales[aggKey]._lotMatchDateNum = getLotDateNum(matchDate);
+                }
                 const saleDateForSort = getLotDateNum(sale.일자);
                 if (saleDateForSort && saleDateForSort < safeNum(aggregatedSales[aggKey]._minSalesDate))
                     aggregatedSales[aggKey]._minSalesDate = saleDateForSort;
                 if (safeNum(sale._sourceRowIndex) < safeNum(aggregatedSales[aggKey]._minRowIndex))
                     aggregatedSales[aggKey]._minRowIndex = safeNum(sale._sourceRowIndex);
-                const existingDetail = aggregatedSales[aggKey]._salesVendorDetails.find(d => d.vendor === vendorKey);
+                const existingDetail = aggregatedSales[aggKey]._salesVendorDetails.find(d => d.vendor === vendorKey && d.matchPriceKey === matchPriceKey);
                 if (existingDetail) {
                     existingDetail.qty += qty;
                     existingDetail.rev += rev;
                 }
                 else {
-                    aggregatedSales[aggKey]._salesVendorDetails.push({ vendor: vendorKey, qty, rev, remainingQty: qty, remainingRev: rev });
+                    aggregatedSales[aggKey]._salesVendorDetails.push({ vendor: vendorKey, qty, rev, remainingQty: qty, remainingRev: rev, requestedPrice: matchPrice, matchPriceKey, requestedLotDate: matchDate, matchDateKey });
                 }
             });
             // 3. 병합된 전표 리스트 정렬
@@ -2425,6 +2473,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 const priceCompare = safeNum(a._lotMatchPrice) - safeNum(b._lotMatchPrice);
                 if (priceCompare !== 0)
                     return priceCompare;
+                const lotDateCompare = (safeNum(a._lotMatchDateNum) || UNKNOWN_LOT_SORT_DATE) - (safeNum(b._lotMatchDateNum) || UNKNOWN_LOT_SORT_DATE);
+                if (lotDateCompare !== 0)
+                    return lotDateCompare;
                 const dateCompare = (safeNum(a._minSalesDate) || UNKNOWN_LOT_SORT_DATE) - (safeNum(b._minSalesDate) || UNKNOWN_LOT_SORT_DATE);
                 if (dateCompare !== 0)
                     return dateCompare;
@@ -2482,9 +2533,19 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     if (isTransferLotContext) {
                         const requestedPrice = safeNum(sale._lotMatchPrice);
                         const appliedPrice = safeNum(bucket.단가);
+                        const requestedLotDate = safeStr(sale._lotMatchDate, '');
+                        const appliedLotDate = safeStr(bucket.일자, '');
                         const priceMemo = requestedPrice > 0 ? ` / 요청원가=${formatMoney(requestedPrice)} / 적용원가=${formatMoney(appliedPrice)}` : ` / 원가=${formatMoney(appliedPrice)}`;
-                        const memoPrefix = options.priceMismatch ? '2전송Lot단가불일치' : (options.matchFailed ? '2전송구매처미일치' : '2전송구매처매핑');
-                        appendLotMemo(row, `${memoPrefix}: 요청=${requestedLot} / 적용=${appliedLot}${priceMemo}`);
+                        const dateMemo = requestedLotDate ? ` / 요청구매일=${requestedLotDate} / 적용구매일=${appliedLotDate || '미상'}` : '';
+                        const memoPrefix = options.dateMismatch ? '2전송Lot일자불일치' : (options.priceMismatch ? '2전송Lot단가불일치' : (options.matchFailed ? '2전송구매처미일치' : '2전송구매처매핑'));
+                        appendLotMemo(row, `${memoPrefix}: 요청=${requestedLot} / 적용=${appliedLot}${priceMemo}${dateMemo}`);
+                        if (options.dateMismatch) {
+                            const issueMsg = `🚨Lot일자불일치(${requestedLotDate || '미지정'}→${appliedLotDate || '미상'})`;
+                            if (!row.이슈.includes(issueMsg)) {
+                                row.이슈.push(issueMsg);
+                                row.수기확인완료 = false;
+                            }
+                        }
                         if (options.priceMismatch) {
                             const issueMsg = `🚨Lot단가불일치(${requestedPrice > 0 ? formatMoney(requestedPrice) : '미지정'}→${formatMoney(appliedPrice)})`;
                             if (!row.이슈.includes(issueMsg)) {
@@ -2577,6 +2638,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                                 requestedPrice: safeNum(sale._lotMatchPrice),
                                 appliedPrice: safeNum(bucket.단가),
                                 priceMismatch: safeNum(sale._lotMatchPrice) > 0 && Math.abs(safeNum(sale._lotMatchPrice) - safeNum(bucket.단가)) > 0.0001,
+                                requestedLotDate: safeStr(sale._lotMatchDate, ''),
+                                appliedLotDate: safeStr(bucket.일자, ''),
+                                dateMismatch: safeStr(sale._lotMatchDate, '') !== '' && getLotDateNum(sale._lotMatchDate) !== getLotDateNum(bucket.일자),
                                 matchMode: matchMode || (matchStr ? 'FIXED_LOT' : (effectiveIsLifo ? 'LIFO' : 'SEQUENTIAL'))
                             };
                         }
@@ -2601,6 +2665,10 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     const hasRequestedMatchPrice = requestedMatchPrice > 0;
                     const isPriceMatchedBucket = (bucket) => !hasRequestedMatchPrice || Math.abs(safeNum(bucket && bucket.단가) - requestedMatchPrice) <= 0.0001;
                     const isPriceMismatchedBucket = (bucket) => hasRequestedMatchPrice && !isPriceMatchedBucket(bucket);
+                    const requestedLotDateNum = getLotDateNum(sale._lotMatchDate);
+                    const hasRequestedLotDate = safeStr(sale._lotMatchDate, '') !== '' && requestedLotDateNum !== UNKNOWN_LOT_SORT_DATE;
+                    const isDateMatchedBucket = (bucket) => !hasRequestedLotDate || safeNum(bucket && bucket._lotSortDate) === safeNum(requestedLotDateNum);
+                    const isDateMismatchedBucket = (bucket) => hasRequestedLotDate && !isDateMatchedBucket(bucket);
                     const saleDateNumRaw = getLotDateNum(safeStr(sale.일자 || targetDateStrFromData || ''));
                     const saleDateNum = saleDateNumRaw === UNKNOWN_LOT_SORT_DATE ? extractDateNum(targetDateStrFromData) : saleDateNumRaw;
                     const hasValidSaleDate = saleDateNum && saleDateNum !== UNKNOWN_LOT_SORT_DATE;
@@ -2621,12 +2689,25 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     };
                     const requestedBuckets = matchStr ? allBuckets.filter(isRequestedBucket) : [];
                     const requestedSamePriceBuckets = requestedBuckets.filter(isPriceMatchedBucket);
+                    const requestedSamePriceSameDateBuckets = requestedSamePriceBuckets.filter(isDateMatchedBucket);
+                    const requestedSamePriceOtherDateBuckets = requestedSamePriceBuckets.filter(isDateMismatchedBucket);
                     const requestedOtherPriceBuckets = requestedBuckets.filter(isPriceMismatchedBucket);
+                    const requestedOtherPriceSameDateBuckets = requestedOtherPriceBuckets.filter(isDateMatchedBucket);
+                    const requestedOtherPriceOtherDateBuckets = requestedOtherPriceBuckets.filter(isDateMismatchedBucket);
                     const otherBuckets = allBuckets.filter(bucket => !isRequestedBucket(bucket));
                     const otherSamePriceBuckets = otherBuckets.filter(isPriceMatchedBucket);
+                    const otherSamePriceSameDateBuckets = otherSamePriceBuckets.filter(isDateMatchedBucket);
+                    const otherSamePriceOtherDateBuckets = otherSamePriceBuckets.filter(isDateMismatchedBucket);
                     const otherOtherPriceBuckets = otherBuckets.filter(isPriceMismatchedBucket);
+                    const otherOtherPriceSameDateBuckets = otherOtherPriceBuckets.filter(isDateMatchedBucket);
+                    const otherOtherPriceOtherDateBuckets = otherOtherPriceBuckets.filter(isDateMismatchedBucket);
                     const todayBuckets = allBuckets.filter(isTodayPurchaseBucket);
+                    const todayRequestedBuckets = todayBuckets.filter(isRequestedBucket);
+                    const todayRequestedSamePriceBuckets = todayRequestedBuckets.filter(isPriceMatchedBucket);
+                    const todayRequestedOtherPriceBuckets = todayRequestedBuckets.filter(isPriceMismatchedBucket);
                     const todayOtherBuckets = todayBuckets.filter(bucket => !isRequestedBucket(bucket));
+                    const todayOtherSamePriceBuckets = todayOtherBuckets.filter(isPriceMatchedBucket);
+                    const todayOtherOtherPriceBuckets = todayOtherBuckets.filter(isPriceMismatchedBucket);
                     const stockFifoBuckets = allBuckets.filter(bucket => !isTodayPurchaseBucket(bucket));
                     const requestedStockBuckets = requestedBuckets.filter(bucket => !isTodayPurchaseBucket(bucket));
                     const stockOtherBuckets = stockFifoBuckets.filter(bucket => !isRequestedBucket(bucket));
@@ -2647,15 +2728,14 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                             if (hasRequestedMatchPrice && !hasRequestedSamePricePositive)
                                 matchFailedFlag = true;
                             return [
-                                // v8.99zza: 2전송 판매현황 매핑은 구매처 + 매핑단가가 모두 일치하는 Lot을 먼저 차감한다.
-                                // 같은 구매처라도 16,000 / 18,000처럼 원가가 다르면 서로 다른 판매처 배정으로 본다.
-                                { buckets: requestedSamePriceBuckets, mode: 'TRANSFER_REQUESTED_VENDOR_PRICE_FIFO', matchFailed: false, fifoReview: false, priceMismatch: false },
-                                // 요청 구매처 수량이 부족할 때만 같은 구매처의 다른 단가 Lot를 대체하고 단가불일치 이슈를 남긴다.
-                                { buckets: requestedOtherPriceBuckets, mode: 'TRANSFER_REQUESTED_VENDOR_OTHER_PRICE_FALLBACK', matchFailed: false, fifoReview: false, priceMismatch: true },
-                                // 그래도 부족할 때만 다른 구매처 중 같은 단가 Lot를 오래된 일자부터 대체한다.
-                                { buckets: otherSamePriceBuckets, mode: 'TRANSFER_OTHER_VENDOR_SAME_PRICE_FALLBACK', matchFailed: true, fifoReview: false, priceMismatch: false },
-                                // 마지막으로 다른 구매처·다른 단가 Lot를 대체하고 단가불일치 이슈를 남긴다.
-                                { buckets: otherOtherPriceBuckets, mode: 'TRANSFER_OTHER_VENDOR_OTHER_PRICE_FALLBACK', matchFailed: true, fifoReview: false, priceMismatch: true }
+                                // v8.99zzd: 2전송 판매현황에 구매처 정보가 있으면 금일 구매분으로 확정한다.
+                                // 전일재고 FIFO보다 금일 구매현황의 동일 구매처 + 동일 구매가 Lot를 먼저 차감한다.
+                                { buckets: todayRequestedSamePriceBuckets, mode: 'TRANSFER_TODAY_REQUESTED_VENDOR_PRICE', matchFailed: false, fifoReview: false, priceMismatch: false, dateMismatch: false },
+                                // 금일 동일 구매처 수량은 있으나 단가가 다르면 금일 구매분 안에서만 대체하고 단가불일치 표시한다.
+                                { buckets: todayRequestedOtherPriceBuckets, mode: 'TRANSFER_TODAY_REQUESTED_VENDOR_OTHER_PRICE', matchFailed: false, fifoReview: false, priceMismatch: true, dateMismatch: false },
+                                // 금일 구매분 중 다른 구매처는 최후 대체 후보로만 사용하고 구매처미일치/단가불일치를 표시한다.
+                                { buckets: todayOtherSamePriceBuckets, mode: 'TRANSFER_TODAY_OTHER_VENDOR_SAME_PRICE_FALLBACK', matchFailed: true, fifoReview: false, priceMismatch: false, dateMismatch: false },
+                                { buckets: todayOtherOtherPriceBuckets, mode: 'TRANSFER_TODAY_OTHER_VENDOR_OTHER_PRICE_FALLBACK', matchFailed: true, fifoReview: false, priceMismatch: true, dateMismatch: false }
                             ];
                         }
                         if (isTransferLotContext) {
@@ -2705,20 +2785,46 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                                 break;
                             deductFromBucket(targetBucket, take, false, stage.mode);
                             remainingQty -= take;
-                            applyLotMatchPolicy(targetBucket, { matchFailed: stage.matchFailed || matchFailedFlag, fifoReview: stage.fifoReview || fifoReviewFlag, priceMismatch: stage.priceMismatch || false });
+                            applyLotMatchPolicy(targetBucket, { matchFailed: stage.matchFailed || matchFailedFlag, fifoReview: stage.fifoReview || fifoReviewFlag, priceMismatch: stage.priceMismatch || false, dateMismatch: stage.dateMismatch || false });
                             markShortageIfNeeded(targetBucket);
                         }
                         if (remainingQty <= 0)
                             break;
                     }
                     if (remainingQty > 0) {
-                        // 전체 가용 Lot이 부족한 진짜 부족분만 마지막 Lot에 남긴다.
-                        const shortageBucket = uniqueBuckets(allBuckets).filter(Boolean).slice(-1)[0];
+                        // v8.99zzd: 판매현황 구매처가 있는 2전송 건은 금일 구매분 확정 신호다.
+                        // 부족분을 전일재고에 강제 배정하지 않고, 금일 구매 Lot 안에서만 초과배정하거나 별도 확인행으로 남긴다.
+                        const shortageSourceBuckets = (isTransferLotContext && matchStr) ? uniqueBuckets(todayBuckets) : uniqueBuckets(allBuckets);
+                        const shortageBucket = shortageSourceBuckets.filter(Boolean).slice(-1)[0];
                         if (shortageBucket) {
                             deductFromBucket(shortageBucket, remainingQty, false, 'SHORTAGE_OVER_ALLOC');
-                            applyLotMatchPolicy(shortageBucket, { matchFailed: matchFailedFlag, fifoReview: fifoReviewFlag, priceMismatch: false });
+                            applyLotMatchPolicy(shortageBucket, { matchFailed: matchFailedFlag || (isTransferLotContext && matchStr), fifoReview: fifoReviewFlag, priceMismatch: false });
                             markShortageIfNeeded(shortageBucket, '🚨Lot초과배정');
                             markShortageIfNeeded(shortageBucket, '🚨수량부족');
+                            remainingQty = 0;
+                        }
+                        else {
+                            const failVendor = safeStr(sale.매입처매칭, '금일구매Lot없음');
+                            const failPrice = safeNum(sale._lotMatchPrice);
+                            const failDate = safeStr(sale.일자 || targetDateStrFromData || '');
+                            const failKey = generateBatchKey(code, sale.품명, failPrice, `금일구매Lot없음:${failVendor}`, failDate);
+                            if (!pData[failKey]) {
+                                pData[failKey] = {
+                                    batchKey: failKey, 코드: code, 품명: sale.품명, 적재위치: '', 단가: failPrice, 일자: failDate, 거래처: `금일구매Lot없음:${failVendor}`,
+                                    기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0,
+                                    매출액: 0, 매출원가: 0, 메모: `판매현황 구매처=${failVendor} / 구매가=${failPrice > 0 ? formatMoney(failPrice) : '미지정'} / 금일 구매현황 매칭 Lot 없음`,
+                                    이슈: ['🚨금일구매Lot없음', '🚨Lot매칭실패'], 출고내역: {}, _orig: { 기초: 0, 입고: 0, 출고: 0, 단가: failPrice },
+                                    isDummy: true, 수기확인완료: false
+                                };
+                            }
+                            const revShare = qtyToDeduct > 0 ? finalRevenue * (remainingQty / qtyToDeduct) : 0;
+                            pData[failKey].출고 += remainingQty;
+                            pData[failKey].매출액 += revShare;
+                            const displayVendor = safeStr(sale.거래처, '미지정');
+                            if (!pData[failKey].출고내역[displayVendor])
+                                pData[failKey].출고내역[displayVendor] = { qty: 0, rev: 0, cogs: 0, isLifo: false, isPerfectMatch: false, displayVendor, matchMode: 'TODAY_PURCHASE_LOT_NOT_FOUND' };
+                            pData[failKey].출고내역[displayVendor].qty += remainingQty;
+                            pData[failKey].출고내역[displayVendor].rev += revShare;
                             remainingQty = 0;
                         }
                     }
@@ -2844,23 +2950,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             const finalProductData = Object.values(pData)
                 .filter(item => !isSummaryOrInvalidProductRow({ code: item.코드, name: item.품명, raw: item._raw }))
                 .filter(item => !(item.기초 === 0 && item.입고 === 0 && item.출고 === 0 && item.실사 === 0 && item.로스 === 0))
-                .sort((a, b) => {
-                const codeA = safeStr(a.코드 || '').replace(/\.0$/, '').trim();
-                const codeB = safeStr(b.코드 || '').replace(/\.0$/, '').trim();
-                if (codeA !== codeB)
-                    return codeA.localeCompare(codeB, 'ko', { numeric: false, sensitivity: 'base' });
-                const stockRank = FILTER_SORT_MODULE.getStockSortRank(a) - FILTER_SORT_MODULE.getStockSortRank(b);
-                if (stockRank !== 0)
-                    return stockRank;
-                const stockQty = FILTER_SORT_MODULE.getStockSortQty(b) - FILTER_SORT_MODULE.getStockSortQty(a);
-                if (stockQty !== 0)
-                    return stockQty;
-                const dateA = String(a.일자 || '');
-                const dateB = String(b.일자 || '');
-                if (dateA !== dateB)
-                    return dateA.localeCompare(dateB);
-                return (a.단가 || 0) - (b.단가 || 0);
-            });
+                .sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b));
             setProductData(finalProductData);
             setAckMultiCodes(autoAckCodes);
             setAppStep('closing');
@@ -5869,7 +5959,7 @@ ${changeText}
                     React.createElement("h1", { className: "text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zza Lot Price Match Fix"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzd Today Purchase Lot Match Fix"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
