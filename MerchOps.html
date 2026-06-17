@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.22 출력센터복귀브릿지]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.23 행사제안필터정리]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -691,7 +691,7 @@ const getInitialVisibleUploadCols = () => ({
     estimate: ['창고', '기준일자', '구매처', '브랜드', '견적서', '단위', '재고수량', '상품 구매일자', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '검색어등록'],
     purchase: ['창고', '구매처', '단위', '입고가', '입고수량'],
     sales: ['창고', '구매처', '단위', '출고가', '출고량'],
-    inventory: ['창고', '기준일자', '재고수량', '상품 구매일자', '구매처', '단위', '입고가', '출고가', '행사가', '간단설명']
+    inventory: ['창고', '기준일자', '재고수량', '기록', '거래', '최종(창고)', '구분(기본)', '상품 구매일자', '구매처', '단위', '입고가', '출고가', '행사가', '간단설명']
 });
 // ============================================================
 // [M-TABLE-01] 테이블 양식 프리셋 정책
@@ -890,6 +890,27 @@ const getInitialMappings = () => {
         '간단설명': '지시사항, 간단설명, 비고',
         '검색어등록': '검색어등록, 검색어, 유사어, 키워드'
     };
+    base.inventory = {
+        '창고': '창고, 창고코드',
+        '기준일자': '기준일자, 기준일, 기준일시',
+        '품목코드': '품목코드, 상품코드, 코드',
+        '품목명': '품명, 품목명, 상품명, 상품명(규격)',
+        '규격': '규격, 규격명',
+        '단위': '단위, 단위유형, 판매단위, 포장단위',
+        '재고수량': '재고수량, 재고, 잔량, 현재고, 기말실사(이월수량), 수량',
+        '재고': '재고, 재고수량, 잔량, 현재고, 기말실사(이월수량), 수량',
+        '기록': '기록, 상품 구매일자, 구매일자, 입고일자, 일자',
+        '상품 구매일자': '상품 구매일자, 구매일자, 기록, 입고일자, 일자',
+        '거래': '거래, 구매처, 매입처, 매입처(Lot), Lot, 거래처명',
+        '구매처': '구매처, 거래, 매입처, 매입처(Lot), Lot, 거래처명',
+        '최종(창고)': '최종(창고), 최종창고, 최신단가, 재고단가, 매입단가(원가), 매입단가, 원가',
+        '입고가': '입고가, 최종(창고), 최종창고, 최신단가, 재고단가, 매입단가(원가), 매입단가, 원가',
+        '구분(기본)': '구분(기본), 구분기본, 기본, 기본여부, 관리구분',
+        '기본': '기본, 기본여부, 구분(기본), 구분기본, 관리구분',
+        '적재위치': '적재위치, 위치',
+        '적요': '적요, 비고, 메모',
+        '간단설명': '적요, 비고, 메모, 간단설명'
+    };
     return base;
 };
 const getInitialMasterLinks = () => {
@@ -911,6 +932,23 @@ const getInitialMasterLinks = () => {
         '도매B': '도매B',
         '간단설명': '간단설명',
         '검색어등록': '검색어등록'
+    };
+    base.inventory = {
+        '창고': '창고',
+        '기준일자': '',
+        '재고수량': '재고수량',
+        '재고': '재고수량',
+        '기록': '',
+        '상품 구매일자': '',
+        '거래': '구매처',
+        '구매처': '구매처',
+        '최종(창고)': '입고가',
+        '입고가': '입고가',
+        '구분(기본)': '기본',
+        '기본': '기본',
+        '적재위치': '',
+        '적요': '간단설명',
+        '간단설명': '간단설명'
     };
     return base;
 };
@@ -1552,7 +1590,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                 }
                 const sheetMeta = excelData._sheetMeta || {};
                 const actualHeaders = Object.keys(excelData[0]);
-                const curMap = config.mappings['estimate'] || {};
+                const curMap = config.mappings[role] || config.mappings['estimate'] || {};
                 const headerCache = createHeaderMap(actualHeaders, curMap);
                 excelData.forEach((row, rowIdx) => {
                     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
@@ -1624,8 +1662,11 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                         const source = mItem.sources.inventory;
                         const actualPurchaseDateKey = headerCache['상품 구매일자'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '기록');
                         const actualStockKey = headerCache['재고수량'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '재고');
-                        const actualInventoryPriceKey = headerCache['입고가'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '최종(창고)' || String(h).replace(/\s/g, '') === '최종창고');
-                        const actualMemoKey = actualHeaders.find(h => String(h).replace(/\s/g, '') === '적요' || String(h).replace(/\s/g, '') === '비고');
+                        const actualInventoryPriceKey = headerCache['최종(창고)'] || headerCache['입고가'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '최종(창고)' || String(h).replace(/\s/g, '') === '최종창고');
+                        const actualTradeKey = headerCache['거래'] || headerCache['구매처'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '거래' || String(h).replace(/\s/g, '') === '구매처' || String(h).replace(/\s/g, '') === '매입처' || String(h).replace(/\s/g, '') === '매입처(Lot)');
+                        const actualBasicKey = headerCache['구분(기본)'] || headerCache['기본'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '구분(기본)' || String(h).replace(/\s/g, '') === '구분기본' || String(h).replace(/\s/g, '') === '기본' || String(h).replace(/\s/g, '') === '기본여부' || String(h).replace(/\s/g, '') === '관리구분');
+                        const actualLocationKey = headerCache['적재위치'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '적재위치' || String(h).replace(/\s/g, '') === '위치');
+                        const actualMemoKey = headerCache['적요'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '적요' || String(h).replace(/\s/g, '') === '비고' || String(h).replace(/\s/g, '') === '메모');
                         const metaWarehouseCode = window.normalizeWarehouseCode(sheetMeta.warehouseCode || sheetMeta.warehouseRaw || '');
                         const metaBaseDate = sheetMeta.baseDate || '';
                         // 기존 일반 매핑에서 '창고'가 '최종(창고)'에 부분일치되어 들어온 경우를 방어적으로 제거한다.
@@ -1644,12 +1685,28 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                             source['_inventorySheetTitle'] = sheetMeta.titleText;
                         if (sheetMeta.docType)
                             source['_inventorySheetType'] = sheetMeta.docType;
-                        if (actualPurchaseDateKey)
+                        if (actualPurchaseDateKey) {
+                            source['기록'] = row[actualPurchaseDateKey] || '';
                             source['상품 구매일자'] = window.normalizeInventoryPurchaseDate(row[actualPurchaseDateKey]);
-                        if (actualStockKey)
-                            source['재고수량'] = window.keepExcelCellValue(row[actualStockKey], true);
+                        }
+                        if (actualTradeKey) {
+                            source['거래'] = row[actualTradeKey] || '';
+                            source['구매처'] = row[actualTradeKey] || '';
+                        }
+                        if (actualStockKey) {
+                            const stockQty = window.keepExcelCellValue(row[actualStockKey], true);
+                            source['재고'] = stockQty;
+                            source['재고수량'] = stockQty;
+                        }
+                        if (actualBasicKey) {
+                            source['구분(기본)'] = row[actualBasicKey] || '';
+                            source['기본'] = row[actualBasicKey] || '';
+                        }
+                        if (actualLocationKey)
+                            source['적재위치'] = row[actualLocationKey] || '';
                         if (actualInventoryPriceKey) {
                             const latestWarehousePrice = window.keepExcelCellValue(row[actualInventoryPriceKey], true);
+                            source['최종(창고)'] = latestWarehousePrice;
                             source['최신단가'] = latestWarehousePrice;
                             source['_latestWarehousePrice'] = latestWarehousePrice;
                             source['_latestWarehousePriceHeader'] = actualInventoryPriceKey;
@@ -1657,8 +1714,10 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                             if (source['입고가'] === undefined || source['입고가'] === '')
                                 source['입고가'] = latestWarehousePrice;
                         }
-                        if (actualMemoKey)
+                        if (actualMemoKey) {
+                            source['적요'] = row[actualMemoKey] || '';
                             source['비고'] = row[actualMemoKey] || '';
+                        }
                         source['_inventoryFifoKey'] = window.getInventoryPurchaseDateKey(source['상품 구매일자'], metaBaseDate);
                         source['_inventorySourceRole'] = '1재고현황_기초재고';
                     }
@@ -3004,9 +3063,10 @@ const getMarginToneClass = (rate) => {
 };
 const isPromoSuggestion = (row = {}, mItem = {}, config = {}) => {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
-    // 행사제안 버튼은 현재 행사중 상품과 행사 메리트가 있는 상품을 함께 검토 대상으로 올린다.
+    // 행사제안 버튼은 아직 행사중이 아닌 상품 중 행사 메리트가 있는 후보만 올린다.
+    // 현재 행사중 상품은 별도 [행사중] 필터에서 확인하므로 중복 노출하지 않는다.
     if (isPromoActive(row, mItem))
-        return true;
+        return false;
     if (getWorkingPromoPrice(row) > 0)
         return true;
     const marginInfo = getMarginInfo(row, mItem);
@@ -3033,7 +3093,7 @@ const isPromoSuggestion = (row = {}, mItem = {}, config = {}) => {
 const getPromoSuggestionReason = (row = {}, mItem = {}, config = {}) => {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
     if (isPromoActive(row, mItem))
-        return '현재 행사중';
+        return '';
     const oldIn = window.parseNum(mItem === null || mItem === void 0 ? void 0 : mItem['입고가']);
     const newIn = window.parseNum(((_a = row.finalData) === null || _a === void 0 ? void 0 : _a['입고가']) !== undefined ? row.finalData['입고가'] : ((_k = (_g = (_d = (_c = (_b = row.sources) === null || _b === void 0 ? void 0 : _b.estimate) === null || _c === void 0 ? void 0 : _c['입고가']) !== null && _d !== void 0 ? _d : (_f = (_e = row.sources) === null || _e === void 0 ? void 0 : _e.purchase) === null || _f === void 0 ? void 0 : _f['입고가']) !== null && _g !== void 0 ? _g : (_j = (_h = row.sources) === null || _h === void 0 ? void 0 : _h.sales) === null || _j === void 0 ? void 0 : _j['입고가']) !== null && _k !== void 0 ? _k : (_m = (_l = row.sources) === null || _l === void 0 ? void 0 : _l.inventory) === null || _m === void 0 ? void 0 : _m['입고가']));
     const dropAmount = oldIn > 0 && newIn > 0 ? oldIn - newIn : 0;
@@ -3587,7 +3647,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.22 Export Return Bridge Fix]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.23 Promo Suggest Filter Fix]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -3908,7 +3968,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.22 Export Return Bridge Fix")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.23 Promo Suggest Filter Fix")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
