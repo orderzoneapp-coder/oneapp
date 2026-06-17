@@ -4,11 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.5 마진룰동기화]</title>
+    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.6 RuntimeOpenFix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script src="coreEngine.js"></script>
     <style>
@@ -24,897 +23,899 @@
 <body class="bg-slate-100 font-sans text-slate-800">
     <div id="root"></div>
 
-    <script type="text/babel">
-        // 🚨 coreEngine.js 안전장치 및 getIDB/setIDB 폴리필 확보
-        if (typeof window.getAllIDB !== 'function') {
-            window.initIDB = () => new Promise((resolve, reject) => { const request = indexedDB.open('MerchOpsDB', 2); request.onupgradeneeded = (e) => { const db = e.target.result; if (!db.objectStoreNames.contains('store')) db.createObjectStore('store'); if (!db.objectStoreNames.contains('master_products')) db.createObjectStore('master_products', { keyPath: '코드' }); }; request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
-            window.getAllIDB = async (storeName) => { try { const db = await window.initIDB(); return new Promise((resolve, reject) => { if (!db.objectStoreNames.contains(storeName)) return resolve([]); const tx = db.transaction(storeName, 'readonly'); const req = tx.objectStore(storeName).getAll(); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); } catch (e) { return []; } };
-            window.getIDB = async (key) => { try { const db = await window.initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); } catch (e) { return null; } };
-            window.setIDB = async (key, val) => { try { const db = await window.initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readwrite'); tx.objectStore('store').put(val, key); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); } catch (e) { console.warn('IDB put failed'); } };
-            window.bulkPutIDB = async (storeName, items) => { try { const db = await window.initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction(storeName, 'readwrite'); const store = tx.objectStore(storeName); items.forEach(item => store.put(item)); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); } catch (e) { console.warn('IDB put failed'); } };
-        }
-        if (!window.MASTER_HEADERS) {
-            window.MASTER_HEADERS = ["창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "판매여부", "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록"];
-        }
-
-        const { useState, useMemo, useEffect, useCallback } = React;
-
-        const safeJSONParse = (key, defaultValue) => {
-            try {
-                const raw = localStorage.getItem(key);
-                if (!raw || raw === 'undefined' || raw === 'null') return defaultValue;
-                return JSON.parse(raw) || defaultValue;
-            } catch (e) {
-                console.warn(`[Config Parse Warning] ${key}`, e);
-                return defaultValue;
-            }
-        };
-
-        const TABLE_VIEW_TARGETS = [
-            { id: 'catalog', label: '카탈로그', tone: 'indigo' },
-            { id: 'estimate', label: '견적', tone: 'emerald' },
-            { id: 'purchase', label: '구매', tone: 'sky' },
-            { id: 'sales', label: '판매', tone: 'purple' },
-            { id: 'inventory', label: '재고', tone: 'amber' }
+    <script>
+// 🚨 coreEngine.js 안전장치 및 getIDB/setIDB 폴리필 확보
+if (typeof window.getAllIDB !== 'function') {
+    window.initIDB = () => new Promise((resolve, reject) => { const request = indexedDB.open('MerchOpsDB', 2); request.onupgradeneeded = (e) => { const db = e.target.result; if (!db.objectStoreNames.contains('store'))
+        db.createObjectStore('store'); if (!db.objectStoreNames.contains('master_products'))
+        db.createObjectStore('master_products', { keyPath: '코드' }); }; request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+    window.getAllIDB = async (storeName) => { try {
+        const db = await window.initIDB();
+        return new Promise((resolve, reject) => { if (!db.objectStoreNames.contains(storeName))
+            return resolve([]); const tx = db.transaction(storeName, 'readonly'); const req = tx.objectStore(storeName).getAll(); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); });
+    }
+    catch (e) {
+        return [];
+    } };
+    window.getIDB = async (key) => { try {
+        const db = await window.initIDB();
+        return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); });
+    }
+    catch (e) {
+        return null;
+    } };
+    window.setIDB = async (key, val) => { try {
+        const db = await window.initIDB();
+        return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readwrite'); tx.objectStore('store').put(val, key); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); });
+    }
+    catch (e) {
+        console.warn('IDB put failed');
+    } };
+    window.bulkPutIDB = async (storeName, items) => { try {
+        const db = await window.initIDB();
+        return new Promise((resolve, reject) => { const tx = db.transaction(storeName, 'readwrite'); const store = tx.objectStore(storeName); items.forEach(item => store.put(item)); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); });
+    }
+    catch (e) {
+        console.warn('IDB put failed');
+    } };
+}
+if (!window.MASTER_HEADERS) {
+    window.MASTER_HEADERS = ["창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "판매여부", "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록"];
+}
+const { useState, useMemo, useEffect, useCallback } = React;
+const safeJSONParse = (key, defaultValue) => {
+    try {
+        const raw = localStorage.getItem(key);
+        if (!raw || raw === 'undefined' || raw === 'null')
+            return defaultValue;
+        return JSON.parse(raw) || defaultValue;
+    }
+    catch (e) {
+        console.warn(`[Config Parse Warning] ${key}`, e);
+        return defaultValue;
+    }
+};
+const TABLE_VIEW_TARGETS = [
+    { id: 'catalog', label: '카탈로그', tone: 'indigo' },
+    { id: 'estimate', label: '견적', tone: 'emerald' },
+    { id: 'purchase', label: '구매', tone: 'sky' },
+    { id: 'sales', label: '판매', tone: 'purple' },
+    { id: 'inventory', label: '재고', tone: 'amber' }
+];
+const UPLOAD_ROLES = TABLE_VIEW_TARGETS;
+const TABLE_VIEW_TARGET_IDS = TABLE_VIEW_TARGETS.map(t => t.id);
+const requiredCoreFields = ['품목코드', '품목명', '규격'];
+const canonicalMerchFieldName = (field) => {
+    const clean = String(field || '').trim();
+    if (['A판매', 'A판매가'].includes(clean))
+        return '도매A';
+    if (['B판매', 'B판매가', 'B도매가'].includes(clean))
+        return '도매B';
+    return clean;
+};
+const normalizeTableColumns = (columns = []) => {
+    const result = [];
+    (Array.isArray(columns) ? columns : []).map(canonicalMerchFieldName).filter(Boolean).forEach(col => {
+        if (!result.includes(col))
+            result.push(col);
+    });
+    return result;
+};
+const normalizeMasterColumns = (columns = []) => normalizeTableColumns(columns).filter(c => !requiredCoreFields.includes(c));
+const getDefaultVisibleMasterCols = () => ({
+    catalog: ['입고가'],
+    estimate: ['입고가'],
+    purchase: ['입고가'],
+    sales: ['입고가'],
+    inventory: ['입고가']
+});
+const getDefaultVisibleUploadCols = () => ({
+    catalog: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A', '행사가'],
+    estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명', '행사가'],
+    purchase: ['창고', '구매처', '단위', '입고가', '입고수량'],
+    sales: ['창고', '구매처', '단위', '출고가', '출고량'],
+    inventory: ['창고', '구매처', '단위', '재고수량', '입고가', '재고금액', '오차', '이슈요약']
+});
+const createTableView = (target, name, masterColumns = ['입고가'], workColumns = [], options = {}) => ({
+    id: options.id || `${target}_view_${Date.now()}`,
+    name: name || '맞춤보기',
+    system: !!options.system,
+    masterColumns: normalizeMasterColumns(masterColumns),
+    workColumns: normalizeTableColumns(workColumns).filter(c => c !== '품목코드'),
+    updatedAt: options.updatedAt || new Date().toISOString()
+});
+const getDefaultTableViewPresets = () => {
+    const result = {};
+    TABLE_VIEW_TARGETS.forEach(target => {
+        result[target.id] = { views: [] };
+    });
+    return result;
+};
+const sanitizeTableViewPresets = (raw = {}) => {
+    const result = {};
+    TABLE_VIEW_TARGETS.forEach(target => {
+        var _a;
+        const sourceViews = Array.isArray((_a = raw === null || raw === void 0 ? void 0 : raw[target.id]) === null || _a === void 0 ? void 0 : _a.views) ? raw[target.id].views : [];
+        const views = sourceViews
+            .filter(v => v && v.system !== true && !String(v.id || '').endsWith('_default') && String(v.name || '').trim() !== '기본보기')
+            .slice(0, 5)
+            .map((v, idx) => createTableView(target.id, String(v.name || `맞춤보기 ${idx + 1}`).trim(), v.masterColumns || ['입고가'], v.workColumns || v.columns || [], { id: v.id || `${target.id}_custom_${idx + 1}`, system: false, updatedAt: v.updatedAt }));
+        result[target.id] = { views };
+    });
+    return result;
+};
+const getDefaultMappings = () => ({
+    master: {},
+    catalog: {
+        '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격명, 규격, 사이즈, 단량',
+        '카탈로그': '카탈로그, 카테고리, 분류', '견적서': '견적서, 카테고리, 템플릿, 견적분류', '행사가': '행사가, 행사, 특가', '입고가': '입고가, 입고, 매입가', '출고가': '출고가, 출고, 판매가', '입고B': 'B단가, 입고B', '도매A': '도매A', '도매B': '도매B'
+    },
+    estimate: {
+        '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격명, 규격, 사이즈, 단량',
+        '구매처': '거래처명, 구매처, 거래처', '견적서': '견적서, 카테고리, 템플릿, 견적분류', '행사가': '행사가, 행사, 특가', '입고가': '입고가, 입고, 매입가', '출고가': '출고가, 출고, 판매가',
+        '입고B': 'B단가, 입고B', '도매A': 'A판매, A판매가, 도매A', '도매B': 'B판매, B판매가, 도매B', '간단설명': '지시사항, 간단설명, 비고'
+    },
+    purchase: {
+        '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격, 규격명, 사이즈, 단량',
+        '구매처': '구매처, 매입처, 거래처명, 거래처', '단위': '단위, 단위유형, 판매단위', '입고가': '입고가, 매입단가, 구매단가, 원가', '입고수량': '입고수량, 구매수량, 수량, 입고'
+    },
+    sales: {
+        '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격, 규격명, 사이즈, 단량',
+        '구매처': '거래처명, 판매처, 납품처, 구매처, 거래처', '단위': '단위, 단위유형, 판매단위', '출고가': '출고가, 판매단가, 단가, 판매가', '출고량': '출고량, 판매수량, 수량, 출고'
+    },
+    inventory: {
+        '품목코드': '품목코드, 상품코드, 코드', '품목명': '품명, 상품명, 상품명(규격), 품목명', '규격': '규격, 규격명',
+        '구매처': '구매처, 매입처(Lot), 매입처, Lot, 거래처명', '단위': '단위유형, 단위, 판매단위', '창고': '창고, 창고코드',
+        '재고수량': '잔량, 기말실사(이월수량), 수량, 재고수량', '입고가': '입고가, 매입단가(원가), 매입단가, 원가', '재고금액': '재고금액, 기말재고액(자산가치)',
+        '기초수량': '재고, 기초수량', '입고수량': '입고, 입고수량', '출고량': '출고, 출고량', '오차': '오차, 로스/조정수량, 로스', '이슈요약': '이슈요약, 이슈/결과', '메모': '메모, 수기메모'
+    }
+});
+const getDefaultMasterLinks = () => ({
+    catalog: { '카탈로그': '카탈로그', '견적서': '견적서', '행사가': '행사가', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B' },
+    estimate: { '창고': '창고', '구매처': '구매처', '견적서': '견적서', '행사가': '행사가', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B', '간단설명': '간단설명' },
+    purchase: { '창고': '창고', '구매처': '구매처', '단위': '단위', '입고가': '입고가' },
+    sales: { '창고': '창고', '구매처': '구매처', '단위': '단위', '출고가': '출고가' },
+    inventory: { '창고': '창고', '구매처': '구매처', '단위': '단위', '입고가': '입고가', '재고수량': '재고수량' }
+});
+const useMerchConfig = () => {
+    const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v870') || '');
+    const [visibleMasterCols, setVisibleMasterCols] = useState(() => safeJSONParse('merchVisMaster_v870', getDefaultVisibleMasterCols()));
+    const [visibleUploadCols, setVisibleUploadCols] = useState(() => safeJSONParse('merchVisUpload_v870', getDefaultVisibleUploadCols()));
+    const [mappings, setMappings] = useState(() => safeJSONParse('merchMappings_v870', getDefaultMappings()));
+    const [masterLinks, setMasterLinks] = useState(() => safeJSONParse('merchMasterLinks_v870', getDefaultMasterLinks()));
+    const [uploadColumnMeta, setUploadColumnMeta] = useState(() => safeJSONParse('merchUploadColumnMeta_v870', { catalog: {}, estimate: {}, purchase: {}, sales: {}, inventory: {} }));
+    const [tableShortcuts, setTableShortcuts] = useState(() => safeJSONParse('merchTableShortcuts_v870', []));
+    const [tableViewPresets, setTableViewPresets] = useState(() => sanitizeTableViewPresets(safeJSONParse('merchTableViewPresets_v1', getDefaultTableViewPresets())));
+    const [marginRules, setMarginRules] = useState(() => {
+        var _a, _b, _c, _d, _e;
+        const defaultRules = [
+            { id: 'rule_1', whCode: '01', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
+            { id: 'rule_2', whCode: '01', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' },
+            { id: 'rule_3', whCode: '03,05', unit: 'box, 박스, BOX', rate: 15, type: 'divide' },
+            { id: 'rule_4', whCode: '03,05', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 10, type: 'divide' },
+            { id: 'rule_5', whCode: '77,99', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
+            { id: 'rule_6', whCode: '77,99', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' },
+            { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }
         ];
-        const UPLOAD_ROLES = TABLE_VIEW_TARGETS;
-        const TABLE_VIEW_TARGET_IDS = TABLE_VIEW_TARGETS.map(t => t.id);
-        const requiredCoreFields = ['품목코드', '품목명', '규격'];
-
-        const canonicalMerchFieldName = (field) => {
-            const clean = String(field || '').trim();
-            if (['A판매', 'A판매가'].includes(clean)) return '도매A';
-            if (['B판매', 'B판매가', 'B도매가'].includes(clean)) return '도매B';
-            return clean;
-        };
-        const normalizeTableColumns = (columns = []) => {
-            const result = [];
-            (Array.isArray(columns) ? columns : []).map(canonicalMerchFieldName).filter(Boolean).forEach(col => {
-                if (!result.includes(col)) result.push(col);
-            });
-            return result;
-        };
-        const normalizeMasterColumns = (columns = []) => normalizeTableColumns(columns).filter(c => !requiredCoreFields.includes(c));
-
-        const getDefaultVisibleMasterCols = () => ({
-            catalog: ['입고가'],
-            estimate: ['입고가'],
-            purchase: ['입고가'],
-            sales: ['입고가'],
-            inventory: ['입고가']
-        });
-
-        const getDefaultVisibleUploadCols = () => ({
-            catalog: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A', '행사가'],
-            estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명', '행사가'],
-            purchase: ['창고', '구매처', '단위', '입고가', '입고수량'],
-            sales: ['창고', '구매처', '단위', '출고가', '출고량'],
-            inventory: ['창고', '구매처', '단위', '재고수량', '입고가', '재고금액', '오차', '이슈요약']
-        });
-
-        const createTableView = (target, name, masterColumns = ['입고가'], workColumns = [], options = {}) => ({
-            id: options.id || `${target}_view_${Date.now()}`,
-            name: name || '맞춤보기',
-            system: !!options.system,
-            masterColumns: normalizeMasterColumns(masterColumns),
-            workColumns: normalizeTableColumns(workColumns).filter(c => c !== '품목코드'),
-            updatedAt: options.updatedAt || new Date().toISOString()
-        });
-
-        const getDefaultTableViewPresets = () => {
-            const result = {};
-            TABLE_VIEW_TARGETS.forEach(target => {
-                result[target.id] = { views: [] };
-            });
-            return result;
-        };
-
-        const sanitizeTableViewPresets = (raw = {}) => {
-            const result = {};
-            TABLE_VIEW_TARGETS.forEach(target => {
-                const sourceViews = Array.isArray(raw?.[target.id]?.views) ? raw[target.id].views : [];
-                const views = sourceViews
-                    .filter(v => v && v.system !== true && !String(v.id || '').endsWith('_default') && String(v.name || '').trim() !== '기본보기')
-                    .slice(0, 5)
-                    .map((v, idx) => createTableView(target.id, String(v.name || `맞춤보기 ${idx + 1}`).trim(), v.masterColumns || ['입고가'], v.workColumns || v.columns || [], { id: v.id || `${target.id}_custom_${idx + 1}`, system: false, updatedAt: v.updatedAt }));
-                result[target.id] = { views };
-            });
-            return result;
-        };
-
-        const getDefaultMappings = () => ({
-            master: {},
-            catalog: {
-                '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격명, 규격, 사이즈, 단량',
-                '카탈로그': '카탈로그, 카테고리, 분류', '견적서': '견적서, 카테고리, 템플릿, 견적분류', '행사가': '행사가, 행사, 특가', '입고가': '입고가, 입고, 매입가', '출고가': '출고가, 출고, 판매가', '입고B': 'B단가, 입고B', '도매A': '도매A', '도매B': '도매B'
-            },
-            estimate: {
-                '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격명, 규격, 사이즈, 단량',
-                '구매처': '거래처명, 구매처, 거래처', '견적서': '견적서, 카테고리, 템플릿, 견적분류', '행사가': '행사가, 행사, 특가', '입고가': '입고가, 입고, 매입가', '출고가': '출고가, 출고, 판매가',
-                '입고B': 'B단가, 입고B', '도매A': 'A판매, A판매가, 도매A', '도매B': 'B판매, B판매가, 도매B', '간단설명': '지시사항, 간단설명, 비고'
-            },
-            purchase: {
-                '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격, 규격명, 사이즈, 단량',
-                '구매처': '구매처, 매입처, 거래처명, 거래처', '단위': '단위, 단위유형, 판매단위', '입고가': '입고가, 매입단가, 구매단가, 원가', '입고수량': '입고수량, 구매수량, 수량, 입고'
-            },
-            sales: {
-                '창고': '창고, 창고코드', '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드', '품목명': '품목명, 상품명, 품명, 상품이름', '규격': '규격, 규격명, 사이즈, 단량',
-                '구매처': '거래처명, 판매처, 납품처, 구매처, 거래처', '단위': '단위, 단위유형, 판매단위', '출고가': '출고가, 판매단가, 단가, 판매가', '출고량': '출고량, 판매수량, 수량, 출고'
-            },
-            inventory: {
-                '품목코드': '품목코드, 상품코드, 코드', '품목명': '품명, 상품명, 상품명(규격), 품목명', '규격': '규격, 규격명',
-                '구매처': '구매처, 매입처(Lot), 매입처, Lot, 거래처명', '단위': '단위유형, 단위, 판매단위', '창고': '창고, 창고코드',
-                '재고수량': '잔량, 기말실사(이월수량), 수량, 재고수량', '입고가': '입고가, 매입단가(원가), 매입단가, 원가', '재고금액': '재고금액, 기말재고액(자산가치)',
-                '기초수량': '재고, 기초수량', '입고수량': '입고, 입고수량', '출고량': '출고, 출고량', '오차': '오차, 로스/조정수량, 로스', '이슈요약': '이슈요약, 이슈/결과', '메모': '메모, 수기메모'
-            }
-        });
-
-        const getDefaultMasterLinks = () => ({
-            catalog: { '카탈로그': '카탈로그', '견적서': '견적서', '행사가': '행사가', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B' },
-            estimate: { '창고': '창고', '구매처': '구매처', '견적서': '견적서', '행사가': '행사가', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B', '간단설명': '간단설명' },
-            purchase: { '창고': '창고', '구매처': '구매처', '단위': '단위', '입고가': '입고가' },
-            sales: { '창고': '창고', '구매처': '구매처', '단위': '단위', '출고가': '출고가' },
-            inventory: { '창고': '창고', '구매처': '구매처', '단위': '단위', '입고가': '입고가', '재고수량': '재고수량' }
-        });
-
-        const useMerchConfig = () => {
-            const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v870') || '');
-            const [visibleMasterCols, setVisibleMasterCols] = useState(() => safeJSONParse('merchVisMaster_v870', getDefaultVisibleMasterCols()));
-            const [visibleUploadCols, setVisibleUploadCols] = useState(() => safeJSONParse('merchVisUpload_v870', getDefaultVisibleUploadCols()));
-            const [mappings, setMappings] = useState(() => safeJSONParse('merchMappings_v870', getDefaultMappings()));
-            const [masterLinks, setMasterLinks] = useState(() => safeJSONParse('merchMasterLinks_v870', getDefaultMasterLinks()));
-            const [uploadColumnMeta, setUploadColumnMeta] = useState(() => safeJSONParse('merchUploadColumnMeta_v870', { catalog: {}, estimate: {}, purchase: {}, sales: {}, inventory: {} }));
-            const [tableShortcuts, setTableShortcuts] = useState(() => safeJSONParse('merchTableShortcuts_v870', []));
-            const [tableViewPresets, setTableViewPresets] = useState(() => sanitizeTableViewPresets(safeJSONParse('merchTableViewPresets_v1', getDefaultTableViewPresets())));
-            const [marginRules, setMarginRules] = useState(() => {
-                const defaultRules = [
-                    { id: 'rule_1', whCode: '01', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
-                    { id: 'rule_2', whCode: '01', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' },
-                    { id: 'rule_3', whCode: '03,05', unit: 'box, 박스, BOX', rate: 15, type: 'divide' },
-                    { id: 'rule_4', whCode: '03,05', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 10, type: 'divide' },
-                    { id: 'rule_5', whCode: '77,99', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
-                    { id: 'rule_6', whCode: '77,99', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' },
-                    { id: 'default', whCode: '*', unit: '*', rate: 20, type: 'divide' }
-                ];
-                const parsed = safeJSONParse('merchMarginRules_v878', null);
-                const isLegacyDefaultOnly = Array.isArray(parsed)
-                    && parsed.length === 1
-                    && String(parsed[0]?.whCode ?? '*').trim() === '*'
-                    && String(parsed[0]?.unit ?? '*').trim() === '*'
-                    && Number(parsed[0]?.rate) === 20;
-                if (Array.isArray(parsed) && parsed.length > 1) return parsed;
-                if (isLegacyDefaultOnly) return defaultRules;
-                return defaultRules;
-            });
-
-            useEffect(() => {
-                localStorage.setItem('merchCloudUrl_v870', cloudUrl);
-                localStorage.setItem('merchVisMaster_v870', JSON.stringify(visibleMasterCols));
-                localStorage.setItem('merchVisUpload_v870', JSON.stringify(visibleUploadCols));
-                localStorage.setItem('merchMappings_v870', JSON.stringify(mappings));
-                localStorage.setItem('merchMasterLinks_v870', JSON.stringify(masterLinks));
-                localStorage.setItem('merchMarginRules_v878', JSON.stringify(marginRules));
-                localStorage.setItem('merchUploadColumnMeta_v870', JSON.stringify(uploadColumnMeta));
-                localStorage.setItem('merchTableShortcuts_v870', JSON.stringify(tableShortcuts));
-                localStorage.setItem('merchTableViewPresets_v1', JSON.stringify(sanitizeTableViewPresets(tableViewPresets)));
-                localStorage.setItem('config_sync_trigger', Date.now().toString()); 
-            }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules, uploadColumnMeta, tableShortcuts, tableViewPresets]);
-
-            return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules, uploadColumnMeta, setUploadColumnMeta, tableShortcuts, setTableShortcuts, tableViewPresets, setTableViewPresets };
-        };
-
-        const useMerchData = () => {
-            const [masterProducts, setMasterProducts] = useState({});
-            const [historyLogs, setHistoryLogs] = useState([]);
-
-            useEffect(() => {
-                if (typeof window.getAllIDB === 'function') {
-                    window.getAllIDB('master_products').then(items => {
-                        if (items && items.length > 0) {
-                            const dict = {};
-                            items.forEach(i => dict[i.코드] = i);
-                            setMasterProducts(dict);
-                        }
-                    }).catch(err => console.warn('IDB Data Error:', err));
+        const parsed = safeJSONParse('merchMarginRules_v878', null);
+        const isLegacyDefaultOnly = Array.isArray(parsed)
+            && parsed.length === 1
+            && String((_b = (_a = parsed[0]) === null || _a === void 0 ? void 0 : _a.whCode) !== null && _b !== void 0 ? _b : '*').trim() === '*'
+            && String((_d = (_c = parsed[0]) === null || _c === void 0 ? void 0 : _c.unit) !== null && _d !== void 0 ? _d : '*').trim() === '*'
+            && Number((_e = parsed[0]) === null || _e === void 0 ? void 0 : _e.rate) === 20;
+        if (Array.isArray(parsed) && parsed.length > 1)
+            return parsed;
+        if (isLegacyDefaultOnly)
+            return defaultRules;
+        return defaultRules;
+    });
+    useEffect(() => {
+        localStorage.setItem('merchCloudUrl_v870', cloudUrl);
+        localStorage.setItem('merchVisMaster_v870', JSON.stringify(visibleMasterCols));
+        localStorage.setItem('merchVisUpload_v870', JSON.stringify(visibleUploadCols));
+        localStorage.setItem('merchMappings_v870', JSON.stringify(mappings));
+        localStorage.setItem('merchMasterLinks_v870', JSON.stringify(masterLinks));
+        localStorage.setItem('merchMarginRules_v878', JSON.stringify(marginRules));
+        localStorage.setItem('merchUploadColumnMeta_v870', JSON.stringify(uploadColumnMeta));
+        localStorage.setItem('merchTableShortcuts_v870', JSON.stringify(tableShortcuts));
+        localStorage.setItem('merchTableViewPresets_v1', JSON.stringify(sanitizeTableViewPresets(tableViewPresets)));
+        localStorage.setItem('config_sync_trigger', Date.now().toString());
+    }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules, uploadColumnMeta, tableShortcuts, tableViewPresets]);
+    return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules, uploadColumnMeta, setUploadColumnMeta, tableShortcuts, setTableShortcuts, tableViewPresets, setTableViewPresets };
+};
+const useMerchData = () => {
+    const [masterProducts, setMasterProducts] = useState({});
+    const [historyLogs, setHistoryLogs] = useState([]);
+    useEffect(() => {
+        if (typeof window.getAllIDB === 'function') {
+            window.getAllIDB('master_products').then(items => {
+                if (items && items.length > 0) {
+                    const dict = {};
+                    items.forEach(i => dict[i.코드] = i);
+                    setMasterProducts(dict);
                 }
-                try { 
-                    const logs = JSON.parse(localStorage.getItem('merchHistory_v870'));
-                    if (logs) setHistoryLogs(logs);
-                } catch(e) {}
-            }, []);
-
-            return { masterProducts, setMasterProducts, historyLogs, setHistoryLogs };
-        };
-
-        const App = () => {
-            const config = useMerchConfig();
-            const data = useMerchData();
-            
-            const [activeTab, setActiveTab] = useState('display');
-            const [activeUploadRole, setActiveUploadRole] = useState('catalog');
-            const [activeTableViewId, setActiveTableViewId] = useState('');
-            const [newViewName, setNewViewName] = useState('');
-            const [viewDraft, setViewDraft] = useState(null);
-            const [viewDirty, setViewDirty] = useState(false);
-            const [customEstColInput, setCustomEstColInput] = useState('');
-            const [isComparePriceCol, setIsComparePriceCol] = useState(false);
-            const [shortcutDraft, setShortcutDraft] = useState({ name: '', role: 'estimate', columns: [], enabled: true });
-            const [editingShortcutId, setEditingShortcutId] = useState(null);
-            const [toast, setToast] = useState('');
-            const [isProcessing, setIsProcessing] = useState(false);
-            const [processMsg, setProcessMsg] = useState('');
-
-            const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
-
-            const availableCatalogs = useMemo(() => {
-                const counts = {};
-                Object.values(data.masterProducts).forEach(m => {
-                    const tags = String(m['카탈로그'] || '').split(',').map(s=>s.trim()).filter(Boolean);
-                    tags.forEach(t => counts[t] = (counts[t] || 0) + 1);
-                });
-                return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
-            }, [data.masterProducts]);
-
-            const availableCategories = useMemo(() => {
-                const counts = {};
-                Object.values(data.masterProducts).forEach(m => {
-                    const tags = String(m['견적서'] || m['카테고리'] || '').split(',').map(s=>s.trim()).filter(Boolean);
-                    tags.forEach(t => counts[t] = (counts[t] || 0) + 1);
-                });
-                return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
-            }, [data.masterProducts]);
-
-            // ☁️ 클라우드 동기화 (v1.6 규격 반영 및 품절 대기열 백업)
-            const handleCloudSync = async (type) => {
-                if (!config.cloudUrl) return showToast("⚠️ 클라우드 URL이 설정되지 않았습니다.");
-                setIsProcessing(true);
-                try {
-                    if (type === 'upload') {
-                        showToast('☁️ 클라우드 분할 백업 준비 중...');
-                        setProcessMsg('서버 초기화 중...');
-                        
-                        // 1. 초기화
-                        let initRes = await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify({ action: 'initSync' }) });
-                        if ((await initRes.json()).status !== 'success') throw new Error("초기화 실패");
-
-                        // 2. 마스터 분할 전송
-                        const masterItems = Object.values(data.masterProducts);
-                        const chunkSize = 500;
-                        for (let i = 0; i < masterItems.length; i += chunkSize) {
-                            const chunk = masterItems.slice(i, i + chunkSize);
-                            setProcessMsg(`마스터 데이터 업로드 중... (${Math.min(i + chunkSize, masterItems.length)} / ${masterItems.length}건)`);
-                            await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_master', data: chunk }) });
-                        }
-
-                        // 3. 히스토리 전송
-                        const historyItems = data.historyLogs || [];
-                        for (let i = 0; i < historyItems.length; i += chunkSize) {
-                            const chunk = historyItems.slice(i, i + chunkSize);
-                            setProcessMsg(`히스토리 업로드 중... (${Math.min(i + chunkSize, historyItems.length)} / ${historyItems.length}건)`);
-                            await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_history', data: chunk }) });
-                        }
-
-                        // 4. 품절 대기열 확보 및 전체 설정 전송
-                        setProcessMsg('환경설정 및 품절 대기열 동기화 중...');
-                        const pendingList = await window.getIDB('pending_shop_status') || [];
-                        const dict = JSON.parse(localStorage.getItem('parserDict_v870') || '{}');
-                        
-                        const configPayload = {
-                            action: 'config',
-                            data: {
-                                dict: dict,
-                                rules: config.marginRules,
-                                pendingShopStatus: pendingList, // 🚨 대기열 백업
-                                appConfig: {
-                                    mappings: config.mappings,
-                                    masterLinks: config.masterLinks,
-                                    visibleUploadCols: config.visibleUploadCols,
-                                    visibleMasterCols: config.visibleMasterCols,
-                                    uploadColumnMeta: config.uploadColumnMeta,
-                                    tableShortcuts: config.tableShortcuts,
-                                    tableViewPresets: config.tableViewPresets
-                                }
-                            }
-                        };
-                        await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify(configPayload) });
-
-                        showToast('✅ 클라우드 대용량 분할 백업이 완료되었습니다.');
-
-                    } else {
-                        showToast('☁️ 클라우드에서 데이터를 불러옵니다...');
-                        setProcessMsg(`전체 데이터 다운로드 중...`);
-                        const res = await fetch(config.cloudUrl, { method: 'GET' });
-                        if (!res.ok) throw new Error("Network Error");
-                        const result = await res.json();
-                        
-                        if (result.status === 'success' && result.data) { 
-                            if (result.data.master && Object.keys(result.data.master).length > 0) {
-                                data.setMasterProducts(result.data.master);
-                                const requestIdle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
-                                requestIdle(async () => {
-                                    const safeData = Object.values(result.data.master).filter(item => item && item.코드);
-                                    await window.bulkPutIDB('master_products', safeData);
-                                    localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
-                                });
-                            }
-                            if (result.data.dict && Object.keys(result.data.dict).length > 0) localStorage.setItem('parserDict_v870', JSON.stringify(result.data.dict));
-                            if (result.data.rules && result.data.rules.length > 0) config.setMarginRules(result.data.rules);
-                            if (result.data.history && Array.isArray(result.data.history)) {
-                                data.setHistoryLogs(result.data.history);
-                                localStorage.setItem('merchHistory_v870', JSON.stringify(result.data.history));
-                            }
-                            
-                            // 🚨 품절 대기열 복구
-                            if (result.data.pendingShopStatus) {
-                                await window.setIDB('pending_shop_status', result.data.pendingShopStatus);
-                            }
-
-                            if (result.data.appConfig) {
-                                if (result.data.appConfig.mappings) config.setMappings(result.data.appConfig.mappings);
-                                if (result.data.appConfig.masterLinks) config.setMasterLinks(result.data.appConfig.masterLinks);
-                                if (result.data.appConfig.visibleUploadCols) config.setVisibleUploadCols(result.data.appConfig.visibleUploadCols);
-                                if (result.data.appConfig.visibleMasterCols) config.setVisibleMasterCols(result.data.appConfig.visibleMasterCols);
-                                if (result.data.appConfig.uploadColumnMeta) config.setUploadColumnMeta(result.data.appConfig.uploadColumnMeta);
-                                if (result.data.appConfig.tableShortcuts) config.setTableShortcuts(result.data.appConfig.tableShortcuts);
-                                if (result.data.appConfig.tableViewPresets) config.setTableViewPresets(sanitizeTableViewPresets(result.data.appConfig.tableViewPresets));
-                            }
-                            
-                            const masterCount = result.data.master ? Object.keys(result.data.master).length : 0;
-                            showToast(`✅ 데이터 불러오기 성공! (상품: ${masterCount.toLocaleString()}건)`);
-                        } else {
-                            throw new Error("Invalid Data");
+            }).catch(err => console.warn('IDB Data Error:', err));
+        }
+        try {
+            const logs = JSON.parse(localStorage.getItem('merchHistory_v870'));
+            if (logs)
+                setHistoryLogs(logs);
+        }
+        catch (e) { }
+    }, []);
+    return { masterProducts, setMasterProducts, historyLogs, setHistoryLogs };
+};
+const App = () => {
+    var _a;
+    const config = useMerchConfig();
+    const data = useMerchData();
+    const [activeTab, setActiveTab] = useState('display');
+    const [activeUploadRole, setActiveUploadRole] = useState('catalog');
+    const [activeTableViewId, setActiveTableViewId] = useState('');
+    const [newViewName, setNewViewName] = useState('');
+    const [viewDraft, setViewDraft] = useState(null);
+    const [viewDirty, setViewDirty] = useState(false);
+    const [customEstColInput, setCustomEstColInput] = useState('');
+    const [isComparePriceCol, setIsComparePriceCol] = useState(false);
+    const [shortcutDraft, setShortcutDraft] = useState({ name: '', role: 'estimate', columns: [], enabled: true });
+    const [editingShortcutId, setEditingShortcutId] = useState(null);
+    const [toast, setToast] = useState('');
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [processMsg, setProcessMsg] = useState('');
+    const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+    const availableCatalogs = useMemo(() => {
+        const counts = {};
+        Object.values(data.masterProducts).forEach(m => {
+            const tags = String(m['카탈로그'] || '').split(',').map(s => s.trim()).filter(Boolean);
+            tags.forEach(t => counts[t] = (counts[t] || 0) + 1);
+        });
+        return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
+    }, [data.masterProducts]);
+    const availableCategories = useMemo(() => {
+        const counts = {};
+        Object.values(data.masterProducts).forEach(m => {
+            const tags = String(m['견적서'] || m['카테고리'] || '').split(',').map(s => s.trim()).filter(Boolean);
+            tags.forEach(t => counts[t] = (counts[t] || 0) + 1);
+        });
+        return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
+    }, [data.masterProducts]);
+    // ☁️ 클라우드 동기화 (v1.6 규격 반영 및 품절 대기열 백업)
+    const handleCloudSync = async (type) => {
+        if (!config.cloudUrl)
+            return showToast("⚠️ 클라우드 URL이 설정되지 않았습니다.");
+        setIsProcessing(true);
+        try {
+            if (type === 'upload') {
+                showToast('☁️ 클라우드 분할 백업 준비 중...');
+                setProcessMsg('서버 초기화 중...');
+                // 1. 초기화
+                let initRes = await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify({ action: 'initSync' }) });
+                if ((await initRes.json()).status !== 'success')
+                    throw new Error("초기화 실패");
+                // 2. 마스터 분할 전송
+                const masterItems = Object.values(data.masterProducts);
+                const chunkSize = 500;
+                for (let i = 0; i < masterItems.length; i += chunkSize) {
+                    const chunk = masterItems.slice(i, i + chunkSize);
+                    setProcessMsg(`마스터 데이터 업로드 중... (${Math.min(i + chunkSize, masterItems.length)} / ${masterItems.length}건)`);
+                    await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_master', data: chunk }) });
+                }
+                // 3. 히스토리 전송
+                const historyItems = data.historyLogs || [];
+                for (let i = 0; i < historyItems.length; i += chunkSize) {
+                    const chunk = historyItems.slice(i, i + chunkSize);
+                    setProcessMsg(`히스토리 업로드 중... (${Math.min(i + chunkSize, historyItems.length)} / ${historyItems.length}건)`);
+                    await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_history', data: chunk }) });
+                }
+                // 4. 품절 대기열 확보 및 전체 설정 전송
+                setProcessMsg('환경설정 및 품절 대기열 동기화 중...');
+                const pendingList = await window.getIDB('pending_shop_status') || [];
+                const dict = JSON.parse(localStorage.getItem('parserDict_v870') || '{}');
+                const configPayload = {
+                    action: 'config',
+                    data: {
+                        dict: dict,
+                        rules: config.marginRules,
+                        pendingShopStatus: pendingList, // 🚨 대기열 백업
+                        appConfig: {
+                            mappings: config.mappings,
+                            masterLinks: config.masterLinks,
+                            visibleUploadCols: config.visibleUploadCols,
+                            visibleMasterCols: config.visibleMasterCols,
+                            uploadColumnMeta: config.uploadColumnMeta,
+                            tableShortcuts: config.tableShortcuts,
+                            tableViewPresets: config.tableViewPresets
                         }
                     }
-                } catch (error) { 
-                    console.error("클라우드 에러:", error);
-                    showToast("❌ 통신 오류 발생. URL이나 권한을 확인하세요.\n" + error.message); 
-                } finally {
-                    setIsProcessing(false);
-                    setProcessMsg('');
-                }
-            };
-
-            const handleDeleteTag = async (type, tagName) => {
-                if (!window.confirm(`[${tagName}] 태그를 모든 상품에서 삭제하시겠습니까?`)) return;
-                const fieldKey = type === 'catalog' ? '카탈로그' : '견적서';
-                let newMaster = { ...data.masterProducts };
-                let count = 0;
-
-                for (let code in newMaster) {
-                    if (newMaster[code][fieldKey]) {
-                        const tags = String(newMaster[code][fieldKey]).split(',').map(s => s.trim()).filter(Boolean);
-                        if (tags.includes(tagName)) {
-                            newMaster[code] = { ...newMaster[code] };
-                            newMaster[code][fieldKey] = tags.filter(t => t !== tagName).join(', ');
-                            count++;
-                        }
-                    }
-                }
-                
-                if (count > 0) {
-                    data.setMasterProducts(newMaster);
-                    const safeData = Object.values(newMaster).filter(item => item && item.코드);
-                    await window.bulkPutIDB('master_products', safeData);
-                    localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
-                    showToast(`✅ ${count}개의 상품에서 [${tagName}] 태그를 삭제했습니다.`);
-                }
-            };
-
-            const toggleMasterCol = (tabId, header) => config.setVisibleMasterCols(prev => { const list = prev[tabId] || []; return { ...prev, [tabId]: list.includes(header) ? list.filter(h => h !== header) : [...list, header] }; });
-
-            const isComparePriceField = useCallback((type, header) => {
-                return config.uploadColumnMeta?.[type]?.[header]?.type === 'comparePrice';
-            }, [config.uploadColumnMeta]);
-
-            const addCustomUploadCol = (type, val, comparePrice = false) => {
-                if(!val || !val.trim()) return;
-                const cleanVal = val.trim();
-                if ((config.visibleUploadCols[type] || []).includes(cleanVal)) return showToast('⚠️ 이미 추가된 항목입니다.');
-                config.setVisibleUploadCols(prev => ({ ...prev, [type]: [...(prev[type] || []), cleanVal] }));
-                if (type === activeUploadRole && editView && !(editView.workColumns || []).includes(cleanVal)) {
-                    updateDraft({ workColumns: normalizeTableColumns([...(editView.workColumns || []), cleanVal]).filter(c => c !== '품목코드') });
-                }
-                config.setMappings(prev => ({ ...prev, [type]: { ...prev[type], [cleanVal]: cleanVal } }));
-                config.setMasterLinks(prev => ({ ...prev, [type]: { ...prev[type], [cleanVal]: '' } }));
-                config.setUploadColumnMeta(prev => ({
-                    ...prev,
-                    [type]: {
-                        ...(prev?.[type] || {}),
-                        [cleanVal]: { type: comparePrice ? 'comparePrice' : 'normal' }
-                    }
-                }));
-                setCustomEstColInput('');
-                setIsComparePriceCol(false);
-                showToast(comparePrice ? '✅ 비교단가 항목이 추가되었습니다.' : '✅ 항목이 추가되었습니다.');
-            };
-
-            const removeUploadCol = (type, header) => {
-                config.setVisibleUploadCols(prev => ({ ...prev, [type]: (prev[type] || []).filter(x => x !== header) }));
-                config.setMappings(prev => {
-                    const nextType = { ...(prev?.[type] || {}) };
-                    delete nextType[header];
-                    return { ...prev, [type]: nextType };
-                });
-                config.setMasterLinks(prev => {
-                    const nextType = { ...(prev?.[type] || {}) };
-                    delete nextType[header];
-                    return { ...prev, [type]: nextType };
-                });
-                config.setUploadColumnMeta(prev => {
-                    const nextType = { ...(prev?.[type] || {}) };
-                    delete nextType[header];
-                    return { ...prev, [type]: nextType };
-                });
-                showToast('✅ 작업 항목이 삭제되었습니다.');
-            };
-
-            const resetUploadRoleToDefault = (type) => {
-                const label = UPLOAD_ROLES.find(r => r.id === type)?.label || type;
-                if (!window.confirm(`[${label}] 작업 항목 노출 설정을 기본값으로 정리하시겠습니까?\n이미 자동 보강으로 섞인 항목을 정리할 때 사용하세요.`)) return;
-                const defaults = getDefaultVisibleUploadCols();
-                config.setVisibleUploadCols(prev => ({ ...prev, [type]: [...(defaults[type] || [])] }));
-                config.setUploadColumnMeta(prev => {
-                    const allowed = new Set(defaults[type] || []);
-                    const nextType = {};
-                    Object.entries(prev?.[type] || {}).forEach(([k, v]) => { if (allowed.has(k)) nextType[k] = v; });
-                    return { ...prev, [type]: nextType };
-                });
-                showToast(`✅ [${label}] 자동 생성 항목을 기본값으로 정리했습니다.`);
-            };
-
-            
-            const shortcutList = Array.isArray(config.tableShortcuts) ? config.tableShortcuts : [];
-            const getShortcutRoleLabel = (roleId) => UPLOAD_ROLES.find(r => r.id === roleId)?.label || roleId || '견적';
-            const getShortcutColumns = (roleId) => Array.from(new Set([...(config.visibleUploadCols?.[roleId] || [])])).filter(Boolean);
-            const toggleShortcutColumn = (columnName) => {
-                setShortcutDraft(prev => {
-                    const list = prev.columns || [];
-                    return { ...prev, columns: list.includes(columnName) ? list.filter(c => c !== columnName) : [...list, columnName] };
-                });
-            };
-            const resetShortcutDraft = () => {
-                setShortcutDraft({ name: '', role: 'estimate', columns: [], enabled: true });
-                setEditingShortcutId(null);
-            };
-            const saveTableShortcut = () => {
-                const name = String(shortcutDraft.name || '').trim();
-                const role = shortcutDraft.role || 'estimate';
-                const columns = Array.from(new Set(shortcutDraft.columns || [])).filter(Boolean);
-                if (!name) return showToast('⚠️ 단축버튼명을 입력하세요.');
-                if (columns.length === 0) return showToast('⚠️ 노출할 테이블 항목을 1개 이상 선택하세요.');
-                const current = shortcutList;
-                if (!editingShortcutId && current.length >= 5) return showToast('⚠️ 테이블 단축버튼은 최대 5개까지 저장할 수 있습니다.');
-                const payload = {
-                    id: editingShortcutId || `table_shortcut_${Date.now()}`,
-                    name,
-                    role,
-                    columns,
-                    enabled: shortcutDraft.enabled !== false,
-                    updatedAt: new Date().toISOString()
                 };
-                const next = editingShortcutId ? current.map(item => item.id === editingShortcutId ? payload : item) : [...current, payload];
-                config.setTableShortcuts(next.slice(0, 5));
-                localStorage.setItem('table_shortcuts_sync_trigger', Date.now().toString());
-                resetShortcutDraft();
-                showToast('✅ 테이블 단축버튼을 저장했습니다.');
-            };
-            const editTableShortcut = (shortcut) => {
-                setEditingShortcutId(shortcut.id);
-                setShortcutDraft({
-                    name: shortcut.name || '',
-                    role: shortcut.role || 'estimate',
-                    columns: Array.isArray(shortcut.columns) ? shortcut.columns : [],
-                    enabled: shortcut.enabled !== false
-                });
-            };
-            const deleteTableShortcut = (shortcutId) => {
-                config.setTableShortcuts(shortcutList.filter(item => item.id !== shortcutId));
-                localStorage.setItem('table_shortcuts_sync_trigger', Date.now().toString());
-                if (editingShortcutId === shortcutId) resetShortcutDraft();
-                showToast('✅ 테이블 단축버튼을 삭제했습니다.');
-            };
-            const toggleTableShortcutEnabled = (shortcutId) => {
-                config.setTableShortcuts(shortcutList.map(item => item.id === shortcutId ? { ...item, enabled: item.enabled === false } : item));
-                localStorage.setItem('table_shortcuts_sync_trigger', Date.now().toString());
-            };
-
-
-            const getActiveViewGroup = () => sanitizeTableViewPresets(config.tableViewPresets || getDefaultTableViewPresets())?.[activeUploadRole] || { views: [] };
-            const activeViewGroup = getActiveViewGroup();
-            const activeViews = activeViewGroup.views || [];
-            const activeView = activeViews.find(v => v.id === activeTableViewId) || activeViews[0] || null;
-            const activeRoleLabel = UPLOAD_ROLES.find(r => r.id === activeUploadRole)?.label || '카탈로그';
-            const editView = viewDraft || activeView;
-
-            useEffect(() => {
-                if (!activeView) {
-                    setViewDraft(null);
-                    setViewDirty(false);
-                    return;
+                await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify(configPayload) });
+                showToast('✅ 클라우드 대용량 분할 백업이 완료되었습니다.');
+            }
+            else {
+                showToast('☁️ 클라우드에서 데이터를 불러옵니다...');
+                setProcessMsg(`전체 데이터 다운로드 중...`);
+                const res = await fetch(config.cloudUrl, { method: 'GET' });
+                if (!res.ok)
+                    throw new Error("Network Error");
+                const result = await res.json();
+                if (result.status === 'success' && result.data) {
+                    if (result.data.master && Object.keys(result.data.master).length > 0) {
+                        data.setMasterProducts(result.data.master);
+                        const requestIdle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
+                        requestIdle(async () => {
+                            const safeData = Object.values(result.data.master).filter(item => item && item.코드);
+                            await window.bulkPutIDB('master_products', safeData);
+                            localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+                        });
+                    }
+                    if (result.data.dict && Object.keys(result.data.dict).length > 0)
+                        localStorage.setItem('parserDict_v870', JSON.stringify(result.data.dict));
+                    if (result.data.rules && result.data.rules.length > 0)
+                        config.setMarginRules(result.data.rules);
+                    if (result.data.history && Array.isArray(result.data.history)) {
+                        data.setHistoryLogs(result.data.history);
+                        localStorage.setItem('merchHistory_v870', JSON.stringify(result.data.history));
+                    }
+                    // 🚨 품절 대기열 복구
+                    if (result.data.pendingShopStatus) {
+                        await window.setIDB('pending_shop_status', result.data.pendingShopStatus);
+                    }
+                    if (result.data.appConfig) {
+                        if (result.data.appConfig.mappings)
+                            config.setMappings(result.data.appConfig.mappings);
+                        if (result.data.appConfig.masterLinks)
+                            config.setMasterLinks(result.data.appConfig.masterLinks);
+                        if (result.data.appConfig.visibleUploadCols)
+                            config.setVisibleUploadCols(result.data.appConfig.visibleUploadCols);
+                        if (result.data.appConfig.visibleMasterCols)
+                            config.setVisibleMasterCols(result.data.appConfig.visibleMasterCols);
+                        if (result.data.appConfig.uploadColumnMeta)
+                            config.setUploadColumnMeta(result.data.appConfig.uploadColumnMeta);
+                        if (result.data.appConfig.tableShortcuts)
+                            config.setTableShortcuts(result.data.appConfig.tableShortcuts);
+                        if (result.data.appConfig.tableViewPresets)
+                            config.setTableViewPresets(sanitizeTableViewPresets(result.data.appConfig.tableViewPresets));
+                    }
+                    const masterCount = result.data.master ? Object.keys(result.data.master).length : 0;
+                    showToast(`✅ 데이터 불러오기 성공! (상품: ${masterCount.toLocaleString()}건)`);
                 }
-                setViewDraft({
-                    ...activeView,
-                    masterColumns: [...(activeView.masterColumns || [])],
-                    workColumns: [...(activeView.workColumns || [])]
-                });
-                setViewDirty(false);
-            }, [activeUploadRole, activeView?.id]);
-
-            const updateDraft = (patch = {}) => {
-                if (!editView) return;
-                setViewDraft(prev => ({ ...(prev || editView), ...patch, updatedAt: new Date().toISOString() }));
-                setViewDirty(true);
-            };
-
-            const saveActiveView = () => {
-                if (!editView) return showToast('⚠️ 저장할 보기를 먼저 추가하세요.');
-                const cleanName = String(editView.name || '').trim();
-                if (!cleanName) return showToast('⚠️ 보기 이름을 입력하세요.');
-                if (activeViews.some(v => v.id !== editView.id && String(v.name).trim() === cleanName)) return showToast('⚠️ 같은 이름의 보기가 이미 있습니다.');
-                config.setTableViewPresets(prev => {
-                    const safe = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
-                    const group = safe[activeUploadRole] || { views: [] };
-                    const savedView = createTableView(activeUploadRole, cleanName, editView.masterColumns || ['입고가'], editView.workColumns || [], { id: editView.id, updatedAt: new Date().toISOString() });
-                    const views = group.views.map(v => v.id === savedView.id ? savedView : v);
-                    return { ...safe, [activeUploadRole]: { views } };
-                });
-                config.setVisibleMasterCols(prev => ({ ...(prev || {}), [activeUploadRole]: normalizeMasterColumns(editView.masterColumns || []) }));
-                config.setVisibleUploadCols(prev => ({ ...(prev || {}), [activeUploadRole]: normalizeTableColumns(editView.workColumns || []).filter(c => c !== '품목코드') }));
-                localStorage.setItem('config_sync_trigger', Date.now().toString());
-                setViewDirty(false);
-                showToast('✅ 보기를 저장했습니다.');
-            };
-
-            const cancelActiveViewEdit = () => {
-                if (!activeView) return;
-                setViewDraft({ ...activeView, masterColumns: [...(activeView.masterColumns || [])], workColumns: [...(activeView.workColumns || [])] });
-                setViewDirty(false);
-                showToast('↩️ 변경을 취소했습니다.');
-            };
-
-            const toggleActiveMasterColumn = (header) => {
-                if (!editView || requiredCoreFields.includes(header)) return;
-                const list = editView.masterColumns || [];
-                const next = list.includes(header) ? list.filter(h => h !== header) : [...list, header];
-                updateDraft({ masterColumns: normalizeMasterColumns(next) });
-            };
-
-            const toggleActiveWorkColumn = (header) => {
-                if (!editView) return;
-                const list = editView.workColumns || [];
-                const next = list.includes(header) ? list.filter(h => h !== header) : [...list, header];
-                updateDraft({ workColumns: normalizeTableColumns(next).filter(c => c !== '품목코드') });
-            };
-
-            const selectTableView = (target, viewId = '') => {
-                setActiveUploadRole(target);
-                const group = sanitizeTableViewPresets(config.tableViewPresets || getDefaultTableViewPresets())?.[target] || { views: [] };
-                const firstId = group.views?.[0]?.id || '';
-                setActiveTableViewId(viewId || firstId);
-            };
-
-            const addCustomTableView = () => {
-                const name = String(newViewName || '').trim();
-                if (!name) return showToast('⚠️ 보기 이름을 입력하세요.');
-                const safe = sanitizeTableViewPresets(config.tableViewPresets || getDefaultTableViewPresets());
-                const group = safe[activeUploadRole] || { views: [] };
-                if ((group.views || []).length >= 5) return showToast('⚠️ 보기는 대상별 최대 5개까지 생성할 수 있습니다.');
-                if ((group.views || []).some(v => String(v.name).trim() === name)) return showToast('⚠️ 같은 이름의 보기가 이미 있습니다.');
-                const baseMaster = editView?.masterColumns || getDefaultVisibleMasterCols()[activeUploadRole] || ['입고가'];
-                const baseWork = editView?.workColumns || getDefaultVisibleUploadCols()[activeUploadRole] || [];
-                const newView = createTableView(activeUploadRole, name, baseMaster, baseWork, { id: `${activeUploadRole}_custom_${Date.now()}` });
-                config.setTableViewPresets(prev => {
-                    const next = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
-                    const g = next[activeUploadRole] || { views: [] };
-                    return { ...next, [activeUploadRole]: { views: [...g.views, newView].slice(0, 5) } };
-                });
-                setActiveTableViewId(newView.id);
-                setNewViewName('');
-                showToast('✅ 보기를 추가했습니다. 항목 수정 후 보기 저장을 누르세요.');
-            };
-
-            const renameActiveView = (name) => updateDraft({ name: String(name || '').trim() });
-
-            const deleteActiveView = () => {
-                if (!activeView) return;
-                if (!window.confirm(`[${activeView.name}] 보기를 삭제할까요?`)) return;
-                config.setTableViewPresets(prev => {
-                    const safe = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
-                    const group = safe[activeUploadRole] || { views: [] };
-                    const views = group.views.filter(v => v.id !== activeView.id);
-                    setActiveTableViewId(views[0]?.id || '');
-                    return { ...safe, [activeUploadRole]: { views } };
-                });
-                showToast('✅ 보기를 삭제했습니다.');
-            };
-
-
-            const copyActiveView = () => {
-                if (!editView) return showToast('⚠️ 복사할 보기가 없습니다.');
-                const safe = sanitizeTableViewPresets(config.tableViewPresets || getDefaultTableViewPresets());
-                const group = safe[activeUploadRole] || { views: [] };
-                if (group.views.length >= 5) return showToast('⚠️ 보기는 대상별 최대 5개까지 생성할 수 있습니다.');
-                const baseName = `${editView.name || '보기'} 복사`;
-                let name = baseName;
-                let i = 2;
-                while (group.views.some(v => String(v.name).trim() === name)) name = `${baseName}${i++}`;
-                const copied = createTableView(activeUploadRole, name, editView.masterColumns || ['입고가'], editView.workColumns || [], { id: `${activeUploadRole}_copy_${Date.now()}` });
-                config.setTableViewPresets(prev => {
-                    const next = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
-                    const g = next[activeUploadRole] || { views: [] };
-                    return { ...next, [activeUploadRole]: { views: [...g.views, copied].slice(0, 5) } };
-                });
-                setActiveTableViewId(copied.id);
-                showToast('✅ 보기를 복사했습니다.');
-            };
-
-            const moveActiveView = (delta) => {
-                if (!activeView) return;
-                config.setTableViewPresets(prev => {
-                    const safe = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
-                    const group = safe[activeUploadRole] || { views: [] };
-                    const views = [...group.views];
-                    const idx = views.findIndex(v => v.id === activeView.id);
-                    const nextIdx = idx + delta;
-                    if (idx < 0 || nextIdx < 0 || nextIdx >= views.length) return safe;
-                    [views[idx], views[nextIdx]] = [views[nextIdx], views[idx]];
-                    return { ...safe, [activeUploadRole]: { views } };
-                });
-                showToast(delta < 0 ? '⬆️ 보기 순서를 올렸습니다.' : '⬇️ 보기 순서를 내렸습니다.');
-            };
-
-            const addMarginRule = () => config.setMarginRules([...(config.marginRules || []), { id: typeof window.generateUUID === 'function' ? window.generateUUID() : crypto.randomUUID(), whCode: '', unit: '', rate: 10, type: 'divide' }]);
-            const updateMarginRule = (id, field, value) => config.setMarginRules((config.marginRules || []).map(r => r.id === id ? { ...r, [field]: value } : r));
-            const deleteMarginRule = (id) => config.setMarginRules((config.marginRules || []).filter(r => r.id !== id));
-
-            const requiredCoreFields = ['품목코드', '품목명', '규격'];
-            const selectableMasterHeaders = useMemo(() => Array.from(new Set([...(window.MASTER_HEADERS || []), ...(config.visibleMasterCols?.[activeUploadRole] || [])])), [config.visibleMasterCols, activeUploadRole]);
-
-            return (
-                <div className="flex h-screen overflow-hidden bg-slate-50 relative fade-in">
-                    {/* 로딩 오버레이 */}
-                    {isProcessing && (
-                        <div className="absolute inset-0 bg-slate-900/60 z-[2000] flex flex-col justify-center items-center backdrop-blur-sm">
-                            <i className="fas fa-spinner fa-spin text-5xl text-indigo-400 mb-4"></i>
-                            <div className="text-white font-bold text-lg bg-slate-800/80 px-6 py-2 rounded-full border border-slate-700 shadow-xl">{processMsg}</div>
-                        </div>
-                    )}
-
-                    {toast && <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-[1000] bg-slate-800 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 text-sm font-bold transition-all"><i className="fas fa-check-circle text-emerald-400"></i>{toast}</div>}
-                    
-                    {/* 왼쪽 사이드바 */}
-                    <div className="w-[260px] bg-[#0f172a] flex flex-col text-slate-300 shadow-xl z-10 shrink-0">
-                        <div className="p-6 border-b border-slate-800 bg-[#0b1120]">
-                            <h1 className="text-xl font-black text-indigo-400 tracking-tight flex items-center"><i className="fas fa-sliders-h mr-3"></i>콘트롤 타워</h1>
-                            <p className="text-[10px] text-slate-500 mt-2 font-bold uppercase tracking-widest">MERCHOPS SETTINGS</p>
-                        </div>
-                        <div className="flex flex-col py-4 gap-1 px-3">
-                            <button onClick={() => setActiveTab('display')} className={`px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all ${activeTab === 'display' ? 'bg-indigo-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}><i className="fas fa-desktop w-6 text-center mr-1"></i> 1. 환경 및 클라우드 설정</button>
-                            <button onClick={() => setActiveTab('inputMap')} className={`px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all ${activeTab === 'inputMap' ? 'bg-emerald-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}><i className="fas fa-sign-in-alt w-6 text-center mr-1"></i> 2. 입력 데이터 매핑</button>
-                            <button onClick={() => setActiveTab('marginRule')} className={`px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all ${activeTab === 'marginRule' ? 'bg-rose-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}><i className="fas fa-calculator w-6 text-center mr-1"></i> 3. 단가 계산 및 룰</button>
-                            <button onClick={() => setActiveTab('tagManager')} className={`px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all ${activeTab === 'tagManager' ? 'bg-amber-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}`}><i className="fas fa-tags w-6 text-center mr-1"></i> 4. 카탈로그 관리</button>
-                        </div>
-                        <div className="mt-auto p-6 border-t border-slate-800">
-                            <button onClick={() => window.location.href = 'MerchOps.html'} className="w-full py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[13px] font-bold transition-colors">
-                                <i className="fas fa-home mr-2"></i> 메인으로 돌아가기
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* 메인 컨텐츠 영역 */}
-                    <div className="flex-1 overflow-y-auto p-10 custom-scrollbar relative">
-                        {activeTab === 'display' && (
-                            <div className="max-w-4xl space-y-6">
-                                <h2 className="text-2xl font-black text-slate-800 mb-6">환경 설정 및 클라우드 동기화</h2>
-                                
-                                {/* 클라우드 동기화 컨트롤러 통합 */}
-                                <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100 shadow-sm">
-                                    <h3 className="text-[15px] font-black text-indigo-900 mb-4 pb-2 border-b border-indigo-200 flex items-center"><span><i className="fas fa-cloud text-indigo-500 mr-2"></i>클라우드 동기화 (Apps Script 분할 전송)</span></h3>
-                                    <div className="mb-4">
-                                        <label className="text-[12px] font-bold text-indigo-800 mb-1 block">타겟 URL 세팅</label>
-                                        <input type="text" value={config.cloudUrl} onChange={e=>config.setCloudUrl(e.target.value)} placeholder="https://script.google.com/macros/..." className="w-full border border-indigo-200 rounded-xl px-4 py-3 text-[13px] outline-none focus:border-indigo-500 bg-white shadow-sm" />
-                                    </div>
-                                    <div className="flex gap-3 pt-2 border-t border-indigo-200/50">
-                                        <button onClick={() => handleCloudSync('upload')} disabled={isProcessing} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3.5 rounded-xl text-[13px] font-bold transition-colors shadow-md flex items-center justify-center">
-                                            <i className="fas fa-cloud-upload-alt mr-2 text-[16px]"></i> 현재 데이터를 클라우드에 백업 (저장)
-                                        </button>
-                                        <button onClick={() => handleCloudSync('download')} disabled={isProcessing} className="flex-1 bg-white border border-indigo-300 text-indigo-700 hover:bg-indigo-100 px-4 py-3.5 rounded-xl text-[13px] font-bold transition-colors shadow-sm flex items-center justify-center">
-                                            <i className="fas fa-cloud-download-alt mr-2 text-[16px]"></i> 클라우드에서 데이터 복구 (불러오기)
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mt-6">
-                                    <div className="flex items-center justify-between mb-4 pb-2 border-b">
-                                        <h3 className="text-[15px] font-black flex items-center text-slate-800"><i className="fas fa-table-columns text-indigo-500 mr-2"></i> 테이블 보기 설정</h3>
-                                        <span className="text-[11px] text-slate-500 font-bold">대상별 보기 최대 5개 · 최상단 자동 적용</span>
-                                    </div>
-
-                                    <div className="flex flex-wrap gap-2 mb-4">
-                                        {UPLOAD_ROLES.map(role => (
-                                            <button key={`role-view-${role.id}`} onClick={() => selectTableView(role.id)} className={`px-4 py-2 rounded-xl border text-[12px] font-black transition-all ${activeUploadRole === role.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
-                                                {role.label}
-                                            </button>
-                                        ))}
-                                    </div>
-
-                                    <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-5">
-                                        <div className="border border-slate-200 rounded-xl bg-slate-50 p-3">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <div className="text-[12px] font-black text-slate-700">{activeRoleLabel} 보기</div>
-                                                <div className="text-[11px] text-slate-400 font-bold">{activeViews.length}/5</div>
-                                            </div>
-                                            <div className="space-y-2 mb-3">
-                                                {activeViews.map(view => (
-                                                    <button key={view.id} onClick={() => setActiveTableViewId(view.id)} className={`w-full text-left px-3 py-2 rounded-lg border text-[12px] font-black transition-all ${activeTableViewId === view.id ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-indigo-50 hover:text-indigo-700'}`}>
-                                                        {view.name}
-                                                        {activeViews[0]?.id === view.id && <span className="ml-1 text-[10px] opacity-70">자동</span>}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                            <div className="flex gap-1.5">
-                                                <input type="text" value={newViewName} onChange={e=>setNewViewName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addCustomTableView()} placeholder="보기 이름" className="min-w-0 flex-1 border border-slate-300 rounded-lg px-2 py-2 text-[12px] outline-none focus:border-indigo-500 bg-white" />
-                                                <button onClick={addCustomTableView} className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-[12px] font-black hover:bg-indigo-700">추가</button>
-                                            </div>
-                                        </div>
-
-                                        <div className="space-y-5">
-                                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <div>
-                                                        <div className="text-[13px] font-black text-slate-800">{activeRoleLabel} / {editView?.name || '보기 없음'}</div>
-                                                        <div className="text-[11px] text-slate-500 font-bold mt-0.5">코드·상품명·규격은 마스터정보 기본 고정값입니다.</div>
-                                                    </div>
-                                                    <div className="flex items-center gap-2">
-                                                        {editView && <input type="text" value={editView.name || ''} onChange={e=>renameActiveView(e.target.value)} className="border border-slate-300 rounded-lg px-3 py-2 text-[12px] font-bold outline-none focus:border-indigo-500 bg-white" />}
-                                                        {editView && <button onClick={() => moveActiveView(-1)} className="px-2.5 py-2 rounded-lg bg-white text-slate-500 border border-slate-200 text-[12px] font-black hover:bg-slate-50" title="위로"><i className="fas fa-arrow-up"></i></button>}
-                                                        {editView && <button onClick={() => moveActiveView(1)} className="px-2.5 py-2 rounded-lg bg-white text-slate-500 border border-slate-200 text-[12px] font-black hover:bg-slate-50" title="아래로"><i className="fas fa-arrow-down"></i></button>}
-                                                        {editView && <button onClick={copyActiveView} className="px-3 py-2 rounded-lg bg-white text-slate-600 border border-slate-200 text-[12px] font-black hover:bg-slate-50">복사</button>}
-                                                        {editView && <button onClick={saveActiveView} disabled={!viewDirty} className={`px-3 py-2 rounded-lg border text-[12px] font-black ${viewDirty ? 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700' : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'}`}>보기 저장</button>}
-                                                        {editView && <button onClick={cancelActiveViewEdit} disabled={!viewDirty} className="px-3 py-2 rounded-lg bg-white text-slate-600 border border-slate-200 text-[12px] font-black hover:bg-slate-50 disabled:opacity-40">변경 취소</button>}
-                                                        {editView && <button onClick={deleteActiveView} className="px-3 py-2 rounded-lg bg-rose-50 text-rose-600 border border-rose-200 text-[12px] font-black hover:bg-rose-100">삭제</button>}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="bg-white border border-slate-200 rounded-xl p-4">
-                                                <div className="text-[12px] font-black text-slate-700 mb-3"><i className="fas fa-database text-blue-500 mr-1.5"></i>마스터 노출항목</div>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {(window.MASTER_HEADERS || []).filter(h => !requiredCoreFields.includes(h)).map(h => (
-                                                        <button key={`view-master-${activeUploadRole}-${editView?.id || 'none'}-${h}`} onClick={() => toggleActiveMasterColumn(h)} className={`px-3 py-1.5 rounded-full border text-[12px] font-bold transition-all ${(editView?.masterColumns || []).includes(h) ? 'bg-blue-100 border-blue-300 text-blue-700 shadow-inner' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
-                                                            {h}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-
-                                            <div className="bg-white border border-slate-200 rounded-xl p-4">
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <div className="text-[12px] font-black text-slate-700"><i className="fas fa-edit text-emerald-500 mr-1.5"></i>작업테이블 노출항목</div>
-                                                    <button className="hidden"> </button>
-                                                </div>
-                                                <div className="flex flex-wrap gap-2 mb-4">
-                                                    {Array.from(new Set([...(window.MASTER_HEADERS || []), ...((editView?.workColumns) || [])])).filter(h => h && h !== '품목코드').map(h => {
-                                                        const selected = (editView?.workColumns || []).includes(h);
-                                                        const isCompare = isComparePriceField(activeUploadRole, h);
-                                                        return <button key={`view-work-${activeUploadRole}-${editView?.id || 'none'}-${h}`} onClick={() => toggleActiveWorkColumn(h)} className={`px-3 py-1.5 rounded-full border text-[12px] font-bold transition-all ${selected ? 'bg-emerald-100 border-emerald-300 text-emerald-800 shadow-inner' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>{selected && <i className="fas fa-check mr-1"></i>}{h}{isCompare && <span className="ml-1 text-[10px] text-amber-600">비교</span>}</button>;
-                                                    })}
-                                                </div>
-                                                <div className="flex items-center gap-2 max-w-2xl">
-                                                    <input type="text" value={customEstColInput} onChange={e=>setCustomEstColInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addCustomUploadCol(activeUploadRole, customEstColInput, isComparePriceCol)} placeholder={`${activeRoleLabel} 항목명 입력`} className="flex-1 border border-slate-300 rounded-xl px-4 py-2 text-[13px] outline-none focus:border-emerald-500" />
-                                                    <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-[12px] font-black cursor-pointer select-none">
-                                                        <input type="checkbox" checked={isComparePriceCol} onChange={e=>setIsComparePriceCol(e.target.checked)} className="rounded border-amber-300 text-amber-500" />
-                                                        비교단가
-                                                    </label>
-                                                    <button onClick={()=>addCustomUploadCol(activeUploadRole, customEstColInput, isComparePriceCol)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-[13px] font-bold transition-colors">항목추가</button>
-                                                </div>
-                                                <p className="mt-3 text-[11px] text-slate-500 leading-relaxed">이슈와 리포트는 시스템 고정 영역입니다. 여기서는 마스터정보와 작업테이블 컬럼만 설정합니다.</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {activeTab === 'inputMap' && (
-                            <div className="max-w-4xl space-y-6">
-                                <h2 className="text-2xl font-black text-slate-800 mb-3">입력 데이터 매핑</h2>
-                                <div className="flex flex-wrap gap-2 mb-6">
-                                    {UPLOAD_ROLES.map(role => (
-                                        <button key={`role-map-${role.id}`} onClick={() => setActiveUploadRole(role.id)} className={`px-4 py-2 rounded-xl border text-[12px] font-black transition-all ${activeUploadRole === role.id ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>{role.label}</button>
-                                    ))}
-                                </div>
-                                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                                    <table className="w-full text-left text-[13px]">
-                                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold">
-                                            <tr><th className="p-4 w-[160px]">화면 노출 항목</th><th className="p-4 w-[120px] text-center">항목 유형</th><th className="p-4">엑셀 감지 키워드 (콤마 구분)</th><th className="p-4 w-[240px]">마스터 DB 연결</th></tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100">
-                                            {requiredCoreFields.map(h => (
-                                                <tr key={`map-req-${h}`} className="bg-slate-50/50">
-                                                    <td className="p-4 font-bold text-slate-700"><i className="fas fa-lock text-slate-400 mr-2"></i>{h}</td>
-                                                    <td className="p-4 text-center"><span className="bg-slate-200 text-slate-600 px-2 py-1 rounded-full text-[10px] font-black">필수</span></td>
-                                                    <td className="p-4"><input type="text" value={config.mappings[activeUploadRole]?.[h]||''} onChange={e=>config.setMappings(p=>({...p, [activeUploadRole]:{...(p?.[activeUploadRole]||{}), [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 bg-white" /></td>
-                                                    <td className="p-4"><div className="text-[12px] text-slate-500 bg-slate-200 px-3 py-2 rounded-lg font-bold text-center"><i className="fas fa-key mr-1.5"></i>식별자 고정</div></td>
-                                                </tr>
-                                            ))}
-                                            {(config.visibleUploadCols[activeUploadRole]||[]).filter(h => !requiredCoreFields.includes(h)).map(h => {
-                                                const isCompare = isComparePriceField(activeUploadRole, h);
-                                                return (
-                                                    <tr key={`map-e-${h}`} className="hover:bg-slate-50 transition-colors">
-                                                        <td className="p-4 font-bold text-slate-800">{h}</td>
-                                                        <td className="p-4 text-center">{isCompare ? <span className="bg-amber-100 text-amber-700 border border-amber-200 px-2 py-1 rounded-full text-[10px] font-black">비교단가</span> : <span className="bg-slate-100 text-slate-500 border border-slate-200 px-2 py-1 rounded-full text-[10px] font-bold">일반</span>}</td>
-                                                        <td className="p-4"><input type="text" value={config.mappings[activeUploadRole]?.[h]||''} onChange={e=>config.setMappings(p=>({...p, [activeUploadRole]:{...(p?.[activeUploadRole]||{}), [h]:e.target.value}}))} placeholder={h} className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500" /></td>
-                                                        <td className="p-4">{isCompare ? <div className="text-[12px] text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg font-bold text-center"><i className="fas fa-ban mr-1.5"></i>DB 저장 안함</div> : <select value={config.masterLinks[activeUploadRole]?.[h]||''} onChange={e=>config.setMasterLinks(p=>({...p, [activeUploadRole]:{...(p?.[activeUploadRole]||{}), [h]:e.target.value}}))} className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 bg-white font-bold text-slate-700"><option value="">-- DB 저장 안함 --</option>{selectableMasterHeaders.map(mh=><option key={mh} value={mh}>{mh}</option>)}</select>}</td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        )}
-
-                        {activeTab === 'marginRule' && (
-                            <div className="max-w-5xl space-y-6">
-                                <div className="flex justify-between items-center mb-6">
-                                    <h2 className="text-2xl font-black text-slate-800">동적 단가 계산 및 마진 룰</h2>
-                                    <button onClick={addMarginRule} className="bg-rose-600 hover:bg-rose-700 text-white px-5 py-2.5 rounded-xl text-[13px] font-bold shadow-md"><i className="fas fa-plus mr-2"></i>룰셋 추가</button>
-                                </div>
-                                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-1">
-                                    <table className="w-full text-left text-[13px]">
-                                        <thead className="bg-rose-50 border-b border-rose-100 text-rose-800 font-bold rounded-t-xl">
-                                            <tr><th className="p-4 rounded-tl-xl">창고코드 (그룹)</th><th className="p-4">단위 조건</th><th className="p-4 text-center">마진율(%)</th><th className="p-4 text-center">연결 방식</th><th className="p-4 text-center">동작 예시</th><th className="p-4 rounded-tr-xl"></th></tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100">
-                                            {(config.marginRules || []).map(rule => {
-                                                const isDefault = rule.id === 'default';
-                                                const examplePrice = rule.type === 'divide' ? Math.round(10000 / (1 - rule.rate / 100)) : Math.round(10000 * (1 + rule.rate / 100));
-                                                return (
-                                                    <tr key={rule.id} className="hover:bg-slate-50 transition-colors">
-                                                        <td className="p-3">{isDefault ? <div className="text-slate-400 font-bold pl-2">* (전체 창고)</div> : <input type="text" value={rule.whCode} onChange={e=>updateMarginRule(rule.id, 'whCode', e.target.value)} placeholder="01, 02..." className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-rose-500" />}</td>
-                                                        <td className="p-3">{isDefault ? <div className="text-slate-400 font-bold pl-2">* (전체 단위)</div> : <input type="text" value={rule.unit} onChange={e=>updateMarginRule(rule.id, 'unit', e.target.value)} placeholder="box, ea..." className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-rose-500" />}</td>
-                                                        <td className="p-3 text-center"><input type="number" value={rule.rate} onChange={e=>updateMarginRule(rule.id, 'rate', Number(e.target.value))} className="w-20 text-center border border-slate-300 rounded-lg py-2 outline-none focus:border-rose-500 font-black text-rose-600" /></td>
-                                                        <td className="p-3 text-center"><select value={rule.type} onChange={e=>updateMarginRule(rule.id, 'type', e.target.value)} className="border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-rose-500 bg-white"><option value="divide">나누기(÷)</option><option value="multiply">곱하기(×)</option></select></td>
-                                                        <td className="p-3 text-center font-mono text-slate-500 text-[12px]">➔ {examplePrice.toLocaleString()}원</td>
-                                                        <td className="p-3 text-center">{!isDefault && <button onClick={()=>deleteMarginRule(rule.id)} className="w-8 h-8 bg-slate-100 text-slate-400 rounded-lg hover:bg-rose-500 hover:text-white transition-colors"><i className="fas fa-trash-alt"></i></button>}</td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        )}
-
-                        {activeTab === 'tagManager' && (
-                            <div className="max-w-4xl space-y-6">
-                                <h2 className="text-2xl font-black text-slate-800 mb-6">카탈로그 관리</h2>
-                                <div className="bg-white p-6 rounded-xl border shadow-sm">
-                                    <h3 className="text-[15px] font-black text-slate-800 mb-4 pb-2 border-b flex items-center"><i className="fas fa-folder-open text-indigo-500 mr-2"></i>카탈로그 목록</h3>
-                                    <div className="grid grid-cols-3 gap-3">
-                                        {availableCatalogs.length === 0 ? <div className="col-span-3 text-slate-400">데이터 없음</div> : availableCatalogs.map(tag => (
-                                            <div key={tag.name} className="flex justify-between bg-slate-50 border p-3 rounded-lg"><div className="truncate"><span className="font-bold">{tag.name}</span><span className="text-[11px] text-indigo-500 block">{tag.count}건</span></div><button onClick={() => handleDeleteTag('catalog', tag.name)} className="text-slate-400 hover:text-rose-500"><i className="fas fa-trash-alt"></i></button></div>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="bg-white p-6 rounded-xl border shadow-sm mt-6">
-                                    <h3 className="text-[15px] font-black text-slate-800 mb-4 pb-2 border-b flex items-center"><i className="fas fa-file-invoice text-blue-500 mr-2"></i>견적서 목록</h3>
-                                    <div className="grid grid-cols-3 gap-3">
-                                        {availableCategories.length === 0 ? <div className="col-span-3 text-slate-400">데이터 없음</div> : availableCategories.map(tag => (
-                                            <div key={tag.name} className="flex justify-between bg-slate-50 border p-3 rounded-lg"><div className="truncate"><span className="font-bold">{tag.name}</span><span className="text-[11px] text-blue-500 block">{tag.count}건</span></div><button onClick={() => handleDeleteTag('category', tag.name)} className="text-slate-400 hover:text-rose-500"><i className="fas fa-trash-alt"></i></button></div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            );
+                else {
+                    throw new Error("Invalid Data");
+                }
+            }
+        }
+        catch (error) {
+            console.error("클라우드 에러:", error);
+            showToast("❌ 통신 오류 발생. URL이나 권한을 확인하세요.\n" + error.message);
+        }
+        finally {
+            setIsProcessing(false);
+            setProcessMsg('');
+        }
+    };
+    const handleDeleteTag = async (type, tagName) => {
+        if (!window.confirm(`[${tagName}] 태그를 모든 상품에서 삭제하시겠습니까?`))
+            return;
+        const fieldKey = type === 'catalog' ? '카탈로그' : '견적서';
+        let newMaster = { ...data.masterProducts };
+        let count = 0;
+        for (let code in newMaster) {
+            if (newMaster[code][fieldKey]) {
+                const tags = String(newMaster[code][fieldKey]).split(',').map(s => s.trim()).filter(Boolean);
+                if (tags.includes(tagName)) {
+                    newMaster[code] = { ...newMaster[code] };
+                    newMaster[code][fieldKey] = tags.filter(t => t !== tagName).join(', ');
+                    count++;
+                }
+            }
+        }
+        if (count > 0) {
+            data.setMasterProducts(newMaster);
+            const safeData = Object.values(newMaster).filter(item => item && item.코드);
+            await window.bulkPutIDB('master_products', safeData);
+            localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+            showToast(`✅ ${count}개의 상품에서 [${tagName}] 태그를 삭제했습니다.`);
+        }
+    };
+    const toggleMasterCol = (tabId, header) => config.setVisibleMasterCols(prev => { const list = prev[tabId] || []; return { ...prev, [tabId]: list.includes(header) ? list.filter(h => h !== header) : [...list, header] }; });
+    const isComparePriceField = useCallback((type, header) => {
+        var _a, _b, _c;
+        return ((_c = (_b = (_a = config.uploadColumnMeta) === null || _a === void 0 ? void 0 : _a[type]) === null || _b === void 0 ? void 0 : _b[header]) === null || _c === void 0 ? void 0 : _c.type) === 'comparePrice';
+    }, [config.uploadColumnMeta]);
+    const addCustomUploadCol = (type, val, comparePrice = false) => {
+        if (!val || !val.trim())
+            return;
+        const cleanVal = val.trim();
+        if ((config.visibleUploadCols[type] || []).includes(cleanVal))
+            return showToast('⚠️ 이미 추가된 항목입니다.');
+        config.setVisibleUploadCols(prev => ({ ...prev, [type]: [...(prev[type] || []), cleanVal] }));
+        if (type === activeUploadRole && editView && !(editView.workColumns || []).includes(cleanVal)) {
+            updateDraft({ workColumns: normalizeTableColumns([...(editView.workColumns || []), cleanVal]).filter(c => c !== '품목코드') });
+        }
+        config.setMappings(prev => ({ ...prev, [type]: { ...prev[type], [cleanVal]: cleanVal } }));
+        config.setMasterLinks(prev => ({ ...prev, [type]: { ...prev[type], [cleanVal]: '' } }));
+        config.setUploadColumnMeta(prev => ({
+            ...prev,
+            [type]: {
+                ...((prev === null || prev === void 0 ? void 0 : prev[type]) || {}),
+                [cleanVal]: { type: comparePrice ? 'comparePrice' : 'normal' }
+            }
+        }));
+        setCustomEstColInput('');
+        setIsComparePriceCol(false);
+        showToast(comparePrice ? '✅ 비교단가 항목이 추가되었습니다.' : '✅ 항목이 추가되었습니다.');
+    };
+    const removeUploadCol = (type, header) => {
+        config.setVisibleUploadCols(prev => ({ ...prev, [type]: (prev[type] || []).filter(x => x !== header) }));
+        config.setMappings(prev => {
+            const nextType = { ...((prev === null || prev === void 0 ? void 0 : prev[type]) || {}) };
+            delete nextType[header];
+            return { ...prev, [type]: nextType };
+        });
+        config.setMasterLinks(prev => {
+            const nextType = { ...((prev === null || prev === void 0 ? void 0 : prev[type]) || {}) };
+            delete nextType[header];
+            return { ...prev, [type]: nextType };
+        });
+        config.setUploadColumnMeta(prev => {
+            const nextType = { ...((prev === null || prev === void 0 ? void 0 : prev[type]) || {}) };
+            delete nextType[header];
+            return { ...prev, [type]: nextType };
+        });
+        showToast('✅ 작업 항목이 삭제되었습니다.');
+    };
+    const resetUploadRoleToDefault = (type) => {
+        var _a;
+        const label = ((_a = UPLOAD_ROLES.find(r => r.id === type)) === null || _a === void 0 ? void 0 : _a.label) || type;
+        if (!window.confirm(`[${label}] 작업 항목 노출 설정을 기본값으로 정리하시겠습니까?\n이미 자동 보강으로 섞인 항목을 정리할 때 사용하세요.`))
+            return;
+        const defaults = getDefaultVisibleUploadCols();
+        config.setVisibleUploadCols(prev => ({ ...prev, [type]: [...(defaults[type] || [])] }));
+        config.setUploadColumnMeta(prev => {
+            const allowed = new Set(defaults[type] || []);
+            const nextType = {};
+            Object.entries((prev === null || prev === void 0 ? void 0 : prev[type]) || {}).forEach(([k, v]) => { if (allowed.has(k))
+                nextType[k] = v; });
+            return { ...prev, [type]: nextType };
+        });
+        showToast(`✅ [${label}] 자동 생성 항목을 기본값으로 정리했습니다.`);
+    };
+    const shortcutList = Array.isArray(config.tableShortcuts) ? config.tableShortcuts : [];
+    const getShortcutRoleLabel = (roleId) => { var _a; return ((_a = UPLOAD_ROLES.find(r => r.id === roleId)) === null || _a === void 0 ? void 0 : _a.label) || roleId || '견적'; };
+    const getShortcutColumns = (roleId) => { var _a; return Array.from(new Set([...(((_a = config.visibleUploadCols) === null || _a === void 0 ? void 0 : _a[roleId]) || [])])).filter(Boolean); };
+    const toggleShortcutColumn = (columnName) => {
+        setShortcutDraft(prev => {
+            const list = prev.columns || [];
+            return { ...prev, columns: list.includes(columnName) ? list.filter(c => c !== columnName) : [...list, columnName] };
+        });
+    };
+    const resetShortcutDraft = () => {
+        setShortcutDraft({ name: '', role: 'estimate', columns: [], enabled: true });
+        setEditingShortcutId(null);
+    };
+    const saveTableShortcut = () => {
+        const name = String(shortcutDraft.name || '').trim();
+        const role = shortcutDraft.role || 'estimate';
+        const columns = Array.from(new Set(shortcutDraft.columns || [])).filter(Boolean);
+        if (!name)
+            return showToast('⚠️ 단축버튼명을 입력하세요.');
+        if (columns.length === 0)
+            return showToast('⚠️ 노출할 테이블 항목을 1개 이상 선택하세요.');
+        const current = shortcutList;
+        if (!editingShortcutId && current.length >= 5)
+            return showToast('⚠️ 테이블 단축버튼은 최대 5개까지 저장할 수 있습니다.');
+        const payload = {
+            id: editingShortcutId || `table_shortcut_${Date.now()}`,
+            name,
+            role,
+            columns,
+            enabled: shortcutDraft.enabled !== false,
+            updatedAt: new Date().toISOString()
         };
+        const next = editingShortcutId ? current.map(item => item.id === editingShortcutId ? payload : item) : [...current, payload];
+        config.setTableShortcuts(next.slice(0, 5));
+        localStorage.setItem('table_shortcuts_sync_trigger', Date.now().toString());
+        resetShortcutDraft();
+        showToast('✅ 테이블 단축버튼을 저장했습니다.');
+    };
+    const editTableShortcut = (shortcut) => {
+        setEditingShortcutId(shortcut.id);
+        setShortcutDraft({
+            name: shortcut.name || '',
+            role: shortcut.role || 'estimate',
+            columns: Array.isArray(shortcut.columns) ? shortcut.columns : [],
+            enabled: shortcut.enabled !== false
+        });
+    };
+    const deleteTableShortcut = (shortcutId) => {
+        config.setTableShortcuts(shortcutList.filter(item => item.id !== shortcutId));
+        localStorage.setItem('table_shortcuts_sync_trigger', Date.now().toString());
+        if (editingShortcutId === shortcutId)
+            resetShortcutDraft();
+        showToast('✅ 테이블 단축버튼을 삭제했습니다.');
+    };
+    const toggleTableShortcutEnabled = (shortcutId) => {
+        config.setTableShortcuts(shortcutList.map(item => item.id === shortcutId ? { ...item, enabled: item.enabled === false } : item));
+        localStorage.setItem('table_shortcuts_sync_trigger', Date.now().toString());
+    };
+    const getActiveViewGroup = () => { var _a; return ((_a = sanitizeTableViewPresets(config.tableViewPresets || getDefaultTableViewPresets())) === null || _a === void 0 ? void 0 : _a[activeUploadRole]) || { views: [] }; };
+    const activeViewGroup = getActiveViewGroup();
+    const activeViews = activeViewGroup.views || [];
+    const activeView = activeViews.find(v => v.id === activeTableViewId) || activeViews[0] || null;
+    const activeRoleLabel = ((_a = UPLOAD_ROLES.find(r => r.id === activeUploadRole)) === null || _a === void 0 ? void 0 : _a.label) || '카탈로그';
+    const editView = viewDraft || activeView;
+    useEffect(() => {
+        if (!activeView) {
+            setViewDraft(null);
+            setViewDirty(false);
+            return;
+        }
+        setViewDraft({
+            ...activeView,
+            masterColumns: [...(activeView.masterColumns || [])],
+            workColumns: [...(activeView.workColumns || [])]
+        });
+        setViewDirty(false);
+    }, [activeUploadRole, activeView === null || activeView === void 0 ? void 0 : activeView.id]);
+    const updateDraft = (patch = {}) => {
+        if (!editView)
+            return;
+        setViewDraft(prev => ({ ...(prev || editView), ...patch, updatedAt: new Date().toISOString() }));
+        setViewDirty(true);
+    };
+    const saveActiveView = () => {
+        if (!editView)
+            return showToast('⚠️ 저장할 보기를 먼저 추가하세요.');
+        const cleanName = String(editView.name || '').trim();
+        if (!cleanName)
+            return showToast('⚠️ 보기 이름을 입력하세요.');
+        if (activeViews.some(v => v.id !== editView.id && String(v.name).trim() === cleanName))
+            return showToast('⚠️ 같은 이름의 보기가 이미 있습니다.');
+        config.setTableViewPresets(prev => {
+            const safe = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
+            const group = safe[activeUploadRole] || { views: [] };
+            const savedView = createTableView(activeUploadRole, cleanName, editView.masterColumns || ['입고가'], editView.workColumns || [], { id: editView.id, updatedAt: new Date().toISOString() });
+            const views = group.views.map(v => v.id === savedView.id ? savedView : v);
+            return { ...safe, [activeUploadRole]: { views } };
+        });
+        config.setVisibleMasterCols(prev => ({ ...(prev || {}), [activeUploadRole]: normalizeMasterColumns(editView.masterColumns || []) }));
+        config.setVisibleUploadCols(prev => ({ ...(prev || {}), [activeUploadRole]: normalizeTableColumns(editView.workColumns || []).filter(c => c !== '품목코드') }));
+        localStorage.setItem('config_sync_trigger', Date.now().toString());
+        setViewDirty(false);
+        showToast('✅ 보기를 저장했습니다.');
+    };
+    const cancelActiveViewEdit = () => {
+        if (!activeView)
+            return;
+        setViewDraft({ ...activeView, masterColumns: [...(activeView.masterColumns || [])], workColumns: [...(activeView.workColumns || [])] });
+        setViewDirty(false);
+        showToast('↩️ 변경을 취소했습니다.');
+    };
+    const toggleActiveMasterColumn = (header) => {
+        if (!editView || requiredCoreFields.includes(header))
+            return;
+        const list = editView.masterColumns || [];
+        const next = list.includes(header) ? list.filter(h => h !== header) : [...list, header];
+        updateDraft({ masterColumns: normalizeMasterColumns(next) });
+    };
+    const toggleActiveWorkColumn = (header) => {
+        if (!editView)
+            return;
+        const list = editView.workColumns || [];
+        const next = list.includes(header) ? list.filter(h => h !== header) : [...list, header];
+        updateDraft({ workColumns: normalizeTableColumns(next).filter(c => c !== '품목코드') });
+    };
+    const selectTableView = (target, viewId = '') => {
+        var _a, _b, _c;
+        setActiveUploadRole(target);
+        const group = ((_a = sanitizeTableViewPresets(config.tableViewPresets || getDefaultTableViewPresets())) === null || _a === void 0 ? void 0 : _a[target]) || { views: [] };
+        const firstId = ((_c = (_b = group.views) === null || _b === void 0 ? void 0 : _b[0]) === null || _c === void 0 ? void 0 : _c.id) || '';
+        setActiveTableViewId(viewId || firstId);
+    };
+    const addCustomTableView = () => {
+        const name = String(newViewName || '').trim();
+        if (!name)
+            return showToast('⚠️ 보기 이름을 입력하세요.');
+        const safe = sanitizeTableViewPresets(config.tableViewPresets || getDefaultTableViewPresets());
+        const group = safe[activeUploadRole] || { views: [] };
+        if ((group.views || []).length >= 5)
+            return showToast('⚠️ 보기는 대상별 최대 5개까지 생성할 수 있습니다.');
+        if ((group.views || []).some(v => String(v.name).trim() === name))
+            return showToast('⚠️ 같은 이름의 보기가 이미 있습니다.');
+        const baseMaster = (editView === null || editView === void 0 ? void 0 : editView.masterColumns) || getDefaultVisibleMasterCols()[activeUploadRole] || ['입고가'];
+        const baseWork = (editView === null || editView === void 0 ? void 0 : editView.workColumns) || getDefaultVisibleUploadCols()[activeUploadRole] || [];
+        const newView = createTableView(activeUploadRole, name, baseMaster, baseWork, { id: `${activeUploadRole}_custom_${Date.now()}` });
+        config.setTableViewPresets(prev => {
+            const next = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
+            const g = next[activeUploadRole] || { views: [] };
+            return { ...next, [activeUploadRole]: { views: [...g.views, newView].slice(0, 5) } };
+        });
+        setActiveTableViewId(newView.id);
+        setNewViewName('');
+        showToast('✅ 보기를 추가했습니다. 항목 수정 후 보기 저장을 누르세요.');
+    };
+    const renameActiveView = (name) => updateDraft({ name: String(name || '').trim() });
+    const deleteActiveView = () => {
+        if (!activeView)
+            return;
+        if (!window.confirm(`[${activeView.name}] 보기를 삭제할까요?`))
+            return;
+        config.setTableViewPresets(prev => {
+            var _a;
+            const safe = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
+            const group = safe[activeUploadRole] || { views: [] };
+            const views = group.views.filter(v => v.id !== activeView.id);
+            setActiveTableViewId(((_a = views[0]) === null || _a === void 0 ? void 0 : _a.id) || '');
+            return { ...safe, [activeUploadRole]: { views } };
+        });
+        showToast('✅ 보기를 삭제했습니다.');
+    };
+    const copyActiveView = () => {
+        if (!editView)
+            return showToast('⚠️ 복사할 보기가 없습니다.');
+        const safe = sanitizeTableViewPresets(config.tableViewPresets || getDefaultTableViewPresets());
+        const group = safe[activeUploadRole] || { views: [] };
+        if (group.views.length >= 5)
+            return showToast('⚠️ 보기는 대상별 최대 5개까지 생성할 수 있습니다.');
+        const baseName = `${editView.name || '보기'} 복사`;
+        let name = baseName;
+        let i = 2;
+        while (group.views.some(v => String(v.name).trim() === name))
+            name = `${baseName}${i++}`;
+        const copied = createTableView(activeUploadRole, name, editView.masterColumns || ['입고가'], editView.workColumns || [], { id: `${activeUploadRole}_copy_${Date.now()}` });
+        config.setTableViewPresets(prev => {
+            const next = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
+            const g = next[activeUploadRole] || { views: [] };
+            return { ...next, [activeUploadRole]: { views: [...g.views, copied].slice(0, 5) } };
+        });
+        setActiveTableViewId(copied.id);
+        showToast('✅ 보기를 복사했습니다.');
+    };
+    const moveActiveView = (delta) => {
+        if (!activeView)
+            return;
+        config.setTableViewPresets(prev => {
+            const safe = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
+            const group = safe[activeUploadRole] || { views: [] };
+            const views = [...group.views];
+            const idx = views.findIndex(v => v.id === activeView.id);
+            const nextIdx = idx + delta;
+            if (idx < 0 || nextIdx < 0 || nextIdx >= views.length)
+                return safe;
+            [views[idx], views[nextIdx]] = [views[nextIdx], views[idx]];
+            return { ...safe, [activeUploadRole]: { views } };
+        });
+        showToast(delta < 0 ? '⬆️ 보기 순서를 올렸습니다.' : '⬇️ 보기 순서를 내렸습니다.');
+    };
+    const addMarginRule = () => config.setMarginRules([...(config.marginRules || []), { id: typeof window.generateUUID === 'function' ? window.generateUUID() : crypto.randomUUID(), whCode: '', unit: '', rate: 10, type: 'divide' }]);
+    const updateMarginRule = (id, field, value) => config.setMarginRules((config.marginRules || []).map(r => r.id === id ? { ...r, [field]: value } : r));
+    const deleteMarginRule = (id) => config.setMarginRules((config.marginRules || []).filter(r => r.id !== id));
+    const requiredCoreFields = ['품목코드', '품목명', '규격'];
+    const selectableMasterHeaders = useMemo(() => { var _a; return Array.from(new Set([...(window.MASTER_HEADERS || []), ...(((_a = config.visibleMasterCols) === null || _a === void 0 ? void 0 : _a[activeUploadRole]) || [])])); }, [config.visibleMasterCols, activeUploadRole]);
+    return (React.createElement("div", { className: "flex h-screen overflow-hidden bg-slate-50 relative fade-in" },
+        isProcessing && (React.createElement("div", { className: "absolute inset-0 bg-slate-900/60 z-[2000] flex flex-col justify-center items-center backdrop-blur-sm" },
+            React.createElement("i", { className: "fas fa-spinner fa-spin text-5xl text-indigo-400 mb-4" }),
+            React.createElement("div", { className: "text-white font-bold text-lg bg-slate-800/80 px-6 py-2 rounded-full border border-slate-700 shadow-xl" }, processMsg))),
+        toast && React.createElement("div", { className: "fixed top-6 left-1/2 transform -translate-x-1/2 z-[1000] bg-slate-800 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 text-sm font-bold transition-all" },
+            React.createElement("i", { className: "fas fa-check-circle text-emerald-400" }),
+            toast),
+        React.createElement("div", { className: "w-[260px] bg-[#0f172a] flex flex-col text-slate-300 shadow-xl z-10 shrink-0" },
+            React.createElement("div", { className: "p-6 border-b border-slate-800 bg-[#0b1120]" },
+                React.createElement("h1", { className: "text-xl font-black text-indigo-400 tracking-tight flex items-center" },
+                    React.createElement("i", { className: "fas fa-sliders-h mr-3" }),
+                    "\uCF58\uD2B8\uB864 \uD0C0\uC6CC"),
+                React.createElement("p", { className: "text-[10px] text-slate-500 mt-2 font-bold uppercase tracking-widest" }, "MERCHOPS SETTINGS")),
+            React.createElement("div", { className: "flex flex-col py-4 gap-1 px-3" },
+                React.createElement("button", { onClick: () => setActiveTab('display'), className: `px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all ${activeTab === 'display' ? 'bg-indigo-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}` },
+                    React.createElement("i", { className: "fas fa-desktop w-6 text-center mr-1" }),
+                    " 1. \uD658\uACBD \uBC0F \uD074\uB77C\uC6B0\uB4DC \uC124\uC815"),
+                React.createElement("button", { onClick: () => setActiveTab('inputMap'), className: `px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all ${activeTab === 'inputMap' ? 'bg-emerald-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}` },
+                    React.createElement("i", { className: "fas fa-sign-in-alt w-6 text-center mr-1" }),
+                    " 2. \uC785\uB825 \uB370\uC774\uD130 \uB9E4\uD551"),
+                React.createElement("button", { onClick: () => setActiveTab('marginRule'), className: `px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all ${activeTab === 'marginRule' ? 'bg-rose-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}` },
+                    React.createElement("i", { className: "fas fa-calculator w-6 text-center mr-1" }),
+                    " 3. \uB2E8\uAC00 \uACC4\uC0B0 \uBC0F \uB8F0"),
+                React.createElement("button", { onClick: () => setActiveTab('tagManager'), className: `px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all ${activeTab === 'tagManager' ? 'bg-amber-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}` },
+                    React.createElement("i", { className: "fas fa-tags w-6 text-center mr-1" }),
+                    " 4. \uCE74\uD0C8\uB85C\uADF8 \uAD00\uB9AC")),
+            React.createElement("div", { className: "mt-auto p-6 border-t border-slate-800" },
+                React.createElement("button", { onClick: navigateToMerchOps, className: "w-full py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[13px] font-bold transition-colors" },
+                    React.createElement("i", { className: "fas fa-home mr-2" }),
+                    " \uBA54\uC778\uC73C\uB85C \uB3CC\uC544\uAC00\uAE30"))),
+        React.createElement("div", { className: "flex-1 overflow-y-auto p-10 custom-scrollbar relative" },
+            activeTab === 'display' && (React.createElement("div", { className: "max-w-4xl space-y-6" },
+                React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-6" }, "\uD658\uACBD \uC124\uC815 \uBC0F \uD074\uB77C\uC6B0\uB4DC \uB3D9\uAE30\uD654"),
+                React.createElement("div", { className: "bg-indigo-50 p-6 rounded-2xl border border-indigo-100 shadow-sm" },
+                    React.createElement("h3", { className: "text-[15px] font-black text-indigo-900 mb-4 pb-2 border-b border-indigo-200 flex items-center" },
+                        React.createElement("span", null,
+                            React.createElement("i", { className: "fas fa-cloud text-indigo-500 mr-2" }),
+                            "\uD074\uB77C\uC6B0\uB4DC \uB3D9\uAE30\uD654 (Apps Script \uBD84\uD560 \uC804\uC1A1)")),
+                    React.createElement("div", { className: "mb-4" },
+                        React.createElement("label", { className: "text-[12px] font-bold text-indigo-800 mb-1 block" }, "\uD0C0\uAC9F URL \uC138\uD305"),
+                        React.createElement("input", { type: "text", value: config.cloudUrl, onChange: e => config.setCloudUrl(e.target.value), placeholder: "https://script.google.com/macros/...", className: "w-full border border-indigo-200 rounded-xl px-4 py-3 text-[13px] outline-none focus:border-indigo-500 bg-white shadow-sm" })),
+                    React.createElement("div", { className: "flex gap-3 pt-2 border-t border-indigo-200/50" },
+                        React.createElement("button", { onClick: () => handleCloudSync('upload'), disabled: isProcessing, className: "flex-1 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3.5 rounded-xl text-[13px] font-bold transition-colors shadow-md flex items-center justify-center" },
+                            React.createElement("i", { className: "fas fa-cloud-upload-alt mr-2 text-[16px]" }),
+                            " \uD604\uC7AC \uB370\uC774\uD130\uB97C \uD074\uB77C\uC6B0\uB4DC\uC5D0 \uBC31\uC5C5 (\uC800\uC7A5)"),
+                        React.createElement("button", { onClick: () => handleCloudSync('download'), disabled: isProcessing, className: "flex-1 bg-white border border-indigo-300 text-indigo-700 hover:bg-indigo-100 px-4 py-3.5 rounded-xl text-[13px] font-bold transition-colors shadow-sm flex items-center justify-center" },
+                            React.createElement("i", { className: "fas fa-cloud-download-alt mr-2 text-[16px]" }),
+                            " \uD074\uB77C\uC6B0\uB4DC\uC5D0\uC11C \uB370\uC774\uD130 \uBCF5\uAD6C (\uBD88\uB7EC\uC624\uAE30)"))),
+                React.createElement("div", { className: "bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mt-6" },
+                    React.createElement("div", { className: "flex items-center justify-between mb-4 pb-2 border-b" },
+                        React.createElement("h3", { className: "text-[15px] font-black flex items-center text-slate-800" },
+                            React.createElement("i", { className: "fas fa-table-columns text-indigo-500 mr-2" }),
+                            " \uD14C\uC774\uBE14 \uBCF4\uAE30 \uC124\uC815"),
+                        React.createElement("span", { className: "text-[11px] text-slate-500 font-bold" }, "\uB300\uC0C1\uBCC4 \uBCF4\uAE30 \uCD5C\uB300 5\uAC1C \u00B7 \uCD5C\uC0C1\uB2E8 \uC790\uB3D9 \uC801\uC6A9")),
+                    React.createElement("div", { className: "flex flex-wrap gap-2 mb-4" }, UPLOAD_ROLES.map(role => (React.createElement("button", { key: `role-view-${role.id}`, onClick: () => selectTableView(role.id), className: `px-4 py-2 rounded-xl border text-[12px] font-black transition-all ${activeUploadRole === role.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}` }, role.label)))),
+                    React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-5" },
+                        React.createElement("div", { className: "border border-slate-200 rounded-xl bg-slate-50 p-3" },
+                            React.createElement("div", { className: "flex items-center justify-between mb-2" },
+                                React.createElement("div", { className: "text-[12px] font-black text-slate-700" },
+                                    activeRoleLabel,
+                                    " \uBCF4\uAE30"),
+                                React.createElement("div", { className: "text-[11px] text-slate-400 font-bold" },
+                                    activeViews.length,
+                                    "/5")),
+                            React.createElement("div", { className: "space-y-2 mb-3" }, activeViews.map(view => {
+                                var _a;
+                                return (React.createElement("button", { key: view.id, onClick: () => setActiveTableViewId(view.id), className: `w-full text-left px-3 py-2 rounded-lg border text-[12px] font-black transition-all ${activeTableViewId === view.id ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-indigo-50 hover:text-indigo-700'}` },
+                                    view.name,
+                                    ((_a = activeViews[0]) === null || _a === void 0 ? void 0 : _a.id) === view.id && React.createElement("span", { className: "ml-1 text-[10px] opacity-70" }, "\uC790\uB3D9")));
+                            })),
+                            React.createElement("div", { className: "flex gap-1.5" },
+                                React.createElement("input", { type: "text", value: newViewName, onChange: e => setNewViewName(e.target.value), onKeyDown: e => e.key === 'Enter' && addCustomTableView(), placeholder: "\uBCF4\uAE30 \uC774\uB984", className: "min-w-0 flex-1 border border-slate-300 rounded-lg px-2 py-2 text-[12px] outline-none focus:border-indigo-500 bg-white" }),
+                                React.createElement("button", { onClick: addCustomTableView, className: "px-3 py-2 rounded-lg bg-indigo-600 text-white text-[12px] font-black hover:bg-indigo-700" }, "\uCD94\uAC00"))),
+                        React.createElement("div", { className: "space-y-5" },
+                            React.createElement("div", { className: "bg-slate-50 border border-slate-200 rounded-xl p-4" },
+                                React.createElement("div", { className: "flex items-center justify-between mb-3" },
+                                    React.createElement("div", null,
+                                        React.createElement("div", { className: "text-[13px] font-black text-slate-800" },
+                                            activeRoleLabel,
+                                            " / ",
+                                            (editView === null || editView === void 0 ? void 0 : editView.name) || '보기 없음'),
+                                        React.createElement("div", { className: "text-[11px] text-slate-500 font-bold mt-0.5" }, "\uCF54\uB4DC\u00B7\uC0C1\uD488\uBA85\u00B7\uADDC\uACA9\uC740 \uB9C8\uC2A4\uD130\uC815\uBCF4 \uAE30\uBCF8 \uACE0\uC815\uAC12\uC785\uB2C8\uB2E4.")),
+                                    React.createElement("div", { className: "flex items-center gap-2" },
+                                        editView && React.createElement("input", { type: "text", value: editView.name || '', onChange: e => renameActiveView(e.target.value), className: "border border-slate-300 rounded-lg px-3 py-2 text-[12px] font-bold outline-none focus:border-indigo-500 bg-white" }),
+                                        editView && React.createElement("button", { onClick: () => moveActiveView(-1), className: "px-2.5 py-2 rounded-lg bg-white text-slate-500 border border-slate-200 text-[12px] font-black hover:bg-slate-50", title: "\uC704\uB85C" },
+                                            React.createElement("i", { className: "fas fa-arrow-up" })),
+                                        editView && React.createElement("button", { onClick: () => moveActiveView(1), className: "px-2.5 py-2 rounded-lg bg-white text-slate-500 border border-slate-200 text-[12px] font-black hover:bg-slate-50", title: "\uC544\uB798\uB85C" },
+                                            React.createElement("i", { className: "fas fa-arrow-down" })),
+                                        editView && React.createElement("button", { onClick: copyActiveView, className: "px-3 py-2 rounded-lg bg-white text-slate-600 border border-slate-200 text-[12px] font-black hover:bg-slate-50" }, "\uBCF5\uC0AC"),
+                                        editView && React.createElement("button", { onClick: saveActiveView, disabled: !viewDirty, className: `px-3 py-2 rounded-lg border text-[12px] font-black ${viewDirty ? 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700' : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'}` }, "\uBCF4\uAE30 \uC800\uC7A5"),
+                                        editView && React.createElement("button", { onClick: cancelActiveViewEdit, disabled: !viewDirty, className: "px-3 py-2 rounded-lg bg-white text-slate-600 border border-slate-200 text-[12px] font-black hover:bg-slate-50 disabled:opacity-40" }, "\uBCC0\uACBD \uCDE8\uC18C"),
+                                        editView && React.createElement("button", { onClick: deleteActiveView, className: "px-3 py-2 rounded-lg bg-rose-50 text-rose-600 border border-rose-200 text-[12px] font-black hover:bg-rose-100" }, "\uC0AD\uC81C")))),
+                            React.createElement("div", { className: "bg-white border border-slate-200 rounded-xl p-4" },
+                                React.createElement("div", { className: "text-[12px] font-black text-slate-700 mb-3" },
+                                    React.createElement("i", { className: "fas fa-database text-blue-500 mr-1.5" }),
+                                    "\uB9C8\uC2A4\uD130 \uB178\uCD9C\uD56D\uBAA9"),
+                                React.createElement("div", { className: "flex flex-wrap gap-2" }, (window.MASTER_HEADERS || []).filter(h => !requiredCoreFields.includes(h)).map(h => (React.createElement("button", { key: `view-master-${activeUploadRole}-${(editView === null || editView === void 0 ? void 0 : editView.id) || 'none'}-${h}`, onClick: () => toggleActiveMasterColumn(h), className: `px-3 py-1.5 rounded-full border text-[12px] font-bold transition-all ${((editView === null || editView === void 0 ? void 0 : editView.masterColumns) || []).includes(h) ? 'bg-blue-100 border-blue-300 text-blue-700 shadow-inner' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}` }, h))))),
+                            React.createElement("div", { className: "bg-white border border-slate-200 rounded-xl p-4" },
+                                React.createElement("div", { className: "flex items-center justify-between mb-3" },
+                                    React.createElement("div", { className: "text-[12px] font-black text-slate-700" },
+                                        React.createElement("i", { className: "fas fa-edit text-emerald-500 mr-1.5" }),
+                                        "\uC791\uC5C5\uD14C\uC774\uBE14 \uB178\uCD9C\uD56D\uBAA9"),
+                                    React.createElement("button", { className: "hidden" }, " ")),
+                                React.createElement("div", { className: "flex flex-wrap gap-2 mb-4" }, Array.from(new Set([...(window.MASTER_HEADERS || []), ...((editView === null || editView === void 0 ? void 0 : editView.workColumns) || [])])).filter(h => h && h !== '품목코드').map(h => {
+                                    const selected = ((editView === null || editView === void 0 ? void 0 : editView.workColumns) || []).includes(h);
+                                    const isCompare = isComparePriceField(activeUploadRole, h);
+                                    return React.createElement("button", { key: `view-work-${activeUploadRole}-${(editView === null || editView === void 0 ? void 0 : editView.id) || 'none'}-${h}`, onClick: () => toggleActiveWorkColumn(h), className: `px-3 py-1.5 rounded-full border text-[12px] font-bold transition-all ${selected ? 'bg-emerald-100 border-emerald-300 text-emerald-800 shadow-inner' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}` },
+                                        selected && React.createElement("i", { className: "fas fa-check mr-1" }),
+                                        h,
+                                        isCompare && React.createElement("span", { className: "ml-1 text-[10px] text-amber-600" }, "\uBE44\uAD50"));
+                                })),
+                                React.createElement("div", { className: "flex items-center gap-2 max-w-2xl" },
+                                    React.createElement("input", { type: "text", value: customEstColInput, onChange: e => setCustomEstColInput(e.target.value), onKeyDown: e => e.key === 'Enter' && addCustomUploadCol(activeUploadRole, customEstColInput, isComparePriceCol), placeholder: `${activeRoleLabel} 항목명 입력`, className: "flex-1 border border-slate-300 rounded-xl px-4 py-2 text-[13px] outline-none focus:border-emerald-500" }),
+                                    React.createElement("label", { className: "flex items-center gap-1.5 px-3 py-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-[12px] font-black cursor-pointer select-none" },
+                                        React.createElement("input", { type: "checkbox", checked: isComparePriceCol, onChange: e => setIsComparePriceCol(e.target.checked), className: "rounded border-amber-300 text-amber-500" }),
+                                        "\uBE44\uAD50\uB2E8\uAC00"),
+                                    React.createElement("button", { onClick: () => addCustomUploadCol(activeUploadRole, customEstColInput, isComparePriceCol), className: "bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-[13px] font-bold transition-colors" }, "\uD56D\uBAA9\uCD94\uAC00")),
+                                React.createElement("p", { className: "mt-3 text-[11px] text-slate-500 leading-relaxed" }, "\uC774\uC288\uC640 \uB9AC\uD3EC\uD2B8\uB294 \uC2DC\uC2A4\uD15C \uACE0\uC815 \uC601\uC5ED\uC785\uB2C8\uB2E4. \uC5EC\uAE30\uC11C\uB294 \uB9C8\uC2A4\uD130\uC815\uBCF4\uC640 \uC791\uC5C5\uD14C\uC774\uBE14 \uCEEC\uB7FC\uB9CC \uC124\uC815\uD569\uB2C8\uB2E4."))))))),
+            activeTab === 'inputMap' && (React.createElement("div", { className: "max-w-4xl space-y-6" },
+                React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3" }, "\uC785\uB825 \uB370\uC774\uD130 \uB9E4\uD551"),
+                React.createElement("div", { className: "flex flex-wrap gap-2 mb-6" }, UPLOAD_ROLES.map(role => (React.createElement("button", { key: `role-map-${role.id}`, onClick: () => setActiveUploadRole(role.id), className: `px-4 py-2 rounded-xl border text-[12px] font-black transition-all ${activeUploadRole === role.id ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}` }, role.label)))),
+                React.createElement("div", { className: "bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden" },
+                    React.createElement("table", { className: "w-full text-left text-[13px]" },
+                        React.createElement("thead", { className: "bg-slate-50 border-b border-slate-200 text-slate-500 font-bold" },
+                            React.createElement("tr", null,
+                                React.createElement("th", { className: "p-4 w-[160px]" }, "\uD654\uBA74 \uB178\uCD9C \uD56D\uBAA9"),
+                                React.createElement("th", { className: "p-4 w-[120px] text-center" }, "\uD56D\uBAA9 \uC720\uD615"),
+                                React.createElement("th", { className: "p-4" }, "\uC5D1\uC140 \uAC10\uC9C0 \uD0A4\uC6CC\uB4DC (\uCF64\uB9C8 \uAD6C\uBD84)"),
+                                React.createElement("th", { className: "p-4 w-[240px]" }, "\uB9C8\uC2A4\uD130 DB \uC5F0\uACB0"))),
+                        React.createElement("tbody", { className: "divide-y divide-slate-100" },
+                            requiredCoreFields.map(h => {
+                                var _a;
+                                return (React.createElement("tr", { key: `map-req-${h}`, className: "bg-slate-50/50" },
+                                    React.createElement("td", { className: "p-4 font-bold text-slate-700" },
+                                        React.createElement("i", { className: "fas fa-lock text-slate-400 mr-2" }),
+                                        h),
+                                    React.createElement("td", { className: "p-4 text-center" },
+                                        React.createElement("span", { className: "bg-slate-200 text-slate-600 px-2 py-1 rounded-full text-[10px] font-black" }, "\uD544\uC218")),
+                                    React.createElement("td", { className: "p-4" },
+                                        React.createElement("input", { type: "text", value: ((_a = config.mappings[activeUploadRole]) === null || _a === void 0 ? void 0 : _a[h]) || '', onChange: e => config.setMappings(p => ({ ...p, [activeUploadRole]: { ...((p === null || p === void 0 ? void 0 : p[activeUploadRole]) || {}), [h]: e.target.value } })), placeholder: h, className: "w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 bg-white" })),
+                                    React.createElement("td", { className: "p-4" },
+                                        React.createElement("div", { className: "text-[12px] text-slate-500 bg-slate-200 px-3 py-2 rounded-lg font-bold text-center" },
+                                            React.createElement("i", { className: "fas fa-key mr-1.5" }),
+                                            "\uC2DD\uBCC4\uC790 \uACE0\uC815"))));
+                            }),
+                            (config.visibleUploadCols[activeUploadRole] || []).filter(h => !requiredCoreFields.includes(h)).map(h => {
+                                var _a, _b;
+                                const isCompare = isComparePriceField(activeUploadRole, h);
+                                return (React.createElement("tr", { key: `map-e-${h}`, className: "hover:bg-slate-50 transition-colors" },
+                                    React.createElement("td", { className: "p-4 font-bold text-slate-800" }, h),
+                                    React.createElement("td", { className: "p-4 text-center" }, isCompare ? React.createElement("span", { className: "bg-amber-100 text-amber-700 border border-amber-200 px-2 py-1 rounded-full text-[10px] font-black" }, "\uBE44\uAD50\uB2E8\uAC00") : React.createElement("span", { className: "bg-slate-100 text-slate-500 border border-slate-200 px-2 py-1 rounded-full text-[10px] font-bold" }, "\uC77C\uBC18")),
+                                    React.createElement("td", { className: "p-4" },
+                                        React.createElement("input", { type: "text", value: ((_a = config.mappings[activeUploadRole]) === null || _a === void 0 ? void 0 : _a[h]) || '', onChange: e => config.setMappings(p => ({ ...p, [activeUploadRole]: { ...((p === null || p === void 0 ? void 0 : p[activeUploadRole]) || {}), [h]: e.target.value } })), placeholder: h, className: "w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500" })),
+                                    React.createElement("td", { className: "p-4" }, isCompare ? React.createElement("div", { className: "text-[12px] text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg font-bold text-center" },
+                                        React.createElement("i", { className: "fas fa-ban mr-1.5" }),
+                                        "DB \uC800\uC7A5 \uC548\uD568") : React.createElement("select", { value: ((_b = config.masterLinks[activeUploadRole]) === null || _b === void 0 ? void 0 : _b[h]) || '', onChange: e => config.setMasterLinks(p => ({ ...p, [activeUploadRole]: { ...((p === null || p === void 0 ? void 0 : p[activeUploadRole]) || {}), [h]: e.target.value } })), className: "w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 bg-white font-bold text-slate-700" },
+                                        React.createElement("option", { value: "" }, "-- DB \uC800\uC7A5 \uC548\uD568 --"),
+                                        selectableMasterHeaders.map(mh => React.createElement("option", { key: mh, value: mh }, mh))))));
+                            })))))),
+            activeTab === 'marginRule' && (React.createElement("div", { className: "max-w-5xl space-y-6" },
+                React.createElement("div", { className: "flex justify-between items-center mb-6" },
+                    React.createElement("h2", { className: "text-2xl font-black text-slate-800" }, "\uB3D9\uC801 \uB2E8\uAC00 \uACC4\uC0B0 \uBC0F \uB9C8\uC9C4 \uB8F0"),
+                    React.createElement("button", { onClick: addMarginRule, className: "bg-rose-600 hover:bg-rose-700 text-white px-5 py-2.5 rounded-xl text-[13px] font-bold shadow-md" },
+                        React.createElement("i", { className: "fas fa-plus mr-2" }),
+                        "\uB8F0\uC14B \uCD94\uAC00")),
+                React.createElement("div", { className: "bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-1" },
+                    React.createElement("table", { className: "w-full text-left text-[13px]" },
+                        React.createElement("thead", { className: "bg-rose-50 border-b border-rose-100 text-rose-800 font-bold rounded-t-xl" },
+                            React.createElement("tr", null,
+                                React.createElement("th", { className: "p-4 rounded-tl-xl" }, "\uCC3D\uACE0\uCF54\uB4DC (\uADF8\uB8F9)"),
+                                React.createElement("th", { className: "p-4" }, "\uB2E8\uC704 \uC870\uAC74"),
+                                React.createElement("th", { className: "p-4 text-center" }, "\uB9C8\uC9C4\uC728(%)"),
+                                React.createElement("th", { className: "p-4 text-center" }, "\uC5F0\uACB0 \uBC29\uC2DD"),
+                                React.createElement("th", { className: "p-4 text-center" }, "\uB3D9\uC791 \uC608\uC2DC"),
+                                React.createElement("th", { className: "p-4 rounded-tr-xl" }))),
+                        React.createElement("tbody", { className: "divide-y divide-slate-100" }, (config.marginRules || []).map(rule => {
+                            const isDefault = rule.id === 'default';
+                            const examplePrice = rule.type === 'divide' ? Math.round(10000 / (1 - rule.rate / 100)) : Math.round(10000 * (1 + rule.rate / 100));
+                            return (React.createElement("tr", { key: rule.id, className: "hover:bg-slate-50 transition-colors" },
+                                React.createElement("td", { className: "p-3" }, isDefault ? React.createElement("div", { className: "text-slate-400 font-bold pl-2" }, "* (\uC804\uCCB4 \uCC3D\uACE0)") : React.createElement("input", { type: "text", value: rule.whCode, onChange: e => updateMarginRule(rule.id, 'whCode', e.target.value), placeholder: "01, 02...", className: "w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-rose-500" })),
+                                React.createElement("td", { className: "p-3" }, isDefault ? React.createElement("div", { className: "text-slate-400 font-bold pl-2" }, "* (\uC804\uCCB4 \uB2E8\uC704)") : React.createElement("input", { type: "text", value: rule.unit, onChange: e => updateMarginRule(rule.id, 'unit', e.target.value), placeholder: "box, ea...", className: "w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-rose-500" })),
+                                React.createElement("td", { className: "p-3 text-center" },
+                                    React.createElement("input", { type: "number", value: rule.rate, onChange: e => updateMarginRule(rule.id, 'rate', Number(e.target.value)), className: "w-20 text-center border border-slate-300 rounded-lg py-2 outline-none focus:border-rose-500 font-black text-rose-600" })),
+                                React.createElement("td", { className: "p-3 text-center" },
+                                    React.createElement("select", { value: rule.type, onChange: e => updateMarginRule(rule.id, 'type', e.target.value), className: "border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-rose-500 bg-white" },
+                                        React.createElement("option", { value: "divide" }, "\uB098\uB204\uAE30(\u00F7)"),
+                                        React.createElement("option", { value: "multiply" }, "\uACF1\uD558\uAE30(\u00D7)"))),
+                                React.createElement("td", { className: "p-3 text-center font-mono text-slate-500 text-[12px]" },
+                                    "\u2794 ",
+                                    examplePrice.toLocaleString(),
+                                    "\uC6D0"),
+                                React.createElement("td", { className: "p-3 text-center" }, !isDefault && React.createElement("button", { onClick: () => deleteMarginRule(rule.id), className: "w-8 h-8 bg-slate-100 text-slate-400 rounded-lg hover:bg-rose-500 hover:text-white transition-colors" },
+                                    React.createElement("i", { className: "fas fa-trash-alt" })))));
+                        })))))),
+            activeTab === 'tagManager' && (React.createElement("div", { className: "max-w-4xl space-y-6" },
+                React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-6" }, "\uCE74\uD0C8\uB85C\uADF8 \uAD00\uB9AC"),
+                React.createElement("div", { className: "bg-white p-6 rounded-xl border shadow-sm" },
+                    React.createElement("h3", { className: "text-[15px] font-black text-slate-800 mb-4 pb-2 border-b flex items-center" },
+                        React.createElement("i", { className: "fas fa-folder-open text-indigo-500 mr-2" }),
+                        "\uCE74\uD0C8\uB85C\uADF8 \uBAA9\uB85D"),
+                    React.createElement("div", { className: "grid grid-cols-3 gap-3" }, availableCatalogs.length === 0 ? React.createElement("div", { className: "col-span-3 text-slate-400" }, "\uB370\uC774\uD130 \uC5C6\uC74C") : availableCatalogs.map(tag => (React.createElement("div", { key: tag.name, className: "flex justify-between bg-slate-50 border p-3 rounded-lg" },
+                        React.createElement("div", { className: "truncate" },
+                            React.createElement("span", { className: "font-bold" }, tag.name),
+                            React.createElement("span", { className: "text-[11px] text-indigo-500 block" },
+                                tag.count,
+                                "\uAC74")),
+                        React.createElement("button", { onClick: () => handleDeleteTag('catalog', tag.name), className: "text-slate-400 hover:text-rose-500" },
+                            React.createElement("i", { className: "fas fa-trash-alt" }))))))),
+                React.createElement("div", { className: "bg-white p-6 rounded-xl border shadow-sm mt-6" },
+                    React.createElement("h3", { className: "text-[15px] font-black text-slate-800 mb-4 pb-2 border-b flex items-center" },
+                        React.createElement("i", { className: "fas fa-file-invoice text-blue-500 mr-2" }),
+                        "\uACAC\uC801\uC11C \uBAA9\uB85D"),
+                    React.createElement("div", { className: "grid grid-cols-3 gap-3" }, availableCategories.length === 0 ? React.createElement("div", { className: "col-span-3 text-slate-400" }, "\uB370\uC774\uD130 \uC5C6\uC74C") : availableCategories.map(tag => (React.createElement("div", { key: tag.name, className: "flex justify-between bg-slate-50 border p-3 rounded-lg" },
+                        React.createElement("div", { className: "truncate" },
+                            React.createElement("span", { className: "font-bold" }, tag.name),
+                            React.createElement("span", { className: "text-[11px] text-blue-500 block" },
+                                tag.count,
+                                "\uAC74")),
+                        React.createElement("button", { onClick: () => handleDeleteTag('category', tag.name), className: "text-slate-400 hover:text-rose-500" },
+                            React.createElement("i", { className: "fas fa-trash-alt" }))))))))))));
+};
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(App, null));
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
+</script>
 </body>
 </html>
