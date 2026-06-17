@@ -1,10 +1,10 @@
-\<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko" translate="no">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zze Today Purchase Lot Runtime Fix)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzf Today Purchase Match Signal Fix)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.99zze Today Purchase Lot Runtime Fix.....</div>
+        <div class="loader-text">ONEAPP DataOps v8.99zzf Today Purchase Match Signal Fix.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -526,7 +526,7 @@ const defaultMappings = {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'v8.99zze Today Purchase Lot Runtime Fix',
+    version: 'v8.99zzf Today Purchase Match Signal Fix',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -2369,7 +2369,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 return n > 0 ? String(Math.round(n * 1000) / 1000) : 'NO_PRICE';
             };
             const getSalesLotMatchDate = (sale = {}) => {
-                // v8.99zze: 런타임 오류 수정.
+                // v8.99zzf: 판매현황 구매처 정보가 있으면 거래처 그룹과 무관하게 금일구매 매칭 신호로 처리.
                 // getValWithKeyByKeywords는 parseExcelData 내부 로컬 함수이므로 runAnalysis에서 호출하면 ReferenceError가 발생한다.
                 // 판매현황에는 기본적으로 구매일자가 없으므로, 명시적인 Lot일자 계열 컬럼이 있을 때만 보조값으로 읽고 일반 판매일자는 구매일자로 쓰지 않는다.
                 const direct = safeStr(sale._lotMatchDate, '');
@@ -2512,6 +2512,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 const sourceFileName = safeStr(sale._sourceFileName || sale._fileName || '', '');
                 const saleVendorText = `${safeStr(sale.거래처)} ${safeStr(sale.매입처매칭)} ${sourceFileName} ${safeStr(sale._rawCombinedStr)}`;
                 const isTransferLotContext = isTransferWarehouseRow(sale, sourceFileName) || /(^|[^0-9])02(구매|판매|창고|전송)|2전송|전송검증/.test(saleVendorText);
+                // v8.99zzf: 판매현황에 구매처 정보가 있으면 1마산/4연산 등 판매처 그룹과 무관하게 금일 구매분 매칭 신호로 본다.
+                // 재고현황은 전일까지의 Lot이고, 판매현황 구매처+구매가는 금일 구매현황 Lot 지정값이다.
+                const hasTodayPurchaseMatchSignal = !!matchStr;
                 const getPoolPriceOptions = () => {
                     if (!pool || !Array.isArray(pool.buckets))
                         return [];
@@ -2533,14 +2536,15 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     // v8.99u 정책 확정:
                     // - 2전송: 판매현황의 구매처를 기준으로 매핑한다. Lot 확인 이슈는 만들지 않는다.
                     // - 1창고: 구매처 정보가 부족하므로 FIFO 차감하되, Lot 확인 메모/이슈를 남긴다.
-                    if (isTransferLotContext) {
+                    if (isTransferLotContext || hasTodayPurchaseMatchSignal) {
                         const requestedPrice = safeNum(sale._lotMatchPrice);
                         const appliedPrice = safeNum(bucket.단가);
                         const requestedLotDate = safeStr(sale._lotMatchDate, '');
                         const appliedLotDate = safeStr(bucket.일자, '');
                         const priceMemo = requestedPrice > 0 ? ` / 요청원가=${formatMoney(requestedPrice)} / 적용원가=${formatMoney(appliedPrice)}` : ` / 원가=${formatMoney(appliedPrice)}`;
                         const dateMemo = requestedLotDate ? ` / 요청구매일=${requestedLotDate} / 적용구매일=${appliedLotDate || '미상'}` : '';
-                        const memoPrefix = options.dateMismatch ? '2전송Lot일자불일치' : (options.priceMismatch ? '2전송Lot단가불일치' : (options.matchFailed ? '2전송구매처미일치' : '2전송구매처매핑'));
+                        const lotMemoScope = isTransferLotContext ? '2전송' : '금일구매';
+                        const memoPrefix = options.dateMismatch ? `${lotMemoScope}Lot일자불일치` : (options.priceMismatch ? `${lotMemoScope}Lot단가불일치` : (options.matchFailed ? `${lotMemoScope}구매처미일치` : `${lotMemoScope}구매처매핑`));
                         appendLotMemo(row, `${memoPrefix}: 요청=${requestedLot} / 적용=${appliedLot}${priceMemo}${dateMemo}`);
                         if (options.dateMismatch) {
                             const issueMsg = `🚨Lot일자불일치(${requestedLotDate || '미지정'}→${appliedLotDate || '미상'})`;
@@ -2656,11 +2660,11 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     deductFromBucket(pool.buckets[pool.buckets.length - 1], remainingQty, false, 'RETURN');
                 }
                 else if (remainingQty > 0) {
-                    // v8.99zu: Lot 잔여수량 잠금 + 재고우선 분할매칭 정책.
-                    // 1) 2전송 + 외부 구매처 지정: 당일 동일 구매처 Lot → 기존 재고 FIFO → 부족분만 당일 다른 구매 Lot.
-                    // 2) 구매처 매칭 실패/미지정/우리농산 계열: 기존 재고 FIFO → 부족분만 당일 구매 FIFO.
+                    // v8.99zzf: Lot 잔여수량 잠금 + 금일 구매처 매칭 정책.
+                    // 1) 판매현황 구매처가 있으면 거래처 그룹과 무관하게 금일 구매현황의 동일 구매처+동일 구매가 Lot를 먼저 차감한다.
+                    // 2) 구매처 매칭 실패/미지정/우리농산 계열은 기존 재고 FIFO → 부족분만 당일 구매 FIFO.
                     // 3) 어떤 경우에도 잔여수량이 0인 Lot에는 추가 배정하지 않는다. 전체 가용수량이 부족할 때만 Lot초과배정 이슈를 남긴다.
-                    // 4) 화면/리스트 정렬은 같은 품목코드 안에서 재고 있는 Lot를 상단으로 올린다.
+                    // 4) 화면/리스트 정렬은 같은 품목코드 안에서 구매일자 오래된 Lot를 먼저 보여준다.
                     let matchFailedFlag = false;
                     let fifoReviewFlag = false;
                     const allBuckets = [...pool.buckets];
@@ -2725,20 +2729,20 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                                 { buckets: todayBuckets, mode: 'INTERNAL_TODAY_AFTER_STOCK', matchFailed: false, fifoReview: false }
                             ];
                         }
-                        if (isTransferLotContext && matchStr) {
+                        if (hasTodayPurchaseMatchSignal) {
                             if (!hasRequestedPositive)
                                 matchFailedFlag = true;
                             if (hasRequestedMatchPrice && !hasRequestedSamePricePositive)
                                 matchFailedFlag = true;
                             return [
-                                // v8.99zzd: 2전송 판매현황에 구매처 정보가 있으면 금일 구매분으로 확정한다.
+                                // v8.99zzf: 판매현황에 구매처 정보가 있으면 1마산/4연산 등 거래처 그룹과 무관하게 금일 구매분으로 확정한다.
                                 // 전일재고 FIFO보다 금일 구매현황의 동일 구매처 + 동일 구매가 Lot를 먼저 차감한다.
-                                { buckets: todayRequestedSamePriceBuckets, mode: 'TRANSFER_TODAY_REQUESTED_VENDOR_PRICE', matchFailed: false, fifoReview: false, priceMismatch: false, dateMismatch: false },
+                                { buckets: todayRequestedSamePriceBuckets, mode: 'TODAY_REQUESTED_VENDOR_PRICE', matchFailed: false, fifoReview: false, priceMismatch: false, dateMismatch: false },
                                 // 금일 동일 구매처 수량은 있으나 단가가 다르면 금일 구매분 안에서만 대체하고 단가불일치 표시한다.
-                                { buckets: todayRequestedOtherPriceBuckets, mode: 'TRANSFER_TODAY_REQUESTED_VENDOR_OTHER_PRICE', matchFailed: false, fifoReview: false, priceMismatch: true, dateMismatch: false },
+                                { buckets: todayRequestedOtherPriceBuckets, mode: 'TODAY_REQUESTED_VENDOR_OTHER_PRICE', matchFailed: false, fifoReview: false, priceMismatch: true, dateMismatch: false },
                                 // 금일 구매분 중 다른 구매처는 최후 대체 후보로만 사용하고 구매처미일치/단가불일치를 표시한다.
-                                { buckets: todayOtherSamePriceBuckets, mode: 'TRANSFER_TODAY_OTHER_VENDOR_SAME_PRICE_FALLBACK', matchFailed: true, fifoReview: false, priceMismatch: false, dateMismatch: false },
-                                { buckets: todayOtherOtherPriceBuckets, mode: 'TRANSFER_TODAY_OTHER_VENDOR_OTHER_PRICE_FALLBACK', matchFailed: true, fifoReview: false, priceMismatch: true, dateMismatch: false }
+                                { buckets: todayOtherSamePriceBuckets, mode: 'TODAY_OTHER_VENDOR_SAME_PRICE_FALLBACK', matchFailed: true, fifoReview: false, priceMismatch: false, dateMismatch: false },
+                                { buckets: todayOtherOtherPriceBuckets, mode: 'TODAY_OTHER_VENDOR_OTHER_PRICE_FALLBACK', matchFailed: true, fifoReview: false, priceMismatch: true, dateMismatch: false }
                             ];
                         }
                         if (isTransferLotContext) {
@@ -2746,15 +2750,6 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                             return [
                                 { buckets: stockFifoBuckets, mode: 'FIFO_STOCK_NO_VENDOR', matchFailed: true, fifoReview: false },
                                 { buckets: todayBuckets, mode: 'TODAY_PURCHASE_AFTER_STOCK', matchFailed: true, fifoReview: false }
-                            ];
-                        }
-                        if (matchStr) {
-                            if (!hasRequestedPositive)
-                                matchFailedFlag = true;
-                            return [
-                                { buckets: requestedBuckets, mode: 'REQUESTED_LOT', matchFailed: false, fifoReview: false },
-                                { buckets: stockOtherBuckets, mode: 'FIFO_STOCK_LOT_FALLBACK', matchFailed: true, fifoReview: true },
-                                { buckets: todayOtherBuckets, mode: 'TODAY_LOT_FALLBACK', matchFailed: true, fifoReview: true }
                             ];
                         }
                         fifoReviewFlag = allBuckets.length > 1;
@@ -2795,13 +2790,13 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                             break;
                     }
                     if (remainingQty > 0) {
-                        // v8.99zzd: 판매현황 구매처가 있는 2전송 건은 금일 구매분 확정 신호다.
+                        // v8.99zzf: 판매현황 구매처가 있으면 거래처 그룹과 무관하게 금일 구매분 확정 신호다.
                         // 부족분을 전일재고에 강제 배정하지 않고, 금일 구매 Lot 안에서만 초과배정하거나 별도 확인행으로 남긴다.
-                        const shortageSourceBuckets = (isTransferLotContext && matchStr) ? uniqueBuckets(todayBuckets) : uniqueBuckets(allBuckets);
+                        const shortageSourceBuckets = hasTodayPurchaseMatchSignal ? uniqueBuckets(todayBuckets) : uniqueBuckets(allBuckets);
                         const shortageBucket = shortageSourceBuckets.filter(Boolean).slice(-1)[0];
                         if (shortageBucket) {
                             deductFromBucket(shortageBucket, remainingQty, false, 'SHORTAGE_OVER_ALLOC');
-                            applyLotMatchPolicy(shortageBucket, { matchFailed: matchFailedFlag || (isTransferLotContext && matchStr), fifoReview: fifoReviewFlag, priceMismatch: false });
+                            applyLotMatchPolicy(shortageBucket, { matchFailed: matchFailedFlag || hasTodayPurchaseMatchSignal, fifoReview: fifoReviewFlag, priceMismatch: false });
                             markShortageIfNeeded(shortageBucket, '🚨Lot초과배정');
                             markShortageIfNeeded(shortageBucket, '🚨수량부족');
                             remainingQty = 0;
@@ -5962,7 +5957,7 @@ ${changeText}
                     React.createElement("h1", { className: "text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zze Today Purchase Lot Runtime Fix"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzf Today Purchase Match Signal Fix"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
