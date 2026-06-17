@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.8 Runtime Open Fix]</title>
+    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.9 Return Route Fix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -28,6 +28,43 @@
 const { useState, useEffect, useMemo, useCallback } = React;
 const parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
 const fmt = (v) => parseNum(v).toLocaleString('ko-KR');
+// ============================================================
+// [E-NAV-01] MerchOps 복귀 라우팅 보정
+// 역할: 출력검증센터에서 메인으로 돌아갈 때 상대경로 오류/clean URL 차이로 흰화면이 되는 현상을 방지한다.
+// 정책:
+// - MerchOps에서 넘어온 경우 referrer를 우선 사용해 테스트 파일도 그대로 복귀한다.
+// - 운영 도메인에서는 /MerchOps clean URL을 우선 사용한다.
+// - 로컬 파일 또는 GitHub 파일 직접 실행은 MerchOps.html로 복귀한다.
+// ============================================================
+const navigateToMerchOps = () => {
+    try {
+        localStorage.setItem('merch_export_return_trigger', String(Date.now()));
+    } catch (e) {}
+
+    const ref = String(document.referrer || '');
+    if (/MerchOps(?:\.html|_test\d*\.html)?(?:$|[?#])/i.test(ref) || /\/MerchOps(?:$|[?#/])/i.test(ref)) {
+        window.location.assign(ref);
+        return;
+    }
+
+    const protocol = String(window.location.protocol || '');
+    const origin = String(window.location.origin || '');
+    if (protocol === 'file:') {
+        window.location.assign('MerchOps.html');
+        return;
+    }
+
+    if (origin && /oneapp\.orderz\.co\.kr/i.test(origin)) {
+        window.location.assign(origin + '/MerchOps');
+        return;
+    }
+
+    try {
+        window.location.assign(new URL('MerchOps.html', window.location.href).href);
+    } catch (e) {
+        window.location.assign('MerchOps.html');
+    }
+};
 const initIDB = () => new Promise((resolve, reject) => {
     const request = indexedDB.open('MerchOpsDB', 2);
     request.onupgradeneeded = (e) => {
@@ -817,7 +854,7 @@ const ExportApp = () => {
                     React.createElement("b", { className: "text-slate-200" }, "merch_export_draft"),
                     " \uAE30\uC900\uC785\uB2C8\uB2E4. \uB9C8\uC2A4\uD130 \uC804\uCCB4\uB294 \uC791\uC5C5 \uB300\uC0C1\uC73C\uB85C \uC0AC\uC6A9\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.")),
             React.createElement("div", { className: "p-6 border-t border-slate-800 shrink-0" },
-                React.createElement("button", { onClick: () => window.location.href = 'MerchOps.html', className: "w-full py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[13px] font-bold transition-colors" },
+                React.createElement("button", { onClick: navigateToMerchOps, className: "w-full py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[13px] font-bold transition-colors" },
                     React.createElement("i", { className: "fas fa-arrow-left mr-2" }),
                     " \uBA54\uC778\uC73C\uB85C \uB3CC\uC544\uAC00\uAE30"))),
         React.createElement("div", { className: "flex-1 flex flex-col overflow-hidden" },
