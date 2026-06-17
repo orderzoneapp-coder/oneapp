@@ -4,366 +4,192 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="google" content="notranslate" />
-  <title>ONEAPP MerchOps - 시스템 감사 로그 뷰어 [v1.8 히스토리 안전장치 강화본]</title>
+  <title>ONEAPP MerchOps - HistoryViewer [v1.1.0 RuntimeOpenFix]</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
   <style>
     @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-    body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; }
-    ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-    .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; }
-    .fade-in { animation: fadeIn 0.22s ease-out; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+    body{font-family:'Pretendard',-apple-system,BlinkMacSystemFont,sans-serif;background:#f8fafc;color:#1e293b;margin:0;overflow:hidden}
+    ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:10px}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
   </style>
 </head>
-<body class="bg-slate-100 font-sans text-slate-800">
-  <div id="root"></div>
-
-  <script type="text/babel">
-    const { useEffect, useMemo, useState } = React;
-
-    const HISTORY_KEY = 'merchHistory_v870';
-    const parseNum = (v) => {
-      if (v === null || v === undefined || v === '') return 0;
-      return Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0;
-    };
-    const fmtNumber = (v) => {
-      if (v === null || v === undefined || v === '') return '-';
-      const n = Number(v);
-      return Number.isFinite(n) ? n.toLocaleString() : String(v);
-    };
-    const fmtRate = (v) => {
-      if (v === null || v === undefined || v === '' || Number.isNaN(Number(v))) return '-';
-      return `${Number(v).toFixed(1)}%`;
-    };
-    const safeText = (v) => String(v ?? '').trim();
-    const parseHistoryTime = (log = {}) => {
-      const iso = log.timestampISO || log.createdAtISO || log.savedAtISO;
-      if (iso) {
-        const t = new Date(iso).getTime();
-        if (Number.isFinite(t)) return t;
-      }
-      if (log.timestamp) {
-        const t = new Date(log.timestamp).getTime();
-        if (Number.isFinite(t)) return t;
-      }
-      return 0;
-    };
-
-    const normalizeLog = (log = {}) => {
-      const oldVal = log.oldVal ?? log.beforeVal ?? '';
-      const newVal = log.newVal ?? log.afterVal ?? '';
-      const oldNum = parseNum(oldVal);
-      const newNum = parseNum(newVal);
-      const diff = log.diff !== undefined ? Number(log.diff) : (oldNum || newNum ? newNum - oldNum : 0);
-      const diffRate = log.diffRate !== undefined
-        ? Number(log.diffRate)
-        : (oldNum ? ((newNum - oldNum) / oldNum) * 100 : 0);
-      return {
-        id: log.id || `${log.timestamp || ''}_${log.code || ''}_${log.field || ''}_${Math.random()}`,
-        timestamp: safeText(log.timestamp),
-        timestampISO: safeText(log.timestampISO || log.createdAtISO || log.savedAtISO || ''),
-        source: safeText(log.source || log.origin || (log.catalog || log.catalogName ? 'parser' : 'unknown')),
-        sourceLabel: safeText(log.sourceLabel || (log.source === 'parser' ? '스마트 파서' : '')),
-        actionType: safeText(log.actionType || log.action || (log.field === '입고가' && (log.catalog || log.catalogName) ? 'catalog_price_apply' : 'change')),
-        path: safeText(log.path || log.route || ''),
-        route: safeText(log.route || log.path || ''),
-        applyMode: safeText(log.applyMode || ''),
-        catalog: safeText(log.catalog || log.catalogName || ''),
-        catalogName: safeText(log.catalogName || log.catalog || ''),
-        estimate: safeText(log.estimate || log.quoteName || log.quote || log.견적서 || ''),
-        quoteName: safeText(log.quoteName || log.estimate || log.quote || log.견적서 || ''),
-        code: safeText(log.code),
-        name: safeText(log.name),
-        spec: safeText(log.spec),
-        unit: safeText(log.unit),
-        parsedName: safeText(log.parsedName),
-        parsedSpec: safeText(log.parsedSpec),
-        parsedUnit: safeText(log.parsedUnit),
-        field: safeText(log.field),
-        oldVal,
-        newVal,
-        diff,
-        diffRate,
-        oldOutPrice: log.oldOutPrice,
-        newOutPrice: log.newOutPrice,
-        oldSalePrice: log.oldSalePrice,
-        newSalePrice: log.newSalePrice,
-        stockQty: log.stockQty,
-        safeStock: log.safeStock,
-        marginRate: log.marginRate,
-        matchStatus: safeText(log.matchStatus),
-        memo: safeText(log.memo || log.note || '')
-      };
-    };
-
-    const Badge = ({ children, tone = 'slate' }) => {
-      const tones = {
-        slate: 'bg-slate-100 text-slate-600 border-slate-200',
-        indigo: 'bg-indigo-50 text-indigo-700 border-indigo-100',
-        emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-        amber: 'bg-amber-50 text-amber-700 border-amber-100',
-        rose: 'bg-rose-50 text-rose-700 border-rose-100',
-        blue: 'bg-blue-50 text-blue-700 border-blue-100'
-      };
-      return <span className={`inline-flex items-center px-2 py-1 rounded-lg border text-[11px] font-black ${tones[tone] || tones.slate}`}>{children}</span>;
-    };
-
-    const HistoryApp = () => {
-      const [logs, setLogs] = useState([]);
-      const [searchTerm, setSearchTerm] = useState('');
-      const [activeTab, setActiveTab] = useState('all');
-      const [fieldFilter, setFieldFilter] = useState('all');
-      const [sourceFilter, setSourceFilter] = useState('all');
-      const [actionFilter, setActionFilter] = useState('all');
-      const [selectedLog, setSelectedLog] = useState(null);
-
-      const loadLogs = () => {
-        try {
-          const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-          const normalized = Array.isArray(raw) ? raw.map(normalizeLog) : [];
-          normalized.sort((a, b) => parseHistoryTime(b) - parseHistoryTime(a));
-          setLogs(normalized);
-        } catch (e) {
-          console.error(e);
-          setLogs([]);
-        }
-      };
-
-      useEffect(() => {
-        loadLogs();
-        const onStorage = (e) => { if (e.key === HISTORY_KEY) loadLogs(); };
-        window.addEventListener('storage', onStorage);
-        return () => window.removeEventListener('storage', onStorage);
-      }, []);
-
-      const stats = useMemo(() => {
-        const parser = logs.filter(l => l.source === 'parser' || l.actionType.includes('catalog') || l.catalog).length;
-        const price = logs.filter(l => ['입고가', '출고가', '시중가', '행사가'].includes(l.field)).length;
-        const status = logs.filter(l => ['판매여부', '재고수량', '카탈로그', '견적서'].includes(l.field)).length;
-        const big = logs.filter(l => Math.abs(Number(l.diffRate || 0)) >= 10 || Math.abs(Number(l.diff || 0)) >= 500).length;
-        return { total: logs.length, parser, price, status, big };
-      }, [logs]);
-
-      const availableFields = useMemo(() => {
-        const set = new Set(logs.map(l => l.field).filter(Boolean));
-        return Array.from(set).sort();
-      }, [logs]);
-      const availableSources = useMemo(() => {
-        const set = new Set(logs.map(l => l.source).filter(Boolean));
-        return Array.from(set).sort();
-      }, [logs]);
-      const availableActions = useMemo(() => {
-        const set = new Set(logs.map(l => l.actionType).filter(Boolean));
-        return Array.from(set).sort();
-      }, [logs]);
-
-      const filteredLogs = useMemo(() => {
-        const keyword = searchTerm.toLowerCase().trim();
-        return logs.filter(log => {
-          if (activeTab === 'parser' && !(log.source === 'parser' || log.catalog || log.actionType.includes('catalog'))) return false;
-          if (activeTab === 'price' && !['입고가', '출고가', '시중가', '행사가'].includes(log.field)) return false;
-          if (activeTab === 'status' && !['판매여부', '재고수량', '카탈로그', '견적서'].includes(log.field)) return false;
-          if (activeTab === 'big' && !(Math.abs(Number(log.diffRate || 0)) >= 10 || Math.abs(Number(log.diff || 0)) >= 500)) return false;
-          if (fieldFilter !== 'all' && log.field !== fieldFilter) return false;
-          if (sourceFilter !== 'all' && log.source !== sourceFilter) return false;
-          if (actionFilter !== 'all' && log.actionType !== actionFilter) return false;
-          if (!keyword) return true;
-          const haystack = [
-            log.timestamp, log.source, log.actionType, log.path, log.catalog, log.estimate,
-            log.code, log.name, log.spec, log.unit, log.parsedName, log.parsedSpec, log.parsedUnit,
-            log.field, log.oldVal, log.newVal, log.matchStatus, log.memo
-          ].join(' ').toLowerCase();
-          return haystack.includes(keyword);
-        });
-      }, [logs, searchTerm, activeTab, fieldFilter, sourceFilter, actionFilter]);
-
-      const clearLogs = () => {
-        const msg = '히스토리는 마스터 변경 근거이자 필수 안전장치입니다.\n삭제하면 파서 적용 근거를 복구할 수 없습니다.\n정말 삭제하려면 DELETE를 입력하세요.';
-        const answer = window.prompt(msg, '');
-        if (answer !== 'DELETE') return;
-        localStorage.removeItem(HISTORY_KEY);
-        setLogs([]);
-        setSelectedLog(null);
-      };
-
-      const exportJson = () => {
-        const blob = new Blob([JSON.stringify(logs, null, 2)], { type: 'application/json;charset=utf-8' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `merchHistory_v870_export_${new Date().toISOString().slice(0,10)}.json`;
-        a.click();
-        URL.revokeObjectURL(a.href);
-      };
-
-      const diffCell = (log) => {
-        const d = Number(log.diff || 0);
-        if (!d) return <span className="text-slate-300 font-bold">-</span>;
-        return d > 0
-          ? <span className="text-rose-600 font-black">▲ {d.toLocaleString()}</span>
-          : <span className="text-blue-600 font-black">▼ {Math.abs(d).toLocaleString()}</span>;
-      };
-
-      return (
-        <div className="flex h-screen overflow-hidden bg-slate-50 fade-in">
-          <aside className="w-[280px] bg-[#0f172a] flex flex-col text-slate-300 shadow-xl z-10 shrink-0">
-            <div className="p-6 border-b border-slate-800 bg-[#0b1120]">
-              <div className="flex items-center mb-2">
-                <span className="text-xl font-black text-amber-400 mr-3">ONEAPP</span>
-                <div className="flex flex-col border-l-2 border-slate-700 pl-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[14px] font-black text-slate-100">MerchOps</span>
-                    <span className="bg-amber-500/20 border border-amber-400/30 text-amber-300 px-1.5 py-0.5 rounded text-[9px] font-black">v1.8</span>
-                  </div>
-                  <span className="text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">HISTORY AUDIT VIEWER</span>
-                </div>
-              </div>
-              <p className="text-[12px] leading-relaxed text-slate-400 mt-4">파서·머치옵스·출력검증센터의 변경 근거를 추적합니다. 히스토리는 마스터 적용의 필수 안전장치입니다.</p>
-            </div>
-
-            <nav className="flex flex-col py-4 gap-1 px-3 flex-1">
-              {[
-                ['all', '전체 로그', stats.total, 'fa-list', 'amber'],
-                ['parser', '파서 적용', stats.parser, 'fa-magic', 'indigo'],
-                ['price', '가격변동', stats.price, 'fa-won-sign', 'emerald'],
-                ['status', '상태/태그', stats.status, 'fa-toggle-on', 'rose'],
-                ['big', '큰 변동', stats.big, 'fa-triangle-exclamation', 'amber']
-              ].map(([key, label, count, icon]) => (
-                <button key={key} onClick={() => setActiveTab(key)} className={`px-4 py-3 rounded-xl text-left text-[13px] font-black transition-all flex justify-between items-center ${activeTab === key ? 'bg-amber-600 text-white shadow-md' : 'hover:bg-slate-800 text-slate-400 hover:text-white'}`}>
-                  <span><i className={`fas ${icon} w-6 text-center mr-1`}></i>{label}</span>
-                  <span className="text-[11px] opacity-80">{count}</span>
-                </button>
-              ))}
-            </nav>
-
-            <div className="mt-auto p-5 border-t border-slate-800 flex flex-col gap-2">
-              <button onClick={exportJson} className="w-full py-2.5 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[12px] font-bold transition-colors"><i className="fas fa-file-export mr-2"></i>JSON 내보내기</button>
-              <button onClick={clearLogs} className="w-full py-2.5 bg-rose-900/50 text-rose-300 border border-rose-800/50 rounded-xl hover:bg-rose-800 hover:text-white text-[12px] font-bold transition-colors"><i className="fas fa-trash-alt mr-2"></i>위험: 기록 전체 지우기</button>
-              <button onClick={() => window.location.href = 'MerchOps.html'} className="w-full py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[13px] font-bold transition-colors"><i className="fas fa-arrow-left mr-2"></i>메인으로 돌아가기</button>
-            </div>
-          </aside>
-
-          <main className="flex-1 overflow-hidden flex flex-col">
-            <header className="bg-white p-6 border-b border-slate-200 shadow-sm shrink-0">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h1 className="text-2xl font-black text-slate-800 mb-1">시스템 감사 로그</h1>
-                  <p className="text-[13px] text-slate-500 font-bold">마스터 변경 전/후 값, 파싱 원본, 경로, 매칭상태를 함께 확인합니다.</p>
-                </div>
-                <div className="flex gap-2 items-center">
-                  <select value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} className="border border-slate-300 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-amber-500 bg-white font-bold text-slate-600 shadow-sm">
-                    <option value="all">모든 작업유형</option>
-                    {availableActions.map(a => <option key={a} value={a}>{a}</option>)}
-                  </select>
-                  <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} className="border border-slate-300 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-amber-500 bg-white font-bold text-slate-600 shadow-sm">
-                    <option value="all">모든 출처</option>
-                    {availableSources.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                  <select value={fieldFilter} onChange={(e) => setFieldFilter(e.target.value)} className="border border-slate-300 rounded-lg px-3 py-2.5 text-[13px] outline-none focus:border-amber-500 bg-white font-bold text-slate-600 shadow-sm">
-                    <option value="all">모든 항목</option>
-                    {availableFields.map(f => <option key={f} value={f}>{f}</option>)}
-                  </select>
-                  <div className="relative">
-                    <i className="fas fa-search absolute left-4 top-3.5 text-slate-400"></i>
-                    <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="상품명, 코드, 카탈로그, 경로 검색" className="border border-slate-300 rounded-lg pl-10 pr-4 py-2.5 w-80 text-[13px] outline-none focus:border-amber-500 bg-white shadow-sm" />
-                  </div>
-                </div>
-              </div>
-            </header>
-            <div className="bg-amber-50 border-b border-amber-100 px-6 py-3 text-[12px] text-amber-800 font-bold shrink-0">
-              <i className="fas fa-shield-halved mr-2"></i>정책 기준: 파서는 마스터를 무근거로 덮어쓰지 않습니다. 히스토리 저장 실패 시 마스터 적용은 완료 처리하면 안 됩니다.
-            </div>
-
-            <section className="grid grid-cols-4 gap-4 p-5 bg-slate-100 border-b border-slate-200 shrink-0">
-              <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm"><div className="text-[11px] text-slate-500 font-black mb-1">전체 로그</div><div className="text-2xl font-black text-slate-800">{stats.total.toLocaleString()}</div></div>
-              <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm"><div className="text-[11px] text-indigo-500 font-black mb-1">파서 적용</div><div className="text-2xl font-black text-indigo-700">{stats.parser.toLocaleString()}</div></div>
-              <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm"><div className="text-[11px] text-emerald-500 font-black mb-1">가격변동</div><div className="text-2xl font-black text-emerald-700">{stats.price.toLocaleString()}</div></div>
-              <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm"><div className="text-[11px] text-rose-500 font-black mb-1">큰 변동</div><div className="text-2xl font-black text-rose-700">{stats.big.toLocaleString()}</div></div>
-            </section>
-
-            <section className="flex-1 overflow-auto custom-scrollbar p-5 bg-slate-100">
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <table className="w-full text-left text-[12px] whitespace-nowrap">
-                  <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
-                    <tr className="text-slate-500 font-black">
-                      <th className="px-4 py-3 w-40 text-center">작업일시</th>
-                      <th className="px-4 py-3 w-24">출처</th>
-                      <th className="px-4 py-3 w-36">작업유형</th>
-                      <th className="px-4 py-3 w-36">경로/카탈로그</th>
-                      <th className="px-4 py-3 w-24">상품코드</th>
-                      <th className="px-4 py-3 min-w-[220px]">마스터 상품</th>
-                      <th className="px-4 py-3 min-w-[220px]">파싱 원본</th>
-                      <th className="px-4 py-3 w-24 text-center">항목</th>
-                      <th className="px-4 py-3 w-24 text-right">이전값</th>
-                      <th className="px-4 py-3 w-24 text-right">변경값</th>
-                      <th className="px-4 py-3 w-24 text-right">차액</th>
-                      <th className="px-4 py-3 w-20 text-right">변동률</th>
-                      <th className="px-4 py-3 w-24 text-center">매칭</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredLogs.length === 0 ? (
-                      <tr><td colSpan="13" className="p-16 text-center text-slate-400"><i className="fas fa-search text-3xl mb-3 block opacity-50"></i>기록된 내용이 없거나 검색 결과가 없습니다.</td></tr>
-                    ) : filteredLogs.map(log => (
-                      <tr key={log.id} onClick={() => setSelectedLog(log)} className="hover:bg-amber-50/40 transition-colors cursor-pointer group">
-                        <td className="px-4 py-3 text-center text-slate-500 text-[11px] tracking-tight">{log.timestamp || '-'}</td>
-                        <td className="px-4 py-3"><Badge tone={log.source === 'parser' ? 'indigo' : log.source === 'merchops' ? 'emerald' : 'slate'}>{log.sourceLabel || log.source || '-'}</Badge></td>
-                        <td className="px-4 py-3"><span className="text-[11px] font-black text-slate-600 truncate max-w-[160px] block">{log.actionType || '-'}</span><span className="text-[10px] text-slate-400 truncate max-w-[160px] block">{log.applyMode || '-'}</span></td>
-                        <td className="px-4 py-3"><div className="flex flex-col gap-1"><span className="font-black text-slate-700 truncate max-w-[160px]">{log.catalogName || log.catalog || log.quoteName || log.estimate || '-'}</span><span className="text-[10px] text-slate-400 truncate max-w-[180px]">{log.path || log.route || '-'}</span></div></td>
-                        <td className="px-4 py-3 font-mono text-slate-500 text-[11px]">{log.code || '-'}</td>
-                        <td className="px-4 py-3"><div className="font-bold text-slate-800 truncate max-w-[240px]">{log.name || '-'}</div><div className="text-[11px] text-slate-400 truncate max-w-[240px]">{[log.spec, log.unit].filter(Boolean).join(' / ')}</div></td>
-                        <td className="px-4 py-3"><div className="font-bold text-emerald-700 truncate max-w-[240px]">{log.parsedName || '-'}</div><div className="text-[11px] text-emerald-500 truncate max-w-[240px]">{[log.parsedSpec, log.parsedUnit].filter(Boolean).join(' / ')}</div></td>
-                        <td className="px-4 py-3 text-center"><Badge>{log.field || '-'}</Badge></td>
-                        <td className="px-4 py-3 text-right text-slate-500">{fmtNumber(log.oldVal)}</td>
-                        <td className="px-4 py-3 text-right font-black text-indigo-600">{fmtNumber(log.newVal)}</td>
-                        <td className="px-4 py-3 text-right">{diffCell(log)}</td>
-                        <td className="px-4 py-3 text-right font-bold text-slate-600">{fmtRate(log.diffRate)}</td>
-                        <td className="px-4 py-3 text-center"><span className="text-[11px] font-bold text-slate-500">{log.matchStatus || '-'}</span></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          </main>
-
-          {selectedLog && (
-            <div className="fixed inset-0 bg-slate-900/60 z-[100] flex items-center justify-center p-6" onClick={() => setSelectedLog(null)}>
-              <div className="bg-white w-[760px] max-h-[86vh] overflow-hidden rounded-2xl shadow-2xl border border-slate-200 fade-in" onClick={(e) => e.stopPropagation()}>
-                <div className="bg-[#0f172a] text-white px-5 py-4 flex justify-between items-center">
-                  <h2 className="font-black text-[15px]"><i className="fas fa-circle-info text-amber-400 mr-2"></i>히스토리 상세</h2>
-                  <button onClick={() => setSelectedLog(null)} className="text-slate-400 hover:text-white"><i className="fas fa-times"></i></button>
-                </div>
-                <div className="p-5 overflow-auto custom-scrollbar max-h-[76vh]">
-                  <div className="grid grid-cols-2 gap-3 text-[12px]">
-                    {[
-                      ['작업일시', selectedLog.timestamp], ['ISO시각', selectedLog.timestampISO], ['출처', selectedLog.sourceLabel || selectedLog.source], ['작업유형', selectedLog.actionType], ['작업경로', selectedLog.path || selectedLog.route],
-                      ['카탈로그/견적서', selectedLog.catalogName || selectedLog.catalog || selectedLog.quoteName || selectedLog.estimate], ['적용방식', selectedLog.applyMode], ['상품코드', selectedLog.code], ['변동항목', selectedLog.field],
-                      ['마스터 품명', selectedLog.name], ['파싱 품명', selectedLog.parsedName], ['마스터 규격/단위', [selectedLog.spec, selectedLog.unit].filter(Boolean).join(' / ')], ['파싱 규격/단위', [selectedLog.parsedSpec, selectedLog.parsedUnit].filter(Boolean).join(' / ')],
-                      ['이전값', fmtNumber(selectedLog.oldVal)], ['변경값', fmtNumber(selectedLog.newVal)], ['차액', selectedLog.diff ? selectedLog.diff.toLocaleString() : '-'], ['변동률', fmtRate(selectedLog.diffRate)],
-                      ['이전 출고가', fmtNumber(selectedLog.oldOutPrice)], ['변경 출고가', fmtNumber(selectedLog.newOutPrice)], ['재고수량', fmtNumber(selectedLog.stockQty)], ['안전재고', fmtNumber(selectedLog.safeStock)],
-                      ['마진율', fmtRate(selectedLog.marginRate)], ['매칭상태', selectedLog.matchStatus], ['메모', selectedLog.memo]
-                    ].map(([k, v]) => (
-                      <div key={k} className="border border-slate-100 rounded-xl p-3 bg-slate-50/70">
-                        <div className="text-[10px] font-black text-slate-400 mb-1">{k}</div>
-                        <div className="font-bold text-slate-800 break-words">{v || '-'}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+<body>
+  <div id="app" class="h-screen flex flex-col">
+    <header class="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shadow-sm shrink-0">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-slate-900 text-emerald-400 flex items-center justify-center"><i class="fas fa-clock-rotate-left"></i></div>
+        <div>
+          <h1 class="text-xl font-black tracking-tight">ONEAPP HistoryViewer</h1>
+          <p class="text-xs text-slate-500 font-bold">v1.1.0 RuntimeOpenFix · MerchOps 변경 이력 조회</p>
         </div>
-      );
-    };
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="btnReload" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-black"><i class="fas fa-rotate mr-2"></i>새로고침</button>
+        <button id="btnJson" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-black"><i class="fas fa-download mr-2"></i>JSON</button>
+        <button id="btnCsv" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-black"><i class="fas fa-file-csv mr-2"></i>CSV</button>
+        <button id="btnBack" class="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-black"><i class="fas fa-arrow-left mr-2"></i>MerchOps</button>
+      </div>
+    </header>
 
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<HistoryApp />);
-  </script>
+    <section class="px-6 py-4 bg-slate-50 border-b border-slate-200 shrink-0">
+      <div class="grid grid-cols-4 gap-3 mb-4">
+        <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm"><div class="text-xs font-black text-slate-400">전체 이력</div><div id="statTotal" class="text-2xl font-black mt-1">0</div></div>
+        <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm"><div class="text-xs font-black text-slate-400">가격 변경</div><div id="statPrice" class="text-2xl font-black text-rose-600 mt-1">0</div></div>
+        <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm"><div class="text-xs font-black text-slate-400">오늘 기록</div><div id="statToday" class="text-2xl font-black text-emerald-600 mt-1">0</div></div>
+        <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm"><div class="text-xs font-black text-slate-400">소스</div><div id="statSource" class="text-lg font-black text-indigo-600 mt-2 truncate">-</div></div>
+      </div>
+      <div class="flex flex-wrap gap-2 items-center">
+        <div class="relative flex-1 min-w-[320px]">
+          <i class="fas fa-search absolute left-3 top-3 text-slate-400 text-sm"></i>
+          <input id="searchInput" class="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-300 outline-none focus:border-indigo-500 text-sm font-bold" placeholder="품목코드 / 품명 / 경로 / 액션 / 변경값 검색" />
+        </div>
+        <select id="sourceFilter" class="h-10 px-3 rounded-xl border border-slate-300 bg-white text-sm font-bold"><option value="">전체 소스</option></select>
+        <select id="actionFilter" class="h-10 px-3 rounded-xl border border-slate-300 bg-white text-sm font-bold"><option value="">전체 액션</option></select>
+        <select id="sortMode" class="h-10 px-3 rounded-xl border border-slate-300 bg-white text-sm font-bold"><option value="newest">최신순</option><option value="oldest">오래된순</option><option value="code">코드순</option><option value="diff">변동폭순</option></select>
+      </div>
+    </section>
+
+    <main class="flex-1 overflow-auto p-6">
+      <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+        <table class="w-full text-left text-sm whitespace-nowrap">
+          <thead class="sticky top-0 bg-slate-100 border-b border-slate-200 text-xs text-slate-500 uppercase z-10">
+            <tr>
+              <th class="px-3 py-3 w-40">시간</th>
+              <th class="px-3 py-3 w-28">소스</th>
+              <th class="px-3 py-3 w-28">액션</th>
+              <th class="px-3 py-3 w-28">코드</th>
+              <th class="px-3 py-3">품명/규격</th>
+              <th class="px-3 py-3 w-44">경로</th>
+              <th class="px-3 py-3 w-36 text-right">이전값</th>
+              <th class="px-3 py-3 w-36 text-right">변경값</th>
+              <th class="px-3 py-3 w-28 text-right">차이</th>
+            </tr>
+          </thead>
+          <tbody id="historyTbody" class="divide-y divide-slate-100"></tbody>
+        </table>
+        <div id="emptyBox" class="hidden p-16 text-center text-slate-400 font-black"><i class="fas fa-box-open text-4xl mb-3 block"></i>표시할 히스토리가 없습니다.</div>
+      </div>
+    </main>
+  </div>
+
+<script>
+(function(){
+  'use strict';
+  const HISTORY_KEY='merchHistory_v870';
+  const $=id=>document.getElementById(id);
+  const safeStr=v=>v===undefined||v===null?'':String(v);
+  const parseNum=v=>{const n=Number(String(v??'').replace(/,/g,'').replace(/[^\d.-]/g,''));return Number.isFinite(n)?n:0;};
+  const fmtNum=v=>{const n=parseNum(v);return n===0&&String(v??'').trim()===''?'':n.toLocaleString('ko-KR');};
+  const escapeHtml=s=>safeStr(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+  let rawLogs=[];
+  let normalized=[];
+
+  function readHistory(){
+    try{
+      const raw=localStorage.getItem(HISTORY_KEY);
+      if(!raw||raw==='undefined'||raw==='null') return [];
+      const parsed=JSON.parse(raw);
+      if(Array.isArray(parsed)) return parsed;
+      if(parsed&&Array.isArray(parsed.logs)) return parsed.logs;
+      if(parsed&&typeof parsed==='object') return Object.values(parsed).flat().filter(Boolean);
+      return [];
+    }catch(e){ console.error('[HistoryViewer] parse error',e); return []; }
+  }
+  function norm(log,idx){
+    const oldVal=log.oldVal??log.beforeVal??log.oldValue??log.prev??'';
+    const newVal=log.newVal??log.afterVal??log.newValue??log.next??'';
+    const diffRaw=log.diff!==undefined?log.diff:(String(oldVal).match(/\d/)||String(newVal).match(/\d/)?parseNum(newVal)-parseNum(oldVal):'');
+    const ts=log.timestampISO||log.createdAtISO||log.savedAtISO||log.timestamp||log.time||log.date||'';
+    return {
+      id:log.id||String(idx),
+      timestamp:ts,
+      source:safeStr(log.source||log.origin||log.sourceLabel||'unknown'),
+      action:safeStr(log.actionType||log.action||log.applyMode||'change'),
+      code:safeStr(log.code||log.코드||log.productCode||''),
+      name:safeStr(log.name||log.품명||log.productName||''),
+      spec:safeStr(log.spec||log.규격||''),
+      path:safeStr(log.path||log.route||log.field||log.column||''),
+      oldVal, newVal, diff:diffRaw,
+      raw:log
+    };
+  }
+  function fillFilters(){
+    const src=$('sourceFilter'), act=$('actionFilter');
+    const curS=src.value, curA=act.value;
+    const sources=[...new Set(normalized.map(x=>x.source).filter(Boolean))].sort();
+    const actions=[...new Set(normalized.map(x=>x.action).filter(Boolean))].sort();
+    src.innerHTML='<option value="">전체 소스</option>'+sources.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+    act.innerHTML='<option value="">전체 액션</option>'+actions.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+    src.value=curS; act.value=curA;
+  }
+  function formatTime(v){
+    if(!v) return '-';
+    const d=new Date(v);
+    if(!Number.isNaN(d.getTime())) return d.toLocaleString('ko-KR');
+    return safeStr(v);
+  }
+  function isToday(v){const d=new Date(v); if(Number.isNaN(d.getTime())) return false; const n=new Date(); return d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth()&&d.getDate()===n.getDate();}
+  function apply(){
+    const q=$('searchInput').value.trim().toLowerCase();
+    const src=$('sourceFilter').value; const act=$('actionFilter').value; const sort=$('sortMode').value;
+    let rows=normalized.filter(x=>{
+      if(src&&x.source!==src) return false;
+      if(act&&x.action!==act) return false;
+      if(q){
+        const hay=[x.timestamp,x.source,x.action,x.code,x.name,x.spec,x.path,x.oldVal,x.newVal,x.diff].join(' ').toLowerCase();
+        if(!q.split(/\s+/).every(t=>hay.includes(t))) return false;
+      }
+      return true;
+    });
+    rows.sort((a,b)=>{
+      if(sort==='oldest') return new Date(a.timestamp||0)-new Date(b.timestamp||0);
+      if(sort==='code') return a.code.localeCompare(b.code,'ko')||a.name.localeCompare(b.name,'ko');
+      if(sort==='diff') return Math.abs(parseNum(b.diff))-Math.abs(parseNum(a.diff));
+      return new Date(b.timestamp||0)-new Date(a.timestamp||0);
+    });
+    render(rows);
+  }
+  function render(rows){
+    $('historyTbody').innerHTML=rows.map(x=>`<tr class="hover:bg-slate-50">
+      <td class="px-3 py-2 text-xs text-slate-500">${escapeHtml(formatTime(x.timestamp))}</td>
+      <td class="px-3 py-2"><span class="px-2 py-1 rounded-lg bg-slate-100 text-slate-600 text-xs font-black">${escapeHtml(x.source)}</span></td>
+      <td class="px-3 py-2 text-xs font-black text-indigo-700">${escapeHtml(x.action)}</td>
+      <td class="px-3 py-2 mono text-xs text-slate-500">${escapeHtml(x.code)}</td>
+      <td class="px-3 py-2 font-bold">${escapeHtml(x.name)} <span class="text-slate-400 font-normal text-xs">${x.spec?`(${escapeHtml(x.spec)})`:''}</span></td>
+      <td class="px-3 py-2 text-xs text-slate-500 max-w-[240px] truncate">${escapeHtml(x.path)}</td>
+      <td class="px-3 py-2 text-right text-slate-500">${escapeHtml(safeStr(x.oldVal))}</td>
+      <td class="px-3 py-2 text-right font-black text-slate-800">${escapeHtml(safeStr(x.newVal))}</td>
+      <td class="px-3 py-2 text-right font-black ${parseNum(x.diff)>0?'text-rose-600':parseNum(x.diff)<0?'text-blue-600':'text-slate-400'}">${escapeHtml(fmtNum(x.diff))}</td>
+    </tr>`).join('');
+    $('emptyBox').classList.toggle('hidden', rows.length>0);
+  }
+  function refresh(){
+    rawLogs=readHistory();
+    normalized=rawLogs.map(norm);
+    fillFilters();
+    $('statTotal').textContent=normalized.length.toLocaleString('ko-KR');
+    $('statPrice').textContent=normalized.filter(x=>/(가격|단가|입고가|출고가|행사가|price)/i.test([x.action,x.path].join(' '))).length.toLocaleString('ko-KR');
+    $('statToday').textContent=normalized.filter(x=>isToday(x.timestamp)).length.toLocaleString('ko-KR');
+    $('statSource').textContent=([...new Set(normalized.map(x=>x.source).filter(Boolean))].slice(0,3).join(', ') || '-');
+    apply();
+  }
+  function download(name,content,type){const blob=new Blob([content],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),500);}
+  function toCsv(rows){
+    const cols=['timestamp','source','action','code','name','spec','path','oldVal','newVal','diff'];
+    return [cols.join(','),...rows.map(r=>cols.map(c=>'"'+safeStr(r[c]).replace(/"/g,'""')+'"').join(','))].join('\n');
+  }
+  function navigateBack(){
+    try{const ref=document.referrer||''; if(ref&&/MerchOps(?:\.html)?/i.test(ref)&&history.length>1){history.back();return;}}catch(e){}
+    try{location.href=(location.origin&&location.origin.includes('oneapp.orderz.co.kr'))?location.origin+'/MerchOps.html':'MerchOps.html';}catch(e){location.href='MerchOps.html';}
+  }
+  $('btnReload').onclick=refresh;
+  $('btnJson').onclick=()=>download('MerchOps_History_'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(rawLogs,null,2),'application/json');
+  $('btnCsv').onclick=()=>download('MerchOps_History_'+new Date().toISOString().slice(0,10)+'.csv','\ufeff'+toCsv(normalized),'text/csv;charset=utf-8');
+  $('btnBack').onclick=navigateBack;
+  ['searchInput','sourceFilter','actionFilter','sortMode'].forEach(id=>$(id).addEventListener('input',apply));
+  ['sourceFilter','actionFilter','sortMode'].forEach(id=>$(id).addEventListener('change',apply));
+  refresh();
+})();
+</script>
 </body>
 </html>
