@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.6 RuntimeOpenFix]</title>
+    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.7 NavigateFix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -245,6 +245,26 @@ const useMerchData = () => {
     }, []);
     return { masterProducts, setMasterProducts, historyLogs, setHistoryLogs };
 };
+
+const navigateToMerchOps = () => {
+    try {
+        const ref = document.referrer || '';
+        if (ref && /MerchOps/i.test(ref)) {
+            window.location.href = ref;
+            return;
+        }
+    } catch (e) {}
+    try {
+        if (window.location.protocol === 'file:') {
+            window.location.href = 'MerchOps.html';
+            return;
+        }
+        window.location.href = new URL('MerchOps.html', window.location.href).href;
+    } catch (e) {
+        window.location.href = 'MerchOps.html';
+    }
+};
+
 const App = () => {
     var _a;
     const config = useMerchConfig();
