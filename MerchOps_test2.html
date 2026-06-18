@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.27 CloudUrlSync]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.29 DetailFilterVisible]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -2861,6 +2861,11 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
     const { activeTags, selectedRows, globalSearch, priceFilter, categoryFilters = [], basicSearch, fullDisplayRows, config, registrationMode } = state;
     const { handleStopSales, handleExcludeSelectedFromUpdate, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, setPriceFilter, setCategoryFilters, setSelectedRows, setBasicSearch, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode } = actions;
     const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+    // [M-FILTER-DETAIL-RESTORE] 상세필터 복구: 상세필터 버튼을 눌렀을 때 하단 필터줄을 다시 생성하고,
+    // 상세필터 항목이 활성화된 상태에서는 행이 숨지지 않도록 유지한다.
+    const detailFilterValues = ['margin', 'selling', 'stoppedSoldout', 'safeMinus', 'basic', 'basicExclude', 'unitBox', 'unitEa', 'unitSub'];
+    const isDetailFilterActive = detailFilterValues.includes(priceFilter);
+    const showDetailFilterPanel = filterPanelOpen || isDetailFilterActive;
     const activeTableTarget = (config === null || config === void 0 ? void 0 : config.activeTableTarget) || '';
     const activeTableViewId = (config === null || config === void 0 ? void 0 : config.activeTableViewId) || '';
     const tableViewList = useMemo(() => (activeTableTarget && window.getMerchTableViewsForTarget)
@@ -2988,8 +2993,8 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                         ['promo', '행사중'],
                         ['promoSuggest', '행사제안']
                     ].map(([value, label]) => (React.createElement("button", { key: value, onClick: () => applyPriceFilter(value), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, label))),
-                    React.createElement("button", { onClick: () => setFilterPanelOpen(v => !v), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all flex items-center ${filterPanelOpen ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: "\uD310\uB9E4\uC0C1\uD0DC, \uC7AC\uACE0, \uC5ED\uB9C8\uC9C4 \uB4F1 \uC0C1\uC138 \uD544\uD130 \uC5F4\uAE30" },
-                        React.createElement("i", { className: `fas ${filterPanelOpen ? 'fa-chevron-up' : 'fa-chevron-down'} mr-1.5 text-[11px]` }),
+                    React.createElement("button", { onClick: () => setFilterPanelOpen(v => !v), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all flex items-center ${showDetailFilterPanel ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: "\uC0C1\uC138\uD544\uD130 \uC5F4\uAE30/\uB2EB\uAE30: \uC5ED\uB9C8\uC9C4, \uD310\uB9E4\uC911, \uC815\uC9C0&\uD488\uC808, \uAE30\uBCF8\uC0C1\uD488, BOX/EA/\uC18C\uBD84" },
+                        React.createElement("i", { className: `fas ${showDetailFilterPanel ? 'fa-chevron-up' : 'fa-chevron-down'} mr-1.5 text-[11px]` }),
                         " \uC0C1\uC138\uD544\uD130")),
                 tableViewList.length > 0 && (React.createElement("div", { className: "flex-1 min-w-[260px] flex justify-center" },
                     React.createElement("div", { className: "flex items-center justify-center gap-1.5 px-2 py-1 rounded-xl border border-dashed border-slate-300 bg-white/80 shadow-sm max-w-full overflow-x-auto custom-scrollbar" },
@@ -3042,7 +3047,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                     React.createElement("span", { className: "px-2 flex items-center bg-slate-50 border-l border-slate-200 text-[12px] font-black text-slate-500" }, "%")),
                 React.createElement("button", { onClick: runScreenPercentApply, disabled: fullDisplayRows.length === 0, className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${fullDisplayRows.length > 0 ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터 화면 전체에 행사가를 적용합니다." }, "행사가 적용"),
                 React.createElement("span", { className: "text-[11px] text-slate-400 ml-auto" }, selectedRows.size > 0 ? `선택 ${selectedRows.size}건` : `화면 ${fullDisplayRows.length}건`)),
-            filterPanelOpen && (React.createElement("div", { className: "rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 shadow-inner flex items-center gap-2 flex-wrap" },
+            showDetailFilterPanel && (React.createElement("div", { className: "rounded-xl border border-indigo-100 bg-indigo-50/40 px-3 py-2 shadow-inner flex items-center gap-2 flex-wrap" },
                 React.createElement("span", { className: "text-[11px] font-black text-slate-500 mr-1" }, "\uC0C1\uC138\uD544\uD130"),
                 [
                     ['margin', '역마진'],
@@ -3882,7 +3887,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.23 Promo Suggest Filter Fix]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.29 DetailFilterVisible]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -4187,8 +4192,9 @@ const App = () => {
                         .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; } 
                         .fade-in { animation: fadeIn 0.3s ease-out; } 
                         .system-ui-shell { transition: max-height 180ms ease, opacity 160ms ease, transform 180ms ease, border-color 180ms ease; will-change: max-height, opacity, transform; }
+                        /* [M-FILTER-DETAIL-HEIGHT] 상세필터는 카테고리/프로테지 줄 아래에 추가 렌더링된다. 260px 고정은 하단 상세필터 줄을 잘라서 버튼을 눌러도 안 보이는 원인이 된다. */
                         .system-ui-shell.is-collapsed { max-height: 0 !important; opacity: 0; transform: translateY(-10px); pointer-events: none; border-color: transparent; }
-                        .system-ui-shell.is-expanded { max-height: 260px; opacity: 1; transform: translateY(0); }
+                        .system-ui-shell.is-expanded { max-height: 420px; opacity: 1; transform: translateY(0); }
                         @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
                     `),
         ui.alertMsg && (React.createElement("div", { className: "fixed top-6 z-[999] bg-slate-800 text-white px-6 py-4 rounded-xl shadow-2xl flex items-start gap-3 fade-in text-sm font-bold border border-slate-700" },
@@ -4209,7 +4215,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.23 Promo Suggest Filter Fix")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.29 DetailFilterVisible")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
