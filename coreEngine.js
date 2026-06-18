@@ -1,6 +1,6 @@
 /**
  * ONEAPP MerchOps - coreEngine.js
- * v1.0.0 / 1단계 공통 엔진 초안
+ * v1.0.3 / DataOps MasterDB Sync + Cloud URL Setting
  *
  * 목적:
  * - HTML 화면 파일에서 중복되는 저장소, 가격계산, 히스토리, F9 전달, 클라우드 로직을 중앙화한다.
@@ -18,7 +18,7 @@
   'use strict';
 
   const ONEAPP = global.ONEAPP = global.ONEAPP || {};
-  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.0.2 MarginRuleSync';
+  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.0.3 DataOpsMasterSync';
 
   const DEFAULT_DB_NAME = 'MerchOpsDB';
   const DEFAULT_DB_VERSION = 2;
@@ -668,6 +668,56 @@
   // ============================================================
   const CLOUD = ONEAPP.CLOUD = ONEAPP.CLOUD || {};
 
+  // ============================================================
+  // CLOUD URL / DATAOPS MASTER SYNC SETTINGS
+  // - URL은 고정 하드코딩이 아니라 사용자가 설정값으로 변경 가능해야 한다.
+  // - 기본 URL은 최초 실행/복원용 fallback으로만 사용한다.
+  // ============================================================
+  const ONEAPP_CLOUD_URL_KEY = 'oneapp_cloud_sync_url_v1';
+  const ONEAPP_DEFAULT_CLOUD_SYNC_URL = 'https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec';
+  const DATAOPS_MASTER_CACHE_KEY = 'dataops_merch_master_cache_v1';
+  const DATAOPS_MASTER_SUMMARY_KEY = 'dataops_merch_master_summary_v1';
+  const DATAOPS_RAW_SUBDIVISION_KEY = 'dataops_raw_subdivision_cache_v1';
+
+  const appendQueryParam = (url, key, value) => {
+    const safeUrl = String(url || '').trim();
+    if (!safeUrl) return '';
+    const sep = safeUrl.includes('?') ? '&' : '?';
+    return `${safeUrl}${sep}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+  };
+
+  CLOUD.getDefaultCloudSyncUrl = () => ONEAPP_DEFAULT_CLOUD_SYNC_URL;
+
+  CLOUD.getCloudSyncUrl = () => {
+    try {
+      const saved = String(global.localStorage.getItem(ONEAPP_CLOUD_URL_KEY) || '').trim();
+      return saved || ONEAPP_DEFAULT_CLOUD_SYNC_URL;
+    } catch (e) {
+      return ONEAPP_DEFAULT_CLOUD_SYNC_URL;
+    }
+  };
+
+  CLOUD.setCloudSyncUrl = (url) => {
+    const safeUrl = String(url || '').trim();
+    if (!safeUrl) throw new Error('클라우드 URL이 비어 있습니다.');
+    try {
+      global.localStorage.setItem(ONEAPP_CLOUD_URL_KEY, safeUrl);
+    } catch (e) {
+      throw new Error('클라우드 URL 저장에 실패했습니다.');
+    }
+    return safeUrl;
+  };
+
+  CLOUD.ensureDefaultCloudSyncUrl = () => {
+    try {
+      const current = String(global.localStorage.getItem(ONEAPP_CLOUD_URL_KEY) || '').trim();
+      if (!current) global.localStorage.setItem(ONEAPP_CLOUD_URL_KEY, ONEAPP_DEFAULT_CLOUD_SYNC_URL);
+    } catch (e) {}
+    return CLOUD.getCloudSyncUrl();
+  };
+
+  CLOUD.buildMasterOnlyUrl = (url) => appendQueryParam(url || CLOUD.getCloudSyncUrl(), 'action', 'master_only');
+
   CLOUD.buildCloudConfigPayload = async (config = {}) => {
     const pendingShopStatus = await STORAGE.getIDB('pending_shop_status').catch(() => []);
     const dict = safeJSONParse('parserDict_v870', {});
@@ -683,6 +733,174 @@
         visibleMasterCols: config.visibleMasterCols || {},
         uploadColumnMeta: config.uploadColumnMeta || {}
       }
+    };
+  };
+
+  CLOUD.normalizeMasterItemForDataOps = (item = {}, fallbackCode = '') => {
+    const code = String(item.코드 || item['품목코드'] || fallbackCode || '').trim();
+    return {
+      ...item,
+      코드: code,
+      품목코드: String(item['품목코드'] || code).trim(),
+      품목명: String(item['품목명'] || '').trim(),
+      규격: String(item['규격'] || '').trim(),
+      단위: String(item['단위'] || '').trim(),
+      창고: String(item['창고'] || '').trim(),
+      기본: item['기본'],
+      입고가: parseNum(item['입고가']),
+      출고가: parseNum(item['출고가']),
+      도매A: parseNum(item['도매A']),
+      도매B: parseNum(item['도매B']),
+      상장가: parseNum(item['상장가']),
+      행사가: parseNum(item['행사가']),
+      판매여부: item['판매여부'],
+      '1종코드': String(item['1종코드'] || '').trim(),
+      '1종규격': String(item['1종규격'] || '').trim(),
+      '1종연산': parseNum(item['1종연산']),
+      '2종코드': String(item['2종코드'] || '').trim(),
+      '2종규격': String(item['2종규격'] || '').trim(),
+      '2종연산': parseNum(item['2종연산']),
+      외주비: parseNum(item['외주비']),
+      노무비: parseNum(item['노무비']),
+      경비: parseNum(item['경비'])
+    };
+  };
+
+  CLOUD.buildRawSubdivisionFromMaster = (masterMap = {}) => {
+    const items = Object.entries(masterMap || {}).map(([code, item]) => CLOUD.normalizeMasterItemForDataOps(item, code));
+    const relations = [];
+    const issues = [];
+
+    const isValidSubCode = (code) => {
+      const s = String(code || '').trim();
+      return s !== '' && s !== '0' && s !== '00' && s !== '-' && s.toLowerCase() !== 'undefined' && s.toLowerCase() !== 'null';
+    };
+
+    items.forEach(item => {
+      const rawCode = String(item.코드 || item['품목코드'] || '').trim();
+      const subCode = String(item['1종코드'] || '').trim();
+      const subSpec = String(item['1종규격'] || '').trim();
+      const subRate = parseNum(item['1종연산']);
+
+      if (!rawCode) {
+        issues.push({ type: 'NO_RAW_CODE', message: '원물 품목코드 없음', item });
+        return;
+      }
+
+      if (!isValidSubCode(subCode)) return;
+
+      if (subRate <= 0) {
+        issues.push({ type: 'NO_SUB_RATE', message: '1종코드는 있으나 1종연산 없음', rawCode, subCode, item });
+        return;
+      }
+
+      relations.push({
+        source: 'MerchOpsMasterDB',
+        rawCode,
+        rawName: item['품목명'] || '',
+        rawSpec: item['규격'] || '',
+        rawUnit: item['단위'] || '',
+        subCode,
+        subNameSpec: subSpec,
+        subSpec,
+        subUnit: '',
+        conversionRate: subRate,
+        costMethod: 'raw_cost_divide_conversion',
+        rawDeductMethod: 'ceil',
+        active: true,
+        createdFrom: '1종코드',
+        memo: ''
+      });
+    });
+
+    const bySubCode = {};
+    const byRawCode = {};
+
+    relations.forEach(rel => {
+      if (rel.subCode) bySubCode[rel.subCode] = rel;
+      if (rel.rawCode) {
+        if (!byRawCode[rel.rawCode]) byRawCode[rel.rawCode] = [];
+        byRawCode[rel.rawCode].push(rel);
+      }
+    });
+
+    return {
+      relations,
+      bySubCode,
+      byRawCode,
+      issues,
+      summary: {
+        relationCount: relations.length,
+        issueCount: issues.length
+      }
+    };
+  };
+
+  CLOUD.pullMerchMasterForDataOps = async ({ url, onProgress } = {}) => {
+    const targetUrl = String(url || CLOUD.getCloudSyncUrl() || '').trim();
+    if (!targetUrl) throw new Error('클라우드 URL이 없습니다.');
+
+    if (typeof onProgress === 'function') {
+      onProgress({ step: 'download', message: 'MerchOps MasterDB 수신 중...' });
+    }
+
+    const requestUrl = CLOUD.buildMasterOnlyUrl(targetUrl);
+    const res = await fetch(requestUrl, { method: 'GET' });
+    if (!res.ok) throw new Error('MerchOps MasterDB 다운로드 실패');
+
+    const result = await res.json();
+    if (!result || result.status !== 'success' || !result.data) {
+      throw new Error(result?.message || 'MerchOps MasterDB 응답 형식 오류');
+    }
+
+    const rawMaster = result.data.master || {};
+    const normalizedMaster = {};
+
+    Object.entries(rawMaster).forEach(([code, item]) => {
+      const normalized = CLOUD.normalizeMasterItemForDataOps(item, code);
+      if (normalized.코드) normalizedMaster[normalized.코드] = normalized;
+    });
+
+    const masterItems = Object.values(normalizedMaster);
+    const rawSubdivision = CLOUD.buildRawSubdivisionFromMaster(normalizedMaster);
+
+    await STORAGE.bulkPutIDB(STORE_MASTER, masterItems).catch(() => false);
+    await STORAGE.setIDB(DATAOPS_MASTER_CACHE_KEY, normalizedMaster).catch(() => false);
+    await STORAGE.setIDB(DATAOPS_RAW_SUBDIVISION_KEY, rawSubdivision).catch(() => false);
+
+    const summary = {
+      ...(result.data.summary || {}),
+      normalizedCount: masterItems.length,
+      rawSubdivisionCount: rawSubdivision.relations.length,
+      rawSubdivisionIssueCount: rawSubdivision.issues.length,
+      syncedAt: new Date().toISOString(),
+      url: targetUrl
+    };
+
+    try {
+      global.localStorage.setItem(DATAOPS_MASTER_SUMMARY_KEY, JSON.stringify(summary));
+      global.localStorage.setItem('dataops_master_sync_trigger', Date.now().toString());
+    } catch (e) {}
+
+    if (typeof onProgress === 'function') {
+      onProgress({
+        step: 'done',
+        message: `마스터 ${summary.normalizedCount || 0}건 / 소분관계 ${summary.rawSubdivisionCount || 0}건 불러오기 완료`
+      });
+    }
+
+    return { status: 'success', master: normalizedMaster, rawSubdivision, summary };
+  };
+
+  CLOUD.getCachedMerchMasterForDataOps = async () => {
+    const master = await STORAGE.getIDB(DATAOPS_MASTER_CACHE_KEY).catch(() => null);
+    const rawSubdivision = await STORAGE.getIDB(DATAOPS_RAW_SUBDIVISION_KEY).catch(() => null);
+    const summary = safeJSONParse(DATAOPS_MASTER_SUMMARY_KEY, {});
+
+    return {
+      master: master || {},
+      rawSubdivision: rawSubdivision || { relations: [], bySubCode: {}, byRawCode: {}, issues: [], summary: {} },
+      summary
     };
   };
 
@@ -705,16 +923,17 @@
   };
 
   CLOUD.pushCloudBackup = async ({ url, masterProducts = {}, historyLogs = [], config = {}, chunkSize = 500, onProgress }) => {
-    if (!url) throw new Error('클라우드 URL이 없습니다.');
+    const targetUrl = String(url || CLOUD.getCloudSyncUrl() || '').trim();
+    if (!targetUrl) throw new Error('클라우드 URL이 없습니다.');
 
     if (typeof onProgress === 'function') onProgress({ step: 'init', message: '서버 초기화 중...' });
-    const initRes = await fetch(url, { method: 'POST', body: JSON.stringify({ action: 'initSync' }) });
+    const initRes = await fetch(targetUrl, { method: 'POST', body: JSON.stringify({ action: 'initSync' }) });
     const initJson = await initRes.json();
     if (!initJson || initJson.status !== 'success') throw new Error(initJson?.message || '초기화 실패');
 
     const masterItems = Array.isArray(masterProducts) ? masterProducts : Object.values(masterProducts || {});
     await CLOUD.chunkUpload({
-      url,
+      url: targetUrl,
       action: 'chunk_master',
       data: masterItems,
       chunkSize,
@@ -723,7 +942,7 @@
 
     const safeHistory = Array.isArray(historyLogs) ? historyLogs : [];
     await CLOUD.chunkUpload({
-      url,
+      url: targetUrl,
       action: 'chunk_history',
       data: safeHistory,
       chunkSize,
@@ -732,7 +951,7 @@
 
     if (typeof onProgress === 'function') onProgress({ step: 'config', message: '환경설정 및 대기열 업로드 중...' });
     const configPayload = await CLOUD.buildCloudConfigPayload(config);
-    const configRes = await fetch(url, {
+    const configRes = await fetch(targetUrl, {
       method: 'POST',
       body: JSON.stringify({ action: 'config', data: configPayload })
     });
@@ -793,10 +1012,11 @@
   };
 
   CLOUD.pullCloudBackup = async ({ url, hooks = {}, onProgress }) => {
-    if (!url) throw new Error('클라우드 URL이 없습니다.');
+    const targetUrl = String(url || CLOUD.getCloudSyncUrl() || '').trim();
+    if (!targetUrl) throw new Error('클라우드 URL이 없습니다.');
     if (typeof onProgress === 'function') onProgress({ step: 'download', message: '클라우드 데이터 수신 중...' });
 
-    const res = await fetch(url, { method: 'GET' });
+    const res = await fetch(targetUrl, { method: 'GET' });
     if (!res.ok) throw new Error('Network Error');
     const result = await res.json();
     const data = await CLOUD.restoreCloudData(result, hooks);
@@ -822,5 +1042,10 @@
   global.calculatePricesEngine = global.calculatePricesEngine || PRICING.calculatePricesEngine;
   global.computeFinalData = global.computeFinalData || PRICING.computeFinalData;
   global.getMasterSalesState = global.getMasterSalesState || PRICING.getMasterSalesState;
+  global.getOneAppCloudSyncUrl = global.getOneAppCloudSyncUrl || CLOUD.getCloudSyncUrl;
+  global.setOneAppCloudSyncUrl = global.setOneAppCloudSyncUrl || CLOUD.setCloudSyncUrl;
+  global.ensureDefaultCloudSyncUrl = global.ensureDefaultCloudSyncUrl || CLOUD.ensureDefaultCloudSyncUrl;
+  global.pullMerchMasterForDataOps = global.pullMerchMasterForDataOps || CLOUD.pullMerchMasterForDataOps;
+  global.getCachedMerchMasterForDataOps = global.getCachedMerchMasterForDataOps || CLOUD.getCachedMerchMasterForDataOps;
 
 })(window);
