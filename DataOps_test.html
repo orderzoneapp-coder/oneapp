@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzh Master Cache Architecture Pass)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzp Sticky System Panel Reveal)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.99zzh Master Cache Architecture Pass.....</div>
+        <div class="loader-text">ONEAPP DataOps v8.99zzp Sticky System Panel Reveal.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -164,6 +164,14 @@ const getWarehouseFromRow = (row = {}, fallbackFileName = '') => {
     const wh = normalizeWarehouseCode(direct);
     if (wh)
         return wh;
+    // v8.99zzi: 2전송 판매현황은 창고 컬럼 없이 1행 제목줄에만 "2전송"이 들어오는 경우가 있다.
+    // 기존 로직은 파일명/창고 컬럼만 보아 0619판매.xlsx 같은 파일의 판매행을 전부 제외했다.
+    // 파서가 보관한 제목줄/기준일 원문을 창고 판정 보조값으로 사용한다.
+    const titleText = safeStr(row._sourceTitleText || row._sheetBasisDateRaw || '', '').replace(/\s/g, '');
+    if (titleText.includes('2전송') || /(^|[\/|])02([\/|]|$)/.test(titleText))
+        return '2전송';
+    if (titleText.includes('1창고') || /(^|[\/|])01([\/|]|$)/.test(titleText))
+        return '1창고';
     const fileName = safeStr(row._sourceFileName || fallbackFileName, '');
     if (/^02|2전송|02구매|02판매/.test(fileName))
         return '2전송';
@@ -494,13 +502,57 @@ const defaultMappings = {
     transferPriceGroups: buildDefaultTransferPriceGroupText(),
     transferPriceColumns: '수기공지단가=출고가(공지)\n고정상장가=청과\n시세상장가=상장가\n창고출고가=출고(외노)\n식자재가=식자재\n도매A=도매A\n매입원가=단가'
 };
+const DATAOPS_TABLE_SORT_PREF_KEY = 'dataops_table_sort_mode_v1';
+const DATAOPS_TABLE_SORT_DESC_PREF_KEY = 'dataops_table_sort_desc_v1';
+const DATAOPS_TABLE_SORT_MODES = Object.freeze(['DEFAULT', 'DATE', 'CATEGORY', 'VENDOR', 'PRICE']);
+const getSavedTableSortMode = () => {
+    try {
+        const saved = localStorage.getItem(DATAOPS_TABLE_SORT_PREF_KEY);
+        return DATAOPS_TABLE_SORT_MODES.includes(saved) ? saved : 'DEFAULT';
+    }
+    catch (e) {
+        return 'DEFAULT';
+    }
+};
+const getSavedTableSortDesc = () => {
+    try {
+        return localStorage.getItem(DATAOPS_TABLE_SORT_DESC_PREF_KEY) === '1';
+    }
+    catch (e) {
+        return false;
+    }
+};
+const saveTableSortMode = (sortMode = 'DEFAULT') => {
+    const mode = DATAOPS_TABLE_SORT_MODES.includes(sortMode) ? sortMode : 'DEFAULT';
+    try {
+        localStorage.setItem(DATAOPS_TABLE_SORT_PREF_KEY, mode);
+    }
+    catch (e) { }
+    return mode;
+};
+const saveTableSortDesc = (isDesc = false) => {
+    const desc = !!isDesc;
+    try {
+        localStorage.setItem(DATAOPS_TABLE_SORT_DESC_PREF_KEY, desc ? '1' : '0');
+    }
+    catch (e) { }
+    return desc;
+};
+const clearTableSortPreference = () => {
+    try {
+        localStorage.setItem(DATAOPS_TABLE_SORT_PREF_KEY, 'DEFAULT');
+        localStorage.setItem(DATAOPS_TABLE_SORT_DESC_PREF_KEY, '0');
+    }
+    catch (e) { }
+    return { sortMode: 'DEFAULT', sortDesc: false };
+};
 /* =======================================================================
    1-A. v8.50 내부 모듈 + 현장 고도화 베이스 (Single HTML Logical Modules)
    - 목적: 기존 기능은 유지하고, 이후 고도화를 위한 책임 경계를 만든다.
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'v8.99zzh Master Cache Architecture Pass',
+    version: 'v8.99zzp Sticky System Panel Reveal',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -764,7 +816,7 @@ window.DATAOPS_CLOUD_MODULE = DATAOPS_CLOUD_MODULE;
 
 
 /* =======================================================================
-   1-B-2. v8.99zzh Master Cache Architecture Pass
+   1-B-2. v8.99zzp Sticky System Panel Reveal
    - 목적: 클라우드는 동기화 때만 조회하고, 수불/매칭/치환은 로컬 캐시와 인덱스를 즉시 사용한다.
    - 원칙: 계산 중 클라우드 fetch 금지. 마감 작업은 현재 로컬 마스터 스냅샷 기준으로 고정한다.
    ======================================================================= */
@@ -986,7 +1038,7 @@ window.DATAOPS_MASTER_LINK_MODULE = DATAOPS_MASTER_LINK_MODULE;
 
 
 /* =======================================================================
-   1-D. v8.99zzh Master Cache Architecture Pass
+   1-D. v8.99zzp Sticky System Panel Reveal
    - 목적: MerchOps 마스터의 원물/소분 관계를 기준으로 소분 마이너스 항목을 치환 후보로 추출하고, 관리자 명령 시 치환입고/치환출고를 반영한다.
    - 원칙: 자동 실행하지 않는다. 후보 확인 후 관리자 버튼으로만 실행한다.
    ======================================================================= */
@@ -1414,42 +1466,74 @@ const FILTER_SORT_MODULE = Object.freeze({
             return 1;
         return 2; // 마이너스/부족 Lot은 같은 코드의 마지막으로 내린다.
     },
+    getPurchaseDateSortValue: (row = {}) => {
+        const rawNum = safeNum(row._purchaseDateNum);
+        if (rawNum > 0)
+            return rawNum;
+        const dateText = safeStr(row.일자 || row._stockRecordDate || '');
+        const parsed = formatItemDate(dateText, new Date().getFullYear());
+        return parsed > 0 ? parsed : 99999999;
+    },
     compareByCodeThenName: (a, b) => {
         var _a, _b;
         const sa = FILTER_SORT_MODULE.getStandard(a);
         const sb = FILTER_SORT_MODULE.getStandard(b);
         return FILTER_SORT_MODULE.getCodeSortValue(a).localeCompare(FILTER_SORT_MODULE.getCodeSortValue(b), 'ko', { numeric: false, sensitivity: 'base' })
-            || FILTER_SORT_MODULE.getStockSortRank(a) - FILTER_SORT_MODULE.getStockSortRank(b)
-            || FILTER_SORT_MODULE.getStockSortQty(b) - FILTER_SORT_MODULE.getStockSortQty(a)
+            || FILTER_SORT_MODULE.getPurchaseDateSortValue(a) - FILTER_SORT_MODULE.getPurchaseDateSortValue(b)
             || safeStr(sa.displayName || (a === null || a === void 0 ? void 0 : a.품명)).localeCompare(safeStr(sb.displayName || (b === null || b === void 0 ? void 0 : b.품명)), 'ko', { numeric: false, sensitivity: 'base' })
             || safeStr(sa.vendor || (a === null || a === void 0 ? void 0 : a.거래처)).localeCompare(safeStr(sb.vendor || (b === null || b === void 0 ? void 0 : b.거래처)), 'ko', { numeric: false, sensitivity: 'base' })
-            || safeNum((_a = sa.price) !== null && _a !== void 0 ? _a : a === null || a === void 0 ? void 0 : a.단가) - safeNum((_b = sb.price) !== null && _b !== void 0 ? _b : b === null || b === void 0 ? void 0 : b.단가);
+            || safeNum((_a = sa.price) !== null && _a !== void 0 ? _a : a === null || a === void 0 ? void 0 : a.단가) - safeNum((_b = sb.price) !== null && _b !== void 0 ? _b : b === null || b === void 0 ? void 0 : b.단가)
+            || FILTER_SORT_MODULE.getStockSortRank(a) - FILTER_SORT_MODULE.getStockSortRank(b)
+            || FILTER_SORT_MODULE.getStockSortQty(b) - FILTER_SORT_MODULE.getStockSortQty(a);
     },
-    sortRows: (rows = [], sortMode = 'DEFAULT') => {
-        return [...rows].sort((a, b) => {
+    compareByDateThenCode: (a, b) => FILTER_SORT_MODULE.getPurchaseDateSortValue(a) - FILTER_SORT_MODULE.getPurchaseDateSortValue(b)
+        || FILTER_SORT_MODULE.compareByCodeThenName(a, b),
+    compareByPriceThenCode: (a, b) => {
+        const sa = FILTER_SORT_MODULE.getStandard(a);
+        const sb = FILTER_SORT_MODULE.getStandard(b);
+        return safeNum(sa.price !== null && sa.price !== void 0 ? sa.price : a === null || a === void 0 ? void 0 : a.단가) - safeNum(sb.price !== null && sb.price !== void 0 ? sb.price : b === null || b === void 0 ? void 0 : b.단가)
+            || FILTER_SORT_MODULE.compareByCodeThenName(a, b);
+    },
+    sortRows: (rows = [], sortMode = 'DEFAULT', sortDesc = false) => {
+        const sorted = [...rows].sort((a, b) => {
             const sa = FILTER_SORT_MODULE.getStandard(a);
             const sb = FILTER_SORT_MODULE.getStandard(b);
+            if (sortMode === 'DATE')
+                return FILTER_SORT_MODULE.compareByDateThenCode(a, b);
             if (sortMode === 'CATEGORY')
                 return (sa.category2Code || '9999').localeCompare(sb.category2Code || '9999') || FILTER_SORT_MODULE.compareByCodeThenName(a, b);
             if (sortMode === 'VENDOR')
                 return safeStr(sa.vendor, '미지정').localeCompare(safeStr(sb.vendor, '미지정'), 'ko') || FILTER_SORT_MODULE.compareByCodeThenName(a, b);
+            if (sortMode === 'PRICE')
+                return FILTER_SORT_MODULE.compareByPriceThenCode(a, b);
             return FILTER_SORT_MODULE.compareByCodeThenName(a, b);
         });
+        return sortDesc ? sorted.reverse() : sorted;
     },
     getGroupLabel: (row, sortMode = 'DEFAULT') => {
         const standard = FILTER_SORT_MODULE.getStandard(row);
+        if (sortMode === 'DATE') {
+            const d = FILTER_SORT_MODULE.getPurchaseDateSortValue(row);
+            return d === 99999999 ? '구매일자미확정' : formatStrForPeriod(d);
+        }
         if (sortMode === 'CATEGORY')
             return standard.category2Code || '미지정';
         if (sortMode === 'VENDOR')
             return standard.vendor || '미지정';
+        if (sortMode === 'PRICE')
+            return `${formatMoney(standard.price || row.단가)}원`;
         return '';
     },
     getSortGroupKey: (row, sortMode = 'DEFAULT') => {
         const standard = FILTER_SORT_MODULE.getStandard(row);
+        if (sortMode === 'DATE')
+            return `${FILTER_SORT_MODULE.getPurchaseDateSortValue(row)}|${standard.code}`;
         if (sortMode === 'CATEGORY')
             return `${standard.category2Code}|${standard.code}`;
         if (sortMode === 'VENDOR')
             return `${standard.vendor}|${standard.code}`;
+        if (sortMode === 'PRICE')
+            return `${safeNum(standard.price || row.단가)}|${standard.code}`;
         return standard.batchKey || standard.code;
     }
 });
@@ -2223,6 +2307,11 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                     return { dateNum: 0, raw: '', source: '' };
                 };
                 const sheetBasisDate = extractBasisDateFromTitleRows(jsonAll);
+                const sourceTitleText = jsonAll
+                    .slice(0, Math.max(headerRowIdx, 0))
+                    .map(row => (row || []).map(v => safeStr(v, '')).filter(Boolean).join(' / '))
+                    .filter(Boolean)
+                    .join(' / ');
                 const rawHeaders = jsonAll[headerRowIdx];
                 const uniqueHeaders = [];
                 const headerCounts = {};
@@ -2330,7 +2419,7 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                         수량: parseNumber(getValByKeywords(rowObj, keywords.qty)), 단가: parseNumber(getValByKeywords(rowObj, keywords.price)),
                         거래처: safeStr(getValByKeywords(rowObj, keywords.vendor), '미지정'), 매입처매칭: safeStr(getValByKeywords(rowObj, keywords.matchVendor), ''),
                         일자: safeStr(dateCell.value, ''), _dateSource: safeStr(dateCell.key, ''), 기본: safeStr(basicCell.value, ''), _basicSource: safeStr(basicCell.key, ''), 메모: '', _raw: rowObj,
-                        _sourceSheet: sheetName || '', _sourceFileName: file.name || '', _uploadRole: role, _fileType: isClosingRestoreRow ? 'CLOSING_RESTORE' : 'RAW_DATA',
+                        _sourceSheet: sheetName || '', _sourceFileName: file.name || '', _sourceTitleText: sourceTitleText, _uploadRole: role, _fileType: isClosingRestoreRow ? 'CLOSING_RESTORE' : 'RAW_DATA',
                         _sheetBasisDate: sheetBasisDate.dateNum || 0, _sheetBasisDateSource: sheetBasisDate.source || '', _sheetBasisDateRaw: sheetBasisDate.raw || ''
                     };
                     // v8.99v: 수불마감/시스템누적을 기초재고 슬롯에서 읽을 때는 전용 해석을 강제한다.
@@ -2483,87 +2572,69 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
         }));
     }, []);
     const executeImmediateSubstitution = useCallback((key1, key2) => {
+        // v8.99zzk: Spacebar 수기치환은 전표 입고/출고 또는 치환입고/치환출고를 만들지 않는다.
+        // 목적은 두 오차 행의 관계를 메모/이슈로 남기고 확인 처리하는 것이다.
+        // 구매/판매 원본값은 파일 전표값으로만 유지하고, 사용자가 입력한 잔량 차이는 오차수량으로 표시한다.
         setProductData(prev => {
             const idx1 = prev.findIndex(d => d.batchKey === key1);
-            const realIdx2 = prev.findIndex(d => d.batchKey === key2);
-            if (idx1 < 0 || realIdx2 < 0)
+            const idx2 = prev.findIndex(d => d.batchKey === key2);
+            if (idx1 < 0 || idx2 < 0)
                 return prev;
-            const sourceItemOrig = { ...prev[idx1], 이슈: [...prev[idx1].이슈] };
-            const targetItemOrig = { ...prev[realIdx2], 이슈: [...prev[realIdx2].이슈] };
-            let sourceItem = { ...sourceItemOrig };
-            let targetItem = { ...targetItemOrig };
-            if (sourceItem.로스 < 0 && targetItem.로스 > 0) { }
-            else if (targetItem.로스 < 0 && sourceItem.로스 > 0) {
-                let temp = sourceItem;
-                sourceItem = targetItem;
-                targetItem = temp;
-            }
-            else if (sourceItem.로스 < 0 && targetItem.로스 === 0) { }
-            else if (targetItem.로스 < 0 && sourceItem.로스 === 0) {
+            const item1Orig = { ...prev[idx1], 이슈: [...(prev[idx1].이슈 || [])], 출고내역: prev[idx1].출고내역 ? JSON.parse(JSON.stringify(prev[idx1].출고내역)) : {} };
+            const item2Orig = { ...prev[idx2], 이슈: [...(prev[idx2].이슈 || [])], 출고내역: prev[idx2].출고내역 ? JSON.parse(JSON.stringify(prev[idx2].출고내역)) : {} };
+            let sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
+            let targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
+            // 음수 오차 행을 차감/소모 쪽, 양수 또는 0 오차 행을 연결 대상 쪽으로 잡는다.
+            // 실제 수량 이동은 하지 않고, 오차 확인 메모만 남긴다.
+            if (sourceItem.로스 < 0 && targetItem.로스 >= 0) { }
+            else if (targetItem.로스 < 0 && sourceItem.로스 >= 0) {
                 let temp = sourceItem;
                 sourceItem = targetItem;
                 targetItem = temp;
             }
             else {
-                setAlertMsg(`재고조정 실패!\n\n두 상품을 연결하려면 먼저 실사 수량을 변경하여 오차(로스)를 만들어주세요.\n• 원물(차감 대상): 마이너스(-) 로스 발생\n• 소분(증가 대상): 플러스(+) 로스 발생`);
+                setAlertMsg(`수기치환 실패!\n\n스페이스바 수기치환은 한쪽에 마이너스 오차가 있어야 합니다.\n기초/입고/출고 원본값은 수정하지 않고, 잔량 수정으로 발생한 오차만 확인 처리합니다.`);
                 return prev;
             }
-            const sQty = Math.abs(sourceItem.로스);
-            const tQty = Math.abs(targetItem.로스);
-            if (tQty === 0) {
-                setAlertMsg("대체되는 상품(소분품)의 실사 수량이 입력되지 않아 조정 비율을 알 수 없습니다.\n수량을 입력해주세요.");
-                return prev;
-            }
-            const transferredCost = sQty * sourceItem.단가;
-            const unitCost = transferredCost / tQty;
-            sourceItem.대체출고 += sQty;
-            sourceItem.전산잔량 = sourceItem.기초 + sourceItem.입고 + sourceItem.대체입고 - sourceItem.출고 - sourceItem.대체출고;
-            sourceItem.실사 = sourceItem.실사 === null || sourceItem.실사 === '' ? sourceItem.전산잔량 : sourceItem.실사;
-            sourceItem.로스 = sourceItem.실사 - sourceItem.전산잔량;
-            // 🌟 대체 차감 후 로스가 0이 되면 수량 관련 경고 칩 완전 삭제
-            if (sourceItem.로스 === 0) {
-                sourceItem.이슈 = sourceItem.이슈.filter(msg => !msg.includes('수량변동') && !msg.includes('실사 수기조정') && !msg.includes('과다로스'));
-            }
-            // 🌟 관리자 조작으로 전산잔량이 0 이상이 되면 수량부족(잔량) 이슈 칩 삭제
-            if (sourceItem.전산잔량 >= 0) {
-                sourceItem.이슈 = sourceItem.이슈.filter(msg => !msg.includes('수량부족'));
-            }
-            sourceItem.이슈.push(`🔄 (${sQty})`);
-            sourceItem.수기확인완료 = true;
-            targetItem.대체입고 += tQty;
-            targetItem.전산잔량 = targetItem.기초 + targetItem.입고 + targetItem.대체입고 - targetItem.출고 - targetItem.대체출고;
-            targetItem.실사 = targetItem.실사 === null || targetItem.실사 === '' ? targetItem.전산잔량 : targetItem.실사;
-            targetItem.로스 = targetItem.실사 - targetItem.전산잔량;
-            targetItem.단가 = unitCost;
-            targetItem.매출원가 = targetItem.출고 * unitCost;
-            // v8.99zv: 스페이스바 상계 시 소분/대체 대상은 원물의 구매처/Lot 추적 정보를 승계한다.
-            targetItem.거래처 = safeStr(sourceItem.거래처, targetItem.거래처 || '미지정');
-            targetItem.일자 = safeStr(sourceItem.일자, targetItem.일자 || '');
-            targetItem._substitutionSourceVendor = safeStr(sourceItem.거래처, '');
-            targetItem._substitutionSourceDate = safeStr(sourceItem.일자, '');
-            targetItem._substitutionSourcePrice = safeNum(sourceItem.단가);
-            // 🌟 소분 대상도 로스가 0이 되면 관련 에러 칩 일괄 삭제
-            if (targetItem.로스 === 0) {
-                targetItem.이슈 = targetItem.이슈.filter(msg => !msg.includes('수량변동') && !msg.includes('실사 수기조정') && !msg.includes('과다로스'));
-            }
-            // 🌟 관리자 조작으로 전산잔량이 0 이상이 되면 수량부족(잔량) 이슈 칩 삭제
-            if (targetItem.전산잔량 >= 0) {
-                targetItem.이슈 = targetItem.이슈.filter(msg => !msg.includes('수량부족'));
-            }
-            targetItem.이슈 = targetItem.이슈.filter(msg => !msg.includes('매입내역 없음') && !msg.includes('전산 재고 부족'));
-            // 🌟 대체 품목(원물) 정보를 거래처 칩과 혼동되지 않도록 우측 '메모' 영역으로 자동 삽입
-            const autoMemo = `🔄 [${sourceItem.품명}]`;
-            if (!(targetItem.메모 || '').includes(autoMemo)) {
-                targetItem.메모 = targetItem.메모 ? targetItem.메모 + ' ' + autoMemo : autoMemo;
-            }
-            targetItem.수기확인완료 = true;
+            const sourceLossQty = Math.abs(safeNum(sourceItem.로스));
+            const targetLossQty = Math.abs(safeNum(targetItem.로스));
+            const makeManualIssue = (item, other, roleLabel, qty) => {
+                const next = { ...item, 이슈: [...(item.이슈 || [])], 출고내역: item.출고내역 ? JSON.parse(JSON.stringify(item.출고내역)) : {} };
+                // 기존 미확인 수량 이슈는 확인 표시로 바꾼다. 오차 숫자는 그대로 유지된다.
+                let issues = (next.이슈 || []).map(msg => safeStr(msg).replace(/🚨/g, '✅'));
+                const issueText = `🔄수기치환오차(${roleLabel}${formatMoney(qty)})`;
+                issues.push(issueText);
+                next.이슈 = DATAOPS_ISSUE_HELPER.unique(issues);
+                const memoText = `[수기치환/오차] ${safeStr(other.품명, '상대품목')} ${roleLabel}${formatMoney(qty)}`;
+                if (!safeStr(next.메모, '').includes(memoText)) {
+                    next.메모 = `${safeStr(next.메모, '')}${safeStr(next.메모, '') ? ' ' : ''}${memoText}`;
+                }
+                // 전표/치환 수량은 절대 변경하지 않는다.
+                next.전산잔량 = safeNum(next.기초) + safeNum(next.입고) + safeNum(next.대체입고) - safeNum(next.출고) - safeNum(next.대체출고);
+                const finalQty = next.실사 === '' || next.실사 === null || next.실사 === undefined ? next.전산잔량 : safeNum(next.실사);
+                next.로스 = finalQty - next.전산잔량;
+                next.수기확인완료 = true;
+                return next;
+            };
+            const sourceAfter = makeManualIssue(sourceItem, targetItem, '-', sourceLossQty);
+            const targetAfter = makeManualIssue(targetItem, sourceItem, '+', targetLossQty);
             setSubstHistory(h => [...h, {
-                    id: Date.now(), sourceKey: sourceItem.batchKey, targetKey: targetItem.batchKey, sourceName: sourceItem.품명, targetName: targetItem.품명,
-                    sQty, tQty, transferredCost, sourceItemPrev: sourceItem.batchKey === sourceItemOrig.batchKey ? sourceItemOrig : targetItemOrig, targetItemPrev: targetItem.batchKey === targetItemOrig.batchKey ? targetItemOrig : sourceItemOrig,
+                    id: Date.now(),
+                    type: 'MANUAL_LOSS_LINK',
+                    sourceKey: sourceAfter.batchKey,
+                    targetKey: targetAfter.batchKey,
+                    sourceName: sourceAfter.품명,
+                    targetName: targetAfter.품명,
+                    sQty: sourceLossQty,
+                    tQty: targetLossQty,
+                    transferredCost: 0,
+                    sourceItemPrev: sourceItem.batchKey === item1Orig.batchKey ? item1Orig : item2Orig,
+                    targetItemPrev: targetItem.batchKey === item2Orig.batchKey ? item2Orig : item1Orig,
+                    createdAt: new Date().toISOString()
                 }]);
             const newData = [...prev];
-            newData[prev.findIndex(d => d.batchKey === sourceItem.batchKey)] = sourceItem;
-            newData[prev.findIndex(d => d.batchKey === targetItem.batchKey)] = targetItem;
+            newData[prev.findIndex(d => d.batchKey === sourceAfter.batchKey)] = sourceAfter;
+            newData[prev.findIndex(d => d.batchKey === targetAfter.batchKey)] = targetAfter;
             return newData;
         });
     }, [setAlertMsg]);
@@ -2674,7 +2745,8 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             });
             return prevP.map(p => {
                 if (p.batchKey === sourceKey) {
-                    const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역)) };
+                    const cleanVendorName = safeStr(vendorName).replace('_perfect', '');
+                    const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역 || {})), 이슈: [...(p.이슈 || [])] };
                     np.출고 -= qtyToMove;
                     const movedCogs = qtyToMove * sPrice;
                     const movedRev = qtyToMove * sRevUnit;
@@ -2699,6 +2771,19 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     // 🌟 관리자 조작으로 전산잔량이 0 이상이 되면 수량부족(잔량) 이슈 칩 삭제
                     if (np.전산잔량 >= 0) {
                         np.이슈 = np.이슈.filter(msg => !msg.includes('수량부족'));
+                    }
+                    const remainingLotQty = Object.values(np.출고내역 || {}).reduce((sum, v) => sum + safeNum(v && v.qty), 0);
+                    const isMoveEmptiedSource = safeNum(np.기초) === 0 && safeNum(np.입고) === 0 && safeNum(np.출고) === 0 && safeNum(np.대체입고) === 0 && safeNum(np.대체출고) === 0 && safeNum(np.전산잔량) === 0 && safeNum(np.실사) === 0 && safeNum(np.로스) === 0 && remainingLotQty === 0;
+                    if (isMoveEmptiedSource) {
+                        np._hiddenBySalesMove = true;
+                        np._hiddenBySalesMoveAt = new Date().toISOString();
+                        np._hiddenBySalesMoveTargetKey = targetKey;
+                        np._hiddenBySalesMoveVendor = cleanVendorName;
+                        np._hiddenBySalesMoveQty = qtyToMove;
+                        np.메모 = safeStr(np.메모, '').includes('[매칭변경원본숨김]') ? np.메모 : `${safeStr(np.메모, '')}${safeStr(np.메모, '') ? ' ' : ''}[매칭변경원본숨김] ${cleanVendorName} ${qtyToMove}`;
+                    }
+                    else {
+                        np._hiddenBySalesMove = false;
                     }
                     np.수기확인완료 = true;
                     return np;
@@ -2731,6 +2816,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     if (np.전산잔량 >= 0) {
                         np.이슈 = np.이슈.filter(msg => !msg.includes('수량부족'));
                     }
+                    np._hiddenBySalesMove = false;
                     np.수기확인완료 = true;
                     return np;
                 }
@@ -4219,7 +4305,7 @@ function App() {
     const [appStep, setAppStep] = useState('closing');
     const [files, setFiles] = useState({ prev: null, in: null, out: null, end: null });
     const [analysisMeta, setAnalysisMeta] = useState({ fileLabel: '', analyzedAt: '', status: 'idle' });
-    const [filters, setFilters] = useState({ issuesOnly: false, excludeZeroActual: false, search: '', reviewType: null, category: 'ALL', favoriteVendorOnly: false, unit: { ...CONFIG_MODULE.defaultUnitFilter }, sortMode: 'DEFAULT' });
+    const [filters, setFilters] = useState({ issuesOnly: false, excludeZeroActual: false, search: '', reviewType: null, category: 'ALL', favoriteVendorOnly: false, showHiddenMoveRows: false, unit: { ...CONFIG_MODULE.defaultUnitFilter }, sortMode: getSavedTableSortMode(), sortDesc: getSavedTableSortDesc() });
     const [activeIssueMode, setActiveIssueMode] = useState(null);
     const [activeMultiCode, setActiveMultiCode] = useState(null);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -4319,9 +4405,27 @@ function App() {
         reviewType: null,
         category: 'ALL',
         favoriteVendorOnly: false,
+        showHiddenMoveRows: false,
         unit: { ...CONFIG_MODULE.defaultUnitFilter },
-        sortMode: 'DEFAULT'
+        sortMode: 'DEFAULT',
+        sortDesc: false
     }), []);
+    useEffect(() => {
+        saveTableSortMode(filters.sortMode);
+        saveTableSortDesc(filters.sortDesc);
+    }, [filters.sortMode, filters.sortDesc]);
+    const handleTableSortSelect = useCallback((mode) => {
+        setFilters(f => {
+            const nextMode = DATAOPS_TABLE_SORT_MODES.includes(mode) ? mode : 'DEFAULT';
+            const isSameMode = f.sortMode === nextMode;
+            return { ...f, sortMode: nextMode, sortDesc: isSameMode ? !f.sortDesc : false };
+        });
+    }, []);
+    const resetTableFilters = useCallback(() => {
+        clearTableSortPreference();
+        setActiveIssueMode(null);
+        setFilters(getDefaultFilters());
+    }, [getDefaultFilters]);
     const buildAnalysisFileLabel = useCallback((targetFiles = files) => {
         const labels = [
             targetFiles.prev ? `기초:${targetFiles.prev.name}` : '',
@@ -4366,7 +4470,7 @@ function App() {
         return "waiting for data_blocks... (파일을 업로드하세요)";
     }, [files, isProcessing, isCostExtractionMode, analysisMeta]);
     useEffect(() => { activeIssueModeRef.current = activeIssueMode; }, [activeIssueMode]);
-    // v8.99zb: 아래 스크롤 정지 시 상단이동바가 깜박이지 않도록 스크롤 UI 전환을 안정화한다.
+    // v8.99zzp: System.IO 패널은 스크롤 위치를 최상단으로 이동하지 않고 현재 위치에서 고정 펼침/접힘만 전환한다.
     useEffect(() => { systemUiCollapsedRef.current = systemUiCollapsed; }, [systemUiCollapsed]);
     useEffect(() => {
         const container = document.getElementById('main-scroll-container');
@@ -4789,7 +4893,7 @@ function App() {
         return counts;
     }, [substitutionCandidateRows]);
     const closingStats = useMemo(() => {
-        let missingPriceCount = 0, totalMissingPriceCount = 0, lossCount = 0, totalLossCount = 0, matchCount = 0, totalMatchCount = 0, totalRevenue = 0, totalInventoryAsset = 0, totalLossValue = 0;
+        let missingPriceCount = 0, totalMissingPriceCount = 0, lossCount = 0, totalLossCount = 0, matchCount = 0, totalMatchCount = 0, stockLotCount = 0, totalStockLotCount = 0, totalRevenue = 0, totalInventoryAsset = 0, totalLossValue = 0;
         let multiPriceSet = new Set(multiPriceCodes);
         productData.forEach(p => {
             const hasPriceTotal = (Number(p.단가) || 0) <= 0 || (p.이슈 && p.이슈.some(i => i.includes('단가변경') || i.includes('단가없음')));
@@ -4812,6 +4916,10 @@ function App() {
                 totalMatchCount++;
             if (hasMatchUnresolved)
                 matchCount++;
+            if (hasQtyTotal || hasMatchTotal)
+                totalStockLotCount++;
+            if (hasQtyUnresolved || hasMatchUnresolved)
+                stockLotCount++;
             totalRevenue += (Number(p.매출액) || 0);
             const actualQty = p.실사 === '' || p.실사 === null ? 0 : Number(p.실사);
             const price = Number(p.단가) || 0;
@@ -4826,6 +4934,8 @@ function App() {
             totalLossCount,
             multiPriceCount: matchCount,
             totalMultiPriceCount: totalMatchCount,
+            stockLotCount,
+            totalStockLotCount,
             substitutionCandidateCount: substitutionCandidateRows.length,
             substitutionRunnableCount: safeNum(substitutionCandidateStatusCounts['치환후보']),
             substitutionProblemCount: Math.max(0, substitutionCandidateRows.length - safeNum(substitutionCandidateStatusCounts['치환후보'])),
@@ -4835,6 +4945,7 @@ function App() {
             total: productData.length
         };
     }, [productData, hasQtyIssueTotal, hasUnresolvedQtyIssue, hasLotIssueTotal, hasUnresolvedLotIssue, substitutionCandidateRows, substitutionCandidateStatusCounts]);
+    const hiddenMovedSourceCount = useMemo(() => productData.filter(item => item && item._hiddenBySalesMove).length, [productData]);
     const showCards = useMemo(() => {
         // v8.61: 카드뷰는 문제 건수가 0이어도 분석 완료 후 항상 표시한다.
         // 카드 자체가 '이상 없음' 상태를 보여주는 작업 체크리스트이기 때문이다.
@@ -5543,7 +5654,47 @@ function App() {
             const parsedOut = await parseExcelData(targetFiles.out, mappings, 'out');
             // v8.99b: 2전송 검증 전용 정제 레이어. / v8.99c: Lot 원가영향 필터 적용.
             // ERP 출력물의 총합계/월계/출력시간/공제금액 행을 상품으로 읽지 않도록 일반 파서 결과를 한 번 더 방어한다.
-            const isTransferRow = (item, fallbackFileName) => isTransferWarehouseRow(item, fallbackFileName);
+            // v8.99zzj: 전체마감은 출고를 정상 인식하지만 2전송검증만 출고가 0으로 사라지는 문제 보완.
+            // 원인: 2전송검증은 전체마감 엔진과 별도 집계 함수이며, 창고 컬럼이 없는 판매현황을 행 단위 2전송 필터에서 제외할 수 있다.
+            // 이 버튼은 사용자가 구매현황/판매현황을 직접 지정한 전송검증 전용 실행이므로, 명시적 1창고가 아닌 한 선택 파일 단위의 2전송 제목/역할을 보조 판정한다.
+            const hasTransferFileHint = (fileName = '', rows = []) => {
+                const fileText = safeStr(fileName, '').replace(/\s/g, '');
+                if (/2전송|전송|^02|02구매|02판매/.test(fileText))
+                    return true;
+                return (rows || []).some(row => {
+                    const title = safeStr((row && (row._sourceTitleText || row._sheetBasisDateRaw || row._sourceSheet)) || '', '').replace(/\s/g, '');
+                    return title.includes('2전송') || title.includes('/02/') || title.includes('02구매') || title.includes('02판매');
+                });
+            };
+            const transferFileHints = {
+                in: hasTransferFileHint(targetFiles.in && targetFiles.in.name, parsedIn),
+                out: hasTransferFileHint(targetFiles.out && targetFiles.out.name, parsedOut)
+            };
+            const isTransferRow = (item, fallbackFileName, roleName = '') => {
+                const wh = getWarehouseFromRow(item, fallbackFileName);
+                if (wh === '2전송')
+                    return true;
+                if (wh === '1창고')
+                    return false;
+                const title = safeStr((item && (item._sourceTitleText || item._sheetBasisDateRaw || item._sourceSheet)) || fallbackFileName || '', '').replace(/\s/g, '');
+                if (title.includes('2전송') || title.includes('/02/') || title.includes('02구매') || title.includes('02판매'))
+                    return true;
+                if (roleName === 'in' && transferFileHints.in)
+                    return true;
+                if (roleName === 'out' && transferFileHints.out)
+                    return true;
+                // 전송검증 버튼 자체가 구매/판매 파일을 별도로 지정해서 실행되므로, 창고 힌트가 비어 있는 판매현황도 버리지 않는다.
+                if (roleName === 'in' || roleName === 'out')
+                    return true;
+                return false;
+            };
+            const getTransferQty = (item = {}, mode = 'out') => {
+                const raw = item._raw || {};
+                const qty = mode === 'in'
+                    ? getRawCell(raw, ['수량', '입고수량', '구매수량', '매입수량'])
+                    : getRawCell(raw, ['수량', '출고수량', '판매수량', '출고량', '판매량']);
+                return parseNumber(qty !== null && qty !== undefined ? qty : item.수량);
+            };
             const transferCleanStats = {
                 purchaseRaw: parsedIn.length,
                 salesRaw: parsedOut.length,
@@ -5854,13 +6005,13 @@ function App() {
             parsedIn.forEach(item => {
                 var _a, _b, _c;
                 const raw = item._raw || {};
-                if (!isTransferRow(item, targetFiles.in.name) || isReportFooterOrSummaryRow(item)) {
+                if (!isTransferRow(item, targetFiles.in.name, 'in') || isReportFooterOrSummaryRow(item)) {
                     transferCleanStats.purchaseSkipped++;
                     return;
                 }
                 const code = getCode(item);
                 const name = getName(item);
-                const qty = parseNumber((_a = getRawCell(raw, ['입고수량', '수량', '구매수량', '매입수량'])) !== null && _a !== void 0 ? _a : item.수량);
+                const qty = getTransferQty(item, 'in');
                 const price = parseNumber((_b = getRawCell(raw, ['출고(외노)', '입고가', '단가', '구매단가', '매입단가', '매입단가(원가)', '원가', '상장가'])) !== null && _b !== void 0 ? _b : item.단가);
                 const vendor = safeStr((_c = getRawCell(raw, ['구매처', '원구매처', '매입처', '거래처명', '거래처', 'no', 'NO', '3거래'])) !== null && _c !== void 0 ? _c : item.거래처, '미지정');
                 if (!code || !name || safeNum(qty) === 0) {
@@ -5877,13 +6028,13 @@ function App() {
             parsedOut.forEach(item => {
                 var _a, _b, _c, _d, _e, _f, _g;
                 const raw = item._raw || {};
-                if (!isTransferRow(item, targetFiles.out.name)) {
+                if (!isTransferRow(item, targetFiles.out.name, 'out')) {
                     transferCleanStats.salesSkipped++;
                     return;
                 }
                 const code = getCode(item);
                 const name = getName(item);
-                const qty = parseNumber((_a = getRawCell(raw, ['출고수량', '판매수량', '수량', '판매량', '출고량'])) !== null && _a !== void 0 ? _a : item.수량);
+                const qty = getTransferQty(item, 'out');
                 const unitPrice = parseNumber((_b = getRawCell(raw, ['판매단가', '단가', '출고가', '출고가 (공지)', '출고가(공지)', '청과', '정과'])) !== null && _b !== void 0 ? _b : item.단가);
                 const supply = parseNumber((_c = getRawCell(raw, ['공급가', '공급가액', '최종공급가액', '최종공급가액(할인적용)', '판매금액', '금액'])) !== null && _c !== void 0 ? _c : 0) || (qty * unitPrice);
                 const explicitFee = parseNumber((_d = getRawCell(raw, ['공제금액', '공제', '수수료', '공제수수료'])) !== null && _d !== void 0 ? _d : 0);
@@ -5997,7 +6148,7 @@ function App() {
             const purchaseByDetailCustomerCode = {};
             const purchaseByCode = {};
             parsedIn.forEach(item => {
-                if (!isTransferRow(item, targetFiles.in.name) || isReportFooterOrSummaryRow(item) || isTransferFeeRow(item))
+                if (!isTransferRow(item, targetFiles.in.name, 'in') || isReportFooterOrSummaryRow(item) || isTransferFeeRow(item))
                     return;
                 if (!isTransferGenerationValidPurchaseRow(item))
                     return;
@@ -6031,7 +6182,7 @@ function App() {
             parsedOut.forEach((item, idx) => {
                 var _a, _b, _c, _d, _e, _f, _g;
                 const raw = item._raw || {};
-                if (!isTransferRow(item, targetFiles.out.name) || isReportFooterOrSummaryRow(item))
+                if (!isTransferRow(item, targetFiles.out.name, 'out') || isReportFooterOrSummaryRow(item))
                     return;
                 const code = getCode(item);
                 const name = getName(item);
@@ -6041,7 +6192,7 @@ function App() {
                 const detailCustomer = safeStr((_b = getRawCell(raw, ['NO.', 'NO', 'No.', '세부거래처', '거래처세부'])) !== null && _b !== void 0 ? _b : '', '');
                 const reportCustomer = detailCustomer || customer;
                 const spec = safeStr((_c = getRawCell(raw, ['규격', '규격명', '포장규격', '상품규격'])) !== null && _c !== void 0 ? _c : '', '');
-                const qty = parseNumber((_d = getRawCell(raw, ['출고수량', '판매수량', '수량', '판매량', '출고량'])) !== null && _d !== void 0 ? _d : item.수량);
+                const qty = getTransferQty(item, 'out');
                 const actualPrice = parseNumber((_e = getRawCell(raw, ['판매단가', '단가', '출고가', '출고가 (공지)', '출고가(공지)', '청과', '정과'])) !== null && _e !== void 0 ? _e : item.단가);
                 const supply = parseNumber((_f = getRawCell(raw, ['공급가', '공급가액', '최종공급가액', '최종공급가액(할인적용)', '판매금액', '금액'])) !== null && _f !== void 0 ? _f : 0) || (qty * actualPrice);
                 const fee = isListingFeeCustomer(customer) ? parseNumber((_g = getRawCell(raw, ['수수료', '공제금액', '공제', '공제수수료'])) !== null && _g !== void 0 ? _g : 0) : 0;
@@ -6262,6 +6413,10 @@ function App() {
                 : '단가확인 없음';
             setAlertMsg(`✅ 2전송검증 완료
 
+원본 구매행: ${transferCleanStats.purchaseRaw}건 / 제외: ${transferCleanStats.purchaseSkipped}건
+원본 판매행: ${transferCleanStats.salesRaw}건 / 제외: ${transferCleanStats.salesSkipped}건
+집계 품목: ${finalRows.length}건 / 판매 제외행: ${salesExcludedRows.length}건
+
 ${changeText}
 
 거래처별 수익률 확인필요: ${customerNeedCount}건
@@ -6395,7 +6550,7 @@ ${changeText}
     const handleIssueJump = useCallback((type, direction = 'next', fromCardClick = false) => {
         setActiveIssueMode(type);
         setSearchInputVal('');
-        setFilters(prev => ({ ...prev, search: '', issuesOnly: false, excludeZeroActual: false, reviewType: null, category: 'ALL', favoriteVendorOnly: false, unit: { ...CONFIG_MODULE.defaultUnitFilter } }));
+        setFilters(prev => ({ ...prev, search: '', issuesOnly: false, excludeZeroActual: false, reviewType: null, category: 'ALL', favoriteVendorOnly: false, showHiddenMoveRows: false, unit: { ...CONFIG_MODULE.defaultUnitFilter } }));
         if (fromCardClick)
             issueJumpHistoryRef.current = [];
         const activeEl = document.activeElement;
@@ -6427,7 +6582,7 @@ ${changeText}
                 const targetField = type === 'missingPrice' ? 'price-input' : 'actual-input';
                 const input = row.querySelector(`input[data-field="${targetField}"]`) || row.querySelector(`input[id^="${targetField}-"]`);
                 scrollIssueRowIntoWorkCenter(row, input, type);
-                const colorClass = type === 'missingPrice' ? 'bg-rose-50' : (type === 'multiPrice' ? 'bg-blue-50' : 'bg-orange-50');
+                const colorClass = type === 'missingPrice' ? 'bg-rose-50' : (type === 'stockLot' ? 'bg-cyan-50' : (type === 'multiPrice' ? 'bg-blue-50' : 'bg-orange-50'));
                 row.classList.add(colorClass);
                 setTimeout(() => row.classList.remove(colorClass), 1500);
                 if (!input) {
@@ -6506,6 +6661,8 @@ ${changeText}
             // 실제 단가 0원 행은 더미/확인완료 여부와 관계없이 검토 대상이다.
             if (type === 'missingPrice')
                 return (!p.수기확인완료 && safeNum(p.단가) <= 0) || (p.이슈 && p.이슈.some(i => i.includes('🚨단가변경') || i.includes('🚨단가없음')));
+            if (type === 'stockLot')
+                return hasUnresolvedQtyIssue(p) || hasUnresolvedLotIssue(p);
             if (type === 'loss')
                 return hasUnresolvedQtyIssue(p);
             if (type === 'multiPrice')
@@ -6533,6 +6690,10 @@ ${changeText}
                     if ((!p.수기확인완료 && safeNum(p.단가) <= 0) || (p.이슈 && p.이슈.some(i => i.includes('🚨단가변경') || i.includes('🚨단가없음'))))
                         shouldAck = true;
                 }
+                else if (type === 'stockLot') {
+                    if (hasUnresolvedQtyIssue(p) || hasUnresolvedLotIssue(p))
+                        shouldAck = true;
+                }
                 else if (type === 'loss') {
                     if (hasUnresolvedQtyIssue(p))
                         shouldAck = true;
@@ -6551,7 +6712,7 @@ ${changeText}
                 return p;
             });
         });
-        if (type === 'multiPrice') {
+        if (type === 'multiPrice' || type === 'stockLot') {
             setAckMultiCodes(prev => {
                 const newSet = new Set(prev);
                 multiPriceCodes.forEach(c => newSet.add(c));
@@ -6703,7 +6864,11 @@ ${changeText}
     }, [linkSourceKey, appStep, isProcessing, files, guideModalOpen]);
     const filteredProductData = useMemo(() => {
         let data = productData;
-        if (filters.reviewType === 'loss')
+        if (!filters.showHiddenMoveRows)
+            data = data.filter(p => !p._hiddenBySalesMove);
+        if (filters.reviewType === 'stockLot')
+            data = data.filter(p => hasQtyIssueTotal(p) || hasLotIssueTotal(p));
+        else if (filters.reviewType === 'loss')
             data = data.filter(p => p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0) || (p.이슈 && p.이슈.some(i => i.includes('수량변동') || i.includes('잔량') || i.includes('계산') || i.includes('신규추가') || i.includes('삭제됨'))));
         else if (filters.reviewType === 'missingPrice')
             data = data.filter(p => safeNum(p.단가) <= 0 || (p.이슈 && p.이슈.some(i => i.includes('단가변경') || i.includes('단가없음'))));
@@ -6720,8 +6885,8 @@ ${changeText}
             data = data.filter(d => d.이슈 && d.이슈.length > 0);
         if (filters.excludeZeroActual)
             data = data.filter(d => { const act = d.실사 === '' || d.실사 === null || d.실사 === undefined ? 0 : Number(d.실사); return act !== 0; });
-        return FILTER_SORT_MODULE.sortRows(data, filters.sortMode);
-    }, [productData, filters, multiPriceCodes, mappings, hasLotIssueTotal, substitutionCandidateCodeSet]);
+        return FILTER_SORT_MODULE.sortRows(data, filters.sortMode, filters.sortDesc);
+    }, [productData, filters, multiPriceCodes, mappings, hasQtyIssueTotal, hasLotIssueTotal, substitutionCandidateCodeSet]);
     useEffect(() => {
         filteredProductDataRef.current = filteredProductData;
     }, [filteredProductData]);
@@ -6732,7 +6897,7 @@ ${changeText}
                     React.createElement("h1", { className: "text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzh Master Cache Architecture Pass"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzp Sticky System Panel Reveal"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
@@ -6955,7 +7120,7 @@ ${changeText}
             React.createElement("div", { className: "flex-1 flex flex-col w-full relative bg-[#f8fafc] overflow-hidden" },
                 React.createElement("div", { id: "main-scroll-container", className: "flex-1 overflow-auto w-full relative" },
                     React.createElement("div", { className: "w-full min-w-[1000px] flex flex-col min-h-full" },
-                        systemUiCollapsed && (React.createElement("div", { className: "sticky top-0 z-[70] bg-slate-950/95 text-white border-b border-slate-800 px-4 py-2 shadow-lg backdrop-blur flex items-center justify-between text-[12px] font-bold" },
+                        systemUiCollapsed && (React.createElement("div", { onClick: () => setSystemUiCollapsed(false), className: "sticky top-0 z-[70] bg-slate-950/95 text-white border-b border-slate-800 px-4 py-2 shadow-lg backdrop-blur flex items-center justify-between text-[12px] font-bold cursor-pointer" },
                             React.createElement("div", { className: "flex items-center gap-3 min-w-0" },
                                 React.createElement("span", { className: "text-emerald-300" },
                                     React.createElement("i", { className: "fas fa-database mr-1" }),
@@ -6969,10 +7134,10 @@ ${changeText}
                                     productData.filter(item => item.이슈 && item.이슈.length > 0).length.toLocaleString(),
                                     "\uAC74"),
                                 React.createElement("span", { className: "text-slate-400 truncate max-w-[520px]" }, terminalMessage)),
-                            React.createElement("button", { onClick: () => { var _a; (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); setSystemUiCollapsed(false); }, className: "px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white transition", title: "\uC0C1\uB2E8 \uC2DC\uC2A4\uD15C UI \uD3BC\uCE58\uAE30" },
-                                React.createElement("i", { className: "fas fa-angle-up mr-1" }),
-                                "\uC0C1\uB2E8"))),
-                        React.createElement("div", { className: `px-4 md:px-6 pt-4 pb-2 max-w-7xl mx-auto w-full shrink-0 transition-all duration-200 ${systemUiCollapsed ? 'max-h-0 opacity-0 overflow-hidden py-0 pointer-events-none' : 'max-h-[900px] opacity-100'}` },
+                            React.createElement("button", { onClick: (e) => { e.stopPropagation(); setSystemUiCollapsed(false); }, className: "px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white transition", title: "현재 위치에서 System.IO 패널 펼치기" },
+                                React.createElement("i", { className: "fas fa-chevron-down mr-1" }),
+                                "펼치기"))),
+                        React.createElement("div", { className: `px-4 md:px-6 pt-4 pb-2 max-w-7xl mx-auto w-full shrink-0 transition-all duration-200 sticky top-0 z-[65] ${systemUiCollapsed ? 'max-h-0 opacity-0 overflow-hidden py-0 pointer-events-none' : 'max-h-[900px] opacity-100'}` },
                             React.createElement("div", { className: "bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden fade-in" },
                                 React.createElement("div", { className: "bg-slate-900 p-4 md:px-6 md:py-4 flex flex-col md:flex-row md:justify-between md:items-center gap-4 border-b border-slate-800 relative shadow-inner" },
                                     React.createElement("div", { className: "flex flex-col md:flex-row items-start md:items-center gap-3 w-full md:w-auto flex-1 overflow-hidden" },
@@ -7018,7 +7183,7 @@ ${changeText}
                                         React.createElement("i", { className: "fas fa-redo-alt mr-1.5" }),
                                         "\uCD08\uAE30\uD654"))))),
                         React.createElement("div", { ref: cardContainerRef, className: "sticky top-0 z-40 bg-[#f8fafc] w-full border-slate-200 shrink-0", style: { borderBottomWidth: showCards ? '1px' : '0px', boxShadow: showCards ? '0 4px 6px -4px rgba(0,0,0,0.05)' : 'none' } }, showCards && (React.createElement("div", { className: "px-4 md:px-6 pt-2 pb-3 max-w-7xl mx-auto w-full" },
-                            React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-4 gap-4" },
+                            React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-3 gap-4" },
                                 React.createElement("div", { onClick: () => { setActiveIssueMode(null); setActiveMultiCode(null); setFilters({ ...filters, reviewType: filters.reviewType === 'substitution' ? null : 'substitution', issuesOnly: false }); }, className: `p-4 rounded-xl border-[3px] transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${filters.reviewType === 'substitution' ? 'bg-purple-50 border-purple-500 shadow-xl ring-4 ring-purple-500/20 scale-[1.02] z-10' : 'bg-white border-purple-200 hover:border-purple-400 hover:shadow-md'}` },
                                     React.createElement("div", { className: `text-xs font-bold mb-1 flex items-center justify-between ${filters.reviewType === 'substitution' ? 'text-purple-800' : 'text-slate-600'}` },
                                         React.createElement("span", { className: "flex items-center" },
@@ -7038,62 +7203,35 @@ ${changeText}
                                     closingStats.substitutionRunnableCount > 0 && React.createElement("button", { onClick: (e) => { e.stopPropagation(); executeMasterSubstitutionCandidates(); }, className: "mt-3 w-full px-3 py-2 rounded-lg bg-purple-600 text-white text-[12px] font-black hover:bg-purple-700 shadow-sm transition flex items-center justify-center gap-2" },
                                         React.createElement("i", { className: "fas fa-play-circle" }),
                                         "실행가능 후보 치환")),
-                                React.createElement("div", { onClick: () => { if (activeIssueMode !== 'multiPrice') {
+                                React.createElement("div", { onClick: () => { if (activeIssueMode !== 'stockLot') {
                                         setFilters({ ...filters, reviewType: null });
-                                        handleIssueJump('multiPrice', 'next', true);
-                                    } }, className: `p-4 rounded-xl border-[3px] transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${activeIssueMode === 'multiPrice' ? 'bg-blue-50 border-blue-500 shadow-xl ring-4 ring-blue-500/20 scale-[1.02] z-10' : 'bg-white border-blue-200 hover:border-blue-400 hover:shadow-md'}` },
-                                    React.createElement("div", { className: `text-xs font-bold mb-1 flex items-center justify-between ${activeIssueMode === 'multiPrice' ? 'text-blue-800' : 'text-slate-600'}` },
+                                        handleIssueJump('stockLot', 'next', true);
+                                    } }, className: `p-4 rounded-xl border-[3px] transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${activeIssueMode === 'stockLot' ? 'bg-cyan-50 border-cyan-500 shadow-xl ring-4 ring-cyan-500/20 scale-[1.02] z-10' : 'bg-white border-cyan-200 hover:border-cyan-400 hover:shadow-md'}` },
+                                    React.createElement("div", { className: `text-xs font-bold mb-1 flex items-center justify-between ${activeIssueMode === 'stockLot' ? 'text-cyan-800' : 'text-slate-600'}` },
                                         React.createElement("span", { className: "flex items-center" },
-                                            React.createElement("i", { className: "fas fa-tags text-blue-500 mr-2 text-base" }),
-                                            "Lot \uB9E4\uCE58"),
-                                        closingStats.multiPriceCount > 0 && React.createElement("span", { className: "w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]" })),
+                                            React.createElement("i", { className: "fas fa-boxes-stacked text-cyan-500 mr-2 text-base" }),
+                                            "재고/Lot 확인"),
+                                        closingStats.stockLotCount > 0 && React.createElement("span", { className: "w-2.5 h-2.5 rounded-full bg-cyan-500 animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.6)]" })),
                                     React.createElement("div", { className: "flex items-end justify-between mt-2" },
                                         React.createElement("div", null,
-                                            React.createElement("div", { className: `text-3xl font-black ${activeIssueMode === 'multiPrice' ? 'text-blue-900' : 'text-slate-800'}` },
-                                                closingStats.multiPriceCount,
-                                                React.createElement("span", { className: "text-sm font-bold text-slate-500 ml-1" }, "\uAC74")),
-                                            closingStats.multiPriceCount > 0 ? (React.createElement("div", { className: "text-[12px] text-blue-600 font-bold mt-1" }, hasEndFile ? "Lot 확인 필요" : "실제 Lot 이슈 확인")) : (React.createElement("div", { className: "text-[12px] text-slate-400 font-semibold mt-1" }, "\uD655\uC815 \uB9E4\uCE6D \uC81C\uC678 \u00B7 \uC644\uB8CC"))),
-                                        activeIssueMode === 'multiPrice' ? (React.createElement("div", { className: "flex items-center gap-1.5 mb-1" },
-                                            React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleIssueJump('multiPrice', 'prev', false); }, className: "p-1.5 bg-white rounded border border-blue-300 text-blue-600 hover:bg-blue-100 hover:border-blue-400 shadow-sm transition flex items-center justify-center w-8 h-8", title: "\uC774\uC804 \uD56D\uBAA9 (Shift+Tab)" },
+                                            React.createElement("div", { className: `text-3xl font-black ${activeIssueMode === 'stockLot' ? 'text-cyan-900' : 'text-slate-800'}` },
+                                                closingStats.stockLotCount,
+                                                React.createElement("span", { className: "text-sm font-bold text-slate-500 ml-1" }, "건")),
+                                            closingStats.stockLotCount > 0 ? (React.createElement("div", { className: "text-[12px] text-cyan-600 font-bold mt-1" },
+                                                "재고 ", closingStats.lossCount, " / Lot ", closingStats.multiPriceCount)) : (React.createElement("div", { className: "text-[12px] text-slate-400 font-semibold mt-1" }, "재고/Lot 확인 완료"))),
+                                        activeIssueMode === 'stockLot' ? (React.createElement("div", { className: "flex items-center gap-1.5 mb-1" },
+                                            React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleIssueJump('stockLot', 'prev', false); }, className: "p-1.5 bg-white rounded border border-cyan-300 text-cyan-600 hover:bg-cyan-100 hover:border-cyan-400 shadow-sm transition flex items-center justify-center w-8 h-8", title: "이전 항목 (Shift+Tab)" },
                                                 React.createElement("i", { className: "fas fa-chevron-left text-sm" })),
-                                            React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleIssueJump('multiPrice', 'next', false); }, className: "px-3 py-1.5 bg-blue-600 rounded border border-blue-700 text-white font-bold hover:bg-blue-700 shadow-sm transition flex items-center h-8", title: "\uB2E4\uC74C \uD56D\uBAA9 (Tab)" },
+                                            React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleIssueJump('stockLot', 'next', false); }, className: "px-3 py-1.5 bg-cyan-600 rounded border border-cyan-700 text-white font-bold hover:bg-cyan-700 shadow-sm transition flex items-center h-8", title: "다음 항목 (Tab)" },
                                                 "Tab ",
-                                                React.createElement("i", { className: "fas fa-chevron-right text-[10px] ml-1.5" })))) : (closingStats.multiPriceCount === 0 ? (React.createElement("div", { className: "text-emerald-500 font-bold text-sm bg-emerald-50 px-2 py-1 rounded flex items-center mb-1" },
+                                                React.createElement("i", { className: "fas fa-chevron-right text-[10px] ml-1.5" })))) : (closingStats.stockLotCount === 0 ? (React.createElement("div", { className: "text-emerald-500 font-bold text-sm bg-emerald-50 px-2 py-1 rounded flex items-center mb-1" },
                                             React.createElement("i", { className: "fas fa-check-circle mr-1" }),
-                                            "\uC644\uB8CC")) : (React.createElement("div", { className: "text-xs text-slate-400 font-bold mb-1 bg-slate-50 px-2 py-1 rounded border border-slate-100 shadow-sm" }, "\uD074\uB9AD\uD558\uC5EC \uAC80\uD1A0 \uC2DC\uC791")))),
-                                    filters.reviewType === 'multiPrice' ? (React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleAcknowledgeAll('multiPrice'); }, className: `absolute top-3 right-3 text-[11px] font-bold px-2.5 py-1.5 rounded text-white shadow-md z-10 transition ${activeIssueMode === 'multiPrice' ? 'bg-blue-700 hover:bg-blue-800 ring-2 ring-white' : 'bg-blue-600 hover:bg-blue-700'}` },
+                                            "완료")) : (React.createElement("div", { className: "text-xs text-slate-400 font-bold mb-1 bg-slate-50 px-2 py-1 rounded border border-slate-100 shadow-sm" }, "클릭하여 검토 시작")))),
+                                    filters.reviewType === 'stockLot' ? (React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleAcknowledgeAll('stockLot'); }, className: `absolute top-3 right-3 text-[11px] font-bold px-2.5 py-1.5 rounded text-white shadow-md z-10 transition ${activeIssueMode === 'stockLot' ? 'bg-cyan-700 hover:bg-cyan-800 ring-2 ring-white' : 'bg-cyan-600 hover:bg-cyan-700'}` },
                                         React.createElement("i", { className: "fas fa-check-double mr-1" }),
-                                        "\uBAA8\uB450 \uD655\uC778")) : (React.createElement("button", { onClick: (e) => { e.stopPropagation(); setActiveIssueMode(null); setFilters({ ...filters, reviewType: 'multiPrice', issuesOnly: false }); }, className: `absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded shadow-sm z-10 transition ${activeIssueMode === 'multiPrice' ? 'bg-white text-blue-600 border border-blue-200 hover:bg-blue-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-blue-600'}`, title: "\uC2E4\uC81C Lot \uC774\uC288\uAC00 \uC788\uB294 \uD56D\uBAA9\uB9CC \uBAA8\uC544\uC11C \uBCF4\uC5EC\uC90D\uB2C8\uB2E4." },
+                                        "모두 확인")) : (React.createElement("button", { onClick: (e) => { e.stopPropagation(); setActiveIssueMode(null); setFilters({ ...filters, reviewType: 'stockLot', issuesOnly: false }); }, className: `absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded shadow-sm z-10 transition ${activeIssueMode === 'stockLot' ? 'bg-white text-cyan-600 border border-cyan-200 hover:bg-cyan-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-cyan-600'}`, title: "재고 수량과 Lot 매칭 이슈를 함께 모아봅니다." },
                                         React.createElement("i", { className: "fas fa-list mr-1" }),
-                                        "\uBAA8\uC544\uBCF4\uAE30"))),
-                                React.createElement("div", { onClick: () => { if (activeIssueMode !== 'loss') {
-                                        setFilters({ ...filters, reviewType: null });
-                                        handleIssueJump('loss', 'next', true);
-                                    } }, className: `p-4 rounded-xl border-[3px] transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${activeIssueMode === 'loss' ? 'bg-orange-50 border-orange-500 shadow-xl ring-4 ring-orange-500/20 scale-[1.02] z-10' : 'bg-white border-orange-200 hover:border-orange-400 hover:shadow-md'}` },
-                                    React.createElement("div", { className: `text-xs font-bold mb-1 flex items-center justify-between ${activeIssueMode === 'loss' ? 'text-orange-800' : 'text-slate-600'}` },
-                                        React.createElement("span", { className: "flex items-center" },
-                                            React.createElement("i", { className: "fas fa-balance-scale text-orange-500 mr-2 text-base" }),
-                                            "\uC7AC\uACE0/\uC804\uD45C \uBCC0\uB3D9 \uD655\uC778"),
-                                        closingStats.lossCount > 0 && React.createElement("span", { className: "w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.6)]" })),
-                                    React.createElement("div", { className: "flex items-end justify-between mt-2" },
-                                        React.createElement("div", null,
-                                            React.createElement("div", { className: `text-3xl font-black ${activeIssueMode === 'loss' ? 'text-orange-900' : 'text-slate-800'}` },
-                                                closingStats.lossCount,
-                                                React.createElement("span", { className: "text-sm font-bold text-slate-500 ml-1" }, "\uAC74")),
-                                            closingStats.lossCount > 0 ? (React.createElement("div", { className: "text-[12px] text-orange-600 font-bold mt-1" }, hasEndFile ? "새로운 변동사항 발견" : "실사 수량 확인하세요")) : (React.createElement("div", { className: "text-[12px] text-slate-400 font-semibold mt-1" }, "\uBAA8\uB4E0 \uBCC0\uB3D9 \uD655\uC778\uB428"))),
-                                        activeIssueMode === 'loss' ? (React.createElement("div", { className: "flex items-center gap-1.5 mb-1" },
-                                            React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleIssueJump('loss', 'prev', false); }, className: "p-1.5 bg-white rounded border border-orange-300 text-orange-600 hover:bg-orange-100 hover:border-orange-400 shadow-sm transition flex items-center justify-center w-8 h-8", title: "\uC774\uC804 \uD56D\uBAA9 (Shift+Tab)" },
-                                                React.createElement("i", { className: "fas fa-chevron-left text-sm" })),
-                                            React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleIssueJump('loss', 'next', false); }, className: "px-3 py-1.5 bg-orange-600 rounded border border-orange-700 text-white font-bold hover:bg-orange-700 shadow-sm transition flex items-center h-8", title: "\uB2E4\uC74C \uD56D\uBAA9 (Tab)" },
-                                                "Tab ",
-                                                React.createElement("i", { className: "fas fa-chevron-right text-[10px] ml-1.5" })))) : (closingStats.lossCount === 0 ? (React.createElement("div", { className: "text-emerald-500 font-bold text-sm bg-emerald-50 px-2 py-1 rounded flex items-center mb-1" },
-                                            React.createElement("i", { className: "fas fa-check-circle mr-1" }),
-                                            "\uC644\uB8CC")) : (React.createElement("div", { className: "text-xs text-slate-400 font-bold mb-1 bg-slate-50 px-2 py-1 rounded border border-slate-100 shadow-sm" }, "\uD074\uB9AD\uD558\uC5EC \uAC80\uD1A0 \uC2DC\uC791")))),
-                                    filters.reviewType === 'loss' ? (React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleAcknowledgeAll('loss'); }, className: `absolute top-3 right-3 text-[11px] font-bold px-2.5 py-1.5 rounded text-white shadow-md z-10 transition ${activeIssueMode === 'loss' ? 'bg-orange-700 hover:bg-orange-800 ring-2 ring-white' : 'bg-orange-600 hover:bg-orange-700'}` },
-                                        React.createElement("i", { className: "fas fa-check-double mr-1" }),
-                                        "\uBAA8\uB450 \uD655\uC778")) : (React.createElement("button", { onClick: (e) => { e.stopPropagation(); setActiveIssueMode(null); setFilters({ ...filters, reviewType: 'loss', issuesOnly: false }); }, className: `absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded shadow-sm z-10 transition ${activeIssueMode === 'loss' ? 'bg-white text-orange-600 border border-orange-200 hover:bg-orange-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-orange-600'}`, title: "\uC2E4\uC81C Lot \uC774\uC288\uAC00 \uC788\uB294 \uD56D\uBAA9\uB9CC \uBAA8\uC544\uC11C \uBCF4\uC5EC\uC90D\uB2C8\uB2E4." },
-                                        React.createElement("i", { className: "fas fa-list mr-1" }),
-                                        "\uBAA8\uC544\uBCF4\uAE30"))),
+                                        "모아보기"))),
                                 React.createElement("div", { onClick: () => { if (activeIssueMode !== 'missingPrice') {
                                         setFilters({ ...filters, reviewType: null });
                                         handleIssueJump('missingPrice', 'next', true);
@@ -7126,7 +7264,13 @@ ${changeText}
                             React.createElement("div", { className: "bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col flex-1 overflow-visible" },
                                 productData.length > 0 && (React.createElement("div", { ref: filterBarRef, className: "shrink-0 sticky bg-white border-b border-slate-200 px-3 py-2 flex flex-nowrap items-center gap-1.5 text-[11px] font-bold z-[38] shadow-sm overflow-x-auto hide-scrollbar", style: { top: showCards ? `${cardHeight}px` : '0px' } },
                                     React.createElement("span", { className: "text-slate-500 mr-1" }, "\uC815\uB82C"),
-                                    [['DEFAULT', '품목코드순'], ['CATEGORY', '카테고리순'], ['VENDOR', '구매처순']].map(([mode, label]) => (React.createElement("button", { key: mode, onClick: () => setFilters(f => ({ ...f, sortMode: mode })), className: `px-2 py-1 rounded border transition ${filters.sortMode === mode ? 'bg-slate-800 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, label))),
+                                    [['DEFAULT', '품목+FIFO'], ['DATE', '구매일자순'], ['CATEGORY', '카테고리순'], ['VENDOR', '구매처순'], ['PRICE', '단가순']].map(([mode, label]) => {
+                                        const isActive = filters.sortMode === mode;
+                                        const arrow = isActive ? (filters.sortDesc ? '↓' : '↑') : '';
+                                        return React.createElement("button", { key: mode, onClick: () => handleTableSortSelect(mode), title: `${mode === 'DEFAULT' ? '품목코드순 + 구매일자 오름차순(FIFO)' : label} / 같은 버튼을 한 번 더 누르면 역순 정렬`, className: `px-2 py-1 rounded border transition ${isActive ? 'bg-slate-800 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` },
+                                            label,
+                                            arrow && React.createElement("span", { className: "ml-1 text-[10px]" }, arrow));
+                                    }),
                                     React.createElement("div", { className: "w-px h-5 bg-slate-200 mx-1" }),
                                     React.createElement("span", { className: "text-slate-500 mr-1" }, "\uCE74\uD14C\uACE0\uB9AC"),
                                     ['ALL', '10', '20', '30', '40', '50'].map(cat => (React.createElement("button", { key: cat, onClick: () => setFilters(f => ({ ...f, category: cat })), title: cat === 'ALL' ? '전체' : CONFIG_MODULE.categoryMap[cat], className: `px-2 py-1 rounded border transition ${filters.category === cat ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, cat === 'ALL' ? '전체' : cat))),
@@ -7135,6 +7279,7 @@ ${changeText}
                                     React.createElement("span", { className: "text-slate-500 mr-1" }, "\uB2E8\uC704"),
                                     ['BOX', 'EA', 'SPLIT'].map(unit => (React.createElement("button", { key: unit, onClick: () => setFilters(f => ({ ...f, unit: { ...f.unit, [unit]: !f.unit[unit] } })), title: `${unit === 'SPLIT' ? '소분' : unit} 단위 상품 노출`, className: `px-2 py-1 rounded border transition ${filters.unit[unit] ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-white text-slate-400 border-slate-300 hover:bg-slate-50'}` }, unit === 'SPLIT' ? '소분' : unit))),
                                     React.createElement("button", { onClick: () => setFilters(f => ({ ...f, excludeZeroActual: !f.excludeZeroActual })), title: "\uC794\uB7C9/\uC2E4\uC0AC \uC218\uB7C9\uC774 0\uC778 \uC0C1\uD488 \uC81C\uC678", className: `px-2 py-1 rounded border whitespace-nowrap transition ${filters.excludeZeroActual ? 'bg-blue-600 text-white border-blue-700 shadow-sm' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, "\uC2E4\uC0AC 0 \uC81C\uC678"),
+                                    hiddenMovedSourceCount > 0 && React.createElement("button", { onClick: () => setFilters(f => ({ ...f, showHiddenMoveRows: !f.showHiddenMoveRows })), title: "드래그 매칭으로 비워진 원본 행을 표시/숨김합니다. 원본값은 삭제하지 않고 내부 이력으로 보관됩니다.", className: `px-2 py-1 rounded border whitespace-nowrap transition ${filters.showHiddenMoveRows ? 'bg-amber-500 text-white border-amber-600 shadow-sm' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-50'}` }, "매칭원본 ", hiddenMovedSourceCount),
                                     React.createElement("div", { className: "ml-1 px-2 py-1 rounded-full whitespace-nowrap bg-slate-100 border border-slate-200 text-slate-600 flex items-center gap-1", title: "\uD604\uC7AC \uD544\uD130 \uC801\uC6A9 \uD6C4 \uB178\uCD9C \uC0C1\uD488 \uC218 / \uC804\uCCB4 \uC0C1\uD488 \uC218" },
                                         React.createElement("i", { className: "fas fa-list-check text-blue-500" }),
                                         React.createElement("span", null, "\uD604\uC7AC"),
@@ -7145,7 +7290,7 @@ ${changeText}
                                             "\uC804\uCCB4 ",
                                             productData.length.toLocaleString(),
                                             "\uAC74")),
-                                    React.createElement("button", { onClick: () => setFilters(f => ({ ...f, category: 'ALL', favoriteVendorOnly: false, unit: { ...CONFIG_MODULE.defaultUnitFilter }, sortMode: 'DEFAULT', reviewType: null, excludeZeroActual: false })), className: "ml-auto px-2 py-1 rounded border whitespace-nowrap bg-slate-50 text-slate-500 border-slate-300 hover:bg-slate-100" }, "\u21BA \uD544\uD130 \uCD08\uAE30\uD654"))),
+                                    React.createElement("button", { onClick: resetTableFilters, title: "필터와 정렬을 기본값으로 되돌립니다. 기본 정렬은 품목+FIFO 오름차순입니다.", className: "ml-auto px-2 py-1 rounded border whitespace-nowrap bg-slate-50 text-slate-500 border-slate-300 hover:bg-slate-100" }, "\u21BA \uD544\uD130 \uCD08\uAE30\uD654"))),
                                 React.createElement("table", { className: "w-full text-left border-collapse whitespace-nowrap text-sm" },
                                     React.createElement("thead", { className: "bg-slate-50 text-slate-600 font-extrabold text-[12px] tracking-tight sticky z-[35] border-b-2 border-slate-200 shadow-md transition-all duration-75", style: { top: `${(showCards ? cardHeight : 0) + filterBarHeight}px` } },
                                         React.createElement("tr", null,
