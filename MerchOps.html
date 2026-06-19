@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.23 행사제안필터정리]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.30 ToolbarReorder]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -25,6 +25,59 @@
         };
 
         window.parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
+
+        // ============================================================
+        // [M-CLOUD-URL-01] ONEAPP 공통 클라우드 URL 설정
+        // 역할: MerchOps/DataOps가 같은 Apps Script 웹앱 URL을 사용하도록 저장키를 통일한다.
+        // 정책: 새 공통키(oneapp_cloud_sync_url_v1)를 우선하고, 기존 merchCloudUrl_v870은 호환 보관한다.
+        // ============================================================
+        window.ONEAPP_DEFAULT_CLOUD_SYNC_URL = window.ONEAPP_DEFAULT_CLOUD_SYNC_URL || 'https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec';
+        window.ONEAPP_CLOUD_URL_KEY = window.ONEAPP_CLOUD_URL_KEY || 'oneapp_cloud_sync_url_v1';
+        window.MERCH_LEGACY_CLOUD_URL_KEY = window.MERCH_LEGACY_CLOUD_URL_KEY || 'merchCloudUrl_v870';
+
+        window.normalizeOneAppCloudSyncUrl = (url = '') => {
+            const raw = String(url || '').trim();
+            if (!raw) return '';
+            return raw.replace(/\?action=[^&#]*/g, '').replace(/&action=[^&#]*/g, '');
+        };
+
+        window.getOneAppCloudSyncUrl = (fallback = '') => {
+            try {
+                const current = window.normalizeOneAppCloudSyncUrl(localStorage.getItem(window.ONEAPP_CLOUD_URL_KEY) || '');
+                if (current) return current;
+                const legacy = window.normalizeOneAppCloudSyncUrl(localStorage.getItem(window.MERCH_LEGACY_CLOUD_URL_KEY) || '');
+                if (legacy) return legacy;
+                const fb = window.normalizeOneAppCloudSyncUrl(fallback || '');
+                if (fb) return fb;
+                return window.ONEAPP_DEFAULT_CLOUD_SYNC_URL;
+            } catch (e) {
+                return window.normalizeOneAppCloudSyncUrl(fallback || '') || window.ONEAPP_DEFAULT_CLOUD_SYNC_URL;
+            }
+        };
+
+        window.setOneAppCloudSyncUrl = (url = '') => {
+            const safeUrl = window.normalizeOneAppCloudSyncUrl(url || window.ONEAPP_DEFAULT_CLOUD_SYNC_URL);
+            if (!safeUrl) throw new Error('클라우드 URL이 비어 있습니다.');
+            try {
+                localStorage.setItem(window.ONEAPP_CLOUD_URL_KEY, safeUrl);
+                localStorage.setItem(window.MERCH_LEGACY_CLOUD_URL_KEY, safeUrl);
+                localStorage.setItem('config_sync_trigger', Date.now().toString());
+            } catch (e) {}
+            return safeUrl;
+        };
+
+        window.ensureOneAppCloudSyncUrl = () => {
+            const url = window.getOneAppCloudSyncUrl();
+            return window.setOneAppCloudSyncUrl(url);
+        };
+
+        window.appendOneAppCloudAction = (url = '', action = '') => {
+            const base = window.normalizeOneAppCloudSyncUrl(url || window.getOneAppCloudSyncUrl());
+            if (!action) return base;
+            return base.includes('?') ? `${base}&action=${encodeURIComponent(action)}` : `${base}?action=${encodeURIComponent(action)}`;
+        };
+
+        try { window.ensureOneAppCloudSyncUrl(); } catch (e) {}
 
 
         // ============================================================
@@ -1132,7 +1185,7 @@ const parseExcelRobust = (file) => {
     });
 };
 const useMerchConfig = () => {
-    const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v870') || '');
+    const [cloudUrl, setCloudUrl] = useState(() => window.getOneAppCloudSyncUrl ? window.getOneAppCloudSyncUrl() : (localStorage.getItem('oneapp_cloud_sync_url_v1') || localStorage.getItem('merchCloudUrl_v870') || ''));
     const [visibleMasterCols, setVisibleMasterCols] = useState(() => safeJSONParse('merchVisMaster_v870', getInitialVisibleMasterCols()));
     const [visibleUploadCols, setVisibleUploadCols] = useState(() => safeJSONParse('merchVisUpload_v870', getInitialVisibleUploadCols()));
     const [tableViewPresets, setTableViewPresets] = useState(() => window.sanitizeMerchTableViewPresets(safeJSONParse('merchTableViewPresets_v1', window.getDefaultMerchTableViewPresets())));
@@ -1215,8 +1268,10 @@ const useMerchConfig = () => {
             try {
                 const saved = await window.getIDB('merchops_config_v870');
                 if (mounted && saved && typeof saved === 'object') {
-                    if (saved.cloudUrl !== undefined && !localStorage.getItem('merchCloudUrl_v870'))
-                        setCloudUrl(saved.cloudUrl || '');
+                    if (saved.cloudUrl !== undefined && !localStorage.getItem('oneapp_cloud_sync_url_v1') && !localStorage.getItem('merchCloudUrl_v870')) {
+                        const restoredCloudUrl = window.setOneAppCloudSyncUrl ? window.setOneAppCloudSyncUrl(saved.cloudUrl || '') : (saved.cloudUrl || '');
+                        setCloudUrl(restoredCloudUrl || '');
+                    }
                     if (saved.visibleMasterCols && !localStorage.getItem('merchVisMaster_v870'))
                         setVisibleMasterCols(saved.visibleMasterCols);
                     if (saved.visibleUploadCols && !localStorage.getItem('merchVisUpload_v870'))
@@ -1265,7 +1320,11 @@ const useMerchConfig = () => {
             savedAt: new Date().toISOString()
         };
         try {
-            localStorage.setItem('merchCloudUrl_v870', cloudUrl || '');
+            const safeCloudUrl = window.setOneAppCloudSyncUrl ? window.setOneAppCloudSyncUrl(cloudUrl || window.ONEAPP_DEFAULT_CLOUD_SYNC_URL || '') : (cloudUrl || '');
+            if (safeCloudUrl && safeCloudUrl !== cloudUrl) {
+                setCloudUrl(safeCloudUrl);
+            }
+            localStorage.setItem('merchCloudUrl_v870', safeCloudUrl || '');
             localStorage.setItem('merchVisMaster_v870', JSON.stringify(visibleMasterCols));
             localStorage.setItem('merchVisUpload_v870', JSON.stringify(visibleUploadCols));
             localStorage.setItem('merchTableViewPresets_v1', JSON.stringify(window.sanitizeMerchTableViewPresets(tableViewPresets)));
@@ -1292,6 +1351,9 @@ const useMerchConfig = () => {
     useEffect(() => {
         const handleConfigSync = (e) => {
             if (e.key === 'config_sync_trigger') {
+                const fCloudUrl = window.getOneAppCloudSyncUrl ? window.getOneAppCloudSyncUrl(cloudUrl) : (localStorage.getItem('oneapp_cloud_sync_url_v1') || localStorage.getItem('merchCloudUrl_v870') || '');
+                if (fCloudUrl && fCloudUrl !== cloudUrl)
+                    setCloudUrl(fCloudUrl);
                 const fVisMaster = safeJSONParse('merchVisMaster_v870', null);
                 const fVisUpload = safeJSONParse('merchVisUpload_v870', null);
                 const fTableViewPresets = safeJSONParse('merchTableViewPresets_v1', null);
@@ -1414,6 +1476,7 @@ const useMerchUI = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [processMsg, setProcessMsg] = useState('');
     const [priceFilter, setPriceFilter] = useState('all');
+    const [categoryFilters, setCategoryFilters] = useState([]);
     const [basicSearch, setBasicSearch] = useState('');
     const [registrationMode, setRegistrationMode] = useState(false);
     const showToast = useCallback((msg) => {
@@ -1432,6 +1495,7 @@ const useMerchUI = () => {
         processMsg, setProcessMsg,
         showToast,
         priceFilter, setPriceFilter,
+        categoryFilters, setCategoryFilters,
         basicSearch, setBasicSearch,
         registrationMode, setRegistrationMode
     };
@@ -1439,14 +1503,20 @@ const useMerchUI = () => {
 const useMerchActions = (config, data, ui, fullDisplayRows) => {
     const quickExcelReadyRef = useRef({ ready: false, at: 0, count: 0, codes: [] });
     const handleCloudSync = useCallback(async (type) => {
-        if (!config.cloudUrl)
-            return ui.setAlertMsg("클라우드 URL이 설정되지 않았습니다. 우측 상단 톱니바퀴에서 URL을 세팅해주세요.");
+        const targetCloudUrl = window.getOneAppCloudSyncUrl ? window.getOneAppCloudSyncUrl(config.cloudUrl) : (config.cloudUrl || '');
+        if (!targetCloudUrl)
+            return ui.setAlertMsg("클라우드 URL이 설정되지 않았습니다. DataOps 매핑센터 또는 MerchOps 설정에서 URL을 세팅해주세요.");
+        if (window.setOneAppCloudSyncUrl) {
+            const savedUrl = window.setOneAppCloudSyncUrl(targetCloudUrl);
+            if (config.setCloudUrl && savedUrl !== config.cloudUrl)
+                config.setCloudUrl(savedUrl);
+        }
         ui.showToast(`☁️ 클라우드 ${type === 'upload' ? '전체 백업' : '불러오기'} 시작...`);
         ui.setIsProcessing(true);
         try {
             if (type === 'upload') {
                 ui.setProcessMsg('서버 초기화 중...');
-                let initRes = await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify({ action: 'initSync' }) });
+                let initRes = await fetch(targetCloudUrl, { method: 'POST', body: JSON.stringify({ action: 'initSync' }) });
                 if ((await initRes.json()).status !== 'success')
                     throw new Error("초기화 실패");
                 const masterItems = Object.values(data.masterProducts);
@@ -1454,13 +1524,13 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                 for (let i = 0; i < masterItems.length; i += chunkSize) {
                     const chunk = masterItems.slice(i, i + chunkSize);
                     ui.setProcessMsg(`마스터 데이터 업로드 중... (${Math.min(i + chunkSize, masterItems.length)} / ${masterItems.length}건)`);
-                    await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_master', data: chunk }) });
+                    await fetch(targetCloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_master', data: chunk }) });
                 }
                 const historyItems = data.historyLogs || [];
                 for (let i = 0; i < historyItems.length; i += chunkSize) {
                     const chunk = historyItems.slice(i, i + chunkSize);
                     ui.setProcessMsg(`히스토리 업로드 중... (${Math.min(i + chunkSize, historyItems.length)} / ${historyItems.length}건)`);
-                    await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_history', data: chunk }) });
+                    await fetch(targetCloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_history', data: chunk }) });
                 }
                 ui.setProcessMsg('환경설정 및 AI 매핑 사전 업로드 중...');
                 const dict = JSON.parse(localStorage.getItem('parserDict_v870') || '{}');
@@ -1476,16 +1546,17 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                             visibleMasterCols: config.visibleMasterCols,
                             tableViewPresets: config.tableViewPresets,
                             activeTableTarget: config.activeTableTarget,
-                            activeTableViewId: config.activeTableViewId
+                            activeTableViewId: config.activeTableViewId,
+                            cloudUrl: targetCloudUrl
                         }
                     }
                 };
-                await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify(configPayload) });
+                await fetch(targetCloudUrl, { method: 'POST', body: JSON.stringify(configPayload) });
                 ui.showToast('✅ 클라우드 대용량 분할 백업(Push) 성공!');
             }
             else {
                 ui.setProcessMsg('클라우드 데이터 수신 중...');
-                const res = await fetch(config.cloudUrl, { method: 'GET' });
+                const res = await fetch(targetCloudUrl, { method: 'GET' });
                 if (!res.ok)
                     throw new Error("Network Error");
                 const result = await res.json();
@@ -1538,7 +1609,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             ui.setIsProcessing(false);
             ui.setProcessMsg('');
         }
-    }, [config.cloudUrl, data.masterProducts, data.setMasterProducts, config.marginRules, config.setMarginRules, config.mappings, config.masterLinks, config.visibleUploadCols, config.visibleMasterCols, data.historyLogs, data.setHistoryLogs, ui]);
+    }, [config.cloudUrl, data.masterProducts, data.setMasterProducts, config.marginRules, config.setMarginRules, config.mappings, config.masterLinks, config.visibleUploadCols, config.visibleMasterCols, data.historyLogs, data.setHistoryLogs, config.setCloudUrl, ui]);
     const cleanUpGarbageTags = useCallback(() => {
         if (window.confirm("마스터 DB에 남아있는 불필요한 상품태그 찌꺼기를 삭제하여 용량을 최적화하시겠습니까?\n(오직 시스템에서 관리하는 속성만 안전하게 남습니다.)")) {
             let newMaster = { ...data.masterProducts };
@@ -2352,6 +2423,8 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         ui.setGlobalSearch('');
         ui.setActiveTags([]);
         ui.setPriceFilter('all');
+        if (ui.setCategoryFilters)
+            ui.setCategoryFilters([]);
         (_a = ui.setRegistrationMode) === null || _a === void 0 ? void 0 : _a.call(ui, false);
         if (ui.setBasicSearch)
             ui.setBasicSearch('');
@@ -2415,6 +2488,85 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             ui.setProcessMsg('');
         }, 100);
     }, [fullDisplayRows, ui.selectedRows, data.masterProducts, data.setManagedItems, config.marginRules, ui]);
+    // ============================================================
+    // [M-ACTION-04] 화면 즉시 프로테지 행사가 적용
+    // 역할: 환경설정 룰을 바꾸지 않고 현재 필터/선택 범위에 일회성 프로테지를 적용한다.
+    // 정책: 특판/행사용 별도 적용값이므로 결과 컬럼은 항상 '행사가'로 기록한다.
+    // ============================================================
+    const handleApplyScreenPercent = useCallback((options = {}) => {
+        const rate = window.parseNum(options.rate);
+        const baseField = options.baseField || '입고가';
+        const extraFields = Array.isArray(options.extraFields) ? options.extraFields.filter(Boolean) : [];
+        const targetField = '행사가';
+        if (fullDisplayRows.length === 0)
+            return ui.showToast('⚠️ 현재 화면에 적용할 상품이 없습니다.');
+        if (!(rate > 0 && rate < 100))
+            return ui.showToast('⚠️ 프로테지는 1~99 사이로 입력해야 합니다.');
+        const targetRows = ui.selectedRows.size > 0
+            ? fullDisplayRows.filter(r => ui.selectedRows.has(window.getManagedRowKey(r)))
+            : fullDisplayRows;
+        if (targetRows.length === 0)
+            return ui.showToast('⚠️ 적용할 상품이 없습니다.');
+        const targetText = ui.selectedRows.size > 0 ? `선택 ${targetRows.length}건` : `현재 화면 ${targetRows.length}건`;
+        if (!window.confirm(`${targetText}에 ${rate}% 프로테지를 적용해 행사가를 생성하시겠습니까?\n원가기준: ${baseField}${extraFields.length ? ` / 추가원가: ${extraFields.join('+')}` : ''}`))
+            return;
+        ui.setIsProcessing(true);
+        ui.setProcessMsg('화면 프로테지 행사가 적용 중...');
+        setTimeout(() => {
+            const nowStr = new Date().toLocaleString('ko-KR');
+            const logs = [];
+            let count = 0;
+            data.setManagedItems(prev => {
+                const next = { ...prev };
+                targetRows.forEach(row => {
+                    const key = window.getManagedRowKey(row);
+                    const code = row.코드;
+                    const current = next[key] || row || { 코드: code, sources: {}, finalData: {} };
+                    const mItem = data.masterProducts[code] || {};
+                    const calc = calculateScreenPromoPrice(current, mItem, { baseField, extraFields, rate });
+                    if (calc.price > 0) {
+                        const oldVal = window.parseNum((current.finalData || {})[targetField] !== undefined ? (current.finalData || {})[targetField] : getRowValueByField(current, targetField));
+                        next[key] = {
+                            ...current,
+                            finalData: {
+                                ...(current.finalData || {}),
+                                [targetField]: calc.price,
+                                _screenPercentApplied: true,
+                                _screenPercentRate: rate,
+                                _screenPercentBaseField: baseField,
+                                _screenPercentExtraFields: extraFields.join('+'),
+                                _screenPercentCost: calc.totalCost,
+                                확인: `화면프로테지 ${rate}% 행사가`
+                            }
+                        };
+                        logs.push({
+                            id: window.generateUUID(),
+                            timestamp: nowStr,
+                            code,
+                            name: mItem['품목명'] || getRowValueByField(current, '품목명') || '',
+                            spec: mItem['규격'] || getRowValueByField(current, '규격') || '',
+                            field: targetField,
+                            oldVal: oldVal || '없음',
+                            newVal: calc.price,
+                            diff: calc.price - oldVal,
+                            actionType: '화면프로테지적용',
+                            source: 'MerchOps',
+                            memo: `원가기준 ${baseField} / 추가원가 ${extraFields.join('+') || '-'} / 프로테지 ${rate}% / 원가 ${calc.totalCost}`
+                        });
+                        count++;
+                    }
+                });
+                return next;
+            });
+            if (logs.length > 0)
+                data.addHistoryLogs(logs);
+            ui.setSelectedRows(new Set());
+            ui.setIsProcessing(false);
+            ui.setProcessMsg('');
+            ui.showToast(`✅ ${count}건 행사가 적용 완료 (${rate}%)`);
+        }, 100);
+    }, [fullDisplayRows, ui.selectedRows, data.masterProducts, data.setManagedItems, data.addHistoryLogs, ui]);
+
     // ============================================================
     // [M-BRIDGE-01] 출력검증센터 전달 브릿지
     // 역할: 현재 선택/검색/화면 작업범위만 merch_export_draft로 패키징한다.
@@ -2657,8 +2809,8 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         ui.showToast('↩️ 신규등록용 양식에서 복귀했습니다.');
     }, [ui]);
     return useMemo(() => ({
-        handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode
-    }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode]);
+        handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode
+    }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode]);
 };
 // --- UI Components ---
 const SystemConsole = ({ itemCount, isProcessing, processMsg, estimateCount, activeTags }) => {
@@ -2706,9 +2858,17 @@ const SearchBar = ({ value, onChange, placeholder }) => {
         React.createElement("i", { className: "fas fa-search absolute right-3 top-2.5 text-slate-400 pointer-events-none text-[13px]" })));
 };
 const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
-    const { activeTags, selectedRows, globalSearch, priceFilter, basicSearch, fullDisplayRows, config, registrationMode } = state;
-    const { handleStopSales, handleExcludeSelectedFromUpdate, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, setPriceFilter, setSelectedRows, setBasicSearch, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode } = actions;
+    const { activeTags, selectedRows, globalSearch, priceFilter, categoryFilters = [], basicSearch, fullDisplayRows, config, registrationMode } = state;
+    const { handleStopSales, handleExcludeSelectedFromUpdate, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, setPriceFilter, setCategoryFilters, setSelectedRows, setBasicSearch, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode } = actions;
     const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+    // [M-TOOLBAR-REORDER-01] 단가변경 영역은 조회 필터와 분리한다.
+    // 단가변경 버튼은 고정 노출하고, 클릭 시 룰적용/행사가 적용 작업 버튼을 같은 줄에 나란히 펼친다.
+    const [priceActionOpen, setPriceActionOpen] = useState(false);
+    // [M-FILTER-DETAIL-RESTORE] 상세필터 복구: 상세필터 버튼을 눌렀을 때 하단 필터줄을 다시 생성하고,
+    // 상세필터 항목이 활성화된 상태에서는 행이 숨지지 않도록 유지한다.
+    const detailFilterValues = ['margin', 'safeMinus', 'basicExclude', 'unitBox', 'unitEa', 'unitSub'];
+    const isDetailFilterActive = detailFilterValues.includes(priceFilter);
+    const showDetailFilterPanel = filterPanelOpen || isDetailFilterActive;
     const activeTableTarget = (config === null || config === void 0 ? void 0 : config.activeTableTarget) || '';
     const activeTableViewId = (config === null || config === void 0 ? void 0 : config.activeTableViewId) || '';
     const tableViewList = useMemo(() => (activeTableTarget && window.getMerchTableViewsForTarget)
@@ -2746,6 +2906,32 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
     const handleBasicSearchChange = (e) => {
         setBasicSearch(e.target.value);
         setSelectedRows(new Set());
+    };
+    const [screenPercent, setScreenPercent] = useState('10');
+    const [screenBaseField, setScreenBaseField] = useState('입고가');
+    const [screenExtras, setScreenExtras] = useState({ 외주비: false, 노무비: false, 경비: false });
+    const toggleCategoryFilter = (cat) => {
+        if (!setCategoryFilters)
+            return;
+        setCategoryFilters(prev => {
+            const current = Array.isArray(prev) ? prev : [];
+            if (cat === 'all')
+                return [];
+            return current.includes(cat) ? current.filter(v => v !== cat) : [...current, cat];
+        });
+        setSelectedRows(new Set());
+    };
+    const toggleScreenExtra = (field) => {
+        setScreenExtras(prev => ({ ...prev, [field]: !prev[field] }));
+    };
+    const runScreenPercentApply = () => {
+        const extraFields = Object.keys(screenExtras).filter(k => screenExtras[k]);
+        handleApplyScreenPercent === null || handleApplyScreenPercent === void 0 ? void 0 : handleApplyScreenPercent({
+            baseField: screenBaseField,
+            extraFields,
+            rate: screenPercent,
+            targetField: '행사가'
+        });
     };
     return (React.createElement("div", { className: "flex flex-col w-full border-b border-slate-200 bg-white pb-2 shadow-sm relative z-10" },
         React.createElement("div", { className: "px-6 py-3 bg-slate-50 border-b border-slate-200 flex items-center gap-3 overflow-x-auto w-full custom-scrollbar" },
@@ -2808,11 +2994,31 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                         ['all', '전체'],
                         ['changed', '가격변동'],
                         ['promo', '행사중'],
-                        ['promoSuggest', '행사제안']
+                        ['promoSuggest', '행사제안'],
+                        ['selling', '판매중'],
+                        ['stoppedSoldout', '정지&품절'],
+                        ['basic', '기본상품']
                     ].map(([value, label]) => (React.createElement("button", { key: value, onClick: () => applyPriceFilter(value), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, label))),
-                    React.createElement("button", { onClick: () => setFilterPanelOpen(v => !v), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all flex items-center ${filterPanelOpen ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: "\uD310\uB9E4\uC0C1\uD0DC, \uC7AC\uACE0, \uC5ED\uB9C8\uC9C4 \uB4F1 \uC0C1\uC138 \uD544\uD130 \uC5F4\uAE30" },
-                        React.createElement("i", { className: `fas ${filterPanelOpen ? 'fa-chevron-up' : 'fa-chevron-down'} mr-1.5 text-[11px]` }),
-                        " \uC0C1\uC138\uD544\uD130")),
+                    React.createElement("button", { onClick: () => setFilterPanelOpen(v => !v), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all flex items-center ${showDetailFilterPanel ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: "상세필터 열기/닫기: 역마진, 안전(-), 기본상품 제외, BOX/EA/소분" },
+                        React.createElement("i", { className: `fas ${showDetailFilterPanel ? 'fa-chevron-up' : 'fa-chevron-down'} mr-1.5 text-[11px]` }),
+                        " 상세필터")),
+                React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1 shrink-0" }),
+                React.createElement("div", { className: "flex items-center gap-1.5 shrink-0" },
+                    React.createElement("button", { onClick: () => setPriceActionOpen(v => !v), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all flex items-center ${priceActionOpen ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-white text-slate-600 border-slate-300 hover:bg-amber-50'}`, title: "단가변경 작업 열기/닫기: 룰적용, 행사가 적용" },
+                        React.createElement("i", { className: `fas ${priceActionOpen ? 'fa-chevron-up' : 'fa-chevron-down'} mr-1.5 text-[11px]` }),
+                        " 단가변경"),
+                    priceActionOpen && (React.createElement(React.Fragment, null,
+                        React.createElement("button", { onClick: handleForceApplyMarginRules, disabled: fullDisplayRows.length === 0, className: `h-9 px-3 rounded-lg text-[12px] font-black shadow-sm flex items-center border transition-all ${fullDisplayRows.length > 0 ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터/검색 결과 전체에 현재 마진룰을 적용합니다." },
+                            React.createElement("i", { className: "fas fa-magic mr-1.5 text-[13px]" }),
+                            " 룰적용"),
+                        React.createElement("select", { value: screenBaseField, onChange: e => setScreenBaseField(e.target.value), className: "h-9 px-2 rounded-lg border border-slate-300 bg-white text-[12px] font-bold outline-none" },
+                            ['입고가', '최종(창고)', '최신단가'].map(field => React.createElement("option", { key: field, value: field }, field))),
+                        ['외주비', '노무비', '경비'].map(field => (React.createElement("button", { key: `top-extra-${field}`, onClick: () => toggleScreenExtra(field), className: `h-9 px-2.5 rounded-lg text-[12px] font-black border shadow-sm transition-all ${screenExtras[field] ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-slate-600 border-slate-300 hover:bg-amber-50'}` }, field))),
+                        React.createElement("div", { className: "flex h-9 rounded-lg border border-slate-300 overflow-hidden bg-white shadow-sm" },
+                            React.createElement("input", { type: "number", min: "1", max: "99", value: screenPercent, onChange: e => setScreenPercent(e.target.value), className: "w-[62px] px-2 text-[12px] font-black outline-none text-right" }),
+                            React.createElement("span", { className: "px-2 flex items-center bg-slate-50 border-l border-slate-200 text-[12px] font-black text-slate-500" }, "%")),
+                        React.createElement("button", { onClick: runScreenPercentApply, disabled: fullDisplayRows.length === 0, className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${fullDisplayRows.length > 0 ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터/검색 결과 전체에 행사가를 적용합니다." }, "행사가 적용"),
+                        React.createElement("span", { className: "text-[11px] text-slate-400 whitespace-nowrap" }, selectedRows.size > 0 ? `선택 ${selectedRows.size}건` : `화면 ${fullDisplayRows.length}건`)))),
                 tableViewList.length > 0 && (React.createElement("div", { className: "flex-1 min-w-[260px] flex justify-center" },
                     React.createElement("div", { className: "flex items-center justify-center gap-1.5 px-2 py-1 rounded-xl border border-dashed border-slate-300 bg-white/80 shadow-sm max-w-full overflow-x-auto custom-scrollbar" },
                         React.createElement("span", { className: "text-[10px] font-black text-slate-400 mr-1 shrink-0" }, "\uC591\uC2DD\uC120\uD0DD"),
@@ -2836,9 +3042,6 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                             " \uC774\uC804 \uC591\uC2DD"),
                         React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1" }))),
                     selectedRows.size > 0 && !registrationMode && (React.createElement(React.Fragment, null,
-                        React.createElement("button", { onClick: handleForceApplyMarginRules, className: "h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100", title: "\uCCB4\uD06C\uD55C \uC0C1\uD488\uC5D0 \uD604\uC7AC \uB8F0\uC744 \uB2E4\uC2DC \uC801\uC6A9" },
-                            React.createElement("i", { className: "fas fa-magic mr-1.5 text-[13px]" }),
-                            " \uB8F0\uC801\uC6A9"),
                         React.createElement("button", { onClick: handleExcludeSelectedFromUpdate, className: "h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center bg-slate-50 text-slate-700 border border-slate-300 hover:bg-slate-100", title: "\uCCB4\uD06C\uD55C \uC0C1\uD488\uC744 \uC774\uBC88 \uC5C5\uB370\uC774\uD2B8 \uB300\uC0C1\uC5D0\uC11C\uB9CC \uC81C\uC678" },
                             React.createElement("i", { className: "fas fa-minus-circle mr-1.5 text-[13px]" }),
                             " \uC81C\uC678"),
@@ -2850,18 +3053,17 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                         React.createElement("i", { className: "fas fa-redo-alt mr-1.5 text-[13px]" }),
                         " \uCD08\uAE30\uD654"),
                     React.createElement(SearchBar, { value: globalSearch, onChange: setGlobalSearch }))),
-            filterPanelOpen && (React.createElement("div", { className: "rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 shadow-inner flex items-center gap-2 flex-wrap" },
+            React.createElement("div", { className: "rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm flex items-center gap-2 flex-wrap" },
+                React.createElement("span", { className: "text-[11px] font-black text-slate-500 mr-1" }, "카테고리"),
+                React.createElement("button", { onClick: () => toggleCategoryFilter('all'), className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${categoryFilters.length === 0 ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, "전체"),
+                MERCH_CATEGORY_FILTERS.map(cat => (React.createElement("button", { key: `cat-${cat}`, onClick: () => toggleCategoryFilter(cat), className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${categoryFilters.includes(cat) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-blue-50'}` }, cat))),
+                React.createElement("span", { className: "text-[11px] text-slate-400 ml-auto" }, selectedRows.size > 0 ? `선택 ${selectedRows.size}건` : `화면 ${fullDisplayRows.length}건`)),
+            showDetailFilterPanel && (React.createElement("div", { className: "rounded-xl border border-indigo-100 bg-indigo-50/40 px-3 py-2 shadow-inner flex items-center gap-2 flex-wrap" },
                 React.createElement("span", { className: "text-[11px] font-black text-slate-500 mr-1" }, "\uC0C1\uC138\uD544\uD130"),
                 [
                     ['margin', '역마진'],
-                    ['selling', '판매중'],
-                    ['stoppedSoldout', '정지&품절'],
                     ['safeMinus', '안전(-)']
                 ].map(([value, label]) => (React.createElement("button", { key: value, onClick: () => applyPriceFilter(value), className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, label))),
-                React.createElement("div", { className: `h-8 flex items-center rounded-lg border shadow-sm overflow-hidden ${priceFilter === 'basic' ? 'border-slate-800 bg-slate-800' : 'border-slate-300 bg-white'}` },
-                    React.createElement("button", { onClick: applyBasicFilter, className: `h-full px-3 text-[12px] font-black transition-all ${priceFilter === 'basic' ? 'text-white' : 'text-slate-600 hover:bg-slate-50'}`, title: "\uAE30\uBCF8\uAC12 \uD544\uD130 \uC2E4\uD589: \uBE48\uAC12=\uAE30\uBCF8\uC0C1\uD488 \uC804\uCCB4, 0=\uAE30\uBCF8\uC544\uB2D8 \uC804\uCCB4, \uADF8 \uC678=\uD3EC\uD568\uAC80\uC0C9" }, "\uAE30\uBCF8\uC0C1\uD488"),
-                    React.createElement("input", { type: "text", value: basicSearch, onChange: handleBasicSearchChange, onKeyDown: (e) => { if (e.key === 'Enter')
-                            applyBasicFilter(); }, placeholder: "\uAE30\uBCF8\uAC12", className: `h-full w-[82px] px-2 text-[12px] font-bold outline-none border-l ${priceFilter === 'basic' ? 'bg-white text-slate-800 border-slate-600' : 'bg-white text-slate-700 border-slate-200 focus:bg-white'}`, title: "\uBE48\uAC12: \uAE30\uBCF8\uC0C1\uD488 \uC804\uCCB4 / 0: \uAE30\uBCF8\uC544\uB2D8 \uC804\uCCB4 / 1,2,Y,\uD544\uC218 \uB4F1: \uD3EC\uD568\uAC80\uC0C9" })),
                 React.createElement("button", { onClick: () => applyPriceFilter('basicExclude'), className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${priceFilter === 'basicExclude' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: "\uAE30\uBCF8\uAC12\uC774 \uACF5\uBC31/0/N/false\uC778 \uAE30\uD0C0\uC0C1\uD488\uB9CC \uB178\uCD9C\uD569\uB2C8\uB2E4." }, "\uAE30\uBCF8\uC0C1\uD488 \uC81C\uC678"),
                 React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1" }),
                 [
@@ -2984,6 +3186,49 @@ const matchUnitFilter = (row = {}, mItem = {}, filter = '') => {
     if (filter === 'unitSub')
         return /소분|분할|절단|컷|소포장|묶음/.test(unitText);
     return true;
+};
+// ============================================================
+// [M-FILTER-02] 카테고리/화면 프로테지 보조 함수
+// 역할: 품목코드 앞 2자리 기준 카테고리 필터와 현재 화면 즉시 행사가 계산을 지원한다.
+// ============================================================
+const MERCH_CATEGORY_FILTERS = ['10', '20', '30', '40', '50'];
+const getMerchCategoryCode = (row = {}, mItem = {}) => {
+    var _a, _b, _c;
+    const code = String(((_a = row.finalData) === null || _a === void 0 ? void 0 : _a['품목코드']) || row.코드 || ((_b = mItem['품목코드']) !== null && _b !== void 0 ? _b : '') || ((_c = mItem['코드']) !== null && _c !== void 0 ? _c : '')).replace(/[^0-9]/g, '');
+    return code.length >= 2 ? code.slice(0, 2) : '';
+};
+const matchMerchCategoryFilter = (row = {}, mItem = {}, filters = []) => {
+    const selected = Array.isArray(filters) ? filters.filter(Boolean) : [];
+    if (selected.length === 0)
+        return true;
+    const cat = getMerchCategoryCode(row, mItem);
+    return selected.includes(cat);
+};
+const getScreenApplyCostValue = (row = {}, mItem = {}, field = '입고가') => {
+    const v = getRowValueByField(row, field);
+    if (v !== undefined && v !== null && String(v).trim() !== '')
+        return window.parseNum(v);
+    return window.parseNum(mItem === null || mItem === void 0 ? void 0 : mItem[field]);
+};
+const roundScreenPromoPrice = (rawPrice, row = {}, mItem = {}) => {
+    const n = Number(rawPrice || 0);
+    if (!Number.isFinite(n) || n <= 0)
+        return 0;
+    const unitText = getItemUnitText(row, mItem);
+    const roundUnit = (/소분|분할|절단|컷|소포장|묶음|ea|개|낱개|낱|each/.test(unitText) && !/box|박스|상자|bx/.test(unitText)) ? 10 : 100;
+    return Math.round(n / roundUnit) * roundUnit;
+};
+const calculateScreenPromoPrice = (row = {}, mItem = {}, options = {}) => {
+    const baseField = options.baseField || '입고가';
+    const rate = window.parseNum(options.rate);
+    const extraFields = Array.isArray(options.extraFields) ? options.extraFields : [];
+    const baseCost = getScreenApplyCostValue(row, mItem, baseField);
+    const extraCost = extraFields.reduce((sum, field) => sum + getScreenApplyCostValue(row, mItem, field), 0);
+    const totalCost = baseCost + extraCost;
+    if (totalCost <= 0 || rate <= 0 || rate >= 100)
+        return { price: 0, baseCost, extraCost, totalCost, rate };
+    const rawPrice = totalCost / (1 - (rate / 100));
+    return { price: roundScreenPromoPrice(rawPrice, row, mItem), baseCost, extraCost, totalCost, rate };
 };
 const getStockQty = (row = {}, mItem = {}) => {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
@@ -3647,7 +3892,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.23 Promo Suggest Filter Fix]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.30 ToolbarReorder]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -3792,6 +4037,12 @@ const App = () => {
         else {
             baseList.sort((a, b) => window.compareProductCodeText(a.코드, b.코드));
         }
+        if (Array.isArray(ui.categoryFilters) && ui.categoryFilters.length > 0) {
+            baseList = baseList.filter(item => {
+                const mItem = data.masterProducts[item.코드] || {};
+                return matchMerchCategoryFilter(item, mItem, ui.categoryFilters);
+            });
+        }
         if (ui.registrationMode) {
             baseList = baseList.filter(item => item && item.코드 && !data.masterProducts[item.코드]);
         }
@@ -3850,15 +4101,15 @@ const App = () => {
             });
         }
         return baseList;
-    }, [isEstimateUploaded, data.managedItems, data.masterProducts, ui.globalSearch, ui.priceFilter, ui.basicSearch, ui.registrationMode, config.uploadColumnMeta]);
+    }, [isEstimateUploaded, data.managedItems, data.masterProducts, ui.globalSearch, ui.priceFilter, ui.categoryFilters, ui.basicSearch, ui.registrationMode, config.uploadColumnMeta]);
     const customActions = useMerchActions(config, data, ui, fullDisplayRows);
     const appState = useMemo(() => ({
         config, data, activeTags: ui.activeTags, isEstimateUploaded, selectedRows: ui.selectedRows, globalSearch: ui.globalSearch, isProcessing: ui.isProcessing, processMsg: ui.processMsg, registrationMode: ui.registrationMode,
-        visibleMasterCols: config.visibleMasterCols, visibleUploadCols: config.visibleUploadCols, activeTableTarget: config.activeTableTarget, activeTableViewId: config.activeTableViewId, masterProducts: data.masterProducts, fullDisplayRows, priceFilter: ui.priceFilter, basicSearch: ui.basicSearch
-    }), [config, data, ui.activeTags, ui.registrationMode, isEstimateUploaded, ui.selectedRows, ui.globalSearch, ui.isProcessing, ui.processMsg, config.visibleMasterCols, config.visibleUploadCols, config.activeTableTarget, config.activeTableViewId, config.tableViewPresets, data.masterProducts, fullDisplayRows, ui.priceFilter, ui.basicSearch]);
+        visibleMasterCols: config.visibleMasterCols, visibleUploadCols: config.visibleUploadCols, activeTableTarget: config.activeTableTarget, activeTableViewId: config.activeTableViewId, masterProducts: data.masterProducts, fullDisplayRows, priceFilter: ui.priceFilter, categoryFilters: ui.categoryFilters, basicSearch: ui.basicSearch
+    }), [config, data, ui.activeTags, ui.registrationMode, isEstimateUploaded, ui.selectedRows, ui.globalSearch, ui.isProcessing, ui.processMsg, config.visibleMasterCols, config.visibleUploadCols, config.activeTableTarget, config.activeTableViewId, config.tableViewPresets, data.masterProducts, fullDisplayRows, ui.priceFilter, ui.categoryFilters, ui.basicSearch]);
     const appActions = useMemo(() => ({
-        setShowCategoryModal: ui.setShowCategoryModal, setShowCatalogModal: ui.setShowCatalogModal, setSelectedRows: ui.setSelectedRows, setGlobalSearch: ui.setGlobalSearch, showToast: ui.showToast, setPriceFilter: ui.setPriceFilter, setBasicSearch: ui.setBasicSearch, ...customActions
-    }), [ui.setShowCategoryModal, ui.setShowCatalogModal, ui.setSelectedRows, ui.setGlobalSearch, ui.showToast, ui.setPriceFilter, ui.setBasicSearch, customActions]);
+        setShowCategoryModal: ui.setShowCategoryModal, setShowCatalogModal: ui.setShowCatalogModal, setSelectedRows: ui.setSelectedRows, setGlobalSearch: ui.setGlobalSearch, showToast: ui.showToast, setPriceFilter: ui.setPriceFilter, setCategoryFilters: ui.setCategoryFilters, setBasicSearch: ui.setBasicSearch, ...customActions
+    }), [ui.setShowCategoryModal, ui.setShowCatalogModal, ui.setSelectedRows, ui.setGlobalSearch, ui.showToast, ui.setPriceFilter, ui.setCategoryFilters, ui.setBasicSearch, customActions]);
     useEffect(() => {
         // ============================================================
         // [M-UX-01] 전역 키보드 조작
@@ -3946,8 +4197,9 @@ const App = () => {
                         .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; } 
                         .fade-in { animation: fadeIn 0.3s ease-out; } 
                         .system-ui-shell { transition: max-height 180ms ease, opacity 160ms ease, transform 180ms ease, border-color 180ms ease; will-change: max-height, opacity, transform; }
+                        /* [M-FILTER-DETAIL-HEIGHT] 상세필터는 카테고리/프로테지 줄 아래에 추가 렌더링된다. 260px 고정은 하단 상세필터 줄을 잘라서 버튼을 눌러도 안 보이는 원인이 된다. */
                         .system-ui-shell.is-collapsed { max-height: 0 !important; opacity: 0; transform: translateY(-10px); pointer-events: none; border-color: transparent; }
-                        .system-ui-shell.is-expanded { max-height: 260px; opacity: 1; transform: translateY(0); }
+                        .system-ui-shell.is-expanded { max-height: 420px; opacity: 1; transform: translateY(0); }
                         @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
                     `),
         ui.alertMsg && (React.createElement("div", { className: "fixed top-6 z-[999] bg-slate-800 text-white px-6 py-4 rounded-xl shadow-2xl flex items-start gap-3 fade-in text-sm font-bold border border-slate-700" },
@@ -3968,16 +4220,16 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.23 Promo Suggest Filter Fix")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.30 ToolbarReorder")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
                                 React.createElement("a", { href: "https://oneapp.orderz.co.kr/MerchOps/guide", target: "_blank", rel: "noopener noreferrer", className: `h-8 px-2.5 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-emerald-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-emerald-300 hover:border-emerald-500/50 font-bold text-[11px] tracking-wider uppercase ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`, title: "MerchOps \uC0AC\uC6A9 \uAC00\uC774\uB4DC" }, "GUIDE"),
                                 React.createElement("a", { href: "https://oneapp.orderz.co.kr/MerchOps/trend_report", target: "_blank", rel: "noopener noreferrer", className: `h-8 px-2.5 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-blue-400 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-blue-300 hover:border-blue-500/50 font-bold text-[11px] tracking-wider uppercase ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`, title: "\uD2B8\uB80C\uB4DC \uB9AC\uD3EC\uD2B8" }, "REPORT"),
                                 React.createElement("div", { className: "w-px h-4 bg-slate-700 mx-0.5" }),
-                                React.createElement("button", { onClick: () => customActions.handleCloudSync('download'), className: `w-8 h-8 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-slate-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`, title: "\uD074\uB77C\uC6B0\uB4DC \uB370\uC774\uD130 \uBD88\uB7EC\uC624\uAE30" },
+                                React.createElement("button", { onClick: () => customActions.handleCloudSync('download'), className: `w-8 h-8 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-slate-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`, title: `클라우드 데이터 불러오기\n${config.cloudUrl || (window.getOneAppCloudSyncUrl ? window.getOneAppCloudSyncUrl() : "")}` },
                                     React.createElement("i", { className: "fas fa-cloud-download-alt text-[13px]" })),
-                                React.createElement("button", { onClick: () => customActions.handleCloudSync('upload'), className: `w-8 h-8 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-slate-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`, title: "\uD074\uB77C\uC6B0\uB4DC\uC5D0 \uB370\uC774\uD130 \uBC31\uC5C5" },
+                                React.createElement("button", { onClick: () => customActions.handleCloudSync('upload'), className: `w-8 h-8 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-slate-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-white hover:border-slate-500 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`, title: `클라우드에 데이터 백업\n${config.cloudUrl || (window.getOneAppCloudSyncUrl ? window.getOneAppCloudSyncUrl() : "")}` },
                                     React.createElement("i", { className: "fas fa-cloud-upload-alt text-[13px]" })),
                                 React.createElement("div", { className: "w-px h-4 bg-slate-700 mx-0.5" }),
                                 React.createElement("button", { onClick: () => window.location.href = 'history_viewer.html', className: `w-8 h-8 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-amber-300 bg-[#0f172a] border-slate-700 hover:bg-[#1e293b] hover:text-amber-400 hover:border-amber-500/50 ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`, title: "\uC791\uC5C5 \uD788\uC2A4\uD1A0\uB9AC \uBDF0\uC5B4" },
