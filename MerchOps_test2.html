@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.29 DetailFilterVisible]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.32 TableViewThirdRow]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -2861,11 +2861,18 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
     const { activeTags, selectedRows, globalSearch, priceFilter, categoryFilters = [], basicSearch, fullDisplayRows, config, registrationMode } = state;
     const { handleStopSales, handleExcludeSelectedFromUpdate, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, setPriceFilter, setCategoryFilters, setSelectedRows, setBasicSearch, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode } = actions;
     const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+    // [M-TOOLBAR-LAYOUT-03] 상단 컨트롤 4단 재정렬 보정
+    // 1단 파일/저장 영역은 유지한다.
+    // 2단은 단가변경/편집/초기화·검색만 배치해 선택 버튼 노출 시에도 깨지지 않게 한다.
+    // 3단은 고정필터 좌측 + 양식선택 우측 정렬로 분리해 양식 5개까지 짤리지 않게 한다.
+    // 4단은 상세필터(카테고리 포함) 전용으로 유지한다.
+    const [priceActionOpen, setPriceActionOpen] = useState(false);
     // [M-FILTER-DETAIL-RESTORE] 상세필터 복구: 상세필터 버튼을 눌렀을 때 하단 필터줄을 다시 생성하고,
     // 상세필터 항목이 활성화된 상태에서는 행이 숨지지 않도록 유지한다.
-    const detailFilterValues = ['margin', 'selling', 'stoppedSoldout', 'safeMinus', 'basic', 'basicExclude', 'unitBox', 'unitEa', 'unitSub'];
+    const detailFilterValues = ['margin', 'safeMinus', 'basicExclude', 'unitBox', 'unitEa', 'unitSub'];
     const isDetailFilterActive = detailFilterValues.includes(priceFilter);
-    const showDetailFilterPanel = filterPanelOpen || isDetailFilterActive;
+    const isCategoryFilterActive = Array.isArray(categoryFilters) && categoryFilters.length > 0;
+    const showDetailFilterPanel = filterPanelOpen || isDetailFilterActive || isCategoryFilterActive;
     const activeTableTarget = (config === null || config === void 0 ? void 0 : config.activeTableTarget) || '';
     const activeTableViewId = (config === null || config === void 0 ? void 0 : config.activeTableViewId) || '';
     const tableViewList = useMemo(() => (activeTableTarget && window.getMerchTableViewsForTarget)
@@ -2985,28 +2992,25 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                     React.createElement("i", { className: "fas fa-print mr-1.5 text-[14px]" }),
                     " F9"))),
         React.createElement("div", { className: "px-6 pt-3 pb-2 flex flex-col gap-2 w-full" },
-            React.createElement("div", { className: "flex items-center gap-3 w-full min-w-0" },
-                React.createElement("div", { className: "flex items-center gap-1.5 shrink-0" },
-                    [
-                        ['all', '전체'],
-                        ['changed', '가격변동'],
-                        ['promo', '행사중'],
-                        ['promoSuggest', '행사제안']
-                    ].map(([value, label]) => (React.createElement("button", { key: value, onClick: () => applyPriceFilter(value), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, label))),
-                    React.createElement("button", { onClick: () => setFilterPanelOpen(v => !v), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all flex items-center ${showDetailFilterPanel ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: "\uC0C1\uC138\uD544\uD130 \uC5F4\uAE30/\uB2EB\uAE30: \uC5ED\uB9C8\uC9C4, \uD310\uB9E4\uC911, \uC815\uC9C0&\uD488\uC808, \uAE30\uBCF8\uC0C1\uD488, BOX/EA/\uC18C\uBD84" },
-                        React.createElement("i", { className: `fas ${showDetailFilterPanel ? 'fa-chevron-up' : 'fa-chevron-down'} mr-1.5 text-[11px]` }),
-                        " \uC0C1\uC138\uD544\uD130")),
-                tableViewList.length > 0 && (React.createElement("div", { className: "flex-1 min-w-[260px] flex justify-center" },
-                    React.createElement("div", { className: "flex items-center justify-center gap-1.5 px-2 py-1 rounded-xl border border-dashed border-slate-300 bg-white/80 shadow-sm max-w-full overflow-x-auto custom-scrollbar" },
-                        React.createElement("span", { className: "text-[10px] font-black text-slate-400 mr-1 shrink-0" }, "\uC591\uC2DD\uC120\uD0DD"),
-                        tableViewList.map(view => {
-                            const active = activeTableViewId === view.id;
-                            return (React.createElement("button", { key: view.id || view.name, onClick: () => applyTableShortcut(view), className: `h-7 px-2.5 rounded-lg text-[11px] font-black border shadow-sm transition-all shrink-0 ${active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200'}`, title: `양식: 마스터 ${(view.masterColumns || []).join(', ')} / 작업 ${(view.workColumns || []).join(', ')}` },
-                                React.createElement("i", { className: "fas fa-table-columns mr-1 text-[10px]" }),
-                                view.name));
-                        })))),
-                tableViewList.length === 0 && React.createElement("div", { className: "flex-1 min-w-[10px]" }),
-                React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
+            React.createElement("div", { className: "flex items-center justify-between gap-3 w-full min-w-0" },
+                React.createElement("div", { className: "min-w-0 flex-1 overflow-x-auto custom-scrollbar" },
+                    React.createElement("div", { className: "inline-flex items-center gap-1.5 min-w-max pr-1" },
+                        React.createElement("button", { onClick: () => setPriceActionOpen(v => !v), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all flex items-center shrink-0 ${priceActionOpen ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-white text-slate-600 border-slate-300 hover:bg-amber-50'}`, title: "단가변경 작업 열기/닫기: 룰적용, 행사가 적용" },
+                            React.createElement("i", { className: `fas ${priceActionOpen ? 'fa-chevron-up' : 'fa-chevron-down'} mr-1.5 text-[11px]` }),
+                            " 단가변경"),
+                        priceActionOpen && (React.createElement(React.Fragment, null,
+                            React.createElement("button", { onClick: handleForceApplyMarginRules, disabled: fullDisplayRows.length === 0, className: `h-9 px-3 rounded-lg text-[12px] font-black shadow-sm flex items-center border transition-all shrink-0 ${fullDisplayRows.length > 0 ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터/검색 결과 전체에 현재 마진룰을 적용합니다." },
+                                React.createElement("i", { className: "fas fa-magic mr-1.5 text-[13px]" }),
+                                " 룰적용"),
+                            React.createElement("select", { value: screenBaseField, onChange: e => setScreenBaseField(e.target.value), className: "h-9 px-2 rounded-lg border border-slate-300 bg-white text-[12px] font-bold outline-none shrink-0" },
+                                ['입고가', '최종(창고)', '최신단가'].map(field => React.createElement("option", { key: field, value: field }, field))),
+                            ['외주비', '노무비', '경비'].map(field => (React.createElement("button", { key: `top-extra-${field}`, onClick: () => toggleScreenExtra(field), className: `h-9 px-2.5 rounded-lg text-[12px] font-black border shadow-sm transition-all shrink-0 ${screenExtras[field] ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-slate-600 border-slate-300 hover:bg-amber-50'}` }, field))),
+                            React.createElement("div", { className: "flex h-9 rounded-lg border border-slate-300 overflow-hidden bg-white shadow-sm shrink-0" },
+                                React.createElement("input", { type: "number", min: "1", max: "99", value: screenPercent, onChange: e => setScreenPercent(e.target.value), className: "w-[62px] px-2 text-[12px] font-black outline-none text-right" }),
+                                React.createElement("span", { className: "px-2 flex items-center bg-slate-50 border-l border-slate-200 text-[12px] font-black text-slate-500" }, "%")),
+                            React.createElement("button", { onClick: runScreenPercentApply, disabled: fullDisplayRows.length === 0, className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all shrink-0 ${fullDisplayRows.length > 0 ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터/검색 결과 전체에 행사가를 적용합니다." }, "행사가 적용"),
+                            React.createElement("span", { className: "text-[11px] text-slate-400 whitespace-nowrap shrink-0" }, selectedRows.size > 0 ? `선택 ${selectedRows.size}건` : `화면 ${fullDisplayRows.length}건`))))),
+                React.createElement("div", { className: "flex items-center justify-end gap-2 shrink-0 ml-auto" },
                     registrationMode && (React.createElement(React.Fragment, null,
                         React.createElement("span", { className: "h-9 px-3 rounded-lg text-[12px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center shadow-sm" },
                             React.createElement("i", { className: "fas fa-user-plus mr-1.5 text-[13px]" }),
@@ -3019,9 +3023,6 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                             " \uC774\uC804 \uC591\uC2DD"),
                         React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1" }))),
                     selectedRows.size > 0 && !registrationMode && (React.createElement(React.Fragment, null,
-                        React.createElement("button", { onClick: handleForceApplyMarginRules, className: "h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100", title: "\uCCB4\uD06C\uD55C \uC0C1\uD488\uC5D0 \uD604\uC7AC \uB8F0\uC744 \uB2E4\uC2DC \uC801\uC6A9" },
-                            React.createElement("i", { className: "fas fa-magic mr-1.5 text-[13px]" }),
-                            " \uB8F0\uC801\uC6A9"),
                         React.createElement("button", { onClick: handleExcludeSelectedFromUpdate, className: "h-9 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center bg-slate-50 text-slate-700 border border-slate-300 hover:bg-slate-100", title: "\uCCB4\uD06C\uD55C \uC0C1\uD488\uC744 \uC774\uBC88 \uC5C5\uB370\uC774\uD2B8 \uB300\uC0C1\uC5D0\uC11C\uB9CC \uC81C\uC678" },
                             React.createElement("i", { className: "fas fa-minus-circle mr-1.5 text-[13px]" }),
                             " \uC81C\uC678"),
@@ -3034,39 +3035,46 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                         " \uCD08\uAE30\uD654"),
                     React.createElement(SearchBar, { value: globalSearch, onChange: setGlobalSearch }))),
             React.createElement("div", { className: "rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm flex items-center gap-2 flex-wrap" },
-                React.createElement("span", { className: "text-[11px] font-black text-slate-500 mr-1" }, "카테고리"),
-                React.createElement("button", { onClick: () => toggleCategoryFilter('all'), className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${categoryFilters.length === 0 ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, "전체"),
-                MERCH_CATEGORY_FILTERS.map(cat => (React.createElement("button", { key: `cat-${cat}`, onClick: () => toggleCategoryFilter(cat), className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${categoryFilters.includes(cat) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-blue-50'}` }, cat))),
-                React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1" }),
-                React.createElement("span", { className: "text-[11px] font-black text-rose-600 mr-1" }, "화면 프로테지 → 행사가"),
-                React.createElement("select", { value: screenBaseField, onChange: e => setScreenBaseField(e.target.value), className: "h-8 px-2 rounded-lg border border-slate-300 bg-white text-[12px] font-bold outline-none" },
-                    ['입고가', '최종(창고)', '최신단가'].map(field => React.createElement("option", { key: field, value: field }, field))),
-                ['외주비', '노무비', '경비'].map(field => (React.createElement("button", { key: `extra-${field}`, onClick: () => toggleScreenExtra(field), className: `h-8 px-2.5 rounded-lg text-[12px] font-black border shadow-sm transition-all ${screenExtras[field] ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-slate-600 border-slate-300 hover:bg-amber-50'}` }, field))),
-                React.createElement("div", { className: "flex h-8 rounded-lg border border-slate-300 overflow-hidden bg-white shadow-sm" },
-                    React.createElement("input", { type: "number", min: "1", max: "99", value: screenPercent, onChange: e => setScreenPercent(e.target.value), className: "w-[62px] px-2 text-[12px] font-black outline-none text-right" }),
-                    React.createElement("span", { className: "px-2 flex items-center bg-slate-50 border-l border-slate-200 text-[12px] font-black text-slate-500" }, "%")),
-                React.createElement("button", { onClick: runScreenPercentApply, disabled: fullDisplayRows.length === 0, className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${fullDisplayRows.length > 0 ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터 화면 전체에 행사가를 적용합니다." }, "행사가 적용"),
-                React.createElement("span", { className: "text-[11px] text-slate-400 ml-auto" }, selectedRows.size > 0 ? `선택 ${selectedRows.size}건` : `화면 ${fullDisplayRows.length}건`)),
-            showDetailFilterPanel && (React.createElement("div", { className: "rounded-xl border border-indigo-100 bg-indigo-50/40 px-3 py-2 shadow-inner flex items-center gap-2 flex-wrap" },
-                React.createElement("span", { className: "text-[11px] font-black text-slate-500 mr-1" }, "\uC0C1\uC138\uD544\uD130"),
                 [
-                    ['margin', '역마진'],
+                    ['all', '전체'],
+                    ['changed', '가격변동'],
+                    ['promo', '행사중'],
+                    ['promoSuggest', '행사제안'],
                     ['selling', '판매중'],
                     ['stoppedSoldout', '정지&품절'],
-                    ['safeMinus', '안전(-)']
-                ].map(([value, label]) => (React.createElement("button", { key: value, onClick: () => applyPriceFilter(value), className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, label))),
-                React.createElement("div", { className: `h-8 flex items-center rounded-lg border shadow-sm overflow-hidden ${priceFilter === 'basic' ? 'border-slate-800 bg-slate-800' : 'border-slate-300 bg-white'}` },
-                    React.createElement("button", { onClick: applyBasicFilter, className: `h-full px-3 text-[12px] font-black transition-all ${priceFilter === 'basic' ? 'text-white' : 'text-slate-600 hover:bg-slate-50'}`, title: "\uAE30\uBCF8\uAC12 \uD544\uD130 \uC2E4\uD589: \uBE48\uAC12=\uAE30\uBCF8\uC0C1\uD488 \uC804\uCCB4, 0=\uAE30\uBCF8\uC544\uB2D8 \uC804\uCCB4, \uADF8 \uC678=\uD3EC\uD568\uAC80\uC0C9" }, "\uAE30\uBCF8\uC0C1\uD488"),
-                    React.createElement("input", { type: "text", value: basicSearch, onChange: handleBasicSearchChange, onKeyDown: (e) => { if (e.key === 'Enter')
-                            applyBasicFilter(); }, placeholder: "\uAE30\uBCF8\uAC12", className: `h-full w-[82px] px-2 text-[12px] font-bold outline-none border-l ${priceFilter === 'basic' ? 'bg-white text-slate-800 border-slate-600' : 'bg-white text-slate-700 border-slate-200 focus:bg-white'}`, title: "\uBE48\uAC12: \uAE30\uBCF8\uC0C1\uD488 \uC804\uCCB4 / 0: \uAE30\uBCF8\uC544\uB2D8 \uC804\uCCB4 / 1,2,Y,\uD544\uC218 \uB4F1: \uD3EC\uD568\uAC80\uC0C9" })),
-                React.createElement("button", { onClick: () => applyPriceFilter('basicExclude'), className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${priceFilter === 'basicExclude' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: "\uAE30\uBCF8\uAC12\uC774 \uACF5\uBC31/0/N/false\uC778 \uAE30\uD0C0\uC0C1\uD488\uB9CC \uB178\uCD9C\uD569\uB2C8\uB2E4." }, "\uAE30\uBCF8\uC0C1\uD488 \uC81C\uC678"),
+                    ['basic', '기본상품']
+                ].map(([value, label]) => (React.createElement("button", { key: value, onClick: () => applyPriceFilter(value), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, label))),
+                React.createElement("button", { onClick: () => setFilterPanelOpen(v => !v), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all flex items-center ${showDetailFilterPanel ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: "상세필터 열기/닫기: 카테고리, 역마진, 안전(-), 기본상품 제외, BOX/EA/소분" },
+                    React.createElement("i", { className: `fas ${showDetailFilterPanel ? 'fa-chevron-up' : 'fa-chevron-down'} mr-1.5 text-[11px]` }),
+                    " 상세필터"),
+                React.createElement("div", { className: "ml-auto min-w-[360px] max-w-[720px] flex justify-end overflow-x-auto custom-scrollbar" },
+                    tableViewList.length > 0 ? (React.createElement("div", { className: "inline-flex items-center justify-end gap-1.5 px-2 py-1 rounded-xl border border-dashed border-slate-300 bg-white/80 shadow-sm min-w-max" },
+                        React.createElement("span", { className: "text-[10px] font-black text-slate-400 mr-1 shrink-0" }, "양식선택"),
+                        tableViewList.slice(0, 5).map(view => {
+                            const active = activeTableViewId === view.id;
+                            return (React.createElement("button", { key: view.id || view.name, onClick: () => applyTableShortcut(view), className: `h-7 px-2.5 rounded-lg text-[11px] font-black border shadow-sm transition-all shrink-0 whitespace-nowrap ${active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200'}`, title: `양식: 마스터 ${(view.masterColumns || []).join(', ')} / 작업 ${(view.workColumns || []).join(', ')}` },
+                                React.createElement("i", { className: "fas fa-table-columns mr-1 text-[10px]" }),
+                                view.name));
+                        }))) : React.createElement("span", { className: "text-[11px] text-slate-400 whitespace-nowrap" }, selectedRows.size > 0 ? `선택 ${selectedRows.size}건` : `화면 ${fullDisplayRows.length}건`))),
+            showDetailFilterPanel && (React.createElement("div", { className: "rounded-xl border border-indigo-100 bg-indigo-50/40 px-3 py-2 shadow-inner flex items-center gap-3 flex-wrap" },
+                React.createElement("div", { className: "flex items-center gap-2 flex-wrap" },
+                    React.createElement("span", { className: "text-[11px] font-black text-slate-500 mr-1" }, "카테고리"),
+                    React.createElement("button", { onClick: () => toggleCategoryFilter('all'), className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${categoryFilters.length === 0 ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, "전체"),
+                    MERCH_CATEGORY_FILTERS.map(cat => (React.createElement("button", { key: `cat-${cat}`, onClick: () => toggleCategoryFilter(cat), className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${categoryFilters.includes(cat) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-blue-50'}` }, cat)))),
                 React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1" }),
-                [
-                    ['unitBox', 'BOX'],
-                    ['unitEa', 'EA'],
-                    ['unitSub', '소분']
-                ].map(([value, label]) => (React.createElement("button", { key: value, onClick: () => applyPriceFilter(value), className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, label))),
-                React.createElement("span", { className: "text-[11px] text-slate-400 ml-auto" }, "\uAE30\uBCF8\uC0C1\uD488 \uC81C\uC678\uB294 \uAE30\uD0C0\uC0C1\uD488 \uC791\uC5C5\uC6A9, BOX/EA/\uC18C\uBD84\uC740 \uB2E8\uC704 \uAE30\uC900 \uBAA8\uC544\uBCF4\uAE30\uC785\uB2C8\uB2E4."))))));
+                React.createElement("div", { className: "flex items-center gap-2 flex-wrap" },
+                    React.createElement("span", { className: "text-[11px] font-black text-slate-500 mr-1" }, "\uC0C1\uC138\uD544\uD130"),
+                    [
+                        ['margin', '역마진'],
+                        ['safeMinus', '안전(-)']
+                    ].map(([value, label]) => (React.createElement("button", { key: value, onClick: () => applyPriceFilter(value), className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, label))),
+                    React.createElement("button", { onClick: () => applyPriceFilter('basicExclude'), className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${priceFilter === 'basicExclude' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: "\uAE30\uBCF8\uAC12\uC774 \uACF5\uBC31/0/N/false\uC778 \uAE30\uD0C0\uC0C1\uD488\uB9CC \uB178\uCD9C\uD569\uB2C8\uB2E4." }, "\uAE30\uBCF8\uC0C1\uD488 \uC81C\uC678"),
+                    React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1" }),
+                    [
+                        ['unitBox', 'BOX'],
+                        ['unitEa', 'EA'],
+                        ['unitSub', '소분']
+                    ].map(([value, label]) => (React.createElement("button", { key: value, onClick: () => applyPriceFilter(value), className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, label)))))))));
 });
 const CatalogSaveModal = ({ onClose, onSave }) => {
     const [name, setName] = useState('');
@@ -3887,7 +3895,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.29 DetailFilterVisible]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.32 TableViewThirdRow]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -4192,9 +4200,9 @@ const App = () => {
                         .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; } 
                         .fade-in { animation: fadeIn 0.3s ease-out; } 
                         .system-ui-shell { transition: max-height 180ms ease, opacity 160ms ease, transform 180ms ease, border-color 180ms ease; will-change: max-height, opacity, transform; }
-                        /* [M-FILTER-DETAIL-HEIGHT] 상세필터는 카테고리/프로테지 줄 아래에 추가 렌더링된다. 260px 고정은 하단 상세필터 줄을 잘라서 버튼을 눌러도 안 보이는 원인이 된다. */
+                        /* [M-TOOLBAR-LAYOUT-HEIGHT] 상단 컨트롤은 1단 파일영역 + 2단 단가/양식/검색 + 3단 고정필터 + 4단 상세필터까지 수용한다. */
                         .system-ui-shell.is-collapsed { max-height: 0 !important; opacity: 0; transform: translateY(-10px); pointer-events: none; border-color: transparent; }
-                        .system-ui-shell.is-expanded { max-height: 420px; opacity: 1; transform: translateY(0); }
+                        .system-ui-shell.is-expanded { max-height: 500px; opacity: 1; transform: translateY(0); }
                         @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
                     `),
         ui.alertMsg && (React.createElement("div", { className: "fixed top-6 z-[999] bg-slate-800 text-white px-6 py-4 rounded-xl shadow-2xl flex items-start gap-3 fade-in text-sm font-bold border border-slate-700" },
@@ -4215,7 +4223,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.29 DetailFilterVisible")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.32 TableViewThirdRow")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
