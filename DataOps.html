@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzl Table Sort Persist FIFO)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzm Stock Lot Unified Review)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.99zzl Table Sort Persist FIFO.....</div>
+        <div class="loader-text">ONEAPP DataOps v8.99zzm Stock Lot Unified Review.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -527,7 +527,7 @@ const saveTableSortMode = (sortMode = 'DEFAULT') => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'v8.99zzl Table Sort Persist FIFO',
+    version: 'v8.99zzm Stock Lot Unified Review',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -791,7 +791,7 @@ window.DATAOPS_CLOUD_MODULE = DATAOPS_CLOUD_MODULE;
 
 
 /* =======================================================================
-   1-B-2. v8.99zzl Table Sort Persist FIFO
+   1-B-2. v8.99zzm Stock Lot Unified Review
    - 목적: 클라우드는 동기화 때만 조회하고, 수불/매칭/치환은 로컬 캐시와 인덱스를 즉시 사용한다.
    - 원칙: 계산 중 클라우드 fetch 금지. 마감 작업은 현재 로컬 마스터 스냅샷 기준으로 고정한다.
    ======================================================================= */
@@ -1013,7 +1013,7 @@ window.DATAOPS_MASTER_LINK_MODULE = DATAOPS_MASTER_LINK_MODULE;
 
 
 /* =======================================================================
-   1-D. v8.99zzl Table Sort Persist FIFO
+   1-D. v8.99zzm Stock Lot Unified Review
    - 목적: MerchOps 마스터의 원물/소분 관계를 기준으로 소분 마이너스 항목을 치환 후보로 추출하고, 관리자 명령 시 치환입고/치환출고를 반영한다.
    - 원칙: 자동 실행하지 않는다. 후보 확인 후 관리자 버튼으로만 실행한다.
    ======================================================================= */
@@ -4837,7 +4837,7 @@ function App() {
         return counts;
     }, [substitutionCandidateRows]);
     const closingStats = useMemo(() => {
-        let missingPriceCount = 0, totalMissingPriceCount = 0, lossCount = 0, totalLossCount = 0, matchCount = 0, totalMatchCount = 0, totalRevenue = 0, totalInventoryAsset = 0, totalLossValue = 0;
+        let missingPriceCount = 0, totalMissingPriceCount = 0, lossCount = 0, totalLossCount = 0, matchCount = 0, totalMatchCount = 0, stockLotCount = 0, totalStockLotCount = 0, totalRevenue = 0, totalInventoryAsset = 0, totalLossValue = 0;
         let multiPriceSet = new Set(multiPriceCodes);
         productData.forEach(p => {
             const hasPriceTotal = (Number(p.단가) || 0) <= 0 || (p.이슈 && p.이슈.some(i => i.includes('단가변경') || i.includes('단가없음')));
@@ -4860,6 +4860,10 @@ function App() {
                 totalMatchCount++;
             if (hasMatchUnresolved)
                 matchCount++;
+            if (hasQtyTotal || hasMatchTotal)
+                totalStockLotCount++;
+            if (hasQtyUnresolved || hasMatchUnresolved)
+                stockLotCount++;
             totalRevenue += (Number(p.매출액) || 0);
             const actualQty = p.실사 === '' || p.실사 === null ? 0 : Number(p.실사);
             const price = Number(p.단가) || 0;
@@ -4874,6 +4878,8 @@ function App() {
             totalLossCount,
             multiPriceCount: matchCount,
             totalMultiPriceCount: totalMatchCount,
+            stockLotCount,
+            totalStockLotCount,
             substitutionCandidateCount: substitutionCandidateRows.length,
             substitutionRunnableCount: safeNum(substitutionCandidateStatusCounts['치환후보']),
             substitutionProblemCount: Math.max(0, substitutionCandidateRows.length - safeNum(substitutionCandidateStatusCounts['치환후보'])),
@@ -6519,7 +6525,7 @@ ${changeText}
                 const targetField = type === 'missingPrice' ? 'price-input' : 'actual-input';
                 const input = row.querySelector(`input[data-field="${targetField}"]`) || row.querySelector(`input[id^="${targetField}-"]`);
                 scrollIssueRowIntoWorkCenter(row, input, type);
-                const colorClass = type === 'missingPrice' ? 'bg-rose-50' : (type === 'multiPrice' ? 'bg-blue-50' : 'bg-orange-50');
+                const colorClass = type === 'missingPrice' ? 'bg-rose-50' : (type === 'stockLot' ? 'bg-cyan-50' : (type === 'multiPrice' ? 'bg-blue-50' : 'bg-orange-50'));
                 row.classList.add(colorClass);
                 setTimeout(() => row.classList.remove(colorClass), 1500);
                 if (!input) {
@@ -6598,6 +6604,8 @@ ${changeText}
             // 실제 단가 0원 행은 더미/확인완료 여부와 관계없이 검토 대상이다.
             if (type === 'missingPrice')
                 return (!p.수기확인완료 && safeNum(p.단가) <= 0) || (p.이슈 && p.이슈.some(i => i.includes('🚨단가변경') || i.includes('🚨단가없음')));
+            if (type === 'stockLot')
+                return hasUnresolvedQtyIssue(p) || hasUnresolvedLotIssue(p);
             if (type === 'loss')
                 return hasUnresolvedQtyIssue(p);
             if (type === 'multiPrice')
@@ -6625,6 +6633,10 @@ ${changeText}
                     if ((!p.수기확인완료 && safeNum(p.단가) <= 0) || (p.이슈 && p.이슈.some(i => i.includes('🚨단가변경') || i.includes('🚨단가없음'))))
                         shouldAck = true;
                 }
+                else if (type === 'stockLot') {
+                    if (hasUnresolvedQtyIssue(p) || hasUnresolvedLotIssue(p))
+                        shouldAck = true;
+                }
                 else if (type === 'loss') {
                     if (hasUnresolvedQtyIssue(p))
                         shouldAck = true;
@@ -6643,7 +6655,7 @@ ${changeText}
                 return p;
             });
         });
-        if (type === 'multiPrice') {
+        if (type === 'multiPrice' || type === 'stockLot') {
             setAckMultiCodes(prev => {
                 const newSet = new Set(prev);
                 multiPriceCodes.forEach(c => newSet.add(c));
@@ -6795,7 +6807,9 @@ ${changeText}
     }, [linkSourceKey, appStep, isProcessing, files, guideModalOpen]);
     const filteredProductData = useMemo(() => {
         let data = productData;
-        if (filters.reviewType === 'loss')
+        if (filters.reviewType === 'stockLot')
+            data = data.filter(p => hasQtyIssueTotal(p) || hasLotIssueTotal(p));
+        else if (filters.reviewType === 'loss')
             data = data.filter(p => p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0) || (p.이슈 && p.이슈.some(i => i.includes('수량변동') || i.includes('잔량') || i.includes('계산') || i.includes('신규추가') || i.includes('삭제됨'))));
         else if (filters.reviewType === 'missingPrice')
             data = data.filter(p => safeNum(p.단가) <= 0 || (p.이슈 && p.이슈.some(i => i.includes('단가변경') || i.includes('단가없음'))));
@@ -6813,7 +6827,7 @@ ${changeText}
         if (filters.excludeZeroActual)
             data = data.filter(d => { const act = d.실사 === '' || d.실사 === null || d.실사 === undefined ? 0 : Number(d.실사); return act !== 0; });
         return FILTER_SORT_MODULE.sortRows(data, filters.sortMode);
-    }, [productData, filters, multiPriceCodes, mappings, hasLotIssueTotal, substitutionCandidateCodeSet]);
+    }, [productData, filters, multiPriceCodes, mappings, hasQtyIssueTotal, hasLotIssueTotal, substitutionCandidateCodeSet]);
     useEffect(() => {
         filteredProductDataRef.current = filteredProductData;
     }, [filteredProductData]);
@@ -6824,7 +6838,7 @@ ${changeText}
                     React.createElement("h1", { className: "text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzl Table Sort Persist FIFO"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzm Stock Lot Unified Review"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
@@ -7110,7 +7124,7 @@ ${changeText}
                                         React.createElement("i", { className: "fas fa-redo-alt mr-1.5" }),
                                         "\uCD08\uAE30\uD654"))))),
                         React.createElement("div", { ref: cardContainerRef, className: "sticky top-0 z-40 bg-[#f8fafc] w-full border-slate-200 shrink-0", style: { borderBottomWidth: showCards ? '1px' : '0px', boxShadow: showCards ? '0 4px 6px -4px rgba(0,0,0,0.05)' : 'none' } }, showCards && (React.createElement("div", { className: "px-4 md:px-6 pt-2 pb-3 max-w-7xl mx-auto w-full" },
-                            React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-4 gap-4" },
+                            React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-3 gap-4" },
                                 React.createElement("div", { onClick: () => { setActiveIssueMode(null); setActiveMultiCode(null); setFilters({ ...filters, reviewType: filters.reviewType === 'substitution' ? null : 'substitution', issuesOnly: false }); }, className: `p-4 rounded-xl border-[3px] transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${filters.reviewType === 'substitution' ? 'bg-purple-50 border-purple-500 shadow-xl ring-4 ring-purple-500/20 scale-[1.02] z-10' : 'bg-white border-purple-200 hover:border-purple-400 hover:shadow-md'}` },
                                     React.createElement("div", { className: `text-xs font-bold mb-1 flex items-center justify-between ${filters.reviewType === 'substitution' ? 'text-purple-800' : 'text-slate-600'}` },
                                         React.createElement("span", { className: "flex items-center" },
@@ -7130,62 +7144,35 @@ ${changeText}
                                     closingStats.substitutionRunnableCount > 0 && React.createElement("button", { onClick: (e) => { e.stopPropagation(); executeMasterSubstitutionCandidates(); }, className: "mt-3 w-full px-3 py-2 rounded-lg bg-purple-600 text-white text-[12px] font-black hover:bg-purple-700 shadow-sm transition flex items-center justify-center gap-2" },
                                         React.createElement("i", { className: "fas fa-play-circle" }),
                                         "실행가능 후보 치환")),
-                                React.createElement("div", { onClick: () => { if (activeIssueMode !== 'multiPrice') {
+                                React.createElement("div", { onClick: () => { if (activeIssueMode !== 'stockLot') {
                                         setFilters({ ...filters, reviewType: null });
-                                        handleIssueJump('multiPrice', 'next', true);
-                                    } }, className: `p-4 rounded-xl border-[3px] transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${activeIssueMode === 'multiPrice' ? 'bg-blue-50 border-blue-500 shadow-xl ring-4 ring-blue-500/20 scale-[1.02] z-10' : 'bg-white border-blue-200 hover:border-blue-400 hover:shadow-md'}` },
-                                    React.createElement("div", { className: `text-xs font-bold mb-1 flex items-center justify-between ${activeIssueMode === 'multiPrice' ? 'text-blue-800' : 'text-slate-600'}` },
+                                        handleIssueJump('stockLot', 'next', true);
+                                    } }, className: `p-4 rounded-xl border-[3px] transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${activeIssueMode === 'stockLot' ? 'bg-cyan-50 border-cyan-500 shadow-xl ring-4 ring-cyan-500/20 scale-[1.02] z-10' : 'bg-white border-cyan-200 hover:border-cyan-400 hover:shadow-md'}` },
+                                    React.createElement("div", { className: `text-xs font-bold mb-1 flex items-center justify-between ${activeIssueMode === 'stockLot' ? 'text-cyan-800' : 'text-slate-600'}` },
                                         React.createElement("span", { className: "flex items-center" },
-                                            React.createElement("i", { className: "fas fa-tags text-blue-500 mr-2 text-base" }),
-                                            "Lot \uB9E4\uCE58"),
-                                        closingStats.multiPriceCount > 0 && React.createElement("span", { className: "w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]" })),
+                                            React.createElement("i", { className: "fas fa-boxes-stacked text-cyan-500 mr-2 text-base" }),
+                                            "재고/Lot 확인"),
+                                        closingStats.stockLotCount > 0 && React.createElement("span", { className: "w-2.5 h-2.5 rounded-full bg-cyan-500 animate-pulse shadow-[0_0_8px_rgba(6,182,212,0.6)]" })),
                                     React.createElement("div", { className: "flex items-end justify-between mt-2" },
                                         React.createElement("div", null,
-                                            React.createElement("div", { className: `text-3xl font-black ${activeIssueMode === 'multiPrice' ? 'text-blue-900' : 'text-slate-800'}` },
-                                                closingStats.multiPriceCount,
-                                                React.createElement("span", { className: "text-sm font-bold text-slate-500 ml-1" }, "\uAC74")),
-                                            closingStats.multiPriceCount > 0 ? (React.createElement("div", { className: "text-[12px] text-blue-600 font-bold mt-1" }, hasEndFile ? "Lot 확인 필요" : "실제 Lot 이슈 확인")) : (React.createElement("div", { className: "text-[12px] text-slate-400 font-semibold mt-1" }, "\uD655\uC815 \uB9E4\uCE6D \uC81C\uC678 \u00B7 \uC644\uB8CC"))),
-                                        activeIssueMode === 'multiPrice' ? (React.createElement("div", { className: "flex items-center gap-1.5 mb-1" },
-                                            React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleIssueJump('multiPrice', 'prev', false); }, className: "p-1.5 bg-white rounded border border-blue-300 text-blue-600 hover:bg-blue-100 hover:border-blue-400 shadow-sm transition flex items-center justify-center w-8 h-8", title: "\uC774\uC804 \uD56D\uBAA9 (Shift+Tab)" },
+                                            React.createElement("div", { className: `text-3xl font-black ${activeIssueMode === 'stockLot' ? 'text-cyan-900' : 'text-slate-800'}` },
+                                                closingStats.stockLotCount,
+                                                React.createElement("span", { className: "text-sm font-bold text-slate-500 ml-1" }, "건")),
+                                            closingStats.stockLotCount > 0 ? (React.createElement("div", { className: "text-[12px] text-cyan-600 font-bold mt-1" },
+                                                "재고 ", closingStats.lossCount, " / Lot ", closingStats.multiPriceCount)) : (React.createElement("div", { className: "text-[12px] text-slate-400 font-semibold mt-1" }, "재고/Lot 확인 완료"))),
+                                        activeIssueMode === 'stockLot' ? (React.createElement("div", { className: "flex items-center gap-1.5 mb-1" },
+                                            React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleIssueJump('stockLot', 'prev', false); }, className: "p-1.5 bg-white rounded border border-cyan-300 text-cyan-600 hover:bg-cyan-100 hover:border-cyan-400 shadow-sm transition flex items-center justify-center w-8 h-8", title: "이전 항목 (Shift+Tab)" },
                                                 React.createElement("i", { className: "fas fa-chevron-left text-sm" })),
-                                            React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleIssueJump('multiPrice', 'next', false); }, className: "px-3 py-1.5 bg-blue-600 rounded border border-blue-700 text-white font-bold hover:bg-blue-700 shadow-sm transition flex items-center h-8", title: "\uB2E4\uC74C \uD56D\uBAA9 (Tab)" },
+                                            React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleIssueJump('stockLot', 'next', false); }, className: "px-3 py-1.5 bg-cyan-600 rounded border border-cyan-700 text-white font-bold hover:bg-cyan-700 shadow-sm transition flex items-center h-8", title: "다음 항목 (Tab)" },
                                                 "Tab ",
-                                                React.createElement("i", { className: "fas fa-chevron-right text-[10px] ml-1.5" })))) : (closingStats.multiPriceCount === 0 ? (React.createElement("div", { className: "text-emerald-500 font-bold text-sm bg-emerald-50 px-2 py-1 rounded flex items-center mb-1" },
+                                                React.createElement("i", { className: "fas fa-chevron-right text-[10px] ml-1.5" })))) : (closingStats.stockLotCount === 0 ? (React.createElement("div", { className: "text-emerald-500 font-bold text-sm bg-emerald-50 px-2 py-1 rounded flex items-center mb-1" },
                                             React.createElement("i", { className: "fas fa-check-circle mr-1" }),
-                                            "\uC644\uB8CC")) : (React.createElement("div", { className: "text-xs text-slate-400 font-bold mb-1 bg-slate-50 px-2 py-1 rounded border border-slate-100 shadow-sm" }, "\uD074\uB9AD\uD558\uC5EC \uAC80\uD1A0 \uC2DC\uC791")))),
-                                    filters.reviewType === 'multiPrice' ? (React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleAcknowledgeAll('multiPrice'); }, className: `absolute top-3 right-3 text-[11px] font-bold px-2.5 py-1.5 rounded text-white shadow-md z-10 transition ${activeIssueMode === 'multiPrice' ? 'bg-blue-700 hover:bg-blue-800 ring-2 ring-white' : 'bg-blue-600 hover:bg-blue-700'}` },
+                                            "완료")) : (React.createElement("div", { className: "text-xs text-slate-400 font-bold mb-1 bg-slate-50 px-2 py-1 rounded border border-slate-100 shadow-sm" }, "클릭하여 검토 시작")))),
+                                    filters.reviewType === 'stockLot' ? (React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleAcknowledgeAll('stockLot'); }, className: `absolute top-3 right-3 text-[11px] font-bold px-2.5 py-1.5 rounded text-white shadow-md z-10 transition ${activeIssueMode === 'stockLot' ? 'bg-cyan-700 hover:bg-cyan-800 ring-2 ring-white' : 'bg-cyan-600 hover:bg-cyan-700'}` },
                                         React.createElement("i", { className: "fas fa-check-double mr-1" }),
-                                        "\uBAA8\uB450 \uD655\uC778")) : (React.createElement("button", { onClick: (e) => { e.stopPropagation(); setActiveIssueMode(null); setFilters({ ...filters, reviewType: 'multiPrice', issuesOnly: false }); }, className: `absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded shadow-sm z-10 transition ${activeIssueMode === 'multiPrice' ? 'bg-white text-blue-600 border border-blue-200 hover:bg-blue-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-blue-600'}`, title: "\uC2E4\uC81C Lot \uC774\uC288\uAC00 \uC788\uB294 \uD56D\uBAA9\uB9CC \uBAA8\uC544\uC11C \uBCF4\uC5EC\uC90D\uB2C8\uB2E4." },
+                                        "모두 확인")) : (React.createElement("button", { onClick: (e) => { e.stopPropagation(); setActiveIssueMode(null); setFilters({ ...filters, reviewType: 'stockLot', issuesOnly: false }); }, className: `absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded shadow-sm z-10 transition ${activeIssueMode === 'stockLot' ? 'bg-white text-cyan-600 border border-cyan-200 hover:bg-cyan-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-cyan-600'}`, title: "재고 수량과 Lot 매칭 이슈를 함께 모아봅니다." },
                                         React.createElement("i", { className: "fas fa-list mr-1" }),
-                                        "\uBAA8\uC544\uBCF4\uAE30"))),
-                                React.createElement("div", { onClick: () => { if (activeIssueMode !== 'loss') {
-                                        setFilters({ ...filters, reviewType: null });
-                                        handleIssueJump('loss', 'next', true);
-                                    } }, className: `p-4 rounded-xl border-[3px] transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${activeIssueMode === 'loss' ? 'bg-orange-50 border-orange-500 shadow-xl ring-4 ring-orange-500/20 scale-[1.02] z-10' : 'bg-white border-orange-200 hover:border-orange-400 hover:shadow-md'}` },
-                                    React.createElement("div", { className: `text-xs font-bold mb-1 flex items-center justify-between ${activeIssueMode === 'loss' ? 'text-orange-800' : 'text-slate-600'}` },
-                                        React.createElement("span", { className: "flex items-center" },
-                                            React.createElement("i", { className: "fas fa-balance-scale text-orange-500 mr-2 text-base" }),
-                                            "\uC7AC\uACE0/\uC804\uD45C \uBCC0\uB3D9 \uD655\uC778"),
-                                        closingStats.lossCount > 0 && React.createElement("span", { className: "w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.6)]" })),
-                                    React.createElement("div", { className: "flex items-end justify-between mt-2" },
-                                        React.createElement("div", null,
-                                            React.createElement("div", { className: `text-3xl font-black ${activeIssueMode === 'loss' ? 'text-orange-900' : 'text-slate-800'}` },
-                                                closingStats.lossCount,
-                                                React.createElement("span", { className: "text-sm font-bold text-slate-500 ml-1" }, "\uAC74")),
-                                            closingStats.lossCount > 0 ? (React.createElement("div", { className: "text-[12px] text-orange-600 font-bold mt-1" }, hasEndFile ? "새로운 변동사항 발견" : "실사 수량 확인하세요")) : (React.createElement("div", { className: "text-[12px] text-slate-400 font-semibold mt-1" }, "\uBAA8\uB4E0 \uBCC0\uB3D9 \uD655\uC778\uB428"))),
-                                        activeIssueMode === 'loss' ? (React.createElement("div", { className: "flex items-center gap-1.5 mb-1" },
-                                            React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleIssueJump('loss', 'prev', false); }, className: "p-1.5 bg-white rounded border border-orange-300 text-orange-600 hover:bg-orange-100 hover:border-orange-400 shadow-sm transition flex items-center justify-center w-8 h-8", title: "\uC774\uC804 \uD56D\uBAA9 (Shift+Tab)" },
-                                                React.createElement("i", { className: "fas fa-chevron-left text-sm" })),
-                                            React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleIssueJump('loss', 'next', false); }, className: "px-3 py-1.5 bg-orange-600 rounded border border-orange-700 text-white font-bold hover:bg-orange-700 shadow-sm transition flex items-center h-8", title: "\uB2E4\uC74C \uD56D\uBAA9 (Tab)" },
-                                                "Tab ",
-                                                React.createElement("i", { className: "fas fa-chevron-right text-[10px] ml-1.5" })))) : (closingStats.lossCount === 0 ? (React.createElement("div", { className: "text-emerald-500 font-bold text-sm bg-emerald-50 px-2 py-1 rounded flex items-center mb-1" },
-                                            React.createElement("i", { className: "fas fa-check-circle mr-1" }),
-                                            "\uC644\uB8CC")) : (React.createElement("div", { className: "text-xs text-slate-400 font-bold mb-1 bg-slate-50 px-2 py-1 rounded border border-slate-100 shadow-sm" }, "\uD074\uB9AD\uD558\uC5EC \uAC80\uD1A0 \uC2DC\uC791")))),
-                                    filters.reviewType === 'loss' ? (React.createElement("button", { onClick: (e) => { e.stopPropagation(); handleAcknowledgeAll('loss'); }, className: `absolute top-3 right-3 text-[11px] font-bold px-2.5 py-1.5 rounded text-white shadow-md z-10 transition ${activeIssueMode === 'loss' ? 'bg-orange-700 hover:bg-orange-800 ring-2 ring-white' : 'bg-orange-600 hover:bg-orange-700'}` },
-                                        React.createElement("i", { className: "fas fa-check-double mr-1" }),
-                                        "\uBAA8\uB450 \uD655\uC778")) : (React.createElement("button", { onClick: (e) => { e.stopPropagation(); setActiveIssueMode(null); setFilters({ ...filters, reviewType: 'loss', issuesOnly: false }); }, className: `absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded shadow-sm z-10 transition ${activeIssueMode === 'loss' ? 'bg-white text-orange-600 border border-orange-200 hover:bg-orange-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-orange-600'}`, title: "\uC2E4\uC81C Lot \uC774\uC288\uAC00 \uC788\uB294 \uD56D\uBAA9\uB9CC \uBAA8\uC544\uC11C \uBCF4\uC5EC\uC90D\uB2C8\uB2E4." },
-                                        React.createElement("i", { className: "fas fa-list mr-1" }),
-                                        "\uBAA8\uC544\uBCF4\uAE30"))),
+                                        "모아보기"))),
                                 React.createElement("div", { onClick: () => { if (activeIssueMode !== 'missingPrice') {
                                         setFilters({ ...filters, reviewType: null });
                                         handleIssueJump('missingPrice', 'next', true);
