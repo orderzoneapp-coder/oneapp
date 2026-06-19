@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzm Stock Lot Unified Review)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzo Hide Moved Source Rows)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.99zzm Stock Lot Unified Review.....</div>
+        <div class="loader-text">ONEAPP DataOps v8.99zzo Hide Moved Source Rows.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -503,6 +503,7 @@ const defaultMappings = {
     transferPriceColumns: '수기공지단가=출고가(공지)\n고정상장가=청과\n시세상장가=상장가\n창고출고가=출고(외노)\n식자재가=식자재\n도매A=도매A\n매입원가=단가'
 };
 const DATAOPS_TABLE_SORT_PREF_KEY = 'dataops_table_sort_mode_v1';
+const DATAOPS_TABLE_SORT_DESC_PREF_KEY = 'dataops_table_sort_desc_v1';
 const DATAOPS_TABLE_SORT_MODES = Object.freeze(['DEFAULT', 'DATE', 'CATEGORY', 'VENDOR', 'PRICE']);
 const getSavedTableSortMode = () => {
     try {
@@ -513,6 +514,14 @@ const getSavedTableSortMode = () => {
         return 'DEFAULT';
     }
 };
+const getSavedTableSortDesc = () => {
+    try {
+        return localStorage.getItem(DATAOPS_TABLE_SORT_DESC_PREF_KEY) === '1';
+    }
+    catch (e) {
+        return false;
+    }
+};
 const saveTableSortMode = (sortMode = 'DEFAULT') => {
     const mode = DATAOPS_TABLE_SORT_MODES.includes(sortMode) ? sortMode : 'DEFAULT';
     try {
@@ -521,13 +530,29 @@ const saveTableSortMode = (sortMode = 'DEFAULT') => {
     catch (e) { }
     return mode;
 };
+const saveTableSortDesc = (isDesc = false) => {
+    const desc = !!isDesc;
+    try {
+        localStorage.setItem(DATAOPS_TABLE_SORT_DESC_PREF_KEY, desc ? '1' : '0');
+    }
+    catch (e) { }
+    return desc;
+};
+const clearTableSortPreference = () => {
+    try {
+        localStorage.setItem(DATAOPS_TABLE_SORT_PREF_KEY, 'DEFAULT');
+        localStorage.setItem(DATAOPS_TABLE_SORT_DESC_PREF_KEY, '0');
+    }
+    catch (e) { }
+    return { sortMode: 'DEFAULT', sortDesc: false };
+};
 /* =======================================================================
    1-A. v8.50 내부 모듈 + 현장 고도화 베이스 (Single HTML Logical Modules)
    - 목적: 기존 기능은 유지하고, 이후 고도화를 위한 책임 경계를 만든다.
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'v8.99zzm Stock Lot Unified Review',
+    version: 'v8.99zzo Hide Moved Source Rows',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -791,7 +816,7 @@ window.DATAOPS_CLOUD_MODULE = DATAOPS_CLOUD_MODULE;
 
 
 /* =======================================================================
-   1-B-2. v8.99zzm Stock Lot Unified Review
+   1-B-2. v8.99zzo Hide Moved Source Rows
    - 목적: 클라우드는 동기화 때만 조회하고, 수불/매칭/치환은 로컬 캐시와 인덱스를 즉시 사용한다.
    - 원칙: 계산 중 클라우드 fetch 금지. 마감 작업은 현재 로컬 마스터 스냅샷 기준으로 고정한다.
    ======================================================================= */
@@ -1013,7 +1038,7 @@ window.DATAOPS_MASTER_LINK_MODULE = DATAOPS_MASTER_LINK_MODULE;
 
 
 /* =======================================================================
-   1-D. v8.99zzm Stock Lot Unified Review
+   1-D. v8.99zzo Hide Moved Source Rows
    - 목적: MerchOps 마스터의 원물/소분 관계를 기준으로 소분 마이너스 항목을 치환 후보로 추출하고, 관리자 명령 시 치환입고/치환출고를 반영한다.
    - 원칙: 자동 실행하지 않는다. 후보 확인 후 관리자 버튼으로만 실행한다.
    ======================================================================= */
@@ -1469,8 +1494,8 @@ const FILTER_SORT_MODULE = Object.freeze({
         return safeNum(sa.price !== null && sa.price !== void 0 ? sa.price : a === null || a === void 0 ? void 0 : a.단가) - safeNum(sb.price !== null && sb.price !== void 0 ? sb.price : b === null || b === void 0 ? void 0 : b.단가)
             || FILTER_SORT_MODULE.compareByCodeThenName(a, b);
     },
-    sortRows: (rows = [], sortMode = 'DEFAULT') => {
-        return [...rows].sort((a, b) => {
+    sortRows: (rows = [], sortMode = 'DEFAULT', sortDesc = false) => {
+        const sorted = [...rows].sort((a, b) => {
             const sa = FILTER_SORT_MODULE.getStandard(a);
             const sb = FILTER_SORT_MODULE.getStandard(b);
             if (sortMode === 'DATE')
@@ -1483,6 +1508,7 @@ const FILTER_SORT_MODULE = Object.freeze({
                 return FILTER_SORT_MODULE.compareByPriceThenCode(a, b);
             return FILTER_SORT_MODULE.compareByCodeThenName(a, b);
         });
+        return sortDesc ? sorted.reverse() : sorted;
     },
     getGroupLabel: (row, sortMode = 'DEFAULT') => {
         const standard = FILTER_SORT_MODULE.getStandard(row);
@@ -2719,7 +2745,8 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             });
             return prevP.map(p => {
                 if (p.batchKey === sourceKey) {
-                    const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역)) };
+                    const cleanVendorName = safeStr(vendorName).replace('_perfect', '');
+                    const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역 || {})), 이슈: [...(p.이슈 || [])] };
                     np.출고 -= qtyToMove;
                     const movedCogs = qtyToMove * sPrice;
                     const movedRev = qtyToMove * sRevUnit;
@@ -2744,6 +2771,19 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     // 🌟 관리자 조작으로 전산잔량이 0 이상이 되면 수량부족(잔량) 이슈 칩 삭제
                     if (np.전산잔량 >= 0) {
                         np.이슈 = np.이슈.filter(msg => !msg.includes('수량부족'));
+                    }
+                    const remainingLotQty = Object.values(np.출고내역 || {}).reduce((sum, v) => sum + safeNum(v && v.qty), 0);
+                    const isMoveEmptiedSource = safeNum(np.기초) === 0 && safeNum(np.입고) === 0 && safeNum(np.출고) === 0 && safeNum(np.대체입고) === 0 && safeNum(np.대체출고) === 0 && safeNum(np.전산잔량) === 0 && safeNum(np.실사) === 0 && safeNum(np.로스) === 0 && remainingLotQty === 0;
+                    if (isMoveEmptiedSource) {
+                        np._hiddenBySalesMove = true;
+                        np._hiddenBySalesMoveAt = new Date().toISOString();
+                        np._hiddenBySalesMoveTargetKey = targetKey;
+                        np._hiddenBySalesMoveVendor = cleanVendorName;
+                        np._hiddenBySalesMoveQty = qtyToMove;
+                        np.메모 = safeStr(np.메모, '').includes('[매칭변경원본숨김]') ? np.메모 : `${safeStr(np.메모, '')}${safeStr(np.메모, '') ? ' ' : ''}[매칭변경원본숨김] ${cleanVendorName} ${qtyToMove}`;
+                    }
+                    else {
+                        np._hiddenBySalesMove = false;
                     }
                     np.수기확인완료 = true;
                     return np;
@@ -2776,6 +2816,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     if (np.전산잔량 >= 0) {
                         np.이슈 = np.이슈.filter(msg => !msg.includes('수량부족'));
                     }
+                    np._hiddenBySalesMove = false;
                     np.수기확인완료 = true;
                     return np;
                 }
@@ -4264,7 +4305,7 @@ function App() {
     const [appStep, setAppStep] = useState('closing');
     const [files, setFiles] = useState({ prev: null, in: null, out: null, end: null });
     const [analysisMeta, setAnalysisMeta] = useState({ fileLabel: '', analyzedAt: '', status: 'idle' });
-    const [filters, setFilters] = useState({ issuesOnly: false, excludeZeroActual: false, search: '', reviewType: null, category: 'ALL', favoriteVendorOnly: false, unit: { ...CONFIG_MODULE.defaultUnitFilter }, sortMode: getSavedTableSortMode() });
+    const [filters, setFilters] = useState({ issuesOnly: false, excludeZeroActual: false, search: '', reviewType: null, category: 'ALL', favoriteVendorOnly: false, showHiddenMoveRows: false, unit: { ...CONFIG_MODULE.defaultUnitFilter }, sortMode: getSavedTableSortMode(), sortDesc: getSavedTableSortDesc() });
     const [activeIssueMode, setActiveIssueMode] = useState(null);
     const [activeMultiCode, setActiveMultiCode] = useState(null);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -4364,12 +4405,27 @@ function App() {
         reviewType: null,
         category: 'ALL',
         favoriteVendorOnly: false,
+        showHiddenMoveRows: false,
         unit: { ...CONFIG_MODULE.defaultUnitFilter },
-        sortMode: getSavedTableSortMode()
+        sortMode: 'DEFAULT',
+        sortDesc: false
     }), []);
     useEffect(() => {
         saveTableSortMode(filters.sortMode);
-    }, [filters.sortMode]);
+        saveTableSortDesc(filters.sortDesc);
+    }, [filters.sortMode, filters.sortDesc]);
+    const handleTableSortSelect = useCallback((mode) => {
+        setFilters(f => {
+            const nextMode = DATAOPS_TABLE_SORT_MODES.includes(mode) ? mode : 'DEFAULT';
+            const isSameMode = f.sortMode === nextMode;
+            return { ...f, sortMode: nextMode, sortDesc: isSameMode ? !f.sortDesc : false };
+        });
+    }, []);
+    const resetTableFilters = useCallback(() => {
+        clearTableSortPreference();
+        setActiveIssueMode(null);
+        setFilters(getDefaultFilters());
+    }, [getDefaultFilters]);
     const buildAnalysisFileLabel = useCallback((targetFiles = files) => {
         const labels = [
             targetFiles.prev ? `기초:${targetFiles.prev.name}` : '',
@@ -4889,6 +4945,7 @@ function App() {
             total: productData.length
         };
     }, [productData, hasQtyIssueTotal, hasUnresolvedQtyIssue, hasLotIssueTotal, hasUnresolvedLotIssue, substitutionCandidateRows, substitutionCandidateStatusCounts]);
+    const hiddenMovedSourceCount = useMemo(() => productData.filter(item => item && item._hiddenBySalesMove).length, [productData]);
     const showCards = useMemo(() => {
         // v8.61: 카드뷰는 문제 건수가 0이어도 분석 완료 후 항상 표시한다.
         // 카드 자체가 '이상 없음' 상태를 보여주는 작업 체크리스트이기 때문이다.
@@ -6493,7 +6550,7 @@ ${changeText}
     const handleIssueJump = useCallback((type, direction = 'next', fromCardClick = false) => {
         setActiveIssueMode(type);
         setSearchInputVal('');
-        setFilters(prev => ({ ...prev, search: '', issuesOnly: false, excludeZeroActual: false, reviewType: null, category: 'ALL', favoriteVendorOnly: false, unit: { ...CONFIG_MODULE.defaultUnitFilter } }));
+        setFilters(prev => ({ ...prev, search: '', issuesOnly: false, excludeZeroActual: false, reviewType: null, category: 'ALL', favoriteVendorOnly: false, showHiddenMoveRows: false, unit: { ...CONFIG_MODULE.defaultUnitFilter } }));
         if (fromCardClick)
             issueJumpHistoryRef.current = [];
         const activeEl = document.activeElement;
@@ -6807,6 +6864,8 @@ ${changeText}
     }, [linkSourceKey, appStep, isProcessing, files, guideModalOpen]);
     const filteredProductData = useMemo(() => {
         let data = productData;
+        if (!filters.showHiddenMoveRows)
+            data = data.filter(p => !p._hiddenBySalesMove);
         if (filters.reviewType === 'stockLot')
             data = data.filter(p => hasQtyIssueTotal(p) || hasLotIssueTotal(p));
         else if (filters.reviewType === 'loss')
@@ -6826,7 +6885,7 @@ ${changeText}
             data = data.filter(d => d.이슈 && d.이슈.length > 0);
         if (filters.excludeZeroActual)
             data = data.filter(d => { const act = d.실사 === '' || d.실사 === null || d.실사 === undefined ? 0 : Number(d.실사); return act !== 0; });
-        return FILTER_SORT_MODULE.sortRows(data, filters.sortMode);
+        return FILTER_SORT_MODULE.sortRows(data, filters.sortMode, filters.sortDesc);
     }, [productData, filters, multiPriceCodes, mappings, hasQtyIssueTotal, hasLotIssueTotal, substitutionCandidateCodeSet]);
     useEffect(() => {
         filteredProductDataRef.current = filteredProductData;
@@ -6838,7 +6897,7 @@ ${changeText}
                     React.createElement("h1", { className: "text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzm Stock Lot Unified Review"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzo Hide Moved Source Rows"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
@@ -7205,7 +7264,13 @@ ${changeText}
                             React.createElement("div", { className: "bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col flex-1 overflow-visible" },
                                 productData.length > 0 && (React.createElement("div", { ref: filterBarRef, className: "shrink-0 sticky bg-white border-b border-slate-200 px-3 py-2 flex flex-nowrap items-center gap-1.5 text-[11px] font-bold z-[38] shadow-sm overflow-x-auto hide-scrollbar", style: { top: showCards ? `${cardHeight}px` : '0px' } },
                                     React.createElement("span", { className: "text-slate-500 mr-1" }, "\uC815\uB82C"),
-                                    [['DEFAULT', '품목+FIFO'], ['DATE', '구매일자순'], ['CATEGORY', '카테고리순'], ['VENDOR', '구매처순'], ['PRICE', '단가순']].map(([mode, label]) => (React.createElement("button", { key: mode, onClick: () => setFilters(f => ({ ...f, sortMode: mode })), title: mode === 'DEFAULT' ? '품목코드순 + 구매일자 오름차순(FIFO)' : label, className: `px-2 py-1 rounded border transition ${filters.sortMode === mode ? 'bg-slate-800 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, label))),
+                                    [['DEFAULT', '품목+FIFO'], ['DATE', '구매일자순'], ['CATEGORY', '카테고리순'], ['VENDOR', '구매처순'], ['PRICE', '단가순']].map(([mode, label]) => {
+                                        const isActive = filters.sortMode === mode;
+                                        const arrow = isActive ? (filters.sortDesc ? '↓' : '↑') : '';
+                                        return React.createElement("button", { key: mode, onClick: () => handleTableSortSelect(mode), title: `${mode === 'DEFAULT' ? '품목코드순 + 구매일자 오름차순(FIFO)' : label} / 같은 버튼을 한 번 더 누르면 역순 정렬`, className: `px-2 py-1 rounded border transition ${isActive ? 'bg-slate-800 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` },
+                                            label,
+                                            arrow && React.createElement("span", { className: "ml-1 text-[10px]" }, arrow));
+                                    }),
                                     React.createElement("div", { className: "w-px h-5 bg-slate-200 mx-1" }),
                                     React.createElement("span", { className: "text-slate-500 mr-1" }, "\uCE74\uD14C\uACE0\uB9AC"),
                                     ['ALL', '10', '20', '30', '40', '50'].map(cat => (React.createElement("button", { key: cat, onClick: () => setFilters(f => ({ ...f, category: cat })), title: cat === 'ALL' ? '전체' : CONFIG_MODULE.categoryMap[cat], className: `px-2 py-1 rounded border transition ${filters.category === cat ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, cat === 'ALL' ? '전체' : cat))),
@@ -7214,6 +7279,7 @@ ${changeText}
                                     React.createElement("span", { className: "text-slate-500 mr-1" }, "\uB2E8\uC704"),
                                     ['BOX', 'EA', 'SPLIT'].map(unit => (React.createElement("button", { key: unit, onClick: () => setFilters(f => ({ ...f, unit: { ...f.unit, [unit]: !f.unit[unit] } })), title: `${unit === 'SPLIT' ? '소분' : unit} 단위 상품 노출`, className: `px-2 py-1 rounded border transition ${filters.unit[unit] ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-white text-slate-400 border-slate-300 hover:bg-slate-50'}` }, unit === 'SPLIT' ? '소분' : unit))),
                                     React.createElement("button", { onClick: () => setFilters(f => ({ ...f, excludeZeroActual: !f.excludeZeroActual })), title: "\uC794\uB7C9/\uC2E4\uC0AC \uC218\uB7C9\uC774 0\uC778 \uC0C1\uD488 \uC81C\uC678", className: `px-2 py-1 rounded border whitespace-nowrap transition ${filters.excludeZeroActual ? 'bg-blue-600 text-white border-blue-700 shadow-sm' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, "\uC2E4\uC0AC 0 \uC81C\uC678"),
+                                    hiddenMovedSourceCount > 0 && React.createElement("button", { onClick: () => setFilters(f => ({ ...f, showHiddenMoveRows: !f.showHiddenMoveRows })), title: "드래그 매칭으로 비워진 원본 행을 표시/숨김합니다. 원본값은 삭제하지 않고 내부 이력으로 보관됩니다.", className: `px-2 py-1 rounded border whitespace-nowrap transition ${filters.showHiddenMoveRows ? 'bg-amber-500 text-white border-amber-600 shadow-sm' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-50'}` }, "매칭원본 ", hiddenMovedSourceCount),
                                     React.createElement("div", { className: "ml-1 px-2 py-1 rounded-full whitespace-nowrap bg-slate-100 border border-slate-200 text-slate-600 flex items-center gap-1", title: "\uD604\uC7AC \uD544\uD130 \uC801\uC6A9 \uD6C4 \uB178\uCD9C \uC0C1\uD488 \uC218 / \uC804\uCCB4 \uC0C1\uD488 \uC218" },
                                         React.createElement("i", { className: "fas fa-list-check text-blue-500" }),
                                         React.createElement("span", null, "\uD604\uC7AC"),
@@ -7224,7 +7290,7 @@ ${changeText}
                                             "\uC804\uCCB4 ",
                                             productData.length.toLocaleString(),
                                             "\uAC74")),
-                                    React.createElement("button", { onClick: () => setFilters(f => ({ ...f, category: 'ALL', favoriteVendorOnly: false, unit: { ...CONFIG_MODULE.defaultUnitFilter }, sortMode: f.sortMode || getSavedTableSortMode(), reviewType: null, excludeZeroActual: false })), className: "ml-auto px-2 py-1 rounded border whitespace-nowrap bg-slate-50 text-slate-500 border-slate-300 hover:bg-slate-100" }, "\u21BA \uD544\uD130 \uCD08\uAE30\uD654"))),
+                                    React.createElement("button", { onClick: resetTableFilters, title: "필터와 정렬을 기본값으로 되돌립니다. 기본 정렬은 품목+FIFO 오름차순입니다.", className: "ml-auto px-2 py-1 rounded border whitespace-nowrap bg-slate-50 text-slate-500 border-slate-300 hover:bg-slate-100" }, "\u21BA \uD544\uD130 \uCD08\uAE30\uD654"))),
                                 React.createElement("table", { className: "w-full text-left border-collapse whitespace-nowrap text-sm" },
                                     React.createElement("thead", { className: "bg-slate-50 text-slate-600 font-extrabold text-[12px] tracking-tight sticky z-[35] border-b-2 border-slate-200 shadow-md transition-all duration-75", style: { top: `${(showCards ? cardHeight : 0) + filterBarHeight}px` } },
                                         React.createElement("tr", null,
