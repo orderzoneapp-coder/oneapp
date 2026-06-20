@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzza Warehouse Outbound Price Fallback)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzzb Transfer Check Upload Linked Final)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.99zzza Warehouse Outbound Price Fallback.....</div>
+        <div class="loader-text">ONEAPP DataOps v8.99zzzb Transfer Check Upload Linked Final.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -424,6 +424,7 @@ const normalizeTransferGroupName = (name) => {
 // v8.99zzy: 청과상장 판매가 산출의 공제율을 8%에서 9%로 복구한다. 기존 알고리즘은 유지하고 비율만 /0.91로 변경한다.
 // v8.99zzz: 2전송검증 단가확인은 구매파일 재해석 매칭을 중단하고, 판매업로드 생성 결과와 판매현황을 직접 비교한다.
 // v8.99zzza: 창고출고 그룹은 도매A가 없으면 출고(외노)를 적용한다.
+// v8.99zzzb: 2전송검증 기준가를 판매업로드 생성 엔진 결과에 완전 연동한다. 판매업로드 단가 알고리즘 변경 시 검증 기준가도 함께 변경된다.
 // v8.99zzs: 2전송 검증에서 고정가 적용 행은 저마진 추출에서 제외.
 // v8.99zzr: 2전송 판매업로드 단가 최종 룰 반영.
 // 단가가 없으면 사용자가 정한 그룹별 후보 외 다른 컬럼으로 자동 대체하지 않고 공백 + 단가확인으로 보낸다.
@@ -559,7 +560,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'v8.99zzza Warehouse Outbound Price Fallback',
+    version: 'v8.99zzzb Transfer Check Upload Linked Final',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -823,7 +824,7 @@ window.DATAOPS_CLOUD_MODULE = DATAOPS_CLOUD_MODULE;
 
 
 /* =======================================================================
-   1-B-2. v8.99zzza Warehouse Outbound Price Fallback
+   1-B-2. v8.99zzzb Transfer Check Upload Linked Final
    - 목적: 클라우드는 동기화 때만 조회하고, 수불/매칭/치환은 로컬 캐시와 인덱스를 즉시 사용한다.
    - 원칙: 계산 중 클라우드 fetch 금지. 마감 작업은 현재 로컬 마스터 스냅샷 기준으로 고정한다.
    ======================================================================= */
@@ -1045,7 +1046,7 @@ window.DATAOPS_MASTER_LINK_MODULE = DATAOPS_MASTER_LINK_MODULE;
 
 
 /* =======================================================================
-   1-D. v8.99zzza Warehouse Outbound Price Fallback
+   1-D. v8.99zzzb Transfer Check Upload Linked Final
    - 목적: MerchOps 마스터의 원물/소분 관계를 기준으로 소분 마이너스 항목을 치환 후보로 추출하고, 관리자 명령 시 치환입고/치환출고를 반영한다.
    - 원칙: 자동 실행하지 않는다. 후보 확인 후 관리자 버튼으로만 실행한다.
    ======================================================================= */
@@ -4691,7 +4692,8 @@ function App() {
             return true;
         if (normalized.includes('식자재>상장가'))
             return true;
-        if (normalized.includes('상장가') || normalized.includes('청과>상장가') || normalized.includes('도매A>출고(외노)'))
+        // v8.99zzzb: 도매A>출고(외노)는 식자재/창고출고의 현재 유효 룰이므로 구버전으로 보지 않는다.
+        if (normalized.includes('상장가') || normalized.includes('청과>상장가'))
             return true;
         if (!(normalized.includes('금양=창고출고') || normalized.includes('금양=9부산')))
             return true;
@@ -5493,7 +5495,7 @@ function App() {
                 const supply = safeNum(r['공급가액']) || (qty * price);
                 const unitProfit = price - cost;
                 const settlement = unitProfit * qty;
-                const fee = safeStr(r['_적용그룹']) === '청과상장' ? Math.round(supply * 0.08) : 0;
+                const fee = safeStr(r['_적용그룹']) === '청과상장' ? Math.round(supply * 0.09) : 0;
                 return {
                     '일자': formatPreviewDate(r['날짜'] || r['일자']),
                     '거래처명': r['거래처명'] || '',
@@ -6274,9 +6276,10 @@ function App() {
                 finalRows[0]._transfer.feeSummary = summarizeFeeMap(transferFeeVendors);
                 finalRows[0].메모 = [finalRows[0].메모, `공제:${formatMoney(transferCleanStats.feeAmount)} ${summarizeFeeMap(transferFeeVendors)}`].filter(Boolean).join(' | ');
             }
-            // v8.99zzz: 2전송검증 단가확인은 구매파일을 다시 매칭/그룹판단하지 않는다.
+            // v8.99zzz/v8.99zzzb: 2전송검증 단가확인은 구매파일을 다시 매칭/그룹판단하지 않는다.
             // 판매업로드 생성 엔진이 만든 거래처별 기준데이터와 판매현황을 직접 비교한다.
             // 기준가 = 판매업로드 생성 결과 단가, 판매가 = 판매현황 실제 단가.
+            // 따라서 판매업로드 알고리즘(청과상장 0.91, 식자재, 창고출고 도매A>출고(외노) 등)이 바뀌면 검증 기준가도 동일하게 바뀐다.
             const generatedTransferUpload = buildTransferSalesUploadRows(parsedIn);
             const generatedUploadRows = (generatedTransferUpload.rows || [])
                 .filter(r => safeStr(r['품목코드'], '').replace(/\.0$/, '').trim() && safeNum(r['수량']) !== 0);
@@ -6597,6 +6600,8 @@ function App() {
 원본 판매행: ${transferCleanStats.salesRaw}건 / 제외: ${transferCleanStats.salesSkipped}건
 집계 품목: ${finalRows.length}건 / 판매 제외행: ${salesExcludedRows.length}건
 
+검증기준: 판매업로드 생성 엔진 결과와 판매현황 직접 비교
+
 ${changeText}
 ${balanceText}
 
@@ -6615,7 +6620,7 @@ ${balanceText}
         finally {
             setIsProcessing(false);
         }
-    }, [files, isProcessing, mappings, buildAnalysisFileLabel, getDefaultFilters, formatAnalysisTime, buildTransferPriceConfig, downloadWorkbook, getTransferBaseFields, getTransferOutputCustomerName, getTransferPriceMissingReason, isTransferGenerationValidPurchaseRow, resolveTransferSalesPrice]);
+    }, [files, isProcessing, mappings, buildAnalysisFileLabel, getDefaultFilters, formatAnalysisTime, buildTransferPriceConfig, buildTransferSalesUploadRows, downloadWorkbook, getTransferBaseFields, getTransferOutputCustomerName, getTransferPriceMissingReason, isTransferGenerationValidPurchaseRow]);
     const handleFileStateChange = useCallback((updater) => {
         resetAnalysisWorkspace('selected');
         setFiles(prev => {
@@ -7078,7 +7083,7 @@ ${balanceText}
                     React.createElement("h1", { className: "text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzza Warehouse Outbound Price Fallback"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzzb Transfer Check Upload Linked Final"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
