@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.38 CompactFilterActions]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.39 FinalLayoutPolish]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -2853,7 +2853,7 @@ const SearchBar = ({ value, onChange, placeholder }) => {
             clearTimeout(timerRef.current);
         timerRef.current = setTimeout(() => { onChange(val); }, 300);
     };
-    return (React.createElement("div", { className: "relative w-[150px] lg:w-[190px] h-9 shrink-0", onClick: () => { var _a, _b; (_a = inputRef.current) === null || _a === void 0 ? void 0 : _a.focus(); (_b = inputRef.current) === null || _b === void 0 ? void 0 : _b.select(); } },
+    return (React.createElement("div", { className: "relative w-[220px] lg:w-[300px] xl:w-[360px] h-9 shrink-0", onClick: () => { var _a, _b; (_a = inputRef.current) === null || _a === void 0 ? void 0 : _a.focus(); (_b = inputRef.current) === null || _b === void 0 ? void 0 : _b.select(); } },
         React.createElement("input", { type: "text", ref: inputRef, id: "merch-global-search", placeholder: placeholder || "결과 내 검색 (단어 조합)", value: localVal, onChange: handleChange, autoComplete: "off", spellCheck: "false", className: "w-full h-full pl-3 pr-8 py-1 border border-slate-300 rounded-lg text-[12px] font-bold outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 transition-shadow text-slate-700" }),
         React.createElement("i", { className: "fas fa-search absolute right-3 top-2.5 text-slate-400 pointer-events-none text-[13px]" })));
 };
@@ -3010,7 +3010,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                 priceActionOpen && (React.createElement("div", { className: "flex items-center gap-1.5 flex-nowrap min-w-0 shrink-0" },
                     React.createElement("button", { onClick: handleForceApplyMarginRules, disabled: fullDisplayRows.length === 0, className: `h-9 px-3 rounded-lg text-[12px] font-black shadow-sm flex items-center border transition-all shrink-0 ${fullDisplayRows.length > 0 ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터/검색 결과 전체에 현재 마진룰을 적용합니다." },
                         React.createElement("i", { className: "fas fa-magic mr-1.5 text-[13px]" }),
-                        " 룰"),
+                        " 룰적용"),
                     React.createElement("select", { value: screenBaseField, onChange: e => setScreenBaseField(e.target.value), className: "h-9 px-2 rounded-lg border border-slate-300 bg-white text-[12px] font-bold outline-none shrink-0" },
                         ['입고가', '최종(창고)', '최신단가'].map(field => React.createElement("option", { key: field, value: field }, field))),
                     ['외주비', '노무비'].map(field => (React.createElement("button", { key: `top-extra-${field}`, onClick: () => toggleScreenExtra(field), className: `h-9 px-2.5 rounded-lg text-[12px] font-black border shadow-sm transition-all shrink-0 ${screenExtras[field] ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-slate-600 border-slate-300 hover:bg-amber-50'}` }, field))),
@@ -3871,7 +3871,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.38 CompactFilterActions]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.39 FinalLayoutPolish]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -4199,7 +4199,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.38 CompactFilterActions")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.39 FinalLayoutPolish")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
