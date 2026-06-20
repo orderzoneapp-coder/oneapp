@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzu System IO Offset Layout)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzs Fixed Price Low Margin Exclude)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.99zzu System IO Offset Layout.....</div>
+        <div class="loader-text">ONEAPP DataOps v8.99zzs Fixed Price Low Margin Exclude.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -417,8 +417,6 @@ const normalizeTransferGroupName = (name) => {
         return '창고출고';
     return value;
 };
-// v8.99zzt: 2전송검증 단가확인 시트는 알고리즘 기준 판매가와 실제 판매가 불일치만 추출하고, 잔량확인 시트를 추가한다.
-// v8.99zzu: System.IO 펼침/접힘 시 카드뷰·필터·테이블헤더 sticky top을 실제 System.IO 높이만큼 보정해 가림을 방지한다.
 // v8.99zzs: 2전송 검증에서 고정가 적용 행은 저마진 추출에서 제외.
 // v8.99zzr: 2전송 판매업로드 단가 최종 룰 반영.
 // 단가가 없으면 사용자가 정한 그룹별 후보 외 다른 컬럼으로 자동 대체하지 않고 공백 + 단가확인으로 보낸다.
@@ -554,7 +552,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'v8.99zzu System IO Offset Layout',
+    version: 'v8.99zzs Fixed Price Low Margin Exclude',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -818,7 +816,7 @@ window.DATAOPS_CLOUD_MODULE = DATAOPS_CLOUD_MODULE;
 
 
 /* =======================================================================
-   1-B-2. v8.99zzu System IO Offset Layout
+   1-B-2. v8.99zzs Fixed Price Low Margin Exclude
    - 목적: 클라우드는 동기화 때만 조회하고, 수불/매칭/치환은 로컬 캐시와 인덱스를 즉시 사용한다.
    - 원칙: 계산 중 클라우드 fetch 금지. 마감 작업은 현재 로컬 마스터 스냅샷 기준으로 고정한다.
    ======================================================================= */
@@ -1040,7 +1038,7 @@ window.DATAOPS_MASTER_LINK_MODULE = DATAOPS_MASTER_LINK_MODULE;
 
 
 /* =======================================================================
-   1-D. v8.99zzu System IO Offset Layout
+   1-D. v8.99zzs Fixed Price Low Margin Exclude
    - 목적: MerchOps 마스터의 원물/소분 관계를 기준으로 소분 마이너스 항목을 치환 후보로 추출하고, 관리자 명령 시 치환입고/치환출고를 반영한다.
    - 원칙: 자동 실행하지 않는다. 후보 확인 후 관리자 버튼으로만 실행한다.
    ======================================================================= */
@@ -4338,9 +4336,6 @@ function App() {
     // Native Sticky Scroll 적용을 위한 반응형 상태
     const [cardHeight, setCardHeight] = useState(0);
     const [filterBarHeight, setFilterBarHeight] = useState(0); // v8.76: 정렬/카테고리/단위/F10 전 설정바 sticky 높이
-    const [systemStickyOffset, setSystemStickyOffset] = useState(0); // v8.99zzu: System.IO 높이만큼 하단 sticky UI를 밀어 가림 방지
-    const systemMiniBarRef = useRef(null);
-    const systemPanelRef = useRef(null);
     const cardContainerRef = useRef(null);
     const filterBarRef = useRef(null);
     const currentIssueIdxRef = useRef(-1);
@@ -4575,13 +4570,13 @@ function App() {
         }, 250);
         return () => clearTimeout(timer);
     }, [searchInputVal]);
-    // v8.99zzu: 카드뷰 + 필터바 + 테이블 헤더 위치 보정
-    // System.IO가 sticky로 펼쳐질 때 작업테이블 위를 덮지 않도록 실제 System.IO 높이를 sticky top offset으로 반영한다.
+    // v8.76: 카드뷰 + 출력 설정 전 필터바 + 테이블 헤더 위치 보정
+    // 화면을 아래로 스크롤해도 정렬/카테고리/구매처/단위/F10 전 설정바가 계속 노출되어야 한다.
+    // showCards 선언 전 의존성 오류를 피하기 위해 appStep/productData.length 기준으로만 높이를 측정한다.
     useEffect(() => {
         if (appStep !== 'closing' || productData.length === 0) {
             setCardHeight(prev => prev !== 0 ? 0 : prev);
             setFilterBarHeight(prev => prev !== 0 ? 0 : prev);
-            setSystemStickyOffset(prev => prev !== 0 ? 0 : prev);
             return;
         }
         let rafId = null;
@@ -4589,12 +4584,8 @@ function App() {
             if (rafId)
                 cancelAnimationFrame(rafId);
             rafId = requestAnimationFrame(() => {
-                const newSystemHeight = systemUiCollapsed
-                    ? (systemMiniBarRef.current ? systemMiniBarRef.current.offsetHeight : 0)
-                    : (systemPanelRef.current ? systemPanelRef.current.offsetHeight : 0);
                 const newCardHeight = cardContainerRef.current ? cardContainerRef.current.offsetHeight : 0;
                 const newFilterBarHeight = filterBarRef.current ? filterBarRef.current.offsetHeight : 0;
-                setSystemStickyOffset(prev => Math.abs(prev - newSystemHeight) > 1 ? newSystemHeight : prev);
                 setCardHeight(prev => Math.abs(prev - newCardHeight) > 1 ? newCardHeight : prev);
                 setFilterBarHeight(prev => Math.abs(prev - newFilterBarHeight) > 1 ? newFilterBarHeight : prev);
             });
@@ -4603,8 +4594,6 @@ function App() {
         window.addEventListener('resize', updateHeight);
         let cardObserver = null;
         let filterObserver = null;
-        let systemPanelObserver = null;
-        let systemMiniObserver = null;
         if (typeof ResizeObserver !== 'undefined') {
             if (cardContainerRef.current) {
                 cardObserver = new ResizeObserver(updateHeight);
@@ -4613,14 +4602,6 @@ function App() {
             if (filterBarRef.current) {
                 filterObserver = new ResizeObserver(updateHeight);
                 filterObserver.observe(filterBarRef.current);
-            }
-            if (systemPanelRef.current) {
-                systemPanelObserver = new ResizeObserver(updateHeight);
-                systemPanelObserver.observe(systemPanelRef.current);
-            }
-            if (systemMiniBarRef.current) {
-                systemMiniObserver = new ResizeObserver(updateHeight);
-                systemMiniObserver.observe(systemMiniBarRef.current);
             }
         }
         return () => {
@@ -4631,12 +4612,8 @@ function App() {
                 cardObserver.disconnect();
             if (filterObserver)
                 filterObserver.disconnect();
-            if (systemPanelObserver)
-                systemPanelObserver.disconnect();
-            if (systemMiniObserver)
-                systemMiniObserver.disconnect();
         };
-    }, [appStep, productData.length, systemUiCollapsed]);
+    }, [appStep, productData.length]);
     const validateTransferPriceGroupText = useCallback((text = mappings.transferPriceGroups) => {
         const allowedPriceKeys = ['출고가(공지)', '청과상장산출', '식자재', '출고(외노)', '도매A', '단가'];
         const allowedOutputModes = ['GROUP_NAME', 'ORIGINAL_CUSTOMER'];
@@ -4991,7 +4968,6 @@ function App() {
         setAnalysisMeta({ fileLabel, analyzedAt: formatAnalysisTime(new Date()), status: 'done' });
     }, [files, isProcessing, buildAnalysisFileLabel, getDefaultFilters, runAnalysis, formatAnalysisTime]);
     /* =======================================================================
-       v8.99zzt 2전송검증 / 단가확인 알고리즘 불일치 전용 + 잔량확인 시트 추가
        v8.99zzs 2전송 검증 / 고정가 저마진 추출 제외
        v8.99zzr 2전송 판매업로드 생성 / 단가그룹별 판매가 최종 알고리즘 고정
        - 구매현황을 받아 판매업로드 파일을 만들 때 판매입력의 단가/판매가 칸에는 사용자 확정 단가만 입력한다.
@@ -5846,9 +5822,8 @@ function App() {
                 .filter(([, data]) => safeNum(data.fee) !== 0 || safeNum(data.amount) !== 0)
                 .map(([vendor, data]) => `${vendor}(${formatMoney(safeNum(data.fee) || safeNum(data.amount))})`)
                 .join(', ');
-            // v8.99zzt: 단가확인 시트는 판매가 알고리즘 기준값과 실제 판매가 불일치만 추출한다.
-            // 잔량확인 시트는 구매수량-판매수량 잔량이 0이 아닌 상품만 추출한다.
-            // 엑셀 시트: 단가확인 / 잔량확인 / 거래처별수익 / 품목별수익. 2전송_브리핑 시트는 생성하지 않는다.
+            // v8.99zw: 2전송검증은 버튼 클릭 팝업 브리핑 + 엑셀 3시트로 단순화한다.
+            // 엑셀 시트: 단가확인 / 거래처별수익 / 품목별수익. 2전송_브리핑 시트는 생성하지 않는다.
             const createProfitSummaryRows = (detailRows = []) => {
                 const totals = detailRows.reduce((acc, r) => {
                     var _a;
@@ -6024,43 +5999,37 @@ function App() {
                 return aoa;
             };
             const aggregateTransferPriceChanges = (rows = []) => {
-                // v8.99zzt: 단가확인은 판매가 알고리즘으로 산출한 기준 판매가와 판매현황 실제 판매단가가 다른 행만 추출한다.
-                // 입고가 없음·저마진·잔량 불일치 같은 다른 검증 이슈는 단가확인 시트에 섞지 않는다.
+                // 단가확인은 기준단가(단가공지 우선, 없으면 그룹 기준가)와 판매현황 판매가를 비교한다.
+                // 기존 단가변동 외에 입고가/매입원가가 없는 행도 단가확인 시트에 추출한다.
                 const map = {};
                 rows.forEach(r => {
                     const qty = safeNum(r['판매수량']);
                     const groupName = safeStr(r['거래처그룹'], '미지정');
                     const customer = safeStr(r['보고거래처'] || r['거래처명'], '미지정');
                     const itemName = safeStr(r['품명'], '');
-                    const expectedPrice = safeNum(r['기준단가']);
+                    const noticePrice = safeNum(r['기준단가']);
                     const salesPrice = safeNum(r['실제판매단가']);
                     const costPrice = safeNum(r['매입원가']);
-                    const resultText = safeStr(r['검증결과'], '');
                     if (qty === 0)
                         return;
                     const checks = [];
-                    if (expectedPrice > 0 && salesPrice > 0 && expectedPrice !== salesPrice) {
-                        checks.push(salesPrice > expectedPrice ? '판매가 알고리즘보다 높음' : '판매가 알고리즘보다 낮음');
-                    }
-                    else if (expectedPrice > 0 && salesPrice <= 0) {
-                        checks.push('판매단가 없음');
-                    }
-                    else if (expectedPrice <= 0 && salesPrice > 0 && (resultText.includes('판매단가 없음') || resultText.includes('판매단가') || resultText.includes('단가 없음') || resultText.includes('단가없음') || resultText.includes('도매A 없음') || resultText.includes('식자재 판매단가 없음') || resultText.includes('기준원가 없음'))) {
-                        checks.push('알고리즘 기준단가 없음');
-                    }
+                    if (noticePrice > 0 && salesPrice > 0 && noticePrice !== salesPrice)
+                        checks.push(salesPrice > noticePrice ? '단가인상' : '단가인하');
+                    if (costPrice <= 0)
+                        checks.push('입고가 없음');
                     if (!checks.length)
                         return;
-                    const diff = (expectedPrice > 0 && salesPrice > 0) ? salesPrice - expectedPrice : '';
-                    const key = `${groupName}|${customer}|${itemName}|${expectedPrice}|${salesPrice}|${costPrice}|${checks.join('/')}`;
+                    const diff = salesPrice - noticePrice;
+                    const key = `${groupName}|${customer}|${itemName}|${noticePrice}|${salesPrice}|${costPrice}|${checks.join('/')}`;
                     if (!map[key]) {
                         map[key] = {
                             '그룹': groupName,
                             '거래처': customer,
                             '상품': itemName,
                             '수량': 0,
-                            '기준가': expectedPrice > 0 ? Math.round(expectedPrice) : '',
+                            '공지가': noticePrice > 0 ? Math.round(noticePrice) : '',
                             '판매가': salesPrice > 0 ? Math.round(salesPrice) : '',
-                            '차이': diff === '' ? '' : Math.round(diff),
+                            '차이': noticePrice > 0 && salesPrice > 0 ? Math.round(diff) : '',
                             '입고가': costPrice > 0 ? Math.round(costPrice) : '',
                             '확인': checks.join(', ')
                         };
@@ -6072,7 +6041,6 @@ function App() {
                     safeStr(a['상품']).localeCompare(safeStr(b['상품']), 'ko') ||
                     safeStr(a['확인']).localeCompare(safeStr(b['확인']), 'ko'));
             };
-
             const transferMap = {};
             const transferFeeVendors = {};
             const salesExcludedRows = [];
@@ -6428,9 +6396,7 @@ function App() {
                     '확인필요품목수': itemProfitRows.filter(r => safeStr(r['확인'])).length
                 }];
             const priceChangeRows = aggregateTransferPriceChanges(priceValidationRows);
-            const priceChangeColumns = ['그룹', '거래처', '상품', '수량', '기준가', '판매가', '차이', '입고가', '확인'];
-            const balanceCheckRows = quantityCheckRows.filter(r => safeNum(r['잔량']) !== 0);
-            const balanceCheckColumns = ['품목코드', '품명', '구매수량', '판매수량', '잔량', '검증결과'];
+            const priceChangeColumns = ['그룹', '거래처', '상품', '수량', '공지가', '판매가', '차이', '입고가', '확인'];
             const customerProfitColumns = ['그룹', '거래처', '품목수', '수량', '공급가', '공제', '실매출', '매입가', '수익', '수익률', '확인', '비고'];
             const itemProfitColumns = ['상품', '수량', '공급가', '공제', '실매출', '매입가', '수익', '수익률', '확인', '비고'];
             const priceChangeUpCount = priceChangeRows.filter(r => safeNum(r['차이']) > 0).length;
@@ -6452,8 +6418,8 @@ function App() {
                 if (!ws || !ws['!ref'])
                     return ws;
                 const range = XLSX.utils.decode_range(ws['!ref']);
-                const moneyCols = new Set(['공지가', '기준가', '판매가', '차이', '입고가', '공급가', '공제', '실매출', '매입가', '수익']);
-                const qtyCols = new Set(['수량', '품목수', '거래처수', '구매수량', '판매수량', '잔량']);
+                const moneyCols = new Set(['공지가', '판매가', '차이', '입고가', '공급가', '공제', '실매출', '매입가', '수익']);
+                const qtyCols = new Set(['수량', '품목수', '거래처수']);
                 const pctCols = new Set(['수익률']);
                 const confirmColIndex = columns.findIndex(col => col === '확인');
                 for (let r = range.s.r + 1; r <= range.e.r; r++) {
@@ -6492,7 +6458,6 @@ function App() {
             };
             const wb = XLSX.utils.book_new();
             appendFlatSheet(wb, '단가확인', priceChangeColumns, priceChangeRows);
-            appendFlatSheet(wb, '잔량확인', balanceCheckColumns, balanceCheckRows);
             appendFlatSheet(wb, '거래처별수익', customerProfitColumns, customerProfitRows);
             appendFlatSheet(wb, '품목별수익', itemProfitColumns, itemProfitRows);
             const today = new Date();
@@ -6508,10 +6473,6 @@ function App() {
 판매가↑ ${priceChangeUpCount}건 / 판매가↓ ${priceChangeDownCount}건
 최대 차이: ${formatMoney(maxPriceDiff)}원`
                 : '단가확인 없음';
-            const balanceText = balanceCheckRows.length > 0
-                ? `잔량확인 ${balanceCheckRows.length}건
-잔량 발생: ${balanceCheckRows.filter(r => safeNum(r['잔량']) > 0).length}건 / 마이너스: ${balanceCheckRows.filter(r => safeNum(r['잔량']) < 0).length}건`
-                : '잔량확인 없음';
             setAlertMsg(`✅ 2전송검증 완료
 
 원본 구매행: ${transferCleanStats.purchaseRaw}건 / 제외: ${transferCleanStats.purchaseSkipped}건
@@ -6519,14 +6480,13 @@ function App() {
 집계 품목: ${finalRows.length}건 / 판매 제외행: ${salesExcludedRows.length}건
 
 ${changeText}
-${balanceText}
 
 거래처별 수익률 확인필요: ${customerNeedCount}건
 품목별 수익률 확인필요: ${itemNeedCount}건
 적자 품목: ${deficitItemCount}건 / 저마진 품목: ${lowMarginItemCount}건
 
 엑셀 보고서를 생성했습니다.
-시트: 단가확인 / 잔량확인 / 거래처별수익 / 품목별수익`);
+시트: 단가확인 / 거래처별수익 / 품목별수익`);
         }
         catch (err) {
             console.error(err);
@@ -6999,7 +6959,7 @@ ${balanceText}
                     React.createElement("h1", { className: "text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzu System IO Offset Layout"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzs Fixed Price Low Margin Exclude"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
@@ -7222,7 +7182,7 @@ ${balanceText}
             React.createElement("div", { className: "flex-1 flex flex-col w-full relative bg-[#f8fafc] overflow-hidden" },
                 React.createElement("div", { id: "main-scroll-container", className: "flex-1 overflow-auto w-full relative" },
                     React.createElement("div", { className: "w-full min-w-[1000px] flex flex-col min-h-full" },
-                        systemUiCollapsed && (React.createElement("div", { ref: systemMiniBarRef, onClick: () => setSystemUiCollapsed(false), className: "sticky top-0 z-[70] bg-slate-950/95 text-white border-b border-slate-800 px-4 py-2 shadow-lg backdrop-blur flex items-center justify-between text-[12px] font-bold cursor-pointer" },
+                        systemUiCollapsed && (React.createElement("div", { onClick: () => setSystemUiCollapsed(false), className: "sticky top-0 z-[70] bg-slate-950/95 text-white border-b border-slate-800 px-4 py-2 shadow-lg backdrop-blur flex items-center justify-between text-[12px] font-bold cursor-pointer" },
                             React.createElement("div", { className: "flex items-center gap-3 min-w-0" },
                                 React.createElement("span", { className: "text-emerald-300" },
                                     React.createElement("i", { className: "fas fa-database mr-1" }),
@@ -7239,7 +7199,7 @@ ${balanceText}
                             React.createElement("button", { onClick: (e) => { e.stopPropagation(); setSystemUiCollapsed(false); }, className: "px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white transition", title: "현재 위치에서 System.IO 패널 펼치기" },
                                 React.createElement("i", { className: "fas fa-chevron-down mr-1" }),
                                 "펼치기"))),
-                        React.createElement("div", { ref: systemPanelRef, className: `px-4 md:px-6 pt-4 pb-2 max-w-7xl mx-auto w-full shrink-0 transition-all duration-200 sticky top-0 z-[65] ${systemUiCollapsed ? 'max-h-0 opacity-0 overflow-hidden py-0 pointer-events-none' : 'max-h-[900px] opacity-100'}` },
+                        React.createElement("div", { className: `px-4 md:px-6 pt-4 pb-2 max-w-7xl mx-auto w-full shrink-0 transition-all duration-200 sticky top-0 z-[65] ${systemUiCollapsed ? 'max-h-0 opacity-0 overflow-hidden py-0 pointer-events-none' : 'max-h-[900px] opacity-100'}` },
                             React.createElement("div", { className: "bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden fade-in" },
                                 React.createElement("div", { className: "bg-slate-900 p-4 md:px-6 md:py-4 flex flex-col md:flex-row md:justify-between md:items-center gap-4 border-b border-slate-800 relative shadow-inner" },
                                     React.createElement("div", { className: "flex flex-col md:flex-row items-start md:items-center gap-3 w-full md:w-auto flex-1 overflow-hidden" },
@@ -7284,7 +7244,7 @@ ${balanceText}
                                     (files.prev || files.in || files.out || files.end) && (React.createElement("button", { onClick: handleResetFiles, className: "flex items-center justify-center font-bold transition-colors rounded ml-auto px-4 py-2 text-[12px] text-slate-400 hover:text-slate-100 hover:bg-slate-700/50" },
                                         React.createElement("i", { className: "fas fa-redo-alt mr-1.5" }),
                                         "\uCD08\uAE30\uD654"))))),
-                        React.createElement("div", { ref: cardContainerRef, className: "sticky z-40 bg-[#f8fafc] w-full border-slate-200 shrink-0", style: { top: `${systemStickyOffset}px`, borderBottomWidth: showCards ? '1px' : '0px', boxShadow: showCards ? '0 4px 6px -4px rgba(0,0,0,0.05)' : 'none' } }, showCards && (React.createElement("div", { className: "px-4 md:px-6 pt-2 pb-3 max-w-7xl mx-auto w-full" },
+                        React.createElement("div", { ref: cardContainerRef, className: "sticky top-0 z-40 bg-[#f8fafc] w-full border-slate-200 shrink-0", style: { borderBottomWidth: showCards ? '1px' : '0px', boxShadow: showCards ? '0 4px 6px -4px rgba(0,0,0,0.05)' : 'none' } }, showCards && (React.createElement("div", { className: "px-4 md:px-6 pt-2 pb-3 max-w-7xl mx-auto w-full" },
                             React.createElement("div", { className: "grid grid-cols-1 md:grid-cols-3 gap-4" },
                                 React.createElement("div", { onClick: () => { setActiveIssueMode(null); setActiveMultiCode(null); setFilters({ ...filters, reviewType: filters.reviewType === 'substitution' ? null : 'substitution', issuesOnly: false }); }, className: `p-4 rounded-xl border-[3px] transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${filters.reviewType === 'substitution' ? 'bg-purple-50 border-purple-500 shadow-xl ring-4 ring-purple-500/20 scale-[1.02] z-10' : 'bg-white border-purple-200 hover:border-purple-400 hover:shadow-md'}` },
                                     React.createElement("div", { className: `text-xs font-bold mb-1 flex items-center justify-between ${filters.reviewType === 'substitution' ? 'text-purple-800' : 'text-slate-600'}` },
@@ -7364,7 +7324,7 @@ ${balanceText}
                                         "\uBAA8\uC544\uBCF4\uAE30"))))))),
                         React.createElement("div", { className: "px-4 md:px-6 py-4 pb-12 max-w-7xl mx-auto w-full flex-1 flex flex-col" },
                             React.createElement("div", { className: "bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col flex-1 overflow-visible" },
-                                productData.length > 0 && (React.createElement("div", { ref: filterBarRef, className: "shrink-0 sticky bg-white border-b border-slate-200 px-3 py-2 flex flex-nowrap items-center gap-1.5 text-[11px] font-bold z-[38] shadow-sm overflow-x-auto hide-scrollbar", style: { top: `${systemStickyOffset + (showCards ? cardHeight : 0)}px` } },
+                                productData.length > 0 && (React.createElement("div", { ref: filterBarRef, className: "shrink-0 sticky bg-white border-b border-slate-200 px-3 py-2 flex flex-nowrap items-center gap-1.5 text-[11px] font-bold z-[38] shadow-sm overflow-x-auto hide-scrollbar", style: { top: showCards ? `${cardHeight}px` : '0px' } },
                                     React.createElement("span", { className: "text-slate-500 mr-1" }, "\uC815\uB82C"),
                                     [['DEFAULT', '품목+FIFO'], ['DATE', '구매일자순'], ['CATEGORY', '카테고리순'], ['VENDOR', '구매처순'], ['PRICE', '단가순']].map(([mode, label]) => {
                                         const isActive = filters.sortMode === mode;
@@ -7394,7 +7354,7 @@ ${balanceText}
                                             "\uAC74")),
                                     React.createElement("button", { onClick: resetTableFilters, title: "필터와 정렬을 기본값으로 되돌립니다. 기본 정렬은 품목+FIFO 오름차순입니다.", className: "ml-auto px-2 py-1 rounded border whitespace-nowrap bg-slate-50 text-slate-500 border-slate-300 hover:bg-slate-100" }, "\u21BA \uD544\uD130 \uCD08\uAE30\uD654"))),
                                 React.createElement("table", { className: "w-full text-left border-collapse whitespace-nowrap text-sm" },
-                                    React.createElement("thead", { className: "bg-slate-50 text-slate-600 font-extrabold text-[12px] tracking-tight sticky z-[35] border-b-2 border-slate-200 shadow-md transition-all duration-75", style: { top: `${systemStickyOffset + (showCards ? cardHeight : 0) + filterBarHeight}px` } },
+                                    React.createElement("thead", { className: "bg-slate-50 text-slate-600 font-extrabold text-[12px] tracking-tight sticky z-[35] border-b-2 border-slate-200 shadow-md transition-all duration-75", style: { top: `${(showCards ? cardHeight : 0) + filterBarHeight}px` } },
                                         React.createElement("tr", null,
                                             React.createElement("th", { className: "p-2 border-r border-slate-200 sticky left-0 bg-slate-50 z-30 shadow-[1px_0_0_#e2e8f0] w-[320px] min-w-[280px]" },
                                                 React.createElement("div", { className: "relative w-full flex items-center" },
