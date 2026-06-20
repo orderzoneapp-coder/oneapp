@@ -1,6 +1,6 @@
 /**
  * ONEAPP MerchOps - coreEngine.js
- * v1.0.3 / DataOps MasterDB Sync + Cloud URL Setting
+ * v1.0.4 / OneQty Master Column + Stock Conversion
  *
  * 목적:
  * - HTML 화면 파일에서 중복되는 저장소, 가격계산, 히스토리, F9 전달, 클라우드 로직을 중앙화한다.
@@ -18,29 +18,41 @@
   'use strict';
 
   const ONEAPP = global.ONEAPP = global.ONEAPP || {};
-  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.0.3 DataOpsMasterSync';
+  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.0.4 OneQtyStockConversion';
 
   const DEFAULT_DB_NAME = 'MerchOpsDB';
   const DEFAULT_DB_VERSION = 2;
   const STORE_KV = 'store';
   const STORE_MASTER = 'master_products';
 
-  const MASTER_HEADERS = global.MASTER_HEADERS || [
+  const ensureHeaderAfter = (headers = [], header, afterHeader = '') => {
+    const result = Array.isArray(headers) ? [...headers] : [];
+    if (!header || result.includes(header)) return result;
+    const afterIdx = afterHeader ? result.indexOf(afterHeader) : -1;
+    if (afterIdx >= 0) result.splice(afterIdx + 1, 0, header);
+    else result.push(header);
+    return result;
+  };
+
+  const BASE_MASTER_HEADERS = global.MASTER_HEADERS || [
     "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드",
     "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가",
     "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가",
-    "행사가", "판매여부", "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산",
+    "행사가", "판매여부", "1종코드", "1종규격", "1종연산", "1당수량", "2종코드", "2종규격", "2종연산",
     "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록"
   ];
 
-  const NUMERIC_HEADERS = global.NUMERIC_HEADERS || [
+  const BASE_NUMERIC_HEADERS = global.NUMERIC_HEADERS || [
     "안전재고", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고",
-    "단가H", "단가I", "시중가", "행사가", "1종연산", "2종연산", "외주비", "노무비", "경비",
+    "단가H", "단가I", "시중가", "행사가", "1종연산", "1당수량", "2종연산", "외주비", "노무비", "경비",
     "1구매", "1출고", "2구매", "2출고", "1입고", "2입고", "재고수량"
   ];
 
-  global.MASTER_HEADERS = global.MASTER_HEADERS || MASTER_HEADERS;
-  global.NUMERIC_HEADERS = global.NUMERIC_HEADERS || NUMERIC_HEADERS;
+  const MASTER_HEADERS = ensureHeaderAfter(BASE_MASTER_HEADERS, "1당수량", "1종연산");
+  const NUMERIC_HEADERS = ensureHeaderAfter(BASE_NUMERIC_HEADERS, "1당수량", "1종연산");
+
+  global.MASTER_HEADERS = MASTER_HEADERS;
+  global.NUMERIC_HEADERS = NUMERIC_HEADERS;
 
   const generateUUID = () => {
     if (global.crypto && typeof global.crypto.randomUUID === 'function') return global.crypto.randomUUID();
@@ -388,25 +400,50 @@
     return s !== '' && s !== '0' && s !== '00' && s !== '-' && s.toLowerCase() !== 'undefined' && s.toLowerCase() !== 'null';
   };
 
+  // 1종연산은 원가/가격 산출용 계수다. 재고수량 환산은 1당수량을 사용한다.
   PRICING.calculateSubPriceInfo = (row = {}) => {
-    const div1 = parseNum(row['1종연산']);
-    if (!PRICING.isValidSubItemCode(row['1종코드']) || div1 <= 0) return null;
+    const costFactor1 = parseNum(row['1종연산']);
+    if (!PRICING.isValidSubItemCode(row['1종코드']) || costFactor1 <= 0) return null;
 
     const inPrice = parseNum(row.입고가);
     const outPrice = parseNum(row.출고가); // 확정 정책: 원물 기본 출고가 기준
     const outsrc = parseNum(row['외주비']);
     const extraCost = parseNum(row['경비']);
+    const stockFactor1 = parseNum(row['1당수량']);
 
-    const subIn = inPrice > 0 ? Math.round(((inPrice + outsrc) / div1) / 100) * 100 : 0;
-    const rawSubOut = outPrice > 0 ? Math.round((outPrice / div1) + extraCost) : 0;
+    const subIn = inPrice > 0 ? Math.round(((inPrice + outsrc) / costFactor1) / 100) * 100 : 0;
+    const rawSubOut = outPrice > 0 ? Math.round((outPrice / costFactor1) + extraCost) : 0;
     const subOut = rawSubOut > 0 ? Math.round(rawSubOut / 10) * 10 : 0;
 
     return {
       code: String(row['1종코드']).trim(),
       spec: row['1종규격'] || '',
-      div1,
+      div1: costFactor1,
+      costFactor1,
+      stockFactor1,
+      oneQty: stockFactor1,
       subIn,
       subOut
+    };
+  };
+
+  // 원물 재고수량을 1종품목 재고 가능수량으로 환산한다.
+  // 정책: 재고수량 산출에는 1종연산을 쓰지 않고 1당수량만 사용한다.
+  PRICING.calculateSubStockInfo = (row = {}, rawStockQty = undefined) => {
+    if (!PRICING.isValidSubItemCode(row['1종코드'])) return null;
+    const stockFactor1 = parseNum(row['1당수량']);
+    if (stockFactor1 <= 0) return null;
+
+    const rawStock = rawStockQty !== undefined ? parseNum(rawStockQty) : parseNum(row['재고수량']);
+    const subStockQty = rawStock * stockFactor1;
+
+    return {
+      code: String(row['1종코드']).trim(),
+      spec: row['1종규격'] || '',
+      rawStockQty: rawStock,
+      stockFactor1,
+      oneQty: stockFactor1,
+      subStockQty
     };
   };
 
@@ -591,6 +628,7 @@
       '1종코드': getStr('1종코드'),
       '1종규격': getStr('1종규격'),
       '1종연산': getNum('1종연산'),
+      '1당수량': getNum('1당수량'),
       '경비': getNum('경비'),
       '외주비': getNum('외주비'),
       '노무비': getNum('노무비'),
@@ -757,6 +795,7 @@
       '1종코드': String(item['1종코드'] || '').trim(),
       '1종규격': String(item['1종규격'] || '').trim(),
       '1종연산': parseNum(item['1종연산']),
+      '1당수량': parseNum(item['1당수량']),
       '2종코드': String(item['2종코드'] || '').trim(),
       '2종규격': String(item['2종규격'] || '').trim(),
       '2종연산': parseNum(item['2종연산']),
@@ -780,7 +819,8 @@
       const rawCode = String(item.코드 || item['품목코드'] || '').trim();
       const subCode = String(item['1종코드'] || '').trim();
       const subSpec = String(item['1종규격'] || '').trim();
-      const subRate = parseNum(item['1종연산']);
+      const costRate = parseNum(item['1종연산']);
+      const stockRate = parseNum(item['1당수량']);
 
       if (!rawCode) {
         issues.push({ type: 'NO_RAW_CODE', message: '원물 품목코드 없음', item });
@@ -789,10 +829,15 @@
 
       if (!isValidSubCode(subCode)) return;
 
-      if (subRate <= 0) {
-        issues.push({ type: 'NO_SUB_RATE', message: '1종코드는 있으나 1종연산 없음', rawCode, subCode, item });
-        return;
+      if (costRate <= 0) {
+        issues.push({ type: 'NO_SUB_COST_RATE', message: '1종코드는 있으나 원가계수(1종연산) 없음', rawCode, subCode, item });
       }
+
+      if (stockRate <= 0) {
+        issues.push({ type: 'NO_SUB_STOCK_RATE', message: '1종코드는 있으나 재고수량계수(1당수량) 없음', rawCode, subCode, item });
+      }
+
+      if (costRate <= 0 && stockRate <= 0) return;
 
       relations.push({
         source: 'MerchOpsMasterDB',
@@ -804,8 +849,13 @@
         subNameSpec: subSpec,
         subSpec,
         subUnit: '',
-        conversionRate: subRate,
-        costMethod: 'raw_cost_divide_conversion',
+        // 기존 DataOps 호환값: 원가 산출용 1종연산을 conversionRate로 유지한다.
+        conversionRate: costRate,
+        costConversionRate: costRate,
+        stockConversionRate: stockRate,
+        stockQtyPerRaw: stockRate,
+        costMethod: 'raw_cost_divide_1종연산',
+        stockMethod: 'raw_stock_multiply_1당수량',
         rawDeductMethod: 'ceil',
         active: true,
         createdFrom: '1종코드',
@@ -1041,6 +1091,8 @@
   global.getMerchUnitRuleCandidates = global.getMerchUnitRuleCandidates || getMerchUnitRuleCandidates;
   global.calculatePricesEngine = global.calculatePricesEngine || PRICING.calculatePricesEngine;
   global.computeFinalData = global.computeFinalData || PRICING.computeFinalData;
+  global.calculateSubPriceInfo = global.calculateSubPriceInfo || PRICING.calculateSubPriceInfo;
+  global.calculateSubStockInfo = global.calculateSubStockInfo || PRICING.calculateSubStockInfo;
   global.getMasterSalesState = global.getMasterSalesState || PRICING.getMasterSalesState;
   global.getOneAppCloudSyncUrl = global.getOneAppCloudSyncUrl || CLOUD.getCloudSyncUrl;
   global.setOneAppCloudSyncUrl = global.setOneAppCloudSyncUrl || CLOUD.setCloudSyncUrl;
