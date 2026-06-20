@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzu Transfer Price Balance Check)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzs Fixed Price Low Margin Exclude)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -25,6 +25,15 @@
         .modal-bounce { animation: modalBounce 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         @keyframes modalBounce { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
 
+        /* 커스텀 툴팁 스타일 */
+        [data-tooltip]:hover::after {
+            content: attr(data-tooltip);
+            position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%) translateY(-4px);
+            background: rgba(15, 23, 42, 0.95); color: white; padding: 6px 10px; border-radius: 6px;
+            font-size: 11px; font-weight: 500; white-space: nowrap; z-index: 100;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); pointer-events: none;
+        }
+
         /* 초기 로딩 애니메이션 (체감 속도 개선) */
         #initial-loader { position: fixed; inset: 0; background-color: #f8fafc; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.5s ease; }
         .spinner { width: 40px; height: 40px; border: 4px solid #e2e8f0; border-top: 4px solid #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 16px; }
@@ -37,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.99zzu Transfer Price Balance Check.....</div>
+        <div class="loader-text">ONEAPP DataOps v8.99zzs Fixed Price Low Margin Exclude.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -370,7 +379,7 @@ const TRANSFER_PRICE_GROUP_PRESETS = [
         label: '식자재',
         description: '식자재 고정단가 거래처',
         customers: ['4연산', '5온산', '6진주', '7초전', '7남해', '8통영', '9구미'],
-        rule: ['출고가(공지)', '도매A', '식자재', '출고(외노)'],
+        rule: ['출고가(공지)', '식자재', '출고(외노)'],
         feeMode: 'NONE',
         profitMode: 'NORMAL',
         outputCustomerMode: 'ORIGINAL_CUSTOMER',
@@ -410,14 +419,13 @@ const normalizeTransferGroupName = (name) => {
 };
 // v8.99zzs: 2전송 검증에서 고정가 적용 행은 저마진 추출에서 제외.
 // v8.99zzr: 2전송 판매업로드 단가 최종 룰 반영.
-// 단가확인은 판매업로드 생성 알고리즘으로 산출한 정상 판매가와 실제 판매현황 판매가가 다른 행만 추출한다.
-// 식자재는 출고가(공지)가 없으면 도매A를 우선 정상 판매가로 본다.
+// 단가가 없으면 사용자가 정한 그룹별 후보 외 다른 컬럼으로 자동 대체하지 않고 공백 + 단가확인으로 보낸다.
 // 청과상장은 출고가(공지)가 없을 때 도매A 원가 우선, 도매A가 없으면 입고가+외주비+노무비 기준원가를 사용한다.
 // 청과상장 판매가는 기준원가 / 0.92 후 100원 단위 반올림한다.
 const normalizeTransferPriceRuleByGroup = (groupName, rule = []) => {
     const normalizedGroup = normalizeTransferGroupName(groupName);
     if (normalizedGroup === '식자재')
-        return ['출고가(공지)', '도매A', '식자재', '출고(외노)'];
+        return ['출고가(공지)', '식자재', '출고(외노)'];
     if (normalizedGroup === '창고출고')
         return ['출고가(공지)', '도매A'];
     if (normalizedGroup === '청과상장')
@@ -544,7 +552,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'v8.99zzu Transfer Price Balance Check',
+    version: 'v8.99zzs Fixed Price Low Margin Exclude',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -808,7 +816,7 @@ window.DATAOPS_CLOUD_MODULE = DATAOPS_CLOUD_MODULE;
 
 
 /* =======================================================================
-   1-B-2. v8.99zzu Transfer Price Balance Check
+   1-B-2. v8.99zzs Fixed Price Low Margin Exclude
    - 목적: 클라우드는 동기화 때만 조회하고, 수불/매칭/치환은 로컬 캐시와 인덱스를 즉시 사용한다.
    - 원칙: 계산 중 클라우드 fetch 금지. 마감 작업은 현재 로컬 마스터 스냅샷 기준으로 고정한다.
    ======================================================================= */
@@ -1030,7 +1038,7 @@ window.DATAOPS_MASTER_LINK_MODULE = DATAOPS_MASTER_LINK_MODULE;
 
 
 /* =======================================================================
-   1-D. v8.99zzu Transfer Price Balance Check
+   1-D. v8.99zzs Fixed Price Low Margin Exclude
    - 목적: MerchOps 마스터의 원물/소분 관계를 기준으로 소분 마이너스 항목을 치환 후보로 추출하고, 관리자 명령 시 치환입고/치환출고를 반영한다.
    - 원칙: 자동 실행하지 않는다. 후보 확인 후 관리자 버튼으로만 실행한다.
    ======================================================================= */
@@ -3957,7 +3965,7 @@ const IssueChip = React.memo(({ msg }) => {
         // 긴 품명이 들어올 수 있으므로 max-w 와 truncate 클래스 적용
         colorClass = "bg-slate-100 text-slate-600 border-slate-200 font-medium max-w-[200px] truncate inline-block align-bottom";
     }
-    return (React.createElement("span", { className: `relative px-2 py-0.5 rounded border font-semibold text-[10px] ${colorClass}` }, shortMsg));
+    return (React.createElement("span", { "data-tooltip": tooltip, className: `relative px-2 py-0.5 rounded border font-semibold text-[10px] cursor-help ${colorClass}` }, shortMsg));
 });
 const GuideModal = ({ isOpen, onClose }) => {
     if (!isOpen)
@@ -4614,13 +4622,8 @@ function App() {
         safeStr(text, '').split(/\n+/).map(line => line.trim()).filter(Boolean).forEach((line, idx) => {
             const [customerPart, rest = ''] = line.split('=');
             const customer = safeStr(customerPart);
-            const [rawGroupName = '', rulePart = '', feeMode = 'NONE', profitMode = 'NORMAL', outputCustomerMode = 'GROUP_NAME'] = rest.split('|').map(v => safeStr(v));
-            const groupName = normalizeTransferGroupName(rawGroupName);
-            const rawRule = rulePart.split('>').map(v => v.trim()).filter(Boolean);
-            // v8.99zzt: 구버전 브라우저 저장값 호환.
-            // 예전 설정값(청과상장: 출고가(공지)>청과>상장가)이 localStorage에 남아 있어도
-            // 판매업로드 생성 단계에서는 현재 확정 룰(출고가(공지)>청과상장산출)로 정규화해서 검증한다.
-            const rule = normalizeTransferPriceRuleByGroup(groupName, rawRule);
+            const [groupName = '', rulePart = '', feeMode = 'NONE', profitMode = 'NORMAL', outputCustomerMode = 'GROUP_NAME'] = rest.split('|').map(v => safeStr(v));
+            const rule = rulePart.split('>').map(v => v.trim()).filter(Boolean);
             const lineNo = idx + 1;
             if (!customer)
                 errors.push(`${lineNo}행: 거래처명이 비어 있습니다.`);
@@ -5106,7 +5109,7 @@ function App() {
     }, [getTransferBaseFields]);
     const resolveTransferEffectiveRule = useCallback((group = {}) => {
         // v8.99zzr: 판매업로드 단가/판매가 칸은 확정된 단가 후보만 사용한다.
-        // 식자재는 출고가(공지)가 없으면 도매A를 우선 적용한다. 이후 식자재/출고(외노)는 보조 후보로만 사용한다.
+        // 식자재의 출고(외노)는 확정 룰로 복구하고, 상장가/시세상장가·식자재 도매A 자동대체는 제거한다.
         const groupName = normalizeTransferGroupName(group.groupName);
         const rule = normalizeTransferPriceRuleByGroup(groupName, group.rule || []);
         return rule.length ? rule : (group.rule || []).map(v => safeStr(v)).filter(Boolean);
@@ -5190,7 +5193,7 @@ function App() {
         if (normalizedGroup === '청과상장')
             return '청과상장 기준원가 없음(도매A/입고가+외주비+노무비)';
         if (normalizedGroup === '식자재')
-            return '식자재 판매단가 없음(도매A/식자재/출고(외노))';
+            return '식자재 판매단가 없음(식자재/출고(외노))';
         if (normalizedGroup === '창고출고')
             return '창고출고 도매A 없음';
         if (normalizedGroup === '내부이동')
@@ -5528,7 +5531,7 @@ function App() {
 전송출고는 구매처=우리농산 행을 1전송·40창고 가전표로 생성하되, 수량까지만 입력하고 단가부터 이하 컬럼은 공란 처리합니다.
 전송구매는 거래처명=3우리 행을 3우리·03창고 가전표로 생성하며, 단가/공급가액/구매값은 판매입력 값을 그대로 복사합니다.
 판매입력의 단가/판매가 칸에는 단가그룹별 알고리즘 적용 단가를 입력했습니다.
-식자재: 출고가(공지) > 도매A > 식자재 > 출고(외노) > 단가확인
+식자재: 출고가(공지) > 식자재 > 출고(외노) > 단가확인
 창고출고: 출고가(공지) > 도매A > 단가확인
 청과상장: 출고가(공지) > 도매A 기준원가 / 0.92 후 100단위 반올림 > 입고가+외주비+노무비 기준원가 / 0.92 후 100단위 반올림 > 단가확인
 내부이동: 입고가
@@ -5820,7 +5823,7 @@ function App() {
                 .map(([vendor, data]) => `${vendor}(${formatMoney(safeNum(data.fee) || safeNum(data.amount))})`)
                 .join(', ');
             // v8.99zw: 2전송검증은 버튼 클릭 팝업 브리핑 + 엑셀 3시트로 단순화한다.
-            // 엑셀 시트: 단가확인 / 잔량검증 / 거래처별수익 / 품목별수익. 2전송_브리핑 시트는 생성하지 않는다.
+            // 엑셀 시트: 단가확인 / 거래처별수익 / 품목별수익. 2전송_브리핑 시트는 생성하지 않는다.
             const createProfitSummaryRows = (detailRows = []) => {
                 const totals = detailRows.reduce((acc, r) => {
                     var _a;
@@ -5996,38 +5999,38 @@ function App() {
                 return aoa;
             };
             const aggregateTransferPriceChanges = (rows = []) => {
-                // v8.99zzu: 단가확인은 “알고리즘 정상판매가”와 “판매현황 실제판매가”가 다른 행만 추출한다.
-                // 입고가 없음·수익률 이슈는 거래처별/품목별 수익 시트에서만 확인하고, 단가확인에는 섞지 않는다.
+                // 단가확인은 기준단가(단가공지 우선, 없으면 그룹 기준가)와 판매현황 판매가를 비교한다.
+                // 기존 단가변동 외에 입고가/매입원가가 없는 행도 단가확인 시트에 추출한다.
                 const map = {};
                 rows.forEach(r => {
                     const qty = safeNum(r['판매수량']);
                     const groupName = safeStr(r['거래처그룹'], '미지정');
                     const customer = safeStr(r['보고거래처'] || r['거래처명'], '미지정');
-                    const itemName = safeStr(r['규격']) ? `${safeStr(r['품명'])} ${safeStr(r['규격'])}`.trim() : safeStr(r['품명'], '');
-                    const algorithmPrice = safeNum(r['기준단가']);
+                    const itemName = safeStr(r['품명'], '');
+                    const noticePrice = safeNum(r['기준단가']);
                     const salesPrice = safeNum(r['실제판매단가']);
-                    const appliedRule = safeStr(r['적용단가명'] || r['단가룰'], '');
-                    if (qty === 0 || algorithmPrice <= 0)
+                    const costPrice = safeNum(r['매입원가']);
+                    if (qty === 0)
                         return;
                     const checks = [];
-                    if (salesPrice <= 0)
-                        checks.push('판매가 없음');
-                    else if (salesPrice !== algorithmPrice)
-                        checks.push(salesPrice > algorithmPrice ? '단가인상' : '단가인하');
+                    if (noticePrice > 0 && salesPrice > 0 && noticePrice !== salesPrice)
+                        checks.push(salesPrice > noticePrice ? '단가인상' : '단가인하');
+                    if (costPrice <= 0)
+                        checks.push('입고가 없음');
                     if (!checks.length)
                         return;
-                    const diff = salesPrice - algorithmPrice;
-                    const key = `${groupName}|${customer}|${itemName}|${algorithmPrice}|${salesPrice}|${appliedRule}|${checks.join('/')}`;
+                    const diff = salesPrice - noticePrice;
+                    const key = `${groupName}|${customer}|${itemName}|${noticePrice}|${salesPrice}|${costPrice}|${checks.join('/')}`;
                     if (!map[key]) {
                         map[key] = {
                             '그룹': groupName,
                             '거래처': customer,
                             '상품': itemName,
                             '수량': 0,
-                            '알고리즘가': Math.round(algorithmPrice),
+                            '공지가': noticePrice > 0 ? Math.round(noticePrice) : '',
                             '판매가': salesPrice > 0 ? Math.round(salesPrice) : '',
-                            '차이': salesPrice > 0 ? Math.round(diff) : '',
-                            '적용룰': appliedRule,
+                            '차이': noticePrice > 0 && salesPrice > 0 ? Math.round(diff) : '',
+                            '입고가': costPrice > 0 ? Math.round(costPrice) : '',
                             '확인': checks.join(', ')
                         };
                     }
@@ -6343,20 +6346,13 @@ function App() {
                 '구매수량': r['구매수량'],
                 '판매수량': r['판매수량'],
                 '잔량': r['잔량'],
-                '검증결과': safeNum(r['잔량']) === 0 ? '정상(잔량 0)' : (safeNum(r['잔량']) < 0 ? '마이너스 발생(판매수량 초과)' : '잔량 발생(미출고/미판매)')
+                '검증결과': safeNum(r['잔량']) === 0 ? '수량 일치' : (safeNum(r['잔량']) < 0 ? '판매수량 초과' : '잔량 발생')
             }));
-            const balanceCheckRows = quantityCheckRows
-                .filter(r => safeNum(r['잔량']) !== 0)
-                .map(r => ({
-                    ...r,
-                    '상태': safeNum(r['잔량']) < 0 ? '마이너스' : '잔량',
-                    '확인요청': safeNum(r['잔량']) < 0 ? '판매수량이 구매수량보다 큽니다. 판매현황/구매현황 수량을 확인하세요.' : '2전송은 잔량 0이 정상입니다. 남은 수량의 미판매/미출고 사유를 확인하세요.'
-                }));
-            balanceCheckRows.forEach(r => checkRows.push({
+            quantityCheckRows.filter(r => safeNum(r['잔량']) !== 0).forEach(r => checkRows.push({
                 '구분': '확인필요', '심각도': safeNum(r['잔량']) < 0 ? '높음' : '중간',
                 '거래처명': '', '품목코드': r['품목코드'], '품명': r['품명'], '규격': '', '수량': r['판매수량'],
                 '공급가액': '', '매입원가': '', '수익': '', '수익률': '',
-                '사유': r['검증결과'], '필요조치': r['확인요청']
+                '사유': r['검증결과'], '필요조치': '구매/판매 수량 확인'
             }));
             salesExcludedRows.forEach(r => checkRows.unshift(r));
             const profitSummaryRows = createProfitSummaryRows(profitDetailRows);
@@ -6400,16 +6396,12 @@ function App() {
                     '확인필요품목수': itemProfitRows.filter(r => safeStr(r['확인'])).length
                 }];
             const priceChangeRows = aggregateTransferPriceChanges(priceValidationRows);
-            const priceChangeColumns = ['그룹', '거래처', '상품', '수량', '알고리즘가', '판매가', '차이', '적용룰', '확인'];
-            const balanceCheckColumns = ['품목코드', '품명', '구매수량', '판매수량', '잔량', '상태', '검증결과', '확인요청'];
+            const priceChangeColumns = ['그룹', '거래처', '상품', '수량', '공지가', '판매가', '차이', '입고가', '확인'];
             const customerProfitColumns = ['그룹', '거래처', '품목수', '수량', '공급가', '공제', '실매출', '매입가', '수익', '수익률', '확인', '비고'];
             const itemProfitColumns = ['상품', '수량', '공급가', '공제', '실매출', '매입가', '수익', '수익률', '확인', '비고'];
             const priceChangeUpCount = priceChangeRows.filter(r => safeNum(r['차이']) > 0).length;
             const priceChangeDownCount = priceChangeRows.filter(r => safeNum(r['차이']) < 0).length;
             const maxPriceDiff = priceChangeRows.reduce((max, r) => Math.max(max, Math.abs(safeNum(r['차이']))), 0);
-            const balanceNeedCount = balanceCheckRows.length;
-            const minusBalanceCount = balanceCheckRows.filter(r => safeNum(r['잔량']) < 0).length;
-            const remainBalanceCount = balanceCheckRows.filter(r => safeNum(r['잔량']) > 0).length;
             const customerNeedCount = customerProfitRows.filter(r => safeStr(r['확인'])).length;
             const itemNeedCount = itemProfitRows.filter(r => safeStr(r['확인'])).length;
             const deficitItemCount = itemProfitRows.filter(r => safeStr(r['확인']).includes('역마진')).length;
@@ -6426,8 +6418,8 @@ function App() {
                 if (!ws || !ws['!ref'])
                     return ws;
                 const range = XLSX.utils.decode_range(ws['!ref']);
-                const moneyCols = new Set(['공지가', '알고리즘가', '판매가', '차이', '입고가', '공급가', '공제', '실매출', '매입가', '수익']);
-                const qtyCols = new Set(['수량', '품목수', '거래처수', '구매수량', '판매수량', '잔량']);
+                const moneyCols = new Set(['공지가', '판매가', '차이', '입고가', '공급가', '공제', '실매출', '매입가', '수익']);
+                const qtyCols = new Set(['수량', '품목수', '거래처수']);
                 const pctCols = new Set(['수익률']);
                 const confirmColIndex = columns.findIndex(col => col === '확인');
                 for (let r = range.s.r + 1; r <= range.e.r; r++) {
@@ -6466,7 +6458,6 @@ function App() {
             };
             const wb = XLSX.utils.book_new();
             appendFlatSheet(wb, '단가확인', priceChangeColumns, priceChangeRows);
-            appendFlatSheet(wb, '잔량검증', balanceCheckColumns, balanceCheckRows);
             appendFlatSheet(wb, '거래처별수익', customerProfitColumns, customerProfitRows);
             appendFlatSheet(wb, '품목별수익', itemProfitColumns, itemProfitRows);
             const today = new Date();
@@ -6482,10 +6473,6 @@ function App() {
 판매가↑ ${priceChangeUpCount}건 / 판매가↓ ${priceChangeDownCount}건
 최대 차이: ${formatMoney(maxPriceDiff)}원`
                 : '단가확인 없음';
-            const balanceText = balanceNeedCount > 0
-                ? `잔량검증 ${balanceNeedCount}건
-잔량 발생 ${remainBalanceCount}건 / 마이너스 ${minusBalanceCount}건`
-                : '잔량검증 정상(잔량 0)';
             setAlertMsg(`✅ 2전송검증 완료
 
 원본 구매행: ${transferCleanStats.purchaseRaw}건 / 제외: ${transferCleanStats.purchaseSkipped}건
@@ -6493,14 +6480,13 @@ function App() {
 집계 품목: ${finalRows.length}건 / 판매 제외행: ${salesExcludedRows.length}건
 
 ${changeText}
-${balanceText}
 
 거래처별 수익률 확인필요: ${customerNeedCount}건
 품목별 수익률 확인필요: ${itemNeedCount}건
 적자 품목: ${deficitItemCount}건 / 저마진 품목: ${lowMarginItemCount}건
 
 엑셀 보고서를 생성했습니다.
-시트: 단가확인 / 잔량검증 / 거래처별수익 / 품목별수익`);
+시트: 단가확인 / 거래처별수익 / 품목별수익`);
         }
         catch (err) {
             console.error(err);
@@ -6973,7 +6959,7 @@ ${balanceText}
                     React.createElement("h1", { className: "text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzu Transfer Price Balance Check"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzs Fixed Price Low Margin Exclude"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
