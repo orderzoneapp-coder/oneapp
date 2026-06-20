@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzv Dynamic Action Buttons)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzy Cheonggwa Fee 9 Percent)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.99zzv Dynamic Action Buttons.....</div>
+        <div class="loader-text">ONEAPP DataOps v8.99zzy Cheonggwa Fee 9 Percent.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -379,7 +379,7 @@ const TRANSFER_PRICE_GROUP_PRESETS = [
         label: '식자재',
         description: '식자재 고정단가 거래처',
         customers: ['4연산', '5온산', '6진주', '7초전', '7남해', '8통영', '9구미'],
-        rule: ['출고가(공지)', '식자재', '출고(외노)'],
+        rule: ['출고가(공지)', '식자재', '도매A', '출고(외노)'],
         feeMode: 'NONE',
         profitMode: 'NORMAL',
         outputCustomerMode: 'ORIGINAL_CUSTOMER',
@@ -420,15 +420,17 @@ const normalizeTransferGroupName = (name) => {
 // v8.99zzt: 2전송검증 단가확인 시트는 알고리즘 기준 판매가와 실제 판매가 불일치만 추출하고, 잔량확인 시트를 추가한다.
 // v8.99zzu: System.IO 펼침/접힘 시 카드뷰·필터·테이블헤더 sticky top을 실제 System.IO 높이만큼 보정해 가림을 방지한다.
 // v8.99zzv: 전체마감/판매업로드 생성/2전송 검증 버튼은 업로드된 파일 조합에 따라 필요한 버튼만 노출한다.
+// v8.99zzw: 판매업로드 생성 알고리즘을 2전송검증 단가확인에 그대로 재사용하고, 식자재 도매A 우선순위를 복구한다.
+// v8.99zzy: 청과상장 판매가 산출의 공제율을 8%에서 9%로 복구한다. 기존 알고리즘은 유지하고 비율만 /0.91로 변경한다.
 // v8.99zzs: 2전송 검증에서 고정가 적용 행은 저마진 추출에서 제외.
 // v8.99zzr: 2전송 판매업로드 단가 최종 룰 반영.
 // 단가가 없으면 사용자가 정한 그룹별 후보 외 다른 컬럼으로 자동 대체하지 않고 공백 + 단가확인으로 보낸다.
 // 청과상장은 출고가(공지)가 없을 때 도매A 원가 우선, 도매A가 없으면 입고가+외주비+노무비 기준원가를 사용한다.
-// 청과상장 판매가는 기준원가 / 0.92 후 100원 단위 반올림한다.
+// 청과상장 판매가는 기준원가 / 0.91 후 100원 단위 반올림한다.
 const normalizeTransferPriceRuleByGroup = (groupName, rule = []) => {
     const normalizedGroup = normalizeTransferGroupName(groupName);
     if (normalizedGroup === '식자재')
-        return ['출고가(공지)', '식자재', '출고(외노)'];
+        return ['출고가(공지)', '식자재', '도매A', '출고(외노)'];
     if (normalizedGroup === '창고출고')
         return ['출고가(공지)', '도매A'];
     if (normalizedGroup === '청과상장')
@@ -555,7 +557,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'v8.99zzv Dynamic Action Buttons',
+    version: 'v8.99zzy Cheonggwa Fee 9 Percent',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -819,7 +821,7 @@ window.DATAOPS_CLOUD_MODULE = DATAOPS_CLOUD_MODULE;
 
 
 /* =======================================================================
-   1-B-2. v8.99zzv Dynamic Action Buttons
+   1-B-2. v8.99zzy Cheonggwa Fee 9 Percent
    - 목적: 클라우드는 동기화 때만 조회하고, 수불/매칭/치환은 로컬 캐시와 인덱스를 즉시 사용한다.
    - 원칙: 계산 중 클라우드 fetch 금지. 마감 작업은 현재 로컬 마스터 스냅샷 기준으로 고정한다.
    ======================================================================= */
@@ -1041,7 +1043,7 @@ window.DATAOPS_MASTER_LINK_MODULE = DATAOPS_MASTER_LINK_MODULE;
 
 
 /* =======================================================================
-   1-D. v8.99zzv Dynamic Action Buttons
+   1-D. v8.99zzy Cheonggwa Fee 9 Percent
    - 목적: MerchOps 마스터의 원물/소분 관계를 기준으로 소분 마이너스 항목을 치환 후보로 추출하고, 관리자 명령 시 치환입고/치환출고를 반영한다.
    - 원칙: 자동 실행하지 않는다. 후보 확인 후 관리자 버튼으로만 실행한다.
    ======================================================================= */
@@ -4656,14 +4658,17 @@ function App() {
             const customer = safeStr(customerPart);
             const [groupName = '', rulePart = '', feeMode = 'NONE', profitMode = 'NORMAL', outputCustomerMode = 'GROUP_NAME'] = rest.split('|').map(v => safeStr(v));
             const rule = rulePart.split('>').map(v => v.trim()).filter(Boolean);
+            const normalizedRule = normalizeTransferPriceRuleByGroup(groupName, rule);
             const lineNo = idx + 1;
             if (!customer)
                 errors.push(`${lineNo}행: 거래처명이 비어 있습니다.`);
             if (!groupName)
                 errors.push(`${lineNo}행: 그룹명이 비어 있습니다.`);
-            if (!rule.length)
+            if (!rule.length && !normalizedRule.length)
                 errors.push(`${lineNo}행: 단가룰이 비어 있습니다.`);
-            rule.forEach(key => { if (!allowedPriceKeys.includes(key))
+            // v8.99zzw: 그룹명 기준 최종 알고리즘을 강제 정규화하므로, 저장된 구버전 룰의 상장가 등은 판매업로드 생성을 막지 않는다.
+            // 검증은 실제로 적용될 normalizedRule만 대상으로 수행한다.
+            normalizedRule.forEach(key => { if (!allowedPriceKeys.includes(key))
                 errors.push(`${lineNo}행: 허용되지 않은 단가 후보(${key})`); });
             if (!allowedOutputModes.includes(outputCustomerMode || 'GROUP_NAME'))
                 errors.push(`${lineNo}행: 출력모드는 GROUP_NAME 또는 ORIGINAL_CUSTOMER만 허용합니다.`);
@@ -5142,14 +5147,14 @@ function App() {
     }, [getTransferBaseFields]);
     const resolveTransferEffectiveRule = useCallback((group = {}) => {
         // v8.99zzr: 판매업로드 단가/판매가 칸은 확정된 단가 후보만 사용한다.
-        // 식자재의 출고(외노)는 확정 룰로 복구하고, 상장가/시세상장가·식자재 도매A 자동대체는 제거한다.
+        // 식자재는 출고가(공지) > 식자재 > 도매A > 출고(외노) 순서로 적용한다.
         const groupName = normalizeTransferGroupName(group.groupName);
         const rule = normalizeTransferPriceRuleByGroup(groupName, group.rule || []);
         return rule.length ? rule : (group.rule || []).map(v => safeStr(v)).filter(Boolean);
     }, []);
 
     const resolveCheonggwaListingPrice = useCallback((f = {}) => {
-        const CHEONGGWA_PRICE_DIVISOR = 0.92;
+        const CHEONGGWA_PRICE_DIVISOR = 0.91;
         const noticePrice = transferStrictNumber(getTransferRawValue(f.raw || {}, '출고가(공지)'));
         if (noticePrice > 0) {
             return { status: 'MATCHED', price: noticePrice, priceKey: '출고가(공지)', columnName: '출고가(공지)' };
@@ -5167,7 +5172,7 @@ function App() {
         }
         if (baseCost > 0) {
             const finalPrice = Math.round((baseCost / CHEONGGWA_PRICE_DIVISOR) / 100) * 100;
-            return { status: 'MATCHED', price: finalPrice, priceKey: '청과상장산출', columnName: `${source} / 0.92 / 100단위 반올림`, baseCost };
+            return { status: 'MATCHED', price: finalPrice, priceKey: '청과상장산출', columnName: `${source} / 0.91 / 100단위 반올림`, baseCost };
         }
         return { status: 'PRICE_MISSING', price: 0, priceKey: '', columnName: '', baseCost: 0 };
     }, [getTransferRawValue, transferStrictNumber]);
@@ -5226,7 +5231,7 @@ function App() {
         if (normalizedGroup === '청과상장')
             return '청과상장 기준원가 없음(도매A/입고가+외주비+노무비)';
         if (normalizedGroup === '식자재')
-            return '식자재 판매단가 없음(식자재/출고(외노))';
+            return '식자재 판매단가 없음(식자재/도매A/출고(외노))';
         if (normalizedGroup === '창고출고')
             return '창고출고 도매A 없음';
         if (normalizedGroup === '내부이동')
@@ -5564,9 +5569,9 @@ function App() {
 전송출고는 구매처=우리농산 행을 1전송·40창고 가전표로 생성하되, 수량까지만 입력하고 단가부터 이하 컬럼은 공란 처리합니다.
 전송구매는 거래처명=3우리 행을 3우리·03창고 가전표로 생성하며, 단가/공급가액/구매값은 판매입력 값을 그대로 복사합니다.
 판매입력의 단가/판매가 칸에는 단가그룹별 알고리즘 적용 단가를 입력했습니다.
-식자재: 출고가(공지) > 식자재 > 출고(외노) > 단가확인
+식자재: 출고가(공지) > 식자재 > 도매A > 출고(외노) > 단가확인
 창고출고: 출고가(공지) > 도매A > 단가확인
-청과상장: 출고가(공지) > 도매A 기준원가 / 0.92 후 100단위 반올림 > 입고가+외주비+노무비 기준원가 / 0.92 후 100단위 반올림 > 단가확인
+청과상장: 출고가(공지) > 도매A 기준원가 / 0.91 후 100단위 반올림 > 입고가+외주비+노무비 기준원가 / 0.91 후 100단위 반올림 > 단가확인
 내부이동: 입고가
 ※ 단가가 없으면 다른 단가로 임의 대체하지 않고 공백으로 생성합니다.`);
         }
@@ -5592,6 +5597,7 @@ function App() {
             const purchaseRows = [];
             const byExactKey = {};
             const byCustomerCode = {};
+            const byCode = {};
             parsedIn.forEach(item => {
                 if (!isTransferGenerationValidPurchaseRow(item))
                     return;
@@ -5599,7 +5605,7 @@ function App() {
                 const f = resolved.base;
                 const outputCustomer = getTransferOutputCustomerName(resolved);
                 const specKey = safeStr(f.detailCustomer, '');
-                const rec = { ...resolved, outputCustomer, code: f.code, name: f.name, qty: f.qty, specKey };
+                const rec = { ...resolved, outputCustomer, code: f.code, name: f.name, qty: f.qty, specKey, isInternalMove: normalizeTransferGroupName(resolved.groupName || '') === '내부이동' };
                 purchaseRows.push(rec);
                 const exactKey = `${outputCustomer}|${f.code}|${specKey}`;
                 const ccKey = `${outputCustomer}|${f.code}`;
@@ -5607,8 +5613,11 @@ function App() {
                     byExactKey[exactKey] = [];
                 if (!byCustomerCode[ccKey])
                     byCustomerCode[ccKey] = [];
+                if (!byCode[f.code])
+                    byCode[f.code] = [];
                 byExactKey[exactKey].push(rec);
                 byCustomerCode[ccKey].push(rec);
+                byCode[f.code].push(rec);
             });
             const priceRows = [];
             const qtyMap = {};
@@ -5641,9 +5650,28 @@ function App() {
                 if (!code || !name || safeNum(qty) === 0)
                     return;
                 addQty(code, name, 'salesQty', qty);
-                let match = (byExactKey[`${customer}|${code}|${specKey}`] || [])[0];
-                if (!match)
-                    match = (byCustomerCode[`${customer}|${code}`] || [])[0];
+                const chooseDeterministicTransferPriceMatch = (...sets) => {
+                    const merged = [];
+                    const seen = new Set();
+                    sets.flat().filter(Boolean).forEach(r => {
+                        const key = `${r.outputCustomer || ''}|${r.specKey || ''}|${r.groupName || ''}|${r.code || ''}|${r.priceKey || ''}|${r.price || ''}|${r.qty || ''}`;
+                        if (!seen.has(key)) {
+                            seen.add(key);
+                            merged.push(r);
+                        }
+                    });
+                    if (!merged.length)
+                        return null;
+                    const internal = merged.find(r => r && r.isInternalMove);
+                    if (internal)
+                        return internal;
+                    return merged.find(r => r.status === 'MATCHED' && safeNum(r.price) > 0) || merged[0];
+                };
+                const match = chooseDeterministicTransferPriceMatch(
+                    byExactKey[`${customer}|${code}|${specKey}`] || [],
+                    byCustomerCode[`${customer}|${code}`] || [],
+                    byCode[code] || []
+                );
                 const basePrice = match ? safeNum(match.price) : 0;
                 const priceDiff = actualPrice - basePrice;
                 const calcSupply = qty * actualPrice;
@@ -6115,7 +6143,8 @@ function App() {
                 const code = getCode(item);
                 const name = getName(item);
                 const qty = getTransferQty(item, 'in');
-                const price = parseNumber((_b = getRawCell(raw, ['출고(외노)', '입고가', '단가', '구매단가', '매입단가', '매입단가(원가)', '원가', '상장가'])) !== null && _b !== void 0 ? _b : item.단가);
+                // v8.99zzw: 수익/잔량 검증의 매입원가는 판매가 후보(출고(외노)/상장가)가 아니라 실제 입고가/매입단가를 우선 사용한다.
+                const price = parseNumber((_b = getRawCell(raw, ['입고가', '단가', '구매단가', '매입단가', '매입단가(원가)', '원가'])) !== null && _b !== void 0 ? _b : item.단가);
                 const vendor = safeStr((_c = getRawCell(raw, ['구매처', '원구매처', '매입처', '거래처명', '거래처', 'no', 'NO', '3거래'])) !== null && _c !== void 0 ? _c : item.거래처, '미지정');
                 if (!code || !name || safeNum(qty) === 0) {
                     transferCleanStats.purchaseSkipped++;
@@ -6244,7 +6273,7 @@ function App() {
                 finalRows[0].메모 = [finalRows[0].메모, `공제:${formatMoney(transferCleanStats.feeAmount)} ${summarizeFeeMap(transferFeeVendors)}`].filter(Boolean).join(' | ');
             }
             // v8.99zw: 판매가검증은 단가확인 시트로만 단순 출력한다.
-            // 단가확인은 행단위가 아니라 거래처+세부거래처+상품 기준 합계로 출력하고, 입고가 없음도 함께 추출한다.
+            // 단가확인은 판매업로드 생성 알고리즘 기준가와 판매현황 실제 판매가가 다른 항목만 추출한다.
             const transferPriceConfigForExport = buildTransferPriceConfig();
             const purchasePriceRows = [];
             const purchaseByCustomerCode = {};
@@ -6261,10 +6290,11 @@ function App() {
                 const noticePrice = transferStrictNumber(f.notice);
                 const rec = {
                     code: f.code, name: f.name, spec: f.spec || f.detailCustomer || '', qty: f.qty,
-                    outputCustomer, purchaseVendor: f.purchaseVendor || '', cost: safeNum(f.cost),
+                    outputCustomer, sourceCustomer: f.groupCustomer || '', detailCustomer: f.detailCustomer || '', purchaseVendor: f.purchaseVendor || '', cost: safeNum(f.cost),
                     status: resolved.status, price: safeNum(resolved.price), noticePrice,
                     priceKey: noticePrice > 0 ? '단가공지' : (resolved.priceKey || ''),
-                    groupName: resolved.groupName || '', rulePath: resolved.rulePath || '', profitMode: resolved.profitMode || 'NORMAL'
+                    groupName: resolved.groupName || '', rulePath: resolved.rulePath || '', profitMode: resolved.profitMode || 'NORMAL',
+                    isInternalMove: normalizeTransferGroupName(resolved.groupName || '') === '내부이동'
                 };
                 purchasePriceRows.push(rec);
                 const customerCodeKey = `${outputCustomer}|${f.code}`;
@@ -6301,25 +6331,30 @@ function App() {
                 const fee = isListingFeeCustomer(customer) ? parseNumber((_g = getRawCell(raw, ['수수료', '공제금액', '공제', '공제수수료'])) !== null && _g !== void 0 ? _g : 0) : 0;
                 if (!code || !name || safeNum(qty) === 0)
                     return;
-                const chooseTransferPriceMatch = (candidates = []) => {
-                    const list = (candidates || []).filter(Boolean);
-                    if (!list.length)
+                const chooseTransferPriceMatch = (...candidateSets) => {
+                    const merged = [];
+                    const seen = new Set();
+                    candidateSets.flat().filter(Boolean).forEach(r => {
+                        const key = `${r.outputCustomer || ''}|${r.detailCustomer || ''}|${r.sourceCustomer || ''}|${r.code || ''}|${r.groupName || ''}|${r.priceKey || ''}|${r.price || ''}|${r.qty || ''}`;
+                        if (!seen.has(key)) {
+                            seen.add(key);
+                            merged.push(r);
+                        }
+                    });
+                    if (!merged.length)
                         return null;
-                    if (actualPrice > 0) {
-                        // 단가공지는 최우선 기준이다. 판매현황 단가가 공지단가와 같으면 단가변동 이슈로 보지 않는다.
-                        const noticeExact = list.find(r => safeNum(r.noticePrice) > 0 && safeNum(r.noticePrice) === actualPrice);
-                        if (noticeExact)
-                            return noticeExact;
-                        const baseExact = list.find(r => safeNum(r.price) > 0 && safeNum(r.price) === actualPrice);
-                        if (baseExact)
-                            return baseExact;
-                    }
-                    return list[0] || null;
+                    // v8.99zzx: 2전송검증은 실제 판매가와 같은 후보를 찾아 맞추지 않는다.
+                    // 구매행을 먼저 확정한 뒤, 판매업로드 생성 알고리즘의 기준가와 실제 판매가만 비교한다.
+                    // 3우리 내부이동 재고출고 건은 판매처명이 5온산 등으로 보여도 내부이동 단가 알고리즘을 우선 적용한다.
+                    const internal = merged.find(r => r && r.isInternalMove);
+                    if (internal)
+                        return internal;
+                    return merged.find(r => r.status === 'MATCHED' && safeNum(r.price) > 0) || merged[0];
                 };
                 const detailCandidates = purchaseByDetailCustomerCode[`${reportCustomer}|${code}`] || [];
                 const customerCandidates = purchaseByCustomerCode[`${customer}|${code}`] || [];
                 const codeCandidates = purchaseByCode[code] || [];
-                const match = chooseTransferPriceMatch(detailCandidates) || chooseTransferPriceMatch(customerCandidates) || chooseTransferPriceMatch(codeCandidates);
+                const match = chooseTransferPriceMatch(detailCandidates, customerCandidates, codeCandidates);
                 const noticePrice = match ? safeNum(match.noticePrice) : 0;
                 const basePrice = match ? (noticePrice > 0 ? noticePrice : safeNum(match.price)) : 0;
                 const appliedPriceKey = match ? (noticePrice > 0 ? '단가공지' : safeStr(match.priceKey, '')) : '';
@@ -7008,7 +7043,7 @@ ${balanceText}
                     React.createElement("h1", { className: "text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzv Dynamic Action Buttons"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzy Cheonggwa Fee 9 Percent"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
