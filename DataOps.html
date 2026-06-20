@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a02)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a03)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a02.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a03.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -71,7 +71,7 @@
     <div id="root"></div>
 
     <script>
-        // V1.a02: 외부 라이브러리 미로드 시 무한 로딩 방지
+        // V1.a03: 외부 라이브러리 미로드 시 무한 로딩 방지
         window.__DATAOPS_DEP_CHECK__ = function() {
             var missing = [];
             if (!window.XLSX) missing.push('XLSX');
@@ -164,7 +164,7 @@ const getWarehouseFromRow = (row = {}, fallbackFileName = '') => {
     const wh = normalizeWarehouseCode(direct);
     if (wh)
         return wh;
-    // V1.a02: 2전송 판매현황은 창고 컬럼 없이 1행 제목줄에만 "2전송"이 들어오는 경우가 있다.
+    // V1.a03: 2전송 판매현황은 창고 컬럼 없이 1행 제목줄에만 "2전송"이 들어오는 경우가 있다.
     // 기존 로직은 파일명/창고 컬럼만 보아 0619판매.xlsx 같은 파일의 판매행을 전부 제외했다.
     // 파서가 보관한 제목줄/기준일 원문을 창고 판정 보조값으로 사용한다.
     const titleText = safeStr(row._sourceTitleText || row._sheetBasisDateRaw || '', '').replace(/\s/g, '');
@@ -305,7 +305,7 @@ const parseIssuesAndVendors = (str, price) => {
     });
     return { issues, vendors };
 };
-// V1.a02: ERP 출력물의 소계/합계/총합계 또는 상품이 아닌 숫자형 요약행 방어막.
+// V1.a03: ERP 출력물의 소계/합계/총합계 또는 상품이 아닌 숫자형 요약행 방어막.
 // 예: 품명 2593, 상품코드 없음, 매입내역 없음 형태로 하단에 상품처럼 올라오는 행을 차단한다.
 const isSummaryOrInvalidProductRow = ({ code = '', name = '', raw = {} } = {}) => {
     const codeText = safeStr(code, '').trim();
@@ -330,7 +330,7 @@ const isSummaryOrInvalidProductRow = ({ code = '', name = '', raw = {} } = {}) =
         return true;
     return false;
 };
-// V1.a02: 재고현황/수불마감 기본여부 그룹 정책.
+// V1.a03: 재고현황/수불마감 기본여부 그룹 정책.
 // 기본=1은 농산류, 기본=2 이상(3·5·7 등)은 식자재, 기본=0/공백은 기타로 분류한다.
 const getBasicRawValue = (item = {}) => {
     if (item.기본 !== undefined && item.기본 !== null && safeStr(item.기본, '') !== '')
@@ -368,7 +368,7 @@ const TRANSFER_PRICE_GROUP_PRESETS = [
         label: '청과상장',
         description: '청과/상장 거래처',
         customers: ['1마산', '2중앙'],
-        rule: ['출고가(공지)', '청과', '청과상장산출'],
+        rule: ['출고가(공지)', '청과', '도매A/0.91', '상장가'],
         feeMode: 'LISTING_FEE',
         profitMode: 'NORMAL',
         outputCustomerMode: 'GROUP_NAME',
@@ -417,22 +417,22 @@ const normalizeTransferGroupName = (name) => {
         return '창고출고';
     return value;
 };
-// V1.a02: 2전송검증 단가확인 시트는 알고리즘 기준 판매가와 실제 판매가 불일치만 추출하고, 잔량확인 시트를 추가한다.
-// V1.a02: System.IO 펼침/접힘 시 카드뷰·필터·테이블헤더 sticky top을 실제 System.IO 높이만큼 보정해 가림을 방지한다.
-// V1.a02: 전체마감/판매업로드 생성/2전송 검증 버튼은 업로드된 파일 조합에 따라 필요한 버튼만 노출한다.
-// V1.a02: 판매업로드 생성 알고리즘을 2전송검증 단가확인에 그대로 재사용하고, 식자재 도매A 우선순위를 복구한다.
-// V1.a02: 청과상장 판매가 산출의 공제율을 8%에서 9%로 복구한다. 기존 알고리즘은 유지하고 비율만 /0.91로 변경한다.
-// V1.a02: 2전송검증 단가확인은 구매파일 재해석 매칭을 중단하고, 판매업로드 생성 결과와 판매현황을 직접 비교한다.
-// V1.a02: 창고출고 그룹은 도매A가 없으면 출고(외노)를 적용한다.
-// V1.a02: DataOps 버전 체계 초기화. 기존 구버전 계열 표기를 폐기하고 V1.a02부터 새 버전으로 관리한다.
-// V1.a02: 2전송검증 기준가를 판매업로드 생성 엔진 결과에 완전 연동한다. 판매업로드 단가 알고리즘 변경 시 검증 기준가도 함께 변경된다.
-// V1.a02: 2전송 검증에서 고정가 적용 행은 저마진 추출에서 제외.
-// V1.a02: 2전송 판매업로드 단가 최종 룰 반영.
-// V1.a02: 청과상장 그룹은 출고가(공지) 다음 청과 고정가를 바로 적용하고, 청과가 없을 때만 도매A/입고가 기준 /0.91 산출을 적용한다.
+// V1.a03: 2전송검증 단가확인 시트는 알고리즘 기준 판매가와 실제 판매가 불일치만 추출하고, 잔량확인 시트를 추가한다.
+// V1.a03: System.IO 펼침/접힘 시 카드뷰·필터·테이블헤더 sticky top을 실제 System.IO 높이만큼 보정해 가림을 방지한다.
+// V1.a03: 전체마감/판매업로드 생성/2전송 검증 버튼은 업로드된 파일 조합에 따라 필요한 버튼만 노출한다.
+// V1.a03: 판매업로드 생성 알고리즘을 2전송검증 단가확인에 그대로 재사용하고, 식자재 도매A 우선순위를 복구한다.
+// V1.a03: 청과상장 판매가 산출의 공제율을 8%에서 9%로 복구한다. 기존 알고리즘은 유지하고 비율만 /0.91로 변경한다.
+// V1.a03: 2전송검증 단가확인은 구매파일 재해석 매칭을 중단하고, 판매업로드 생성 결과와 판매현황을 직접 비교한다.
+// V1.a03: 창고출고 그룹은 도매A가 없으면 출고(외노)를 적용한다.
+// V1.a03: DataOps 버전 체계 초기화. 기존 구버전 계열 표기를 폐기하고 V1.a03부터 새 버전으로 관리한다.
+// V1.a03: 2전송검증 기준가를 판매업로드 생성 엔진 결과에 완전 연동한다. 판매업로드 단가 알고리즘 변경 시 검증 기준가도 함께 변경된다.
+// V1.a03: 2전송 검증에서 고정가 적용 행은 저마진 추출에서 제외.
+// V1.a03: 2전송 판매업로드 단가 최종 룰 반영.
+// V1.a03: 청과상장 그룹은 출고가(공지) 다음 청과 고정가를 바로 적용하고, 청과가 없을 때만 도매A/0.91 산출, 상장가 순으로 적용한다.
 // 단가가 없으면 사용자가 정한 그룹별 후보 외 다른 컬럼으로 자동 대체하지 않고 공백 + 단가확인으로 보낸다.
 // 청과상장은 출고가(공지) 다음 청과 고정가를 바로 적용한다.
-// 청과 고정가가 없을 때 도매A 원가 우선, 도매A가 없으면 입고가+외주비+노무비 기준원가를 사용한다.
-// 청과상장 산출 판매가는 기준원가 / 0.91 후 100원 단위 반올림한다.
+// 청과 고정가가 없을 때 도매A/0.91을 적용하고, 도매A가 없으면 이미 입고가+외주비+노무비/0.91로 계산된 상장가를 적용한다.
+// 청과상장 도매A 산출 판매가는 도매A / 0.91 후 100원 단위 반올림하고, 상장가는 고정 산출값으로 그대로 적용한다.
 const normalizeTransferPriceRuleByGroup = (groupName, rule = []) => {
     const normalizedGroup = normalizeTransferGroupName(groupName);
     if (normalizedGroup === '식자재')
@@ -440,7 +440,7 @@ const normalizeTransferPriceRuleByGroup = (groupName, rule = []) => {
     if (normalizedGroup === '창고출고')
         return ['출고가(공지)', '도매A', '출고(외노)'];
     if (normalizedGroup === '청과상장')
-        return ['출고가(공지)', '청과', '청과상장산출'];
+        return ['출고가(공지)', '청과', '도매A/0.91', '상장가'];
     if (normalizedGroup === '내부이동')
         return ['단가'];
     return (rule || []).map(v => safeStr(v)).filter(Boolean);
@@ -558,12 +558,12 @@ const clearTableSortPreference = () => {
     return { sortMode: 'DEFAULT', sortDesc: false };
 };
 /* =======================================================================
-   1-A. V1.a02 내부 모듈 + 현장 고도화 베이스 (Single HTML Logical Modules)
+   1-A. V1.a03 내부 모듈 + 현장 고도화 베이스 (Single HTML Logical Modules)
    - 목적: 기존 기능은 유지하고, 이후 고도화를 위한 책임 경계를 만든다.
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a02',
+    version: 'V1.a03',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -592,7 +592,7 @@ const CONFIG_MODULE = Object.freeze({
 });
 
 /* =======================================================================
-   1-B. V1.a02 MerchOps Cloud Master Sync
+   1-B. V1.a03 MerchOps Cloud Master Sync
    - 목적: DataOps 매핑센터에서 MerchOps 클라우드 URL을 관리하고 MasterDB를 읽기 전용으로 불러온다.
    - 원칙: DataOps는 클라우드 원본을 수정하지 않고, 불러온 마스터를 브라우저 캐시로만 사용한다.
    ======================================================================= */
@@ -827,7 +827,7 @@ window.DATAOPS_CLOUD_MODULE = DATAOPS_CLOUD_MODULE;
 
 
 /* =======================================================================
-   1-B-2. V1.a02
+   1-B-2. V1.a03
    - 목적: 클라우드는 동기화 때만 조회하고, 수불/매칭/치환은 로컬 캐시와 인덱스를 즉시 사용한다.
    - 원칙: 계산 중 클라우드 fetch 금지. 마감 작업은 현재 로컬 마스터 스냅샷 기준으로 고정한다.
    ======================================================================= */
@@ -908,7 +908,7 @@ const DATAOPS_MASTER_CACHE_MODULE = {
 window.DATAOPS_MASTER_CACHE_MODULE = DATAOPS_MASTER_CACHE_MODULE;
 
 /* =======================================================================
-   1-C. V1.a02 Merch Master Ledger Link
+   1-C. V1.a03 Merch Master Ledger Link
    - 목적: MerchOps MasterDB 캐시를 수불마감/분석원장 출력에 연결한다.
    - 원칙: 원본 수불 데이터는 변경하지 않고, 마스터 연결값은 확인용 보조 컬럼으로만 출력한다.
    ======================================================================= */
@@ -1049,7 +1049,7 @@ window.DATAOPS_MASTER_LINK_MODULE = DATAOPS_MASTER_LINK_MODULE;
 
 
 /* =======================================================================
-   1-D. V1.a02
+   1-D. V1.a03
    - 목적: MerchOps 마스터의 원물/소분 관계를 기준으로 소분 마이너스 항목을 치환 후보로 추출하고, 관리자 명령 시 치환입고/치환출고를 반영한다.
    - 원칙: 자동 실행하지 않는다. 후보 확인 후 관리자 버튼으로만 실행한다.
    ======================================================================= */
@@ -1228,7 +1228,7 @@ const DATA_MODEL_MODULE = Object.freeze({
         const unitText = safeStr(unitValue);
         const nameText = safeStr(nameValue);
         const allText = `${unitText} ${nameText}`;
-        // V1.a02 원칙: 엑셀의 단위 컬럼을 최우선으로 판정한다.
+        // V1.a03 원칙: 엑셀의 단위 컬럼을 최우선으로 판정한다.
         // 단위 컬럼이 비어 있거나 설정 키워드와 맞지 않을 때만 품명/규격 텍스트를 보조 단서로 사용한다.
         if (unitText) {
             if (CONFIG_MODULE.hasKeyword(unitText, unitRules.SPLIT))
@@ -1379,7 +1379,7 @@ const DATAOPS_ISSUE_HELPER = Object.freeze({
         const issues = DATAOPS_ISSUE_HELPER.stripQuantityIssues(baseIssues);
         if (calc.diffQty !== 0)
             issues.push('🚨수량변동(잔량수정)');
-        // V1.a02: 잔량/계산 마이너스가 동시에 걸려도 화면에는 하나만 노출한다.
+        // V1.a03: 잔량/계산 마이너스가 동시에 걸려도 화면에는 하나만 노출한다.
         // 우선순위는 실제 최종 재고 상태인 '잔량'이 먼저다.
         if (calc.finalQty < 0)
             issues.push('🚨잔량');
@@ -1432,7 +1432,7 @@ const FILTER_SORT_MODULE = Object.freeze({
     },
     shouldShowSplitItem: (row, unitFilter = CONFIG_MODULE.defaultUnitFilter, options = {}) => {
         const standard = FILTER_SORT_MODULE.getStandard(row, options);
-        // V1.a02: 전체마감 기본 보기에서는 BOX/EA/소분을 모두 노출한다.
+        // V1.a03: 전체마감 기본 보기에서는 BOX/EA/소분을 모두 노출한다.
         // 소분은 사용자가 버튼으로 직접 끌 때만 제외하며, 기본 자동 제외 정책은 폐기한다.
         if (standard.unitType !== 'SPLIT')
             return !!unitFilter[standard.unitType || 'EA'];
@@ -1457,7 +1457,7 @@ const FILTER_SORT_MODULE = Object.freeze({
         const rawCode = safeStr(standard.code || (row === null || row === void 0 ? void 0 : row.코드) || '').replace(/\.0$/, '').trim();
         if (!rawCode || rawCode === 'NO_CODE' || rawCode === '-')
             return '~~~~';
-        // V1.a02: 품목코드는 숫자가 아니라 분류 문자열 코드다.
+        // V1.a03: 품목코드는 숫자가 아니라 분류 문자열 코드다.
         // 숫자형/자릿수 보정 정렬을 쓰면 8자리 30/40/50 코드가 10 농산류보다 먼저 올라온다.
         // ERP·MerchOps 호환 기준은 문자열 오름차순이다.
         return rawCode;
@@ -1677,7 +1677,7 @@ const EXPORT_MODULE = Object.freeze({
             '기록': safeStr(item.일자, ''),
             '거래': safeStr(item.거래처, ''),
             '최종(창고)': Math.round(safeNum(item.단가)),
-            // V1.a02: ERP 재고현황 K열 계열의 기본여부를 수불마감 재고현황에도 보존한다.
+            // V1.a03: ERP 재고현황 K열 계열의 기본여부를 수불마감 재고현황에도 보존한다.
             // 다음 재불러오기와 농산류/식자재/기타 분류가 이 값으로 동작한다.
             '구분(기본)': getBasicDisplayValue(item),
             '적요': safeStr(item.메모 || raw['적요'] || raw['비고'] || '')
@@ -1687,7 +1687,7 @@ const EXPORT_MODULE = Object.freeze({
         const rows = EXPORT_MODULE.buildNextBaseStockRows({ productData, targetDateStr });
         const displayDate = safeStr(targetDateStr, '').replace(/-/g, '/');
         const title = `회사명 : 원앱 / 1창고 / ${displayDate || '기준일미상'} / 재고현황`;
-        // V1.a02: 시트명은 재고현황, 1행은 ERP 제목줄, 2행은 ERP 재고현황 호환 헤더를 유지한다.
+        // V1.a03: 시트명은 재고현황, 1행은 ERP 제목줄, 2행은 ERP 재고현황 호환 헤더를 유지한다.
         // 기본여부는 별도 리포트용이 아니라 재고현황 원본에도 존재하는 컬럼이므로 함께 출력한다.
         const headers = ['단위', '품목코드', '품명', '규격', '주문', '재고', '기록', '거래', '최종(창고)', '구분(기본)', '적요'];
         const aoa = [
@@ -2050,7 +2050,7 @@ const EXPORT_MODULE = Object.freeze({
         const negativeCount = rows.filter(r => safeNum(r.finalQty) < 0).length;
         const htmlRows = rows.map((r, idx) => {
             const stateClass = safeNum(r.finalQty) < 0 ? 'negative' : (safeNum(r.diffQty) !== 0 ? 'diff' : '');
-            // V1.a02: 실사 검수용 인쇄 레이아웃.
+            // V1.a03: 실사 검수용 인쇄 레이아웃.
             // 품명&규격 바로 뒤에 잔량을 배치해 상품명과 확인 수량이 떨어져 보이지 않게 한다.
             return `
                     <tr class="${((idx + 1) % 5 === 0) ? 'line-marker' : ''} ${stateClass}">
@@ -2094,7 +2094,7 @@ const EXPORT_MODULE = Object.freeze({
         const foodRows = EXPORT_MODULE.buildGroupedBaseStockRows({ productData, groupName: '식자재', targetDateStr });
         const etcRows = EXPORT_MODULE.buildGroupedBaseStockRows({ productData, groupName: '기타', targetDateStr });
         const wb = XLSX.utils.book_new();
-        // V1.a02: 수불마감 파일은 다음날 기초재고용 재고현황을 1번 시트로 고정한다.
+        // V1.a03: 수불마감 파일은 다음날 기초재고용 재고현황을 1번 시트로 고정한다.
         // 재고수불_마감은 재불러오기용이 아니라 Lot/수불 추적용이며, 보고서는 거래처별 매출·이익률과 미해결 확인필요만 담는다.
         XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.buildNextBaseStockSheet({ productData, targetDateStr }), '재고현황');
         if (exportData2.length > 0) {
@@ -2276,11 +2276,11 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                 }
                 if (headerRowIdx === -1 || maxScore < 2)
                     return resolve([]);
-                // V1.a02: ERP 재고현황은 1행 제목줄에 기준일이 들어간다.
+                // V1.a03: ERP 재고현황은 1행 제목줄에 기준일이 들어간다.
                 // 예: 회사명 : 원앱 / 1창고 / 2026/06/11 / 재고현황
                 // 이 날짜는 파일/재고현황 기준일이며, 상품별 기록(구매일)과 분리해서 보관한다.
                 const extractBasisDateFromTitleRows = (rows = []) => {
-                    // V1.a02: ERP 재고현황 1행은 "회사명 / 1창고 / 2026/06/11 / 재고현황"처럼
+                    // V1.a03: ERP 재고현황 1행은 "회사명 / 1창고 / 2026/06/11 / 재고현황"처럼
                     // 창고번호(1창고)와 날짜가 같이 있으므로 전체 문자열을 formatItemDate에 바로 넣으면
                     // 숫자 토큰 [1, 2026, 06, 11] 때문에 기준일 인식이 실패한다.
                     // 따라서 반드시 20xx-xx-xx, 20xx/xx/xx, 20xx.xx.xx 패턴만 직접 추출한다.
@@ -2433,7 +2433,7 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                         _sourceSheet: sheetName || '', _sourceFileName: file.name || '', _sourceTitleText: sourceTitleText, _uploadRole: role, _fileType: isClosingRestoreRow ? 'CLOSING_RESTORE' : 'RAW_DATA',
                         _sheetBasisDate: sheetBasisDate.dateNum || 0, _sheetBasisDateSource: sheetBasisDate.source || '', _sheetBasisDateRaw: sheetBasisDate.raw || ''
                     };
-                    // V1.a02: 수불마감/시스템누적을 기초재고 슬롯에서 읽을 때는 전용 해석을 강제한다.
+                    // V1.a03: 수불마감/시스템누적을 기초재고 슬롯에서 읽을 때는 전용 해석을 강제한다.
                     // - 수불마감의 입고/출고는 현재 입출고가 아니므로 무시한다.
                     // - 기초재고는 잔량/기말실사만 사용한다.
                     // - 입고가는 입고가/매입단가(원가)만 사용하고 재고금액/기말재고액은 단가 후보에서 제외한다.
@@ -2468,7 +2468,7 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                         normObj.매입처매칭 = '';
                         normObj._closingBaseOnly = true;
                     }
-                    // V1.a02: 역할별 거래처 의미를 강제 분리한다.
+                    // V1.a03: 역할별 거래처 의미를 강제 분리한다.
                     // 구매현황의 거래처명 = 매입처/Lot, 판매현황의 거래처명 = 판매처, 판매현황의 구매처 = 매입처/Lot 매칭값.
                     // 공통 vendor 매핑을 그대로 쓰면 판매처와 구매처가 뒤섞여 Lot 매칭/출고내역이 깨진다.
                     if (role === 'in') {
@@ -2546,7 +2546,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 nextItem.수기확인완료 = !DATAOPS_ISSUE_HELPER.hasUnresolved(nextItem.이슈);
                 return nextItem;
             }
-            // V1.a02 핵심 정책 복구:
+            // V1.a03 핵심 정책 복구:
             // 기초/입고/출고는 장부 기준값이다. 사용자가 장부값을 수정하면 최종 잔량도 새 계산잔량으로 따라간다.
             // 즉 장부 수정은 오차를 만드는 행위가 아니라, 기준 장부를 바로잡는 행위다.
             const systemQty = safeNum(nextItem.기초) + safeNum(nextItem.입고) + safeNum(nextItem.대체입고) - safeNum(nextItem.출고) - safeNum(nextItem.대체출고);
@@ -2569,7 +2569,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
         setProductData(prev => prev.map(item => {
             if (item.batchKey !== batchKey)
                 return item;
-            // V1.a02 핵심 정책 복구:
+            // V1.a03 핵심 정책 복구:
             // 잔량 수정은 기초/입고/출고를 역산 수정하지 않는다. 최종 잔량만 바꾸고 오차로 표기한다.
             const nextItem = { ...item, 실사: val === '' ? '' : Number(val) };
             const systemQty = safeNum(nextItem.기초) + safeNum(nextItem.입고) + safeNum(nextItem.대체입고) - safeNum(nextItem.출고) - safeNum(nextItem.대체출고);
@@ -2583,7 +2583,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
         }));
     }, []);
     const executeImmediateSubstitution = useCallback((key1, key2) => {
-        // V1.a02: Spacebar 수기치환은 전표 입고/출고 또는 치환입고/치환출고를 만들지 않는다.
+        // V1.a03: Spacebar 수기치환은 전표 입고/출고 또는 치환입고/치환출고를 만들지 않는다.
         // 목적은 두 오차 행의 관계를 메모/이슈로 남기고 확인 처리하는 것이다.
         // 구매/판매 원본값은 파일 전표값으로만 유지하고, 사용자가 입력한 잔량 차이는 오차수량으로 표시한다.
         setProductData(prev => {
@@ -2851,7 +2851,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 return fallback;
             };
             const rawNum = (raw = {}, keys = [], fallback = 0) => parseNumber(rawVal(raw, keys, fallback));
-            // V1.a02: 재고변동표/수불부는 빈 셀도 0으로 본다.
+            // V1.a03: 재고변동표/수불부는 빈 셀도 0으로 본다.
             // 컬럼이 존재하는데 값이 비어 있다고 fallback(item.수량 등)을 쓰면 앱이 임의로 재고를 만들어버린다.
             const rawNumStrict = (raw = {}, keys = [], fallback = 0) => {
                 for (const key of keys) {
@@ -2870,7 +2870,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     return false;
                 return (item === null || item === void 0 ? void 0 : item._fileType) === 'CLOSING_RESTORE' || rawHas(raw, '로스/조정수량') || rawHas(raw, '기초수량') || rawHas(raw, '기말실사(이월수량)') || isStockLedgerItem(item);
             };
-            // V1.a02: 수불마감은 기초재고 자료다.
+            // V1.a03: 수불마감은 기초재고 자료다.
             // 수불마감 내부의 과거 재고/입고/출고/계산잔량은 현재 작업의 입출고 계산에 사용하지 않는다.
             // 기초재고는 마감 시점의 최종 보유수량(잔량/기말실사)만 사용한다.
             const getClosingFinalQty = (item) => rawNumStrict(item._raw, ['잔량', '기말실사(이월수량)', '기말실사', '수량'], item.수량 || 0);
@@ -2881,7 +2881,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             const getClosingAdjustQty = (item) => 0;
             const closingEndItems = parsedEnd.filter(isClosingItem);
             const hasClosingEnd = closingEndItems.length > 0;
-            // V1.a02: 수불마감/시스템누적은 기초재고 자료로만 사용한다.
+            // V1.a03: 수불마감/시스템누적은 기초재고 자료로만 사용한다.
             // 파일 내부의 입고/출고는 현재 구매/판매 수량이 아니므로 계산에 사용하지 않는다.
             const prevItems = hasClosingEnd ? parsedPrev.filter(item => !isClosingItem(item)) : parsedPrev;
             const inItems = parsedIn.filter(item => !isClosingItem(item));
@@ -2945,7 +2945,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     const outQty = getClosingOutQty(item);
                     let actualQty = getClosingFinalQty(item);
                     const adjustQty = getClosingAdjustQty(item);
-                    // V1.a02: 수불마감 기초재고는 잔량 0 이하 행을 현재 기준재고로 올리지 않는다.
+                    // V1.a03: 수불마감 기초재고는 잔량 0 이하 행을 현재 기준재고로 올리지 않는다.
                     if (baseQty <= 0)
                         return;
                     if (!pData[batchKey]) {
@@ -3022,11 +3022,11 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             };
             const addStock = (item, type, qtyToApply) => {
                 var _a, _b, _c, _d, _e;
-                // V1.a02: 수불마감/시스템누적 기초재고는 잔량 0 이하 행을 제외한다.
+                // V1.a03: 수불마감/시스템누적 기초재고는 잔량 0 이하 행을 제외한다.
                 // 과거 입출고 흔적만 있고 최종 보유재고가 없는 Lot의 입고가가 화면에 뜨는 문제를 차단한다.
                 if (type === 'prev' && isClosingItem(item) && safeNum(qtyToApply) <= 0)
                     return;
-                // 제외거래처는 외부 구매/판매 계산에서 제외한다. V1.a02 기준 3우리도 확인용 내부전표라 입고 계산에서 제외한다.
+                // 제외거래처는 외부 구매/판매 계산에서 제외한다. V1.a03 기준 3우리도 확인용 내부전표라 입고 계산에서 제외한다.
                 if (type === 'in' && isExcluded(item.거래처))
                     return;
                 const code = String(item.코드 || 'NO_CODE');
@@ -3035,13 +3035,13 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 const name = item.품명;
                 const vendor = item.거래처 || (type === 'prev' ? '이월재고' : '미지정');
                 const unit = safeStr(item.단위 || ((_a = item._raw) === null || _a === void 0 ? void 0 : _a['단위']) || ((_b = item._raw) === null || _b === void 0 ? void 0 : _b['규격단위']) || ((_c = item._raw) === null || _c === void 0 ? void 0 : _c['포장단위']) || ((_d = item._raw) === null || _d === void 0 ? void 0 : _d['단위명']) || ((_e = item._raw) === null || _e === void 0 ? void 0 : _e['판매단위']), '');
-                // V1.a02: 수불마감/시스템누적을 기초재고로 올린 경우 같은 품목의 구매현황/판매현황이
+                // V1.a03: 수불마감/시스템누적을 기초재고로 올린 경우 같은 품목의 구매현황/판매현황이
                 // 별도 가격 batchKey로 갈라져 입고/출고가 안 보이는 문제를 방지한다.
                 // 기초재고 행은 기준 잔량만 제공하고, 현재 입고/출고는 구매/판매 파일에서만 누적한다.
                 const closingBaseRowsForCode = (type === 'in' && code !== 'NO_CODE')
                     ? Object.values(pData).filter(p => (p._fromClosingBase || p._fromFile4) && String(p.코드) === code)
                     : [];
-                // V1.a02: 수불마감 기초행과 구매현황을 병합할 때 코드만 맞으면 붙이는 방식 금지.
+                // V1.a03: 수불마감 기초행과 구매현황을 병합할 때 코드만 맞으면 붙이는 방식 금지.
                 // 코드만으로 붙이면 가락(마니농산), 우리농산 등 Lot이 한 행으로 합쳐져 판매현황 구매처 기준 Lot 매칭이 실패한다.
                 const baseRowByCode = closingBaseRowsForCode.find(p => isSameLotName(p.거래처, vendor))
                     || (closingBaseRowsForCode.length === 1 && (!vendor || vendor === '미지정') ? closingBaseRowsForCode[0] : null);
@@ -3098,7 +3098,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 if (!stockPool[code])
                     stockPool[code] = { buckets: [] };
                 if (qtyToApply !== 0) {
-                    // V1.a02: 화면 표시용 batchKey와 FIFO 계산용 lotKey를 분리한다.
+                    // V1.a03: 화면 표시용 batchKey와 FIFO 계산용 lotKey를 분리한다.
                     // 같은 코드/단가로 화면에서는 합쳐 보여도, 구매처·날짜·파일역할이 다르면 FIFO Lot은 별도로 선출되어야 한다.
                     const lotKey = `${batchKey}|${type}|${safeStr(vendor, '미지정')}|${safeStr(date, '')}|${price}`;
                     let existingBucket = stockPool[code].buckets.find(b => b.lotKey === lotKey);
@@ -3153,7 +3153,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     finalRevenue = sale.단가;
                 sale._finalRevenue = finalRevenue;
             });
-            // 2. 🌟 V1.a02: Lot/원가 매칭용 전표 병합 기준 정정.
+            // 2. 🌟 V1.a03: Lot/원가 매칭용 전표 병합 기준 정정.
             // 원가 배정 기준은 판매처가 아니라 "상품코드 + 품명 + 판매현황 구매처(Lot)"이다.
             // 예: 쌈추_1kg_BOX가 1마산/2중앙으로 나뉘어도 구매처가 같으면 먼저 합산해 같은 Lot에서 차감한다.
             // 판매처별 수량/매출은 _salesVendorDetails에 보존하고, 출고내역 표시 단계에서 다시 분리한다.
@@ -3237,7 +3237,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 // 🌟 당일우선(LIFO) 거래처라도, 내부분배용으로 지정된 전표면 LIFO를 무시하고 FIFO(기존 재고 우선 선출) 적용
                 const effectiveIsLifo = isInternalDistribution ? false : isLifo;
                 const normalizeLotName = normalizeLotNameForMatch;
-                // V1.a02: Lot 이슈는 판매 가능 여부가 아니라 원가/잔량 실사 영향 기준으로만 노출한다.
+                // V1.a03: Lot 이슈는 판매 가능 여부가 아니라 원가/잔량 실사 영향 기준으로만 노출한다.
                 // 2전송/내부분배 계열은 이미 매칭 확인 성격이 강하므로, 수량부족/마이너스가 아니면 Lot 경고에서 제외한다.
                 const sourceFileName = safeStr(sale._sourceFileName || sale._fileName || '', '');
                 const saleVendorText = `${safeStr(sale.거래처)} ${safeStr(sale.매입처매칭)} ${sourceFileName} ${safeStr(sale._rawCombinedStr)}`;
@@ -3260,7 +3260,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     const row = pData[bucket.batchKey];
                     const requestedLot = safeStr(sale.매입처매칭, '미지정');
                     const appliedLot = safeStr(bucket.거래처, '미지정');
-                    // V1.a02 정책 확정:
+                    // V1.a03 정책 확정:
                     // - 2전송: 판매현황의 구매처를 기준으로 매핑한다. Lot 확인 이슈는 만들지 않는다.
                     // - 1창고: 구매처 정보가 부족하므로 FIFO 차감하되, Lot 확인 메모/이슈를 남긴다.
                     if (isTransferLotContext) {
@@ -3360,7 +3360,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     deductFromBucket(pool.buckets[pool.buckets.length - 1], remainingQty, false, 'RETURN');
                 }
                 else if (remainingQty > 0) {
-                    // V1.a02: Lot 잔여수량 잠금 + 재고우선 분할매칭 정책.
+                    // V1.a03: Lot 잔여수량 잠금 + 재고우선 분할매칭 정책.
                     // 1) 2전송 + 외부 구매처 지정: 당일 동일 구매처 Lot → 기존 재고 FIFO → 부족분만 당일 다른 구매 Lot.
                     // 2) 구매처 매칭 실패/미지정/우리농산 계열: 기존 재고 FIFO → 부족분만 당일 구매 FIFO.
                     // 3) 어떤 경우에도 잔여수량이 0인 Lot에는 추가 배정하지 않는다. 전체 가용수량이 부족할 때만 Lot초과배정 이슈를 남긴다.
@@ -3395,7 +3395,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     const stockOtherBuckets = stockFifoBuckets.filter(bucket => !isRequestedBucket(bucket));
                     const hasRequestedPositive = requestedBuckets.some(hasPositiveQty);
                     const buildLotStages = () => {
-                        // V1.a02 최종 확정: 우리농산/우리/3우리 계열은 2전송이어도 내부분배로 먼저 판정한다.
+                        // V1.a03 최종 확정: 우리농산/우리/3우리 계열은 2전송이어도 내부분배로 먼저 판정한다.
                         // 내부분배/매칭실패/구매처미지정은 기존 재고 FIFO → 부족분만 당일 같은상품 Lot 순서로 분할 배정한다.
                         if (isInternalDistribution) {
                             return [
@@ -3561,7 +3561,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     }
                 }
             });
-            // V1.a02: 테이블 값은 단순 수학으로만 계산한다. 앱이 '강제조정' 같은 판단 문구를 만들지 않는다.
+            // V1.a03: 테이블 값은 단순 수학으로만 계산한다. 앱이 '강제조정' 같은 판단 문구를 만들지 않는다.
             // 오차 = 잔량 - (재고 + 입고 - 출고). 오차 숫자는 오차 칸에만 표시한다.
             // 잔량 마이너스, 계산잔량 마이너스, 단가없음은 오차와 별개의 상태 이슈다.
             Object.values(pData).forEach(item => {
@@ -3730,7 +3730,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 setAlertMsg('원가추출용 재고/수불마감 파일이 없습니다.');
                 return;
             }
-            // V1.a02: 원가추출의 재고 소스는 1재고현황이든 수불마감이든 모두 "기초재고"로 해석한다.
+            // V1.a03: 원가추출의 재고 소스는 1재고현황이든 수불마감이든 모두 "기초재고"로 해석한다.
             // 수불마감 파일을 실사/마감 슬롯으로 넣어도 결산일자를 구매일처럼 표시하지 않고,
             // 구매현황 Lot의 실제 구매일자/구매처/구매단가를 화면 기준값으로 우선 적용한다.
             const parsedEnd = await parseExcelData(stockSourceFile, mappings, 'prev');
@@ -3738,7 +3738,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             const endDateNum = extractDateFromName(stockSourceFile.name);
             if (endDateNum)
                 refYear = Math.floor(endDateNum / 10000);
-            // V1.a02: 원가추출 날짜는 재고/수불마감 기준일이 아니라 "구매현황의 실제 구매일자"만 사용한다.
+            // V1.a03: 원가추출 날짜는 재고/수불마감 기준일이 아니라 "구매현황의 실제 구매일자"만 사용한다.
             // 수불마감의 결산일자, 재고현황의 기록일자, 오늘 날짜는 상품 구매일로 표시하지 않는다.
             const normalizeKeyText = (val) => safeStr(val, '').replace(/\s/g, '').replace(/[\-_()（）\[\]{}]/g, '').toLowerCase();
             const normalizeCodeKey = (val) => safeStr(val, '').replace(/\s/g, '').replace(/\.0$/, '').toUpperCase();
@@ -3765,7 +3765,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 }
                 return { dateNum: 0, source: rawDate.key || item._dateSource || '', rawValue: '' };
             };
-            // V1.a02: 원가추출 파일 기준일은 재고/수불마감 스냅샷 기준일이다.
+            // V1.a03: 원가추출 파일 기준일은 재고/수불마감 스냅샷 기준일이다.
             // ERP 재고현황은 1행 제목줄의 날짜가 기준일이다.
             // 상품별 구매일(기록)이나 오늘 날짜를 기준일/파일명으로 쓰지 않는다.
             // 우선순위: 1행 제목 기준일 > 파일명 날짜 > 기준일/마감일자/결산일자 컬럼 > 미상.
@@ -3795,7 +3795,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             const targetDateStrFromData = stockBasisDateNum ? toDateDisplay(stockBasisDateNum) : '기준일미상';
             setTargetDateStr(targetDateStrFromData);
             setAnalysisPeriod(stockBasisDateNum ? `초기 재고 자산화 모드 / 기준일 ${targetDateStrFromData}` : '초기 재고 자산화 모드 / 기준일미상');
-            // V1.a02: 원가추출은 현재 재고를 최신 구매분부터 역순으로 자산화한다.
+            // V1.a03: 원가추출은 현재 재고를 최신 구매분부터 역순으로 자산화한다.
             // 단, 화면 표시일은 구매 Lot의 구매일자만 허용한다. 매칭 실패 시 오늘 날짜로 대체하지 않는다.
             const sortedIn = [...parsedIn]
                 .map((item, idx) => {
@@ -4346,18 +4346,18 @@ function App() {
     const [searchInputVal, setSearchInputVal] = useState('');
     // Native Sticky Scroll 적용을 위한 반응형 상태
     const [cardHeight, setCardHeight] = useState(0);
-    const [filterBarHeight, setFilterBarHeight] = useState(0); // V1.a02: 정렬/카테고리/단위/F10 전 설정바 sticky 높이
-    const [systemStickyOffset, setSystemStickyOffset] = useState(0); // V1.a02: System.IO 높이만큼 하단 sticky UI를 밀어 가림 방지
+    const [filterBarHeight, setFilterBarHeight] = useState(0); // V1.a03: 정렬/카테고리/단위/F10 전 설정바 sticky 높이
+    const [systemStickyOffset, setSystemStickyOffset] = useState(0); // V1.a03: System.IO 높이만큼 하단 sticky UI를 밀어 가림 방지
     const systemMiniBarRef = useRef(null);
     const systemPanelRef = useRef(null);
     const cardContainerRef = useRef(null);
     const filterBarRef = useRef(null);
     const currentIssueIdxRef = useRef(-1);
-    const issueJumpHistoryRef = useRef([]); // V1.a02: 이슈카드 Tab 이동 경로 저장. < 버튼은 검색이 아니라 이 경로를 역순 복귀한다.
+    const issueJumpHistoryRef = useRef([]); // V1.a03: 이슈카드 Tab 이동 경로 저장. < 버튼은 검색이 아니라 이 경로를 역순 복귀한다.
     const focusedInputRef = useRef({ key: null, idx: -1 });
     const activeIssueModeRef = useRef(null);
-    const filteredProductDataRef = useRef([]); // V1.a02: 프린터 출력은 현재 화면 필터 결과를 그대로 사용한다.
-    const systemUiCollapsedRef = useRef(false); // V1.a02: 스크롤 중 헤더 깜박임 방지용 현재 접힘 상태 참조
+    const filteredProductDataRef = useRef([]); // V1.a03: 프린터 출력은 현재 화면 필터 결과를 그대로 사용한다.
+    const systemUiCollapsedRef = useRef(false); // V1.a03: 스크롤 중 헤더 깜박임 방지용 현재 접힘 상태 참조
     const scrollUiGuardRef = useRef({
         lastTop: 0,
         accDown: 0,
@@ -4380,16 +4380,16 @@ function App() {
             });
             return parts.join(', ');
         };
-        // V1.a02 정책: 3우리는 02 통합구매분 중 01창고 입고 확인용 내부전표이므로 DataOps 계산에서 제외한다.
-        // 기존 브라우저 localStorage에 V1.a02 설정이 남아 있어도 3우리는 자동 보강한다.
+        // V1.a03 정책: 3우리는 02 통합구매분 중 01창고 입고 확인용 내부전표이므로 DataOps 계산에서 제외한다.
+        // 기존 브라우저 localStorage에 V1.a03 설정이 남아 있어도 3우리는 자동 보강한다.
         merged.excludeVendor = ensureCsvValue(merged.excludeVendor, ['우리농산', '1전송', '3우리']);
-        // V1.a02 정책: 구매전표 거래처명 '우리농산'이 판매전표 Lot 매칭값으로도 유입될 수 있으므로
+        // V1.a03 정책: 구매전표 거래처명 '우리농산'이 판매전표 Lot 매칭값으로도 유입될 수 있으므로
         // 내부 분배/공용 Lot 예외에는 '우리'와 '우리농산'을 함께 보강한다.
         merged.internalLot = ensureCsvValue(merged.internalLot, ['우리', '우리농산']);
         merged.matchVendor = safeStr(merged.matchVendor, defaultMappings.matchVendor);
         merged.lifoVendor = safeStr(merged.lifoVendor, defaultMappings.lifoVendor);
         merged.priorityVendor = safeStr(merged.priorityVendor, defaultMappings.priorityVendor);
-        // V1.a02: 1재고현황의 날짜 컬럼명 '기록'을 Lot 기준일로 인식한다.
+        // V1.a03: 1재고현황의 날짜 컬럼명 '기록'을 Lot 기준일로 인식한다.
         // 과거 저장된 localStorage 매핑에 date 항목이 남아 있어도 자동 보강한다.
         merged.date = ensureCsvValue(merged.date || defaultMappings.date, ['기록', '최종기록', '재고기록', '등록일', '등록일자', '기준일']);
         return merged;
@@ -4412,7 +4412,7 @@ function App() {
     const { productData, setProductData, analysisPeriod, setAnalysisPeriod, targetDateStr, setTargetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes, resetEngine, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction } = useInventoryEngine({ mappings, grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep });
     const isCostExtractionMode = !files.prev && files.in && !files.out && files.end;
     const hasEndFile = !!files.end;
-    // V1.a02: 실행 버튼은 업로드된 파일 역할에 맞는 것만 노출한다.
+    // V1.a03: 실행 버튼은 업로드된 파일 역할에 맞는 것만 노출한다.
     // 재고/마감 파일만 올라온 상태에서 2전송검증·판매업로드 버튼이 보이면 업무상 오해가 생기므로 숨김 처리한다.
     const hasAnyUploadedFile = !!(files.prev || files.in || files.out || files.end);
     const hasPurchaseFile = !!files.in;
@@ -4492,7 +4492,7 @@ function App() {
         return "waiting for data_blocks... (파일을 업로드하세요)";
     }, [files, isProcessing, isCostExtractionMode, analysisMeta]);
     useEffect(() => { activeIssueModeRef.current = activeIssueMode; }, [activeIssueMode]);
-    // V1.a02: System.IO 패널은 스크롤 위치를 최상단으로 이동하지 않고 현재 위치에서 고정 펼침/접힘만 전환한다.
+    // V1.a03: System.IO 패널은 스크롤 위치를 최상단으로 이동하지 않고 현재 위치에서 고정 펼침/접힘만 전환한다.
     useEffect(() => { systemUiCollapsedRef.current = systemUiCollapsed; }, [systemUiCollapsed]);
     useEffect(() => {
         const container = document.getElementById('main-scroll-container');
@@ -4592,7 +4592,7 @@ function App() {
         }, 250);
         return () => clearTimeout(timer);
     }, [searchInputVal]);
-    // V1.a02: 카드뷰 + 필터바 + 테이블 헤더 위치 보정
+    // V1.a03: 카드뷰 + 필터바 + 테이블 헤더 위치 보정
     // System.IO가 sticky로 펼쳐질 때 작업테이블 위를 덮지 않도록 실제 System.IO 높이를 sticky top offset으로 반영한다.
     useEffect(() => {
         if (appStep !== 'closing' || productData.length === 0) {
@@ -4655,7 +4655,7 @@ function App() {
         };
     }, [appStep, productData.length, systemUiCollapsed]);
     const validateTransferPriceGroupText = useCallback((text = mappings.transferPriceGroups) => {
-        const allowedPriceKeys = ['출고가(공지)', '청과', '청과상장산출', '식자재', '출고(외노)', '도매A', '단가'];
+        const allowedPriceKeys = ['출고가(공지)', '청과', '도매A/0.91', '상장가', '청과상장산출', '식자재', '출고(외노)', '도매A', '단가'];
         const allowedOutputModes = ['GROUP_NAME', 'ORIGINAL_CUSTOMER'];
         const customerOwner = {};
         const errors = [];
@@ -4672,7 +4672,7 @@ function App() {
                 errors.push(`${lineNo}행: 그룹명이 비어 있습니다.`);
             if (!rule.length && !normalizedRule.length)
                 errors.push(`${lineNo}행: 단가룰이 비어 있습니다.`);
-            // V1.a02: 그룹명 기준 최종 알고리즘을 강제 정규화하므로, 저장된 구버전 룰의 상장가 등은 판매업로드 생성을 막지 않는다.
+            // V1.a03: 그룹명 기준 최종 알고리즘을 강제 정규화하므로, 저장된 구버전 룰의 상장가 등은 판매업로드 생성을 막지 않는다.
             // 검증은 실제로 적용될 normalizedRule만 대상으로 수행한다.
             normalizedRule.forEach(key => { if (!allowedPriceKeys.includes(key))
                 errors.push(`${lineNo}행: 허용되지 않은 단가 후보(${key})`); });
@@ -4695,8 +4695,9 @@ function App() {
             return true;
         if (normalized.includes('식자재>상장가'))
             return true;
-        // V1.a02: 도매A>출고(외노)는 식자재/창고출고의 현재 유효 룰이므로 구버전으로 보지 않는다.
-        if (normalized.includes('상장가') || normalized.includes('청과>상장가'))
+        // V1.a03: 청과상장 상장가는 현재 유효 룰이므로 구버전으로 보지 않는다.
+        // 단, 청과상장 룰에 도매A/0.91 없이 청과>상장가로 바로 이어지는 과거형은 초기화 대상으로 본다.
+        if (normalized.includes('청과상장') && normalized.includes('청과>상장가'))
             return true;
         if (!(normalized.includes('금양=창고출고') || normalized.includes('금양=9부산')))
             return true;
@@ -4844,7 +4845,7 @@ function App() {
         map[p.코드].add(p.단가); }); const result = {}; for (let code in map) {
         result[code] = Array.from(map[code]);
     } return result; }, [productData]);
-    // V1.a02: 판매현황 구매처로 원가가 확정된 상품은 Lot 매치 이슈카드에 올리지 않는다.
+    // V1.a03: 판매현황 구매처로 원가가 확정된 상품은 Lot 매치 이슈카드에 올리지 않는다.
     // 다중 원가 코드 자체는 참고 정보일 뿐이며, 이슈카드는 실제 미처리 Lot 문제만 다룬다.
     const multiPriceCodes = useMemo(() => { const codes = new Set(); productData.forEach(p => { if (priceOptionsMap[p.코드] && priceOptionsMap[p.코드].length >= 2 && p.출고 > 0)
         codes.add(p.코드); }); return Array.from(codes); }, [productData, priceOptionsMap]);
@@ -4878,7 +4879,7 @@ function App() {
     }, []);
     const hasUnresolvedQtyIssue = useCallback((p) => {
         const issues = Array.isArray(p.이슈) ? p.이슈 : [];
-        // V1.a02: 카드 카운트는 실제 수학 상태가 아니라 '미확인(🚨)' 이슈 기준이다.
+        // V1.a03: 카드 카운트는 실제 수학 상태가 아니라 '미확인(🚨)' 이슈 기준이다.
         // Tab 이동으로 ✅ 처리된 항목은 카운트에서 빠져야 한다.
         return issues.some(i => String(i).includes('🚨수량변동') ||
             String(i).includes('🚨잔량') ||
@@ -4952,7 +4953,7 @@ function App() {
                 totalLossCount++;
             if (hasQtyUnresolved)
                 lossCount++;
-            // V1.a02: Lot 카드 카운트는 실제 미처리 Lot 이슈만 센다.
+            // V1.a03: Lot 카드 카운트는 실제 미처리 Lot 이슈만 센다.
             // 판매현황 구매처로 확정 매칭된 다중 원가 코드는 카드 이슈에서 제외한다.
             const hasMatchTotal = hasLotIssueTotal(p);
             const hasMatchUnresolved = hasUnresolvedLotIssue(p);
@@ -4991,7 +4992,7 @@ function App() {
     }, [productData, hasQtyIssueTotal, hasUnresolvedQtyIssue, hasLotIssueTotal, hasUnresolvedLotIssue, substitutionCandidateRows, substitutionCandidateStatusCounts]);
     const hiddenMovedSourceCount = useMemo(() => productData.filter(item => item && item._hiddenBySalesMove).length, [productData]);
     const showCards = useMemo(() => {
-        // V1.a02: 카드뷰는 문제 건수가 0이어도 분석 완료 후 항상 표시한다.
+        // V1.a03: 카드뷰는 문제 건수가 0이어도 분석 완료 후 항상 표시한다.
         // 카드 자체가 '이상 없음' 상태를 보여주는 작업 체크리스트이기 때문이다.
         return appStep === 'closing' && productData.length > 0;
     }, [appStep, productData.length]);
@@ -5012,9 +5013,9 @@ function App() {
         setAnalysisMeta({ fileLabel, analyzedAt: formatAnalysisTime(new Date()), status: 'done' });
     }, [files, isProcessing, buildAnalysisFileLabel, getDefaultFilters, runAnalysis, formatAnalysisTime]);
     /* =======================================================================
-       V1.a02 2전송검증 / 단가확인 알고리즘 불일치 전용 + 잔량확인 시트 추가
-       V1.a02 2전송 검증 / 고정가 저마진 추출 제외
-       V1.a02 2전송 판매업로드 생성 / 단가그룹별 판매가 최종 알고리즘 고정
+       V1.a03 2전송검증 / 단가확인 알고리즘 불일치 전용 + 잔량확인 시트 추가
+       V1.a03 2전송 검증 / 고정가 저마진 추출 제외
+       V1.a03 2전송 판매업로드 생성 / 단가그룹별 판매가 최종 알고리즘 고정
        - 구매현황을 받아 판매업로드 파일을 만들 때 판매입력의 단가/판매가 칸에는 사용자 확정 단가만 입력한다.
        - 단가 생성은 정확한 거래처명 일치 기준만 사용한다.
        - 단가가 없으면 다른 단가로 임의 fallback 하지 않고 공백 + 단가확인으로 보낸다.
@@ -5127,7 +5128,7 @@ function App() {
             if (legacyCheonggwa !== null && transferStrictNumber(legacyCheonggwa) <= 0)
                 detailCustomer = safeStr(legacyCheonggwa, '').trim();
         }
-        // V1.a02: 판매업로드 K열 '규격'은 상품명에서 추출하지 않고 구매현황 원본의 거래처명/규격 값을 우선 적용한다.
+        // V1.a03: 판매업로드 K열 '규격'은 상품명에서 추출하지 않고 구매현황 원본의 거래처명/규격 값을 우선 적용한다.
         // 현재 2전송 구매현황에서는 '거래처명' 컬럼이 판매업로드 K열 규격 자리에 들어가는 운영값이다.
         const purchaseSpecValue = safeStr((_f = (_e = getRawCell(raw, ['거래처명'])) !== null && _e !== void 0 ? _e : getRawCell(raw, ['규격', '규격명', '포장규격', '상품규격', '옵션', '사이즈'])) !== null && _f !== void 0 ? _f : '', '').trim();
         const spec = purchaseSpecValue || detailCustomer;
@@ -5153,7 +5154,7 @@ function App() {
         return true;
     }, [getTransferBaseFields]);
     const resolveTransferEffectiveRule = useCallback((group = {}) => {
-        // V1.a02: 판매업로드 단가/판매가 칸은 확정된 단가 후보만 사용한다.
+        // V1.a03: 판매업로드 단가/판매가 칸은 확정된 단가 후보만 사용한다.
         // 식자재는 출고가(공지) > 식자재 > 도매A > 출고(외노) 순서로 적용한다.
         const groupName = normalizeTransferGroupName(group.groupName);
         const rule = normalizeTransferPriceRuleByGroup(groupName, group.rule || []);
@@ -5166,25 +5167,20 @@ function App() {
         if (noticePrice > 0) {
             return { status: 'MATCHED', price: noticePrice, priceKey: '출고가(공지)', columnName: '출고가(공지)' };
         }
-        // V1.a02: 청과상장 청과 값은 고정가로 바로 적용한다. /0.91 산출을 추가하지 않는다.
+        // V1.a03: 청과상장 청과 값은 고정가로 바로 적용한다. /0.91 산출을 추가하지 않는다.
         const cheonggwaFixedPrice = transferStrictNumber(getTransferRawValue(f.raw || {}, '청과'));
         if (cheonggwaFixedPrice > 0) {
             return { status: 'MATCHED', price: cheonggwaFixedPrice, priceKey: '청과', columnName: '청과' };
         }
         const wholesaleA = transferStrictNumber(f.wholesaleA) || transferStrictNumber(getTransferRawValue(f.raw || {}, '도매A'));
-        let baseCost = 0;
-        let source = '';
         if (wholesaleA > 0) {
-            baseCost = wholesaleA;
-            source = '도매A 기준원가';
+            const finalPrice = Math.round((wholesaleA / CHEONGGWA_PRICE_DIVISOR) / 100) * 100;
+            return { status: 'MATCHED', price: finalPrice, priceKey: '도매A/0.91', columnName: '도매A / 0.91 / 100단위 반올림', baseCost: wholesaleA };
         }
-        else if (safeNum(f.cost) > 0) {
-            baseCost = safeNum(f.cost) + safeNum(f.outsourceCost) + safeNum(f.laborCost);
-            source = '입고가+외주비+노무비 기준원가';
-        }
-        if (baseCost > 0) {
-            const finalPrice = Math.round((baseCost / CHEONGGWA_PRICE_DIVISOR) / 100) * 100;
-            return { status: 'MATCHED', price: finalPrice, priceKey: '청과상장산출', columnName: `${source} / 0.91 / 100단위 반올림`, baseCost };
+        // V1.a03: 상장가는 이미 (입고가 + 외주비 + 노무비) / 0.91로 계산된 값이므로 그대로 적용한다.
+        const listingPrice = transferStrictNumber(getTransferRawValue(f.raw || {}, '상장가'));
+        if (listingPrice > 0) {
+            return { status: 'MATCHED', price: listingPrice, priceKey: '상장가', columnName: '상장가', baseCost: 0 };
         }
         return { status: 'PRICE_MISSING', price: 0, priceKey: '', columnName: '', baseCost: 0 };
     }, [getTransferRawValue, transferStrictNumber]);
@@ -5241,7 +5237,7 @@ function App() {
     const getTransferPriceMissingReason = useCallback((groupName = '') => {
         const normalizedGroup = normalizeTransferGroupName(groupName);
         if (normalizedGroup === '청과상장')
-            return '청과상장 판매단가 없음(청과/도매A/입고가+외주비+노무비)';
+            return '청과상장 판매단가 없음(청과/도매A/상장가)';
         if (normalizedGroup === '식자재')
             return '식자재 판매단가 없음(식자재/도매A/출고(외노))';
         if (normalizedGroup === '창고출고')
@@ -5294,9 +5290,9 @@ function App() {
                 checkReasons.push('품명 없음');
             let price = resolved.status === 'MATCHED' ? safeNum(resolved.price) : '';
             let supply = price === '' ? '' : safeNum(f.qty) * safeNum(price);
-            // V1.a02: 치명 에러는 거래처명/품목코드/수량 없음만 막는다.
+            // V1.a03: 치명 에러는 거래처명/품목코드/수량 없음만 막는다.
             // 단가그룹 없음·기준단가 없음·단가오염 의심은 실무상 후속 입력 가능성이 있으므로 업로드 행은 생성하고 확인필요로 안내한다.
-            // V1.a02: 확정 단가룰에서 가져온 값은 공급가액성 금액으로 임의 공백 처리하지 않는다.
+            // V1.a03: 확정 단가룰에서 가져온 값은 공급가액성 금액으로 임의 공백 처리하지 않는다.
             // 단가가 의심되어도 프로그램이 판매가를 지우면 관리자가 검수할 수 없으므로, 정해진 단가 후보값은 그대로 출력한다.
             if (checkReasons.length) {
                 addWarning({
@@ -5323,7 +5319,7 @@ function App() {
                 '전달사항': checkReasons.length ? `확인필요: ${checkReasons.join(', ')}` : '',
                 '품목코드': f.code,
                 '품목명': f.name,
-                // V1.a02: K열 규격은 구매현황 원본 정보값(거래처명/규격)을 그대로 사용한다.
+                // V1.a03: K열 규격은 구매현황 원본 정보값(거래처명/규격)을 그대로 사용한다.
                 '규격': f.spec,
                 '수량': f.qty,
                 '단가': price,
@@ -5376,11 +5372,11 @@ function App() {
             }
             const parsedIn = await parseExcelData(targetFiles.in, mappings, 'in');
             const { rows, fatalErrors, warnings } = buildTransferSalesUploadRows(parsedIn);
-            // V1.a02: 업로드불가 항목은 별도 시트로 분리하지 않고 확인필요 시트 최상단에 병합한다.
+            // V1.a03: 업로드불가 항목은 별도 시트로 분리하지 않고 확인필요 시트 최상단에 병합한다.
             // 치명 항목은 판매입력 행에서는 제외하되, 나머지 정상 행의 엑셀 생성은 계속 진행한다.
             const wb = XLSX.utils.book_new();
             const uploadColumns = ['일자', '순번', '거래처코드', '거래처명', '출하창고', '거래유형', '전잔액', '전달사항', '품목코드', '품목명', '규격', '수량', '단가', '외화금액', '공급가액', '적요', '출고지시', '공지', '구매처', '날짜', '구매', '생산전표생성'];
-            // V1.a02: 2전송 판매업로드 파일 안에 가전표용 시트2/시트3을 추가한다.
+            // V1.a03: 2전송 판매업로드 파일 안에 가전표용 시트2/시트3을 추가한다.
             // 전송출고: 구매처가 우리농산인 판매입력 행을 1전송/40 창고 출고 가전표로 변환하되, 수량까지만 입력하고 단가부터 이하 컬럼은 공란 처리한다.
             // 전송구매: 거래처명이 3우리인 판매입력 행을 3우리/03 창고 구매 전표로 변환한다.
             // 주의: 전송구매의 단가/공급가액/구매값은 재계산·fallback 없이 이미 생성된 판매입력 row 값을 그대로 복사한다.
@@ -5778,9 +5774,9 @@ function App() {
         try {
             const parsedIn = await parseExcelData(targetFiles.in, mappings, 'in');
             const parsedOut = await parseExcelData(targetFiles.out, mappings, 'out');
-            // V1.a02: 2전송 검증 전용 정제 레이어. / V1.a02: Lot 원가영향 필터 적용.
+            // V1.a03: 2전송 검증 전용 정제 레이어. / V1.a03: Lot 원가영향 필터 적용.
             // ERP 출력물의 총합계/월계/출력시간/공제금액 행을 상품으로 읽지 않도록 일반 파서 결과를 한 번 더 방어한다.
-            // V1.a02: 전체마감은 출고를 정상 인식하지만 2전송검증만 출고가 0으로 사라지는 문제 보완.
+            // V1.a03: 전체마감은 출고를 정상 인식하지만 2전송검증만 출고가 0으로 사라지는 문제 보완.
             // 원인: 2전송검증은 전체마감 엔진과 별도 집계 함수이며, 창고 컬럼이 없는 판매현황을 행 단위 2전송 필터에서 제외할 수 있다.
             // 이 버튼은 사용자가 구매현황/판매현황을 직접 지정한 전송검증 전용 실행이므로, 명시적 1창고가 아닌 한 선택 파일 단위의 2전송 제목/역할을 보조 판정한다.
             const hasTransferFileHint = (fileName = '', rows = []) => {
@@ -5848,7 +5844,7 @@ function App() {
                 return keys.length ? raw[keys[0]] : '';
             };
             const compactText = (value) => safeStr(value, '').replace(/\s/g, '').toLowerCase();
-            // V1.a02: 판매현황 단가표의 T열 명칭을 '청과'로 확정한다.
+            // V1.a03: 판매현황 단가표의 T열 명칭을 '청과'로 확정한다.
             // 과거/오타 파일의 '정과' 헤더도 동일 항목으로 호환 인식하되, 내부 판정명은 '청과'로 통일한다.
             const salesPriceColumnAliases = ['출고가 (공지)', '출고가(공지)', '식자재', '도매A', '청과', '정과', '상장가', '공지a7', '출고(외노)'];
             const normalizeSalesPriceColumnName = (name) => compactText(name) === compactText('정과') ? '청과' : safeStr(name, '');
@@ -5895,7 +5891,7 @@ function App() {
                 .filter(([, data]) => safeNum(data.fee) !== 0 || safeNum(data.amount) !== 0)
                 .map(([vendor, data]) => `${vendor}(${formatMoney(safeNum(data.fee) || safeNum(data.amount))})`)
                 .join(', ');
-            // V1.a02: 단가확인 시트는 판매가 알고리즘 기준값과 실제 판매가 불일치만 추출한다.
+            // V1.a03: 단가확인 시트는 판매가 알고리즘 기준값과 실제 판매가 불일치만 추출한다.
             // 잔량확인 시트는 구매수량-판매수량 잔량이 0이 아닌 상품만 추출한다.
             // 엑셀 시트: 단가확인 / 잔량확인 / 거래처별수익 / 품목별수익. 2전송_브리핑 시트는 생성하지 않는다.
             const createProfitSummaryRows = (detailRows = []) => {
@@ -5950,7 +5946,7 @@ function App() {
                 const s = safeStr(priceKey, '').replace(/\s/g, '');
                 if (!s)
                     return false;
-                // V1.a02: 고정가는 관리자가 의도적으로 확정한 단가이므로 저마진 추출 대상에서 제외한다.
+                // V1.a03: 고정가는 관리자가 의도적으로 확정한 단가이므로 저마진 추출 대상에서 제외한다.
                 // 단가인상/단가인하·역마진 등 다른 확인 이슈는 기존처럼 유지한다.
                 return ['단가공지', '출고가(공지)', '수기공지단가', '식자재', '도매A', '출고(외노)', '고정상장가', '청과']
                     .some(key => s.includes(safeStr(key, '').replace(/\s/g, '')));
@@ -6073,7 +6069,7 @@ function App() {
                 return aoa;
             };
             const aggregateTransferPriceChanges = (rows = []) => {
-                // V1.a02: 단가확인은 판매가 알고리즘으로 산출한 기준 판매가와 판매현황 실제 판매단가가 다른 행만 추출한다.
+                // V1.a03: 단가확인은 판매가 알고리즘으로 산출한 기준 판매가와 판매현황 실제 판매단가가 다른 행만 추출한다.
                 // 입고가 없음·저마진·잔량 불일치 같은 다른 검증 이슈는 단가확인 시트에 섞지 않는다.
                 const map = {};
                 rows.forEach(r => {
@@ -6155,7 +6151,7 @@ function App() {
                 const code = getCode(item);
                 const name = getName(item);
                 const qty = getTransferQty(item, 'in');
-                // V1.a02: 수익/잔량 검증의 매입원가는 판매가 후보(출고(외노)/상장가)가 아니라 실제 입고가/매입단가를 우선 사용한다.
+                // V1.a03: 수익/잔량 검증의 매입원가는 판매가 후보(출고(외노)/상장가)가 아니라 실제 입고가/매입단가를 우선 사용한다.
                 const price = parseNumber((_b = getRawCell(raw, ['입고가', '단가', '구매단가', '매입단가', '매입단가(원가)', '원가'])) !== null && _b !== void 0 ? _b : item.단가);
                 const vendor = safeStr((_c = getRawCell(raw, ['구매처', '원구매처', '매입처', '거래처명', '거래처', 'no', 'NO', '3거래'])) !== null && _c !== void 0 ? _c : item.거래처, '미지정');
                 if (!code || !name || safeNum(qty) === 0) {
@@ -6182,7 +6178,7 @@ function App() {
                 const unitPrice = parseNumber((_b = getRawCell(raw, ['판매단가', '단가', '출고가', '출고가 (공지)', '출고가(공지)', '청과', '정과'])) !== null && _b !== void 0 ? _b : item.단가);
                 const supply = parseNumber((_c = getRawCell(raw, ['공급가', '공급가액', '최종공급가액', '최종공급가액(할인적용)', '판매금액', '금액'])) !== null && _c !== void 0 ? _c : 0) || (qty * unitPrice);
                 const explicitFee = parseNumber((_d = getRawCell(raw, ['공제금액', '공제', '수수료', '공제수수료'])) !== null && _d !== void 0 ? _d : 0);
-                // V1.a02: 9602011002/공제금액 행은 수수료 열이 아니라 실제 공제 금액 열을 우선 집계한다.
+                // V1.a03: 9602011002/공제금액 행은 수수료 열이 아니라 실제 공제 금액 열을 우선 집계한다.
                 // 우선순위: 공급가 > 정산 > 정리 > 공급가액/금액 > 단가×수량 > 단가
                 const deductionAmount = parseNumber((_e = getRawCell(raw, ['공급가', '정산', '정리', '공급가액', '최종공급가액', '최종공급가액(할인적용)', '판매금액', '금액'])) !== null && _e !== void 0 ? _e : 0) || (qty * unitPrice) || unitPrice;
                 const vendorRaw = safeStr((_f = getRawCell(raw, ['거래처명', '거래처', '매출처명', '판매처', '3거래'])) !== null && _f !== void 0 ? _f : item.거래처, '');
@@ -6284,7 +6280,7 @@ function App() {
                 finalRows[0]._transfer.feeSummary = summarizeFeeMap(transferFeeVendors);
                 finalRows[0].메모 = [finalRows[0].메모, `공제:${formatMoney(transferCleanStats.feeAmount)} ${summarizeFeeMap(transferFeeVendors)}`].filter(Boolean).join(' | ');
             }
-            // V1.a02.99zzzb: 2전송검증 단가확인은 구매파일을 다시 매칭/그룹판단하지 않는다.
+            // V1.a03.99zzzb: 2전송검증 단가확인은 구매파일을 다시 매칭/그룹판단하지 않는다.
             // 판매업로드 생성 엔진이 만든 거래처별 기준데이터와 판매현황을 직접 비교한다.
             // 기준가 = 판매업로드 생성 결과 단가, 판매가 = 판매현황 실제 단가.
             // 따라서 판매업로드 알고리즘(청과상장 0.91, 식자재, 창고출고 도매A>출고(외노) 등)이 바뀌면 검증 기준가도 동일하게 바뀐다.
@@ -6695,7 +6691,7 @@ ${balanceText}
         setSubstHistory(h => h.filter(item => item.id !== historyItem.id));
     }, [setProductData, setSubstHistory]);
     const handleUndoAll = useCallback(() => { [...substHistory].reverse().forEach(h => handleUndoAction(h)); setUndoUi({ state: 'closed' }); }, [substHistory, handleUndoAction]);
-    // V1.a02: 이슈카드 Tab/이전/카드 선택 이동 시 대상 행을 실제 작업영역 중앙에 고정한다.
+    // V1.a03: 이슈카드 Tab/이전/카드 선택 이동 시 대상 행을 실제 작업영역 중앙에 고정한다.
     // sticky 카드/필터바/thead 영역을 제외한 테이블 가시 영역 기준으로 중앙 계산하고,
     // 포커스 이후 scrollIntoView를 재호출하지 않아 세로 위치가 위/아래로 흔들리지 않게 한다.
     const scrollIssueRowIntoWorkCenter = useCallback((row, input, type) => {
@@ -6737,7 +6733,7 @@ ${balanceText}
             handleSalesMove(sourceKey, targetKey, vendor, maxQty);
         }
     }, [handleSalesMove]);
-    // V1.a02: 이슈카드 역탭(<)은 현재 목록의 이전 항목 검색이 아니라 사용자가 실제로 지나온 경로로 복귀한다.
+    // V1.a03: 이슈카드 역탭(<)은 현재 목록의 이전 항목 검색이 아니라 사용자가 실제로 지나온 경로로 복귀한다.
     // - Tab/다음 이동: 현재 위치를 issueJumpHistoryRef에 저장한 뒤 다음 이슈로 이동한다.
     // - < 이동: issueJumpHistoryRef.pop()으로 직전 방문 위치로 복귀한다. 복귀 이동은 확인완료/✅ 처리하지 않는다.
     // - 카드 새 선택: 이전 이동 경로를 초기화하고 해당 이슈 모드의 첫 항목부터 새로 시작한다.
@@ -6851,7 +6847,7 @@ ${balanceText}
         const condition = (p, isCurrentIdx = false) => {
             if (isCurrentIdx)
                 return false;
-            // V1.a02: 단가 검증 카운트와 점프 조건을 통일한다.
+            // V1.a03: 단가 검증 카운트와 점프 조건을 통일한다.
             // 실제 단가 0원 행은 더미/확인완료 여부와 관계없이 검토 대상이다.
             if (type === 'missingPrice')
                 return (!p.수기확인완료 && safeNum(p.단가) <= 0) || (p.이슈 && p.이슈.some(i => i.includes('🚨단가변경') || i.includes('🚨단가없음')));
@@ -7091,7 +7087,7 @@ ${balanceText}
                     React.createElement("h1", { className: "text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a02"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a03"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
@@ -7166,7 +7162,7 @@ ${balanceText}
                     React.createElement("div", { className: "mb-4" },
                         React.createElement("h4", { className: "text-sm font-bold text-slate-800" },
                             React.createElement("i", { className: "fas fa-star text-amber-500 mr-2" }),
-                            "V1.a02 \uC7AC\uACE0\uC218\uBD88\uBD80 \uC2E4\uC0AC \uC5C5\uB85C\uB4DC / \uAE30\uCD08\uC7AC\uACE0 \uC778\uC2DD \uBCF4\uC815"),
+                            "V1.a03 \uC7AC\uACE0\uC218\uBD88\uBD80 \uC2E4\uC0AC \uC5C5\uB85C\uB4DC / \uAE30\uCD08\uC7AC\uACE0 \uC778\uC2DD \uBCF4\uC815"),
                         React.createElement("p", { className: "text-xs text-slate-500 mt-1.5 ml-6" }, "\u2605 \uD544\uD130\uC640 BOX/EA/\uC18C\uBD84 \uD544\uD130\uAC00 \uC544\uB798 \uC124\uC815\uAC12\uC744 \uAE30\uC900\uC73C\uB85C \uB3D9\uC791\uD569\uB2C8\uB2E4. \uB2E8\uC704 \uCEEC\uB7FC\uC744 \uC6B0\uC120 \uD310\uC815\uD558\uACE0, \uB2E8\uC704\uAC00 \uC5C6\uC744 \uB54C\uB9CC \uD488\uBA85/\uADDC\uACA9\uC744 \uBCF4\uC870 \uB2E8\uC11C\uB85C \uC0AC\uC6A9\uD569\uB2C8\uB2E4.")),
                     React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-4 bg-amber-50/60 p-4 rounded-lg border border-amber-200" },
                         React.createElement("div", { className: "flex flex-col" },
