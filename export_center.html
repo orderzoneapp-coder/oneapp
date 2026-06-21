@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.12 PromotionThemeFlow]</title>
+    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.13 MasterOptionalExport]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -762,9 +762,52 @@ const ExportApp = () => {
         showToast(`✅ 현재 표시 ${appliedCount.toLocaleString()}건에 행사테마 ${themeString} 지정 완료`);
     }, [bulkThemeSet, filteredRows, showToast]);
     // ============================================================
-    // [E-OUTPUT-02] 최종 마스터 반영 + 통합 엑셀 출력
+    // [E-OUTPUT-02] 통합 엑셀 조립 공통 엔진
+    // 역할: 쇼핑몰업로드/ERP업데이트 시트를 생성한다.
+    // 정책: 마스터 반영 출력과 마스터 미반영 출력이 같은 엑셀 구조를 사용한다.
+    // ============================================================
+    const buildIntegratedUploadWorkbook = useCallback((rows, masterRef = {}) => {
+        if (!window.XLSX)
+            throw new Error('엑셀 라이브러리 없음');
+        const wb = window.XLSX.utils.book_new();
+        // ERP와 쇼핑몰은 거래대상이 다르므로 단가 컬럼명을 분리한다.
+        // ERP: 기존 도매A/도매B 원본값을 A판매/B판매로 출력한다.
+        // 쇼핑몰: 중복 도매B 컬럼을 B판매가(일반유저) / B도매가(유통사)로 출력한다.
+        const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', 'A판매', 'n', 'B판매', 'n', '최종(전송)', 'n', '행사', 'n', '1']];
+        const shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', 'B도매가', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
+        let subOutputCount = 0;
+        rows.forEach(item => {
+            var _a, _b;
+            const sale = getSaleState(item);
+            const inPrice = parseNum(item.입고가);
+            const finalOut = getAppliedPrice(item);
+            const erpASale = parseNum((_a = item.A판매) !== null && _a !== void 0 ? _a : item.도매A);
+            const erpBSale = parseNum((_b = item.B판매) !== null && _b !== void 0 ? _b : item.도매B);
+            const shopBPrice = parseNum(item.B판매가);
+            const shopBWholesale = parseNum(item.B도매가);
+            const pMarket = parseNum(item.시중가);
+            const finalStock = parseNum(item.재고수량);
+            erpData.push([item.코드, inPrice, '0', finalOut, '0', parseNum(item.입고B) || '', 'n', erpASale || '', 'n', erpBSale || '', 'n', inPrice, 'n', parseNum(item.행사가) || '', 'n', sale.code]);
+            const themeFlags = buildThemeFlags(item);
+            shopData.push([item.코드, item.품목명, item.규격, finalOut, (erpASale > 0 ? erpASale : finalOut), (pMarket > 0 ? pMarket : finalOut), shopBPrice || '', shopBWholesale || '', 0, 0, 0, 0, item.브랜드 || '', item.간단설명 || '', sale.code, finalStock, ...themeFlags, item.검색어등록 || '']);
+            const subInfo = calculateSubPriceInfo(item);
+            if (subInfo) {
+                // 소분품목은 원물 행과 별도 출력물로 취급한다. ERP와 쇼핑몰업로드 모두 행 수가 증가해야 한다.
+                erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', subInfo.subIn, 'n', '', 'n', sale.code]);
+                const subShopRow = buildSubShopRow(item, subInfo, masterRef, sale);
+                if (subShopRow)
+                    shopData.push(subShopRow);
+                subOutputCount++;
+            }
+        });
+        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shopData), '쇼핑몰업로드');
+        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), 'ERP업데이트');
+        return { wb, subOutputCount };
+    }, []);
+    // ============================================================
+    // [E-OUTPUT-02A] 최종 마스터 반영 + 통합 엑셀 출력
     // 역할: reviewRows를 기준으로 마스터를 갱신하고 쇼핑몰업로드/ERP업데이트 시트를 생성한다.
-    // 주의: 엑셀만 출력은 추적성이 떨어져 제외한다. 소분품목은 원물과 별도 행으로 건수에 포함한다.
+    // 기본 확정 플로우: F9는 마스터 반영 후 출력으로 유지한다.
     // ============================================================
     const handleExportExcel = useCallback(() => {
         if (reviewRows.length === 0)
@@ -777,8 +820,6 @@ const ExportApp = () => {
         showToast('⏳ 마스터 반영 및 통합 엑셀 조립 중...');
         setTimeout(async () => {
             try {
-                if (!window.XLSX)
-                    throw new Error('엑셀 라이브러리 없음');
                 const newMaster = { ...masterProducts };
                 const updatedItems = [];
                 reviewRows.forEach(item => {
@@ -827,41 +868,9 @@ const ExportApp = () => {
                 await setIDB('merchMaster_v870', newMaster);
                 setMasterProducts(newMaster);
                 localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
-                const wb = window.XLSX.utils.book_new();
-                // ERP와 쇼핑몰은 거래대상이 다르므로 단가 컬럼명을 분리한다.
-                // ERP: 기존 도매A/도매B 원본값을 A판매/B판매로 출력한다.
-                // 쇼핑몰: 중복 도매B 컬럼을 B판매가(일반유저) / B도매가(유통사)로 출력한다.
-                const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', 'A판매', 'n', 'B판매', 'n', '최종(전송)', 'n', '행사', 'n', '1']];
-                const shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', 'B도매가', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
-                let subOutputCount = 0;
-                reviewRows.forEach(item => {
-                    var _a, _b;
-                    const sale = getSaleState(item);
-                    const inPrice = parseNum(item.입고가);
-                    const finalOut = getAppliedPrice(item);
-                    const erpASale = parseNum((_a = item.A판매) !== null && _a !== void 0 ? _a : item.도매A);
-                    const erpBSale = parseNum((_b = item.B판매) !== null && _b !== void 0 ? _b : item.도매B);
-                    const shopBPrice = parseNum(item.B판매가);
-                    const shopBWholesale = parseNum(item.B도매가);
-                    const pMarket = parseNum(item.시중가);
-                    const finalStock = parseNum(item.재고수량);
-                    erpData.push([item.코드, inPrice, '0', finalOut, '0', parseNum(item.입고B) || '', 'n', erpASale || '', 'n', erpBSale || '', 'n', inPrice, 'n', parseNum(item.행사가) || '', 'n', sale.code]);
-                    const themeFlags = buildThemeFlags(item);
-                    shopData.push([item.코드, item.품목명, item.규격, finalOut, (erpASale > 0 ? erpASale : finalOut), (pMarket > 0 ? pMarket : finalOut), shopBPrice || '', shopBWholesale || '', 0, 0, 0, 0, item.브랜드 || '', item.간단설명 || '', sale.code, finalStock, ...themeFlags, item.검색어등록 || '']);
-                    const subInfo = calculateSubPriceInfo(item);
-                    if (subInfo) {
-                        // 소분품목은 원물 행과 별도 출력물로 취급한다. ERP와 쇼핑몰업로드 모두 행 수가 증가해야 한다.
-                        erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', subInfo.subIn, 'n', '', 'n', sale.code]);
-                        const subShopRow = buildSubShopRow(item, subInfo, masterProducts, sale);
-                        if (subShopRow)
-                            shopData.push(subShopRow);
-                        subOutputCount++;
-                    }
-                });
-                window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shopData), '쇼핑몰업로드');
-                window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erpData), 'ERP업데이트');
+                const { wb, subOutputCount } = buildIntegratedUploadWorkbook(reviewRows, newMaster);
                 window.XLSX.writeFile(wb, `통합업로드용_Export_${new Date().toISOString().slice(0, 10)}.xlsx`);
-                showToast(`✅ 원물 ${reviewRows.length}건 + 소분 ${subOutputCount}건 = 총 ${reviewRows.length + subOutputCount}건 엑셀 다운로드 완료`);
+                showToast(`✅ 마스터 반영 완료 · 원물 ${reviewRows.length}건 + 소분 ${subOutputCount}건 = 총 ${reviewRows.length + subOutputCount}건 엑셀 다운로드 완료`);
             }
             catch (e) {
                 console.error('[Export Excel Error]', e);
@@ -871,7 +880,35 @@ const ExportApp = () => {
                 setIsProcessing(false);
             }
         }, 300);
-    }, [reviewRows, masterProducts, analysis, showToast]);
+    }, [reviewRows, masterProducts, analysis, showToast, buildIntegratedUploadWorkbook]);
+    // ============================================================
+    // [E-OUTPUT-02B] 이번 작업값만 엑셀 출력
+    // 역할: 마스터DB에는 저장하지 않고 현재 출력센터 화면값만으로 쇼핑몰/ERP 엑셀을 생성한다.
+    // 사용처: 오늘 구매가/임시 단가를 판매업로드에만 쓰고 마스터 기준가는 유지해야 하는 경우.
+    // ============================================================
+    const handleExportExcelWithoutMaster = useCallback(() => {
+        if (reviewRows.length === 0)
+            return showToast('⚠️ 출력할 데이터가 없습니다.');
+        const confirmMsg = '마스터DB에는 반영하지 않고 현재 출력센터 화면값으로만 엑셀을 출력합니다.\n\n다음 작업에는 이 변경값이 남지 않습니다.\n계속 진행할까요?';
+        if (!window.confirm(confirmMsg))
+            return;
+        setIsProcessing(true);
+        showToast('⏳ 마스터 미반영 엑셀 조립 중...');
+        setTimeout(() => {
+            try {
+                const { wb, subOutputCount } = buildIntegratedUploadWorkbook(reviewRows, masterProducts);
+                window.XLSX.writeFile(wb, `통합업로드용_작업값만_Export_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                showToast(`✅ 마스터 미반영 출력 완료 · 원물 ${reviewRows.length}건 + 소분 ${subOutputCount}건 = 총 ${reviewRows.length + subOutputCount}건`);
+            }
+            catch (e) {
+                console.error('[Export Excel Only Error]', e);
+                showToast('❌ 엑셀 파일 생성 중 오류가 발생했습니다.');
+            }
+            finally {
+                setIsProcessing(false);
+            }
+        }, 300);
+    }, [reviewRows, masterProducts, showToast, buildIntegratedUploadWorkbook]);
     // ============================================================
     // [E-OUTPUT-03] 이미지 출력 데이터 브릿지
     // 역할: reviewRows를 이미지 생성기가 읽는 ONEAPP_IMAGE_DATA_TEMP 구조로 변환한다.
@@ -1060,6 +1097,9 @@ const ExportApp = () => {
                 React.createElement("button", { onClick: handleExportExcel, disabled: isProcessing || reviewRows.length === 0, className: "flex-1 py-4 bg-emerald-600 text-white rounded-xl font-black text-[15px] hover:bg-emerald-700 transition-all shadow-md hover:shadow-lg flex justify-center items-center" },
                     React.createElement("i", { className: "fas fa-save mr-2 text-lg" }),
                     " \uB9C8\uC2A4\uD130 \uBC18\uC601 \uD6C4 \uC5D1\uC140 \uCD9C\uB825 (F9)"),
+                React.createElement("button", { onClick: handleExportExcelWithoutMaster, disabled: isProcessing || reviewRows.length === 0, title: "\uB9C8\uC2A4\uD130\uC5D0 \uC800\uC7A5\uD558\uC9C0 \uC54A\uACE0 \uD604\uC7AC \uC791\uC5C5\uAC12\uB9CC \uC5D1\uC140\uB85C \uCD9C\uB825\uD569\uB2C8\uB2E4.", className: "px-7 py-4 bg-sky-600 text-white rounded-xl font-black text-[15px] hover:bg-sky-700 transition-all shadow-md hover:shadow-lg flex justify-center items-center" },
+                    React.createElement("i", { className: "fas fa-file-export mr-2 text-lg" }),
+                    " \uC774\uBC88 \uC791\uC5C5\uAC12\uB9CC \uCD9C\uB825"),
                 React.createElement("button", { onClick: handleImageExport, disabled: isProcessing || reviewRows.length === 0, className: "px-8 py-4 bg-amber-500 text-white rounded-xl font-black text-[15px] hover:bg-amber-600 transition-all shadow-md hover:shadow-lg flex justify-center items-center" },
                     React.createElement("i", { className: "fas fa-image mr-2 text-lg" }),
                     " \uC774\uBBF8\uC9C0 (F10)")))));
