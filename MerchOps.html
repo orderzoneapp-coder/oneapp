@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.40 FilterOneLineSearchFit]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.42 PromotionThemeFlow]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -12,7 +12,7 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     
     <script>
-        window.MASTER_HEADERS = [ "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "판매여부", "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록" ];
+        window.MASTER_HEADERS = [ "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "행사테마", "판매여부", "1종코드", "1종규격", "1종연산", "2종코드", "2종규격", "2종연산", "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록" ];
         window.NUMERIC_HEADERS = [ "안전재고", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "1종연산", "2종연산", "외주비", "노무비", "경비", "1구매", "1출고", "2구매", "2출고", "1입고", "2입고", "재고수량", "최신단가" ];
         
         window.generateUUID = () => {
@@ -25,6 +25,49 @@
         };
 
         window.parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
+
+        window.PROMOTION_THEMES = window.PROMOTION_THEMES || [
+            { code: '1', label: '오늘의행사', type: '탭' },
+            { code: '2', label: '매장행사', type: '탭' },
+            { code: '3', label: '특가상품', type: '탭' },
+            { code: '4', label: '실사진', type: '뱃지' },
+            { code: '5', label: '행사', type: '뱃지' }
+        ];
+        window.normalizePromotionThemeValue = window.normalizePromotionThemeValue || ((...items) => {
+            const normalizeOne = (item = {}) => {
+                const out = [];
+                const push = (v) => {
+                    const s = String(v ?? '').trim();
+                    if (!s) return;
+                    s.split(/[,/|\s]+/).forEach(part => {
+                        const n = String(part || '').replace(/[^1-5]/g, '');
+                        if (n && /^[1-5]$/.test(n) && !out.includes(n)) out.push(n);
+                    });
+                };
+                push(item['행사테마']);
+                push(item['테마']);
+                push(item['promoTheme']);
+                push(item['_theme']);
+                [1, 2, 3, 4, 5].forEach(n => {
+                    const raw = item[`테마${n}`];
+                    const s = String(raw ?? '').trim();
+                    if (s && s !== '0' && s !== 'false' && s !== 'FALSE' && !out.includes(String(n))) out.push(String(n));
+                });
+                return out.sort((a, b) => Number(a) - Number(b)).join(',');
+            };
+            for (const item of items) {
+                const normalized = normalizeOne(item || {});
+                if (normalized) return normalized;
+            }
+            return '';
+        });
+        window.applyPromotionThemeToMasterItem = window.applyPromotionThemeToMasterItem || ((item = {}, themeValue = '') => {
+            const normalized = window.normalizePromotionThemeValue({ ...item, 행사테마: themeValue });
+            const next = { ...item, 행사테마: normalized };
+            [1, 2, 3, 4, 5].forEach(n => { next[`테마${n}`] = normalized.split(',').includes(String(n)) ? '1' : ''; });
+            return next;
+        });
+
 
         // ============================================================
         // [M-CLOUD-URL-01] ONEAPP 공통 클라우드 URL 설정
@@ -740,8 +783,8 @@ const getInitialVisibleMasterCols = () => ({
     inventory: ['입고가']
 });
 const getInitialVisibleUploadCols = () => ({
-    catalog: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A', '행사가'],
-    estimate: ['창고', '기준일자', '구매처', '브랜드', '견적서', '단위', '재고수량', '상품 구매일자', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '검색어등록'],
+    catalog: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A', '행사가', '행사테마'],
+    estimate: ['창고', '기준일자', '구매처', '브랜드', '견적서', '단위', '재고수량', '상품 구매일자', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '행사테마', '검색어등록'],
     purchase: ['창고', '구매처', '단위', '입고가', '입고수량'],
     sales: ['창고', '구매처', '단위', '출고가', '출고량'],
     inventory: ['창고', '기준일자', '재고수량', '기록', '거래', '최종(창고)', '구분(기본)', '상품 구매일자', '구매처', '단위', '입고가', '출고가', '행사가', '간단설명']
@@ -935,6 +978,7 @@ const getInitialMappings = () => {
         '상품 구매일자': '상품 구매일자, 구매일자, 기록, 일자',
         '견적서': '견적서, 카테고리, 템플릿, 견적분류',
         '행사가': '행사가, 행사, 특가',
+        '행사테마': '행사테마, 테마, 프로모션테마, 테마번호',
         '입고가': '입고가, 입고, 매입가, 최종(창고), 최종창고, 최신단가, 재고단가',
         '출고가': '출고가, 출고, 판매가',
         '입고B': 'B단가, 입고B',
@@ -1198,7 +1242,7 @@ const useMerchConfig = () => {
     const configHydratedRef = useRef(false);
     // v2.0.9 필수 매핑 보강: 기존 localStorage 설정이 있어도 단위/브랜드/검색어등록을 자동 보강한다.
     useEffect(() => {
-        const requiredUploadCols = ['창고', '기준일자', '구매처', '브랜드', '견적서', '단위', '재고수량', '상품 구매일자', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '검색어등록'];
+        const requiredUploadCols = ['창고', '기준일자', '구매처', '브랜드', '견적서', '단위', '재고수량', '상품 구매일자', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '행사테마', '검색어등록'];
         const requiredMappings = {
             '브랜드': '브랜드, 제조사, 메이커',
             '단위': '단위, 판매단위, 포장단위, UNIT, unit',
@@ -2238,9 +2282,12 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             return s && s !== '0' && s !== '00' && s !== '-' && s.toLowerCase() !== 'undefined' && s.toLowerCase() !== 'null';
         };
         const buildThemeFlags = (row) => {
-            const promo = getBestNum(row, '행사가') > 0;
-            const themeNo = promo ? window.parseNum(getBestValue(row, '_theme') || getBestValue(row, 'promoTheme')) : 0;
-            return [1, 2, 3, 4, 5].map(n => themeNo === n ? '1' : '');
+            const finalData = row.finalData || {};
+            const sources = row.sources || {};
+            const master = data.masterProducts[row.코드] || {};
+            const themeValue = window.normalizePromotionThemeValue(finalData, sources.estimate || {}, sources.purchase || {}, sources.sales || {}, sources.inventory || {}, master);
+            const codes = themeValue ? themeValue.split(',') : [];
+            return [1, 2, 3, 4, 5].map(n => codes.includes(String(n)) ? '1' : '');
         };
         const getSaleCode = (row) => {
             const finalData = row.finalData || {};
@@ -2328,13 +2375,10 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             const oldItem = data.masterProducts[code] || {};
             newMaster[item.코드] = { ...(newMaster[item.코드] || { 코드: item.코드 }) };
             if (item.finalData) {
-                if (item.finalData._theme !== undefined) {
-                    const themeNo = window.parseNum(item.finalData._theme);
-                    newMaster[item.코드]['테마1'] = themeNo === 1 ? '1' : '';
-                    newMaster[item.코드]['테마2'] = themeNo === 2 ? '1' : '';
-                    newMaster[item.코드]['테마3'] = themeNo === 3 ? '1' : '';
-                    newMaster[item.코드]['테마4'] = themeNo === 4 ? '1' : '';
-                    newMaster[item.코드]['테마5'] = themeNo === 5 ? '1' : '';
+                if (item.finalData._theme !== undefined || item.finalData['행사테마'] !== undefined) {
+                    const themeValue = window.normalizePromotionThemeValue(item.finalData, oldItem);
+                    newMaster[item.코드]['행사테마'] = themeValue;
+                    [1, 2, 3, 4, 5].forEach(n => { newMaster[item.코드][`테마${n}`] = themeValue.split(',').includes(String(n)) ? '1' : ''; });
                 }
                 // 판매중지는 사용자가 체크 후 명시적으로 요청한 경우에만 마스터 판매여부에 반영한다.
                 // 일반 가격/재고 작업 중에는 판매여부를 자동 판단해서 덮어쓰지 않는다.
@@ -2627,6 +2671,8 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             const stockRaw = (_e = (_d = (_c = (_b = (_a = finalData['재고수량']) !== null && _a !== void 0 ? _a : inventory['재고수량']) !== null && _b !== void 0 ? _b : inventory['안전재고']) !== null && _c !== void 0 ? _c : estimate['재고수량']) !== null && _d !== void 0 ? _d : purchase['재고수량']) !== null && _e !== void 0 ? _e : sales['재고수량'];
             const stockQty = stockRaw !== undefined && stockRaw !== null && stockRaw !== '' ? window.parseNum(stockRaw) : 999;
             const masterSalesState = window.getMasterSalesState(master);
+            const promoThemeCodes = window.normalizePromotionThemeValue(finalData, inventory, estimate, purchase, sales, master).split(',').filter(Boolean);
+            const hasPromoTheme = (n) => promoThemeCodes.includes(String(n));
             return {
                 코드: code,
                 working: {
@@ -2658,11 +2704,12 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                     '외주비': getNum('외주비'),
                     '노무비': getNum('노무비'),
                     재고수량: stockQty,
-                    테마1: window.parseNum(finalData._theme) === 1 ? '1' : (window.parseNum(master['테마1']) === 1 ? '1' : ''),
-                    테마2: window.parseNum(finalData._theme) === 2 ? '1' : (window.parseNum(master['테마2']) === 1 ? '1' : ''),
-                    테마3: window.parseNum(finalData._theme) === 3 ? '1' : (window.parseNum(master['테마3']) === 1 ? '1' : ''),
-                    테마4: window.parseNum(finalData._theme) === 4 ? '1' : (window.parseNum(master['테마4']) === 1 ? '1' : ''),
-                    테마5: window.parseNum(finalData._theme) === 5 ? '1' : (window.parseNum(master['테마5']) === 1 ? '1' : ''),
+                    행사테마: promoThemeCodes.join(','),
+                    테마1: hasPromoTheme(1) ? '1' : '',
+                    테마2: hasPromoTheme(2) ? '1' : '',
+                    테마3: hasPromoTheme(3) ? '1' : '',
+                    테마4: hasPromoTheme(4) ? '1' : '',
+                    테마5: hasPromoTheme(5) ? '1' : '',
                     카테고리: getStr('견적서') || getStr('카테고리'),
                     검색어등록: getStr('검색어등록')
                 },
@@ -3871,7 +3918,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.40 FilterOneLineSearchFit]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.42 PromotionThemeFlow]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -4199,7 +4246,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.40 FilterOneLineSearchFit")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.42 PromotionThemeFlow")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
