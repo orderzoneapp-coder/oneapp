@@ -320,8 +320,11 @@ const App = () => {
     const availableCategories = useMemo(() => {
         const counts = {};
         Object.values(data.masterProducts).forEach(m => {
-            const tags = String(m['견적서'] || m['카테고리'] || '').split(',').map(s => s.trim()).filter(Boolean);
-            tags.forEach(t => counts[t] = (counts[t] || 0) + 1);
+            const merged = new Set();
+            ['견적서', '카테고리'].forEach(field => {
+                String(m[field] || '').split(',').map(s => s.trim()).filter(Boolean).forEach(t => merged.add(t));
+            });
+            merged.forEach(t => counts[t] = (counts[t] || 0) + 1);
         });
         return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
     }, [data.masterProducts]);
@@ -515,27 +518,43 @@ const App = () => {
     };
 
     const handleDeleteTag = async (type, tagName) => {
-        if (!window.confirm(`[${tagName}] 태그를 모든 상품에서 삭제하시겠습니까?`))
+        if (!tagName)
             return;
-        const fieldKey = type === 'catalog' ? '파서리스트' : '사용자 카탈로그';
+        const fields = type === 'catalog' ? ['카탈로그'] : ['견적서', '카테고리'];
+        const label = type === 'catalog' ? '파서리스트' : '사용자 리스트';
+        if (!window.confirm(`[${tagName}] ${label} 태그를 모든 상품에서 삭제하시겠습니까?`))
+            return;
         let newMaster = { ...data.masterProducts };
         let count = 0;
         for (let code in newMaster) {
-            if (newMaster[code][fieldKey]) {
-                const tags = String(newMaster[code][fieldKey]).split(',').map(s => s.trim()).filter(Boolean);
+            const srcItem = newMaster[code] || {};
+            let changed = false;
+            const nextItem = { ...srcItem };
+            fields.forEach(fieldKey => {
+                if (!nextItem[fieldKey])
+                    return;
+                const tags = String(nextItem[fieldKey]).split(',').map(s => s.trim()).filter(Boolean);
                 if (tags.includes(tagName)) {
-                    newMaster[code] = { ...newMaster[code] };
-                    newMaster[code][fieldKey] = tags.filter(t => t !== tagName).join(', ');
-                    count++;
+                    nextItem[fieldKey] = tags.filter(t => t !== tagName).join(', ');
+                    changed = true;
                 }
+            });
+            if (changed) {
+                newMaster[code] = nextItem;
+                count++;
             }
         }
         if (count > 0) {
             data.setMasterProducts(newMaster);
             const safeData = Object.values(newMaster).filter(item => item && item.코드);
             await window.bulkPutIDB('master_products', safeData);
+            if (typeof window.setIDB === 'function')
+                await window.setIDB('merchMaster_v870', newMaster);
             localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
-            showToast(`✅ ${count}개의 상품에서 [${tagName}] 태그를 삭제했습니다.`);
+            showToast(`✅ ${count}개 상품에서 [${tagName}] 태그를 삭제했습니다.`);
+        }
+        else {
+            showToast(`⚠️ 삭제할 [${tagName}] 태그가 없습니다.`);
         }
     };
     const toggleMasterCol = (tabId, header) => config.setVisibleMasterCols(prev => { const list = prev[tabId] || []; return { ...prev, [tabId]: list.includes(header) ? list.filter(h => h !== header) : [...list, header] }; });
@@ -1061,7 +1080,7 @@ const App = () => {
                 React.createElement("div", { className: "bg-white p-6 rounded-xl border shadow-sm" },
                     React.createElement("h3", { className: "text-[15px] font-black text-slate-800 mb-4 pb-2 border-b flex items-center" },
                         React.createElement("i", { className: "fas fa-folder-open text-indigo-500 mr-2" }),
-                        "\uCE74\uD0C8\uB85C\uADF8 \uBAA9\uB85D"),
+                        "파서리스트 목록"),
                     React.createElement("div", { className: "grid grid-cols-3 gap-3" }, availableCatalogs.length === 0 ? React.createElement("div", { className: "col-span-3 text-slate-400" }, "\uB370\uC774\uD130 \uC5C6\uC74C") : availableCatalogs.map(tag => (React.createElement("div", { key: tag.name, className: "flex justify-between bg-slate-50 border p-3 rounded-lg" },
                         React.createElement("div", { className: "truncate" },
                             React.createElement("span", { className: "font-bold" }, tag.name),
@@ -1073,7 +1092,7 @@ const App = () => {
                 React.createElement("div", { className: "bg-white p-6 rounded-xl border shadow-sm mt-6" },
                     React.createElement("h3", { className: "text-[15px] font-black text-slate-800 mb-4 pb-2 border-b flex items-center" },
                         React.createElement("i", { className: "fas fa-file-invoice text-blue-500 mr-2" }),
-                        "\uACAC\uC801\uC11C \uBAA9\uB85D"),
+                        "사용자 리스트 / 견적서 목록"),
                     React.createElement("div", { className: "grid grid-cols-3 gap-3" }, availableCategories.length === 0 ? React.createElement("div", { className: "col-span-3 text-slate-400" }, "\uB370\uC774\uD130 \uC5C6\uC74C") : availableCategories.map(tag => (React.createElement("div", { key: tag.name, className: "flex justify-between bg-slate-50 border p-3 rounded-lg" },
                         React.createElement("div", { className: "truncate" },
                             React.createElement("span", { className: "font-bold" }, tag.name),
