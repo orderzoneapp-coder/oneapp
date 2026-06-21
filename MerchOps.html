@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.49 LoadButtonColorOnly]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.50 SpecWidthFix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -1143,7 +1143,7 @@ const getInitialMasterLinks = () => {
 // ============================================================
 // [M-TABLE-WIDTH-01] 고정 테이블 폭 정책
 // 역할: 견적/구매/판매/재고/카탈로그 전환 시 열폭이 흔들리지 않게 한다.
-// 기준: 동적폭 금지. 마스터 정보부터 주요 열을 조금씩 압축하고, 이슈는 뱃지 전용 짧은 고정폭으로 둔다.
+// 기준: 동적폭 금지. 마스터 정보부터 주요 열을 조금씩 압축하고, 이슈는 뱃지 전용 짧은 고정폭으로 둔다. 엑셀 규격 공란은 마스터값으로 보강하지 않는다.
 // ============================================================
 const getCellWidthClass = (h) => {
     const key = String(h || '').trim();
@@ -1159,9 +1159,11 @@ const getCellWidthClass = (h) => {
         '기록': 'min-w-[70px] w-[70px] max-w-[70px]',
         '품목명': 'min-w-[92px] w-[92px] max-w-[92px]',
         '상품명': 'min-w-[92px] w-[92px] max-w-[92px]',
-        '규격': 'min-w-[88px] w-[88px] max-w-[88px]',
-        '1종규격': 'min-w-[88px] w-[88px] max-w-[88px]',
-        '2종규격': 'min-w-[88px] w-[88px] max-w-[88px]',
+        '규격': 'min-w-[72px] w-[72px] max-w-[72px]',
+        '1종규격': 'min-w-[72px] w-[72px] max-w-[72px]',
+        '2종규격': 'min-w-[72px] w-[72px] max-w-[72px]',
+        '이슈': 'min-w-[64px] w-[64px] max-w-[64px]',
+        '상태': 'min-w-[64px] w-[64px] max-w-[64px]',
         '1당수량': 'min-w-[64px] w-[64px] max-w-[64px]',
         '입고수량': 'min-w-[70px] w-[70px] max-w-[70px]',
         '출고량': 'min-w-[70px] w-[70px] max-w-[70px]',
@@ -1182,10 +1184,10 @@ const getCellWidthClass = (h) => {
         '판매여부': 'min-w-[74px] w-[74px] max-w-[74px]',
         '행사테마': 'min-w-[74px] w-[74px] max-w-[74px]',
         '브랜드': 'min-w-[76px] w-[76px] max-w-[76px]',
-        '간단설명': 'min-w-[116px] w-[116px] max-w-[116px]',
-        '지시사항': 'min-w-[116px] w-[116px] max-w-[116px]',
-        '상품정보': 'min-w-[116px] w-[116px] max-w-[116px]',
-        '적요2': 'min-w-[116px] w-[116px] max-w-[116px]',
+        '간단설명': 'min-w-[82px] w-[82px] max-w-[82px]',
+        '지시사항': 'min-w-[82px] w-[82px] max-w-[82px]',
+        '상품정보': 'min-w-[82px] w-[82px] max-w-[82px]',
+        '적요2': 'min-w-[82px] w-[82px] max-w-[82px]',
         '검색어등록': 'min-w-[96px] w-[96px] max-w-[96px]'
     };
     if (fixed[key]) return fixed[key];
@@ -3820,7 +3822,10 @@ const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, 
     var _a, _b, _c;
     const isComparePrice = ((_b = (_a = config.uploadColumnMeta) === null || _a === void 0 ? void 0 : _a[field]) === null || _b === void 0 ? void 0 : _b.type) === 'comparePrice';
     const isNumeric = isComparePrice || window.NUMERIC_HEADERS.includes(linkedMasterField) || window.NUMERIC_HEADERS.includes(field);
-    const initialVal = ((_c = row.finalData) === null || _c === void 0 ? void 0 : _c[field]) !== undefined ? row.finalData[field] : (mVal !== undefined ? mVal : '');
+    const hasFinalField = !!(row.finalData && Object.prototype.hasOwnProperty.call(row.finalData, field));
+    const hasUploadSourceForOriginal = typeof window.hasAnyUploadSource === 'function' ? window.hasAnyUploadSource(row.sources || {}) : !!(row.sources && Object.keys(row.sources || {}).length > 0);
+    // 엑셀 원본 우선 정책: 업로드 자료에 규격이 없거나 공란이면 마스터 규격으로 대체하지 않는다.
+    const initialVal = hasFinalField ? row.finalData[field] : ((field === '규격' && hasUploadSourceForOriginal) ? '' : (mVal !== undefined ? mVal : ''));
     const [localVal, setLocalVal] = useState(initialVal);
     useEffect(() => { setLocalVal(initialVal); }, [initialVal]);
     const isDiff = linkedMasterField && mVal !== undefined && localVal !== '' && String(mVal) !== String(localVal) && isNumeric;
@@ -3974,10 +3979,13 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
     const targetWorkCols = (visibleUploadCols === null || visibleUploadCols === void 0 ? void 0 : visibleUploadCols[activeTableTarget]);
     const currentMasterCols = registrationMode ? [] : (Array.isArray(targetMasterCols) ? targetMasterCols : (getInitialVisibleMasterCols()[activeTableTarget] || [])).filter(h => !requiredCoreFields.includes(h));
     const currentWorkCols = registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : (Array.isArray(targetWorkCols) ? targetWorkCols : (getInitialVisibleUploadCols()[activeTableTarget] || [])).filter(h => h !== '품목코드' && h !== '구매리포트' && h !== '구매검증리포트');
-    const uploadName = ((_a = row.finalData) === null || _a === void 0 ? void 0 : _a['품목명']) !== undefined ? row.finalData['품목명'] : '';
-    const uploadSpec = ((_b = row.finalData) === null || _b === void 0 ? void 0 : _b['규격']) !== undefined ? row.finalData['규격'] : '';
-    const dName = uploadName || mItem.품목명 || '[미등록]';
-    const dSpec = uploadSpec || mItem.규격 || '';
+    const hasUploadNameField = !!(row.finalData && Object.prototype.hasOwnProperty.call(row.finalData, '품목명'));
+    const hasUploadSpecField = !!(row.finalData && Object.prototype.hasOwnProperty.call(row.finalData, '규격'));
+    const uploadName = hasUploadNameField ? row.finalData['품목명'] : '';
+    const uploadSpec = hasUploadSpecField ? row.finalData['규격'] : '';
+    const dName = hasUploadNameField ? (uploadName || '[미등록]') : (mItem.품목명 || '[미등록]');
+    // 엑셀에 규격 항목이 비어 있으면 마스터 규격으로 보강하지 않고 그대로 비운다.
+    const dSpec = hasUploadSpecField ? uploadSpec : (mItem.규격 || '');
     const oldP = window.parseNum(mItem['입고가']);
     const newP = window.parseNum(((_c = row.finalData) === null || _c === void 0 ? void 0 : _c['입고가']) !== undefined ? row.finalData['입고가'] : ((_q = (_m = (_j = (_f = (_e = (_d = row.sources) === null || _d === void 0 ? void 0 : _d['estimate']) === null || _e === void 0 ? void 0 : _e['입고가']) !== null && _f !== void 0 ? _f : (_h = (_g = row.sources) === null || _g === void 0 ? void 0 : _g['purchase']) === null || _h === void 0 ? void 0 : _h['입고가']) !== null && _j !== void 0 ? _j : (_l = (_k = row.sources) === null || _k === void 0 ? void 0 : _k['sales']) === null || _l === void 0 ? void 0 : _l['입고가']) !== null && _m !== void 0 ? _m : (_p = (_o = row.sources) === null || _o === void 0 ? void 0 : _o['inventory']) === null || _p === void 0 ? void 0 : _p['입고가']) !== null && _q !== void 0 ? _q : oldP));
     const diffAmount = newP - oldP;
@@ -4121,7 +4129,7 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
     const reportLines = buildRowReport({ row, mItem, issueText, issueSubText, latestHistory: latestParserHistory, compareSummary, marginInfo, stockQty, safeStock, promoActive });
     const reportTone = reportLines.some(t => String(t).includes('역마진') || String(t).includes('근거 없음') || String(t).includes('근거없음')) ? 'text-rose-700' : (latestParserHistory ? 'text-slate-700' : 'text-slate-500');
     return (React.createElement("tr", { className: `group border-b border-slate-200 transition-all hover:bg-slate-50 relative z-0 hover:z-10 ${isStopped ? 'opacity-70 bg-slate-50' : ''}` },
-        React.createElement("td", { className: `sticky z-20 px-3 py-2 border-r border-r-slate-200 transition-colors min-w-[250px] w-[250px] max-w-[250px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : 'bg-white group-hover:!bg-slate-50 border-l-4 border-l-transparent group-hover:!border-l-slate-300'}`, style: { left: 0 } },
+        React.createElement("td", { className: `sticky z-20 px-3 py-2 border-r border-r-slate-200 transition-colors min-w-[230px] w-[230px] max-w-[230px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : 'bg-white group-hover:!bg-slate-50 border-l-4 border-l-transparent group-hover:!border-l-slate-300'}`, style: { left: 0 } },
             React.createElement("div", { className: "flex gap-2 items-center w-full min-w-0" },
                 isEstimateUploaded && (React.createElement("input", { type: "checkbox", className: "w-4 h-4 rounded border-slate-300 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500", checked: isSel, onChange: () => { const n = new Set(state.selectedRows); n.has(window.getManagedRowKey(row)) ? n.delete(window.getManagedRowKey(row)) : n.add(window.getManagedRowKey(row)); actions.setSelectedRows(n); } })),
                 React.createElement("div", { className: "flex flex-col min-w-0 w-full overflow-hidden ml-1" },
@@ -4173,7 +4181,7 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
                 return (React.createElement("td", { key: `pm-d-${h}`, className: `px-2 py-1.5 border-r border-slate-200 transition-colors ${getCellWidthClass(h)} ${i === arr.length - 1 ? 'border-r-2 !border-r-slate-300' : ''} ${isChanged ? 'bg-amber-50 text-amber-800' : 'bg-white text-slate-600'} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'} ${isNum ? 'text-right font-bold' : 'text-center'}` },
                     React.createElement("div", { className: `truncate w-full ${h === '판매여부' ? salesClassName : ''}` }, formattedVal)));
             }),
-            React.createElement("td", { className: `px-2 py-1.5 border-l-2 border-l-slate-300 border-r-2 border-r-slate-300 text-center w-[86px] min-w-[86px] max-w-[86px] ${issueCellBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'}` },
+            React.createElement("td", { className: `px-2 py-1.5 border-l-2 border-l-slate-300 border-r-2 border-r-slate-300 text-center w-[64px] min-w-[64px] max-w-[64px] ${issueCellBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'}` },
                 React.createElement("div", { className: "flex flex-col items-center justify-center gap-1 min-w-0" },
                     issueText && issueText !== '-' && (React.createElement("span", { className: `inline-flex items-center max-w-full px-2 py-0.5 rounded-full border text-[11px] font-black truncate ${issueBadgeClass}`, title: issueText }, issueText)),
                     displayIssueSubText && (React.createElement("div", { className: "flex items-center justify-center gap-1 min-w-0 max-w-full" },
@@ -4213,13 +4221,13 @@ const ExcelDataGrid = ({ state, actions }) => {
             React.createElement("table", { className: "text-left border-collapse table-fixed text-[13px] whitespace-nowrap relative z-0 w-max bg-white" },
                 React.createElement("thead", { className: "text-[12px] font-extrabold sticky top-0 z-[60] shadow-sm border-b border-slate-200" },
                     React.createElement("tr", null,
-                        React.createElement("th", { className: "sticky top-0 left-0 z-[70] bg-slate-100 px-3 py-2 border-r border-r-slate-200 text-slate-700 min-w-[250px] w-[250px] max-w-[250px]" },
+                        React.createElement("th", { className: "sticky top-0 left-0 z-[70] bg-slate-100 px-3 py-2 border-r border-r-slate-200 text-slate-700 min-w-[230px] w-[230px] max-w-[230px]" },
                             React.createElement("div", { className: "flex items-center gap-2 pl-1" },
                                 isEstimateUploaded && (React.createElement("input", { type: "checkbox", className: "rounded w-4 h-4 border-slate-400 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500", checked: selectedRows.size === fullDisplayRows.length && displayRows.length > 0, onChange: actions.toggleAllRows })),
                                 React.createElement("span", { className: "truncate font-black" }, registrationMode ? '미등록 상품' : '마스터 정보'))),
                         !isEstimateUploaded ? (currentMasterCols.map(h => (React.createElement("th", { key: `idle-th-${h}`, className: `sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-r border-b border-slate-200 text-center text-slate-700 font-bold ${getCellWidthClass(h)}` }, h === '판매여부' ? '판매상태' : h)))) : (React.createElement(React.Fragment, null,
                             currentMasterCols.map((h, i, arr) => (React.createElement("th", { key: `pm-${h}`, className: `sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-b text-center text-slate-700 font-bold ${getCellWidthClass(h)} ${i === arr.length - 1 ? 'border-r-2 border-r-slate-300' : 'border-r border-r-slate-200'}` }, h === '판매여부' ? '판매상태' : h))),
-                            React.createElement("th", { className: "sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-b border-slate-200 border-l-2 border-l-slate-300 border-r-2 border-r-slate-300 text-center text-slate-700 font-black min-w-[86px] w-[86px] max-w-[86px]" }, registrationMode ? '상태' : '이슈'),
+                            React.createElement("th", { className: "sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-b border-slate-200 border-l-2 border-l-slate-300 border-r-2 border-r-slate-300 text-center text-slate-700 font-black min-w-[64px] w-[64px] max-w-[64px]" }, registrationMode ? '상태' : '이슈'),
                             currentWorkCols.map((h, i, arr) => {
                                 const isHighlight = ['입고가', '도매A', '행사가', '출고가'].includes(h);
                                 return (React.createElement("th", { key: `pu-e-${h}`, className: `sticky top-0 z-[60] bg-slate-100 text-slate-700 ${isHighlight ? 'font-black' : 'font-bold'} px-2 py-3 border-b text-center ${getCellWidthClass(h)} ${i === arr.length - 1 ? 'border-r-2 border-r-slate-300' : 'border-r border-r-slate-200'}` },
@@ -4249,7 +4257,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.49 LoadButtonColorOnly]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.50 SpecWidthFix]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -4579,7 +4587,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.49 LoadButtonColorOnly")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.50 SpecWidthFix")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
