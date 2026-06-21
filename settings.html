@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.9 MasterExcelUpload]</title>
+    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.10 PromotionThemeSettings]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -61,7 +61,7 @@ if (typeof window.getAllIDB !== 'function') {
     } };
 }
 if (!window.MASTER_HEADERS) {
-    window.MASTER_HEADERS = ["창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "판매여부", "1종코드", "1종규격", "1종연산", "1당수량", "2종코드", "2종규격", "2종연산", "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록"];
+    window.MASTER_HEADERS = ["창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "행사테마", "판매여부", "1종코드", "1종규격", "1종연산", "1당수량", "2종코드", "2종규격", "2종연산", "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록"];
 }
 window.ensureMerchHeaderAfter = window.ensureMerchHeaderAfter || ((headers = [], header, afterHeader = '') => {
     const result = Array.isArray(headers) ? [...headers] : [];
@@ -71,8 +71,16 @@ window.ensureMerchHeaderAfter = window.ensureMerchHeaderAfter || ((headers = [],
     else result.push(header);
     return result;
 });
-window.MASTER_HEADERS = window.ensureMerchHeaderAfter(window.MASTER_HEADERS || [], "1당수량", "1종연산");
+window.MASTER_HEADERS = window.ensureMerchHeaderAfter(window.ensureMerchHeaderAfter(window.MASTER_HEADERS || [], "행사테마", "행사가"), "1당수량", "1종연산");
 if (window.NUMERIC_HEADERS) window.NUMERIC_HEADERS = window.ensureMerchHeaderAfter(window.NUMERIC_HEADERS, "1당수량", "1종연산");
+
+window.PROMOTION_THEMES = window.PROMOTION_THEMES || [
+    { code: '1', label: '오늘의행사', type: '탭' },
+    { code: '2', label: '매장행사', type: '탭' },
+    { code: '3', label: '특가상품', type: '탭' },
+    { code: '4', label: '실사진', type: '뱃지' },
+    { code: '5', label: '행사', type: '뱃지' }
+];
 const { useState, useMemo, useEffect, useCallback } = React;
 const safeJSONParse = (key, defaultValue) => {
     try {
@@ -341,13 +349,13 @@ const App = () => {
         reader.onerror = () => reject(reader.error || new Error('파일 읽기 실패'));
         reader.readAsArrayBuffer(file);
     });
-    const handleMasterExcelUpload = async (file) => {
+    const handlePromotionThemeSettings = async (file) => {
         if (!file) return;
         setIsProcessing(true);
         setProcessMsg('마스터 엑셀 분석 중...');
         try {
             const parsed = await parseMasterExcelFile(file);
-            const analyzer = window.ONEAPP?.MASTER?.analyzeMasterExcelUpload || window.analyzeMasterExcelUpload;
+            const analyzer = window.ONEAPP?.MASTER?.analyzePromotionThemeSettings || window.analyzePromotionThemeSettings;
             if (typeof analyzer !== 'function') throw new Error('coreEngine의 마스터 업로드 엔진을 찾을 수 없습니다.');
             const analysis = analyzer({ excelRows: parsed.rows, currentMaster: data.masterProducts, sourceHeaders: parsed.sourceHeaders });
             setMasterUploadFileName(file.name || '마스터 엑셀');
@@ -363,7 +371,7 @@ const App = () => {
             setProcessMsg('');
         }
     };
-    const handleApplyMasterExcelUpload = async () => {
+    const handleApplyPromotionThemeSettings = async () => {
         if (!masterUploadAnalysis) return showToast('⚠️ 먼저 마스터 엑셀을 분석하세요.');
         const s = masterUploadAnalysis.summary || {};
         const confirmMsg = `마스터DB를 엑셀 기준으로 수정합니다.\n\n수정: ${(s.updateCount || 0).toLocaleString()}건\n신규: ${(s.createCount || 0).toLocaleString()}건\n중복: ${(s.duplicateCodeCount || 0).toLocaleString()}건\n코드없음: ${(s.noCodeCount || 0).toLocaleString()}건\n\n적용 전 자동 백업 후 진행합니다.`;
@@ -371,7 +379,7 @@ const App = () => {
         setIsProcessing(true);
         setProcessMsg('마스터DB 백업 및 적용 중...');
         try {
-            const applier = window.ONEAPP?.MASTER?.applyMasterExcelUpload || window.applyMasterExcelUpload;
+            const applier = window.ONEAPP?.MASTER?.applyPromotionThemeSettings || window.applyPromotionThemeSettings;
             if (typeof applier !== 'function') throw new Error('coreEngine의 마스터 적용 엔진을 찾을 수 없습니다.');
             const result = await applier({ analysis: masterUploadAnalysis, currentMaster: data.masterProducts, label: masterUploadFileName || '마스터엑셀업로드' });
             data.setMasterProducts(result.masterMap || {});
@@ -839,8 +847,8 @@ const App = () => {
             React.createElement("div", { className: "flex flex-wrap items-center gap-3" },
                 React.createElement("label", { className: "cursor-pointer inline-flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-5 py-3 rounded-xl text-[13px] font-black shadow-md" },
                     React.createElement("i", { className: "fas fa-file-excel" }), "마스터 엑셀 선택",
-                    React.createElement("input", { type: "file", accept: ".xlsx,.xls,.csv", className: "hidden", onChange: e => handleMasterExcelUpload(e.target.files && e.target.files[0]) })),
-                masterUploadAnalysis && React.createElement("button", { onClick: handleApplyMasterExcelUpload, className: "inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-xl text-[13px] font-black shadow-md" }, React.createElement("i", { className: "fas fa-check-circle" }), "마스터 적용"),
+                    React.createElement("input", { type: "file", accept: ".xlsx,.xls,.csv", className: "hidden", onChange: e => handlePromotionThemeSettings(e.target.files && e.target.files[0]) })),
+                masterUploadAnalysis && React.createElement("button", { onClick: handleApplyPromotionThemeSettings, className: "inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-xl text-[13px] font-black shadow-md" }, React.createElement("i", { className: "fas fa-check-circle" }), "마스터 적용"),
                 masterUploadAnalysis && React.createElement("button", { onClick: () => { setMasterUploadAnalysis(null); setMasterUploadFileName(''); }, className: "inline-flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-3 rounded-xl text-[13px] font-bold border" }, React.createElement("i", { className: "fas fa-times" }), "초기화")),
             React.createElement("div", { className: "mt-4 text-[12px] text-slate-500 leading-relaxed" }, "정책: 엑셀에 있는 컬럼만 수정 / 없는 컬럼은 기존값 유지 / 공란과 0은 그대로 반영 / 엑셀에 없는 기존 상품은 삭제하지 않음 / 1당수량은 숫자형 컬럼")),
         masterUploadAnalysis && React.createElement("div", { className: "grid grid-cols-4 gap-4" },
