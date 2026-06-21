@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.53 ParserHistoryFlowFix]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.55 ParserCatalogDefaultFix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -383,11 +383,11 @@
         window.getManagedRowKey = (row = {}) => row._managedKey || row.코드;
 
 
-        // Smart Parser에서 마스터에 각인한 전용 리스트명을 읽는다.
-        // 파서리스트는 카탈로그/견적서/카테고리와 완전히 분리한다.
-        // 전용 필드가 없으면 다른 필드로 대체하지 않고 빈 값으로 둔다.
+        // Smart Parser에서 마스터에 각인한 파서리스트명을 읽는다.
+        // 운영 기준: 스마트파서가 저장한 파서리스트 필드를 우선하고,
+        // 기존 데이터 호환을 위해 마스터 카탈로그 필드를 기본 파서리스트로 사용한다.
         window.getMerchParserListValue = (item = {}) => {
-            return String(item?.['파서리스트'] || '').trim();
+            return String(item?.['파서리스트'] || item?.['카탈로그'] || '').trim();
         };
 
         // 품목코드 정렬 정책:
@@ -2118,20 +2118,14 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                     let addedCount = 0;
                     const safeMarginRules = window.sanitizeMerchMarginRules ? window.sanitizeMerchMarginRules(config.marginRules) : (Array.isArray(config.marginRules) ? config.marginRules : []);
                     Object.values(data.masterProducts).forEach(mItem => {
-                        if (mItem['카탈로그'] && String(mItem['카탈로그']).trim() !== '') {
+                        const parserListStr = window.getMerchParserListValue ? window.getMerchParserListValue(mItem) : String(mItem['카탈로그'] || '').trim();
+                        if (parserListStr) {
                             if (!newManaged[mItem.코드]) {
-                                const parserSource = {
-                                    품목코드: mItem.코드,
-                                    품목명: mItem['품목명'] || '',
-                                    입고가: window.parseNum(mItem['입고가']),
-                                    카탈로그: mItem['카탈로그'] || '',
-                                    _parserListName: '전체리스트',
-                                    _sourceRole: 'parserList'
-                                };
+                                const mockSource = {};
                                 newManaged[mItem.코드] = {
                                     코드: mItem.코드,
-                                    sources: { parser: parserSource },
-                                    finalData: window.computeFinalData(mItem, { parser: parserSource }, safeMarginRules, false),
+                                    sources: { estimate: mockSource },
+                                    finalData: window.computeFinalData(mItem, { estimate: mockSource }, safeMarginRules, false),
                                     _tags: new Set([`catalog:전체리스트`])
                                 };
                                 addedCount++;
@@ -2169,28 +2163,19 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                 const safeMarginRules = window.sanitizeMerchMarginRules ? window.sanitizeMerchMarginRules(config.marginRules) : (Array.isArray(config.marginRules) ? config.marginRules : []);
                 Object.values(data.masterProducts).forEach(mItem => {
                     let isMatch = false;
-                    // source 원복: catalog는 기존 카달로그(파서) 목록, category는 기존 카달로그(견적) 목록.
-                    const catStr = type === 'category' ? (mItem['견적서'] || mItem['카테고리'] || '') : (mItem['카탈로그'] || '');
+                    // source 원복: catalog는 파서리스트 목록, category는 카탈로그/견적서 목록.
+                    const parserListStr = window.getMerchParserListValue ? window.getMerchParserListValue(mItem) : String(mItem['카탈로그'] || '').trim();
+                    const catStr = type === 'category' ? (mItem['견적서'] || mItem['카테고리'] || '') : parserListStr;
                     if (String(catStr).split(',').map(c => c.trim()).includes(filterName)) {
                         isMatch = true;
                     }
                     if (isMatch) {
                         if (!newManaged[mItem.코드]) {
-                            const isParserList = type === 'catalog';
-                            const mockSource = isParserList ? {
-                                품목코드: mItem.코드,
-                                품목명: mItem['품목명'] || '',
-                                입고가: window.parseNum(mItem['입고가']),
-                                카탈로그: mItem['카탈로그'] || '',
-                                _parserListName: filterName,
-                                _sourceRole: 'parserList'
-                            } : {};
-                            const finalData = isParserList
-                                ? window.computeFinalData(mItem, { parser: mockSource }, safeMarginRules)
-                                : window.computeFinalData(mItem, { estimate: mockSource }, safeMarginRules);
+                            const mockSource = {};
+                            const finalData = window.computeFinalData(mItem, { estimate: mockSource }, safeMarginRules);
                             newManaged[mItem.코드] = {
                                 코드: mItem.코드,
-                                sources: isParserList ? { parser: mockSource } : { estimate: mockSource },
+                                sources: { estimate: mockSource },
                                 finalData: finalData,
                                 _tags: new Set([`${type}:${filterName}`])
                             };
@@ -3101,6 +3086,8 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
     const activeTableTarget = normalizeMerchTableTarget((config === null || config === void 0 ? void 0 : config.activeTableTarget) || DEFAULT_TABLE_VIEW_TARGET);
     const activeTableViewId = (config === null || config === void 0 ? void 0 : config.activeTableViewId) || '';
     const activeTableTargetLabel = ((TABLE_VIEW_TARGETS.find(t => t.id === activeTableTarget) || {}).label) || '견적';
+    const isParserListTableModeForToolbar = (activeTags || []).some(t => String(t?.type || '') === 'catalog');
+    const displayTableTargetLabel = activeTableTargetLabel;
     const tableViewList = useMemo(() => (activeTableTarget && window.getMerchTableViewsForTarget)
         ? window.getMerchTableViewsForTarget(config === null || config === void 0 ? void 0 : config.tableViewPresets, activeTableTarget)
         : [], [config === null || config === void 0 ? void 0 : config.tableViewPresets, activeTableTarget]);
@@ -3134,7 +3121,10 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
     const isPurchaseLoaded = loadedRoleSet.has('purchase') || hasExcelLoadTag(['구매']);
     const isSalesLoaded = loadedRoleSet.has('sales') || hasExcelLoadTag(['판매']);
     const isInventoryLoaded = loadedRoleSet.has('inventory') || hasExcelLoadTag(['재고']);
-    const isCatalogLoaded = (activeTags || []).some(t => ['catalog', 'category'].includes(String(t?.type || ''))) || hasActiveTagName(['카탈로그', '전체리스트']);
+    // 파서리스트와 카탈로그는 같은 선택 UI 영역에 있어도 상태 배색은 분리한다.
+    // type='catalog'는 파서리스트, type='category'는 카탈로그로만 판정한다.
+    const isParserListLoaded = (activeTags || []).some(t => String(t?.type || '') === 'catalog');
+    const isCategoryLoaded = (activeTags || []).some(t => String(t?.type || '') === 'category');
     const getLoadButtonClass = (loaded, tone = 'blue') => {
         const base = 'cursor-pointer h-9 px-3 rounded-xl text-[12px] font-bold transition-all flex items-center justify-center shadow-sm border shrink-0';
         if (!loaded) {
@@ -3212,7 +3202,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
         React.createElement("div", { className: "px-6 py-3 bg-slate-50 border-b border-slate-200 flex items-center gap-3 overflow-x-auto w-full custom-scrollbar" },
             React.createElement("div", { className: "relative shrink-0" },
                 React.createElement("i", { className: "fas fa-bolt absolute left-3 top-2.5 text-indigo-500 pointer-events-none text-[13px]" }),
-                React.createElement("select", { value: "", onChange: (e) => handleLoadFilter('catalog', e.target.value), className: "appearance-none bg-white border border-slate-300 text-slate-700 font-bold text-[12px] py-2 pl-8 pr-8 rounded-xl shadow-sm outline-none focus:border-indigo-400 w-[180px] cursor-pointer h-9" },
+                React.createElement("select", { value: "", onChange: (e) => handleLoadFilter('catalog', e.target.value), className: `appearance-none font-bold text-[12px] py-2 pl-8 pr-8 rounded-xl outline-none w-[180px] cursor-pointer h-9 border ${isParserListLoaded ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-300 text-slate-700 shadow-sm focus:border-indigo-400'}` },
                     React.createElement("option", { value: "", disabled: true }, "\uD30C\uC11C\uB9AC\uC2A4\uD2B8"),
                     React.createElement("option", { value: "all_catalogs" }, "\uC804\uCCB4\uB9AC\uC2A4\uD2B8"),
                     availableCatalogs.map(cat => React.createElement("option", { key: cat.name, value: cat.name },
@@ -3223,7 +3213,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                 React.createElement("i", { className: "fas fa-chevron-down absolute right-3 top-3 text-slate-400 text-[10px] pointer-events-none" })),
             React.createElement("div", { className: "relative shrink-0" },
                 React.createElement("i", { className: "fas fa-folder absolute left-3 top-2.5 text-blue-500 pointer-events-none text-[13px]" }),
-                React.createElement("select", { value: "", onChange: (e) => handleLoadFilter('category', e.target.value), className: `appearance-none font-bold text-[12px] py-2 pl-8 pr-8 rounded-xl outline-none w-[180px] cursor-pointer h-9 border ${isCatalogLoaded ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-slate-300 text-slate-700 shadow-sm focus:border-indigo-400'}` },
+                React.createElement("select", { value: "", onChange: (e) => handleLoadFilter('category', e.target.value), className: `appearance-none font-bold text-[12px] py-2 pl-8 pr-8 rounded-xl outline-none w-[180px] cursor-pointer h-9 border ${isCategoryLoaded ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-slate-300 text-slate-700 shadow-sm focus:border-indigo-400'}` },
                     React.createElement("option", { value: "", disabled: true }, "\uCE74\uD0C8\uB85C\uADF8"),
                     availableCategories.map(cat => React.createElement("option", { key: cat.name, value: cat.name },
                         cat.name,
@@ -3257,10 +3247,10 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
             React.createElement("div", { className: "flex-1 min-w-[12px]" }),
             (displayTableViewList.length > 0 && (React.createElement("div", { className: "ml-auto min-w-[360px] max-w-[620px] flex justify-end overflow-x-auto custom-scrollbar shrink-0" },
                 React.createElement("div", { className: "inline-flex items-center justify-end gap-1.5 px-2 py-1 rounded-xl border border-dashed border-slate-300 bg-white/80 shadow-sm min-w-max" },
-                    React.createElement("span", { className: "text-[10px] font-black text-slate-400 mr-1 shrink-0" }, `${activeTableTargetLabel} 양식`),
+                    React.createElement("span", { className: "text-[10px] font-black text-slate-400 mr-1 shrink-0" }, `${displayTableTargetLabel} 양식`),
                     displayTableViewList.slice(0, 5).map(view => {
                         const active = view.fallback ? !activeTableViewId : activeTableViewId === view.id;
-                        return (React.createElement("button", { key: view.id || view.name, onClick: () => applyTableShortcut(view), className: `h-7 px-2.5 rounded-lg text-[11px] font-black border shadow-sm transition-all shrink-0 whitespace-nowrap ${active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200'}`, title: `${activeTableTargetLabel} 양식: 마스터 ${(view.masterColumns || []).join(', ')} / 작업 ${(view.workColumns || []).join(', ')}` },
+                        return (React.createElement("button", { key: view.id || view.name, onClick: () => applyTableShortcut(view), className: `h-7 px-2.5 rounded-lg text-[11px] font-black border shadow-sm transition-all shrink-0 whitespace-nowrap ${active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200'}`, title: `${displayTableTargetLabel} 양식: 마스터 ${(view.masterColumns || []).join(', ')} / 작업 ${(view.workColumns || []).join(', ')}` },
                             React.createElement("i", { className: "fas fa-table-columns mr-1 text-[10px]" }),
                             view.name));
                     })))))),
@@ -4021,7 +4011,7 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
     const targetWorkCols = (visibleUploadCols === null || visibleUploadCols === void 0 ? void 0 : visibleUploadCols[activeTableTarget]);
     const currentMasterCols = registrationMode ? [] : (Array.isArray(targetMasterCols) ? targetMasterCols : (getInitialVisibleMasterCols()[activeTableTarget] || [])).filter(h => !requiredCoreFields.includes(h));
     const isParserListTableMode = !registrationMode && (state.activeTags || []).some(t => String(t?.type || '') === 'catalog');
-    const currentWorkCols = isParserListTableMode ? ['입고가'] : (registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : (Array.isArray(targetWorkCols) ? targetWorkCols : (getInitialVisibleUploadCols()[activeTableTarget] || [])).filter(h => h !== '품목코드' && h !== '구매리포트' && h !== '구매검증리포트'));
+    const currentWorkCols = registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : (Array.isArray(targetWorkCols) ? targetWorkCols : (getInitialVisibleUploadCols()[activeTableTarget] || [])).filter(h => h !== '품목코드' && h !== '구매리포트' && h !== '구매검증리포트');
     const hasUploadNameField = !!(row.finalData && Object.prototype.hasOwnProperty.call(row.finalData, '품목명'));
     const hasUploadSpecField = !!(row.finalData && Object.prototype.hasOwnProperty.call(row.finalData, '규격'));
     const hasUploadSourceForOriginal = typeof window.hasAnyUploadSource === 'function' ? window.hasAnyUploadSource(row.sources || {}) : !!(row.sources && Object.keys(row.sources || {}).length > 0);
@@ -4260,7 +4250,7 @@ const ExcelDataGrid = ({ state, actions }) => {
     const targetWorkCols = (visibleUploadCols === null || visibleUploadCols === void 0 ? void 0 : visibleUploadCols[activeTableTarget]);
     const currentMasterCols = registrationMode ? [] : (Array.isArray(targetMasterCols) ? targetMasterCols : (getInitialVisibleMasterCols()[activeTableTarget] || [])).filter(h => !requiredCoreFields.includes(h));
     const isParserListTableMode = !registrationMode && (state.activeTags || []).some(t => String(t?.type || '') === 'catalog');
-    const currentWorkCols = isParserListTableMode ? ['입고가'] : (registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : (Array.isArray(targetWorkCols) ? targetWorkCols : (getInitialVisibleUploadCols()[activeTableTarget] || [])).filter(h => h !== '품목코드' && h !== '구매리포트' && h !== '구매검증리포트'));
+    const currentWorkCols = registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : (Array.isArray(targetWorkCols) ? targetWorkCols : (getInitialVisibleUploadCols()[activeTableTarget] || [])).filter(h => h !== '품목코드' && h !== '구매리포트' && h !== '구매검증리포트');
     return (React.createElement("div", { className: "bg-white border border-slate-200 rounded-xl shadow-sm h-full flex flex-col relative overflow-hidden" },
         React.createElement("div", { className: "flex-1 overflow-auto custom-scrollbar relative", onScroll: handleScroll },
             React.createElement("table", { className: "text-left border-collapse table-fixed text-[13px] whitespace-nowrap relative z-0 w-max bg-white" },
@@ -4302,7 +4292,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.53 ParserHistoryFlowFix]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.55 ParserCatalogDefaultFix]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -4370,7 +4360,7 @@ const App = () => {
     const availableCatalogs = useMemo(() => {
         const counts = {};
         Object.values(data.masterProducts).forEach(m => {
-            const str = String(m['카탈로그'] || '').trim();
+            const str = window.getMerchParserListValue ? window.getMerchParserListValue(m) : String(m['카탈로그'] || '').trim();
             if (str) {
                 str.split(',').map(s => s.trim()).filter(Boolean).forEach(t => counts[t] = (counts[t] || 0) + 1);
             }
@@ -4632,7 +4622,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.53 ParserHistoryFlowFix")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.55 ParserCatalogDefaultFix")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
