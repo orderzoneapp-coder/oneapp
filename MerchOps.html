@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.56 SelectedWarehouseFix]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.57 ParserWarehouseIssueColorFix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -162,6 +162,9 @@
         window.getDefaultMerchMarginRules = () => ([
             { id: 'rule_1', whCode: '01', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
             { id: 'rule_2', whCode: '01', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' },
+            // 03창고 확정 정책: BOX 10%, EA/kg/단 15%. 과거 03,05 통합룰보다 우선 적용한다.
+            { id: 'rule_03_box', whCode: '03', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
+            { id: 'rule_03_ea', whCode: '03', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' },
             { id: 'rule_3', whCode: '03,05', unit: 'box, 박스, BOX', rate: 15, type: 'divide' },
             { id: 'rule_4', whCode: '03,05', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 10, type: 'divide' },
             { id: 'rule_5', whCode: '77,99', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
@@ -218,7 +221,13 @@
                 }));
             const hasDefault = cleaned.some(r => String(r.whCode).trim() === '*' && String(r.unit).trim() === '*');
             if (!hasDefault) cleaned.push({ ...defaults[defaults.length - 1] });
-            return cleaned;
+            // 저장된 과거 룰셋이 03,05 통합값이어도 03창고 확정룰을 항상 먼저 평가한다.
+            const fixed03Rules = [
+                { id: 'rule_03_box', whCode: '03', unit: 'box, 박스, BOX', rate: 10, type: 'divide' },
+                { id: 'rule_03_ea', whCode: '03', unit: 'ea, 개, 낱개, EA, kg, 단', rate: 15, type: 'divide' }
+            ];
+            const withoutOld03Fixed = cleaned.filter(r => !['rule_03_box', 'rule_03_ea'].includes(String(r.id || '')));
+            return [...fixed03Rules, ...withoutOld03Fixed];
         };
 
         // ============================================================
@@ -2124,8 +2133,8 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                                 const mockSource = {};
                                 newManaged[mItem.코드] = {
                                     코드: mItem.코드,
-                                    sources: { estimate: mockSource },
-                                    finalData: window.computeFinalData(mItem, { estimate: mockSource }, safeMarginRules, false),
+                                    sources: { parser: mockSource },
+                                    finalData: window.computeFinalData(mItem, { parser: mockSource }, safeMarginRules, false),
                                     _tags: new Set([`catalog:전체리스트`])
                                 };
                                 addedCount++;
@@ -2172,10 +2181,10 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                     if (isMatch) {
                         if (!newManaged[mItem.코드]) {
                             const mockSource = {};
-                            const finalData = window.computeFinalData(mItem, { estimate: mockSource }, safeMarginRules);
+                            const finalData = window.computeFinalData(mItem, { parser: mockSource }, safeMarginRules);
                             newManaged[mItem.코드] = {
                                 코드: mItem.코드,
-                                sources: { estimate: mockSource },
+                                sources: { parser: mockSource },
                                 finalData: finalData,
                                 _tags: new Set([`${type}:${filterName}`])
                             };
@@ -2716,9 +2725,28 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                     if (next[managedKey]) {
                         const mItem = data.masterProducts[code] || {};
                         const currentItem = next[managedKey];
+                        const prevFinalData = currentItem.finalData || {};
+                        const recalculated = window.computeFinalData(mItem, currentItem.sources, safeMarginRules, true);
+                        ['창고', '_calcWarehouse', '_calcWarehouseReason', '_calcUnit'].forEach(key => {
+                            if (prevFinalData[key] !== undefined && prevFinalData[key] !== null && String(prevFinalData[key]).trim() !== '') {
+                                recalculated[key] = prevFinalData[key];
+                            }
+                        });
+                        const recalculatedOutPrice = window.calculatePricesEngine(
+                            window.parseNum(recalculated['입고가']),
+                            0,
+                            mItem,
+                            recalculated,
+                            safeMarginRules,
+                            true
+                        );
+                        recalculated._calculatedOutPrice = recalculatedOutPrice || 0;
+                        if (window.parseNum(recalculated['입고가']) > 0) {
+                            recalculated['출고가'] = recalculatedOutPrice || 0;
+                        }
                         next[managedKey] = {
                             ...currentItem,
-                            finalData: window.computeFinalData(mItem, currentItem.sources, safeMarginRules, true)
+                            finalData: recalculated
                         };
                         count++;
                     }
@@ -3938,7 +3966,8 @@ const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, 
                     estimate: ((_a = currentItem.sources) === null || _a === void 0 ? void 0 : _a.estimate) ? { ...currentItem.sources.estimate } : (_b = currentItem.sources) === null || _b === void 0 ? void 0 : _b.estimate,
                     purchase: ((_c = currentItem.sources) === null || _c === void 0 ? void 0 : _c.purchase) ? { ...currentItem.sources.purchase } : (_d = currentItem.sources) === null || _d === void 0 ? void 0 : _d.purchase,
                     sales: ((_e = currentItem.sources) === null || _e === void 0 ? void 0 : _e.sales) ? { ...currentItem.sources.sales } : (_f = currentItem.sources) === null || _f === void 0 ? void 0 : _f.sales,
-                    inventory: ((_g = currentItem.sources) === null || _g === void 0 ? void 0 : _g.inventory) ? { ...currentItem.sources.inventory } : (_h = currentItem.sources) === null || _h === void 0 ? void 0 : _h.inventory
+                    inventory: ((_g = currentItem.sources) === null || _g === void 0 ? void 0 : _g.inventory) ? { ...currentItem.sources.inventory } : (_h = currentItem.sources) === null || _h === void 0 ? void 0 : _h.inventory,
+                    parser: currentItem.sources?.parser ? { ...currentItem.sources.parser } : currentItem.sources?.parser
                 },
                 finalData: {
                     ...(currentItem.finalData || {}),
@@ -3949,7 +3978,7 @@ const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, 
                 nextItem.finalData[effectiveField] = normalizedVal;
             }
             // 업로드 source는 원본 역할을 유지하되, 관리자가 셀에서 수정한 값은 현재 작업 source에 반영한다.
-            ['estimate', 'purchase', 'sales', 'inventory'].forEach(sourceKey => {
+            ['estimate', 'purchase', 'sales', 'inventory', 'parser'].forEach(sourceKey => {
                 if (!nextItem.sources[sourceKey])
                     return;
                 nextItem.sources[sourceKey][field] = normalizedVal;
@@ -4139,6 +4168,15 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
             issueTextColor = diffAmount > 0 ? 'text-rose-600' : 'text-blue-600';
             issueCellBg = 'bg-white';
         }
+    }
+    // 파서리스트는 스마트파서가 마스터 입고가를 이미 갱신한 뒤 들어올 수 있다.
+    // 이 경우 현재 입고가 비교로는 변동이 사라지므로, 입고가(기준) ↔ 최종입고(파서 반영값) 차이를 이슈 뱃지로 본다.
+    const finalInForParserIssue = window.parseNum((row.finalData || {})['최종입고']);
+    if (!state.registrationMode && isParserListTableMode && oldP > 0 && finalInForParserIssue > 0 && finalInForParserIssue !== oldP) {
+        issueText = finalInForParserIssue > oldP ? '상승' : '하락';
+        issueSubText = '';
+        issueTextColor = finalInForParserIssue > oldP ? 'text-rose-600' : 'text-blue-600';
+        issueCellBg = 'bg-white';
     }
     const hasPurchaseSourceForIssue = !!((row.sources || {}).purchase);
     if (!state.registrationMode && purchaseTrendInfo && purchaseTrendInfo.hasPurchaseData && hasPurchaseSourceForIssue) {
@@ -4332,7 +4370,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.56 SelectedWarehouseFix]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.57 ParserWarehouseIssueColorFix]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -4662,7 +4700,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.56 SelectedWarehouseFix")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.57 ParserWarehouseIssueColorFix")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
