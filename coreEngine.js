@@ -18,7 +18,7 @@
   'use strict';
 
   const ONEAPP = global.ONEAPP = global.ONEAPP || {};
-  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.0.4 OneQtyStockConversion';
+  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.0.5 MasterExcelUpload';
 
   const DEFAULT_DB_NAME = 'MerchOpsDB';
   const DEFAULT_DB_VERSION = 2;
@@ -1073,6 +1073,312 @@
     return { status: 'success', data };
   };
 
+
+
+  // ============================================================
+  // MASTER EXCEL UPLOAD ENGINE
+  // 목적: 환경설정에서 마스터 엑셀 원장을 품목코드 기준으로 비교하고,
+  //       엑셀에 있는 컬럼만 안전하게 master_products에 병합 적용한다.
+  // 정책:
+  // - 기준키: 품목코드 우선, 없으면 코드/상품코드/바코드 후보
+  // - 컬럼 없음: 기존값 유지
+  // - 컬럼 있음 + 공란: 공란으로 반영
+  // - 엑셀에 없는 기존 마스터: 삭제/정지하지 않고 유지
+  // - 적용 전 자동 백업, 변경된 항목만 히스토리 기록
+  // ============================================================
+  const MASTER = ONEAPP.MASTER = ONEAPP.MASTER || {};
+  const MASTER_BACKUP_KEY = 'merchMasterBackups_v1';
+
+  const MASTER_FIELD_ALIASES = {
+    '상품코드': '품목코드',
+    '바코드': '품목코드',
+    '상품번호': '품목코드',
+    '상품명': '품목명',
+    '품명': '품목명',
+    '상품이름': '품목명',
+    '규격명': '규격',
+    '사이즈': '규격',
+    '단량': '규격',
+    'A판매': '도매A',
+    'A판매가': '도매A',
+    'B판매': '도매B',
+    'B판매가': '도매B',
+    'B도매가': '도매B',
+    '매입가': '입고가',
+    '구매단가': '입고가',
+    '매입단가': '입고가',
+    '판매가': '출고가',
+    '판매단가': '출고가',
+    '행사': '행사가',
+    '특가': '행사가',
+    '포장단위': '단위',
+    '판매단위': '단위',
+    '매입단위': '단위',
+    'UNIT': '단위',
+    'unit': '단위',
+    '카테고리': '견적서',
+    '템플릿': '견적서',
+    '견적분류': '견적서',
+    '기본여부': '기본',
+    '관리구분': '기본'
+  };
+
+  MASTER.canonicalMasterFieldName = (field = '') => {
+    const clean = String(field ?? '').trim();
+    if (!clean) return '';
+    return MASTER_FIELD_ALIASES[clean] || clean;
+  };
+
+  MASTER.normalizeMasterCode = (v) => String(v ?? '').trim().replace(/\s/g, '');
+
+  MASTER.getMasterCode = (item = {}) => {
+    const direct = item['품목코드'] ?? item['상품코드'] ?? item['바코드'] ?? item['상품번호'] ?? item['코드'];
+    return MASTER.normalizeMasterCode(direct);
+  };
+
+  MASTER.getMasterStorageKey = (item = {}) => {
+    const code = MASTER.getMasterCode(item);
+    return code || MASTER.normalizeMasterCode(item['코드']);
+  };
+
+  MASTER.normalizeMasterCellValue = (field, value) => {
+    if (value === undefined || value === null) return '';
+    const raw = String(value).trim();
+    if (raw === '') return '';
+    if ((global.NUMERIC_HEADERS || []).includes(field)) return parseNum(value);
+    if (field === '품목코드' || field === '코드') return MASTER.normalizeMasterCode(value);
+    return value;
+  };
+
+  MASTER.normalizeExcelRowForMaster = (row = {}, sourceHeaders = []) => {
+    const headers = Array.isArray(sourceHeaders) && sourceHeaders.length > 0 ? sourceHeaders : Object.keys(row || {});
+    const out = {};
+    const sourceColumns = [];
+    headers.forEach(header => {
+      if (header === undefined || header === null || String(header).trim() === '') return;
+      const field = MASTER.canonicalMasterFieldName(header);
+      if (!field) return;
+      // 엑셀에 존재하는 컬럼만 sourceColumns에 넣는다. 값이 공란이어도 존재 컬럼이다.
+      if (!sourceColumns.includes(field)) sourceColumns.push(field);
+      out[field] = MASTER.normalizeMasterCellValue(field, row[header]);
+    });
+    const code = MASTER.getMasterCode(out);
+    if (code) {
+      out['품목코드'] = code;
+      out['코드'] = code;
+      if (!sourceColumns.includes('품목코드')) sourceColumns.unshift('품목코드');
+    }
+    return { item: out, sourceColumns };
+  };
+
+  MASTER.buildMasterIndex = (masterInput = {}) => {
+    const map = {};
+    const items = Array.isArray(masterInput) ? masterInput : Object.values(masterInput || {});
+    items.forEach(item => {
+      if (!item) return;
+      const code = MASTER.getMasterStorageKey(item);
+      if (!code) return;
+      map[code] = { ...(item || {}), 코드: item['코드'] || code, 품목코드: item['품목코드'] || code };
+    });
+    return map;
+  };
+
+  MASTER.valuesEqual = (field, a, b) => {
+    if ((global.NUMERIC_HEADERS || []).includes(field)) {
+      const aBlank = a === undefined || a === null || String(a).trim?.() === '';
+      const bBlank = b === undefined || b === null || String(b).trim?.() === '';
+      if (aBlank && bBlank) return true;
+      return parseNum(a) === parseNum(b);
+    }
+    return String(a ?? '') === String(b ?? '');
+  };
+
+  MASTER.analyzeMasterExcelUpload = ({ excelRows = [], currentMaster = {}, sourceHeaders = [] } = {}) => {
+    const rows = Array.isArray(excelRows) ? excelRows : [];
+    const masterMap = MASTER.buildMasterIndex(currentMaster);
+    const normalizedRows = [];
+    const errors = [];
+    const duplicateGroups = {};
+    const seen = {};
+    const sourceColumnSet = new Set();
+
+    rows.forEach((row, rowIdx) => {
+      const normalized = MASTER.normalizeExcelRowForMaster(row, sourceHeaders.length ? sourceHeaders : Object.keys(row || {}));
+      normalized.sourceColumns.forEach(c => sourceColumnSet.add(c));
+      const item = normalized.item;
+      const code = MASTER.getMasterStorageKey(item);
+      const payload = { rowNumber: rowIdx + 2, code, item, sourceColumns: normalized.sourceColumns, raw: row };
+      if (!code) {
+        errors.push({ rowNumber: rowIdx + 2, type: 'NO_CODE', message: '품목코드 없음', raw: row });
+        return;
+      }
+      if (seen[code]) {
+        duplicateGroups[code] = duplicateGroups[code] || [seen[code]];
+        duplicateGroups[code].push(payload);
+        return;
+      }
+      seen[code] = payload;
+      normalizedRows.push(payload);
+    });
+
+    const duplicateCodes = Object.keys(duplicateGroups);
+    const duplicateCodeSet = new Set(duplicateCodes);
+    const candidates = [];
+    const changeRows = [];
+    const createRows = [];
+    const sameRows = [];
+    const fieldCounts = {};
+    const updateColumns = Array.from(sourceColumnSet).filter(c => c && c !== '코드');
+
+    normalizedRows.forEach(rowInfo => {
+      if (duplicateCodeSet.has(rowInfo.code)) return;
+      const existing = masterMap[rowInfo.code] || null;
+      const sourceColsForRow = rowInfo.sourceColumns.filter(c => c && c !== '코드');
+      if (!existing) {
+        const newItem = { ...rowInfo.item, 코드: rowInfo.code, 품목코드: rowInfo.item['품목코드'] || rowInfo.code };
+        const candidate = { status: 'create', code: rowInfo.code, name: newItem['품목명'] || '', item: newItem, sourceColumns: sourceColsForRow, changes: [] };
+        createRows.push(candidate);
+        candidates.push(candidate);
+        return;
+      }
+
+      const changes = [];
+      sourceColsForRow.forEach(field => {
+        if (field === '품목코드') return;
+        // 엑셀에 있는 컬럼만 반영한다. 값이 공란이어도 rowInfo.item[field]는 존재한다.
+        if (!Object.prototype.hasOwnProperty.call(rowInfo.item, field)) return;
+        const oldVal = existing[field] ?? '';
+        const newVal = rowInfo.item[field] ?? '';
+        if (!MASTER.valuesEqual(field, oldVal, newVal)) {
+          changes.push({ code: rowInfo.code, name: existing['품목명'] || rowInfo.item['품목명'] || '', field, oldVal, newVal });
+          fieldCounts[field] = (fieldCounts[field] || 0) + 1;
+        }
+      });
+      const candidate = { status: changes.length > 0 ? 'update' : 'same', code: rowInfo.code, name: existing['품목명'] || rowInfo.item['품목명'] || '', existing, item: rowInfo.item, sourceColumns: sourceColsForRow, changes };
+      if (changes.length > 0) changeRows.push(candidate); else sameRows.push(candidate);
+      candidates.push(candidate);
+    });
+
+    const excelCodeSet = new Set(candidates.map(c => c.code));
+    const missingInExcel = Object.keys(masterMap).filter(code => !excelCodeSet.has(code));
+
+    return {
+      analyzedAt: getNowISO(),
+      totalRows: rows.length,
+      validRows: normalizedRows.length - duplicateCodes.length,
+      sourceColumns: updateColumns,
+      summary: {
+        totalRows: rows.length,
+        validCodeRows: normalizedRows.length,
+        noCodeCount: errors.length,
+        duplicateCodeCount: duplicateCodes.length,
+        updateCount: changeRows.length,
+        createCount: createRows.length,
+        sameCount: sameRows.length,
+        missingInExcelCount: missingInExcel.length,
+        fieldCounts
+      },
+      candidates,
+      changeRows,
+      createRows,
+      sameRows,
+      errors,
+      duplicateCodes,
+      duplicateGroups,
+      missingInExcel
+    };
+  };
+
+  MASTER.createMasterBackup = async (masterInput = {}, label = '마스터엑셀업로드') => {
+    const masterMap = MASTER.buildMasterIndex(masterInput);
+    let backups = [];
+    try { backups = await STORAGE.getIDB(MASTER_BACKUP_KEY) || []; } catch (e) { backups = []; }
+    const backup = {
+      id: `master_backup_${Date.now()}`,
+      label,
+      createdAt: getNowISO(),
+      count: Object.keys(masterMap).length,
+      data: masterMap
+    };
+    const next = [backup, ...(Array.isArray(backups) ? backups : [])].slice(0, 5);
+    await STORAGE.setIDB(MASTER_BACKUP_KEY, next);
+    return backup;
+  };
+
+  MASTER.getMasterBackups = async () => {
+    try { return await STORAGE.getIDB(MASTER_BACKUP_KEY) || []; } catch (e) { return []; }
+  };
+
+  MASTER.restoreMasterBackup = async (backupId) => {
+    const backups = await MASTER.getMasterBackups();
+    const backup = backups.find(b => b && b.id === backupId);
+    if (!backup) throw new Error('백업을 찾을 수 없습니다.');
+    const items = Object.values(backup.data || {}).filter(item => item && (item.코드 || item.품목코드));
+    await STORAGE.bulkPutIDB(STORE_MASTER, items);
+    global.localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+    return backup;
+  };
+
+  MASTER.applyMasterExcelUpload = async ({ analysis, currentMaster = {}, label = '마스터엑셀업로드' } = {}) => {
+    if (!analysis || !Array.isArray(analysis.candidates)) throw new Error('적용할 마스터 업로드 분석 결과가 없습니다.');
+    const masterMap = MASTER.buildMasterIndex(currentMaster);
+    const backup = await MASTER.createMasterBackup(masterMap, label);
+    const historyLogs = [];
+    let updateCount = 0;
+    let createCount = 0;
+
+    analysis.candidates.forEach(candidate => {
+      if (!candidate || candidate.status === 'same') return;
+      const code = candidate.code;
+      if (!code) return;
+      if (candidate.status === 'create') {
+        masterMap[code] = { ...(candidate.item || {}), 코드: code, 품목코드: (candidate.item || {})['품목코드'] || code };
+        createCount++;
+        historyLogs.push(HISTORY.buildHistoryLog({
+          source: 'master_excel_upload', actionType: 'master_create', code,
+          name: masterMap[code]['품목명'] || '', field: '신규상품', oldVal: '', newVal: '추가', memo: label
+        }));
+        return;
+      }
+      if (candidate.status === 'update') {
+        const existing = masterMap[code] || { 코드: code, 품목코드: code };
+        const nextItem = { ...existing };
+        (candidate.sourceColumns || []).forEach(field => {
+          if (!field || field === '코드') return;
+          if (!Object.prototype.hasOwnProperty.call(candidate.item || {}, field)) return;
+          nextItem[field] = candidate.item[field];
+        });
+        nextItem['코드'] = code;
+        nextItem['품목코드'] = nextItem['품목코드'] || code;
+        masterMap[code] = nextItem;
+        updateCount++;
+        (candidate.changes || []).forEach(change => {
+          historyLogs.push(HISTORY.buildHistoryLog({
+            source: 'master_excel_upload', actionType: 'master_update', code,
+            name: nextItem['품목명'] || change.name || '', field: change.field,
+            oldVal: change.oldVal, newVal: change.newVal, memo: label
+          }));
+        });
+      }
+    });
+
+    const items = Object.values(masterMap).filter(item => item && (item.코드 || item.품목코드));
+    await STORAGE.bulkPutIDB(STORE_MASTER, items);
+    if (historyLogs.length > 0) HISTORY.addHistoryLogs(historyLogs);
+    global.localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+    global.localStorage.setItem('config_sync_trigger', Date.now().toString());
+
+    return {
+      status: 'success',
+      backup,
+      masterMap,
+      updateCount,
+      createCount,
+      historyCount: historyLogs.length,
+      totalCount: items.length
+    };
+  };
+
   // ============================================================
   // Backward-compatible aliases.
   // 기존 HTML 교체 중에도 단계적으로 사용할 수 있게, 없는 경우에만 전역 별칭을 제공한다.
@@ -1099,5 +1405,9 @@
   global.ensureDefaultCloudSyncUrl = global.ensureDefaultCloudSyncUrl || CLOUD.ensureDefaultCloudSyncUrl;
   global.pullMerchMasterForDataOps = global.pullMerchMasterForDataOps || CLOUD.pullMerchMasterForDataOps;
   global.getCachedMerchMasterForDataOps = global.getCachedMerchMasterForDataOps || CLOUD.getCachedMerchMasterForDataOps;
+  global.analyzeMasterExcelUpload = global.analyzeMasterExcelUpload || MASTER.analyzeMasterExcelUpload;
+  global.applyMasterExcelUpload = global.applyMasterExcelUpload || MASTER.applyMasterExcelUpload;
+  global.getMasterBackups = global.getMasterBackups || MASTER.getMasterBackups;
+  global.restoreMasterBackup = global.restoreMasterBackup || MASTER.restoreMasterBackup;
 
 })(window);
