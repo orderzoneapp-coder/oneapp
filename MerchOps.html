@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.50 SpecWidthFix]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.52 SpecNameWidthFix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -343,6 +343,12 @@
             if (field === '기준일자') {
                 // 기준일자는 1행 메타가 원칙이다. 구매일자/기록 컬럼과 혼동하지 않는다.
                 if (cleanH.includes('구매일자') || cleanH.includes('상품구매일자') || cleanH === '기록') return true;
+            }
+
+            if (field === '규격') {
+                // 품목명(규격), 상품명(규격) 같은 복합 헤더는 규격 컬럼이 아니다.
+                // 실제 규격 컬럼이 없으면 공란 유지한다.
+                if (cleanH.includes('품목명') || cleanH.includes('상품명') || cleanH.includes('품명')) return true;
             }
 
             return false;
@@ -1143,7 +1149,8 @@ const getInitialMasterLinks = () => {
 // ============================================================
 // [M-TABLE-WIDTH-01] 고정 테이블 폭 정책
 // 역할: 견적/구매/판매/재고/카탈로그 전환 시 열폭이 흔들리지 않게 한다.
-// 기준: 동적폭 금지. 마스터 정보부터 주요 열을 조금씩 압축하고, 이슈는 뱃지 전용 짧은 고정폭으로 둔다. 엑셀 규격 공란은 마스터값으로 보강하지 않는다.
+// 기준: 기본 열폭은 고정하되 마지막 리포트 열은 내용 확인용이므로 max-width를 두지 않는다.
+//       규격은 실제 규격 컬럼이 없으면 품목명(규격) 같은 복합 헤더에서 추출하지 않고 공란으로 둔다.
 // ============================================================
 const getCellWidthClass = (h) => {
     const key = String(h || '').trim();
@@ -1157,13 +1164,13 @@ const getCellWidthClass = (h) => {
         '기준일자': 'min-w-[76px] w-[76px] max-w-[76px]',
         '상품 구매일자': 'min-w-[82px] w-[82px] max-w-[82px]',
         '기록': 'min-w-[70px] w-[70px] max-w-[70px]',
-        '품목명': 'min-w-[92px] w-[92px] max-w-[92px]',
-        '상품명': 'min-w-[92px] w-[92px] max-w-[92px]',
-        '규격': 'min-w-[72px] w-[72px] max-w-[72px]',
-        '1종규격': 'min-w-[72px] w-[72px] max-w-[72px]',
-        '2종규격': 'min-w-[72px] w-[72px] max-w-[72px]',
-        '이슈': 'min-w-[64px] w-[64px] max-w-[64px]',
-        '상태': 'min-w-[64px] w-[64px] max-w-[64px]',
+        '품목명': 'min-w-[138px] w-[138px] max-w-[138px]',
+        '상품명': 'min-w-[138px] w-[138px] max-w-[138px]',
+        '규격': 'min-w-[68px] w-[68px] max-w-[68px]',
+        '1종규격': 'min-w-[68px] w-[68px] max-w-[68px]',
+        '2종규격': 'min-w-[68px] w-[68px] max-w-[68px]',
+        '이슈': 'min-w-[56px] w-[56px] max-w-[56px]',
+        '상태': 'min-w-[56px] w-[56px] max-w-[56px]',
         '1당수량': 'min-w-[64px] w-[64px] max-w-[64px]',
         '입고수량': 'min-w-[70px] w-[70px] max-w-[70px]',
         '출고량': 'min-w-[70px] w-[70px] max-w-[70px]',
@@ -1184,10 +1191,10 @@ const getCellWidthClass = (h) => {
         '판매여부': 'min-w-[74px] w-[74px] max-w-[74px]',
         '행사테마': 'min-w-[74px] w-[74px] max-w-[74px]',
         '브랜드': 'min-w-[76px] w-[76px] max-w-[76px]',
-        '간단설명': 'min-w-[82px] w-[82px] max-w-[82px]',
-        '지시사항': 'min-w-[82px] w-[82px] max-w-[82px]',
-        '상품정보': 'min-w-[82px] w-[82px] max-w-[82px]',
-        '적요2': 'min-w-[82px] w-[82px] max-w-[82px]',
+        '간단설명': 'min-w-[68px] w-[68px] max-w-[68px]',
+        '지시사항': 'min-w-[68px] w-[68px] max-w-[68px]',
+        '상품정보': 'min-w-[68px] w-[68px] max-w-[68px]',
+        '적요2': 'min-w-[68px] w-[68px] max-w-[68px]',
         '검색어등록': 'min-w-[96px] w-[96px] max-w-[96px]'
     };
     if (fixed[key]) return fixed[key];
@@ -1235,6 +1242,11 @@ const createHeaderMap = (actualHeaders, mappingConfig) => {
             // 기준일자는 구매일자/기록과 구분한다. 실제 파일 헤더에 기준일자가 있을 때만 매핑한다.
             const baseDateKeywords = ['기준일자', '기준일', '기준일시', '재고기준일', '재고기준일자'];
             matchedKey = findHeader(field, baseDateKeywords, true);
+        }
+        else if (field === '규격') {
+            // 규격은 정확한 헤더만 인정한다. 품목명(규격) 부분일치 금지.
+            const specKeywords = Array.from(new Set([...keywords, '규격', '규격명', '사이즈', '단량']));
+            matchedKey = findHeader(field, specKeywords, true);
         }
         else {
             matchedKey = findHeader(field, keywords, false);
@@ -3981,11 +3993,12 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
     const currentWorkCols = registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : (Array.isArray(targetWorkCols) ? targetWorkCols : (getInitialVisibleUploadCols()[activeTableTarget] || [])).filter(h => h !== '품목코드' && h !== '구매리포트' && h !== '구매검증리포트');
     const hasUploadNameField = !!(row.finalData && Object.prototype.hasOwnProperty.call(row.finalData, '품목명'));
     const hasUploadSpecField = !!(row.finalData && Object.prototype.hasOwnProperty.call(row.finalData, '규격'));
+    const hasUploadSourceForOriginal = typeof window.hasAnyUploadSource === 'function' ? window.hasAnyUploadSource(row.sources || {}) : !!(row.sources && Object.keys(row.sources || {}).length > 0);
     const uploadName = hasUploadNameField ? row.finalData['품목명'] : '';
     const uploadSpec = hasUploadSpecField ? row.finalData['규격'] : '';
     const dName = hasUploadNameField ? (uploadName || '[미등록]') : (mItem.품목명 || '[미등록]');
-    // 엑셀에 규격 항목이 비어 있으면 마스터 규격으로 보강하지 않고 그대로 비운다.
-    const dSpec = hasUploadSpecField ? uploadSpec : (mItem.규격 || '');
+    // 엑셀 업로드 상태에서 규격 컬럼이 없거나 공란이면 마스터 규격/품목명으로 보강하지 않고 그대로 비운다.
+    const dSpec = hasUploadSourceForOriginal ? (hasUploadSpecField ? uploadSpec : '') : (mItem.규격 || '');
     const oldP = window.parseNum(mItem['입고가']);
     const newP = window.parseNum(((_c = row.finalData) === null || _c === void 0 ? void 0 : _c['입고가']) !== undefined ? row.finalData['입고가'] : ((_q = (_m = (_j = (_f = (_e = (_d = row.sources) === null || _d === void 0 ? void 0 : _d['estimate']) === null || _e === void 0 ? void 0 : _e['입고가']) !== null && _f !== void 0 ? _f : (_h = (_g = row.sources) === null || _g === void 0 ? void 0 : _g['purchase']) === null || _h === void 0 ? void 0 : _h['입고가']) !== null && _j !== void 0 ? _j : (_l = (_k = row.sources) === null || _k === void 0 ? void 0 : _k['sales']) === null || _l === void 0 ? void 0 : _l['입고가']) !== null && _m !== void 0 ? _m : (_p = (_o = row.sources) === null || _o === void 0 ? void 0 : _o['inventory']) === null || _p === void 0 ? void 0 : _p['입고가']) !== null && _q !== void 0 ? _q : oldP));
     const diffAmount = newP - oldP;
@@ -4192,13 +4205,13 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
                 const mVal = (_f = (linkedMasterField && row.코드 ? mItem[linkedMasterField] : undefined)) !== null && _f !== void 0 ? _f : mItem[h];
                 return (React.createElement(EditableCell, { key: `p-u-e-${h}`, row: row, field: h, linkedMasterField: linkedMasterField, mVal: mVal, config: config, data: data, isSel: isSel, extraClass: i === arr.length - 1 ? 'border-r-2 !border-r-slate-300' : '' }));
             }),
-            !state.registrationMode && (React.createElement("td", { className: `px-3 py-1.5 bg-white border-l-2 border-l-slate-300 border-r border-slate-200 min-w-[190px] w-[190px] max-w-[190px] ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'}` },
+            !state.registrationMode && (React.createElement("td", { className: `px-3 py-1.5 bg-white border-l-2 border-l-slate-300 border-r border-slate-200 min-w-[220px] w-auto max-w-none ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'}` },
                 React.createElement("div", { className: `flex flex-col justify-center gap-0.5 leading-tight ${reportTone}` },
                     (purchaseTrendInfo && purchaseTrendInfo.reportParts && purchaseTrendInfo.reportParts.length > 0 && reportLines[0] === purchaseTrendInfo.reportText)
-                        ? React.createElement("div", { className: "text-[11px] font-black truncate", title: purchaseTrendInfo.reportText || '' },
+                        ? React.createElement("div", { className: "text-[11px] font-black whitespace-nowrap", title: purchaseTrendInfo.reportText || '' },
                             purchaseTrendInfo.reportParts.map((part, pi) => React.createElement("span", { key: `${part.dateKey || pi}-${pi}`, className: `${part.tone === 'high' ? 'text-rose-600' : (part.tone === 'low' ? 'text-blue-600' : 'text-slate-600')} ${pi > 0 ? 'ml-1.5' : ''}` }, part.text)))
-                        : React.createElement("div", { className: "text-[11px] font-black truncate", title: reportLines[0] || '' }, reportLines[0] || '-'),
-                    React.createElement("div", { className: "text-[10px] font-bold text-slate-500 truncate", title: reportLines[1] || '' }, reportLines[1] || ''))))))));
+                        : React.createElement("div", { className: "text-[11px] font-black whitespace-nowrap", title: reportLines[0] || '' }, reportLines[0] || '-'),
+                    React.createElement("div", { className: "text-[10px] font-bold text-slate-500 whitespace-nowrap", title: reportLines[1] || '' }, reportLines[1] || ''))))))));
 });
 const ExcelDataGrid = ({ state, actions }) => {
     const { isEstimateUploaded, selectedRows, fullDisplayRows, visibleMasterCols, visibleUploadCols, masterProducts, activeTableTarget = 'estimate', registrationMode = false } = state;
@@ -4227,7 +4240,7 @@ const ExcelDataGrid = ({ state, actions }) => {
                                 React.createElement("span", { className: "truncate font-black" }, registrationMode ? '미등록 상품' : '마스터 정보'))),
                         !isEstimateUploaded ? (currentMasterCols.map(h => (React.createElement("th", { key: `idle-th-${h}`, className: `sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-r border-b border-slate-200 text-center text-slate-700 font-bold ${getCellWidthClass(h)}` }, h === '판매여부' ? '판매상태' : h)))) : (React.createElement(React.Fragment, null,
                             currentMasterCols.map((h, i, arr) => (React.createElement("th", { key: `pm-${h}`, className: `sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-b text-center text-slate-700 font-bold ${getCellWidthClass(h)} ${i === arr.length - 1 ? 'border-r-2 border-r-slate-300' : 'border-r border-r-slate-200'}` }, h === '판매여부' ? '판매상태' : h))),
-                            React.createElement("th", { className: "sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-b border-slate-200 border-l-2 border-l-slate-300 border-r-2 border-r-slate-300 text-center text-slate-700 font-black min-w-[64px] w-[64px] max-w-[64px]" }, registrationMode ? '상태' : '이슈'),
+                            React.createElement("th", { className: "sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-b border-slate-200 border-l-2 border-l-slate-300 border-r-2 border-r-slate-300 text-center text-slate-700 font-black min-w-[56px] w-[56px] max-w-[56px]" }, registrationMode ? '상태' : '이슈'),
                             currentWorkCols.map((h, i, arr) => {
                                 const isHighlight = ['입고가', '도매A', '행사가', '출고가'].includes(h);
                                 return (React.createElement("th", { key: `pu-e-${h}`, className: `sticky top-0 z-[60] bg-slate-100 text-slate-700 ${isHighlight ? 'font-black' : 'font-bold'} px-2 py-3 border-b text-center ${getCellWidthClass(h)} ${i === arr.length - 1 ? 'border-r-2 border-r-slate-300' : 'border-r border-r-slate-200'}` },
@@ -4235,7 +4248,7 @@ const ExcelDataGrid = ({ state, actions }) => {
                                     " ",
                                     isHighlight && React.createElement("i", { className: "fas fa-bolt text-amber-500 ml-1 text-[10px]" })));
                             }),
-                            !registrationMode && (React.createElement("th", { className: "sticky top-0 z-[60] bg-slate-100 px-3 py-3 border-b border-l-2 border-l-slate-300 border-slate-200 text-center text-slate-700 font-black min-w-[190px] w-[190px] max-w-[190px]" }, "\uB9AC\uD3EC\uD2B8")))))),
+                            !registrationMode && (React.createElement("th", { className: "sticky top-0 z-[60] bg-slate-100 px-3 py-3 border-b border-l-2 border-l-slate-300 border-slate-200 text-center text-slate-700 font-black min-w-[220px] w-auto max-w-none" }, "\uB9AC\uD3EC\uD2B8")))))),
                 React.createElement("tbody", { className: "divide-y divide-slate-100 text-slate-700" },
                     displayRows.length === 0 ? (React.createElement("tr", null,
                         React.createElement("td", { colSpan: "50", className: "p-16 text-center text-slate-400 bg-white" },
@@ -4257,7 +4270,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.50 SpecWidthFix]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.52 SpecNameWidthFix]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -4587,7 +4600,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.50 SpecWidthFix")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.52 SpecNameWidthFix")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
