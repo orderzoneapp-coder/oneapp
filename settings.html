@@ -4,8 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.8 OneQty]</title>
+    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.9 MasterExcelUpload]</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
@@ -294,6 +295,9 @@ const App = () => {
     const [toast, setToast] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
     const [processMsg, setProcessMsg] = useState('');
+    const [masterUploadAnalysis, setMasterUploadAnalysis] = useState(null);
+    const [masterUploadFileName, setMasterUploadFileName] = useState('');
+    const [masterBackups, setMasterBackups] = useState([]);
     const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
     const availableCatalogs = useMemo(() => {
         const counts = {};
@@ -311,6 +315,102 @@ const App = () => {
         });
         return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] }));
     }, [data.masterProducts]);
+
+    const loadMasterBackups = async () => {
+        try {
+            const list = typeof window.getMasterBackups === 'function'
+                ? await window.getMasterBackups()
+                : (window.ONEAPP?.MASTER?.getMasterBackups ? await window.ONEAPP.MASTER.getMasterBackups() : []);
+            setMasterBackups(Array.isArray(list) ? list : []);
+        }
+        catch (e) { setMasterBackups([]); }
+    };
+    useEffect(() => { loadMasterBackups(); }, []);
+    const parseMasterExcelFile = (file) => new Promise((resolve, reject) => {
+        if (!window.XLSX) return reject(new Error('엑셀 파서가 로드되지 않았습니다.'));
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const wb = window.XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const rows = window.XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+                resolve({ rows, sourceHeaders: rows.length > 0 ? Object.keys(rows[0] || {}) : [], sheetName: wb.SheetNames[0] });
+            }
+            catch (err) { reject(err); }
+        };
+        reader.onerror = () => reject(reader.error || new Error('파일 읽기 실패'));
+        reader.readAsArrayBuffer(file);
+    });
+    const handleMasterExcelUpload = async (file) => {
+        if (!file) return;
+        setIsProcessing(true);
+        setProcessMsg('마스터 엑셀 분석 중...');
+        try {
+            const parsed = await parseMasterExcelFile(file);
+            const analyzer = window.ONEAPP?.MASTER?.analyzeMasterExcelUpload || window.analyzeMasterExcelUpload;
+            if (typeof analyzer !== 'function') throw new Error('coreEngine의 마스터 업로드 엔진을 찾을 수 없습니다.');
+            const analysis = analyzer({ excelRows: parsed.rows, currentMaster: data.masterProducts, sourceHeaders: parsed.sourceHeaders });
+            setMasterUploadFileName(file.name || '마스터 엑셀');
+            setMasterUploadAnalysis({ ...analysis, sheetName: parsed.sheetName });
+            showToast(`✅ 마스터 엑셀 분석 완료: ${analysis.summary.totalRows.toLocaleString()}행`);
+        }
+        catch (err) {
+            console.error(err);
+            showToast('❌ 마스터 엑셀 분석 실패: ' + err.message);
+        }
+        finally {
+            setIsProcessing(false);
+            setProcessMsg('');
+        }
+    };
+    const handleApplyMasterExcelUpload = async () => {
+        if (!masterUploadAnalysis) return showToast('⚠️ 먼저 마스터 엑셀을 분석하세요.');
+        const s = masterUploadAnalysis.summary || {};
+        const confirmMsg = `마스터DB를 엑셀 기준으로 수정합니다.\n\n수정: ${(s.updateCount || 0).toLocaleString()}건\n신규: ${(s.createCount || 0).toLocaleString()}건\n중복: ${(s.duplicateCodeCount || 0).toLocaleString()}건\n코드없음: ${(s.noCodeCount || 0).toLocaleString()}건\n\n적용 전 자동 백업 후 진행합니다.`;
+        if (!window.confirm(confirmMsg)) return;
+        setIsProcessing(true);
+        setProcessMsg('마스터DB 백업 및 적용 중...');
+        try {
+            const applier = window.ONEAPP?.MASTER?.applyMasterExcelUpload || window.applyMasterExcelUpload;
+            if (typeof applier !== 'function') throw new Error('coreEngine의 마스터 적용 엔진을 찾을 수 없습니다.');
+            const result = await applier({ analysis: masterUploadAnalysis, currentMaster: data.masterProducts, label: masterUploadFileName || '마스터엑셀업로드' });
+            data.setMasterProducts(result.masterMap || {});
+            localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+            await loadMasterBackups();
+            showToast(`✅ 마스터 적용 완료: 수정 ${result.updateCount.toLocaleString()}건 / 신규 ${result.createCount.toLocaleString()}건`);
+        }
+        catch (err) {
+            console.error(err);
+            showToast('❌ 마스터 적용 실패: ' + err.message);
+        }
+        finally {
+            setIsProcessing(false);
+            setProcessMsg('');
+        }
+    };
+    const handleRestoreMasterBackup = async (backupId) => {
+        if (!backupId) return;
+        if (!window.confirm('선택한 백업으로 마스터DB를 복구하시겠습니까?')) return;
+        setIsProcessing(true);
+        setProcessMsg('마스터 백업 복구 중...');
+        try {
+            const restorer = window.ONEAPP?.MASTER?.restoreMasterBackup || window.restoreMasterBackup;
+            if (typeof restorer !== 'function') throw new Error('coreEngine의 백업 복구 엔진을 찾을 수 없습니다.');
+            const backup = await restorer(backupId);
+            data.setMasterProducts(backup.data || {});
+            localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+            showToast(`✅ 백업 복구 완료: ${(backup.count || 0).toLocaleString()}건`);
+        }
+        catch (err) {
+            console.error(err);
+            showToast('❌ 백업 복구 실패: ' + err.message);
+        }
+        finally {
+            setIsProcessing(false);
+            setProcessMsg('');
+        }
+    };
+
     // ☁️ 클라우드 동기화 (v1.6 규격 반영 및 품절 대기열 백업)
     const handleCloudSync = async (type) => {
         if (!config.cloudUrl)
@@ -722,6 +822,50 @@ const App = () => {
     const addMarginRule = () => config.setMarginRules([...(config.marginRules || []), { id: typeof window.generateUUID === 'function' ? window.generateUUID() : crypto.randomUUID(), whCode: '', unit: '', rate: 10, type: 'divide' }]);
     const updateMarginRule = (id, field, value) => config.setMarginRules((config.marginRules || []).map(r => r.id === id ? { ...r, [field]: value } : r));
     const deleteMarginRule = (id) => config.setMarginRules((config.marginRules || []).filter(r => r.id !== id));
+
+    const masterUploadSummary = (masterUploadAnalysis && masterUploadAnalysis.summary) || {};
+    const masterUploadFieldCounts = masterUploadAnalysis ? Object.entries(masterUploadSummary.fieldCounts || {}) : [];
+    const masterUploadPreviewRows = masterUploadAnalysis ? [
+        ...((masterUploadAnalysis.changeRows || []).flatMap(row => (row.changes || []).map(ch => ({ type: '수정', code: row.code, name: row.name, field: ch.field, oldVal: ch.oldVal, newVal: ch.newVal })))),
+        ...((masterUploadAnalysis.createRows || []).map(row => ({ type: '신규', code: row.code, name: row.name, field: '신규상품', oldVal: '', newVal: '추가' })))
+    ].slice(0, 80) : [];
+    const masterDbPanel = React.createElement("div", { className: "max-w-6xl space-y-6" },
+        React.createElement("div", { className: "flex justify-between items-center" },
+            React.createElement("div", null,
+                React.createElement("h2", { className: "text-2xl font-black text-slate-800" }, "마스터DB 관리"),
+                React.createElement("p", { className: "text-[13px] text-slate-500 mt-1 font-bold" }, "품목코드 기준으로 마스터 엑셀을 비교하고 엑셀에 있는 컬럼만 수정 업로드합니다.")),
+            React.createElement("div", { className: "text-right text-[12px] text-slate-500 font-bold" }, "현재 마스터 ", Object.keys(data.masterProducts || {}).length.toLocaleString(), "건")),
+        React.createElement("div", { className: "bg-white rounded-2xl border border-slate-200 shadow-sm p-6" },
+            React.createElement("div", { className: "flex flex-wrap items-center gap-3" },
+                React.createElement("label", { className: "cursor-pointer inline-flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-5 py-3 rounded-xl text-[13px] font-black shadow-md" },
+                    React.createElement("i", { className: "fas fa-file-excel" }), "마스터 엑셀 선택",
+                    React.createElement("input", { type: "file", accept: ".xlsx,.xls,.csv", className: "hidden", onChange: e => handleMasterExcelUpload(e.target.files && e.target.files[0]) })),
+                masterUploadAnalysis && React.createElement("button", { onClick: handleApplyMasterExcelUpload, className: "inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-xl text-[13px] font-black shadow-md" }, React.createElement("i", { className: "fas fa-check-circle" }), "마스터 적용"),
+                masterUploadAnalysis && React.createElement("button", { onClick: () => { setMasterUploadAnalysis(null); setMasterUploadFileName(''); }, className: "inline-flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-3 rounded-xl text-[13px] font-bold border" }, React.createElement("i", { className: "fas fa-times" }), "초기화")),
+            React.createElement("div", { className: "mt-4 text-[12px] text-slate-500 leading-relaxed" }, "정책: 엑셀에 있는 컬럼만 수정 / 없는 컬럼은 기존값 유지 / 공란과 0은 그대로 반영 / 엑셀에 없는 기존 상품은 삭제하지 않음 / 1당수량은 숫자형 컬럼")),
+        masterUploadAnalysis && React.createElement("div", { className: "grid grid-cols-4 gap-4" },
+            React.createElement("div", { className: "bg-white rounded-xl border p-4" }, React.createElement("div", { className: "text-[11px] text-slate-400 font-black" }, "엑셀 행수"), React.createElement("div", { className: "text-2xl font-black text-slate-800" }, (masterUploadSummary.totalRows || 0).toLocaleString())),
+            React.createElement("div", { className: "bg-white rounded-xl border p-4" }, React.createElement("div", { className: "text-[11px] text-slate-400 font-black" }, "수정"), React.createElement("div", { className: "text-2xl font-black text-indigo-700" }, (masterUploadSummary.updateCount || 0).toLocaleString())),
+            React.createElement("div", { className: "bg-white rounded-xl border p-4" }, React.createElement("div", { className: "text-[11px] text-slate-400 font-black" }, "신규"), React.createElement("div", { className: "text-2xl font-black text-emerald-700" }, (masterUploadSummary.createCount || 0).toLocaleString())),
+            React.createElement("div", { className: "bg-white rounded-xl border p-4" }, React.createElement("div", { className: "text-[11px] text-slate-400 font-black" }, "오류/중복"), React.createElement("div", { className: "text-2xl font-black text-rose-700" }, ((masterUploadSummary.noCodeCount || 0) + (masterUploadSummary.duplicateCodeCount || 0)).toLocaleString()))),
+        masterUploadAnalysis && React.createElement("div", { className: "grid grid-cols-2 gap-6" },
+            React.createElement("div", { className: "bg-white rounded-2xl border border-slate-200 shadow-sm p-6" },
+                React.createElement("h3", { className: "text-[15px] font-black text-slate-800 mb-4" }, "변경 컬럼 요약"),
+                masterUploadFieldCounts.length === 0 ? React.createElement("div", { className: "text-slate-400 text-sm" }, "변경된 컬럼이 없습니다.") : React.createElement("div", { className: "flex flex-wrap gap-2" }, masterUploadFieldCounts.map(([field, count]) => React.createElement("span", { key: field, className: "px-3 py-2 rounded-lg bg-indigo-50 text-indigo-700 text-[12px] font-black border border-indigo-100" }, field, " ", Number(count).toLocaleString(), "건")))),
+            React.createElement("div", { className: "bg-white rounded-2xl border border-slate-200 shadow-sm p-6" },
+                React.createElement("h3", { className: "text-[15px] font-black text-slate-800 mb-4" }, "검토 요약"),
+                React.createElement("div", { className: "grid grid-cols-3 gap-3 text-center" },
+                    React.createElement("div", { className: "bg-slate-50 rounded-xl p-3" }, React.createElement("div", { className: "text-[11px] text-slate-400 font-black" }, "품목코드 없음"), React.createElement("div", { className: "text-xl font-black text-rose-600" }, (masterUploadSummary.noCodeCount || 0).toLocaleString())),
+                    React.createElement("div", { className: "bg-slate-50 rounded-xl p-3" }, React.createElement("div", { className: "text-[11px] text-slate-400 font-black" }, "중복코드"), React.createElement("div", { className: "text-xl font-black text-rose-600" }, (masterUploadSummary.duplicateCodeCount || 0).toLocaleString())),
+                    React.createElement("div", { className: "bg-slate-50 rounded-xl p-3" }, React.createElement("div", { className: "text-[11px] text-slate-400 font-black" }, "엑셀누락 기존"), React.createElement("div", { className: "text-xl font-black text-slate-600" }, (masterUploadSummary.missingInExcelCount || 0).toLocaleString()))))),
+        masterUploadAnalysis && React.createElement("div", { className: "bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden" },
+            React.createElement("div", { className: "p-4 border-b bg-slate-50 flex justify-between items-center" }, React.createElement("h3", { className: "text-[15px] font-black text-slate-800" }, "변경 상세 미리보기"), React.createElement("span", { className: "text-[12px] text-slate-500 font-bold" }, "최대 80개")),
+            React.createElement("table", { className: "w-full text-left text-[12px]" },
+                React.createElement("thead", { className: "bg-slate-100 text-slate-600 font-black" }, React.createElement("tr", null, React.createElement("th", { className: "p-3" }, "구분"), React.createElement("th", { className: "p-3" }, "품목코드"), React.createElement("th", { className: "p-3" }, "품목명"), React.createElement("th", { className: "p-3" }, "항목"), React.createElement("th", { className: "p-3" }, "기존값"), React.createElement("th", { className: "p-3" }, "엑셀값"))),
+                React.createElement("tbody", { className: "divide-y divide-slate-100" }, masterUploadPreviewRows.map((row, idx) => React.createElement("tr", { key: idx, className: "hover:bg-slate-50" }, React.createElement("td", { className: "p-3 font-black" }, row.type), React.createElement("td", { className: "p-3 font-mono text-indigo-600 font-bold" }, row.code), React.createElement("td", { className: "p-3 font-bold" }, row.name), React.createElement("td", { className: "p-3" }, row.field), React.createElement("td", { className: "p-3 text-slate-500" }, String(row.oldVal ?? '')), React.createElement("td", { className: "p-3 text-emerald-700 font-bold" }, String(row.newVal ?? ''))))))),
+        React.createElement("div", { className: "bg-white rounded-2xl border border-slate-200 shadow-sm p-6" },
+            React.createElement("h3", { className: "text-[15px] font-black text-slate-800 mb-4" }, "백업/복구"),
+            masterBackups.length === 0 ? React.createElement("div", { className: "text-slate-400 text-sm" }, "저장된 백업이 없습니다. 마스터 적용 시 자동 백업됩니다.") : React.createElement("div", { className: "space-y-2" }, masterBackups.map(backup => React.createElement("div", { key: backup.id, className: "flex justify-between items-center bg-slate-50 border rounded-xl px-4 py-3" }, React.createElement("div", null, React.createElement("div", { className: "font-black text-slate-700 text-[13px]" }, backup.label || '마스터 백업'), React.createElement("div", { className: "text-[11px] text-slate-400 font-bold" }, backup.createdAt, " / ", (backup.count || 0).toLocaleString(), "건")), React.createElement("button", { onClick: () => handleRestoreMasterBackup(backup.id), className: "px-3 py-2 rounded-lg bg-slate-800 text-white text-[12px] font-black hover:bg-slate-700" }, "복구"))))));
     const requiredCoreFields = ['품목코드', '품목명', '규격'];
     const selectableMasterHeaders = useMemo(() => { var _a; return Array.from(new Set([...(window.MASTER_HEADERS || []), ...(((_a = config.visibleMasterCols) === null || _a === void 0 ? void 0 : _a[activeUploadRole]) || [])])); }, [config.visibleMasterCols, activeUploadRole]);
     return (React.createElement("div", { className: "flex h-screen overflow-hidden bg-slate-50 relative fade-in" },
@@ -749,7 +893,10 @@ const App = () => {
                     " 3. \uB2E8\uAC00 \uACC4\uC0B0 \uBC0F \uB8F0"),
                 React.createElement("button", { onClick: () => setActiveTab('tagManager'), className: `px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all ${activeTab === 'tagManager' ? 'bg-amber-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}` },
                     React.createElement("i", { className: "fas fa-tags w-6 text-center mr-1" }),
-                    " 4. \uCE74\uD0C8\uB85C\uADF8 \uAD00\uB9AC")),
+                    " 4. \uCE74\uD0C8\uB85C\uADF8 \uAD00\uB9AC"),
+                React.createElement("button", { onClick: () => setActiveTab('masterDb'), className: `px-4 py-3.5 rounded-xl text-left text-[13px] font-bold transition-all ${activeTab === 'masterDb' ? 'bg-cyan-600 text-white shadow-md' : 'hover:bg-slate-800 hover:text-white'}` },
+                    React.createElement("i", { className: "fas fa-database w-6 text-center mr-1" }),
+                    " 5. \uB9C8\uC2A4\uD130DB \uAD00\uB9AC")),
             React.createElement("div", { className: "mt-auto p-6 border-t border-slate-800" },
                 React.createElement("button", { onClick: navigateToMerchOps, className: "w-full py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white text-[13px] font-bold transition-colors" },
                     React.createElement("i", { className: "fas fa-home mr-2" }),
@@ -918,6 +1065,7 @@ const App = () => {
                                 React.createElement("td", { className: "p-3 text-center" }, !isDefault && React.createElement("button", { onClick: () => deleteMarginRule(rule.id), className: "w-8 h-8 bg-slate-100 text-slate-400 rounded-lg hover:bg-rose-500 hover:text-white transition-colors" },
                                     React.createElement("i", { className: "fas fa-trash-alt" })))));
                         })))))),
+            activeTab === 'masterDb' && masterDbPanel,
             activeTab === 'tagManager' && (React.createElement("div", { className: "max-w-4xl space-y-6" },
                 React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-6" }, "\uCE74\uD0C8\uB85C\uADF8 \uAD00\uB9AC"),
                 React.createElement("div", { className: "bg-white p-6 rounded-xl border shadow-sm" },
