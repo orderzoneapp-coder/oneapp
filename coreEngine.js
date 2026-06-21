@@ -1,6 +1,6 @@
 /**
  * ONEAPP MerchOps - coreEngine.js
- * v1.0.4 / OneQty Master Column + Stock Conversion
+ * v1.0.6 / Promotion Theme Master Column
  *
  * 목적:
  * - HTML 화면 파일에서 중복되는 저장소, 가격계산, 히스토리, F9 전달, 클라우드 로직을 중앙화한다.
@@ -18,7 +18,7 @@
   'use strict';
 
   const ONEAPP = global.ONEAPP = global.ONEAPP || {};
-  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.0.5 MasterExcelUpload';
+  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.0.6 PromotionTheme';
 
   const DEFAULT_DB_NAME = 'MerchOpsDB';
   const DEFAULT_DB_VERSION = 2;
@@ -38,7 +38,7 @@
     "창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드",
     "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가",
     "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가",
-    "행사가", "판매여부", "1종코드", "1종규격", "1종연산", "1당수량", "2종코드", "2종규격", "2종연산",
+    "행사가", "행사테마", "판매여부", "1종코드", "1종규격", "1종연산", "1당수량", "2종코드", "2종규격", "2종연산",
     "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록"
   ];
 
@@ -48,7 +48,7 @@
     "1구매", "1출고", "2구매", "2출고", "1입고", "2입고", "재고수량"
   ];
 
-  const MASTER_HEADERS = ensureHeaderAfter(BASE_MASTER_HEADERS, "1당수량", "1종연산");
+  const MASTER_HEADERS = ensureHeaderAfter(ensureHeaderAfter(BASE_MASTER_HEADERS, "행사테마", "행사가"), "1당수량", "1종연산");
   const NUMERIC_HEADERS = ensureHeaderAfter(BASE_NUMERIC_HEADERS, "1당수량", "1종연산");
 
   global.MASTER_HEADERS = MASTER_HEADERS;
@@ -66,6 +66,48 @@
     if (v === null || v === undefined || v === '') return 0;
     return Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0;
   };
+
+
+  const PROMOTION_THEMES = [
+    { code: '1', label: '오늘의행사', type: '탭' },
+    { code: '2', label: '매장행사', type: '탭' },
+    { code: '3', label: '특가상품', type: '탭' },
+    { code: '4', label: '실사진', type: '뱃지' },
+    { code: '5', label: '행사', type: '뱃지' }
+  ];
+  global.PROMOTION_THEMES = global.PROMOTION_THEMES || PROMOTION_THEMES;
+
+  const parsePromotionThemeCodes = (...items) => {
+    const out = [];
+    const push = (v) => {
+      const s = String(v ?? '').trim();
+      if (!s) return;
+      s.split(/[,/|\s]+/).forEach(part => {
+        const n = String(part || '').replace(/[^1-5]/g, '');
+        if (n && /^[1-5]$/.test(n) && !out.includes(n)) out.push(n);
+      });
+    };
+    items.forEach(item => {
+      if (!item) return;
+      if (typeof item === 'object') {
+        push(item['행사테마']);
+        push(item['테마']);
+        push(item['promoTheme']);
+        push(item['_theme']);
+        [1, 2, 3, 4, 5].forEach(n => {
+          const raw = item[`테마${n}`];
+          const s = String(raw ?? '').trim();
+          if (s && s !== '0' && s !== 'false' && s !== 'FALSE' && !out.includes(String(n))) out.push(String(n));
+        });
+      } else {
+        push(item);
+      }
+    });
+    return out.sort((a, b) => Number(a) - Number(b));
+  };
+
+  const normalizePromotionThemeValue = (...items) => parsePromotionThemeCodes(...items).join(',');
+  global.normalizePromotionThemeValue = global.normalizePromotionThemeValue || ((...items) => normalizePromotionThemeValue(...items));
 
   const safeJSONParseRaw = (raw, defaultVal) => {
     try {
@@ -607,6 +649,8 @@
     const estimate = row.sources?.estimate || {};
     const stockRaw = finalData['재고수량'] ?? inventory['재고수량'] ?? inventory['안전재고'] ?? estimate['재고수량'];
     const stockQty = stockRaw !== undefined && stockRaw !== null && stockRaw !== '' ? parseNum(stockRaw) : 999;
+    const promoThemeCodes = parsePromotionThemeCodes(finalData, inventory, estimate, purchase, sales, master);
+    const hasPromoTheme = (n) => promoThemeCodes.includes(String(n));
 
     return {
       품목명: getStr('품목명'),
@@ -633,11 +677,12 @@
       '외주비': getNum('외주비'),
       '노무비': getNum('노무비'),
       재고수량: stockQty,
-      테마1: parseNum(finalData._theme) === 1 ? '1' : (parseNum(master['테마1']) === 1 ? '1' : ''),
-      테마2: parseNum(finalData._theme) === 2 ? '1' : (parseNum(master['테마2']) === 1 ? '1' : ''),
-      테마3: parseNum(finalData._theme) === 3 ? '1' : (parseNum(master['테마3']) === 1 ? '1' : ''),
-      테마4: parseNum(finalData._theme) === 4 ? '1' : (parseNum(master['테마4']) === 1 ? '1' : ''),
-      테마5: parseNum(finalData._theme) === 5 ? '1' : (parseNum(master['테마5']) === 1 ? '1' : ''),
+      행사테마: promoThemeCodes.join(','),
+      테마1: hasPromoTheme(1) ? '1' : '',
+      테마2: hasPromoTheme(2) ? '1' : '',
+      테마3: hasPromoTheme(3) ? '1' : '',
+      테마4: hasPromoTheme(4) ? '1' : '',
+      테마5: hasPromoTheme(5) ? '1' : '',
       카테고리: getStr('견적서') || getStr('카테고리'),
       검색어등록: getStr('검색어등록')
     };
@@ -1111,6 +1156,10 @@
     '판매단가': '출고가',
     '행사': '행사가',
     '특가': '행사가',
+    '테마': '행사테마',
+    '프로모션테마': '행사테마',
+    '행사 테마': '행사테마',
+    '테마번호': '행사테마',
     '포장단위': '단위',
     '판매단위': '단위',
     '매입단위': '단위',
