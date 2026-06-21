@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.12 ConfigBackupSplit]</title>
+    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.13_TagListLabelSplit]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -517,7 +517,7 @@ const App = () => {
     const handleDeleteTag = async (type, tagName) => {
         if (!window.confirm(`[${tagName}] 태그를 모든 상품에서 삭제하시겠습니까?`))
             return;
-        const fieldKey = type === 'catalog' ? '카탈로그' : '견적서';
+        const fieldKey = type === 'catalog' ? '파서리스트' : '사용자 카탈로그';
         let newMaster = { ...data.masterProducts };
         let count = 0;
         for (let code in newMaster) {
