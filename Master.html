@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
-    <title>ONEAPP Master DB [v3.4 MerchOpsCloudSync]</title>
+    <title>ONEAPP Master DB [v3.5 PromotionTheme]</title>
     <!-- 핵심 라이브러리 CDN 로드 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -208,11 +208,15 @@
 
         const normalizeMasterItem = (item = {}, fallbackCode = '') => {
             const code = safeStr(item['코드'] || item['품목코드'] || fallbackCode).trim();
-            return {
+            const themeValue = normalizePromotionThemeValue(item);
+            const next = {
                 ...item,
                 코드: code,
-                품목코드: safeStr(item['품목코드'] || code).trim()
+                품목코드: safeStr(item['품목코드'] || code).trim(),
+                행사테마: themeValue
             };
+            [1, 2, 3, 4, 5].forEach(n => { next[`테마${n}`] = themeValue.split(',').includes(String(n)) ? '1' : ''; });
+            return next;
         };
 
         const masterArrayToMap = (items = []) => {
@@ -357,6 +361,37 @@
         // 💡 하얀 화면(크래시) 방지용 강제 문자열 변환 유틸리티
         const safeStr = (val, def = '') => (val !== undefined && val !== null && val !== '') ? String(val) : def;
 
+        const PROMOTION_THEMES = [
+            { code: '1', label: '오늘의행사', type: '탭' },
+            { code: '2', label: '매장행사', type: '탭' },
+            { code: '3', label: '특가상품', type: '탭' },
+            { code: '4', label: '실사진', type: '뱃지' },
+            { code: '5', label: '행사', type: '뱃지' }
+        ];
+
+        const normalizePromotionThemeValue = (item = {}) => {
+            const out = [];
+            const push = (v) => {
+                const s = String(v ?? '').trim();
+                if (!s) return;
+                s.split(/[,/|\s]+/).forEach(part => {
+                    const n = String(part || '').replace(/[^1-5]/g, '');
+                    if (n && /^[1-5]$/.test(n) && !out.includes(n)) out.push(n);
+                });
+            };
+            push(item['행사테마']);
+            push(item['테마']);
+            push(item['promoTheme']);
+            push(item['_theme']);
+            [1, 2, 3, 4, 5].forEach(n => {
+                const raw = item[`테마${n}`];
+                const s = String(raw ?? '').trim();
+                if (s && s !== '0' && s !== 'false' && s !== 'FALSE' && !out.includes(String(n))) out.push(String(n));
+            });
+            return out.sort((a, b) => Number(a) - Number(b)).join(',');
+        };
+
+
         // ==========================================
         // 🧩 [아이콘 시스템] SafeIcon
         // ==========================================
@@ -437,7 +472,7 @@
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
                                     <div className="flex items-center">
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.4</span>
+                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.5</span>
                                     </div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">
                                         {currentTab ? currentTab.shortTag : 'MERCHOPS CLOUD'}
@@ -779,7 +814,7 @@
                 if (globalSearch.trim()) {
                     const kw = globalSearch.toLowerCase().replace(/\s+/g, '');
                     return arr.filter(item => {
-                        const target = (safeStr(item['코드']) + safeStr(item['품목코드']) + safeStr(item['품목명']) + safeStr(item['규격'])).toLowerCase();
+                        const target = (safeStr(item['코드']) + safeStr(item['품목코드']) + safeStr(item['품목명']) + safeStr(item['규격']) + safeStr(item['행사테마'])).toLowerCase();
                         return target.includes(kw);
                     }).slice(0, 500);
                 }
