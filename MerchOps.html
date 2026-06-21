@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.43 PurchaseIssueReport]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.46 PurchaseIssueBadgeFix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -767,13 +767,15 @@ const safeJSONParse = (key, defaultVal) => {
     }
 };
 const TABLE_VIEW_TARGETS = [
-    { id: 'catalog', label: '카탈로그' },
     { id: 'estimate', label: '견적' },
     { id: 'purchase', label: '구매' },
     { id: 'sales', label: '판매' },
-    { id: 'inventory', label: '재고' }
+    { id: 'inventory', label: '재고' },
+    { id: 'catalog', label: '카탈로그' }
 ];
 const TABLE_VIEW_TARGET_IDS = TABLE_VIEW_TARGETS.map(t => t.id);
+const DEFAULT_TABLE_VIEW_TARGET = 'estimate';
+const normalizeMerchTableTarget = (target = DEFAULT_TABLE_VIEW_TARGET) => TABLE_VIEW_TARGET_IDS.includes(target) ? target : DEFAULT_TABLE_VIEW_TARGET;
 const REQUIRED_MASTER_CORE_FIELDS = ['품목코드', '품목명', '규격'];
 const getInitialVisibleMasterCols = () => ({
     catalog: ['입고가'],
@@ -785,7 +787,7 @@ const getInitialVisibleMasterCols = () => ({
 const getInitialVisibleUploadCols = () => ({
     catalog: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A', '행사가', '행사테마'],
     estimate: ['창고', '기준일자', '구매처', '브랜드', '견적서', '단위', '재고수량', '상품 구매일자', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '행사테마', '검색어등록'],
-    purchase: ['창고', '구매처', '단위', '입고가', '입고수량', '구매리포트'],
+    purchase: ['창고', '구매처', '단위', '입고가', '입고수량'],
     sales: ['창고', '구매처', '단위', '출고가', '출고량'],
     inventory: ['창고', '기준일자', '재고수량', '기록', '거래', '최종(창고)', '구분(기본)', '상품 구매일자', '구매처', '단위', '입고가', '출고가', '행사가', '간단설명']
 });
@@ -796,6 +798,10 @@ const getInitialVisibleUploadCols = () => ({
 // ============================================================
 window.canonicalMerchFieldName = (field) => {
     const clean = String(field || '').trim();
+    // 구매검증 리포트는 별도 작업컬럼으로 노출하지 않는다.
+    // 구매 흐름은 기존 우측 [리포트] 컬럼에만 통합 표시한다.
+    if (['구매리포트', '구매포트', '구매검증', '구매검증리포트'].includes(clean))
+        return '';
     if (['A판매', 'A판매가'].includes(clean))
         return '도매A';
     if (['B판매', 'B판매가', 'B도매가'].includes(clean))
@@ -850,14 +856,14 @@ window.sanitizeMerchTableViewPresets = (raw = {}) => {
     return result;
 };
 window.findMerchTableView = (presets = {}, target = 'estimate', viewId = '') => {
-    const safeTarget = TABLE_VIEW_TARGET_IDS.includes(target) ? target : 'estimate';
+    const safeTarget = normalizeMerchTableTarget(target);
     const safePresets = window.sanitizeMerchTableViewPresets(presets);
     const group = safePresets[safeTarget];
     return ((group === null || group === void 0 ? void 0 : group.views) || []).find(v => v.id === viewId || v.name === viewId) || ((group === null || group === void 0 ? void 0 : group.views) || [])[0] || null;
 };
 window.getMerchTableViewsForTarget = (presets = {}, target = 'estimate') => {
     var _a, _b;
-    const safeTarget = TABLE_VIEW_TARGET_IDS.includes(target) ? target : 'estimate';
+    const safeTarget = normalizeMerchTableTarget(target);
     return ((_b = (_a = window.sanitizeMerchTableViewPresets(presets)) === null || _a === void 0 ? void 0 : _a[safeTarget]) === null || _b === void 0 ? void 0 : _b.views) || [];
 };
 window.getAutoTableViewTarget = (managedItems = {}, fallbackRole = 'estimate') => {
@@ -868,24 +874,33 @@ window.getAutoTableViewTarget = (managedItems = {}, fallbackRole = 'estimate') =
         return fallbackRole;
     return 'estimate';
 };
-window.applyMerchTableView = (config, target = 'estimate', viewId = '', options = {}) => {
+window.applyMerchTableView = (config, target = DEFAULT_TABLE_VIEW_TARGET, viewId = '', options = {}) => {
     var _a, _b, _c, _d, _e;
     if (!config)
         return null;
-    const safeTarget = TABLE_VIEW_TARGET_IDS.includes(target) ? target : 'estimate';
+    const safeTarget = normalizeMerchTableTarget(target);
     const presets = window.sanitizeMerchTableViewPresets(config.tableViewPresets || {});
     const view = window.findMerchTableView(presets, safeTarget, viewId || '');
     (_a = config.setActiveTableTarget) === null || _a === void 0 ? void 0 : _a.call(config, safeTarget);
     if (!view) {
-        // 저장된 양식이 없으면 양식선택 버튼은 숨기고, 테이블은 대상별 기본 컬럼 fallback만 사용한다.
+        // 저장된 양식이 없을 때만 대상별 기본 컬럼을 적용한다.
+        // 이전 견적/다른 대상 컬럼을 그대로 남기지 않는다.
         (_b = config.setActiveTableViewId) === null || _b === void 0 ? void 0 : _b.call(config, '');
+        (_c = config.setVisibleMasterCols) === null || _c === void 0 ? void 0 : _c.call(config, prev => ({
+            ...(prev || {}),
+            [safeTarget]: window.normalizeMerchMasterColumns((getInitialVisibleMasterCols()[safeTarget] || ['입고가']))
+        }));
+        (_d = config.setVisibleUploadCols) === null || _d === void 0 ? void 0 : _d.call(config, prev => ({
+            ...(prev || {}),
+            [safeTarget]: window.normalizeMerchTableColumns((getInitialVisibleUploadCols()[safeTarget] || [])).filter(c => c !== '품목코드')
+        }));
         try {
             localStorage.setItem('merchActiveTableTarget_v1', safeTarget);
             localStorage.removeItem('merchActiveTableViewId_v1');
-            window.dispatchEvent(new CustomEvent('merch_table_view_changed', { detail: { target: safeTarget, viewId: '', name: '', manual: !!options.manual } }));
+            window.dispatchEvent(new CustomEvent('merch_table_view_changed', { detail: { target: safeTarget, viewId: '', name: '', manual: !!options.manual, fallback: true } }));
         }
         catch (e) { }
-        return null;
+        return { id: '', name: '기본양식', target: safeTarget, masterColumns: getInitialVisibleMasterCols()[safeTarget] || ['입고가'], workColumns: getInitialVisibleUploadCols()[safeTarget] || [], fallback: true };
     }
     (_c = config.setVisibleMasterCols) === null || _c === void 0 ? void 0 : _c.call(config, prev => ({
         ...(prev || {}),
@@ -906,7 +921,7 @@ window.applyMerchTableView = (config, target = 'estimate', viewId = '', options 
 };
 // 구버전 단축버튼 호출 호환용. 신규 기능은 applyMerchTableView를 사용한다.
 window.applyMerchTableTemplate = (setVisibleUploadCols, templateKey = 'estimate', options = {}) => {
-    const target = TABLE_VIEW_TARGET_IDS.includes(templateKey) ? templateKey : 'estimate';
+    const target = normalizeMerchTableTarget(templateKey);
     const defaults = window.getDefaultMerchTableViewPresets();
     const view = window.findMerchTableView(defaults, target);
     const cols = window.normalizeMerchTableColumns((view === null || view === void 0 ? void 0 : view.workColumns) || getInitialVisibleUploadCols()[target] || []);
@@ -953,7 +968,7 @@ window.getLoadedExcelRolesFromManagedItems = (managedItems = {}) => {
 window.getAutoTableTemplateKey = (managedItems = {}, fallbackRole = 'estimate') => window.getAutoTableViewTarget(managedItems, fallbackRole);
 window.shouldAutoApplyMerchTableTemplate = () => true;
 const getInitialMappings = () => {
-    const base = { master: {}, estimate: {} };
+    const base = { master: {}, estimate: {}, purchase: {}, sales: {}, inventory: {}, catalog: {} };
     base.master = {
         '창고': '창고, 창고코드',
         '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드',
@@ -964,6 +979,21 @@ const getInitialMappings = () => {
         '검색어등록': '검색어등록, 검색어, 유사어, 키워드',
         '출고가': '출고가, 출고, 판매가, 시중가',
         '입고가': '입고가, 입고, 매입가'
+    };
+    base.catalog = {
+        '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드',
+        '품목명': '품목명, 상품명, 품명, 상품이름',
+        '규격': '규격명, 규격, 사이즈, 단량',
+        '카탈로그': '카탈로그, 카테고리, 분류, 리스트',
+        '견적서': '견적서, 카테고리, 템플릿, 견적분류',
+        '행사가': '행사가, 행사, 특가',
+        '행사테마': '행사테마, 테마, 프로모션테마, 테마번호',
+        '입고가': '입고가, 입고, 매입가',
+        '출고가': '출고가, 출고, 판매가',
+        '입고B': 'B단가, 입고B',
+        '도매A': '도매A, A판매, A판매가',
+        '도매B': '도매B, B판매, B판매가, B도매가',
+        '검색어등록': '검색어등록, 검색어, 유사어, 키워드'
     };
     base.estimate = {
         '창고': '창고, 창고코드',
@@ -985,7 +1015,34 @@ const getInitialMappings = () => {
         '도매A': '도매A',
         '도매B': '도매B',
         '간단설명': '지시사항, 간단설명, 비고',
+        '외주비': '외주비, 외주, 외주가공비',
+        '노무비': '노무비, 노무, 인건비',
         '검색어등록': '검색어등록, 검색어, 유사어, 키워드'
+    };
+    base.purchase = {
+        '창고': '창고, 창고코드',
+        '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드',
+        '품목명': '품목명, 상품명, 품명, 상품이름',
+        '규격': '규격, 규격명, 사이즈, 단량',
+        '구매처': '구매처, 매입처, 거래처명, 거래처, 거래',
+        '단위': '단위, 단위유형, 판매단위, 매입단위, 포장단위, UNIT, unit',
+        '입고가': '입고가, 매입단가, 구매단가, 매입가, 원가, 단가, 최종(창고), 최종창고, 최신단가, 재고단가',
+        '입고수량': '입고수량, 구매수량, 수량, 입고',
+        '수량': '수량, 입고수량, 구매수량, 입고',
+        '상품 구매일자': '상품 구매일자, 구매일자, 입고일자, 일자, 기준일자',
+        '기준일자': '기준일자, 구매일자, 입고일자, 일자',
+    };
+    base.sales = {
+        '창고': '창고, 창고코드',
+        '품목코드': '품목코드, 상품코드, 바코드, 상품번호, 코드',
+        '품목명': '품목명, 상품명, 품명, 상품이름',
+        '규격': '규격, 규격명, 사이즈, 단량',
+        '구매처': '거래처명, 판매처, 납품처, 구매처, 거래처, 거래',
+        '단위': '단위, 단위유형, 판매단위, 포장단위, UNIT, unit',
+        '출고가': '출고가, 판매단가, 단가, 판매가',
+        '출고량': '출고량, 판매수량, 수량, 출고',
+        '수량': '수량, 출고량, 판매수량, 출고',
+        '기준일자': '기준일자, 판매일자, 출고일자, 일자'
     };
     base.inventory = {
         '창고': '창고, 창고코드',
@@ -1011,7 +1068,19 @@ const getInitialMappings = () => {
     return base;
 };
 const getInitialMasterLinks = () => {
-    const base = { master: {}, estimate: {} };
+    const base = { master: {}, estimate: {}, purchase: {}, sales: {}, inventory: {}, catalog: {} };
+    base.catalog = {
+        '카탈로그': '카탈로그',
+        '견적서': '견적서',
+        '행사가': '행사가',
+        '행사테마': '행사테마',
+        '입고가': '입고가',
+        '출고가': '출고가',
+        '입고B': '입고B',
+        '도매A': '도매A',
+        '도매B': '도매B',
+        '검색어등록': '검색어등록'
+    };
     base.estimate = {
         '창고': '창고',
         '브랜드': '브랜드',
@@ -1022,13 +1091,35 @@ const getInitialMasterLinks = () => {
         '상품 구매일자': '상품 구매일자',
         '견적서': '견적서',
         '행사가': '행사가',
+        '행사테마': '행사테마',
         '입고가': '입고가',
         '출고가': '출고가',
         '입고B': '입고B',
         '도매A': '도매A',
         '도매B': '도매B',
         '간단설명': '간단설명',
+        '외주비': '외주비',
+        '노무비': '노무비',
         '검색어등록': '검색어등록'
+    };
+    base.purchase = {
+        '창고': '창고',
+        '구매처': '구매처',
+        '단위': '단위',
+        '입고가': '입고가',
+        '입고수량': '',
+        '수량': '',
+        '상품 구매일자': '',
+        '기준일자': '',
+    };
+    base.sales = {
+        '창고': '창고',
+        '구매처': '구매처',
+        '단위': '단위',
+        '출고가': '출고가',
+        '출고량': '',
+        '수량': '',
+        '기준일자': ''
     };
     base.inventory = {
         '창고': '창고',
@@ -1233,7 +1324,7 @@ const useMerchConfig = () => {
     const [visibleMasterCols, setVisibleMasterCols] = useState(() => safeJSONParse('merchVisMaster_v870', getInitialVisibleMasterCols()));
     const [visibleUploadCols, setVisibleUploadCols] = useState(() => safeJSONParse('merchVisUpload_v870', getInitialVisibleUploadCols()));
     const [tableViewPresets, setTableViewPresets] = useState(() => window.sanitizeMerchTableViewPresets(safeJSONParse('merchTableViewPresets_v1', window.getDefaultMerchTableViewPresets())));
-    const [activeTableTarget, setActiveTableTarget] = useState(() => localStorage.getItem('merchActiveTableTarget_v1') || '');
+    const [activeTableTarget, setActiveTableTarget] = useState(() => normalizeMerchTableTarget(localStorage.getItem('merchActiveTableTarget_v1') || DEFAULT_TABLE_VIEW_TARGET));
     const [activeTableViewId, setActiveTableViewId] = useState(() => localStorage.getItem('merchActiveTableViewId_v1') || '');
     const [mappings, setMappings] = useState(() => safeJSONParse('merchMappings_v870', getInitialMappings()));
     const [masterLinks, setMasterLinks] = useState(() => safeJSONParse('merchMasterLinks_v870', getInitialMasterLinks()));
@@ -1263,16 +1354,9 @@ const useMerchConfig = () => {
             '노무비': '노무비',
             '검색어등록': '검색어등록'
         };
-        setVisibleUploadCols(prev => {
-            const list = window.normalizeMerchTableColumns((prev === null || prev === void 0 ? void 0 : prev.estimate) || []);
-            const merged = [...list];
-            requiredUploadCols.forEach(col => {
-                const canonical = window.canonicalMerchFieldName(col);
-                if (!merged.includes(canonical))
-                    merged.push(canonical);
-            });
-            return { ...(prev || {}), estimate: merged };
-        });
+        // 테이블 양식은 환경설정에서 저장한 view를 단일 기준으로 사용한다.
+        // 사용자가 제거한 컬럼을 앱 기동 시 자동 복구하면 양식이 임의로 섞이므로 visibleUploadCols 자동보강은 하지 않는다.
+        // 필요한 신규 기본항목은 getInitialVisibleUploadCols() 및 저장 view가 없을 때의 fallback에서만 적용한다.
         setMappings(prev => {
             const est = { ...((prev === null || prev === void 0 ? void 0 : prev.estimate) || {}) };
             // v2.1.10 항목명 정리: 과거 A판매/B판매 계열 파서명은 삭제하고 도매A·도매B만 표준 입력명으로 사용한다.
@@ -1323,7 +1407,7 @@ const useMerchConfig = () => {
                     if (saved.tableViewPresets && !localStorage.getItem('merchTableViewPresets_v1'))
                         setTableViewPresets(window.sanitizeMerchTableViewPresets(saved.tableViewPresets));
                     if (saved.activeTableTarget && !localStorage.getItem('merchActiveTableTarget_v1'))
-                        setActiveTableTarget(saved.activeTableTarget);
+                        setActiveTableTarget(normalizeMerchTableTarget(saved.activeTableTarget));
                     if (saved.activeTableViewId && !localStorage.getItem('merchActiveTableViewId_v1'))
                         setActiveTableViewId(saved.activeTableViewId);
                     if (saved.mappings && !localStorage.getItem('merchMappings_v870'))
@@ -1372,10 +1456,7 @@ const useMerchConfig = () => {
             localStorage.setItem('merchVisMaster_v870', JSON.stringify(visibleMasterCols));
             localStorage.setItem('merchVisUpload_v870', JSON.stringify(visibleUploadCols));
             localStorage.setItem('merchTableViewPresets_v1', JSON.stringify(window.sanitizeMerchTableViewPresets(tableViewPresets)));
-            if (activeTableTarget)
-                localStorage.setItem('merchActiveTableTarget_v1', activeTableTarget);
-            else
-                localStorage.removeItem('merchActiveTableTarget_v1');
+            localStorage.setItem('merchActiveTableTarget_v1', normalizeMerchTableTarget(activeTableTarget));
             if (activeTableViewId)
                 localStorage.setItem('merchActiveTableViewId_v1', activeTableViewId);
             else
@@ -1413,8 +1494,7 @@ const useMerchConfig = () => {
                     setTableViewPresets(window.sanitizeMerchTableViewPresets(fTableViewPresets));
                 const fActiveTableTarget = localStorage.getItem('merchActiveTableTarget_v1');
                 const fActiveTableViewId = localStorage.getItem('merchActiveTableViewId_v1');
-                if (fActiveTableTarget)
-                    setActiveTableTarget(fActiveTableTarget);
+                setActiveTableTarget(normalizeMerchTableTarget(fActiveTableTarget || DEFAULT_TABLE_VIEW_TARGET));
                 if (fActiveTableViewId)
                     setActiveTableViewId(fActiveTableViewId);
                 if (fMappings)
@@ -1763,7 +1843,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                                 const val = row[actualKey];
                                 const safeVal = (val !== undefined && val !== null) ? val : '';
                                 const isComparePrice = ((_b = (_a = config.uploadColumnMeta) === null || _a === void 0 ? void 0 : _a[h]) === null || _b === void 0 ? void 0 : _b.type) === 'comparePrice';
-                                const isNumeric = isComparePrice || window.NUMERIC_HEADERS.includes((_c = config.masterLinks['estimate']) === null || _c === void 0 ? void 0 : _c[h]) || window.NUMERIC_HEADERS.includes(h);
+                                const isNumeric = isComparePrice || window.NUMERIC_HEADERS.includes((_c = ((config.masterLinks || {})[role] || (config.masterLinks || {}).estimate || {})) === null || _c === void 0 ? void 0 : _c[h]) || window.NUMERIC_HEADERS.includes(h);
                                 mItem.sources[role][h] = window.keepExcelCellValue(safeVal, isNumeric);
                             }
                         }
@@ -1905,9 +1985,11 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             }
             // 업로드한 엑셀 역할에 맞춰 목적별 테이블 양식을 즉시 적용한다.
             // 최종/파서 템플릿은 사용하지 않고, 불러오기 버튼의 목적값만 적용한다.
-            const autoTableTarget = window.getAutoTableViewTarget ? window.getAutoTableViewTarget(newManaged, role) : role;
+            // 구매/견적/판매/재고 업로드 버튼의 역할을 화면 양식의 단일 기준으로 사용한다.
+            // 기존 작업 화면에 다른 역할 데이터가 남아 있어도 구매 업로드 후에는 반드시 purchase 양식선택만 노출한다.
+            const autoTableTarget = normalizeMerchTableTarget(role);
             const autoAppliedTemplate = window.applyMerchTableView
-                ? window.applyMerchTableView(config, autoTableTarget, null, { manual: false })
+                ? window.applyMerchTableView(config, autoTableTarget, null, { manual: false, uploadRole: role })
                 : null;
             ui.setActiveTags(prev => {
                 const tagLabel = roleMeta.tag;
@@ -2502,14 +2584,14 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             config.setVisibleUploadCols(getInitialVisibleUploadCols());
         if (config.setVisibleMasterCols)
             config.setVisibleMasterCols(getInitialVisibleMasterCols());
-        (_b = config.setActiveTableTarget) === null || _b === void 0 ? void 0 : _b.call(config, '');
+        (_b = config.setActiveTableTarget) === null || _b === void 0 ? void 0 : _b.call(config, DEFAULT_TABLE_VIEW_TARGET);
         (_c = config.setActiveTableViewId) === null || _c === void 0 ? void 0 : _c.call(config, '');
         try {
             localStorage.removeItem('merchTableTemplateManualOverride_v870');
             localStorage.removeItem('merchActiveTableTemplateKey_v870');
-            localStorage.removeItem('merchActiveTableTarget_v1');
+            localStorage.setItem('merchActiveTableTarget_v1', DEFAULT_TABLE_VIEW_TARGET);
             localStorage.removeItem('merchActiveTableViewId_v1');
-            window.dispatchEvent(new CustomEvent('merch_table_view_changed', { detail: { target: '', viewId: '', manual: false } }));
+            window.dispatchEvent(new CustomEvent('merch_table_view_changed', { detail: { target: DEFAULT_TABLE_VIEW_TARGET, viewId: '', manual: false } }));
         }
         catch (e) { }
         window.setIDB('merchops_session', null);
@@ -2945,11 +3027,15 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
     const isDetailFilterActive = detailFilterValues.includes(priceFilter);
     const isCategoryFilterActive = Array.isArray(categoryFilters) && categoryFilters.length > 0;
     const showDetailFilterPanel = filterPanelOpen || isDetailFilterActive || isCategoryFilterActive || (selectedRows.size > 0 && !registrationMode);
-    const activeTableTarget = (config === null || config === void 0 ? void 0 : config.activeTableTarget) || '';
+    const activeTableTarget = normalizeMerchTableTarget((config === null || config === void 0 ? void 0 : config.activeTableTarget) || DEFAULT_TABLE_VIEW_TARGET);
     const activeTableViewId = (config === null || config === void 0 ? void 0 : config.activeTableViewId) || '';
+    const activeTableTargetLabel = ((TABLE_VIEW_TARGETS.find(t => t.id === activeTableTarget) || {}).label) || '견적';
     const tableViewList = useMemo(() => (activeTableTarget && window.getMerchTableViewsForTarget)
         ? window.getMerchTableViewsForTarget(config === null || config === void 0 ? void 0 : config.tableViewPresets, activeTableTarget)
         : [], [config === null || config === void 0 ? void 0 : config.tableViewPresets, activeTableTarget]);
+    const displayTableViewList = tableViewList.length > 0
+        ? tableViewList
+        : [{ id: '', name: `${activeTableTargetLabel} 기본양식`, fallback: true, masterColumns: getInitialVisibleMasterCols()[activeTableTarget] || ['입고가'], workColumns: getInitialVisibleUploadCols()[activeTableTarget] || [] }];
     useEffect(() => {
         const onStorage = (e) => {
             if (e.key === 'merchTableViewPresets_v1' || e.key === 'config_sync_trigger') {
@@ -2966,7 +3052,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
         if (!view)
             return;
         const applied = window.applyMerchTableView
-            ? window.applyMerchTableView(config, activeTableTarget, view.id, { manual: true })
+            ? window.applyMerchTableView(config, activeTableTarget, view.fallback ? '' : view.id, { manual: true })
             : null;
         setSelectedRows(new Set());
         (_a = actions.showToast) === null || _a === void 0 ? void 0 : _a.call(actions, `✅ [${(applied === null || applied === void 0 ? void 0 : applied.name) || view.name || '양식'}] 테이블 양식 적용`);
@@ -3056,21 +3142,18 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                 React.createElement("i", { className: "fas fa-rotate-left mr-1.5 text-[13px]" }),
                 " 초기화"),
             React.createElement("div", { className: "flex-1 min-w-[12px]" }),
-            (tableViewList.length > 0 && (React.createElement("div", { className: "ml-auto min-w-[360px] max-w-[620px] flex justify-end overflow-x-auto custom-scrollbar shrink-0" },
+            (displayTableViewList.length > 0 && (React.createElement("div", { className: "ml-auto min-w-[360px] max-w-[620px] flex justify-end overflow-x-auto custom-scrollbar shrink-0" },
                 React.createElement("div", { className: "inline-flex items-center justify-end gap-1.5 px-2 py-1 rounded-xl border border-dashed border-slate-300 bg-white/80 shadow-sm min-w-max" },
-                    React.createElement("span", { className: "text-[10px] font-black text-slate-400 mr-1 shrink-0" }, "양식선택"),
-                    tableViewList.slice(0, 5).map(view => {
-                        const active = activeTableViewId === view.id;
-                        return (React.createElement("button", { key: view.id || view.name, onClick: () => applyTableShortcut(view), className: `h-7 px-2.5 rounded-lg text-[11px] font-black border shadow-sm transition-all shrink-0 whitespace-nowrap ${active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200'}`, title: `양식: 마스터 ${(view.masterColumns || []).join(', ')} / 작업 ${(view.workColumns || []).join(', ')}` },
+                    React.createElement("span", { className: "text-[10px] font-black text-slate-400 mr-1 shrink-0" }, `${activeTableTargetLabel} 양식`),
+                    displayTableViewList.slice(0, 5).map(view => {
+                        const active = view.fallback ? !activeTableViewId : activeTableViewId === view.id;
+                        return (React.createElement("button", { key: view.id || view.name, onClick: () => applyTableShortcut(view), className: `h-7 px-2.5 rounded-lg text-[11px] font-black border shadow-sm transition-all shrink-0 whitespace-nowrap ${active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200'}`, title: `${activeTableTargetLabel} 양식: 마스터 ${(view.masterColumns || []).join(', ')} / 작업 ${(view.workColumns || []).join(', ')}` },
                             React.createElement("i", { className: "fas fa-table-columns mr-1 text-[10px]" }),
                             view.name));
                     })))))),
         React.createElement("div", { className: "px-6 pt-3 pb-2 flex flex-col gap-2 w-full" },
             React.createElement("div", { className: "rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm flex items-center gap-2 flex-nowrap w-full overflow-x-auto custom-scrollbar" },
-                (activeTableTarget === 'purchase'
-                    ? [['purchaseUp', '상승'], ['purchaseDown', '하락'], ['purchaseOther', '기타상품']]
-                    : [['changed', '가격변동'], ['promo', '행사중'], ['promoSuggest', '행사제안']]
-                ).map(([value, label]) => (React.createElement("button", { key: value, onClick: () => applyPriceFilter(value), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: `${label}: 한 번 누르면 선택, 다시 누르면 해제되어 전체로 복귀` }, label))),
+                [['changed', '가격변동'], ['promo', '행사중'], ['promoSuggest', '행사제안']].map(([value, label]) => (React.createElement("button", { key: value, onClick: () => applyPriceFilter(value), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: `${label}: 한 번 누르면 선택, 다시 누르면 해제되어 전체로 복귀` }, label))),
                 React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1" }),
                 MERCH_CATEGORY_FILTERS.map(cat => (React.createElement("button", { key: `cat-top-${cat}`, onClick: () => toggleCategoryFilter(cat), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${categoryFilters.includes(cat) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-blue-50'}`, title: `${cat} 카테고리: 한 번 누르면 선택, 다시 누르면 해제` }, cat))),
                 React.createElement("button", { onClick: () => setFilterPanelOpen(v => !v), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all flex items-center whitespace-nowrap shrink-0 ${showDetailFilterPanel ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: "상세 열기/닫기" },
@@ -3529,17 +3612,23 @@ window.getMerchPurchaseTrend = (row = {}, mItem = {}) => {
     const rawRows = Array.isArray(purchaseSource._purchaseRows) ? purchaseSource._purchaseRows : [];
     const fallbackPrice = window.parseNum(purchaseSource['입고가'] || purchaseSource['매입가'] || purchaseSource['구매단가'] || purchaseSource['단가']);
     const fallbackDateRaw = purchaseSource['상품 구매일자'] || purchaseSource['구매일자'] || purchaseSource['기준일자'] || purchaseSource['일자'] || '';
-    const today = new Date();
-    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    const rows = (rawRows.length ? rawRows : (fallbackPrice > 0 ? [{ price: fallbackPrice, dateKey: window.normalizeMerchPurchaseDateKey(fallbackDateRaw, today), rawDate: fallbackDateRaw }] : []))
+    const systemToday = new Date();
+    const systemTodayKey = `${systemToday.getFullYear()}-${String(systemToday.getMonth() + 1).padStart(2, '0')}-${String(systemToday.getDate()).padStart(2, '0')}`;
+    const rows = (rawRows.length ? rawRows : (fallbackPrice > 0 ? [{ price: fallbackPrice, dateKey: window.normalizeMerchPurchaseDateKey(fallbackDateRaw, systemToday), rawDate: fallbackDateRaw }] : []))
         .map(r => {
             const price = window.parseNum(r.price !== undefined ? r.price : (r['입고가'] || r['단가']));
-            const dateKey = r.dateKey || window.normalizeMerchPurchaseDateKey(r.rawDate || r.date || r['일자'] || r['구매일자'], today);
-            return { ...r, price, dateKey: dateKey || todayKey };
+            const dateKey = r.dateKey || window.normalizeMerchPurchaseDateKey(r.rawDate || r.date || r['일자'] || r['구매일자'], systemToday);
+            return { ...r, price, dateKey: dateKey || systemTodayKey };
         })
         .filter(r => r.price > 0);
     if (!rows.length) return { hasPurchaseData: false, issue: '', reportText: '', reportParts: [] };
+
+    // 브라우저 날짜가 아니라 업로드된 구매자료의 최신 일자를 '오늘 구매분' 기준으로 본다.
+    // 운영 중 전일/마감 파일을 다음날 확인해도 구매 이슈가 공백으로 빠지지 않게 한다.
+    const validDateKeys = rows.map(r => r.dateKey).filter(Boolean).sort();
+    const todayKey = validDateKeys.length ? validDateKeys[validDateKeys.length - 1] : systemTodayKey;
     const todayMs = new Date(`${todayKey}T00:00:00`).getTime();
+
     const recentRows = rows.filter(r => {
         const ms = new Date(`${r.dateKey}T00:00:00`).getTime();
         if (Number.isNaN(ms)) return true;
@@ -3582,8 +3671,7 @@ window.getMerchPurchaseTrend = (row = {}, mItem = {}) => {
         else issue = '';
     }
     return { hasPurchaseData: true, issue, reportText, reportParts, todayKey, todayCount: todayRows.length, basePrice };
-};
-const buildRowReport = ({ row, mItem, issueText, issueSubText, latestHistory, compareSummary, marginInfo, stockQty, safeStock, promoActive }) => {
+};const buildRowReport = ({ row, mItem, issueText, issueSubText, latestHistory, compareSummary, marginInfo, stockQty, safeStock, promoActive }) => {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t;
     const lines = [];
     const oldIn = window.parseNum(mItem === null || mItem === void 0 ? void 0 : mItem['입고가']);
@@ -3800,8 +3888,10 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s;
     const { isEstimateUploaded, visibleMasterCols, visibleUploadCols, config, data, activeTableTarget = 'estimate', registrationMode = false } = state;
     const requiredCoreFields = ['품목코드', '품목명', '규격'];
-    const currentMasterCols = registrationMode ? [] : ((visibleMasterCols === null || visibleMasterCols === void 0 ? void 0 : visibleMasterCols[activeTableTarget]) || (visibleMasterCols === null || visibleMasterCols === void 0 ? void 0 : visibleMasterCols.estimate) || []).filter(h => !requiredCoreFields.includes(h));
-    const currentWorkCols = registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : ((visibleUploadCols === null || visibleUploadCols === void 0 ? void 0 : visibleUploadCols[activeTableTarget]) || (visibleUploadCols === null || visibleUploadCols === void 0 ? void 0 : visibleUploadCols.estimate) || []).filter(h => h !== '품목코드');
+    const targetMasterCols = (visibleMasterCols === null || visibleMasterCols === void 0 ? void 0 : visibleMasterCols[activeTableTarget]);
+    const targetWorkCols = (visibleUploadCols === null || visibleUploadCols === void 0 ? void 0 : visibleUploadCols[activeTableTarget]);
+    const currentMasterCols = registrationMode ? [] : (Array.isArray(targetMasterCols) ? targetMasterCols : (getInitialVisibleMasterCols()[activeTableTarget] || [])).filter(h => !requiredCoreFields.includes(h));
+    const currentWorkCols = registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : (Array.isArray(targetWorkCols) ? targetWorkCols : (getInitialVisibleUploadCols()[activeTableTarget] || [])).filter(h => h !== '품목코드' && h !== '구매리포트' && h !== '구매검증리포트');
     const uploadName = ((_a = row.finalData) === null || _a === void 0 ? void 0 : _a['품목명']) !== undefined ? row.finalData['품목명'] : '';
     const uploadSpec = ((_b = row.finalData) === null || _b === void 0 ? void 0 : _b['규격']) !== undefined ? row.finalData['규격'] : '';
     const dName = uploadName || mItem.품목명 || '[미등록]';
@@ -3886,7 +3976,8 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
             issueCellBg = 'bg-white';
         }
     }
-    if (!state.registrationMode && purchaseTrendInfo && purchaseTrendInfo.hasPurchaseData && (activeTableTarget === 'purchase' || (((row.sources || {}).purchase) !== undefined))) {
+    const hasPurchaseSourceForIssue = !!((row.sources || {}).purchase);
+    if (!state.registrationMode && purchaseTrendInfo && purchaseTrendInfo.hasPurchaseData && hasPurchaseSourceForIssue) {
         if (purchaseTrendInfo.issue) {
             issueText = purchaseTrendInfo.issue;
             issueSubText = '';
@@ -3909,7 +4000,7 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
         issueTextColor = validation.canRegister ? 'text-emerald-700' : 'text-rose-700';
     }
     const compareSummary = getComparePriceSummary(row, config);
-    if (!state.registrationMode && compareSummary.hasDiff && !(purchaseTrendInfo && purchaseTrendInfo.hasPurchaseData && (activeTableTarget === 'purchase' || (((row.sources || {}).purchase) !== undefined)))) {
+    if (!state.registrationMode && compareSummary.hasDiff && !(purchaseTrendInfo && purchaseTrendInfo.hasPurchaseData && hasPurchaseSourceForIssue)) {
         if (issueText === '-') {
             issueText = '단가확인';
             issueSubText = '';
@@ -4031,8 +4122,10 @@ const ExcelDataGrid = ({ state, actions }) => {
     const displayRows = fullDisplayRows.slice(0, visibleCount);
     const hiddenCount = fullDisplayRows.length - displayRows.length;
     const requiredCoreFields = ['품목코드', '품목명', '규격'];
-    const currentMasterCols = registrationMode ? [] : ((visibleMasterCols === null || visibleMasterCols === void 0 ? void 0 : visibleMasterCols[activeTableTarget]) || (visibleMasterCols === null || visibleMasterCols === void 0 ? void 0 : visibleMasterCols.estimate) || []).filter(h => !requiredCoreFields.includes(h));
-    const currentWorkCols = registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : ((visibleUploadCols === null || visibleUploadCols === void 0 ? void 0 : visibleUploadCols[activeTableTarget]) || (visibleUploadCols === null || visibleUploadCols === void 0 ? void 0 : visibleUploadCols.estimate) || []).filter(h => h !== '품목코드');
+    const targetMasterCols = (visibleMasterCols === null || visibleMasterCols === void 0 ? void 0 : visibleMasterCols[activeTableTarget]);
+    const targetWorkCols = (visibleUploadCols === null || visibleUploadCols === void 0 ? void 0 : visibleUploadCols[activeTableTarget]);
+    const currentMasterCols = registrationMode ? [] : (Array.isArray(targetMasterCols) ? targetMasterCols : (getInitialVisibleMasterCols()[activeTableTarget] || [])).filter(h => !requiredCoreFields.includes(h));
+    const currentWorkCols = registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : (Array.isArray(targetWorkCols) ? targetWorkCols : (getInitialVisibleUploadCols()[activeTableTarget] || [])).filter(h => h !== '품목코드' && h !== '구매리포트' && h !== '구매검증리포트');
     return (React.createElement("div", { className: "bg-white border border-slate-200 rounded-xl shadow-sm h-full flex flex-col relative overflow-hidden" },
         React.createElement("div", { className: "flex-1 overflow-auto custom-scrollbar relative", onScroll: handleScroll },
             React.createElement("table", { className: "text-left border-collapse text-[13px] whitespace-nowrap relative z-0 w-max bg-white" },
@@ -4074,7 +4167,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.43 PurchaseIssueReport]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.46 PurchaseIssueBadgeFix]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -4232,13 +4325,8 @@ const App = () => {
             baseList = baseList.filter(item => {
                 var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11;
                 const mItem = data.masterProducts[item.코드] || {};
-                const purchaseTrend = window.getMerchPurchaseTrend ? window.getMerchPurchaseTrend(item, mItem) : null;
-                if (ui.priceFilter === 'purchaseUp')
-                    return purchaseTrend && purchaseTrend.issue === '상승';
-                if (ui.priceFilter === 'purchaseDown')
-                    return purchaseTrend && purchaseTrend.issue === '하락';
-                if (ui.priceFilter === 'purchaseOther')
-                    return purchaseTrend && purchaseTrend.issue === '기타상품';
+                // 구매 이슈(상승/하락/기타상품)는 상단 필터로 사용하지 않는다.
+                // 이 값은 테이블 [이슈] 열의 뱃지로만 노출한다.
                 const oldIn = window.parseNum(mItem['입고가']);
                 const newIn = window.parseNum(((_a = item.finalData) === null || _a === void 0 ? void 0 : _a['입고가']) !== undefined ? item.finalData['입고가'] : ((_k = (_g = (_d = (_c = (_b = item.sources) === null || _b === void 0 ? void 0 : _b['estimate']) === null || _c === void 0 ? void 0 : _c['입고가']) !== null && _d !== void 0 ? _d : (_f = (_e = item.sources) === null || _e === void 0 ? void 0 : _e['purchase']) === null || _f === void 0 ? void 0 : _f['입고가']) !== null && _g !== void 0 ? _g : (_j = (_h = item.sources) === null || _h === void 0 ? void 0 : _h['sales']) === null || _j === void 0 ? void 0 : _j['입고가']) !== null && _k !== void 0 ? _k : (_m = (_l = item.sources) === null || _l === void 0 ? void 0 : _l['inventory']) === null || _m === void 0 ? void 0 : _m['입고가']));
                 const oldOut = window.parseNum(mItem['출고가']);
@@ -4409,7 +4497,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.43 PurchaseIssueReport")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.46 PurchaseIssueBadgeFix")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
