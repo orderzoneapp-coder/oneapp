@@ -4,19 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="google" content="notranslate">
-    <title>ONEAPP NEXES - Master DB [v3.3]</title>
+    <title>ONEAPP Master DB [v3.4 MerchOpsCloudSync]</title>
     <!-- 핵심 라이브러리 CDN 로드 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     
     <style>
-        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-        body { font-family: 'Pretendard', sans-serif; -webkit-user-select: none; user-select: none; background-color: #f1f5f9; margin: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; -webkit-user-select: none; user-select: none; background-color: #f1f5f9; margin: 0; }
         ::-webkit-scrollbar { width: 6px; height: 6px; } 
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
@@ -33,34 +31,328 @@
 <body class="overflow-hidden text-slate-800">
     <div id="root"></div>
 
+    <!-- White screen guard: shows startup/runtime errors instead of blank screen -->
+    <div id="boot-error" style="display:none;position:fixed;inset:0;z-index:99999;background:#f8fafc;color:#0f172a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:32px;box-sizing:border-box;overflow:auto;">
+        <div style="max-width:920px;margin:40px auto;background:white;border:1px solid #fecaca;border-radius:18px;box-shadow:0 20px 60px rgba(15,23,42,.12);overflow:hidden;">
+            <div style="background:#991b1b;color:white;padding:18px 22px;font-weight:900;font-size:18px;">ONEAPP 초기화 오류</div>
+            <div style="padding:22px;">
+                <div id="boot-error-title" style="font-weight:900;font-size:18px;margin-bottom:10px;color:#991b1b;">화면을 불러오지 못했습니다.</div>
+                <pre id="boot-error-detail" style="white-space:pre-wrap;background:#fff1f2;border:1px solid #fecdd3;border-radius:12px;padding:14px;font-size:12px;line-height:1.6;color:#7f1d1d;overflow:auto;"></pre>
+                <div style="margin-top:14px;font-size:12px;line-height:1.7;color:#475569;">개발자도구 Console 오류, CDN 차단 여부, 파일 경로, localStorage/IndexedDB 권한을 확인하십시오.</div>
+            </div>
+        </div>
+    </div>
+    <script>
+        (function () {
+            function showBootError(title, detail) {
+                var box = document.getElementById('boot-error');
+                var titleEl = document.getElementById('boot-error-title');
+                var detailEl = document.getElementById('boot-error-detail');
+                if (!box || !titleEl || !detailEl) return;
+                titleEl.textContent = title || '초기화 오류';
+                detailEl.textContent = detail || '원인 정보 없음';
+                box.style.display = 'block';
+            }
+            window.__showBootError = showBootError;
+            window.addEventListener('error', function (e) {
+                showBootError('스크립트 실행 오류', (e.message || 'Unknown error') + '\n' + (e.filename || '') + ':' + (e.lineno || '') + ':' + (e.colno || ''));
+            });
+            window.addEventListener('unhandledrejection', function (e) {
+                var reason = e.reason;
+                showBootError('비동기 처리 오류', reason && reason.stack ? reason.stack : String(reason || 'Unknown rejection'));
+            });
+            window.addEventListener('load', function () {
+                setTimeout(function () {
+                    var missing = [];
+                    if (!window.React) missing.push('React');
+                    if (!window.ReactDOM) missing.push('ReactDOM');
+                    if (!window.Babel) missing.push('Babel');
+                    if (!window.XLSX) missing.push('XLSX');
+                    if (missing.length) {
+                        showBootError('CDN 라이브러리 로드 실패', '누락 라이브러리: ' + missing.join(', '));
+                        return;
+                    }
+                    var root = document.getElementById('root');
+                    if (root && root.children.length === 0) {
+                        showBootError('React 앱 렌더링 실패', '필수 라이브러리는 로드됐지만 #root가 비어 있습니다. JSX 변환 오류 또는 ReactDOM 실행 전 오류를 확인해야 합니다.');
+                    }
+                }, 2500);
+            });
+        })();
+    </script>
+
+
     <script type="text/babel">
+        if (!window.React || !window.ReactDOM) { throw new Error('React/ReactDOM 라이브러리 로드 실패'); }
         const { useState, useMemo, useEffect, useCallback, Fragment } = React;
 
         // ==========================================
         // 🔑 Global Storage Keys & Constants
         // ==========================================
         const STORAGE_KEYS = {
+            // MerchOps 공통 클라우드/마스터 저장키
             MASTER_DB: 'merchMaster_v870',
-            CLOUD_URL: 'skuSyncCloudUrl_v6',
-            SYNC_TRIGGER: 'merchMaster_sync_trigger'
+            MASTER_STORE: 'master_products',
+            CLOUD_URL: 'oneapp_cloud_sync_url_v1',
+            LEGACY_CLOUD_URL: 'merchCloudUrl_v870',
+            OLD_CLOUD_URL: 'skuSyncCloudUrl_v6',
+            SYNC_TRIGGER: 'merchMaster_sync_trigger',
+            CONFIG_TRIGGER: 'config_sync_trigger'
         };
+
+        const ONEAPP_DEFAULT_CLOUD_SYNC_URL = 'https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec';
+
+        const normalizeOneAppCloudSyncUrl = (url = '') => {
+            const raw = String(url || '').trim();
+            if (!raw) return '';
+            return raw
+                .replace(/\?action=[^&#]*/g, '')
+                .replace(/&action=[^&#]*/g, '')
+                .replace(/\?sheet=[^&#]*/g, '')
+                .replace(/&sheet=[^&#]*/g, '');
+        };
+
+        const getOneAppCloudSyncUrl = (fallback = '') => {
+            try {
+                const keys = [STORAGE_KEYS.CLOUD_URL, STORAGE_KEYS.LEGACY_CLOUD_URL, STORAGE_KEYS.OLD_CLOUD_URL];
+                for (const key of keys) {
+                    const v = normalizeOneAppCloudSyncUrl(localStorage.getItem(key) || '');
+                    if (v) return v;
+                }
+                const fb = normalizeOneAppCloudSyncUrl(fallback || '');
+                if (fb) return fb;
+                return ONEAPP_DEFAULT_CLOUD_SYNC_URL;
+            } catch (e) {
+                return normalizeOneAppCloudSyncUrl(fallback || '') || ONEAPP_DEFAULT_CLOUD_SYNC_URL;
+            }
+        };
+
+        const setOneAppCloudSyncUrl = (url = '') => {
+            const safeUrl = normalizeOneAppCloudSyncUrl(url || ONEAPP_DEFAULT_CLOUD_SYNC_URL);
+            if (!safeUrl) throw new Error('클라우드 URL이 비어 있습니다.');
+            try {
+                localStorage.setItem(STORAGE_KEYS.CLOUD_URL, safeUrl);
+                localStorage.setItem(STORAGE_KEYS.LEGACY_CLOUD_URL, safeUrl);
+                // 기존 NEXES/마스터 앱 호환키에도 같은 URL을 남긴다.
+                localStorage.setItem(STORAGE_KEYS.OLD_CLOUD_URL, safeUrl);
+                localStorage.setItem(STORAGE_KEYS.CONFIG_TRIGGER, Date.now().toString());
+            } catch (e) {}
+            return safeUrl;
+        };
+
+        const buildCloudUrl = (url = '', params = {}) => {
+            const base = normalizeOneAppCloudSyncUrl(url || getOneAppCloudSyncUrl());
+            const query = Object.entries(params).filter(([_, v]) => v !== undefined && v !== null && v !== '').map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+            if (!query) return base;
+            return base.includes('?') ? `${base}&${query}` : `${base}?${query}`;
+        };
+
+        window.ONEAPP_DEFAULT_CLOUD_SYNC_URL = window.ONEAPP_DEFAULT_CLOUD_SYNC_URL || ONEAPP_DEFAULT_CLOUD_SYNC_URL;
+        window.getOneAppCloudSyncUrl = window.getOneAppCloudSyncUrl || getOneAppCloudSyncUrl;
+        window.setOneAppCloudSyncUrl = window.setOneAppCloudSyncUrl || setOneAppCloudSyncUrl;
+        try { setOneAppCloudSyncUrl(getOneAppCloudSyncUrl()); } catch (e) {}
+
 
         const NUMERIC_HEADERS = [
             "안전재고", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고",
-            "단가H", "단가I", "시중가", "행사가", "1종연산", "2종연산", "외주비", "노무비", "경비"
+            "단가H", "단가I", "시중가", "행사가", "1종연산", "1당수량", "2종연산", "외주비", "노무비", "경비"
         ];
 
         // ==========================================
         // 🛠 Utility Functions
         // ==========================================
         const initIDB = () => new Promise((resolve, reject) => {
-            const request = indexedDB.open('MerchOpsDB', 1);
-            request.onupgradeneeded = (e) => { if (!e.target.result.objectStoreNames.contains('store')) e.target.result.createObjectStore('store'); };
+            const request = indexedDB.open('MerchOpsDB', 2);
+            request.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains('store')) db.createObjectStore('store');
+                if (!db.objectStoreNames.contains(STORAGE_KEYS.MASTER_STORE)) db.createObjectStore(STORAGE_KEYS.MASTER_STORE, { keyPath: '코드' });
+            };
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
         });
         const setIDB = async (key, val) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readwrite'); tx.objectStore('store').put(val, key); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); };
         const getIDB = async (key) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); };
+
+        const clearIDBStore = async (storeName) => {
+            const db = await initIDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readwrite');
+                tx.objectStore(storeName).clear();
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        };
+
+        const bulkPutMasterIDB = async (items = []) => {
+            const db = await initIDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORAGE_KEYS.MASTER_STORE, 'readwrite');
+                const store = tx.objectStore(STORAGE_KEYS.MASTER_STORE);
+                store.clear();
+                items.forEach(item => { if (item && item.코드) store.put(item); });
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        };
+
+        const getAllMasterIDB = async () => {
+            const db = await initIDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORAGE_KEYS.MASTER_STORE, 'readonly');
+                const req = tx.objectStore(STORAGE_KEYS.MASTER_STORE).getAll();
+                req.onsuccess = () => resolve(req.result || []);
+                req.onerror = () => reject(tx.error);
+            });
+        };
+
+        const normalizeMasterItem = (item = {}, fallbackCode = '') => {
+            const code = safeStr(item['코드'] || item['품목코드'] || fallbackCode).trim();
+            return {
+                ...item,
+                코드: code,
+                품목코드: safeStr(item['품목코드'] || code).trim()
+            };
+        };
+
+        const masterArrayToMap = (items = []) => {
+            const map = {};
+            (Array.isArray(items) ? items : Object.values(items || {})).forEach((item, idx) => {
+                const normalized = normalizeMasterItem(item, item && (item.코드 || item['품목코드']) || `ROW-${idx}`);
+                if (normalized.코드) map[normalized.코드] = normalized;
+            });
+            return map;
+        };
+
+        const saveMasterLocal = async (masterMap = {}) => {
+            const safeMap = masterArrayToMap(masterMap);
+            const items = Object.values(safeMap);
+            await setIDB(STORAGE_KEYS.MASTER_DB, safeMap);
+            await bulkPutMasterIDB(items);
+            try { localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); } catch (e) {}
+            return safeMap;
+        };
+
+        const loadMasterLocal = async () => {
+            const items = await getAllMasterIDB().catch(() => []);
+            if (items && items.length > 0) return masterArrayToMap(items);
+            const legacy = await getIDB(STORAGE_KEYS.MASTER_DB).catch(() => null);
+            if (legacy && typeof legacy === 'object') {
+                const safeMap = await saveMasterLocal(legacy);
+                return safeMap;
+            }
+            return {};
+        };
+
+        const extractMasterFromCloudResult = (result = {}) => {
+            if (!result) return {};
+            if (result.status === 'success' && result.data) {
+                if (result.data.master) return masterArrayToMap(result.data.master);
+                if (Array.isArray(result.data)) return masterArrayToMap(result.data);
+            }
+            if (Array.isArray(result.data)) return masterArrayToMap(result.data);
+            if (Array.isArray(result)) return masterArrayToMap(result);
+            return {};
+        };
+
+        const readCloudFullPayload = async (cloudUrl) => {
+            const targetUrl = setOneAppCloudSyncUrl(cloudUrl || getOneAppCloudSyncUrl());
+            const res = await fetch(targetUrl, { method: 'GET' });
+            if (!res.ok) throw new Error('MerchOps 클라우드 수신 실패');
+            return await res.json();
+        };
+
+        const pullMerchOpsCloudMaster = async (cloudUrl) => {
+            const targetUrl = setOneAppCloudSyncUrl(cloudUrl || getOneAppCloudSyncUrl());
+            const candidates = [
+                targetUrl,
+                buildCloudUrl(targetUrl, { action: 'master_only' }),
+                buildCloudUrl(targetUrl, { action: 'pull', sheet: '마스터' })
+            ];
+            let lastError = null;
+            for (const url of candidates) {
+                try {
+                    const res = await fetch(url, { method: 'GET' });
+                    if (!res.ok) throw new Error('Network Error');
+                    const result = await res.json();
+                    const masterMap = extractMasterFromCloudResult(result);
+                    if (Object.keys(masterMap).length > 0) {
+                        await saveMasterLocal(masterMap);
+                        return { masterMap, count: Object.keys(masterMap).length, result };
+                    }
+                    lastError = new Error('마스터 데이터 없음');
+                } catch (e) {
+                    lastError = e;
+                }
+            }
+            throw lastError || new Error('MerchOps 클라우드 응답 형식 오류');
+        };
+
+        const safeJSONParseRaw = (raw, defaultVal) => {
+            try {
+                if (!raw || raw === 'undefined' || raw === 'null') return defaultVal;
+                const parsed = JSON.parse(raw);
+                return parsed === undefined || parsed === null ? defaultVal : parsed;
+            } catch (e) { return defaultVal; }
+        };
+
+        const chunkUploadCloud = async ({ url, action, data = [], chunkSize = 500, onProgress }) => {
+            const items = Array.isArray(data) ? data : Object.values(data || {});
+            for (let i = 0; i < items.length; i += chunkSize) {
+                const chunk = items.slice(i, i + chunkSize);
+                if (typeof onProgress === 'function') onProgress({ sent: Math.min(i + chunkSize, items.length), total: items.length });
+                const res = await fetch(url, { method: 'POST', body: JSON.stringify({ action, data: chunk }) });
+                const json = await res.json();
+                if (!json || json.status !== 'success') throw new Error(json?.message || `${action} 업로드 실패`);
+            }
+            return { total: items.length };
+        };
+
+        const pushMerchOpsCloudMaster = async (masterMap = {}, { cloudUrl, onProgress } = {}) => {
+            const targetUrl = setOneAppCloudSyncUrl(cloudUrl || getOneAppCloudSyncUrl());
+            const safeMaster = await saveMasterLocal(masterMap);
+            const previous = await readCloudFullPayload(targetUrl).catch(() => null);
+            const previousData = previous && previous.data ? previous.data : {};
+            const localHistory = safeJSONParseRaw(localStorage.getItem('merchHistory_v870'), []);
+            const historyItems = Array.isArray(localHistory) && localHistory.length > 0 ? localHistory : (Array.isArray(previousData.history) ? previousData.history : []);
+            const previousConfig = previousData.appConfig || {};
+            if (typeof onProgress === 'function') onProgress('서버 초기화 중...');
+            const initRes = await fetch(targetUrl, { method: 'POST', body: JSON.stringify({ action: 'initSync' }) });
+            const initJson = await initRes.json();
+            if (!initJson || initJson.status !== 'success') throw new Error(initJson?.message || '초기화 실패');
+
+            const masterItems = Object.values(safeMaster);
+            await chunkUploadCloud({
+                url: targetUrl,
+                action: 'chunk_master',
+                data: masterItems,
+                onProgress: p => onProgress && onProgress(`마스터 업로드 중... (${p.sent} / ${p.total}건)`)
+            });
+
+            await chunkUploadCloud({
+                url: targetUrl,
+                action: 'chunk_history',
+                data: historyItems,
+                onProgress: p => onProgress && onProgress(`히스토리 유지 업로드 중... (${p.sent} / ${p.total}건)`)
+            });
+
+            if (typeof onProgress === 'function') onProgress('환경설정 보존 중...');
+            const configPayload = {
+                action: 'config',
+                data: {
+                    dict: safeJSONParseRaw(localStorage.getItem('parserDict_v870'), previousData.dict || {}),
+                    rules: previousData.rules || [],
+                    appConfig: { ...previousConfig, cloudUrl: targetUrl }
+                }
+            };
+            const configRes = await fetch(targetUrl, { method: 'POST', body: JSON.stringify(configPayload) });
+            const configJson = await configRes.json();
+            if (!configJson || configJson.status !== 'success') throw new Error(configJson?.message || '설정 업로드 실패');
+
+            try { localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); } catch (e) {}
+            return { count: masterItems.length, historyCount: historyItems.length };
+        };
+
 
         // 💡 하얀 화면(크래시) 방지용 강제 문자열 변환 유틸리티
         const safeStr = (val, def = '') => (val !== undefined && val !== null && val !== '') ? String(val) : def;
@@ -145,10 +437,10 @@
                                 <div className="flex flex-col border-l-2 border-slate-700/70 pl-4 py-0.5">
                                     <div className="flex items-center">
                                         <span className="font-black text-[16px] leading-none text-indigo-400 tracking-widest uppercase mt-0.5">NEXES</span>
-                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.3</span>
+                                        <span className="ml-2.5 bg-emerald-500/10 border border-emerald-400/30 text-emerald-400 px-[5px] py-[2px] rounded text-[9px] font-black tracking-wider shadow-sm leading-none">v3.4</span>
                                     </div>
                                     <span className="text-[10px] text-slate-400/90 font-medium tracking-[0.15em] mt-1 uppercase">
-                                        {currentTab ? currentTab.shortTag : 'WORKSPACE'}
+                                        {currentTab ? currentTab.shortTag : 'MERCHOPS CLOUD'}
                                     </span>
                                 </div>
                             </div>
@@ -256,7 +548,7 @@
         // ==========================================
         const useMerchConfig = () => {
             const loadConfig = () => {
-                const cloudUrl = localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || '';
+                const cloudUrl = getOneAppCloudSyncUrl();
                 let visibleMasterColsRaw = localStorage.getItem('merchVisMaster_v870');
                 let visibleMasterCols = { estimate: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A'] };
                 try {
@@ -357,15 +649,15 @@
             }, [showToast]);
 
             useEffect(() => {
-                getIDB(STORAGE_KEYS.MASTER_DB).then(data => { 
-                    if (data && typeof data === 'object') setMasterProducts(data); 
+                loadMasterLocal().then(data => {
+                    if (data && typeof data === 'object') setMasterProducts(data);
                 }).catch(console.error);
 
                 const handleMessage = (e) => {
                     if (e.data && e.data.type === 'CLOSE_SETTINGS') {
                         setShowSettingsModal(false);
-                        getIDB(STORAGE_KEYS.MASTER_DB).then(data => { 
-                            if (data && typeof data === 'object') setMasterProducts(data); 
+                        loadMasterLocal().then(data => {
+                            if (data && typeof data === 'object') setMasterProducts(data);
                         }); 
                     }
                 };
@@ -401,51 +693,39 @@
                             const code = safeStr(rowObj['코드'] || rowObj['품목코드']);
                             if (code) newMaster[code] = rowObj;
                         }
-                        setMasterProducts(newMaster);
-                        await setIDB(STORAGE_KEYS.MASTER_DB, newMaster);
-                        
-                        // 💡 [추가됨] 다른 탭(스마트 파서 등)에 데이터가 업데이트 되었음을 즉시 알림
-                        localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
-                        
-                        showToast(`✅ ${Object.keys(newMaster).length}건 등록 완료!`);
+                        const savedMaster = await saveMasterLocal(newMaster);
+                        setMasterProducts(savedMaster);
+                        showToast(`✅ ${Object.keys(savedMaster).length}건 등록 완료! MerchOps 공통 마스터 캐시에 반영되었습니다.`);
                     } catch(err) { showToast("❌ 오류 발생: " + err.message); } finally { setIsProcessing(false); setProcessMsg(""); }
                 };
                 reader.readAsArrayBuffer(file);
                 e.target.value = ''; 
             };
 
+            // [M-CLOUD-01] MerchOps 공통 클라우드 Push
             const handlePush = async () => {
-                if (!config.cloudUrl) return showToast("⚠️ 클라우드 URL 설정 필요");
-                setIsProcessing(true); setProcessMsg("전송 중...");
+                const targetUrl = getOneAppCloudSyncUrl(config.cloudUrl);
+                if (!targetUrl) return showToast("⚠️ 클라우드 URL 설정 필요");
+                setIsProcessing(true); setProcessMsg("MerchOps 클라우드 전송 중...");
                 try {
-                    const response = await fetch(config.cloudUrl + '?action=push&sheet=마스터', {
-                        method: 'POST',
-                        body: JSON.stringify({ data: Object.values(masterProducts), sheet: "마스터" })
+                    const result = await pushMerchOpsCloudMaster(masterProducts, {
+                        cloudUrl: targetUrl,
+                        onProgress: (msg) => setProcessMsg(msg)
                     });
-                    const result = await response.json();
-                    showToast(`✅ ${result.count}건 백업 완료!`);
-                } catch (e) { showToast("❌ 실패"); } finally { setIsProcessing(false); setProcessMsg(""); }
+                    showToast(`✅ MerchOps 클라우드 백업 완료! 마스터 ${result.count.toLocaleString()}건`);
+                } catch (e) { console.error(e); showToast("❌ 실패: " + e.message); } finally { setIsProcessing(false); setProcessMsg(""); }
             };
 
+            // [M-CLOUD-02] MerchOps 공통 클라우드 Pull
             const handlePull = async () => {
-                if (!config.cloudUrl) return showToast("⚠️ 클라우드 URL 설정 필요");
-                setIsProcessing(true); setProcessMsg("수신 중...");
+                const targetUrl = getOneAppCloudSyncUrl(config.cloudUrl);
+                if (!targetUrl) return showToast("⚠️ 클라우드 URL 설정 필요");
+                setIsProcessing(true); setProcessMsg("MerchOps 클라우드 수신 중...");
                 try {
-                    const response = await fetch(config.cloudUrl + '?action=pull&sheet=마스터');
-                    const result = await response.json();
-                    const dataToSave = {};
-                    result.data.forEach(item => { 
-                        const code = safeStr(item['코드'] || item['품목코드']); 
-                        if (code) dataToSave[code] = item; 
-                    });
-                    setMasterProducts(dataToSave);
-                    await setIDB(STORAGE_KEYS.MASTER_DB, dataToSave);
-                    
-                    // 💡 [추가됨] 다른 탭(스마트 파서 등)에 데이터가 업데이트 되었음을 즉시 알림
-                    localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString());
-                    
-                    showToast(`✅ ${result.data.length}건 동기화 완료`);
-                } catch (e) { showToast("❌ 실패"); } finally { setIsProcessing(false); setProcessMsg(""); }
+                    const result = await pullMerchOpsCloudMaster(targetUrl);
+                    setMasterProducts(result.masterMap);
+                    showToast(`✅ MerchOps 클라우드 동기화 완료: ${result.count.toLocaleString()}건`);
+                } catch (e) { console.error(e); showToast("❌ 실패: " + e.message); } finally { setIsProcessing(false); setProcessMsg(""); }
             };
 
             // 💡 safeStr을 적용하여 숫자 데이터로 인한 에러 방어 및 카테고리 로직 복구
@@ -642,9 +922,16 @@
             );
         }
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        // 💡 전체 앱을 ErrorBoundary로 감싸서 하얀 화면 완전 차단
-        root.render(<ErrorBoundary><App /></ErrorBoundary>);
+        try {
+            const mountNode = document.getElementById('root');
+            if (!mountNode) throw new Error('#root 요소를 찾을 수 없습니다.');
+            const root = ReactDOM.createRoot(mountNode);
+            // 💡 전체 앱을 ErrorBoundary로 감싸서 하얀 화면 완전 차단
+            root.render(<ErrorBoundary><App /></ErrorBoundary>);
+        } catch (err) {
+            if (window.__showBootError) window.__showBootError('React 렌더링 초기화 실패', err && err.stack ? err.stack : String(err));
+            else throw err;
+        }
     </script>
 </body>
 </html>
