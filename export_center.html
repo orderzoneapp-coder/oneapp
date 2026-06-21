@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.10 Return Back Hard Fix]</title>
+    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.11 PromotionThemeAssign]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -159,21 +159,80 @@ const getAppliedPrice = (row) => {
     const out = parseNum(row === null || row === void 0 ? void 0 : row.출고가);
     return promo > 0 ? promo : out;
 };
+const THEME_OPTIONS = [
+    { no: 1, label: '오늘의행사', short: '오늘' },
+    { no: 2, label: '매장행사', short: '매장' },
+    { no: 3, label: '특가상품', short: '특가' },
+    { no: 4, label: '실사진', short: '실사' },
+    { no: 5, label: '행사', short: '행사' }
+];
 const normalizeThemeNo = (value) => {
     const n = parseNum(value);
     return n >= 1 && n <= 5 ? n : 0;
 };
-const getThemeNoFromFlags = (item = {}) => {
+const normalizePromotionThemeString = (value) => {
+    if (Array.isArray(value)) {
+        return value.map(v => normalizeThemeNo(v)).filter(Boolean).filter((v, idx, arr) => arr.indexOf(v) === idx).sort((a, b) => a - b).join(',');
+    }
+    const raw = String(value !== undefined && value !== null ? value : '').trim();
+    if (!raw) return '';
+    const nums = raw.split(/[,/|\s]+/).map(v => normalizeThemeNo(v)).filter(Boolean);
+    return nums.filter((v, idx, arr) => arr.indexOf(v) === idx).sort((a, b) => a - b).join(',');
+};
+const getThemeStringFromFlags = (item = {}) => {
+    const nums = [];
     for (let i = 1; i <= 5; i++) {
         if (parseNum(item === null || item === void 0 ? void 0 : item[`테마${i}`]) === 1)
-            return i;
+            nums.push(i);
     }
-    return 0;
+    return normalizePromotionThemeString(nums);
+};
+const getPromotionThemeString = (item = {}) => {
+    const direct = normalizePromotionThemeString(item['행사테마'] || item.promotionThemes || item.promoThemes || item.promotionTheme || item.promoTheme);
+    if (direct) return direct;
+    const legacy = normalizePromotionThemeString(item._theme);
+    if (legacy) return legacy;
+    return getThemeStringFromFlags(item);
 };
 const buildThemeFlags = (row = {}) => {
-    const promo = parseNum(row.행사가) > 0;
-    const themeNo = promo ? normalizeThemeNo(row.promoTheme || getThemeNoFromFlags(row)) : 0;
-    return [1, 2, 3, 4, 5].map(n => themeNo === n ? '1' : '');
+    const themeString = getPromotionThemeString(row);
+    const selected = new Set(themeString.split(',').map(v => normalizeThemeNo(v)).filter(Boolean));
+    return [1, 2, 3, 4, 5].map(n => selected.has(n) ? '1' : '');
+};
+const applyThemeStringToRow = (row = {}, themeValue = '') => {
+    const themeString = normalizePromotionThemeString(themeValue);
+    const themeFlags = buildThemeFlags({ 행사테마: themeString });
+    return {
+        ...row,
+        행사테마: themeString,
+        promoTheme: themeString.split(',')[0] || 0,
+        테마1: themeFlags[0],
+        테마2: themeFlags[1],
+        테마3: themeFlags[2],
+        테마4: themeFlags[3],
+        테마5: themeFlags[4]
+    };
+};
+const toggleThemeString = (themeValue, themeNo) => {
+    const no = normalizeThemeNo(themeNo);
+    if (!no) return normalizePromotionThemeString(themeValue);
+    const selected = new Set(normalizePromotionThemeString(themeValue).split(',').map(v => normalizeThemeNo(v)).filter(Boolean));
+    if (selected.has(no)) selected.delete(no);
+    else selected.add(no);
+    return normalizePromotionThemeString(Array.from(selected));
+};
+const ThemeToggleButtons = ({ value, onToggle, disabled = false, compact = false }) => {
+    const selected = new Set(normalizePromotionThemeString(value).split(',').map(v => normalizeThemeNo(v)).filter(Boolean));
+    return React.createElement("div", { className: `flex flex-wrap justify-center gap-1 ${compact ? 'max-w-[230px]' : ''}` },
+        THEME_OPTIONS.map(theme => React.createElement("button", {
+            key: theme.no,
+            type: "button",
+            disabled,
+            title: `테마${theme.no} · ${theme.label}`,
+            onClick: () => onToggle && onToggle(theme.no),
+            className: `px-1.5 py-1 rounded-md border text-[10px] font-black transition-colors ${selected.has(theme.no) ? 'bg-purple-600 text-white border-purple-600 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:border-purple-300 hover:text-purple-700'} ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`
+        }, compact ? String(theme.no) : `테마${theme.no}`))
+    );
 };
 // 출력검증센터의 행사가 값은 저장/출력 적용 예정값이다.
 // 판매상태 정책:
@@ -434,7 +493,7 @@ const ExportApp = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
     const [toast, setToast] = useState('');
-    const [bulkTheme, setBulkTheme] = useState(1);
+    const [bulkThemeSet, setBulkThemeSet] = useState('1');
     const showToast = useCallback((msg) => {
         setToast(msg);
         setTimeout(() => setToast(''), 3000);
@@ -521,12 +580,7 @@ const ExportApp = () => {
                         '외주비': parseNum((_8 = working['외주비']) !== null && _8 !== void 0 ? _8 : master['외주비']),
                         '노무비': parseNum((_9 = working['노무비']) !== null && _9 !== void 0 ? _9 : master['노무비']),
                         재고수량,
-                        테마1: parseNum(working.테마1) === 1 || parseNum(working._theme) === 1 ? '1' : '',
-                        테마2: parseNum(working.테마2) === 1 || parseNum(working._theme) === 2 ? '1' : '',
-                        테마3: parseNum(working.테마3) === 1 || parseNum(working._theme) === 3 ? '1' : '',
-                        테마4: parseNum(working.테마4) === 1 || parseNum(working._theme) === 4 ? '1' : '',
-                        테마5: parseNum(working.테마5) === 1 || parseNum(working._theme) === 5 ? '1' : '',
-                        promoTheme: normalizeThemeNo(working.promoTheme || working._theme) || getThemeNoFromFlags(working),
+                        ...applyThemeStringToRow({}, getPromotionThemeString({ ...master, ...working })),
                         source
                     };
                 }).filter(row => row.코드);
@@ -551,7 +605,7 @@ const ExportApp = () => {
         setReviewRows(prev => prev.map(row => {
             if (row.코드 !== code)
                 return row;
-            const next = { ...row, [field]: value };
+            let next = { ...row, [field]: value };
             if (field === '입고가' || field === '외주비' || field === '노무비') {
                 const numericValue = parseNum(value);
                 next[field] = numericValue;
@@ -567,9 +621,21 @@ const ExportApp = () => {
             else if (field === '재고수량') {
                 next.재고수량 = parseNum(value);
             }
+            else if (field === '행사테마') {
+                next = applyThemeStringToRow(next, value);
+            }
             return next;
         }));
     }, [marginRules]);
+    const handleRowThemeToggle = useCallback((code, themeNo) => {
+        setReviewRows(prev => prev.map(row => {
+            if (row.코드 !== code) return row;
+            return applyThemeStringToRow(row, toggleThemeString(row.행사테마, themeNo));
+        }));
+    }, []);
+    const handleBulkThemeToggle = useCallback((themeNo) => {
+        setBulkThemeSet(prev => toggleThemeString(prev, themeNo));
+    }, []);
     const analysis = useMemo(() => {
         const result = { total: reviewRows.length, up: 0, down: 0, promo: 0, soldout: 0, stopped: 0, inactive: 0, anomaly: 0, margin: 0, newItem: 0, lowStock: 0 };
         reviewRows.forEach(row => {
@@ -675,37 +741,26 @@ const ExportApp = () => {
             setSortMode('category');
     }, []);
     // ============================================================
-    // [E-ACTION-01] 현재 표시 상품 테마 일괄 지정
-    // 역할: MerchOps 필터/검색으로 선별해 F9 전달된 상품을 한 번에 테마1~5로 지정한다.
-    // 정책: 테마값은 작업값이며, 행사가가 0이면 엑셀 출력 시 테마 열은 비워진다.
+    // [E-ACTION-01] 현재 표시 상품 행사테마 일괄 지정
+    // 역할: MerchOps 필터/검색으로 선별해 F9 전달된 상품을 한 번에 테마1~5 복수 지정한다.
+    // 정책: 행사테마는 마스터 저장값이며, 1,4처럼 쉼표 문자열로 저장한다.
     // ============================================================
     const handleBulkThemeApply = useCallback(() => {
-        const themeNo = normalizeThemeNo(bulkTheme);
-        if (!themeNo)
-            return showToast('⚠️ 테마1~테마5 중 하나를 선택하세요.');
+        const themeString = normalizePromotionThemeString(bulkThemeSet);
+        if (!themeString)
+            return showToast('⚠️ 테마1~테마5 중 하나 이상 선택하세요.');
         if (!filteredRows || filteredRows.length === 0)
             return showToast('⚠️ 현재 표시된 상품이 없습니다.');
         const targetCodes = new Set(filteredRows.map(row => row.코드));
         let appliedCount = 0;
-        let promoCount = 0;
         setReviewRows(prev => prev.map(row => {
             if (!targetCodes.has(row.코드))
                 return row;
             appliedCount++;
-            if (parseNum(row.행사가) > 0)
-                promoCount++;
-            return {
-                ...row,
-                promoTheme: themeNo,
-                테마1: themeNo === 1 ? '1' : '',
-                테마2: themeNo === 2 ? '1' : '',
-                테마3: themeNo === 3 ? '1' : '',
-                테마4: themeNo === 4 ? '1' : '',
-                테마5: themeNo === 5 ? '1' : ''
-            };
+            return applyThemeStringToRow(row, themeString);
         }));
-        showToast(`✅ 현재 표시 ${appliedCount.toLocaleString()}건에 테마${themeNo} 지정 완료 · 행사 출력대상 ${promoCount.toLocaleString()}건`);
-    }, [bulkTheme, filteredRows, showToast]);
+        showToast(`✅ 현재 표시 ${appliedCount.toLocaleString()}건에 행사테마 ${themeString} 지정 완료`);
+    }, [bulkThemeSet, filteredRows, showToast]);
     // ============================================================
     // [E-OUTPUT-02] 최종 마스터 반영 + 통합 엑셀 출력
     // 역할: reviewRows를 기준으로 마스터를 갱신하고 쇼핑몰업로드/ERP업데이트 시트를 생성한다.
@@ -757,6 +812,7 @@ const ExportApp = () => {
                     mItem['브랜드'] = item.브랜드 || '';
                     mItem['간단설명'] = item.간단설명 || '';
                     mItem['검색어등록'] = item.검색어등록 || '';
+                    mItem['행사테마'] = normalizePromotionThemeString(item.행사테마);
                     const themeFlags = buildThemeFlags(item);
                     mItem['테마1'] = themeFlags[0];
                     mItem['테마2'] = themeFlags[1];
@@ -768,6 +824,7 @@ const ExportApp = () => {
                     newMaster[code] = mItem;
                 });
                 await bulkPutIDB('master_products', updatedItems);
+                await setIDB('merchMaster_v870', newMaster);
                 setMasterProducts(newMaster);
                 localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
                 const wb = window.XLSX.utils.book_new();
@@ -923,15 +980,11 @@ const ExportApp = () => {
                         React.createElement("option", { value: "diffAbsDesc" }, "\uCC28\uC561 \uD070 \uC21C"),
                         React.createElement("option", { value: "inPriceDesc" }, "\uC785\uACE0\uAC00 \uB192\uC740 \uC21C"),
                         React.createElement("option", { value: "outPriceDesc" }, "\uCD9C\uACE0\uAC00 \uB192\uC740 \uC21C")),
-                    React.createElement("select", { value: bulkTheme, onChange: (e) => setBulkTheme(e.target.value), className: "h-9 px-3 border border-purple-200 rounded-lg text-[12px] font-black text-purple-700 bg-purple-50 outline-none" },
-                        React.createElement("option", { value: "1" }, "\uD14C\uB9C81"),
-                        React.createElement("option", { value: "2" }, "\uD14C\uB9C82"),
-                        React.createElement("option", { value: "3" }, "\uD14C\uB9C83"),
-                        React.createElement("option", { value: "4" }, "\uD14C\uB9C84"),
-                        React.createElement("option", { value: "5" }, "\uD14C\uB9C85")),
+                    React.createElement("div", { className: "h-9 px-2 border border-purple-200 rounded-lg bg-purple-50 flex items-center" },
+                        React.createElement(ThemeToggleButtons, { value: bulkThemeSet, onToggle: handleBulkThemeToggle, compact: true })),
                     React.createElement("button", { onClick: handleBulkThemeApply, className: "h-9 px-4 rounded-lg bg-purple-600 text-white border border-purple-600 text-[12px] font-black hover:bg-purple-700" },
                         React.createElement("i", { className: "fas fa-tags mr-1.5" }),
-                        "\uD604\uC7AC \uD45C\uC2DC \uC804\uCCB4 \uD14C\uB9C8\uC9C0\uC815"),
+                        "표시상품 테마적용"),
                     React.createElement("button", { onClick: resetFilters, className: "h-9 px-4 rounded-lg bg-slate-100 text-slate-600 border border-slate-300 text-[12px] font-black hover:bg-slate-200" },
                         React.createElement("i", { className: "fas fa-rotate-left mr-1.5" }),
                         "\uD544\uD130 \uCD08\uAE30\uD654"))),
@@ -960,7 +1013,7 @@ const ExportApp = () => {
                                 React.createElement("th", { className: "px-3 py-3 w-24 text-right font-bold text-rose-600" }, "\uCD9C\uACE0\uAC00"),
                                 React.createElement("th", { className: "px-3 py-3 w-20 text-right font-bold text-purple-600" }, "\uD589\uC0AC\uAC00"),
                                 React.createElement("th", { className: "px-3 py-3 w-20 text-center font-bold" }, "\uC7AC\uACE0"),
-                                React.createElement("th", { className: "px-3 py-3 w-24 text-center font-bold" }, "\uD14C\uB9C8"),
+                                React.createElement("th", { className: "px-3 py-3 w-56 text-center font-bold" }, "행사테마"),
                                 React.createElement("th", { className: "px-3 py-3 w-24 text-center font-bold" }, "\uC0C1\uD0DC"))),
                         React.createElement("tbody", { className: "divide-y divide-slate-100" }, filteredRows.length === 0 ? (React.createElement("tr", null,
                             React.createElement("td", { colSpan: "11", className: "p-10 text-center text-slate-400 font-bold" }, "\uD45C\uC2DC\uD560 \uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4."))) : filteredRows.map(item => {
@@ -998,14 +1051,8 @@ const ExportApp = () => {
                                     React.createElement("input", { type: "text", value: item.행사가, onChange: (e) => handleEdit(item.코드, '행사가', e.target.value), title: "\uD589\uC0AC\uAC00\uAC00 \uC788\uC73C\uBA74 \uCD9C\uB825 \uC801\uC6A9\uAC00\uB294 \uD589\uC0AC\uAC00\uAC00 \uC6B0\uC120\uD569\uB2C8\uB2E4.", className: "w-20 bg-transparent border-b border-transparent focus:border-purple-400 hover:border-slate-300 px-1 py-1 text-right font-black text-purple-700 outline-none" })),
                                 React.createElement("td", { className: "px-2 py-1 bg-slate-50/50" },
                                     React.createElement("input", { type: "text", value: item.재고수량, onChange: (e) => handleEdit(item.코드, '재고수량', e.target.value), className: "w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 px-1 py-1 text-center font-bold text-slate-600 outline-none" })),
-                                React.createElement("td", { className: "px-2 py-1 text-center" },
-                                    React.createElement("select", { value: item.promoTheme || 0, onChange: (e) => handleEdit(item.코드, 'promoTheme', e.target.value), disabled: parseNum(item.행사가) <= 0, className: "w-full border border-slate-200 rounded px-1 py-1 text-[12px] font-bold bg-white disabled:bg-slate-50 disabled:text-slate-300 outline-none" },
-                                        React.createElement("option", { value: "0" }, "-"),
-                                        React.createElement("option", { value: "1" }, "\uD14C\uB9C81"),
-                                        React.createElement("option", { value: "2" }, "\uD14C\uB9C82"),
-                                        React.createElement("option", { value: "3" }, "\uD14C\uB9C83"),
-                                        React.createElement("option", { value: "4" }, "\uD14C\uB9C84"),
-                                        React.createElement("option", { value: "5" }, "\uD14C\uB9C85"))),
+                                React.createElement("td", { className: "px-2 py-1 text-center min-w-[210px]" },
+                                    React.createElement(ThemeToggleButtons, { value: item.행사테마, onToggle: (themeNo) => handleRowThemeToggle(item.코드, themeNo), compact: true })),
                                 React.createElement("td", { className: "px-2 py-1 text-center" },
                                     React.createElement("span", { className: `inline-flex items-center justify-center w-full border rounded px-2 py-1 text-[12px] font-black ${sale.cls}` }, sale.text))));
                         }))))),
