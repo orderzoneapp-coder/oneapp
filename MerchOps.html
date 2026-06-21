@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.55 ParserCatalogDefaultFix]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.56 SelectedWarehouseFix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -2279,6 +2279,40 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         ui.setSelectedRows(new Set());
         ui.showToast(`✅ ${excludeCount}개 상품을 이번 업데이트 대상에서 제외했습니다.`);
     }, [ui.selectedRows, data.setManagedItems, ui]);
+    // ============================================================
+    // [M-ACTION-03] 선택상품 창고 일괄 지정
+    // 역할: 체크된 상품의 작업값(finalData.창고)에 입력 창고값을 즉시 반영한다.
+    // 정책: 마스터DB는 즉시 변경하지 않고 현재 작업테이블/출력센터 전달값만 바꾼다.
+    // ============================================================
+    const handleApplySelectedWarehouse = useCallback((warehouseValue) => {
+        const cleanWarehouse = String(warehouseValue !== undefined && warehouseValue !== null ? warehouseValue : '').trim();
+        if (ui.selectedRows.size === 0)
+            return ui.showToast('⚠️ 창고를 적용할 상품을 선택해주세요.');
+        if (!cleanWarehouse)
+            return ui.showToast('⚠️ 적용할 창고값을 입력하세요.');
+        const targetKeys = new Set(ui.selectedRows);
+        let applyCount = 0;
+        data.setManagedItems(prev => {
+            const next = { ...prev };
+            targetKeys.forEach(key => {
+                const current = next[key];
+                if (!current)
+                    return;
+                next[key] = {
+                    ...current,
+                    finalData: {
+                        ...(current.finalData || {}),
+                        '창고': cleanWarehouse,
+                        '_calcWarehouse': cleanWarehouse,
+                        '_calcWarehouseReason': '선택상품 창고지정'
+                    }
+                };
+                applyCount++;
+            });
+            return next;
+        });
+        ui.showToast(`✅ 선택상품 ${applyCount.toLocaleString()}건에 창고 [${cleanWarehouse}] 적용 완료`);
+    }, [ui.selectedRows, data.setManagedItems, ui]);
     const handleSaveAsCategory = useCallback((categoryName) => {
         if (!categoryName || !categoryName.trim())
             return;
@@ -3020,8 +3054,8 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         ui.showToast('↩️ 신규등록용 양식에서 복귀했습니다.');
     }, [ui]);
     return useMemo(() => ({
-        handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode
-    }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode]);
+        handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode
+    }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode]);
 };
 // --- UI Components ---
 const SystemConsole = ({ itemCount, isProcessing, processMsg, estimateCount, activeTags }) => {
@@ -3070,8 +3104,9 @@ const SearchBar = ({ value, onChange, placeholder }) => {
 };
 const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
     const { activeTags, selectedRows, globalSearch, priceFilter, categoryFilters = [], basicSearch, fullDisplayRows, config, registrationMode, data } = state;
-    const { handleStopSales, handleExcludeSelectedFromUpdate, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, setPriceFilter, setCategoryFilters, setSelectedRows, setBasicSearch, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode } = actions;
+    const { handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, setPriceFilter, setCategoryFilters, setSelectedRows, setBasicSearch, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode } = actions;
     const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+    const [selectedWarehouseInput, setSelectedWarehouseInput] = useState('');
     // [M-FILTER-ROWS-01] 정렬필터 재배치
     // 전체 버튼은 제거하고, 모든 필터는 같은 버튼을 다시 누르면 해제되어 전체 상태로 복귀한다.
     // 1단 정렬필터: 가격변동/행사중/행사제안/10/20/30/40/50/상세필터/단가변경/검색.
@@ -3303,6 +3338,11 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                     ['unitSub', '소분']
                 ].map(([value, label]) => (React.createElement("button", { key: value, onClick: () => applyPriceFilter(value), className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: `${label}: 한 번 누르면 선택, 다시 누르면 해제되어 전체로 복귀` }, label))),
                 selectedRows.size > 0 && !registrationMode && (React.createElement("div", { className: "ml-auto flex items-center justify-end gap-2 shrink-0" },
+                    React.createElement("span", { className: "text-[12px] font-black text-slate-600 whitespace-nowrap" }, "창고"),
+                    React.createElement("input", { type: "text", value: selectedWarehouseInput, onChange: e => setSelectedWarehouseInput(e.target.value), onKeyDown: e => { if (e.key === 'Enter') handleApplySelectedWarehouse(selectedWarehouseInput); }, placeholder: "예: 01", className: "h-8 w-[74px] px-2 rounded-lg border border-slate-300 bg-white text-[12px] font-black text-center outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100" }),
+                    React.createElement("button", { onClick: () => handleApplySelectedWarehouse(selectedWarehouseInput), className: "h-8 px-3 rounded-lg text-[12px] font-black shadow-sm flex items-center bg-indigo-600 text-white border border-indigo-600 hover:bg-indigo-700", title: "체크한 상품의 창고란에 입력값을 일괄 적용" },
+                        React.createElement("i", { className: "fas fa-warehouse mr-1.5 text-[12px]" }),
+                        "적용"),
                     React.createElement("button", { onClick: handleExcludeSelectedFromUpdate, className: "h-8 px-3 rounded-lg text-[12px] font-bold shadow-sm flex items-center bg-slate-50 text-slate-700 border border-slate-300 hover:bg-slate-100", title: "체크한 상품을 이번 업데이트 대상에서만 제외" },
                         React.createElement("i", { className: "fas fa-minus-circle mr-1.5 text-[12px]" }),
                         "제외"),
@@ -4292,7 +4332,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.55 ParserCatalogDefaultFix]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.56 SelectedWarehouseFix]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -4622,7 +4662,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.55 ParserCatalogDefaultFix")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.56 SelectedWarehouseFix")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
