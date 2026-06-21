@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.10 PromotionThemeSettings]</title>
+    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.11 TableViewFix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -95,14 +95,16 @@ const safeJSONParse = (key, defaultValue) => {
     }
 };
 const TABLE_VIEW_TARGETS = [
-    { id: 'catalog', label: '카탈로그', tone: 'indigo' },
     { id: 'estimate', label: '견적', tone: 'emerald' },
     { id: 'purchase', label: '구매', tone: 'sky' },
     { id: 'sales', label: '판매', tone: 'purple' },
-    { id: 'inventory', label: '재고', tone: 'amber' }
+    { id: 'inventory', label: '재고', tone: 'amber' },
+    { id: 'catalog', label: '카탈로그', tone: 'indigo' }
 ];
 const UPLOAD_ROLES = TABLE_VIEW_TARGETS;
 const TABLE_VIEW_TARGET_IDS = TABLE_VIEW_TARGETS.map(t => t.id);
+const DEFAULT_TABLE_VIEW_TARGET = 'estimate';
+const normalizeTableViewTarget = (target = DEFAULT_TABLE_VIEW_TARGET) => TABLE_VIEW_TARGET_IDS.includes(target) ? target : DEFAULT_TABLE_VIEW_TARGET;
 const requiredCoreFields = ['품목코드', '품목명', '규격'];
 const canonicalMerchFieldName = (field) => {
     const clean = String(field || '').trim();
@@ -291,7 +293,7 @@ const App = () => {
     const config = useMerchConfig();
     const data = useMerchData();
     const [activeTab, setActiveTab] = useState('display');
-    const [activeUploadRole, setActiveUploadRole] = useState('catalog');
+    const [activeUploadRole, setActiveUploadRole] = useState(DEFAULT_TABLE_VIEW_TARGET);
     const [activeTableViewId, setActiveTableViewId] = useState('');
     const [newViewName, setNewViewName] = useState('');
     const [viewDraft, setViewDraft] = useState(null);
@@ -682,7 +684,7 @@ const App = () => {
     const activeViewGroup = getActiveViewGroup();
     const activeViews = activeViewGroup.views || [];
     const activeView = activeViews.find(v => v.id === activeTableViewId) || activeViews[0] || null;
-    const activeRoleLabel = ((_a = UPLOAD_ROLES.find(r => r.id === activeUploadRole)) === null || _a === void 0 ? void 0 : _a.label) || '카탈로그';
+    const activeRoleLabel = ((_a = UPLOAD_ROLES.find(r => r.id === activeUploadRole)) === null || _a === void 0 ? void 0 : _a.label) || '견적';
     const editView = viewDraft || activeView;
     useEffect(() => {
         if (!activeView) {
@@ -747,8 +749,9 @@ const App = () => {
     };
     const selectTableView = (target, viewId = '') => {
         var _a, _b, _c;
-        setActiveUploadRole(target);
-        const group = ((_a = sanitizeTableViewPresets(config.tableViewPresets || getDefaultTableViewPresets())) === null || _a === void 0 ? void 0 : _a[target]) || { views: [] };
+        const safeTarget = normalizeTableViewTarget(target);
+        setActiveUploadRole(safeTarget);
+        const group = ((_a = sanitizeTableViewPresets(config.tableViewPresets || getDefaultTableViewPresets())) === null || _a === void 0 ? void 0 : _a[safeTarget]) || { views: [] };
         const firstId = ((_c = (_b = group.views) === null || _b === void 0 ? void 0 : _b[0]) === null || _c === void 0 ? void 0 : _c.id) || '';
         setActiveTableViewId(viewId || firstId);
     };
