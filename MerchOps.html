@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.57 ParserWarehouseIssueColorFix]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.58_CatalogQuoteListSplit]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -2079,7 +2079,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
     // [M-FLOW-02] 파서리스트/카탈로그 필터 불러오기
     // 역할: 기존 기능의 데이터 source는 그대로 두고, 화면 표시명만 변경한다.
     // - 기존 카달로그(파서)  → 파서리스트: 내부 type/catalog, 마스터 '카탈로그' 필드 기준
-    // - 기존 카달로그(견적)  → 카탈로그: 내부 type/category, 마스터 '견적서/카테고리' 필드 기준
+    // - 사용자 생성 카탈로그 → 카탈로그: 내부 type/category, 마스터 '견적서/카테고리' 필드 기준
     // 주의: 목록 안의 폴더/항목 source를 섞거나 변경하지 않는다.
     // ============================================================
     const handleLoadFilter = useCallback((type, name) => {
@@ -2374,7 +2374,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         if (fullDisplayRows.length === 0)
             return ui.showToast("⚠️ 카탈로그로 묶을 상품이 없습니다.");
         ui.setIsProcessing(true);
-        ui.setProcessMsg('카탈로그 생성 중...');
+        ui.setProcessMsg('카탈로그 목록 생성 중...');
         setTimeout(() => {
             let newMaster = { ...data.masterProducts };
             let count = 0;
@@ -2384,11 +2384,13 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                 if (!newMaster[code])
                     return;
                 newMaster[code] = { ...newMaster[code] };
-                const currentCatalogs = newMaster[code]['카탈로그'] || '';
-                const tags = String(currentCatalogs).split(',').map(s => s.trim()).filter(Boolean);
+                // 사용자 생성 카탈로그는 Smart Parser의 파서리스트(마스터 '카탈로그')와 분리한다.
+                // 저장 필드는 '견적서'이며, 상단 카탈로그 드롭다운은 이 견적서 목록을 불러온다.
+                const currentQuoteLists = newMaster[code]['견적서'] || newMaster[code]['카테고리'] || '';
+                const tags = String(currentQuoteLists).split(',').map(s => s.trim()).filter(Boolean);
                 if (!tags.includes(safeName)) {
                     tags.push(safeName);
-                    newMaster[code]['카탈로그'] = tags.join(', ');
+                    newMaster[code]['견적서'] = tags.join(', ');
                     count++;
                 }
             });
@@ -2399,7 +2401,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                         code: 'SYSTEM',
                         name: `[카탈로그 생성] ${safeName}`,
                         spec: '',
-                        field: '카탈로그',
+                        field: '견적서',
                         oldVal: '-',
                         newVal: `${count}개 상품 추가됨`,
                         diff: 0
@@ -2409,7 +2411,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             data.setMasterProducts(newMaster);
             ui.setShowCatalogModal(false);
             localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
-            ui.showToast(`✅ ${count}개 상품이 [${safeName}] 카탈로그에 추가/저장되었습니다.`);
+            ui.showToast(`✅ ${count}개 상품이 [${safeName}] 카탈로그 목록에 추가되었습니다. (견적서 목록 저장)`);
             ui.setIsProcessing(false);
             ui.setProcessMsg('');
         }, 100);
@@ -4370,7 +4372,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.57 ParserWarehouseIssueColorFix]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.58_CatalogQuoteListSplit]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -4700,7 +4702,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.57 ParserWarehouseIssueColorFix")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.58_CatalogQuoteListSplit")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
