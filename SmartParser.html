@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Smart Parser [v3.0.15 MappingExclude SafeRecover NoBabel]</title>
+    <title>ONEAPP MerchOps - Smart Parser [v3.0.16 MappingExclude UXFix NoBabel]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -620,7 +620,7 @@ const useParserActions = (appState) => {
                 quoteName: '',
                 timestamp: nowStr,
                 timestampISO: nowISO,
-                version: 'smart-parser-v3.0.15-mapping-exclude-safe-recover'
+                version: 'smart-parser-v3.0.16-mapping-exclude-ux-fix'
             };
             const makeHistoryLog = ({ code, row, oldItem, field, oldVal, newVal, memo, extra = {} }) => {
                 const oldNum = parseNum(oldVal);
@@ -1416,6 +1416,11 @@ const ParserApp = () => {
         return searchMasterProducts(masterProducts, globalSearch).slice(0, 50);
     }, [globalSearch, masterProducts, activeTab]);
     const displayUnmatchedRows = activeTab === 'similar' ? combinedSimilarRows : unmatchedRows;
+    const selectedMappingExcludeTarget = useMemo(() => {
+        if ((activeTab !== 'similar' && activeTab !== 'unmatched') || !targetId)
+            return null;
+        return displayUnmatchedRows.find(r => r && r._id === targetId) || null;
+    }, [activeTab, targetId, displayUnmatchedRows]);
     // [자동 탭 이동 로직]
     useEffect(() => {
         if (activeTab === 'unmatched' && unmatchedRows.length === 0 && parserBuffer.length > 0)
@@ -1531,7 +1536,7 @@ const ParserApp = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "Smart Parser"),
-                                        React.createElement("span", { className: "ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold" }, "v3.0.15 MappingExclude SafeRecover")),
+                                        React.createElement("span", { className: "ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold" }, "v3.0.16 MappingExclude UXFix")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "TEXT ANALYSIS & DELTA SYNC"))),
                             React.createElement("div", { className: "flex flex-1 max-w-md xl:max-w-xl mx-4" }, isProcessing ? React.createElement("div", { className: "w-full bg-amber-400 text-amber-900 px-4 py-1.5 rounded-md font-mono text-[12px] font-bold flex items-center shadow-inner truncate" },
                                 React.createElement("i", { className: "fas fa-spinner fa-spin mr-2" }),
@@ -1583,9 +1588,12 @@ const ParserApp = () => {
                             React.createElement("i", { className: "fas fa-eraser mr-1.5 text-[13px]" }),
                             " \uCE74\uD0C8\uB85C\uADF8 \uC81C\uC678"),
                         (activeTab === 'matched' || activeTab === 'missing') && React.createElement("div", { className: "w-px h-6 bg-slate-300 mx-1" }),
-                        React.createElement("button", { onClick: actions.openMappingExcludeModal, className: "h-9 px-3 rounded-lg text-[12px] font-bold bg-white text-rose-500 border border-rose-100 hover:bg-rose-50 shadow-sm flex items-center", title: "매핑제외 목록 관리" },
+                        (activeTab === 'similar' || activeTab === 'unmatched') && React.createElement("button", { onClick: () => selectedMappingExcludeTarget ? actions.handleExcludeParsedItem(selectedMappingExcludeTarget._id) : showToast("⚠️ 매핑제외할 상품을 먼저 선택하세요."), className: `h-9 px-3 rounded-lg text-[12px] font-bold border shadow-sm flex items-center ${selectedMappingExcludeTarget ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700' : 'bg-white text-slate-400 border-slate-200'}`, title: "선택한 외부상품을 다음부터 매핑제외" },
                             React.createElement("i", { className: "fas fa-ban mr-1.5 text-[12px]" }),
-                            "매핑제외",
+                            "선택 제외"),
+                        React.createElement("button", { onClick: actions.openMappingExcludeModal, className: "h-9 px-3 rounded-lg text-[12px] font-bold bg-white text-rose-500 border border-rose-100 hover:bg-rose-50 shadow-sm flex items-center", title: "매핑제외 목록 관리" },
+                            React.createElement("i", { className: "fas fa-list mr-1.5 text-[12px]" }),
+                            "제외목록",
                             mappingExcludeCount > 0 && React.createElement("span", { className: "ml-1.5 bg-rose-100 text-rose-600 px-1.5 rounded text-[10px] font-black" }, mappingExcludeCount)),
                         React.createElement("button", { onClick: actions.handleResetParser, disabled: parserBuffer.length === 0, className: `w-9 h-9 rounded-lg flex items-center justify-center border shadow-sm shrink-0 transition-colors ${parserBuffer.length > 0 ? 'bg-white border-slate-300 text-slate-500 hover:text-slate-800 hover:bg-slate-100' : 'bg-slate-50 border-slate-200 text-slate-300 cursor-not-allowed'}`, title: "\uC791\uC5C5 \uCD08\uAE30\uD654 (\uC138\uC158 \uBE44\uC6B0\uAE30)" },
                             React.createElement("i", { className: "fas fa-redo-alt text-[13px]" })),
