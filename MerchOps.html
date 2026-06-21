@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.42 PromotionThemeFlow]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.43 PurchaseIssueReport]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -785,7 +785,7 @@ const getInitialVisibleMasterCols = () => ({
 const getInitialVisibleUploadCols = () => ({
     catalog: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A', '행사가', '행사테마'],
     estimate: ['창고', '기준일자', '구매처', '브랜드', '견적서', '단위', '재고수량', '상품 구매일자', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '행사테마', '검색어등록'],
-    purchase: ['창고', '구매처', '단위', '입고가', '입고수량'],
+    purchase: ['창고', '구매처', '단위', '입고가', '입고수량', '구매리포트'],
     sales: ['창고', '구매처', '단위', '출고가', '출고량'],
     inventory: ['창고', '기준일자', '재고수량', '기록', '거래', '최종(창고)', '구분(기본)', '상품 구매일자', '구매처', '단위', '입고가', '출고가', '행사가', '간단설명']
 });
@@ -1738,7 +1738,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                     let mItem = newManaged[managedKey];
                     if (!mItem.sources[role])
                         mItem.sources[role] = {};
-                    mItem = { ...mItem, _tags: new Set([...(mItem._tags || []), `excel:${roleMeta.icon}업로드`]) };
+                    mItem = { ...mItem, _lastUploadRole: role, _tags: new Set([...(mItem._tags || []), `excel:${roleMeta.icon}업로드`]) };
                     const specKey = headerCache['규격'] || findActualHeader(['규격', '규격명', '단량', '사이즈']);
                     const vendorKey = headerCache['구매처'] || findActualHeader(['구매처', '거래처', '거래처명', '거래']);
                     const unitKey = headerCache['단위'] || findActualHeader(['단위', '포장단위', '판매단위', '매입단위', 'UNIT', 'unit']);
@@ -1768,6 +1768,32 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                             }
                         }
                     });
+                    // 구매현황 고도화: 같은 상품의 최근 7일 구매단가 흐름을 보존한다.
+                    // 단일 행으로 덮어쓰지 않고 _purchaseRows에 원본 구매일자/단가를 누적한다.
+                    if (role === 'purchase') {
+                        const source = mItem.sources.purchase;
+                        const actualPurchaseDateKey = headerCache['상품 구매일자'] || headerCache['기준일자'] || actualHeaders.find(h => ['상품구매일자', '구매일자', '입고일자', '일자', '기준일자'].includes(String(h).replace(/\s/g, '')));
+                        const actualPurchasePriceKey = headerCache['입고가'] || actualHeaders.find(h => ['입고가', '매입가', '구매단가', '매입단가', '단가', '최종(창고)', '최종창고'].includes(String(h).replace(/\s/g, '')));
+                        const actualPurchaseQtyKey = headerCache['입고수량'] || headerCache['수량'] || actualHeaders.find(h => ['입고수량', '구매수량', '수량'].includes(String(h).replace(/\s/g, '')));
+                        const dateRaw = actualPurchaseDateKey ? row[actualPurchaseDateKey] : '';
+                        const priceRaw = actualPurchasePriceKey ? row[actualPurchasePriceKey] : source['입고가'];
+                        const qtyRaw = actualPurchaseQtyKey ? row[actualPurchaseQtyKey] : source['입고수량'];
+                        const purchasePrice = window.parseNum(priceRaw);
+                        if (purchasePrice > 0) {
+                            if (!Array.isArray(source._purchaseRows)) source._purchaseRows = [];
+                            const dateKey = window.normalizeMerchPurchaseDateKey ? window.normalizeMerchPurchaseDateKey(dateRaw, new Date()) : '';
+                            source._purchaseRows.push({
+                                dateKey,
+                                rawDate: dateRaw || '',
+                                price: purchasePrice,
+                                qty: window.parseNum(qtyRaw),
+                                vendor: vendorKey ? row[vendorKey] : '',
+                                fileName: file.name || '',
+                                rowIdx
+                            });
+                            source['구매리포트'] = window.getMerchPurchaseTrend ? window.getMerchPurchaseTrend({ sources: { purchase: source } }, newMaster[cleanCode] || {}).reportText : '';
+                        }
+                    }
                     // 1재고현황 전용 컬럼 의미 보정:
                     // - 1행의 창고/기준일자는 실제 행 데이터가 아니므로 sheetMeta에서 읽어 재고 source에 주입한다.
                     // - '기록'은 상품 구매일자다.
@@ -1866,7 +1892,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             }
             data.setMasterProducts(newMaster);
             data.setManagedItems(newManaged);
-            const unregisteredRows = Object.values(newManaged).filter(item => item && item.코드 && !newMaster[item.코드]);
+            const unregisteredRows = Object.values(newManaged).filter(item => item && item.코드 && !newMaster[item.코드] && item._lastUploadRole !== 'purchase');
             if (unregisteredRows.length > 0) {
                 ui.setSelectedRows(new Set(unregisteredRows.map(item => window.getManagedRowKey(item))));
                 setTimeout(() => {
@@ -3041,11 +3067,10 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                     })))))),
         React.createElement("div", { className: "px-6 pt-3 pb-2 flex flex-col gap-2 w-full" },
             React.createElement("div", { className: "rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm flex items-center gap-2 flex-nowrap w-full overflow-x-auto custom-scrollbar" },
-                [
-                    ['changed', '가격변동'],
-                    ['promo', '행사중'],
-                    ['promoSuggest', '행사제안']
-                ].map(([value, label]) => (React.createElement("button", { key: value, onClick: () => applyPriceFilter(value), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: `${label}: 한 번 누르면 선택, 다시 누르면 해제되어 전체로 복귀` }, label))),
+                (activeTableTarget === 'purchase'
+                    ? [['purchaseUp', '상승'], ['purchaseDown', '하락'], ['purchaseOther', '기타상품']]
+                    : [['changed', '가격변동'], ['promo', '행사중'], ['promoSuggest', '행사제안']]
+                ).map(([value, label]) => (React.createElement("button", { key: value, onClick: () => applyPriceFilter(value), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: `${label}: 한 번 누르면 선택, 다시 누르면 해제되어 전체로 복귀` }, label))),
                 React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1" }),
                 MERCH_CATEGORY_FILTERS.map(cat => (React.createElement("button", { key: `cat-top-${cat}`, onClick: () => toggleCategoryFilter(cat), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${categoryFilters.includes(cat) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-blue-50'}`, title: `${cat} 카테고리: 한 번 누르면 선택, 다시 누르면 해제` }, cat))),
                 React.createElement("button", { onClick: () => setFilterPanelOpen(v => !v), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all flex items-center whitespace-nowrap shrink-0 ${showDetailFilterPanel ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: "상세 열기/닫기" },
@@ -3452,11 +3477,121 @@ const formatSignedRate = (v) => {
         return '0.0%';
     return `${n > 0 ? '+' : ''}${n.toFixed(1)}%`;
 };
+
+// ============================================================
+// [M-PURCHASE-ISSUE-01] 구매 불러오기 고도화
+// 역할: 구매현황의 최근 7일 리포트와 상승/하락/기타상품 이슈를 분리 산출한다.
+// 기준가=마스터 입고가, 오늘가=구매현황 오늘 구매분 중 최고단가.
+// 오늘 구매분이 없으면 상승/하락 판정하지 않고 리포트만 표시한다.
+// ============================================================
+window.normalizeMerchPurchaseDateKey = (value, fallbackDate = null) => {
+    if (value === undefined || value === null || value === '') {
+        if (!fallbackDate) return '';
+        const d = fallbackDate instanceof Date ? fallbackDate : new Date(fallbackDate);
+        return Number.isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    if (value instanceof Date) {
+        return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        const d = new Date(Math.round((value - 25569) * 86400 * 1000));
+        return Number.isNaN(d.getTime()) ? '' : `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    }
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const cleaned = raw.replace(/[.]/g, '-').replace(/[\/]/g, '-').replace(/년|월/g, '-').replace(/일/g, '').replace(/\s+/g, ' ');
+    let m = cleaned.match(/(20\d{2}|19\d{2})-(\d{1,2})-(\d{1,2})/);
+    if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+    m = cleaned.match(/(\d{1,2})-(\d{1,2})/);
+    if (m) {
+        const y = new Date().getFullYear();
+        return `${y}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`;
+    }
+    m = cleaned.match(/(^|\D)(\d{1,2})(\D|$)/);
+    if (m) {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(m[2]).padStart(2, '0')}`;
+    }
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+window.formatMerchPurchaseReportDate = (dateKey, prevMonth, hasMonthChange) => {
+    const parts = String(dateKey || '').split('-');
+    if (parts.length < 3) return '';
+    const mm = parts[1];
+    const dd = parts[2];
+    if (!hasMonthChange) return `(${Number(dd)})`;
+    if (!prevMonth || prevMonth !== mm) return `(${mm}/${dd})`;
+    return `(${Number(dd)})`;
+};
+window.getMerchPurchaseTrend = (row = {}, mItem = {}) => {
+    const purchaseSource = (row.sources && row.sources.purchase) || {};
+    const rawRows = Array.isArray(purchaseSource._purchaseRows) ? purchaseSource._purchaseRows : [];
+    const fallbackPrice = window.parseNum(purchaseSource['입고가'] || purchaseSource['매입가'] || purchaseSource['구매단가'] || purchaseSource['단가']);
+    const fallbackDateRaw = purchaseSource['상품 구매일자'] || purchaseSource['구매일자'] || purchaseSource['기준일자'] || purchaseSource['일자'] || '';
+    const today = new Date();
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const rows = (rawRows.length ? rawRows : (fallbackPrice > 0 ? [{ price: fallbackPrice, dateKey: window.normalizeMerchPurchaseDateKey(fallbackDateRaw, today), rawDate: fallbackDateRaw }] : []))
+        .map(r => {
+            const price = window.parseNum(r.price !== undefined ? r.price : (r['입고가'] || r['단가']));
+            const dateKey = r.dateKey || window.normalizeMerchPurchaseDateKey(r.rawDate || r.date || r['일자'] || r['구매일자'], today);
+            return { ...r, price, dateKey: dateKey || todayKey };
+        })
+        .filter(r => r.price > 0);
+    if (!rows.length) return { hasPurchaseData: false, issue: '', reportText: '', reportParts: [] };
+    const todayMs = new Date(`${todayKey}T00:00:00`).getTime();
+    const recentRows = rows.filter(r => {
+        const ms = new Date(`${r.dateKey}T00:00:00`).getTime();
+        if (Number.isNaN(ms)) return true;
+        const diffDays = Math.floor((todayMs - ms) / 86400000);
+        return diffDays >= 0 && diffDays <= 6;
+    });
+    const targetRows = recentRows.length ? recentRows : rows;
+    const byDate = new Map();
+    targetRows.forEach(r => {
+        const cur = byDate.get(r.dateKey);
+        if (!cur || r.price > cur.price) byDate.set(r.dateKey, r);
+    });
+    const reportRows = Array.from(byDate.values()).sort((a, b) => String(a.dateKey).localeCompare(String(b.dateKey)));
+    const prices = reportRows.map(r => r.price).filter(v => v > 0);
+    const maxPrice = prices.length ? Math.max(...prices) : 0;
+    const minPrice = prices.length ? Math.min(...prices) : 0;
+    const hasRange = maxPrice > 0 && minPrice > 0 && maxPrice !== minPrice;
+    const months = new Set(reportRows.map(r => String(r.dateKey).split('-')[1]).filter(Boolean));
+    const hasMonthChange = months.size > 1;
+    let prevMonth = '';
+    const reportParts = reportRows.map(r => {
+        const month = String(r.dateKey).split('-')[1] || '';
+        const dateText = window.formatMerchPurchaseReportDate(r.dateKey, prevMonth, hasMonthChange);
+        prevMonth = month || prevMonth;
+        let tone = 'normal';
+        if (hasRange && r.price === maxPrice) tone = 'high';
+        else if (hasRange && r.price === minPrice) tone = 'low';
+        return { text: `${dateText}${r.price.toLocaleString()}`, tone, dateKey: r.dateKey, price: r.price };
+    });
+    const reportText = reportParts.map(p => p.text).join(' ');
+    const hasMaster = !!(mItem && (mItem['품목코드'] || mItem['품목명'] || mItem['입고가'] !== undefined || mItem['출고가'] !== undefined));
+    const basePrice = window.parseNum(mItem && mItem['입고가']);
+    const todayRows = rows.filter(r => r.dateKey === todayKey);
+    let issue = '';
+    if (!hasMaster) issue = '기타상품';
+    else if (todayRows.length > 0 && basePrice > 0) {
+        const todayMax = Math.max(...todayRows.map(r => r.price));
+        if (todayMax > basePrice) issue = '상승';
+        else if (todayMax < basePrice) issue = '하락';
+        else issue = '';
+    }
+    return { hasPurchaseData: true, issue, reportText, reportParts, todayKey, todayCount: todayRows.length, basePrice };
+};
 const buildRowReport = ({ row, mItem, issueText, issueSubText, latestHistory, compareSummary, marginInfo, stockQty, safeStock, promoActive }) => {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t;
     const lines = [];
     const oldIn = window.parseNum(mItem === null || mItem === void 0 ? void 0 : mItem['입고가']);
     const newIn = window.parseNum(((_a = row.finalData) === null || _a === void 0 ? void 0 : _a['입고가']) !== undefined ? row.finalData['입고가'] : ((_o = (_k = (_g = (_d = (_c = (_b = row.sources) === null || _b === void 0 ? void 0 : _b.estimate) === null || _c === void 0 ? void 0 : _c['입고가']) !== null && _d !== void 0 ? _d : (_f = (_e = row.sources) === null || _e === void 0 ? void 0 : _e.purchase) === null || _f === void 0 ? void 0 : _f['입고가']) !== null && _g !== void 0 ? _g : (_j = (_h = row.sources) === null || _h === void 0 ? void 0 : _h.sales) === null || _j === void 0 ? void 0 : _j['입고가']) !== null && _k !== void 0 ? _k : (_m = (_l = row.sources) === null || _l === void 0 ? void 0 : _l.inventory) === null || _m === void 0 ? void 0 : _m['입고가']) !== null && _o !== void 0 ? _o : oldIn));
+    const purchaseTrend = window.getMerchPurchaseTrend ? window.getMerchPurchaseTrend(row, mItem) : null;
+    if (purchaseTrend && purchaseTrend.hasPurchaseData && purchaseTrend.reportText) {
+        return [purchaseTrend.reportText, ''];
+    }
     if (latestHistory) {
         const catalog = normalizeHistoryCatalog(latestHistory) || '파서';
         const oldVal = (_q = (_p = latestHistory.oldVal) !== null && _p !== void 0 ? _p : latestHistory.oldInPrice) !== null && _q !== void 0 ? _q : oldIn;
@@ -3684,6 +3819,7 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
     const promoActive = isPromoActive(row, mItem);
     const stockQty = getStockQty(row, mItem);
     const safeStock = getSafeStock(mItem);
+    const purchaseTrendInfo = window.getMerchPurchaseTrend ? window.getMerchPurchaseTrend(row, mItem) : null;
     let issueText = '-';
     let issueSubText = marginText;
     let issueCellBg = 'bg-white';
@@ -3750,6 +3886,20 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
             issueCellBg = 'bg-white';
         }
     }
+    if (!state.registrationMode && purchaseTrendInfo && purchaseTrendInfo.hasPurchaseData && (activeTableTarget === 'purchase' || (((row.sources || {}).purchase) !== undefined))) {
+        if (purchaseTrendInfo.issue) {
+            issueText = purchaseTrendInfo.issue;
+            issueSubText = '';
+            issueTextColor = purchaseTrendInfo.issue === '상승' ? 'text-rose-600' : (purchaseTrendInfo.issue === '하락' ? 'text-blue-600' : 'text-slate-700');
+            issueCellBg = 'bg-white';
+        }
+        else if (['가격변동', '큰변동', '신규/재입고', '품절/단종', '신규등록'].includes(issueText)) {
+            issueText = '-';
+            issueSubText = '';
+            issueTextColor = 'text-slate-500';
+            issueCellBg = 'bg-white';
+        }
+    }
     if (state.registrationMode) {
         const draft = window.buildMerchRegistrationDraft ? window.buildMerchRegistrationDraft(row) : (row.finalData || {});
         const validation = window.validateMerchRegistrationCandidate ? window.validateMerchRegistrationCandidate(draft) : { status: '신규등록', message: '' };
@@ -3759,7 +3909,7 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
         issueTextColor = validation.canRegister ? 'text-emerald-700' : 'text-rose-700';
     }
     const compareSummary = getComparePriceSummary(row, config);
-    if (!state.registrationMode && compareSummary.hasDiff) {
+    if (!state.registrationMode && compareSummary.hasDiff && !(purchaseTrendInfo && purchaseTrendInfo.hasPurchaseData && (activeTableTarget === 'purchase' || (((row.sources || {}).purchase) !== undefined)))) {
         if (issueText === '-') {
             issueText = '단가확인';
             issueSubText = '';
@@ -3772,6 +3922,9 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
         issueSubText = '';
     }
     const issueBadgeClassMap = {
+        '상승': 'bg-rose-50 text-rose-700 border-rose-200',
+        '하락': 'bg-blue-50 text-blue-700 border-blue-200',
+        '기타상품': 'bg-slate-100 text-slate-700 border-slate-300',
         '가격변동': 'bg-amber-50 text-amber-700 border-amber-200',
         '단가확인': 'bg-sky-50 text-sky-700 border-sky-200',
         '행사': 'bg-violet-50 text-violet-700 border-violet-200',
@@ -3860,7 +4013,10 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
             }),
             !state.registrationMode && (React.createElement("td", { className: `px-3 py-1.5 bg-white border-l-2 border-l-slate-300 border-r border-slate-200 min-w-[220px] w-[220px] max-w-[220px] ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'}` },
                 React.createElement("div", { className: `flex flex-col justify-center gap-0.5 leading-tight ${reportTone}` },
-                    React.createElement("div", { className: "text-[11px] font-black truncate", title: reportLines[0] || '' }, reportLines[0] || '-'),
+                    (purchaseTrendInfo && purchaseTrendInfo.reportParts && purchaseTrendInfo.reportParts.length > 0 && reportLines[0] === purchaseTrendInfo.reportText)
+                        ? React.createElement("div", { className: "text-[11px] font-black truncate", title: purchaseTrendInfo.reportText || '' },
+                            purchaseTrendInfo.reportParts.map((part, pi) => React.createElement("span", { key: `${part.dateKey || pi}-${pi}`, className: `${part.tone === 'high' ? 'text-rose-600' : (part.tone === 'low' ? 'text-blue-600' : 'text-slate-600')} ${pi > 0 ? 'ml-1.5' : ''}` }, part.text)))
+                        : React.createElement("div", { className: "text-[11px] font-black truncate", title: reportLines[0] || '' }, reportLines[0] || '-'),
                     React.createElement("div", { className: "text-[10px] font-bold text-slate-500 truncate", title: reportLines[1] || '' }, reportLines[1] || ''))))))));
 });
 const ExcelDataGrid = ({ state, actions }) => {
@@ -3918,7 +4074,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.42 PromotionThemeFlow]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.43 PurchaseIssueReport]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -4076,6 +4232,13 @@ const App = () => {
             baseList = baseList.filter(item => {
                 var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11;
                 const mItem = data.masterProducts[item.코드] || {};
+                const purchaseTrend = window.getMerchPurchaseTrend ? window.getMerchPurchaseTrend(item, mItem) : null;
+                if (ui.priceFilter === 'purchaseUp')
+                    return purchaseTrend && purchaseTrend.issue === '상승';
+                if (ui.priceFilter === 'purchaseDown')
+                    return purchaseTrend && purchaseTrend.issue === '하락';
+                if (ui.priceFilter === 'purchaseOther')
+                    return purchaseTrend && purchaseTrend.issue === '기타상품';
                 const oldIn = window.parseNum(mItem['입고가']);
                 const newIn = window.parseNum(((_a = item.finalData) === null || _a === void 0 ? void 0 : _a['입고가']) !== undefined ? item.finalData['입고가'] : ((_k = (_g = (_d = (_c = (_b = item.sources) === null || _b === void 0 ? void 0 : _b['estimate']) === null || _c === void 0 ? void 0 : _c['입고가']) !== null && _d !== void 0 ? _d : (_f = (_e = item.sources) === null || _e === void 0 ? void 0 : _e['purchase']) === null || _f === void 0 ? void 0 : _f['입고가']) !== null && _g !== void 0 ? _g : (_j = (_h = item.sources) === null || _h === void 0 ? void 0 : _h['sales']) === null || _j === void 0 ? void 0 : _j['입고가']) !== null && _k !== void 0 ? _k : (_m = (_l = item.sources) === null || _l === void 0 ? void 0 : _l['inventory']) === null || _m === void 0 ? void 0 : _m['입고가']));
                 const oldOut = window.parseNum(mItem['출고가']);
@@ -4246,7 +4409,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.42 PromotionThemeFlow")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.43 PurchaseIssueReport")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
