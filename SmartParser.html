@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Smart Parser [v3.0.12 WhiteScreenFix NoBabel]</title>
+    <title>ONEAPP MerchOps - Smart Parser [v3.0.15 MappingExclude SafeRecover NoBabel]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -344,6 +344,98 @@ const searchMasterProducts = (productsObj, keyword) => {
     results.sort((a, b) => b.score - a.score || b.matchCount - a.matchCount);
     return results.map(r => r.item);
 };
+const PARSER_EXCLUDE_DICT_KEY = 'smartParserExcludeDict_v3012';
+const PARSER_EXCLUDE_BACKUP_KEY = 'smartParserExcludeDict_backup_v3015';
+const PARSER_EXCLUDE_MAX_KEEP = 1000;
+const makeParserExcludeKey = (catalog, name, spec) => `${normalizeText(catalog || '')}|${normalizeText(name || '')}|${normalizeText(spec || '')}`;
+const safeParseJson = (raw, fallback) => {
+    try {
+        return raw ? JSON.parse(raw) : fallback;
+    }
+    catch (e) {
+        console.warn('JSON 파싱 실패', e);
+        return fallback;
+    }
+};
+const normalizeParserExcludeDict = (dict) => {
+    const source = dict && typeof dict === 'object' && !Array.isArray(dict) ? dict : {};
+    const normalized = {};
+    Object.entries(source).forEach(([rawKey, rawItem]) => {
+        const item = rawItem && typeof rawItem === 'object' ? rawItem : {};
+        const catalog = String(item.catalog || '').trim();
+        const name = String(item.name || '').trim();
+        const spec = String(item.spec || '').trim();
+        if (!catalog || !name)
+            return;
+        const key = makeParserExcludeKey(catalog, name, spec);
+        normalized[key] = {
+            catalog,
+            name,
+            spec,
+            unit: item.unit || '',
+            price: item.price || '',
+            matchStatus: item.matchStatus || '',
+            reason: item.reason || '매핑제외',
+            createdAt: item.createdAt || getNowISO(),
+            sourceKey: rawKey
+        };
+    });
+    const entries = Object.entries(normalized);
+    if (entries.length <= PARSER_EXCLUDE_MAX_KEEP)
+        return normalized;
+    return Object.fromEntries(entries.slice(entries.length - PARSER_EXCLUDE_MAX_KEEP));
+};
+const loadParserExcludeDict = () => {
+    const raw = localStorage.getItem(PARSER_EXCLUDE_DICT_KEY);
+    const parsed = safeParseJson(raw, {});
+    const normalized = normalizeParserExcludeDict(parsed);
+    try {
+        if (raw && JSON.stringify(parsed) !== JSON.stringify(normalized))
+            localStorage.setItem(PARSER_EXCLUDE_DICT_KEY, JSON.stringify(normalized));
+    }
+    catch (e) {
+        console.warn('매핑제외 목록 정리 저장 실패', e);
+    }
+    return normalized;
+};
+const getParserExcludeList = (excludeDict, currentTag = '') => Object.entries(normalizeParserExcludeDict(excludeDict || {})).map(([key, item]) => ({ key, ...(item || {}) })).filter(item => !currentTag || !item.catalog || item.catalog === currentTag);
+const cleanupSmartParserStorage = () => {
+    try { localStorage.removeItem('parser_session'); } catch (e) { }
+    try { localStorage.removeItem('smartParserTempData'); } catch (e) { }
+    try {
+        const hist = safeParseJson(localStorage.getItem('merchHistory_v870'), []);
+        if (Array.isArray(hist) && hist.length > 500)
+            localStorage.setItem('merchHistory_v870', JSON.stringify(hist.slice(0, 500)));
+    }
+    catch (e) { console.warn('히스토리 정리 실패', e); }
+};
+const saveMerchHistoryWithRetry = (localLogs, storageKey = 'merchHistory_v870') => {
+    const logs = Array.isArray(localLogs) ? localLogs.filter(Boolean) : [];
+    if (logs.length === 0)
+        return 0;
+    const currentHistory = safeParseJson(localStorage.getItem(storageKey), []);
+    const retryLimits = [5000, 3000, 2000, 1000, 500, 200, 100, logs.length];
+    let lastError = null;
+    for (const limit of retryLimits) {
+        const keepLimit = Math.max(Number(limit) || logs.length, logs.length);
+        try {
+            const mergedHistory = [...logs, ...(Array.isArray(currentHistory) ? currentHistory : [])].slice(0, keepLimit);
+            localStorage.setItem(storageKey, JSON.stringify(mergedHistory));
+            const verifyHistory = safeParseJson(localStorage.getItem(storageKey), []);
+            const verifyIds = new Set((Array.isArray(verifyHistory) ? verifyHistory : []).map(log => log && log.id));
+            const missingIds = logs.filter(log => !verifyIds.has(log.id));
+            if (missingIds.length > 0)
+                throw new Error('히스토리 저장 검증에 실패했습니다.');
+            return mergedHistory.length;
+        }
+        catch (e) {
+            lastError = e;
+            cleanupSmartParserStorage();
+            console.warn('히스토리 저장 재시도', keepLimit, e);
+        }
+    }
+    throw new Error('히스토리 저장 실패: 브라우저 저장공간이 부족하거나 localStorage가 차단되었습니다. ' + (lastError?.message || lastError?.name || String(lastError || '')));
+};
 const useParserApp = () => {
     const [masterProducts, setMasterProducts] = useState({});
     const [parserDict, setParserDict] = useState(() => { try {
@@ -352,6 +444,7 @@ const useParserApp = () => {
     catch (e) {
         return {};
     } });
+    const [parserExcludeDict, setParserExcludeDict] = useState(() => loadParserExcludeDict());
     const [marginRules, setMarginRules] = useState(() => { try {
         return JSON.parse(localStorage.getItem('merchMarginRules_v878')) || [{ id: 'default', whCode: '*', unit: '*', rate: 10, type: 'divide' }];
     }
@@ -365,13 +458,60 @@ const useParserApp = () => {
     } }).catch(console.error); }, []);
     useEffect(() => { const handleStorageChange = (e) => { if (e.key === 'merchMaster_sync_trigger' || e.key === 'merch_settings_update_trigger')
         window.location.reload(); }; window.addEventListener('storage', handleStorageChange); return () => window.removeEventListener('storage', handleStorageChange); }, []);
-    const saveMaster = async (data) => { setMasterProducts(data); try {
-        window.requestIdleCallback?.(async () => { await bulkPutIDB('master_products', Object.values(data).filter(item => item && item.코드)); localStorage.setItem('merchMaster_sync_trigger', Date.now().toString()); });
-    }
-    catch (e) {
-        console.error("IndexedDB 저장 실패", e);
-    } };
-    const saveDict = (data) => { setParserDict(data); localStorage.setItem('parserDict_v870', JSON.stringify(data)); };
+    const saveMaster = async (data) => {
+        setMasterProducts(data);
+        try {
+            const items = Object.values(data || {}).filter(item => item && item.코드);
+            await bulkPutIDB('master_products', items);
+            localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+        }
+        catch (e) {
+            console.error("IndexedDB 저장 실패", e);
+            throw new Error('마스터 IndexedDB 저장 실패: ' + (e?.message || e?.name || String(e)));
+        }
+    };
+    const saveDict = (data) => {
+        const safeData = data || {};
+        setParserDict(safeData);
+        try {
+            localStorage.setItem('parserDict_v870', JSON.stringify(safeData));
+        }
+        catch (e) {
+            console.warn("파서 매핑사전 localStorage 저장 실패 - 마스터 적용은 계속 진행", e);
+            try {
+                cleanupSmartParserStorage();
+                localStorage.setItem('parserDict_v870', JSON.stringify(safeData));
+            }
+            catch (retryErr) {
+                console.warn("파서 매핑사전 재시도 실패 - 이번 마스터 적용은 유지하고 학습저장만 건너뜀", retryErr);
+            }
+        }
+    };
+    const saveParserExcludeDict = (data) => {
+        const normalized = normalizeParserExcludeDict(data || {});
+        try {
+            localStorage.setItem(PARSER_EXCLUDE_BACKUP_KEY, localStorage.getItem(PARSER_EXCLUDE_DICT_KEY) || '{}');
+        }
+        catch (e) { }
+        try {
+            localStorage.setItem(PARSER_EXCLUDE_DICT_KEY, JSON.stringify(normalized));
+            setParserExcludeDict(normalized);
+        }
+        catch (e) {
+            console.warn("매핑제외 목록 저장 1차 실패", e);
+            try {
+                cleanupSmartParserStorage();
+                const entries = Object.entries(normalized);
+                const compact = Object.fromEntries(entries.slice(Math.max(0, entries.length - 300)));
+                localStorage.setItem(PARSER_EXCLUDE_DICT_KEY, JSON.stringify(compact));
+                setParserExcludeDict(compact);
+            }
+            catch (retryErr) {
+                console.error("매핑제외 목록 저장 실패", retryErr);
+                throw new Error('매핑제외 목록 저장 실패: 브라우저 저장공간이 부족하거나 localStorage가 차단되었습니다. ' + (retryErr?.message || retryErr?.name || String(retryErr)));
+            }
+        }
+    };
     const [parserBuffer, setParserBuffer] = useState([]);
     const [currentTag, setCurrentTag] = useState('');
     const [activeTab, setActiveTab] = useState('matched');
@@ -388,22 +528,32 @@ const useParserApp = () => {
     const [missingSearch, setMissingSearch] = useState('');
     const [showExcludeModal, setShowExcludeModal] = useState(false);
     const [excludeTarget, setExcludeTarget] = useState(null);
+    const [showMappingExcludeModal, setShowMappingExcludeModal] = useState(false);
+    const [lastExcludedCount, setLastExcludedCount] = useState(0);
     const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
-    return { masterProducts, saveMaster, parserDict, saveDict, marginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, setIsProcessing, processMsg, setProcessMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, missingSearch, setMissingSearch, showExcludeModal, setShowExcludeModal, excludeTarget, setExcludeTarget };
+    return { masterProducts, saveMaster, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, marginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, setIsProcessing, processMsg, setProcessMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, missingSearch, setMissingSearch, showExcludeModal, setShowExcludeModal, excludeTarget, setExcludeTarget, showMappingExcludeModal, setShowMappingExcludeModal, lastExcludedCount, setLastExcludedCount };
 };
 const useParserActions = (appState) => {
-    const { masterProducts, saveMaster, parserDict, saveDict, marginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, setActiveTab, setShowInputModal, showToast, setIsProcessing, setProcessMsg, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, setShowErpModal, setShowExcludeModal, setExcludeTarget } = appState;
+    const { masterProducts, saveMaster, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, marginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, setActiveTab, setShowInputModal, showToast, setIsProcessing, setProcessMsg, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, setShowErpModal, setShowExcludeModal, setExcludeTarget, setShowMappingExcludeModal, setLastExcludedCount } = appState;
     const executeParser = useCallback((rawText, tag, forceManual = false) => {
         setShowInputModal(false);
         setIsProcessing(true);
         setProcessMsg("AI 분석 및 스마트 매칭 중...");
         setCurrentTag(tag);
         setProcessedCodes(new Set());
+        setLastExcludedCount(0);
         setTimeout(() => {
             try {
                 const parsedData = parseTextSemantically(rawText);
                 const results = [];
+                const cleanExcludeDict = normalizeParserExcludeDict(parserExcludeDict || {});
+                let excludedCount = 0;
                 parsedData.forEach(rowData => {
+                    const excludeKey = makeParserExcludeKey(tag, rowData['품목명'] || '', rowData['규격'] || '');
+                    if (cleanExcludeDict && cleanExcludeDict[excludeKey]) {
+                        excludedCount++;
+                        return;
+                    }
                     let matchResult = forceManual ? { code: '', status: '🔴 불일치' } : runSmartMatch(rowData['품목명'] || '', rowData['규격'] || '', masterProducts, parserDict);
                     rowData._matchCode = matchResult.code;
                     rowData._matchStatus = matchResult.status;
@@ -417,12 +567,14 @@ const useParserActions = (appState) => {
                         rowData.finalData['입고가'] = pInNum;
                     results.push(rowData);
                 });
+                setLastExcludedCount(excludedCount);
                 setParserBuffer(results);
                 setActiveTab(forceManual ? 'unmatched' : 'matched');
                 setTargetId(null);
                 setGlobalSearch('');
                 setSelectedMissingCodes(new Set());
-                showToast(forceManual ? '✅ 수동 매핑 모드로 로드되었습니다.' : '✅ 텍스트 분석 및 매칭이 완료되었습니다.');
+                const baseMsg = forceManual ? '✅ 수동 매핑 모드로 로드되었습니다.' : '✅ 텍스트 분석 및 매칭이 완료되었습니다.';
+                showToast(excludedCount > 0 ? `${baseMsg} 매핑제외 ${excludedCount}건은 숨겼습니다.` : baseMsg);
             }
             catch (error) {
                 console.error(error);
@@ -433,9 +585,9 @@ const useParserActions = (appState) => {
                 setProcessMsg('');
             }
         }, 100);
-    }, [masterProducts, parserDict, marginRules]);
+    }, [masterProducts, parserDict, parserExcludeDict, marginRules, setLastExcludedCount]);
     const handleApplyMatched = useCallback(async (updateTextData = true) => {
-        const toApply = parserBuffer.filter(r => r._apply && r._matchCode);
+        const toApply = parserBuffer.filter(r => r && !r._excluded && r._apply && r._matchCode && !String(r._matchStatus || '').includes('매핑제외'));
         if (toApply.length === 0) {
             showToast("⚠️ 적용할 항목이 없습니다.");
             return false;
@@ -468,7 +620,7 @@ const useParserActions = (appState) => {
                 quoteName: '',
                 timestamp: nowStr,
                 timestampISO: nowISO,
-                version: 'smart-parser-v3.0.9-spec-display-fix'
+                version: 'smart-parser-v3.0.15-mapping-exclude-safe-recover'
             };
             const makeHistoryLog = ({ code, row, oldItem, field, oldVal, newVal, memo, extra = {} }) => {
                 const oldNum = parseNum(oldVal);
@@ -608,18 +760,7 @@ const useParserActions = (appState) => {
                 throw new Error('마스터 변경 항목이 있으나 히스토리 로그가 생성되지 않았습니다.');
             }
             if (localLogs.length > 0) {
-                let currentHistory = [];
-                try {
-                    currentHistory = JSON.parse(localStorage.getItem('merchHistory_v870')) || [];
-                }
-                catch (e) { }
-                const mergedHistory = [...localLogs, ...currentHistory].slice(0, 5000);
-                localStorage.setItem('merchHistory_v870', JSON.stringify(mergedHistory));
-                const verifyHistory = JSON.parse(localStorage.getItem('merchHistory_v870') || '[]');
-                const verifyIds = new Set(verifyHistory.map(log => log && log.id));
-                const missingIds = localLogs.filter(log => !verifyIds.has(log.id));
-                if (missingIds.length > 0)
-                    throw new Error('히스토리 저장 검증에 실패했습니다.');
+                saveMerchHistoryWithRetry(localLogs);
             }
             if (addedToPending)
                 await setIDB('pending_shop_status', pendingList);
@@ -633,7 +774,11 @@ const useParserActions = (appState) => {
         }
         catch (error) {
             console.error(error);
-            showToast(error?.message?.includes("히스토리") || error?.message?.includes("마스터 변경") ? "❌ " + error.message : "❌ 데이터베이스 저장 중 오류가 발생했습니다.");
+            const errorMsg = error?.message || error?.name || String(error || '알 수 없는 오류');
+            if (errorMsg.includes('히스토리') || errorMsg.includes('마스터') || errorMsg.includes('IndexedDB') || errorMsg.includes('매핑사전') || errorMsg.includes('매핑제외') || errorMsg.includes('저장공간') || errorMsg.includes('Quota') || errorMsg.includes('localStorage'))
+                showToast('❌ ' + errorMsg);
+            else
+                showToast('❌ 데이터베이스 저장 중 오류: ' + errorMsg);
             return false;
         }
         finally {
@@ -705,6 +850,69 @@ const useParserActions = (appState) => {
         setTargetId(null);
         setGlobalSearch('');
     } }, [targetId, setParserBuffer, setTargetId, setGlobalSearch]);
+    const handleExcludeParsedItem = useCallback((id) => {
+        const row = parserBuffer.find(r => r._id === id);
+        if (!row)
+            return;
+        if (!currentTag)
+            return showToast("⚠️ 기준 카탈로그가 없어 매핑제외를 저장할 수 없습니다.");
+        if (!window.confirm(`이 상품을 매핑제외 처리할까요?
+
+[${row['품목명'] || ''}]
+앞으로 같은 카탈로그에서 같은 상품명/규격이 들어오면 유사·불일치 대기열에 표시하지 않습니다.
+
+※ 마스터 상품은 삭제되지 않습니다.`))
+            return;
+        const key = makeParserExcludeKey(currentTag, row['품목명'] || '', row['규격'] || '');
+        const nextDict = {
+            ...(parserExcludeDict || {}),
+            [key]: {
+                catalog: currentTag,
+                name: row['품목명'] || '',
+                spec: row['규격'] || '',
+                unit: row['단위'] || '',
+                price: row['입고가'] || row?.finalData?.['입고가'] || '',
+                matchStatus: row._matchStatus || '',
+                reason: '매핑제외',
+                createdAt: getNowISO()
+            }
+        };
+        try {
+            saveParserExcludeDict(nextDict);
+        }
+        catch (error) {
+            console.error(error);
+            showToast('❌ ' + (error?.message || error?.name || String(error || '매핑제외 저장 실패')));
+            return;
+        }
+        setParserBuffer(prev => prev.filter(r => r._id !== id));
+        setLastExcludedCount(prev => Number(prev || 0) + 1);
+        if (targetId === id) {
+            setTargetId(null);
+            setGlobalSearch('');
+        }
+        showToast("✅ 매핑제외 목록에 저장했습니다. 다음 파싱부터 대기열에 표시하지 않습니다.");
+    }, [parserBuffer, parserExcludeDict, saveParserExcludeDict, currentTag, targetId, setParserBuffer, setTargetId, setGlobalSearch, setLastExcludedCount, showToast]);
+    const handleRestoreParserExcluded = useCallback((key) => {
+        const nextDict = { ...(parserExcludeDict || {}) };
+        delete nextDict[key];
+        saveParserExcludeDict(nextDict);
+        showToast("✅ 매핑제외를 해제했습니다. 다음 파싱부터 다시 후보로 표시됩니다.");
+    }, [parserExcludeDict, saveParserExcludeDict, showToast]);
+    const handleClearParserExclusions = useCallback((scope = 'current') => {
+        const entries = Object.entries(parserExcludeDict || {});
+        if (entries.length === 0)
+            return showToast("⚠️ 삭제할 매핑제외 항목이 없습니다.");
+        const targetEntries = scope === 'current' && currentTag ? entries.filter(([_, item]) => item && item.catalog === currentTag) : entries;
+        if (targetEntries.length === 0)
+            return showToast("⚠️ 현재 카탈로그의 매핑제외 항목이 없습니다.");
+        if (!window.confirm(`${scope === 'current' && currentTag ? currentTag + ' 카탈로그의 ' : '전체 '}매핑제외 ${targetEntries.length}건을 삭제할까요?`))
+            return;
+        const nextDict = { ...(parserExcludeDict || {}) };
+        targetEntries.forEach(([key]) => delete nextDict[key]);
+        saveParserExcludeDict(nextDict);
+        showToast(`✅ 매핑제외 ${targetEntries.length}건을 삭제했습니다.`);
+    }, [parserExcludeDict, saveParserExcludeDict, currentTag, showToast]);
     const executeExclusion = useCallback(async (codesToProcess, statusType) => {
         setIsProcessing(true);
         setProcessMsg("카탈로그 제외 및 상태 처리 중...");
@@ -756,11 +964,12 @@ const useParserActions = (appState) => {
             setTargetId(null);
             setGlobalSearch('');
             setSelectedMissingCodes(new Set());
-            window.setIDB('parser_session', null);
+            setLastExcludedCount(0);
+            setIDB('parser_session', null).catch(e => console.warn('세션 초기화 저장 실패', e));
             showToast("✅ 파서 화면이 깨끗하게 초기화되었습니다.");
         }
-    }, [setParserBuffer, setCurrentTag, setTargetId, setGlobalSearch, setSelectedMissingCodes, showToast]);
-    return useMemo(() => ({ executeParser, handleApplyMatched, handleConfirmMapping, handleCancelMapping, handleCreateNewMasterItem, handleIgnoreParsedItem, handleRemoveMissingTags, handleRemoveTagDirect, executeExclusion, handleResetParser, openErpModal: () => setShowErpModal(true) }), [executeParser, handleApplyMatched, handleConfirmMapping, handleCancelMapping, handleCreateNewMasterItem, handleIgnoreParsedItem, handleRemoveMissingTags, handleRemoveTagDirect, executeExclusion, handleResetParser, setShowErpModal]);
+    }, [setParserBuffer, setCurrentTag, setTargetId, setGlobalSearch, setSelectedMissingCodes, setLastExcludedCount, showToast]);
+    return useMemo(() => ({ executeParser, handleApplyMatched, handleConfirmMapping, handleCancelMapping, handleCreateNewMasterItem, handleIgnoreParsedItem, handleExcludeParsedItem, handleRestoreParserExcluded, handleClearParserExclusions, handleRemoveMissingTags, handleRemoveTagDirect, executeExclusion, handleResetParser, openErpModal: () => setShowErpModal(true), openMappingExcludeModal: () => setShowMappingExcludeModal(true) }), [executeParser, handleApplyMatched, handleConfirmMapping, handleCancelMapping, handleCreateNewMasterItem, handleIgnoreParsedItem, handleExcludeParsedItem, handleRestoreParserExcluded, handleClearParserExclusions, handleRemoveMissingTags, handleRemoveTagDirect, executeExclusion, handleResetParser, setShowErpModal, setShowMappingExcludeModal]);
 };
 const ErpCodeInputModal = ({ onClose, onSubmit, targetItem }) => {
     const [code, setCode] = useState('');
@@ -829,6 +1038,59 @@ const ExcludeOptionModal = ({ onClose, onConfirm, count }) => {
                 React.createElement("div", { className: "flex gap-2 pt-2" },
                     React.createElement("button", { onClick: onClose, className: "flex-1 bg-slate-100 text-slate-600 font-bold py-3 rounded-xl hover:bg-slate-200 text-[13px]" }, "\uCDE8\uC18C"),
                     React.createElement("button", { onClick: () => onConfirm(selectedOption), className: "flex-1 font-bold py-3 rounded-xl transition-all text-[13px] bg-rose-600 text-white hover:bg-rose-700 shadow-sm" }, "\uD655\uC778 \uBC0F \uCC98\uB9AC"))))));
+};
+const MappingExcludeListModal = ({ onClose, excludeDict, currentTag, onRestore, onClear }) => {
+    const [keyword, setKeyword] = useState('');
+    const [scope, setScope] = useState('current');
+    const list = useMemo(() => {
+        const all = Object.entries(excludeDict || {}).map(([key, item]) => ({ key, ...(item || {}) }));
+        const scoped = scope === 'current' && currentTag ? all.filter(item => item.catalog === currentTag) : all;
+        const kw = keyword.trim().toLowerCase();
+        if (!kw)
+            return scoped;
+        return scoped.filter(item => [item.catalog, item.name, item.spec, item.unit, item.matchStatus].some(v => String(v || '').toLowerCase().includes(kw)));
+    }, [excludeDict, currentTag, keyword, scope]);
+    const totalCount = Object.keys(excludeDict || {}).length;
+    return (React.createElement("div", { className: "fixed inset-0 bg-slate-900/60 z-[320] flex justify-center items-center backdrop-blur-sm fade-in", onClick: onClose },
+        React.createElement("div", { className: "bg-white w-[760px] max-h-[82vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200", onClick: (e) => e.stopPropagation() },
+            React.createElement("div", { className: "px-5 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50" },
+                React.createElement("h2", { className: "font-black text-slate-800 text-[15px]" },
+                    React.createElement("i", { className: "fas fa-ban text-rose-500 mr-2" }),
+                    "매핑제외 목록"),
+                React.createElement("button", { onClick: onClose, className: "text-slate-400 hover:text-slate-600" },
+                    React.createElement("i", { className: "fas fa-times" }))),
+            React.createElement("div", { className: "p-5 border-b border-slate-100 bg-white space-y-3" },
+                React.createElement("div", { className: "bg-rose-50 border border-rose-100 rounded-xl p-3 text-[12px] text-rose-800 leading-relaxed" },
+                    "매핑제외는 마스터 상품을 삭제하지 않습니다. 파싱된 외부 상품명/규격 기준으로 저장되어 다음 파싱부터 유사·불일치 대기열에 반복 노출되지 않습니다."),
+                React.createElement("div", { className: "flex gap-2 items-center" },
+                    React.createElement("div", { className: "flex bg-slate-100 p-1 rounded-lg border border-slate-200" },
+                        React.createElement("button", { onClick: () => setScope('current'), className: `px-3 py-1.5 text-[12px] font-bold rounded-md ${scope === 'current' ? 'bg-white text-rose-600 shadow-sm border border-slate-200' : 'text-slate-500'}` }, "현재 카탈로그"),
+                        React.createElement("button", { onClick: () => setScope('all'), className: `px-3 py-1.5 text-[12px] font-bold rounded-md ${scope === 'all' ? 'bg-white text-slate-800 shadow-sm border border-slate-200' : 'text-slate-500'}` }, "전체")),
+                    React.createElement("input", { value: keyword, onChange: e => setKeyword(e.target.value), placeholder: "상품명/규격/카탈로그 검색", className: "flex-1 border border-slate-300 rounded-lg px-3 py-2 text-[12px] font-bold outline-none focus:border-rose-400" }),
+                    React.createElement("button", { onClick: () => onClear(scope), className: "px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[12px] font-bold" }, "목록삭제"))),
+            React.createElement("div", { className: "flex-1 overflow-auto" },
+                React.createElement("table", { className: "w-full text-left text-[12px] whitespace-nowrap" },
+                    React.createElement("thead", { className: "bg-slate-50 sticky top-0 z-10 text-slate-500 border-b border-slate-200" },
+                        React.createElement("tr", null,
+                            React.createElement("th", { className: "px-4 py-2" }, "카탈로그"),
+                            React.createElement("th", { className: "px-4 py-2" }, "외부 상품명"),
+                            React.createElement("th", { className: "px-4 py-2" }, "규격/단위"),
+                            React.createElement("th", { className: "px-4 py-2" }, "상태"),
+                            React.createElement("th", { className: "px-4 py-2 text-center" }, "해제"))),
+                    React.createElement("tbody", { className: "divide-y divide-slate-100" }, list.length === 0 ? React.createElement("tr", null,
+                        React.createElement("td", { colSpan: "5", className: "p-10 text-center text-slate-400 font-bold" }, totalCount === 0 ? "매핑제외 상품이 없습니다." : "검색/범위에 해당하는 항목이 없습니다.")) : list.map(item => React.createElement("tr", { key: item.key, className: "hover:bg-slate-50" },
+                        React.createElement("td", { className: "px-4 py-2 text-slate-500 font-bold" }, item.catalog || '-'),
+                        React.createElement("td", { className: "px-4 py-2" },
+                            React.createElement("div", { className: "font-black text-slate-800" }, item.name || '-'),
+                            item.createdAt && React.createElement("div", { className: "text-[10px] text-slate-400 mt-0.5" }, item.createdAt)),
+                        React.createElement("td", { className: "px-4 py-2 text-slate-600" },
+                            item.spec || '-',
+                            item.unit ? ` / ${item.unit}` : ''),
+                        React.createElement("td", { className: "px-4 py-2 text-slate-500" }, item.matchStatus || item.reason || '-'),
+                        React.createElement("td", { className: "px-4 py-2 text-center" },
+                            React.createElement("button", { onClick: () => onRestore(item.key), className: "px-2.5 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-100 rounded-lg text-[11px] font-black" },
+                                React.createElement("i", { className: "fas fa-undo mr-1" }),
+                                "해제"))))))))));
 };
 const EditablePriceCell = React.memo(({ rowId, initialVal, onUpdate }) => {
     const [localVal, setLocalVal] = useState(initialVal);
@@ -1125,9 +1387,10 @@ const ParserReviewModal = ({ onClose, onConfirm, state, actions }) => {
 const ParserApp = () => {
     const appState = useParserApp();
     const actions = useParserActions(appState);
-    const { masterProducts, parserBuffer, currentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, processMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes } = appState;
+    const { masterProducts, parserBuffer, currentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, processMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, parserExcludeDict, lastExcludedCount } = appState;
     const availableTags = useMemo(() => { const counts = {}; Object.values(masterProducts).forEach(m => String(m['카탈로그'] || '').split(',').forEach(t => { const r = t.trim(); if (r)
         counts[r] = (counts[r] || 0) + 1; })); return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] })); }, [masterProducts]);
+    const mappingExcludeCount = useMemo(() => getParserExcludeList(parserExcludeDict, currentTag).length, [parserExcludeDict, currentTag]);
     const matchedRows = parserBuffer.filter(r => r._matchCode);
     const similarRows = parserBuffer.filter(r => !r._matchCode && r._matchStatus.includes('유사') && !r._matchStatus.includes('중복'));
     const duplicateRows = parserBuffer.filter(r => !r._matchCode && r._matchStatus.includes('중복품목'));
@@ -1268,7 +1531,7 @@ const ParserApp = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "Smart Parser"),
-                                        React.createElement("span", { className: "ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold" }, "v3.0.8 UX \uAC1C\uC120\uBCF8")),
+                                        React.createElement("span", { className: "ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold" }, "v3.0.15 MappingExclude SafeRecover")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "TEXT ANALYSIS & DELTA SYNC"))),
                             React.createElement("div", { className: "flex flex-1 max-w-md xl:max-w-xl mx-4" }, isProcessing ? React.createElement("div", { className: "w-full bg-amber-400 text-amber-900 px-4 py-1.5 rounded-md font-mono text-[12px] font-bold flex items-center shadow-inner truncate" },
                                 React.createElement("i", { className: "fas fa-spinner fa-spin mr-2" }),
@@ -1320,6 +1583,10 @@ const ParserApp = () => {
                             React.createElement("i", { className: "fas fa-eraser mr-1.5 text-[13px]" }),
                             " \uCE74\uD0C8\uB85C\uADF8 \uC81C\uC678"),
                         (activeTab === 'matched' || activeTab === 'missing') && React.createElement("div", { className: "w-px h-6 bg-slate-300 mx-1" }),
+                        React.createElement("button", { onClick: actions.openMappingExcludeModal, className: "h-9 px-3 rounded-lg text-[12px] font-bold bg-white text-rose-500 border border-rose-100 hover:bg-rose-50 shadow-sm flex items-center", title: "매핑제외 목록 관리" },
+                            React.createElement("i", { className: "fas fa-ban mr-1.5 text-[12px]" }),
+                            "매핑제외",
+                            mappingExcludeCount > 0 && React.createElement("span", { className: "ml-1.5 bg-rose-100 text-rose-600 px-1.5 rounded text-[10px] font-black" }, mappingExcludeCount)),
                         React.createElement("button", { onClick: actions.handleResetParser, disabled: parserBuffer.length === 0, className: `w-9 h-9 rounded-lg flex items-center justify-center border shadow-sm shrink-0 transition-colors ${parserBuffer.length > 0 ? 'bg-white border-slate-300 text-slate-500 hover:text-slate-800 hover:bg-slate-100' : 'bg-slate-50 border-slate-200 text-slate-300 cursor-not-allowed'}`, title: "\uC791\uC5C5 \uCD08\uAE30\uD654 (\uC138\uC158 \uBE44\uC6B0\uAE30)" },
                             React.createElement("i", { className: "fas fa-redo-alt text-[13px]" })),
                         React.createElement("button", { onClick: () => setShowInputModal(true), className: "h-9 px-4 rounded-lg text-[12px] font-bold bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 shadow-sm" },
@@ -1337,7 +1604,9 @@ const ParserApp = () => {
                         pendingApplyRows.length,
                         "\uAC74 \u00B7 \uD655\uC778\uD544\uC694 ",
                         unresolvedQueueCount,
-                        "\uAC74"),
+                        "\uAC74",
+                        mappingExcludeCount > 0 ? ` · 매핑제외목록 ${mappingExcludeCount}건` : '',
+                        lastExcludedCount > 0 ? ` · 이번파싱 제외숨김 ${lastExcludedCount}건` : ''),
                     pendingApplyRows.length > 0 && React.createElement("button", { onClick: () => setShowReviewModal(true), className: "px-3 py-1.5 bg-slate-900 text-white rounded-lg text-[11px] font-black hover:bg-slate-700" }, "\uB2E8\uAC00 \uBE0C\uB9AC\uD551/\uC800\uC7A5"))),
             React.createElement("div", { className: "flex-1 overflow-auto p-5 pt-0 bg-slate-100" }, !currentTag && parserBuffer.length === 0 ? (React.createElement("div", { className: "h-full flex flex-col items-center justify-center text-slate-400" },
                 React.createElement("i", { className: "fas fa-robot text-6xl text-slate-300 mb-4" }),
@@ -1496,7 +1765,7 @@ const ParserApp = () => {
                                     React.createElement("th", { className: "py-2.5 px-2 text-center w-14" }, "\uC0C1\uD0DC"),
                                     React.createElement("th", { className: "py-2.5 px-3" }, "\uD30C\uC2F1 \uD488\uBA85 \uBC0F \uADDC\uACA9"),
                                     React.createElement("th", { className: "py-2.5 px-3 text-right w-16" }, "\uC785\uACE0\uAC00"),
-                                    React.createElement("th", { className: "py-2.5 px-2 text-center w-10" }, "\uBB34\uC2DC"))),
+                                    React.createElement("th", { className: "py-2.5 px-2 text-center w-24" }, "숨김/제외"))),
                             React.createElement("tbody", { className: "divide-y divide-slate-100" }, displayUnmatchedRows.length === 0 ? React.createElement("tr", null,
                                 React.createElement("td", { colSpan: "5", className: "p-10 text-center text-slate-400 font-bold" }, "\uB300\uAE30\uC911\uC778 \uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.")) : displayUnmatchedRows.map(row => {
                                 const isTarget = targetId === row._id;
@@ -1513,12 +1782,16 @@ const ParserApp = () => {
                                                 row['단위'] ? `| ${row['단위']}` : ''))),
                                     React.createElement("td", { className: `py-2 px-3 text-right font-bold ${isTarget ? 'text-indigo-600' : 'text-slate-600'}` }, row['입고가'] || '-'),
                                     React.createElement("td", { className: "py-2 px-2 text-center" },
-                                        React.createElement("button", { onClick: (e) => { e.stopPropagation(); actions.handleIgnoreParsedItem(row._id); }, className: "text-slate-400 hover:text-rose-500 hover:bg-rose-50 px-2 py-1.5 rounded" },
-                                            React.createElement("i", { className: "fas fa-trash-alt" })))));
+                                        React.createElement("div", { className: "flex items-center justify-center gap-1" },
+                                            React.createElement("button", { onClick: (e) => { e.stopPropagation(); actions.handleIgnoreParsedItem(row._id); }, className: "text-slate-400 hover:text-slate-700 hover:bg-slate-100 px-2 py-1.5 rounded", title: "이번 작업만 숨김" },
+                                                React.createElement("i", { className: "fas fa-eye-slash" })),
+                                            React.createElement("button", { onClick: (e) => { e.stopPropagation(); actions.handleExcludeParsedItem(row._id); }, className: "text-rose-400 hover:text-rose-600 hover:bg-rose-50 px-2 py-1.5 rounded", title: "다음부터 매핑제외" },
+                                                React.createElement("i", { className: "fas fa-ban" }))))));
                             }))))))))),
         showInputModal && React.createElement(SmartParserInputModal, { onClose: () => setShowInputModal(false), executeParser: actions.executeParser, showToast: showToast, availableTags: availableTags }),
         showReviewModal && React.createElement(ParserReviewModal, { onClose: () => setShowReviewModal(false), onConfirm: actions.handleApplyMatched, state: memoizedState, actions: memoizedActions }),
         showErpModal && React.createElement(ErpCodeInputModal, { onClose: () => setShowErpModal(false), onSubmit: actions.handleCreateNewMasterItem, targetItem: parserBuffer.find(r => r._id === targetId) }),
+        appState.showMappingExcludeModal && React.createElement(MappingExcludeListModal, { onClose: () => appState.setShowMappingExcludeModal(false), excludeDict: parserExcludeDict, currentTag: currentTag, onRestore: actions.handleRestoreParserExcluded, onClear: actions.handleClearParserExclusions }),
         appState.showExcludeModal && React.createElement(ExcludeOptionModal, { onClose: () => appState.setShowExcludeModal(false), onConfirm: (type) => { actions.executeExclusion(appState.excludeTarget === 'selected' ? Array.from(selectedMissingCodes) : [appState.excludeTarget], type); }, count: appState.excludeTarget === 'selected' ? selectedMissingCodes.size : 1 })));
 };
 
