@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.11 PromotionThemeAssign]</title>
+    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.12 PromotionThemeFlow]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -580,7 +580,7 @@ const ExportApp = () => {
                         '외주비': parseNum((_8 = working['외주비']) !== null && _8 !== void 0 ? _8 : master['외주비']),
                         '노무비': parseNum((_9 = working['노무비']) !== null && _9 !== void 0 ? _9 : master['노무비']),
                         재고수량,
-                        ...applyThemeStringToRow({}, getPromotionThemeString({ ...master, ...working })),
+                        ...applyThemeStringToRow({}, getPromotionThemeString(working) || getPromotionThemeString(master)),
                         source
                     };
                 }).filter(row => row.코드);
