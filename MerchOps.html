@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.52 SpecNameWidthFix]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.53 ParserHistoryFlowFix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -2120,10 +2120,18 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                     Object.values(data.masterProducts).forEach(mItem => {
                         if (mItem['카탈로그'] && String(mItem['카탈로그']).trim() !== '') {
                             if (!newManaged[mItem.코드]) {
+                                const parserSource = {
+                                    품목코드: mItem.코드,
+                                    품목명: mItem['품목명'] || '',
+                                    입고가: window.parseNum(mItem['입고가']),
+                                    카탈로그: mItem['카탈로그'] || '',
+                                    _parserListName: '전체리스트',
+                                    _sourceRole: 'parserList'
+                                };
                                 newManaged[mItem.코드] = {
                                     코드: mItem.코드,
-                                    sources: { estimate: {} },
-                                    finalData: window.computeFinalData(mItem, { estimate: {} }, safeMarginRules, false),
+                                    sources: { parser: parserSource },
+                                    finalData: window.computeFinalData(mItem, { parser: parserSource }, safeMarginRules, false),
                                     _tags: new Set([`catalog:전체리스트`])
                                 };
                                 addedCount++;
@@ -2168,11 +2176,21 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                     }
                     if (isMatch) {
                         if (!newManaged[mItem.코드]) {
-                            const mockSource = {};
-                            const finalData = window.computeFinalData(mItem, { estimate: mockSource }, safeMarginRules);
+                            const isParserList = type === 'catalog';
+                            const mockSource = isParserList ? {
+                                품목코드: mItem.코드,
+                                품목명: mItem['품목명'] || '',
+                                입고가: window.parseNum(mItem['입고가']),
+                                카탈로그: mItem['카탈로그'] || '',
+                                _parserListName: filterName,
+                                _sourceRole: 'parserList'
+                            } : {};
+                            const finalData = isParserList
+                                ? window.computeFinalData(mItem, { parser: mockSource }, safeMarginRules)
+                                : window.computeFinalData(mItem, { estimate: mockSource }, safeMarginRules);
                             newManaged[mItem.코드] = {
                                 코드: mItem.코드,
-                                sources: { estimate: mockSource },
+                                sources: isParserList ? { parser: mockSource } : { estimate: mockSource },
                                 finalData: finalData,
                                 _tags: new Set([`${type}:${filterName}`])
                             };
@@ -3108,21 +3126,20 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
         });
         return roleSet;
     }, [data && data.managedItems]);
-    const isEstimateLoaded = loadedRoleSet.has('estimate') || hasActiveTagName(['견적']);
-    const isPurchaseLoaded = loadedRoleSet.has('purchase') || hasActiveTagName(['구매']);
-    const isSalesLoaded = loadedRoleSet.has('sales') || hasActiveTagName(['판매']);
-    const isInventoryLoaded = loadedRoleSet.has('inventory') || hasActiveTagName(['재고']);
+    const hasExcelLoadTag = useCallback((keywords = []) => {
+        const keys = Array.isArray(keywords) ? keywords : [keywords];
+        return (activeTags || []).some(t => String(t?.type || '') === 'excel' && keys.some(key => String(t?.name || '').includes(key)));
+    }, [activeTags]);
+    const isEstimateLoaded = loadedRoleSet.has('estimate') || hasExcelLoadTag(['견적']);
+    const isPurchaseLoaded = loadedRoleSet.has('purchase') || hasExcelLoadTag(['구매']);
+    const isSalesLoaded = loadedRoleSet.has('sales') || hasExcelLoadTag(['판매']);
+    const isInventoryLoaded = loadedRoleSet.has('inventory') || hasExcelLoadTag(['재고']);
     const isCatalogLoaded = (activeTags || []).some(t => ['catalog', 'category'].includes(String(t?.type || ''))) || hasActiveTagName(['카탈로그', '전체리스트']);
     const getLoadButtonClass = (loaded, tone = 'blue') => {
         const base = 'cursor-pointer h-9 px-3 rounded-xl text-[12px] font-bold transition-all flex items-center justify-center shadow-sm border shrink-0';
         if (!loaded) {
-            const idle = {
-                blue: 'bg-white text-blue-700 hover:bg-blue-50 border-blue-200',
-                amber: 'bg-white text-amber-700 hover:bg-amber-50 border-amber-200',
-                purple: 'bg-white text-purple-700 hover:bg-purple-50 border-purple-200',
-                emerald: 'bg-white text-emerald-700 hover:bg-emerald-50 border-emerald-200'
-            };
-            return `${base} ${idle[tone] || idle.blue}`;
+            // 미로드 버튼은 중립색으로 둔다. 파일/파서리스트를 불러온 대상만 배색을 채운다.
+            return `${base} bg-white text-slate-600 hover:bg-slate-50 border-slate-300`;
         }
         const active = {
             blue: 'bg-blue-600 text-white hover:bg-blue-700 border-blue-600 shadow-blue-100',
@@ -3623,26 +3640,39 @@ const getRowCatalogNames = (row = {}, mItem = {}) => {
     String(((_a = row.finalData) === null || _a === void 0 ? void 0 : _a['카탈로그']) || ((_c = (_b = row.sources) === null || _b === void 0 ? void 0 : _b.estimate) === null || _c === void 0 ? void 0 : _c['카탈로그']) || '').split(',').map(v => v.trim()).filter(Boolean).forEach(v => names.add(v));
     return Array.from(names).filter(Boolean);
 };
-const normalizeHistoryCatalog = (log = {}) => String(log.catalogName || log.catalog || log.quoteName || log.estimate || log.견적서 || '').trim();
+const normalizeHistoryCatalog = (log = {}) => String(log.parserListName || log.parserList || log.catalogName || log.catalog || log.quoteName || log.estimate || log.견적서 || '').trim();
+const getHistoryLogCode = (log = {}) => String(log.code || log.코드 || log.itemCode || log.productCode || log.품목코드 || log.targetCode || '').trim();
+const getHistoryFieldName = (log = {}) => String(log.field || log.fieldName || log.column || log.header || log.항목 || log.masterField || '').trim();
+const getHistoryOldValue = (log = {}) => log.oldVal ?? log.oldValue ?? log.beforeValue ?? log.before ?? log.previous ?? log.oldInPrice ?? log.기존값 ?? '';
+const getHistoryNewValue = (log = {}) => log.newVal ?? log.newValue ?? log.afterValue ?? log.after ?? log.current ?? log.parsedInPrice ?? log.신규값 ?? log.변경값 ?? '';
+const isParserHistoryLog = (log = {}) => {
+    const marker = [log.source, log.origin, log.actionType, log.type, log.module, log.app, log.from].map(v => String(v || '').toLowerCase()).join(' ');
+    return marker.includes('parser') || marker.includes('smart') || !!(log.parserListName || log.parserList || log.catalogName || log.catalog);
+};
+const normalizeHistoryLogForField = (log = {}, field = '입고가') => {
+    const changes = Array.isArray(log.changes) ? log.changes : (Array.isArray(log.diffList) ? log.diffList : []);
+    if (changes.length > 0) {
+        const matched = changes.find(ch => !field || getHistoryFieldName(ch) === field || String(ch.field || ch.fieldName || ch.항목 || '').trim() === field);
+        if (!matched) return null;
+        return { ...log, ...matched, field: getHistoryFieldName(matched) || field, oldVal: getHistoryOldValue(matched), newVal: getHistoryNewValue(matched) };
+    }
+    const f = getHistoryFieldName(log);
+    if (field && f && f !== field) return null;
+    return { ...log, field: f || field, oldVal: getHistoryOldValue(log), newVal: getHistoryNewValue(log) };
+};
 const findLatestParserHistory = (code, catalogNames = [], field = '입고가') => {
     const targetCode = String(code || '').trim();
     const targets = Array.isArray(catalogNames) ? catalogNames.map(v => String(v).trim()).filter(Boolean) : [String(catalogNames || '').trim()].filter(Boolean);
     if (!targetCode)
         return null;
-    const logs = getHistoryLogsFromLocal();
-    const exact = logs
-        .filter(log => String(log.code || '').trim() === targetCode)
-        .filter(log => !field || String(log.field || '').trim() === field)
-        .filter(log => String(log.source || log.origin || '').trim() === 'parser' || log.catalog || log.catalogName || String(log.actionType || '').includes('parser') || String(log.actionType || '').includes('catalog'))
-        .filter(log => targets.length === 0 || targets.includes(normalizeHistoryCatalog(log)))
+    const logs = getHistoryLogsFromLocal()
+        .map(log => normalizeHistoryLogForField(log, field))
+        .filter(Boolean)
+        .filter(log => getHistoryLogCode(log) === targetCode)
+        .filter(isParserHistoryLog)
         .sort((a, b) => parseHistoryTime(b) - parseHistoryTime(a));
-    if (exact[0])
-        return exact[0];
-    return logs
-        .filter(log => String(log.code || '').trim() === targetCode)
-        .filter(log => !field || String(log.field || '').trim() === field)
-        .filter(log => String(log.source || log.origin || '').trim() === 'parser' || log.catalog || log.catalogName || String(log.actionType || '').includes('parser') || String(log.actionType || '').includes('catalog'))
-        .sort((a, b) => parseHistoryTime(b) - parseHistoryTime(a))[0] || null;
+    const exact = logs.filter(log => targets.length === 0 || targets.includes(normalizeHistoryCatalog(log)));
+    return exact[0] || logs[0] || null;
 };
 const formatSignedNumber = (v) => {
     const n = Number(v || 0);
@@ -3777,9 +3807,9 @@ window.getMerchPurchaseTrend = (row = {}, mItem = {}) => {
         return [purchaseTrend.reportText, ''];
     }
     if (latestHistory) {
-        const catalog = normalizeHistoryCatalog(latestHistory) || '파서';
-        const oldVal = (_q = (_p = latestHistory.oldVal) !== null && _p !== void 0 ? _p : latestHistory.oldInPrice) !== null && _q !== void 0 ? _q : oldIn;
-        const newVal = (_s = (_r = latestHistory.newVal) !== null && _r !== void 0 ? _r : latestHistory.parsedInPrice) !== null && _s !== void 0 ? _s : newIn;
+        const catalog = normalizeHistoryCatalog(latestHistory) || '파서리스트';
+        const oldVal = getHistoryOldValue(latestHistory) !== '' ? getHistoryOldValue(latestHistory) : oldIn;
+        const newVal = getHistoryNewValue(latestHistory) !== '' ? getHistoryNewValue(latestHistory) : newIn;
         const diff = latestHistory.diff !== undefined ? Number(latestHistory.diff) : (window.parseNum(newVal) - window.parseNum(oldVal));
         const rate = latestHistory.diffRate !== undefined ? Number(latestHistory.diffRate) : (window.parseNum(oldVal) > 0 ? (diff / window.parseNum(oldVal)) * 100 : 0);
         const match = latestHistory.matchStatus || latestHistory.applyMode || '';
@@ -3990,7 +4020,8 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
     const targetMasterCols = (visibleMasterCols === null || visibleMasterCols === void 0 ? void 0 : visibleMasterCols[activeTableTarget]);
     const targetWorkCols = (visibleUploadCols === null || visibleUploadCols === void 0 ? void 0 : visibleUploadCols[activeTableTarget]);
     const currentMasterCols = registrationMode ? [] : (Array.isArray(targetMasterCols) ? targetMasterCols : (getInitialVisibleMasterCols()[activeTableTarget] || [])).filter(h => !requiredCoreFields.includes(h));
-    const currentWorkCols = registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : (Array.isArray(targetWorkCols) ? targetWorkCols : (getInitialVisibleUploadCols()[activeTableTarget] || [])).filter(h => h !== '품목코드' && h !== '구매리포트' && h !== '구매검증리포트');
+    const isParserListTableMode = !registrationMode && (state.activeTags || []).some(t => String(t?.type || '') === 'catalog');
+    const currentWorkCols = isParserListTableMode ? ['입고가'] : (registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : (Array.isArray(targetWorkCols) ? targetWorkCols : (getInitialVisibleUploadCols()[activeTableTarget] || [])).filter(h => h !== '품목코드' && h !== '구매리포트' && h !== '구매검증리포트'));
     const hasUploadNameField = !!(row.finalData && Object.prototype.hasOwnProperty.call(row.finalData, '품목명'));
     const hasUploadSpecField = !!(row.finalData && Object.prototype.hasOwnProperty.call(row.finalData, '규격'));
     const hasUploadSourceForOriginal = typeof window.hasAnyUploadSource === 'function' ? window.hasAnyUploadSource(row.sources || {}) : !!(row.sources && Object.keys(row.sources || {}).length > 0);
@@ -4228,7 +4259,8 @@ const ExcelDataGrid = ({ state, actions }) => {
     const targetMasterCols = (visibleMasterCols === null || visibleMasterCols === void 0 ? void 0 : visibleMasterCols[activeTableTarget]);
     const targetWorkCols = (visibleUploadCols === null || visibleUploadCols === void 0 ? void 0 : visibleUploadCols[activeTableTarget]);
     const currentMasterCols = registrationMode ? [] : (Array.isArray(targetMasterCols) ? targetMasterCols : (getInitialVisibleMasterCols()[activeTableTarget] || [])).filter(h => !requiredCoreFields.includes(h));
-    const currentWorkCols = registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : (Array.isArray(targetWorkCols) ? targetWorkCols : (getInitialVisibleUploadCols()[activeTableTarget] || [])).filter(h => h !== '품목코드' && h !== '구매리포트' && h !== '구매검증리포트');
+    const isParserListTableMode = !registrationMode && (state.activeTags || []).some(t => String(t?.type || '') === 'catalog');
+    const currentWorkCols = isParserListTableMode ? ['입고가'] : (registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : (Array.isArray(targetWorkCols) ? targetWorkCols : (getInitialVisibleUploadCols()[activeTableTarget] || [])).filter(h => h !== '품목코드' && h !== '구매리포트' && h !== '구매검증리포트'));
     return (React.createElement("div", { className: "bg-white border border-slate-200 rounded-xl shadow-sm h-full flex flex-col relative overflow-hidden" },
         React.createElement("div", { className: "flex-1 overflow-auto custom-scrollbar relative", onScroll: handleScroll },
             React.createElement("table", { className: "text-left border-collapse table-fixed text-[13px] whitespace-nowrap relative z-0 w-max bg-white" },
@@ -4270,7 +4302,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.52 SpecNameWidthFix]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.53 ParserHistoryFlowFix]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -4600,7 +4632,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.52 SpecNameWidthFix")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.53 ParserHistoryFlowFix")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
