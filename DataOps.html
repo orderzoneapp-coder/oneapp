@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a24)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a24.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -167,6 +167,34 @@ const getRawCell = (raw = {}, names = []) => {
     }
     return null;
 };
+
+// V1.a24: 거래처칩 표시명 방어로직.
+// 판매파일 양식마다 실제 판매처(no./판매처)와 그룹/경로값(거래/거래처명=1전송)이 섞이므로
+// 계산 전 단계에서 표시명 후보를 정리하고, BOX/EA/소분 같은 단위값 또는 1전송 같은 경로값은 칩명으로 쓰지 않는다.
+const isUnitOnlyVendorLabel = (val = '') => {
+    const text = safeStr(val, '').replace(/\s/g, '').toUpperCase();
+    return !text || ['BOX', 'EA', '소분', 'SPLIT', '박스', '개', '봉', '팩'].includes(text);
+};
+const isSalesGroupVendorValue = (val = '') => {
+    const text = safeStr(val, '').replace(/\s/g, '');
+    if (!text) return true;
+    if (/^(0?1|0?2|01창고|02전송|1창고|2전송|1전송|2창고)$/.test(text)) return true;
+    if (/^(내부이동|전송|창고|가전표)$/.test(text)) return true;
+    return false;
+};
+const resolveVendorDisplayName = (candidates = [], fallback = '미지정') => {
+    for (const cand of candidates || []) {
+        const text = safeStr(cand, '');
+        if (!text) continue;
+        if (isUnitOnlyVendorLabel(text)) continue;
+        if (isSalesGroupVendorValue(text)) continue;
+        return text;
+    }
+    const safeFallback = safeStr(fallback, '미지정');
+    if (!safeFallback || isUnitOnlyVendorLabel(safeFallback) || isSalesGroupVendorValue(safeFallback)) return '미지정';
+    return safeFallback;
+};
+
 const getWarehouseFromRow = (row = {}, fallbackFileName = '') => {
     const raw = row._raw || row.raw || {};
     const direct = getRawCell(raw, ['창고명', '창고', '입고창고', '출고창고', '창고코드']);
@@ -591,7 +619,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22',
+    version: 'V1.a24',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -1934,7 +1962,7 @@ const EXPORT_MODULE = Object.freeze({
             const actualCode = item.코드 === 'NO_CODE' ? '' : item.코드;
             if (item.출고내역 && Object.keys(item.출고내역).length > 0) {
                 Object.entries(item.출고내역).forEach(([vendor, data]) => {
-                    const vendorName = safeStr(data.displayVendor || vendor.replace('_perfect', ''), '미지정');
+                    const vendorName = resolveVendorDisplayName([data.displayVendor, vendor.replace('_perfect', ''), item._salesDisplayVendor, item._salesActualVendor, item.거래처], '미지정');
                     const qty = safeNum(data.qty) || 0;
                     const vRev = Math.round(safeNum(data.rev)) || 0;
                     const vCogs = Math.round(safeNum(data.cogs)) || 0;
@@ -1957,7 +1985,7 @@ const EXPORT_MODULE = Object.freeze({
             productActualQtyMap[pKey] += STOCK_ENGINE_MODULE.getActualQty(item);
             if (item.출고내역 && Object.keys(item.출고내역).length > 0) {
                 Object.entries(item.출고내역).forEach(([vendor, data]) => {
-                    const vendorName = safeStr(data.displayVendor || vendor.replace('_perfect', ''), '미지정');
+                    const vendorName = resolveVendorDisplayName([data.displayVendor, vendor.replace('_perfect', ''), item._salesDisplayVendor, item._salesActualVendor, item.거래처], '미지정');
                     const qty = safeNum(data.qty) || 0;
                     const vRev = Math.round(safeNum(data.rev)) || 0;
                     const vCogs = Math.round(safeNum(data.cogs)) || 0;
@@ -2583,13 +2611,11 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                         normObj.매입처매칭 = '';
                     }
                     else if (role === 'out') {
-                        // V1.a23: 판매현황 양식별 거래처 의미 분리.
-                        // - 첫 번째 양식: 거래=1전송(그룹), 판매처=실제 거래처
-                        // - 두 번째 양식: 거래처명=1전송(그룹), no.=실제 거래처
-                        // 칩 표시명은 실제 판매처(no./판매처)를 우선하고, 거래/거래처명은 그룹값으로만 보관한다.
+                        // V1.a24: 판매현황 거래처칩 표시명 확정.
+                        // 실제 칩명은 no./판매처 우선, 거래/거래처명은 1전송 같은 그룹/경로값이면 칩명에서 제외한다.
                         const salesGroupVendor = getExactRawVal(rowObj, ['거래처명', '거래처', '거래']);
                         const salesActualVendor = getExactRawVal(rowObj, ['no.', 'no', '번호', '판매처', '매출처명', '매장명', '매장', '고객']);
-                        const salesVendor = salesActualVendor !== null ? salesActualVendor : salesGroupVendor;
+                        const salesVendor = resolveVendorDisplayName([salesActualVendor, salesGroupVendor], '미지정');
                         const lotVendor = getExactRawVal(rowObj, ['구매처', '매입처', '원구매처', '매입처(Lot)', '매입처(거래처)']);
                         const salesQty = getExactRawVal(rowObj, ['수량', '출고량', '판매수량']);
                         const salesPrice = getExactRawVal(rowObj, ['단가', '판매단가', '출고가', '출고가(공지)', '출고가 (공지)']);
@@ -2600,8 +2626,8 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                         }
                         normObj._salesGroupVendor = safeStr(salesGroupVendor, '');
                         normObj._salesActualVendor = safeStr(salesActualVendor, '');
-                        if (salesVendor !== null)
-                            normObj.거래처 = safeStr(salesVendor, '미지정');
+                        normObj._salesDisplayVendor = salesVendor;
+                        normObj.거래처 = salesVendor;
                         if (lotVendor !== null)
                             normObj.매입처매칭 = safeStr(lotVendor, '');
                         if (salesQty !== null)
@@ -3375,7 +3401,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 const code = String(sale.코드 || 'NO_CODE');
                 if (isExcluded(sale.거래처))
                     return;
-                const vendorKey = safeStr(sale.거래처, '미지정');
+                const vendorKey = resolveVendorDisplayName([sale._salesDisplayVendor, sale._salesActualVendor, sale.거래처], '미지정');
                 const matchKey = safeStr(sale.매입처매칭, '미지정');
                 const qty = sale._computedQty || 0;
                 const rev = sale._finalRevenue || 0;
@@ -3385,6 +3411,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     aggregatedSales[aggKey] = {
                         ...sale,
                         거래처: vendorKey,
+                        _salesDisplayVendor: vendorKey,
                         _computedQty: 0,
                         _finalRevenue: 0,
                         _rawCombinedStr: '', // 텍스트 단서(LIFO 키워드 등)도 잃어버리지 않게 모두 결합
@@ -3513,7 +3540,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     (sale._salesVendorDetails && sale._salesVendorDetails.length ? sale._salesVendorDetails : [{ vendor: sale.거래처, qty: qtyToDeduct, rev: finalRevenue }]).forEach(detail => {
                         const dQty = safeNum(detail.qty);
                         const dRev = safeNum(detail.rev);
-                        const dVendor = safeStr(detail.vendor, sale.거래처);
+                        const dVendor = resolveVendorDisplayName([detail.displayVendor, detail.vendor, sale._salesDisplayVendor, sale._salesActualVendor, sale.거래처], '미지정');
                         if (!pData[bKey].출고내역[dVendor])
                             pData[bKey].출고내역[dVendor] = { qty: 0, rev: 0, cogs: 0, isLifo: effectiveIsLifo, isPerfectMatch: false, displayVendor: dVendor, matchMode: 'NO_PURCHASE' };
                         pData[bKey].출고내역[dVendor].qty += dQty;
@@ -3553,7 +3580,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         detail.remainingQty = safeNum(detail.remainingQty) - usedQty;
                         detail.remainingRev = safeNum(detail.remainingRev) - usedRev;
                         remainingTake -= usedAbs;
-                        const displayVendor = safeStr(detail.vendor, sale.거래처);
+                        const displayVendor = resolveVendorDisplayName([detail.displayVendor, detail.vendor, sale._salesDisplayVendor, sale._salesActualVendor, sale.거래처], '미지정');
                         const vendorKey = isPerfect ? `${displayVendor}_perfect` : displayVendor;
                         if (!pData[bucket.batchKey].출고내역[vendorKey]) {
                             pData[bucket.batchKey].출고내역[vendorKey] = {
@@ -4488,8 +4515,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                     React.createElement("div", { className: "flex items-center gap-1 flex-wrap text-left" }, hasIssue && regularIssues.map((msg, i) => (React.createElement(IssueChip, { key: i, msg: msg })))),
                     item.출고내역 && Object.keys(item.출고내역).length > 0 && (React.createElement("div", { className: "mt-0.5 flex flex-wrap gap-1.5 items-center" }, Object.entries(item.출고내역).map(([vendor, data]) => {
                         // 🌟 단일 묶음 매칭(isPerfect)은 회색, 일반 분할 매칭은 흰색/하늘색
-                        let displayVendor = safeStr(data.displayVendor || vendor.replace('_perfect', ''), safeStr(item.거래처, '미지정'));
-                        if (['BOX', 'EA', '소분'].includes(displayVendor)) displayVendor = safeStr(item.거래처, displayVendor);
+                        let displayVendor = resolveVendorDisplayName([data.displayVendor, vendor.replace('_perfect', ''), item._salesDisplayVendor, item._salesActualVendor, item.거래처], '미지정');
                         const isPerfect = data.isPerfectMatch;
                         let chipClass = "bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300";
                         if (isPerfect) {
