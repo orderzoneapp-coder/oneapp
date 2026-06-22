@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.16 BasicStockColumn]</title>
+    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.17 BasicGroupFilter]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -572,6 +572,7 @@ const ExportApp = () => {
         try { return normalizeBasicGroupString(localStorage.getItem(BASIC_GROUP_STORAGE_KEY) || DEFAULT_DIRECT_BASIC_GROUPS); }
         catch (e) { return DEFAULT_DIRECT_BASIC_GROUPS; }
     });
+    const [activeBasicGroupFilter, setActiveBasicGroupFilter] = useState('');
     const showToast = useCallback((msg) => {
         setToast(msg);
         setTimeout(() => setToast(''), 3000);
@@ -778,6 +779,10 @@ const ExportApp = () => {
                 default: return true;
             }
         });
+        const basicFilterGroups = normalizeBasicGroupString(activeBasicGroupFilter).split(',').filter(Boolean);
+        if (basicFilterGroups.length > 0) {
+            rows = rows.filter(row => basicFilterGroups.includes(normalizeBasicGroupValue(row.기본)));
+        }
         const terms = searchTerm.toLowerCase().split(/\s+/).map(s => s.trim()).filter(Boolean);
         if (terms.length > 0) {
             rows = rows.filter(row => {
@@ -810,12 +815,13 @@ const ExportApp = () => {
         else
             sorted.sort(byCategory);
         return sorted;
-    }, [reviewRows, activeIssue, searchTerm, sortMode]);
+    }, [reviewRows, activeIssue, activeBasicGroupFilter, searchTerm, sortMode]);
     const resetFilters = useCallback(() => {
         setActiveIssue('all');
         setSortMode('category');
         setSearchInput('');
         setSearchTerm('');
+        setActiveBasicGroupFilter('');
     }, []);
     const handleCardClick = useCallback((key) => {
         setActiveIssue(key);
@@ -871,8 +877,8 @@ const ExportApp = () => {
         showToast(`✅ 현재 표시 ${appliedCount.toLocaleString()}건에 재고수량 ${stockValue.toLocaleString()} 일괄 적용 완료`);
     }, [bulkStockInput, filteredRows, showToast]);
     // ============================================================
-    // [E-ACTION-01C] 기본여부 그룹 기반 재고 재적용
-    // 역할: 입력한 기본 그룹은 재고 999, 그 외 그룹은 실제 재고만 반영하도록 현재 검증행을 다시 계산한다.
+    // [E-ACTION-01C] 기본여부 그룹 기반 표시 필터 + 재고 재적용
+    // 역할: 입력한 기본 그룹만 화면에 표시하고, 해당 그룹은 재고 999 / 그 외 그룹은 실제 재고만 반영한다.
     // ============================================================
     const handleBasicStockPolicyApply = useCallback(() => {
         const groups = normalizeBasicGroupString(basicGroupInput);
@@ -880,6 +886,7 @@ const ExportApp = () => {
             return showToast('⚠️ 기본 그룹값을 입력하세요. 예: 1,3,5');
         try { localStorage.setItem(BASIC_GROUP_STORAGE_KEY, groups); } catch (e) {}
         setBasicGroupInput(groups);
+        setActiveBasicGroupFilter(groups);
         let directCount = 0;
         let actualOnlyCount = 0;
         setReviewRows(prev => prev.map(row => {
@@ -888,7 +895,7 @@ const ExportApp = () => {
             else actualOnlyCount++;
             return next;
         }));
-        showToast(`✅ 기본 ${groups} 그룹은 재고 999 적용 · 그 외 ${actualOnlyCount.toLocaleString()}건은 실제재고만 적용`);
+        showToast(`✅ 기본 ${groups} 그룹만 표시 · 해당 그룹 재고 999 적용 / 그 외는 실제재고만 적용`);
     }, [basicGroupInput, showToast]);
     // ============================================================
     // [E-OUTPUT-02] 통합 엑셀 조립 공통 엔진
@@ -1148,7 +1155,7 @@ const ExportApp = () => {
                         React.createElement("option", { value: "diffAbsDesc" }, "\uCC28\uC561 \uD070 \uC21C"),
                         React.createElement("option", { value: "inPriceDesc" }, "\uC785\uACE0\uAC00 \uB192\uC740 \uC21C"),
                         React.createElement("option", { value: "outPriceDesc" }, "\uCD9C\uACE0\uAC00 \uB192\uC740 \uC21C")),
-                    React.createElement("div", { className: "h-9 px-2 border border-sky-200 rounded-lg bg-sky-50 flex items-center gap-1", title: "기본여부 그룹 기준: 입력 그룹은 재고 999, 그 외 그룹은 실제재고만 적용" },
+                    React.createElement("div", { className: `h-9 px-2 border rounded-lg flex items-center gap-1 ${activeBasicGroupFilter ? 'border-sky-500 bg-sky-100 ring-2 ring-sky-100' : 'border-sky-200 bg-sky-50'}`, title: "기본여부 그룹 기준: 입력 그룹만 표시하고, 해당 그룹은 재고 999 / 그 외 그룹은 실제재고만 적용" },
                         React.createElement("span", { className: "text-[11px] font-black text-sky-700" }, "기본"),
                         React.createElement("input", { value: basicGroupInput, onChange: (e) => setBasicGroupInput(e.target.value), placeholder: "1,3,5", className: "w-20 h-7 px-2 rounded-md border border-sky-200 bg-white text-center text-[12px] font-black text-sky-700 outline-none focus:border-sky-500" }),
                         React.createElement("button", { onClick: handleBasicStockPolicyApply, className: "h-7 px-2 rounded-md bg-sky-600 text-white text-[11px] font-black hover:bg-sky-700" }, "불러오기")),
