@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a25)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a26)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a25.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a26.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -619,7 +619,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a25',
+    version: 'V1.a26',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -2614,7 +2614,8 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                         // V1.a24: 판매현황 거래처칩 표시명 확정.
                         // 실제 칩명은 no./판매처 우선, 거래/거래처명은 1전송 같은 그룹/경로값이면 칩명에서 제외한다.
                         const salesGroupVendor = getExactRawVal(rowObj, ['거래처명', '거래처', '거래']);
-                        const salesActualVendor = getExactRawVal(rowObj, ['no.', 'no', '번호', '판매처', '매출처명', '매장명', '매장', '고객']);
+                        const rawSalesActualVendor = getExactRawVal(rowObj, ['no.', 'no', '번호', '판매처', '매출처명', '매장명', '매장', '고객']);
+                        const salesActualVendor = resolveVendorDisplayName([rawSalesActualVendor], '');
                         const salesVendor = resolveVendorDisplayName([salesActualVendor, salesGroupVendor], '미지정');
                         const lotVendor = getExactRawVal(rowObj, ['구매처', '매입처', '원구매처', '매입처(Lot)', '매입처(거래처)']);
                         const salesQty = getExactRawVal(rowObj, ['수량', '출고량', '판매수량']);
@@ -3255,9 +3256,15 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             };
             const getExcludeVendorCandidates = (item = {}, roleHint = '') => {
                 const role = safeStr(roleHint || item._fileRole || item._sourceRole || '', '').toLowerCase();
+                const rawSalesGroupVendor = safeStr(item._salesGroupVendor || getRawVendorValue(item, ['거래처명', '거래처', '거래']), '');
+                // V1.a26: 판매현황의 거래/거래처명은 1전송 같은 경로값일 수도, 3우리/가구매/가판매 같은 내부전표값일 수도 있다.
+                // 경로값(1전송/2전송/창고)은 제외판정에서 빼고, 내부전표값은 반드시 제외 후보에 포함한다.
+                const salesGroupExcludeCandidate = rawSalesGroupVendor && !isSalesGroupVendorValue(rawSalesGroupVendor) ? rawSalesGroupVendor : '';
+                const rawSalesActualVendor = getRawVendorValue(item, ['no.', 'no', '번호', '판매처', '매출처명', '매장명', '매장', '고객']);
+                const cleanSalesActualVendor = resolveVendorDisplayName([rawSalesActualVendor], '');
                 const outActual = [
-                    item._salesDisplayVendor, item._salesActualVendor, item.거래처,
-                    getRawVendorValue(item, ['no.', 'no', '번호', '판매처', '매출처명', '매장명', '매장', '고객']),
+                    salesGroupExcludeCandidate,
+                    item._salesDisplayVendor, cleanSalesActualVendor, item._salesActualVendor, item.거래처,
                     item.매입처매칭, getRawVendorValue(item, ['구매처', '구매처명', '매입처', '원구매처', '매입처(Lot)', '매입처(거래처)'])
                 ];
                 const inActual = [
@@ -3266,15 +3273,17 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 ];
                 if (role === 'out' || role === 'sale' || role === 'sales') return outActual;
                 if (role === 'in' || role === 'purchase' || role === 'buy') return inActual;
-                // 역할을 알 수 없는 경우에도 거래처명/거래 같은 그룹값만으로는 제외하지 않는다.
-                // 1전송 그룹 판매파일 전체가 제외되는 것을 방지하기 위해 실제 표시/매입처 후보를 우선한다.
+                // 역할을 알 수 없는 경우에도 거래처명/거래 같은 경로값만으로는 제외하지 않는다.
                 return [
-                    item._salesDisplayVendor, item._salesActualVendor, item._purchaseLotVendor,
+                    salesGroupExcludeCandidate, item._salesDisplayVendor, cleanSalesActualVendor, item._salesActualVendor, item._purchaseLotVendor,
                     item.거래처, item.매입처매칭,
-                    getRawVendorValue(item, ['no.', 'no', '번호', '판매처', '매출처명', '구매처', '구매처명', '매입처', '원구매처'])
+                    getRawVendorValue(item, ['구매처', '구매처명', '매입처', '원구매처'])
                 ];
             };
-            const isExcludedRow = (item = {}, roleHint = '') => getExcludeVendorCandidates(item, roleHint).some(isExcluded);
+            const isExcludedRow = (item = {}, roleHint = '') => getExcludeVendorCandidates(item, roleHint)
+                .map(v => resolveVendorDisplayName([v], ''))
+                .filter(Boolean)
+                .some(isExcluded);
             const normalizeLotNameForMatch = (val) => safeStr(val, '')
                 .replace(/\s/g, '')
                 .replace(/[()（）\[\]{}]/g, '')
@@ -3299,7 +3308,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 // 과거 입출고 흔적만 있고 최종 보유재고가 없는 Lot의 입고가가 화면에 뜨는 문제를 차단한다.
                 if (type === 'prev' && isClosingItem(item) && safeNum(qtyToApply) <= 0)
                     return;
-                // V1.a25: 제외거래처는 특정 컬럼 하나가 아니라 행의 실제 거래처/구매처 후보 전체로 판정한다.
+                // V1.a26: 제외거래처는 특정 컬럼 하나가 아니라 행의 실제 거래처/구매처 후보 전체로 판정한다.
                 // 단, 판매파일의 거래/거래처명=1전송 같은 그룹값만으로는 외부 판매를 제외하지 않는다.
                 if (type === 'in' && isExcludedRow(item, 'in'))
                     return;
@@ -3405,7 +3414,10 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 return String(a.거래처 || '').localeCompare(String(b.거래처 || ''));
             }));
             // 1. 초기 수량 및 개별 매출액 계산
-            outItems.forEach(sale => {
+            // V1.a26: 출고량 계산과 거래처칩 계산은 반드시 같은 판매행 필터를 사용한다.
+            // 내부전표(3우리/가구매/가판매 등)는 여기서 먼저 제외하고, no.=EA/BOX 같은 단위값은 거래처명으로 쓰지 않는다.
+            const validOutItems = outItems.filter(sale => !isExcludedRow(sale, 'out'));
+            validOutItems.forEach(sale => {
                 let qty = parseNumber(sale.수량);
                 if (sale._raw && sale._raw['출고량'] !== undefined)
                     qty = parseNumber(sale._raw['출고량']);
@@ -3432,10 +3444,8 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             // 예: 쌈추_1kg_BOX가 1마산/2중앙으로 나뉘어도 구매처가 같으면 먼저 합산해 같은 Lot에서 차감한다.
             // 판매처별 수량/매출은 _salesVendorDetails에 보존하고, 출고내역 표시 단계에서 다시 분리한다.
             const aggregatedSales = {};
-            outItems.forEach(sale => {
+            validOutItems.forEach(sale => {
                 const code = String(sale.코드 || 'NO_CODE');
-                if (isExcludedRow(sale, 'out'))
-                    return;
                 const vendorKey = resolveVendorDisplayName([sale._salesDisplayVendor, sale._salesActualVendor, sale.거래처], '미지정');
                 const matchKey = safeStr(sale.매입처매칭, '미지정');
                 const qty = sale._computedQty || 0;
@@ -7574,7 +7584,7 @@ ${balanceText}
                     React.createElement("div", { className: "mb-4" },
                         React.createElement("h4", { className: "text-sm font-bold text-slate-800" },
                             React.createElement("i", { className: "fas fa-star text-amber-500 mr-2" }),
-                            `V1.a25 재고수불부 실사 업로드 / 기초재고 인식 보정`),
+                            `V1.a26 재고수불부 실사 업로드 / 기초재고 인식 보정`),
                         React.createElement("p", { className: "text-xs text-slate-500 mt-1.5 ml-6" }, "\u2605 \uD544\uD130\uC640 BOX/EA/\uC18C\uBD84 \uD544\uD130\uAC00 \uC544\uB798 \uC124\uC815\uAC12\uC744 \uAE30\uC900\uC73C\uB85C \uB3D9\uC791\uD569\uB2C8\uB2E4. \uB2E8\uC704 \uCEEC\uB7FC\uC744 \uC6B0\uC120 \uD310\uC815\uD558\uACE0, \uB2E8\uC704\uAC00 \uC5C6\uC744 \uB54C\uB9CC \uD488\uBA85/\uADDC\uACA9\uC744 \uBCF4\uC870 \uB2E8\uC11C\uB85C \uC0AC\uC6A9\uD569\uB2C8\uB2E4.")),
                     React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-4 bg-amber-50/60 p-4 rounded-lg border border-amber-200" },
                         React.createElement("div", { className: "flex flex-col" },
