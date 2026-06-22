@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.62_StockBridgeFix]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.63_BasicStockBridge]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -1221,7 +1221,7 @@ const getCellWidthClass = (h) => {
         '규격': 'min-w-[68px] w-[68px] max-w-[68px]',
         '1종규격': 'min-w-[68px] w-[68px] max-w-[68px]',
         '2종규격': 'min-w-[68px] w-[68px] max-w-[68px]',
-        '이슈': 'min-w-[56px] w-[56px] max-w-[56px]',
+        '이슈': 'min-w-[104px] w-[104px] max-w-[104px]',
         '상태': 'min-w-[56px] w-[56px] max-w-[56px]',
         '1당수량': 'min-w-[64px] w-[64px] max-w-[64px]',
         '입고수량': 'min-w-[70px] w-[70px] max-w-[70px]',
@@ -2956,9 +2956,26 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             };
             // 재고수량 전달 정책:
             // - 안전재고는 재고수량이 아니다. 안전재고를 재고 fallback으로 쓰면 전 상품 0/품절 사고가 난다.
-            // - 실제 재고수량 필드가 있을 때만 전달하고, 없으면 출력검증센터 기본값(999)으로 보낸다.
-            const stockRaw = (_e = (_d = (_c = (_b = (_a = finalData['재고수량']) !== null && _a !== void 0 ? _a : inventory['재고수량']) !== null && _b !== void 0 ? _b : estimate['재고수량']) !== null && _c !== void 0 ? _c : purchase['재고수량']) !== null && _d !== void 0 ? _d : sales['재고수량']) !== null && _e !== void 0 ? _e : master['재고수량'];
-            const stockQty = stockRaw !== undefined && stockRaw !== null && stockRaw !== '' ? window.parseNum(stockRaw) : 999;
+            // - 출력검증센터가 기본여부 그룹 기준으로 999/실재고를 판정할 수 있도록 실제 재고가 있을 때만 전달한다.
+            // - 재고가 미전달된 상품은 재고수량을 강제로 999로 넣지 않고 _hasActualStock=false로 넘긴다.
+            const hasRealStockField = (obj, key) => !!obj && Object.prototype.hasOwnProperty.call(obj, key) && obj[key] !== undefined && obj[key] !== null && String(obj[key]).trim() !== '';
+            const stockCandidates = [
+                [finalData, '재고수량'],
+                [inventory, '재고수량'],
+                [inventory, '재고'],
+                [estimate, '재고수량'],
+                [purchase, '재고수량'],
+                [sales, '재고수량']
+            ];
+            let actualStockRaw = undefined;
+            for (const [obj, key] of stockCandidates) {
+                if (hasRealStockField(obj, key)) { actualStockRaw = obj[key]; break; }
+            }
+            const hasActualStock = actualStockRaw !== undefined && actualStockRaw !== null && String(actualStockRaw).trim() !== '';
+            const actualStockQty = hasActualStock ? window.parseNum(actualStockRaw) : '';
+            const stockWorkingFields = hasActualStock
+                ? { 재고수량: actualStockQty, _actualStockQty: actualStockQty, _hasActualStock: true }
+                : { _actualStockQty: '', _hasActualStock: false };
             const masterSalesState = window.getMasterSalesState(master);
             const promoThemeCodes = (window.resolvePromotionThemeByPriority
                 ? window.resolvePromotionThemeByPriority(finalData, sources, master)
@@ -2995,7 +3012,9 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                     '경비': getNum('경비'),
                     '외주비': getNum('외주비'),
                     '노무비': getNum('노무비'),
-                    재고수량: stockQty,
+                    기본: getStr('기본') || getStr('구분(기본)') || getStr('기본여부') || getStr('관리구분'),
+                    '구분(기본)': getStr('구분(기본)') || getStr('기본') || getStr('기본여부') || getStr('관리구분'),
+                    ...stockWorkingFields,
                     행사테마: promoThemeCodes.join(','),
                     테마1: hasPromoTheme(1) ? '1' : '',
                     테마2: hasPromoTheme(2) ? '1' : '',
@@ -3018,7 +3037,8 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                     기준출고가: window.parseNum(master['출고가']),
                     기준시중가: window.parseNum(master['시중가']),
                     기준행사가: window.parseNum(master['행사가']),
-                    기준재고수량: master['재고수량'] !== undefined && master['재고수량'] !== '' ? window.parseNum(master['재고수량']) : 999,
+                    기준재고수량: master['재고수량'] !== undefined && master['재고수량'] !== '' ? window.parseNum(master['재고수량']) : '',
+                    기준기본: master['기본'] || master['구분(기본)'] || master['기본여부'] || master['관리구분'] || '',
                     기준판매여부: masterSalesState.code,
                     기준판매상태: masterSalesState.label
                 }
@@ -4458,7 +4478,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.62_StockBridgeFix]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.63_BasicStockBridge]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -4790,7 +4810,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.62_StockBridgeFix")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.63_BasicStockBridge")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
