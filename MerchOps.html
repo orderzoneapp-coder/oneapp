@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.60_PromoThemePriority]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.61_PromoThemeMulti_ButtonState]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -69,10 +69,11 @@
         });
 
         // ============================================================
-        // [M-PROMO-THEME-01] 행사테마 우선순위 엔진
+        // [M-PROMO-THEME-01] 행사테마 우선순위/중복선택 엔진
         // 역할: 행사중이라는 이유만으로 테마1/2를 자동 지정하지 않고,
         //       명시값 → 업로드값 → 마스터 저장값 순서로만 행사테마를 결정한다.
-        // 정책: 출력검증센터에서 테마3을 마스터에 저장했으면 MerchOps 재조회 시 테마3으로 유지된다.
+        // 정책: 행사테마는 단일값이 아니라 1~5의 중복 선택값이다.
+        //       예) 테마1+테마3이면 행사테마='1,3', 테마1='1', 테마3='1'로 저장한다.
         // ============================================================
         window.resolvePromotionThemeByPriority = window.resolvePromotionThemeByPriority || ((finalData = {}, sources = {}, master = {}) => {
             const currentTheme = window.normalizePromotionThemeValue(finalData || {});
@@ -93,9 +94,10 @@
 
         window.applyPromotionThemeFields = window.applyPromotionThemeFields || ((item = {}, themeValue = '') => {
             const normalized = window.normalizePromotionThemeValue({ 행사테마: themeValue });
+            const themeSet = new Set(normalized.split(',').filter(Boolean));
             const next = { ...item, 행사테마: normalized };
             [1, 2, 3, 4, 5].forEach(n => {
-                next[`테마${n}`] = normalized.split(',').includes(String(n)) ? '1' : '';
+                next[`테마${n}`] = themeSet.has(String(n)) ? '1' : '';
             });
             return next;
         });
@@ -2096,9 +2098,10 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                 : null;
             ui.setActiveTags(prev => {
                 const tagLabel = roleMeta.tag;
-                if (!prev.some(t => t.name === tagLabel))
-                    return [...prev, { type: 'excel', name: tagLabel }];
-                return prev;
+                // 현재 작업테이블 기준의 엑셀 역할만 표시한다.
+                // 기존 견적/구매/판매/재고 source가 내부 데이터에 남아 있어도 상단 버튼과 시스템창은 마지막으로 불러온 작업역할만 켠다.
+                const nonExcelTags = (prev || []).filter(t => String(t?.type || '') !== 'excel');
+                return [...nonExcelTags, { type: 'excel', name: tagLabel }];
             });
             if (totalCount > 0) {
                 const templateMsg = autoAppliedTemplate ? ` / 테이블: ${autoAppliedTemplate.name}` : '';
@@ -3217,33 +3220,24 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
     const displayTableViewList = tableViewList.length > 0
         ? tableViewList
         : [{ id: '', name: `${activeTableTargetLabel} 기본양식`, fallback: true, masterColumns: getInitialVisibleMasterCols()[activeTableTarget] || ['입고가'], workColumns: getInitialVisibleUploadCols()[activeTableTarget] || [] }];
-    // [M-LOAD-BUTTON-COLOR-01] 불러온 자료 역할별 버튼 배색
-    // 견적/구매/판매/재고/카탈로그가 작업화면에 적용된 상태를 상단 버튼 색으로 표시한다.
-    // 필터/정렬 버튼 배치는 건드리지 않고, 업로드/불러오기 버튼의 상태 표시만 담당한다.
-    const hasActiveTagName = useCallback((keywords = []) => {
-        const keys = Array.isArray(keywords) ? keywords : [keywords];
-        return (activeTags || []).some(t => keys.some(key => String(t?.name || '').includes(key)));
+    // [M-LOAD-BUTTON-COLOR-01] 현재 작업테이블 역할별 버튼 배색
+    // 버튼 ON/OFF는 시스템창과 동일하게 activeTags의 현재 excel 태그만 사용한다.
+    // managedItems.sources는 내부 병합/계산용 데이터이므로 버튼 배색 기준으로 쓰지 않는다.
+    const currentExcelRole = useMemo(() => {
+        const excelTagText = (activeTags || [])
+            .filter(t => String(t?.type || '') === 'excel')
+            .map(t => String(t?.name || ''))
+            .join(' ');
+        if (excelTagText.includes('견적')) return 'estimate';
+        if (excelTagText.includes('구매')) return 'purchase';
+        if (excelTagText.includes('판매')) return 'sales';
+        if (excelTagText.includes('재고')) return 'inventory';
+        return '';
     }, [activeTags]);
-    // [M-LOAD-BUTTON-COLOR-02] 파일 불러오기 버튼 배색 판정 보강
-    // activeTags 문구만 보지 않고 실제 작업데이터 sources 기준으로 견적/구매/판매/재고 업로드 여부를 판정한다.
-    // 이 로직은 버튼 색상만 담당하며 필터/정렬/양식 적용 정책은 변경하지 않는다.
-    const loadedRoleSet = useMemo(() => {
-        const roleSet = new Set();
-        Object.values((data && data.managedItems) || {}).forEach(item => {
-            Object.keys((item && item.sources) || {}).forEach(role => {
-                if (['estimate', 'purchase', 'sales', 'inventory'].includes(role)) roleSet.add(role);
-            });
-        });
-        return roleSet;
-    }, [data && data.managedItems]);
-    const hasExcelLoadTag = useCallback((keywords = []) => {
-        const keys = Array.isArray(keywords) ? keywords : [keywords];
-        return (activeTags || []).some(t => String(t?.type || '') === 'excel' && keys.some(key => String(t?.name || '').includes(key)));
-    }, [activeTags]);
-    const isEstimateLoaded = loadedRoleSet.has('estimate') || hasExcelLoadTag(['견적']);
-    const isPurchaseLoaded = loadedRoleSet.has('purchase') || hasExcelLoadTag(['구매']);
-    const isSalesLoaded = loadedRoleSet.has('sales') || hasExcelLoadTag(['판매']);
-    const isInventoryLoaded = loadedRoleSet.has('inventory') || hasExcelLoadTag(['재고']);
+    const isEstimateLoaded = currentExcelRole === 'estimate';
+    const isPurchaseLoaded = currentExcelRole === 'purchase';
+    const isSalesLoaded = currentExcelRole === 'sales';
+    const isInventoryLoaded = currentExcelRole === 'inventory';
     // 파서리스트와 카탈로그는 같은 선택 UI 영역에 있어도 상태 배색은 분리한다.
     // type='catalog'는 파서리스트, type='category'는 카탈로그로만 판정한다.
     const isParserListLoaded = (activeTags || []).some(t => String(t?.type || '') === 'catalog');
@@ -3344,7 +3338,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                         cat.count,
                         "\uAC74)"))),
                 React.createElement("i", { className: "fas fa-chevron-down absolute right-3 top-3 text-slate-400 text-[10px] pointer-events-none" })),
-            React.createElement("button", { onClick: () => setShowCatalogModal(true), disabled: fullDisplayRows.length === 0, className: `h-9 px-3 rounded-xl text-[12px] font-black shadow-sm flex items-center shrink-0 ${fullDisplayRows.length > 0 ? 'bg-indigo-600 text-white hover:bg-indigo-700 border border-indigo-700' : 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed'}`, title: "\uD604\uC7AC \uD654\uBA74 \uB610\uB294 \uC120\uD0DD\uB41C \uC791\uC5C5\uBAA9\uB85D \uAE30\uC900\uC73C\uB85C \uC0C8 \uCE74\uD0C8\uB85C\uADF8\uB97C \uC0DD\uC131\uD569\uB2C8\uB2E4. \uC0AD\uC81C/\uC774\uB984\uBCC0\uACBD\uC740 \uD658\uACBD\uC124\uC815\uC5D0\uC11C \uAD00\uB9AC\uD569\uB2C8\uB2E4." },
+            React.createElement("button", { onClick: () => setShowCatalogModal(true), disabled: fullDisplayRows.length === 0, className: `h-9 px-3 rounded-xl text-[12px] font-black shadow-sm flex items-center shrink-0 ${fullDisplayRows.length > 0 ? 'bg-white text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 border border-slate-300 hover:border-indigo-200' : 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed'}`, title: "\uD604\uC7AC \uD654\uBA74 \uB610\uB294 \uC120\uD0DD\uB41C \uC791\uC5C5\uBAA9\uB85D \uAE30\uC900\uC73C\uB85C \uC0C8 \uCE74\uD0C8\uB85C\uADF8\uB97C \uC0DD\uC131\uD569\uB2C8\uB2E4. \uC0AD\uC81C/\uC774\uB984\uBCC0\uACBD\uC740 \uD658\uACBD\uC124\uC815\uC5D0\uC11C \uAD00\uB9AC\uD569\uB2C8\uB2E4." },
                 React.createElement("i", { className: "fas fa-plus-circle mr-1.5 text-[13px]" }),
                 " 생성"),
             React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1 shrink-0" }),
@@ -3364,7 +3358,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                 React.createElement("i", { className: "fas fa-box mr-2 text-[14px]" }),
                 " 재고",
                 React.createElement("input", { type: "file", className: "hidden", multiple: true, onChange: (e) => handleFileUpload(e, 'inventory'), accept: ".xlsx, .xls, .csv", disabled: state.isProcessing })),
-            React.createElement("button", { onClick: handleReset, className: "h-9 px-3 rounded-xl flex items-center text-[12px] font-black text-white bg-amber-500 border border-amber-600 shadow-md shadow-amber-100 hover:bg-amber-600 hover:border-amber-700 shrink-0", title: "화면 초기화" },
+            React.createElement("button", { onClick: handleReset, className: "h-9 px-3 rounded-xl flex items-center text-[12px] font-black text-slate-700 bg-white border border-slate-300 shadow-sm hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200 shrink-0", title: "화면 초기화" },
                 React.createElement("i", { className: "fas fa-rotate-left mr-1.5 text-[13px]" }),
                 " 초기화"),
             React.createElement("div", { className: "flex-1 min-w-[12px]" }),
@@ -3617,16 +3611,17 @@ const getStockCost = (row = {}) => {
 // 작업파일/업로드/파서의 행사가 값은 미래 적용 후보값이며, 최종 저장 전까지 행사중으로 보지 않는다.
 // ============================================================
 const getMasterPromoPrice = (mItem = {}) => window.parseNum(mItem === null || mItem === void 0 ? void 0 : mItem['행사가']);
+const getPromoThemeCodes = (item = {}) => {
+    const normalized = window.normalizePromotionThemeValue ? window.normalizePromotionThemeValue(item || {}) : '';
+    return normalized ? normalized.split(',').filter(Boolean) : [];
+};
 const getPromoThemeNo = (item = {}) => {
-    for (let i = 1; i <= 5; i++) {
-        if (window.parseNum(item === null || item === void 0 ? void 0 : item[`테마${i}`]) === 1)
-            return i;
-    }
-    return 0;
+    const codes = getPromoThemeCodes(item);
+    return codes.length > 0 ? Number(codes[0]) : 0;
 };
 const getPromoThemeLabel = (item = {}) => {
-    const n = getPromoThemeNo(item);
-    return n > 0 ? `테마${n}` : '테마미지정';
+    const codes = getPromoThemeCodes(item);
+    return codes.length > 0 ? codes.map(n => `테마${n}`).join(',') : '테마미지정';
 };
 // ============================================================
 // [M-FILTER-THEME-01] 상세필터 행사테마 분리
@@ -4460,7 +4455,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.60_PromoThemePriority]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.61_PromoThemeMulti_ButtonState]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -4792,7 +4787,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.60_PromoThemePriority")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.61_PromoThemeMulti_ButtonState")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
