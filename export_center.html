@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.14 StockBulkApply]</title>
+    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.15 BasicStockPolicy]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -250,6 +250,62 @@ const normalizeStockQty = (v, fallback = DEFAULT_EXPORT_STOCK_QTY) => {
     return Number.isFinite(n) ? n : fallback;
 };
 const getReviewStockQty = (row = {}, fallback = DEFAULT_EXPORT_STOCK_QTY) => normalizeStockQty(row.재고수량, fallback);
+
+// ============================================================
+// [E-STOCK-02] 기본여부/물류유형 기반 재고 적용 정책
+// 역할: 바로 구매 가능한 기본 그룹은 재고 999로 열어두고, 그 외 그룹은 실제 재고만 적용한다.
+// 정책:
+// - 기본여부(기본/구분(기본)/기본여부/관리구분)가 1,3,5 등 지정 그룹이면 재고수량 999를 적용한다.
+// - 지정 그룹이 아닌 상품은 실제 재고가 명시된 경우만 해당 수량을 적용하고, 미전달이면 0으로 본다.
+// - 기본 그룹 입력값은 쉼표/공백 구분을 허용한다. 예: 1,3,5
+// ============================================================
+const DEFAULT_DIRECT_BASIC_GROUPS = '1,3,5';
+const BASIC_GROUP_STORAGE_KEY = 'exportDirectBasicGroups_v1';
+const normalizeBasicGroupValue = (v) => {
+    const raw = String(v !== undefined && v !== null ? v : '').trim();
+    if (!raw) return '';
+    const m = raw.match(/\d+/);
+    return m ? String(Number(m[0])) : raw;
+};
+const normalizeBasicGroupString = (value) => {
+    const parts = String(value !== undefined && value !== null ? value : '').split(/[,/|\s]+/).map(normalizeBasicGroupValue).filter(Boolean);
+    return parts.filter((v, idx, arr) => arr.indexOf(v) === idx).join(',');
+};
+const getBasicGroupValue = (...items) => {
+    for (const item of items) {
+        if (!item) continue;
+        const candidates = [item['기본'], item['구분(기본)'], item['기본여부'], item['관리구분'], item.basicGroup, item._basicGroup];
+        for (const v of candidates) {
+            const normalized = normalizeBasicGroupValue(v);
+            if (normalized) return normalized;
+        }
+    }
+    return '';
+};
+const isDirectPurchaseBasicGroup = (basicGroup, directGroups = DEFAULT_DIRECT_BASIC_GROUPS) => {
+    const group = normalizeBasicGroupValue(basicGroup);
+    if (!group) return false;
+    return normalizeBasicGroupString(directGroups).split(',').filter(Boolean).includes(group);
+};
+const getActualStockMeta = (working = {}, source = {}) => {
+    const raw = working._actualStockQty !== undefined ? working._actualStockQty : working.재고수량;
+    const manual = working._stockManuallyEdited === true || working._stockBulkApplied === true;
+    // 구버전 MerchOps가 재고 미전달 상품에도 999를 넣어 넘긴 경우가 있으므로,
+    // _hasActualStock 플래그가 없고 값이 999이면 실제재고로 보지 않는다.
+    const explicit = working._hasActualStock === true || manual || (hasStockValue(raw) && parseNum(raw) !== DEFAULT_EXPORT_STOCK_QTY);
+    return { hasActualStock: explicit && hasStockValue(raw), actualStockQty: explicit && hasStockValue(raw) ? normalizeStockQty(raw, 0) : 0 };
+};
+const resolveStockByBasicPolicy = (row = {}, directGroups = DEFAULT_DIRECT_BASIC_GROUPS) => {
+    if (isDirectPurchaseBasicGroup(row.기본, directGroups)) return DEFAULT_EXPORT_STOCK_QTY;
+    if (row._hasActualStock === true) return normalizeStockQty(row._actualStockQty, 0);
+    return 0;
+};
+const applyBasicStockPolicyToRow = (row = {}, directGroups = DEFAULT_DIRECT_BASIC_GROUPS) => ({
+    ...row,
+    재고수량: resolveStockByBasicPolicy(row, directGroups),
+    _stockPolicyGroups: normalizeBasicGroupString(directGroups),
+    _stockPolicyApplied: true
+});
 
 // 출력검증센터의 행사가 값은 저장/출력 적용 예정값이다.
 // 판매상태 정책:
@@ -512,6 +568,10 @@ const ExportApp = () => {
     const [toast, setToast] = useState('');
     const [bulkThemeSet, setBulkThemeSet] = useState('1');
     const [bulkStockInput, setBulkStockInput] = useState(String(DEFAULT_EXPORT_STOCK_QTY));
+    const [basicGroupInput, setBasicGroupInput] = useState(() => {
+        try { return normalizeBasicGroupString(localStorage.getItem(BASIC_GROUP_STORAGE_KEY) || DEFAULT_DIRECT_BASIC_GROUPS); }
+        catch (e) { return DEFAULT_DIRECT_BASIC_GROUPS; }
+    });
     const showToast = useCallback((msg) => {
         setToast(msg);
         setTimeout(() => setToast(''), 3000);
@@ -556,9 +616,10 @@ const ExportApp = () => {
                     const 행사가 = parseNum(working.행사가);
                     const calcWarehouse = working._calcWarehouse || '';
                     const calcWarehouseReason = working._calcWarehouseReason || '';
-                    const rawStock = working.재고수량;
-                    const stockFallback = hasStockValue(master['재고수량']) ? parseNum(master['재고수량']) : (hasStockValue(baseline.기준재고수량) ? parseNum(baseline.기준재고수량) : DEFAULT_EXPORT_STOCK_QTY);
-                    const 재고수량 = normalizeStockQty(rawStock, stockFallback || DEFAULT_EXPORT_STOCK_QTY);
+                    const basicGroup = getBasicGroupValue(working, master, baseline);
+                    const actualStockMeta = getActualStockMeta(working, source);
+                    const stockBaseRow = { 기본: basicGroup, _hasActualStock: actualStockMeta.hasActualStock, _actualStockQty: actualStockMeta.actualStockQty };
+                    const 재고수량 = resolveStockByBasicPolicy(stockBaseRow, basicGroupInput || DEFAULT_DIRECT_BASIC_GROUPS);
                     return {
                         코드: code,
                         품목명: working.품목명 || master['품목명'] || '',
@@ -598,6 +659,10 @@ const ExportApp = () => {
                         '경비': parseNum((_7 = working['경비']) !== null && _7 !== void 0 ? _7 : master['경비']),
                         '외주비': parseNum((_8 = working['외주비']) !== null && _8 !== void 0 ? _8 : master['외주비']),
                         '노무비': parseNum((_9 = working['노무비']) !== null && _9 !== void 0 ? _9 : master['노무비']),
+                        기본: basicGroup,
+                        _hasActualStock: actualStockMeta.hasActualStock,
+                        _actualStockQty: actualStockMeta.actualStockQty,
+                        _stockPolicyGroups: normalizeBasicGroupString(basicGroupInput || DEFAULT_DIRECT_BASIC_GROUPS),
                         재고수량,
                         ...applyThemeStringToRow({}, getPromotionThemeString(working) || getPromotionThemeString(master)),
                         source
@@ -638,7 +703,10 @@ const ExportApp = () => {
                 next.출고가 = parseNum(value);
             }
             else if (field === '재고수량') {
-                next.재고수량 = normalizeStockQty(value, 0);
+                const stockValue = normalizeStockQty(value, 0);
+                next.재고수량 = stockValue;
+                next._actualStockQty = stockValue;
+                next._hasActualStock = true;
                 next._stockManuallyEdited = true;
             }
             else if (field === '행사테마') {
@@ -798,10 +866,30 @@ const ExportApp = () => {
             if (!targetCodes.has(row.코드))
                 return row;
             appliedCount++;
-            return { ...row, 재고수량: stockValue, _stockManuallyEdited: true, _stockBulkApplied: true };
+            return { ...row, 재고수량: stockValue, _actualStockQty: stockValue, _hasActualStock: true, _stockManuallyEdited: true, _stockBulkApplied: true };
         }));
         showToast(`✅ 현재 표시 ${appliedCount.toLocaleString()}건에 재고수량 ${stockValue.toLocaleString()} 일괄 적용 완료`);
     }, [bulkStockInput, filteredRows, showToast]);
+    // ============================================================
+    // [E-ACTION-01C] 기본여부 그룹 기반 재고 재적용
+    // 역할: 입력한 기본 그룹은 재고 999, 그 외 그룹은 실제 재고만 반영하도록 현재 검증행을 다시 계산한다.
+    // ============================================================
+    const handleBasicStockPolicyApply = useCallback(() => {
+        const groups = normalizeBasicGroupString(basicGroupInput);
+        if (!groups)
+            return showToast('⚠️ 기본 그룹값을 입력하세요. 예: 1,3,5');
+        try { localStorage.setItem(BASIC_GROUP_STORAGE_KEY, groups); } catch (e) {}
+        setBasicGroupInput(groups);
+        let directCount = 0;
+        let actualOnlyCount = 0;
+        setReviewRows(prev => prev.map(row => {
+            const next = applyBasicStockPolicyToRow(row, groups);
+            if (isDirectPurchaseBasicGroup(row.기본, groups)) directCount++;
+            else actualOnlyCount++;
+            return next;
+        }));
+        showToast(`✅ 기본 ${groups} 그룹은 재고 999 적용 · 그 외 ${actualOnlyCount.toLocaleString()}건은 실제재고만 적용`);
+    }, [basicGroupInput, showToast]);
     // ============================================================
     // [E-OUTPUT-02] 통합 엑셀 조립 공통 엔진
     // 역할: 쇼핑몰업로드/ERP업데이트 시트를 생성한다.
@@ -890,6 +978,8 @@ const ExportApp = () => {
                     mItem['B도매가'] = parseNum(item.B도매가);
                     mItem['시중가'] = parseNum(item.시중가);
                     mItem['재고수량'] = getReviewStockQty(item);
+                    mItem['기본'] = item.기본 || mItem['기본'] || '';
+                    mItem['구분(기본)'] = item.기본 || mItem['구분(기본)'] || '';
                     mItem['판매여부'] = sale.code;
                     mItem['브랜드'] = item.브랜드 || '';
                     mItem['간단설명'] = item.간단설명 || '';
@@ -1058,6 +1148,10 @@ const ExportApp = () => {
                         React.createElement("option", { value: "diffAbsDesc" }, "\uCC28\uC561 \uD070 \uC21C"),
                         React.createElement("option", { value: "inPriceDesc" }, "\uC785\uACE0\uAC00 \uB192\uC740 \uC21C"),
                         React.createElement("option", { value: "outPriceDesc" }, "\uCD9C\uACE0\uAC00 \uB192\uC740 \uC21C")),
+                    React.createElement("div", { className: "h-9 px-2 border border-sky-200 rounded-lg bg-sky-50 flex items-center gap-1", title: "기본여부 그룹 기준: 입력 그룹은 재고 999, 그 외 그룹은 실제재고만 적용" },
+                        React.createElement("span", { className: "text-[11px] font-black text-sky-700" }, "기본"),
+                        React.createElement("input", { value: basicGroupInput, onChange: (e) => setBasicGroupInput(e.target.value), placeholder: "1,3,5", className: "w-20 h-7 px-2 rounded-md border border-sky-200 bg-white text-center text-[12px] font-black text-sky-700 outline-none focus:border-sky-500" }),
+                        React.createElement("button", { onClick: handleBasicStockPolicyApply, className: "h-7 px-2 rounded-md bg-sky-600 text-white text-[11px] font-black hover:bg-sky-700" }, "불러오기")),
                     React.createElement("div", { className: "h-9 px-2 border border-purple-200 rounded-lg bg-purple-50 flex items-center" },
                         React.createElement(ThemeToggleButtons, { value: bulkThemeSet, onToggle: handleBulkThemeToggle, compact: true })),
                     React.createElement("button", { onClick: handleBulkThemeApply, className: "h-9 px-4 rounded-lg bg-purple-600 text-white border border-purple-600 text-[12px] font-black hover:bg-purple-700" },
