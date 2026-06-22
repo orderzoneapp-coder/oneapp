@@ -2583,7 +2583,13 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                         normObj.매입처매칭 = '';
                     }
                     else if (role === 'out') {
-                        const salesVendor = getExactRawVal(rowObj, ['거래처명', '판매처', '매출처명', '매장명', '매장', '고객']);
+                        // V1.a23: 판매현황 양식별 거래처 의미 분리.
+                        // - 첫 번째 양식: 거래=1전송(그룹), 판매처=실제 거래처
+                        // - 두 번째 양식: 거래처명=1전송(그룹), no.=실제 거래처
+                        // 칩 표시명은 실제 판매처(no./판매처)를 우선하고, 거래/거래처명은 그룹값으로만 보관한다.
+                        const salesGroupVendor = getExactRawVal(rowObj, ['거래처명', '거래처', '거래']);
+                        const salesActualVendor = getExactRawVal(rowObj, ['no.', 'no', '번호', '판매처', '매출처명', '매장명', '매장', '고객']);
+                        const salesVendor = salesActualVendor !== null ? salesActualVendor : salesGroupVendor;
                         const lotVendor = getExactRawVal(rowObj, ['구매처', '매입처', '원구매처', '매입처(Lot)', '매입처(거래처)']);
                         const salesQty = getExactRawVal(rowObj, ['수량', '출고량', '판매수량']);
                         const salesPrice = getExactRawVal(rowObj, ['단가', '판매단가', '출고가', '출고가(공지)', '출고가 (공지)']);
@@ -2592,6 +2598,8 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                             normObj.일자 = safeStr(salesDate, '');
                             normObj._dateSource = '판매일자';
                         }
+                        normObj._salesGroupVendor = safeStr(salesGroupVendor, '');
+                        normObj._salesActualVendor = safeStr(salesActualVendor, '');
                         if (salesVendor !== null)
                             normObj.거래처 = safeStr(salesVendor, '미지정');
                         if (lotVendor !== null)
@@ -2783,11 +2791,18 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 next.수기확인완료 = true;
                 return next;
             };
-            const subPricePatch = buildManualSubPricePatch(sourceItem, targetItem, sourceLossQty, targetLossQty);
+            const subPricePatch = null; // V1.a22 업데이트: 수기치환은 SKU 단가를 자동 덮어쓰지 않는다. 원가 분리는 Lot/대체 원장에서 처리한다.
             let sourceAfter = makeManualIssue(sourceItem, targetItem, '-', sourceLossQty);
             let targetAfter = makeManualIssue(targetItem, sourceItem, '+', targetLossQty);
-            sourceAfter = applyManualSubPricePatch(sourceAfter, subPricePatch);
-            targetAfter = applyManualSubPricePatch(targetAfter, subPricePatch);
+            const sManualPrice = safeNum(sourceItem.단가);
+            const tManualPrice = safeNum(targetItem.단가);
+            if (sManualPrice > 0 && tManualPrice > 0 && Math.abs(sManualPrice - tManualPrice) > 0.0001) {
+                sourceAfter.이슈 = DATAOPS_ISSUE_HELPER.unique([...(sourceAfter.이슈 || []), '단가차이']);
+                targetAfter.이슈 = DATAOPS_ISSUE_HELPER.unique([...(targetAfter.이슈 || []), '단가차이']);
+                const diffMemo = `[수기치환/단가차이] ${safeStr(sourceItem.품명)} ${formatMoney(sManualPrice)} / ${safeStr(targetItem.품명)} ${formatMoney(tManualPrice)}`;
+                sourceAfter.메모 = safeStr(sourceAfter.메모, '').includes(diffMemo) ? sourceAfter.메모 : `${safeStr(sourceAfter.메모, '')}${safeStr(sourceAfter.메모, '') ? ' ' : ''}${diffMemo}`;
+                targetAfter.메모 = safeStr(targetAfter.메모, '').includes(diffMemo) ? targetAfter.메모 : `${safeStr(targetAfter.메모, '')}${safeStr(targetAfter.메모, '') ? ' ' : ''}${diffMemo}`;
+            }
             setSubstHistory(h => [...h, {
                     id: Date.now(),
                     type: 'MANUAL_LOSS_LINK',
@@ -2911,51 +2926,73 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             setAlertMsg(`소분치환 실행 완료\n\n실행: ${executedCount}건\n건너뜀: ${skippedCount}건\n\n기존 입고/출고 원본값은 유지했고, 치환입고/치환출고와 잔량/오차만 재계산했습니다.`);
         }, 50);
     }, [productData, targetDateStr, setAlertMsg]);
-    const handleSalesMove = useCallback((sourceKey, targetKey, vendorName, qtyToMove) => {
+    const handleSalesMove = useCallback((sourceKey, targetKey, vendorName, qtyToMove, moveOptions = {}) => {
         setProductData(prevP => {
-            let sPrice = 0;
-            let tPrice = 0;
+            const targetMoveQty = safeNum(qtyToMove);
+            const sourceMoveQty = safeNum(moveOptions.sourceMoveQty) > 0 ? safeNum(moveOptions.sourceMoveQty) : targetMoveQty;
+            if (targetMoveQty <= 0 || sourceMoveQty <= 0 || sourceKey === targetKey)
+                return prevP;
+            const sourcePrev = prevP.find(p => p.batchKey === sourceKey);
+            const targetPrev = prevP.find(p => p.batchKey === targetKey);
+            if (!sourcePrev || !targetPrev)
+                return prevP;
+            const cloneForUndo = (item) => JSON.parse(JSON.stringify(item || {}));
+            const cleanVendorName = safeStr(vendorName).replace('_perfect', '') || safeStr(sourcePrev.거래처 || targetPrev.거래처, '미지정');
+            let sPrice = safeNum(sourcePrev.단가);
             let sRevUnit = 0;
-            prevP.forEach(p => {
-                if (p.batchKey === sourceKey) {
-                    sPrice = p.단가;
-                    if (p.출고내역[vendorName] && p.출고내역[vendorName].qty > 0)
-                        sRevUnit = p.출고내역[vendorName].rev / p.출고내역[vendorName].qty;
-                    else
-                        sRevUnit = p.출고 > 0 ? p.매출액 / p.출고 : 0;
-                }
-                if (p.batchKey === targetKey)
-                    tPrice = safeNum(p.단가) > 0 ? p.단가 : sPrice;
-            });
+            if (sourcePrev.출고내역 && sourcePrev.출고내역[vendorName] && safeNum(sourcePrev.출고내역[vendorName].qty) > 0)
+                sRevUnit = safeNum(sourcePrev.출고내역[vendorName].rev) / safeNum(sourcePrev.출고내역[vendorName].qty);
+            else
+                sRevUnit = safeNum(sourcePrev.출고) > 0 ? safeNum(sourcePrev.매출액) / safeNum(sourcePrev.출고) : 0;
+            const sourceMovedCogs = sourceMoveQty * sPrice;
+            const movedRev = sourceMoveQty * sRevUnit;
+            let effectiveTargetPrice = safeNum(targetPrev.단가);
+            if (effectiveTargetPrice <= 0) {
+                // Ctrl 드래그로 1개 묶음 SKU를 10개 기준 SKU로 환산하는 경우: 원천 총원가를 목표 수량으로 나눈다.
+                effectiveTargetPrice = targetMoveQty !== sourceMoveQty && targetMoveQty > 0 ? (sourceMovedCogs / targetMoveQty) : sPrice;
+            }
+            const movedCogs = targetMoveQty * effectiveTargetPrice;
+            const isBundleQtyConvert = Math.abs(targetMoveQty - sourceMoveQty) > 0.0000001;
+            const historyItem = {
+                id: Date.now() + Math.floor(Math.random() * 1000),
+                type: isBundleQtyConvert ? 'BUNDLE_QTY_CONVERT' : 'SALES_CHIP_MOVE',
+                sourceKey,
+                targetKey,
+                sourceName: safeStr(sourcePrev.품명, '원본'),
+                targetName: safeStr(targetPrev.품명, '대상'),
+                sQty: sourceMoveQty,
+                tQty: targetMoveQty,
+                transferredCost: movedCogs,
+                sourceItemPrev: cloneForUndo(sourcePrev),
+                targetItemPrev: cloneForUndo(targetPrev),
+                vendorName: cleanVendorName,
+                createdAt: new Date().toISOString()
+            };
+            setSubstHistory(h => [...h, historyItem]);
             return prevP.map(p => {
                 if (p.batchKey === sourceKey) {
-                    const cleanVendorName = safeStr(vendorName).replace('_perfect', '');
                     const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역 || {})), 이슈: [...(p.이슈 || [])] };
-                    np.출고 -= qtyToMove;
-                    const movedCogs = qtyToMove * sPrice;
-                    const movedRev = qtyToMove * sRevUnit;
-                    np.매출원가 -= movedCogs;
-                    np.매출액 -= movedRev;
+                    np.출고 = safeNum(np.출고) - sourceMoveQty;
+                    np.매출원가 = safeNum(np.매출원가) - sourceMovedCogs;
+                    np.매출액 = safeNum(np.매출액) - movedRev;
                     if (np.출고내역[vendorName]) {
-                        np.출고내역[vendorName].qty -= qtyToMove;
-                        np.출고내역[vendorName].rev -= movedRev;
-                        np.출고내역[vendorName].cogs -= movedCogs;
-                        if (np.출고내역[vendorName].qty <= 0)
+                        np.출고내역[vendorName].qty = safeNum(np.출고내역[vendorName].qty) - sourceMoveQty;
+                        np.출고내역[vendorName].rev = safeNum(np.출고내역[vendorName].rev) - movedRev;
+                        np.출고내역[vendorName].cogs = safeNum(np.출고내역[vendorName].cogs) - sourceMovedCogs;
+                        if (safeNum(np.출고내역[vendorName].qty) <= 0)
                             delete np.출고내역[vendorName];
                     }
-                    np.전산잔량 = np.기초 + np.입고 + np.대체입고 - np.출고 - np.대체출고;
+                    np.전산잔량 = safeNum(np.기초) + safeNum(np.입고) + safeNum(np.대체입고) - safeNum(np.출고) - safeNum(np.대체출고);
                     if (np.실사 !== null && np.실사 !== '') {
-                        np.실사 = Number(np.실사) + qtyToMove;
+                        np.실사 = Number(np.실사) + sourceMoveQty;
                         np.로스 = np.실사 - np.전산잔량;
                     }
                     else {
                         np.실사 = np.전산잔량;
                         np.로스 = 0;
                     }
-                    // 🌟 관리자 조작으로 전산잔량이 0 이상이 되면 수량부족(잔량) 이슈 칩 삭제
-                    if (np.전산잔량 >= 0) {
-                        np.이슈 = np.이슈.filter(msg => !msg.includes('수량부족'));
-                    }
+                    if (np.전산잔량 >= 0)
+                        np.이슈 = np.이슈.filter(msg => !safeStr(msg).includes('수량부족'));
                     const remainingLotQty = Object.values(np.출고내역 || {}).reduce((sum, v) => sum + safeNum(v && v.qty), 0);
                     const isMoveEmptiedSource = safeNum(np.기초) === 0 && safeNum(np.입고) === 0 && safeNum(np.출고) === 0 && safeNum(np.대체입고) === 0 && safeNum(np.대체출고) === 0 && safeNum(np.전산잔량) === 0 && safeNum(np.실사) === 0 && safeNum(np.로스) === 0 && remainingLotQty === 0;
                     if (isMoveEmptiedSource) {
@@ -2963,8 +3000,8 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         np._hiddenBySalesMoveAt = new Date().toISOString();
                         np._hiddenBySalesMoveTargetKey = targetKey;
                         np._hiddenBySalesMoveVendor = cleanVendorName;
-                        np._hiddenBySalesMoveQty = qtyToMove;
-                        np.메모 = safeStr(np.메모, '').includes('[매칭변경원본숨김]') ? np.메모 : `${safeStr(np.메모, '')}${safeStr(np.메모, '') ? ' ' : ''}[매칭변경원본숨김] ${cleanVendorName} ${qtyToMove}`;
+                        np._hiddenBySalesMoveQty = sourceMoveQty;
+                        np.메모 = safeStr(np.메모, '').includes('[매칭변경원본숨김]') ? np.메모 : `${safeStr(np.메모, '')}${safeStr(np.메모, '') ? ' ' : ''}[매칭변경원본숨김] ${cleanVendorName} ${sourceMoveQty}`;
                     }
                     else {
                         np._hiddenBySalesMove = false;
@@ -2973,39 +3010,36 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     return np;
                 }
                 if (p.batchKey === targetKey) {
-                    const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역)), 이슈: [...p.이슈] };
-                    np.출고 += qtyToMove;
-                    const effectiveTargetPrice = safeNum(np.단가) > 0 ? safeNum(np.단가) : safeNum(sPrice);
+                    const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역 || {})), 이슈: [...(p.이슈 || [])] };
+                    np.출고 = safeNum(np.출고) + targetMoveQty;
                     if (safeNum(np.단가) <= 0 && effectiveTargetPrice > 0) {
-                        // V1.a22: Lot 이동으로 원가가 확정되면 단가없음 이슈를 해소해 단가검증 카운트도 줄인다.
-                        np.단가 = effectiveTargetPrice;
+                        np.단가 = Math.round(effectiveTargetPrice * 100) / 100;
                         np.이슈 = DATAOPS_ISSUE_HELPER.stripPriceIssues(np.이슈 || []);
                     }
-                    const movedCogs = qtyToMove * effectiveTargetPrice;
-                    const movedRev = qtyToMove * sRevUnit;
-                    np.매출원가 += movedCogs;
-                    np.매출액 += movedRev;
-                    // 수동으로 드래그 앤 드롭 이동된 건이므로 _perfect 태그를 지우고 일반 상태로 귀속시킴
-                    const cleanVendorName = vendorName.replace('_perfect', '');
+                    np.매출원가 = safeNum(np.매출원가) + movedCogs;
+                    np.매출액 = safeNum(np.매출액) + movedRev;
                     if (!np.출고내역[cleanVendorName])
                         np.출고내역[cleanVendorName] = { qty: 0, rev: 0, cogs: 0, isLifo: false, isPerfectMatch: false, displayVendor: cleanVendorName };
-                    np.출고내역[cleanVendorName].qty += qtyToMove;
-                    np.출고내역[cleanVendorName].rev += movedRev;
-                    np.출고내역[cleanVendorName].cogs += movedCogs;
-                    np.전산잔량 = np.기초 + np.입고 + np.대체입고 - np.출고 - np.대체출고;
+                    np.출고내역[cleanVendorName].qty = safeNum(np.출고내역[cleanVendorName].qty) + targetMoveQty;
+                    np.출고내역[cleanVendorName].rev = safeNum(np.출고내역[cleanVendorName].rev) + movedRev;
+                    np.출고내역[cleanVendorName].cogs = safeNum(np.출고내역[cleanVendorName].cogs) + movedCogs;
+                    np.출고내역[cleanVendorName].displayVendor = cleanVendorName;
+                    if (isBundleQtyConvert) {
+                        np.출고내역[cleanVendorName].matchMode = 'BUNDLE_QTY_CONVERT';
+                        np.이슈 = DATAOPS_ISSUE_HELPER.unique([...(np.이슈 || []), `🔄묶음환산(${sourceMoveQty}→${targetMoveQty})`]);
+                    }
+                    np.전산잔량 = safeNum(np.기초) + safeNum(np.입고) + safeNum(np.대체입고) - safeNum(np.출고) - safeNum(np.대체출고);
                     if (np.실사 !== null && np.실사 !== '') {
-                        np.실사 = Number(np.실사) - qtyToMove;
+                        np.실사 = Number(np.실사) - targetMoveQty;
                         np.로스 = np.실사 - np.전산잔량;
                     }
                     else {
                         np.실사 = np.전산잔량;
                         np.로스 = 0;
                     }
-                    np.이슈 = np.이슈.filter(msg => msg !== '매입내역 없음' && !msg.includes('전산 재고 부족'));
-                    // 🌟 관리자 조작으로 전산잔량이 0 이상이 되면 수량부족(잔량) 이슈 칩 삭제
-                    if (np.전산잔량 >= 0) {
-                        np.이슈 = np.이슈.filter(msg => !msg.includes('수량부족'));
-                    }
+                    np.이슈 = np.이슈.filter(msg => msg !== '매입내역 없음' && !safeStr(msg).includes('전산 재고 부족'));
+                    if (np.전산잔량 >= 0)
+                        np.이슈 = np.이슈.filter(msg => !safeStr(msg).includes('수량부족'));
                     np._hiddenBySalesMove = false;
                     np.수기확인완료 = true;
                     return np;
@@ -3013,7 +3047,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 return p;
             });
         });
-    }, []);
+    }, [setSubstHistory]);
     const executeAnalysis = useCallback((payload) => {
         setIsProcessing(true);
         setConfirmModal({ isOpen: false, warnings: [], payload: null });
@@ -4454,7 +4488,8 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                     React.createElement("div", { className: "flex items-center gap-1 flex-wrap text-left" }, hasIssue && regularIssues.map((msg, i) => (React.createElement(IssueChip, { key: i, msg: msg })))),
                     item.출고내역 && Object.keys(item.출고내역).length > 0 && (React.createElement("div", { className: "mt-0.5 flex flex-wrap gap-1.5 items-center" }, Object.entries(item.출고내역).map(([vendor, data]) => {
                         // 🌟 단일 묶음 매칭(isPerfect)은 회색, 일반 분할 매칭은 흰색/하늘색
-                        const displayVendor = data.displayVendor || vendor.replace('_perfect', '');
+                        let displayVendor = safeStr(data.displayVendor || vendor.replace('_perfect', ''), safeStr(item.거래처, '미지정'));
+                        if (['BOX', 'EA', '소분'].includes(displayVendor)) displayVendor = safeStr(item.거래처, displayVendor);
                         const isPerfect = data.isPerfectMatch;
                         let chipClass = "bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300";
                         if (isPerfect) {
@@ -6996,8 +7031,10 @@ ${balanceText}
         }, 180);
     }, []);
     const handleChipDropRequest = useCallback((sourceKey, targetKey, vendor, maxQty, sourceCode, targetCode, isCtrlPressed) => {
-        if (isCtrlPressed && maxQty > 1) {
-            setSplitModal({ isOpen: true, payload: { sourceKey, targetKey, vendor, maxQty } });
+        if (isCtrlPressed) {
+            // Ctrl 드래그는 수량 1개 칩도 반드시 입력창을 띄운다.
+            // 입력값이 원본 칩 수량보다 크면 묶음상품/판매단위 환산으로 보고, 원본은 maxQty만 차감하고 대상은 입력값만큼 증가시킨다.
+            setSplitModal({ isOpen: true, payload: { sourceKey, targetKey, vendor, maxQty, sourceCode, targetCode } });
         }
         else {
             handleSalesMove(sourceKey, targetKey, vendor, maxQty);
@@ -7622,7 +7659,7 @@ ${balanceText}
                     React.createElement("i", { className: "fas fa-spinner fa-spin mr-3 text-2xl text-emerald-400" }),
                     " \uB370\uC774\uD130\uB97C \uCC98\uB9AC\uD558\uACE0 \uC788\uC2B5\uB2C8\uB2E4..."))),
             React.createElement("div", { className: "flex-1 flex flex-col w-full relative bg-[#f8fafc] overflow-hidden" },
-                systemUiCollapsed && React.createElement("button", { onClick: () => setSystemUiCollapsed(false), className: "fixed right-4 top-[78px] z-[90] px-3 py-2 rounded-full bg-slate-900 text-white text-[12px] font-black shadow-xl border border-slate-700 hover:bg-slate-800 transition flex items-center gap-1.5", title: "System.IO 패널 펼치기" },
+                systemUiCollapsed && React.createElement("button", { onClick: () => { const guard = scrollUiGuardRef.current; const now = (window.performance && performance.now ? performance.now() : Date.now()); guard.ignoreUntil = now + 1200; guard.accDown = 0; guard.accUp = 0; guard.lastUserUpAt = now; systemUiCollapsedRef.current = false; setSystemUiCollapsed(false); }, className: "fixed right-4 top-[78px] z-[90] px-3 py-2 rounded-full bg-slate-900 text-white text-[12px] font-black shadow-xl border border-slate-700 hover:bg-slate-800 transition flex items-center gap-1.5", title: "System.IO 패널 펼치기" },
                     React.createElement("i", { className: "fas fa-chevron-down" }),
                     "System.IO 펼치기"),
                 React.createElement("div", { id: "main-scroll-container", className: "flex-1 overflow-auto w-full relative" },
@@ -7840,14 +7877,15 @@ ${balanceText}
                     React.createElement("i", { className: "fas fa-cut text-blue-500 mr-2" }),
                     "\uBD84\uD560 \uC774\uB3D9 \uC218\uB7C9"),
                 React.createElement("p", { className: "text-xs text-slate-500 mb-4" },
-                    "\uCD5C\uB300 ",
+                    "기본 이동수량 ",
                     React.createElement("span", { className: "font-bold text-blue-600" }, splitModal.payload && splitModal.payload.maxQty),
-                    "\uAC1C\uAE4C\uC9C0 \uBD84\uD560\uD558\uC5EC \uC774\uB3D9\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4."),
-                React.createElement("input", { id: "split-qty-input", type: "number", min: "0", step: "any", max: splitModal.payload ? splitModal.payload.maxQty : 1, defaultValue: splitModal.payload ? splitModal.payload.maxQty : 1, className: "w-full border border-slate-300 rounded-lg p-3 text-lg font-bold text-center focus:ring-2 focus:ring-blue-500 focus:outline-none mb-4", autoFocus: true, onKeyDown: (e) => {
+                    "개. 더 큰 수량을 입력하면 묶음상품 환산/증가로 처리합니다."),
+                React.createElement("input", { id: "split-qty-input", type: "number", min: "0", step: "any", defaultValue: splitModal.payload ? splitModal.payload.maxQty : 1, className: "w-full border border-slate-300 rounded-lg p-3 text-lg font-bold text-center focus:ring-2 focus:ring-blue-500 focus:outline-none mb-4", autoFocus: true, onKeyDown: (e) => {
                         if (e.key === 'Enter') {
                             const val = Number(e.target.value);
-                            if (splitModal.payload && val > 0 && val <= splitModal.payload.maxQty) {
-                                handleSalesMove(splitModal.payload.sourceKey, splitModal.payload.targetKey, splitModal.payload.vendor, val);
+                            if (splitModal.payload && val > 0) {
+                                const sourceMoveQty = val > safeNum(splitModal.payload.maxQty) ? safeNum(splitModal.payload.maxQty) : val;
+                                handleSalesMove(splitModal.payload.sourceKey, splitModal.payload.targetKey, splitModal.payload.vendor, val, { sourceMoveQty });
                                 setSplitModal({ isOpen: false, payload: null });
                             }
                         }
@@ -7856,11 +7894,12 @@ ${balanceText}
                     React.createElement("button", { onClick: () => setSplitModal({ isOpen: false, payload: null }), className: "px-4 py-2 bg-slate-100 text-slate-600 rounded-lg text-sm font-bold hover:bg-slate-200 transition" }, "\uCDE8\uC18C"),
                     React.createElement("button", { onClick: () => {
                             const val = Number(document.getElementById('split-qty-input').value);
-                            if (splitModal.payload && val > 0 && val <= splitModal.payload.maxQty) {
-                                handleSalesMove(splitModal.payload.sourceKey, splitModal.payload.targetKey, splitModal.payload.vendor, val);
+                            if (splitModal.payload && val > 0) {
+                                const sourceMoveQty = val > safeNum(splitModal.payload.maxQty) ? safeNum(splitModal.payload.maxQty) : val;
+                                handleSalesMove(splitModal.payload.sourceKey, splitModal.payload.targetKey, splitModal.payload.vendor, val, { sourceMoveQty });
                                 setSplitModal({ isOpen: false, payload: null });
                             }
-                        }, className: "px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition shadow-sm" }, "\uBD84\uD560 \uC774\uB3D9"))))),
+                        }, className: "px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition shadow-sm" }, "적용"))))),
         undoUi.state === 'list' && (React.createElement("div", { className: "fixed inset-0 z-[200] bg-slate-900 bg-opacity-70 flex items-center justify-center p-4 transition-opacity backdrop-blur-sm" },
             React.createElement("div", { className: "bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col modal-bounce border border-slate-200" },
                 React.createElement("div", { className: "bg-slate-900 p-5 flex justify-between items-center text-white" },
