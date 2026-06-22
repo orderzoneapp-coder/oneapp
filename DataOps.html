@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a24)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a25)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a24.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a25.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -545,7 +545,7 @@ const defaultMappings = {
     basic: '구분(기본), 구분기본, 기본여부, 기본, 관리기본, 기본구분',
     vendor: '원구매처, 구매처, 매출처명, 매입처(Lot), 매입처(거래처), 거래처명, 거래처, 거래, 매장명, 매장, 고객, 판매처, 공급사, 판매, 청과, 3거래',
     matchVendor: '구매처, 매입처',
-    excludeVendor: '우리농산, 1전송, 3우리',
+    excludeVendor: '우리농산, 1전송, 3우리, 가구매, 가판매',
     lifoVendor: '2전송, 현금판매',
     internalLot: '우리, 우리농산',
     priorityVendor: '2전송>1창고',
@@ -619,7 +619,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a24',
+    version: 'V1.a25',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -3240,7 +3240,41 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             const stockPool = {};
             let lotSequence = 0;
             const excludeList = (mappings.excludeVendor || '').split(',').map(s => s.trim().toLowerCase()).filter(s => s);
-            const isExcluded = (vendorName) => vendorName && excludeList.some(keyword => vendorName.toLowerCase().includes(keyword));
+            const isExcluded = (vendorName) => {
+                const text = safeStr(vendorName, '').toLowerCase().replace(/\s/g, '');
+                if (!text) return false;
+                return excludeList.some(keyword => {
+                    const kw = safeStr(keyword, '').toLowerCase().replace(/\s/g, '');
+                    return kw && text.includes(kw);
+                });
+            };
+            const getRawVendorValue = (item = {}, names = []) => {
+                const raw = item._raw || item.raw || {};
+                const value = getRawCell(raw, names);
+                return value === null || value === undefined ? '' : value;
+            };
+            const getExcludeVendorCandidates = (item = {}, roleHint = '') => {
+                const role = safeStr(roleHint || item._fileRole || item._sourceRole || '', '').toLowerCase();
+                const outActual = [
+                    item._salesDisplayVendor, item._salesActualVendor, item.거래처,
+                    getRawVendorValue(item, ['no.', 'no', '번호', '판매처', '매출처명', '매장명', '매장', '고객']),
+                    item.매입처매칭, getRawVendorValue(item, ['구매처', '구매처명', '매입처', '원구매처', '매입처(Lot)', '매입처(거래처)'])
+                ];
+                const inActual = [
+                    item._purchaseLotVendor, item.거래처, item.매입처매칭,
+                    getRawVendorValue(item, ['구매처', '구매처명', '매입처', '원구매처', '매입처(Lot)', '매입처(거래처)', '거래처명', '거래처'])
+                ];
+                if (role === 'out' || role === 'sale' || role === 'sales') return outActual;
+                if (role === 'in' || role === 'purchase' || role === 'buy') return inActual;
+                // 역할을 알 수 없는 경우에도 거래처명/거래 같은 그룹값만으로는 제외하지 않는다.
+                // 1전송 그룹 판매파일 전체가 제외되는 것을 방지하기 위해 실제 표시/매입처 후보를 우선한다.
+                return [
+                    item._salesDisplayVendor, item._salesActualVendor, item._purchaseLotVendor,
+                    item.거래처, item.매입처매칭,
+                    getRawVendorValue(item, ['no.', 'no', '번호', '판매처', '매출처명', '구매처', '구매처명', '매입처', '원구매처'])
+                ];
+            };
+            const isExcludedRow = (item = {}, roleHint = '') => getExcludeVendorCandidates(item, roleHint).some(isExcluded);
             const normalizeLotNameForMatch = (val) => safeStr(val, '')
                 .replace(/\s/g, '')
                 .replace(/[()（）\[\]{}]/g, '')
@@ -3265,8 +3299,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 // 과거 입출고 흔적만 있고 최종 보유재고가 없는 Lot의 입고가가 화면에 뜨는 문제를 차단한다.
                 if (type === 'prev' && isClosingItem(item) && safeNum(qtyToApply) <= 0)
                     return;
-                // 제외거래처는 외부 구매/판매 계산에서 제외한다. V1.a22 기준 3우리도 확인용 내부전표라 입고 계산에서 제외한다.
-                if (type === 'in' && isExcluded(item.거래처))
+                // V1.a25: 제외거래처는 특정 컬럼 하나가 아니라 행의 실제 거래처/구매처 후보 전체로 판정한다.
+                // 단, 판매파일의 거래/거래처명=1전송 같은 그룹값만으로는 외부 판매를 제외하지 않는다.
+                if (type === 'in' && isExcludedRow(item, 'in'))
                     return;
                 const code = String(item.코드 || 'NO_CODE');
                 const price = parseNumber(item.단가);
@@ -3399,7 +3434,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             const aggregatedSales = {};
             outItems.forEach(sale => {
                 const code = String(sale.코드 || 'NO_CODE');
-                if (isExcluded(sale.거래처))
+                if (isExcludedRow(sale, 'out'))
                     return;
                 const vendorKey = resolveVendorDisplayName([sale._salesDisplayVendor, sale._salesActualVendor, sale.거래처], '미지정');
                 const matchKey = safeStr(sale.매입처매칭, '미지정');
@@ -4642,8 +4677,8 @@ function App() {
             return parts.join(', ');
         };
         // V1.a22 정책: 3우리는 02 통합구매분 중 01창고 입고 확인용 내부전표이므로 DataOps 계산에서 제외한다.
-        // 기존 브라우저 localStorage에 V1.a22 설정이 남아 있어도 3우리는 자동 보강한다.
-        merged.excludeVendor = ensureCsvValue(merged.excludeVendor, ['우리농산', '1전송', '3우리']);
+        // 기존 브라우저 localStorage에 V1.a22 설정이 남아 있어도 3우리/가구매/가판매는 자동 보강한다.
+        merged.excludeVendor = ensureCsvValue(merged.excludeVendor, ['우리농산', '1전송', '3우리', '가구매', '가판매']);
         // V1.a22 정책: 구매전표 거래처명 '우리농산'이 판매전표 Lot 매칭값으로도 유입될 수 있으므로
         // 내부 분배/공용 Lot 예외에는 '우리'와 '우리농산'을 함께 보강한다.
         merged.internalLot = ensureCsvValue(merged.internalLot, ['우리', '우리농산']);
@@ -7464,7 +7499,7 @@ ${balanceText}
                     React.createElement("h1", { className: "text-xl md:text-xl font-black leading-none text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, CONFIG_MODULE.version))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
@@ -7539,7 +7574,7 @@ ${balanceText}
                     React.createElement("div", { className: "mb-4" },
                         React.createElement("h4", { className: "text-sm font-bold text-slate-800" },
                             React.createElement("i", { className: "fas fa-star text-amber-500 mr-2" }),
-                            "V1.a22 \uC7AC\uACE0\uC218\uBD88\uBD80 \uC2E4\uC0AC \uC5C5\uB85C\uB4DC / \uAE30\uCD08\uC7AC\uACE0 \uC778\uC2DD \uBCF4\uC815"),
+                            `V1.a25 재고수불부 실사 업로드 / 기초재고 인식 보정`),
                         React.createElement("p", { className: "text-xs text-slate-500 mt-1.5 ml-6" }, "\u2605 \uD544\uD130\uC640 BOX/EA/\uC18C\uBD84 \uD544\uD130\uAC00 \uC544\uB798 \uC124\uC815\uAC12\uC744 \uAE30\uC900\uC73C\uB85C \uB3D9\uC791\uD569\uB2C8\uB2E4. \uB2E8\uC704 \uCEEC\uB7FC\uC744 \uC6B0\uC120 \uD310\uC815\uD558\uACE0, \uB2E8\uC704\uAC00 \uC5C6\uC744 \uB54C\uB9CC \uD488\uBA85/\uADDC\uACA9\uC744 \uBCF4\uC870 \uB2E8\uC11C\uB85C \uC0AC\uC6A9\uD569\uB2C8\uB2E4.")),
                     React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-4 bg-amber-50/60 p-4 rounded-lg border border-amber-200" },
                         React.createElement("div", { className: "flex flex-col" },
