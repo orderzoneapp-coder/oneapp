@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.58_CatalogQuoteListSplit]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.59_ThemeFilter]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -3140,11 +3140,11 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
     // [M-FILTER-ROWS-01] 정렬필터 재배치
     // 전체 버튼은 제거하고, 모든 필터는 같은 버튼을 다시 누르면 해제되어 전체 상태로 복귀한다.
     // 1단 정렬필터: 가격변동/행사중/행사제안/10/20/30/40/50/상세필터/단가변경/검색.
-    // 2단 상세필터: 판매중/정지&품절/기본상품/역마진/안전(-)/기본상품 제외/BOX/EA/소분.
+    // 2단 상세필터: 판매중/정지&품절/기본상품/역마진/안전(-)/기본상품 제외/BOX/EA/소분/테마1~5.
     const [priceActionOpen, setPriceActionOpen] = useState(false);
     // [M-FILTER-DETAIL-RESTORE] 상세필터 복구: 상세필터 버튼을 눌렀을 때 하단 필터줄을 다시 생성하고,
     // 상세필터 항목이 활성화된 상태에서는 행이 숨지지 않도록 유지한다.
-    const detailFilterValues = ['selling', 'stoppedSoldout', 'basic', 'margin', 'safeMinus', 'basicExclude', 'unitBox', 'unitEa', 'unitSub'];
+    const detailFilterValues = ['selling', 'stoppedSoldout', 'basic', 'margin', 'safeMinus', 'basicExclude', 'unitBox', 'unitEa', 'unitSub', 'theme1', 'theme2', 'theme3', 'theme4', 'theme5'];
     const isDetailFilterActive = detailFilterValues.includes(priceFilter);
     const isCategoryFilterActive = Array.isArray(categoryFilters) && categoryFilters.length > 0;
     const showDetailFilterPanel = filterPanelOpen || isDetailFilterActive || isCategoryFilterActive || (selectedRows.size > 0 && !registrationMode);
@@ -3365,8 +3365,13 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                     ['basicExclude', '기본상품 제외'],
                     ['unitBox', 'BOX'],
                     ['unitEa', 'EA'],
-                    ['unitSub', '소분']
-                ].map(([value, label]) => (React.createElement("button", { key: value, onClick: () => applyPriceFilter(value), className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: `${label}: 한 번 누르면 선택, 다시 누르면 해제되어 전체로 복귀` }, label))),
+                    ['unitSub', '소분'],
+                    ['theme1', '테마1'],
+                    ['theme2', '테마2'],
+                    ['theme3', '테마3'],
+                    ['theme4', '테마4'],
+                    ['theme5', '테마5']
+                ].map(([value, label]) => (React.createElement("button", { key: value, onClick: () => applyPriceFilter(value), className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${priceFilter === value ? 'bg-purple-700 text-white border-purple-700' : value.startsWith('theme') ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: `${label}: 행사테마 ${label.replace('테마', '')} 상품만 표시 / 다시 누르면 해제` }, label))),
                 selectedRows.size > 0 && !registrationMode && (React.createElement("div", { className: "ml-auto flex items-center justify-end gap-2 shrink-0" },
                     React.createElement("span", { className: "text-[12px] font-black text-slate-600 whitespace-nowrap" }, "창고"),
                     React.createElement("input", { type: "text", value: selectedWarehouseInput, onChange: e => setSelectedWarehouseInput(e.target.value), onKeyDown: e => { if (e.key === 'Enter') handleApplySelectedWarehouse(selectedWarehouseInput); }, placeholder: "예: 01", className: "h-8 w-[74px] px-2 rounded-lg border border-slate-300 bg-white text-[12px] font-black text-center outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100" }),
@@ -3564,6 +3569,29 @@ const getPromoThemeNo = (item = {}) => {
 const getPromoThemeLabel = (item = {}) => {
     const n = getPromoThemeNo(item);
     return n > 0 ? `테마${n}` : '테마미지정';
+};
+// ============================================================
+// [M-FILTER-THEME-01] 상세필터 행사테마 분리
+// 역할: 상세필터에서 테마1~테마5 버튼으로 행사테마 값을 나눠 본다.
+// 기준: 현재 작업값(finalData) → 업로드 source → 마스터 순서로 행사테마/테마1~5 값을 판정한다.
+// ============================================================
+const getPromotionThemeCodesForFilter = (row = {}, mItem = {}) => {
+    const sources = row.sources || {};
+    const normalized = window.normalizePromotionThemeValue(
+        row.finalData || {},
+        sources.estimate || {},
+        sources.purchase || {},
+        sources.sales || {},
+        sources.inventory || {},
+        mItem || {}
+    );
+    return normalized ? normalized.split(',').filter(Boolean) : [];
+};
+const matchPromotionThemeFilter = (row = {}, mItem = {}, filter = '') => {
+    const themeNo = String(filter || '').replace(/[^1-5]/g, '');
+    if (!themeNo)
+        return true;
+    return getPromotionThemeCodesForFilter(row, mItem).includes(themeNo);
 };
 const getWorkingPromoPrice = (row = {}) => {
     var _a, _b, _c, _d, _e, _f, _g, _h;
@@ -4372,7 +4400,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.58_CatalogQuoteListSplit]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.59_ThemeFilter]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -4562,6 +4590,8 @@ const App = () => {
                     return isNonBasicValue(normalizeBasicValue(mItem));
                 if (['unitBox', 'unitEa', 'unitSub'].includes(ui.priceFilter))
                     return matchUnitFilter(item, mItem, ui.priceFilter);
+                if (/^theme[1-5]$/.test(ui.priceFilter))
+                    return matchPromotionThemeFilter(item, mItem, ui.priceFilter);
                 return true;
             });
         }
@@ -4702,7 +4732,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.58_CatalogQuoteListSplit")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.59_ThemeFilter")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
