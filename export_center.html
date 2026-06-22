@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.15 BasicStockPolicy]</title>
+    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.16 BasicStockColumn]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -1187,17 +1187,19 @@ const ExportApp = () => {
                                 React.createElement("th", { className: "px-3 py-3 w-24 text-right font-bold text-indigo-600" }, "\uC785\uACE0\uAC00"),
                                 React.createElement("th", { className: "px-3 py-3 w-24 text-right font-bold text-rose-600" }, "\uCD9C\uACE0\uAC00"),
                                 React.createElement("th", { className: "px-3 py-3 w-20 text-right font-bold text-purple-600" }, "\uD589\uC0AC\uAC00"),
+                                React.createElement("th", { className: "px-3 py-3 w-16 text-center font-bold text-sky-700", title: "기본/기본여부/구분(기본)/관리구분 값입니다. 기본 불러오기 재고정책 확인용입니다." }, "기본"),
                                 React.createElement("th", { className: "px-3 py-3 w-20 text-center font-bold" }, "\uC7AC\uACE0"),
                                 React.createElement("th", { className: "px-3 py-3 w-56 text-center font-bold" }, "행사테마"),
                                 React.createElement("th", { className: "px-3 py-3 w-24 text-center font-bold" }, "\uC0C1\uD0DC"))),
                         React.createElement("tbody", { className: "divide-y divide-slate-100" }, filteredRows.length === 0 ? (React.createElement("tr", null,
-                            React.createElement("td", { colSpan: "11", className: "p-10 text-center text-slate-400 font-bold" }, "\uD45C\uC2DC\uD560 \uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4."))) : filteredRows.map(item => {
+                            React.createElement("td", { colSpan: "12", className: "p-10 text-center text-slate-400 font-bold" }, "\uD45C\uC2DC\uD560 \uB370\uC774\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4."))) : filteredRows.map(item => {
                             var _a, _b, _c, _d;
                             const sale = getSaleState(item);
                             const promo = parseNum(item.행사가) > 0;
                             const margin = isMarginWarning(item);
                             const anomaly = isBigChange(item);
                             const { diff, rate } = getDiffInfo(item);
+                            const basicDirect = isDirectPurchaseBasicGroup(item.기본, item._stockPolicyGroups || basicGroupInput || DEFAULT_DIRECT_BASIC_GROUPS);
                             return (React.createElement("tr", { key: item.코드, className: `transition-colors ${margin || anomaly ? 'bg-rose-50/50' : 'hover:bg-slate-50'}` },
                                 React.createElement("td", { className: "px-3 py-2 text-center" }, margin ? React.createElement("i", { className: "fas fa-exclamation-triangle text-rose-500", title: "\uC5ED\uB9C8\uC9C4" }) :
                                     anomaly ? React.createElement("i", { className: "fas fa-exclamation-circle text-orange-500", title: "\uD070\uBCC0\uB3D9" }) :
@@ -1224,6 +1226,8 @@ const ExportApp = () => {
                                     React.createElement("input", { type: "text", value: item.출고가, onChange: (e) => handleEdit(item.코드, '출고가', e.target.value), title: "\uC800\uC7A5\uD560 \uAE30\uBCF8 \uCD9C\uACE0\uAC00\uC785\uB2C8\uB2E4. \uD589\uC0AC\uAC00\uAC00 \uC788\uC73C\uBA74 \uCD9C\uB825 \uC801\uC6A9\uAC00\uB294 \uD589\uC0AC\uAC00\uAC00 \uC6B0\uC120\uD569\uB2C8\uB2E4.", className: `w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 rounded-none px-1 py-1 text-right font-black outline-none transition-colors ${margin ? 'text-rose-600' : 'text-slate-800'}` })),
                                 React.createElement("td", { className: "px-3 py-2 text-right" },
                                     React.createElement("input", { type: "text", value: item.행사가, onChange: (e) => handleEdit(item.코드, '행사가', e.target.value), title: "\uD589\uC0AC\uAC00\uAC00 \uC788\uC73C\uBA74 \uCD9C\uB825 \uC801\uC6A9\uAC00\uB294 \uD589\uC0AC\uAC00\uAC00 \uC6B0\uC120\uD569\uB2C8\uB2E4.", className: "w-20 bg-transparent border-b border-transparent focus:border-purple-400 hover:border-slate-300 px-1 py-1 text-right font-black text-purple-700 outline-none" })),
+                                React.createElement("td", { className: "px-2 py-1 text-center bg-sky-50/30", title: `기본값 ${item.기본 || '-'} · ${basicDirect ? '기본그룹 재고 999 적용' : '실재고만 적용'}` },
+                                    React.createElement("span", { className: `inline-flex min-w-[34px] justify-center rounded-md border px-1.5 py-0.5 text-[11px] font-black ${basicDirect ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200'}` }, item.기본 || '-')),
                                 React.createElement("td", { className: "px-2 py-1 bg-slate-50/50" },
                                     React.createElement("input", { type: "text", value: getReviewStockQty(item), onChange: (e) => handleEdit(item.코드, '재고수량', e.target.value), title: "0이면 품절, 공란/미전달은 기본 999로 처리됩니다.", className: "w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 px-1 py-1 text-center font-bold text-slate-600 outline-none" })),
                                 React.createElement("td", { className: "px-2 py-1 text-center min-w-[210px]" },
