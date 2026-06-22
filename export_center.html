@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.13 MasterOptionalExport]</title>
+    <title>ONEAPP MerchOps - 출력검증센터 [v2.6.14 StockBulkApply]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -234,18 +234,35 @@ const ThemeToggleButtons = ({ value, onToggle, disabled = false, compact = false
         }, compact ? String(theme.no) : `테마${theme.no}`))
     );
 };
+// ============================================================
+// [E-STOCK-01] 출력검증센터 재고수량 보정/강제적용
+// 역할: 재고값이 명시되지 않은 상품을 0으로 해석해 전부 품절 처리하는 사고를 방지한다.
+// 정책:
+// - 재고수량 공란/미전달은 기본 999로 간주한다.
+// - 사용자가 직접 0을 입력하거나 실제 재고파일에서 0이 전달된 경우만 품절로 본다.
+// - 화면에서 입력한 일괄 재고수량은 현재 표시/필터된 상품에만 강제 적용한다.
+// ============================================================
+const DEFAULT_EXPORT_STOCK_QTY = 999;
+const hasStockValue = (v) => v !== undefined && v !== null && String(v).trim() !== '';
+const normalizeStockQty = (v, fallback = DEFAULT_EXPORT_STOCK_QTY) => {
+    if (!hasStockValue(v)) return fallback;
+    const n = parseNum(v);
+    return Number.isFinite(n) ? n : fallback;
+};
+const getReviewStockQty = (row = {}, fallback = DEFAULT_EXPORT_STOCK_QTY) => normalizeStockQty(row.재고수량, fallback);
+
 // 출력검증센터의 행사가 값은 저장/출력 적용 예정값이다.
 // 판매상태 정책:
 // - 기존 마스터 판매여부가 0(정지)이더라도, 이번 작업에서 출고가/행사가가 산출되면 판매여부는 1로 복구한다.
 // - 단, 사용자가 MerchOps에서 판매정지 액션을 명시한 경우(_salesStopRequested=true)만 정지 0을 유지한다.
-// - 재고수량 0은 판매여부 1 + 품절 상태이며, 자동 정지 0으로 바꾸지 않는다.
+// - 재고수량 0은 직접입력/실제재고 기준일 때만 품절 상태로 본다.
 const getSaleState = (row) => {
     const explicitStop = (row === null || row === void 0 ? void 0 : row._salesStopRequested) === true || (row === null || row === void 0 ? void 0 : row._explicitStopRequested) === true;
     if (explicitStop)
         return { code: '0', label: '정지', text: '정지', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
     const out = parseNum(row.출고가);
     const promo = parseNum(row.행사가);
-    const stock = row.재고수량 !== undefined && row.재고수량 !== '' ? parseNum(row.재고수량) : 999;
+    const stock = getReviewStockQty(row);
     const hasSalePrice = out > 0 || promo > 0;
     if (!hasSalePrice)
         return { code: '0', label: '정지', text: '정지', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
@@ -289,9 +306,9 @@ const isNewItem = (row) => {
     return !hasBase && hasWork;
 };
 const isLowStock = (row) => {
-    const stock = parseNum(row.재고수량);
+    const stock = getReviewStockQty(row);
     // 현재 단계: 안전재고 기준은 보류. 999는 일반 판매 기본값으로 보고 제외한다.
-    return stock > 0 && stock < 999;
+    return stock > 0 && stock < DEFAULT_EXPORT_STOCK_QTY;
 };
 const isValidSubItemCode = (code) => {
     if (!code)
@@ -332,7 +349,7 @@ const buildSubShopRow = (parentRow, subInfo, masterProducts, sale) => {
     const subBrand = subMaster['브랜드'] || parentRow.브랜드 || '';
     const subDesc = subMaster['간단설명'] || parentRow.간단설명 || '';
     const subTags = subMaster['검색어등록'] || parentRow.검색어등록 || '';
-    const subStock = parentRow.재고수량 !== undefined && parentRow.재고수량 !== '' ? parseNum(parentRow.재고수량) : 999;
+    const subStock = getReviewStockQty(parentRow);
     return [
         subInfo.code,
         subName,
@@ -494,6 +511,7 @@ const ExportApp = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [toast, setToast] = useState('');
     const [bulkThemeSet, setBulkThemeSet] = useState('1');
+    const [bulkStockInput, setBulkStockInput] = useState(String(DEFAULT_EXPORT_STOCK_QTY));
     const showToast = useCallback((msg) => {
         setToast(msg);
         setTimeout(() => setToast(''), 3000);
@@ -539,7 +557,8 @@ const ExportApp = () => {
                     const calcWarehouse = working._calcWarehouse || '';
                     const calcWarehouseReason = working._calcWarehouseReason || '';
                     const rawStock = working.재고수량;
-                    const 재고수량 = (rawStock !== undefined && rawStock !== null && rawStock !== '') ? parseNum(rawStock) : 999;
+                    const stockFallback = hasStockValue(master['재고수량']) ? parseNum(master['재고수량']) : (hasStockValue(baseline.기준재고수량) ? parseNum(baseline.기준재고수량) : DEFAULT_EXPORT_STOCK_QTY);
+                    const 재고수량 = normalizeStockQty(rawStock, stockFallback || DEFAULT_EXPORT_STOCK_QTY);
                     return {
                         코드: code,
                         품목명: working.품목명 || master['품목명'] || '',
@@ -619,7 +638,8 @@ const ExportApp = () => {
                 next.출고가 = parseNum(value);
             }
             else if (field === '재고수량') {
-                next.재고수량 = parseNum(value);
+                next.재고수량 = normalizeStockQty(value, 0);
+                next._stockManuallyEdited = true;
             }
             else if (field === '행사테마') {
                 next = applyThemeStringToRow(next, value);
@@ -710,7 +730,7 @@ const ExportApp = () => {
         const sorted = [...rows];
         const byCategory = (a, b) => String(a.카테고리 || '').localeCompare(String(b.카테고리 || ''), 'ko') || String(a.품목명 || '').localeCompare(String(b.품목명 || ''), 'ko');
         if (sortMode === 'stockAsc')
-            sorted.sort((a, b) => parseNum(a.재고수량) - parseNum(b.재고수량) || byCategory(a, b));
+            sorted.sort((a, b) => getReviewStockQty(a) - getReviewStockQty(b) || byCategory(a, b));
         else if (sortMode === 'diffRateDesc')
             sorted.sort((a, b) => Math.abs(getDiffInfo(b).rate) - Math.abs(getDiffInfo(a).rate));
         else if (sortMode === 'diffAbsDesc')
@@ -762,6 +782,27 @@ const ExportApp = () => {
         showToast(`✅ 현재 표시 ${appliedCount.toLocaleString()}건에 행사테마 ${themeString} 지정 완료`);
     }, [bulkThemeSet, filteredRows, showToast]);
     // ============================================================
+    // [E-ACTION-01B] 현재 표시 상품 재고수량 강제 일괄 적용
+    // 역할: 출력 직전 재고값이 0으로 잘못 전달된 경우, 필터/검색 결과에 같은 재고수량을 빠르게 적용한다.
+    // 정책: 현재 표시된 상품만 대상이며, 0 입력은 명시적 품절 처리로 인정한다.
+    // ============================================================
+    const handleBulkStockApply = useCallback(() => {
+        if (!hasStockValue(bulkStockInput))
+            return showToast('⚠️ 적용할 재고수량을 입력하세요.');
+        if (!filteredRows || filteredRows.length === 0)
+            return showToast('⚠️ 현재 표시된 상품이 없습니다.');
+        const stockValue = normalizeStockQty(bulkStockInput, DEFAULT_EXPORT_STOCK_QTY);
+        const targetCodes = new Set(filteredRows.map(row => row.코드));
+        let appliedCount = 0;
+        setReviewRows(prev => prev.map(row => {
+            if (!targetCodes.has(row.코드))
+                return row;
+            appliedCount++;
+            return { ...row, 재고수량: stockValue, _stockManuallyEdited: true, _stockBulkApplied: true };
+        }));
+        showToast(`✅ 현재 표시 ${appliedCount.toLocaleString()}건에 재고수량 ${stockValue.toLocaleString()} 일괄 적용 완료`);
+    }, [bulkStockInput, filteredRows, showToast]);
+    // ============================================================
     // [E-OUTPUT-02] 통합 엑셀 조립 공통 엔진
     // 역할: 쇼핑몰업로드/ERP업데이트 시트를 생성한다.
     // 정책: 마스터 반영 출력과 마스터 미반영 출력이 같은 엑셀 구조를 사용한다.
@@ -786,7 +827,7 @@ const ExportApp = () => {
             const shopBPrice = parseNum(item.B판매가);
             const shopBWholesale = parseNum(item.B도매가);
             const pMarket = parseNum(item.시중가);
-            const finalStock = parseNum(item.재고수량);
+            const finalStock = getReviewStockQty(item);
             erpData.push([item.코드, inPrice, '0', finalOut, '0', parseNum(item.입고B) || '', 'n', erpASale || '', 'n', erpBSale || '', 'n', inPrice, 'n', parseNum(item.행사가) || '', 'n', sale.code]);
             const themeFlags = buildThemeFlags(item);
             shopData.push([item.코드, item.품목명, item.규격, finalOut, (erpASale > 0 ? erpASale : finalOut), (pMarket > 0 ? pMarket : finalOut), shopBPrice || '', shopBWholesale || '', 0, 0, 0, 0, item.브랜드 || '', item.간단설명 || '', sale.code, finalStock, ...themeFlags, item.검색어등록 || '']);
@@ -848,7 +889,7 @@ const ExportApp = () => {
                     mItem['B판매가'] = parseNum(item.B판매가);
                     mItem['B도매가'] = parseNum(item.B도매가);
                     mItem['시중가'] = parseNum(item.시중가);
-                    mItem['재고수량'] = parseNum(item.재고수량);
+                    mItem['재고수량'] = getReviewStockQty(item);
                     mItem['판매여부'] = sale.code;
                     mItem['브랜드'] = item.브랜드 || '';
                     mItem['간단설명'] = item.간단설명 || '';
@@ -1006,7 +1047,7 @@ const ExportApp = () => {
                         React.createElement("i", { className: `fas ${card.icon} mr-1` }),
                         card.label),
                     React.createElement("span", { className: "text-xl font-black" }, card.count.toLocaleString()))))),
-                React.createElement("div", { className: "flex items-center gap-3" },
+                React.createElement("div", { className: "flex items-center gap-3 flex-wrap" },
                     React.createElement("div", { className: "relative flex-1 max-w-xl" },
                         React.createElement("i", { className: "fas fa-search absolute left-3 top-2.5 text-slate-400 text-[13px]" }),
                         React.createElement("input", { value: searchInput, onChange: (e) => setSearchInput(e.target.value), placeholder: "\uCF54\uB4DC / \uD488\uBAA9\uBA85 / \uADDC\uACA9 / \uBE0C\uB79C\uB4DC / \uCE74\uD14C\uACE0\uB9AC \uAC80\uC0C9 \u00B7 \uC608: \uC591\uD30C 15kg", className: "w-full h-9 pl-9 pr-3 border border-slate-300 rounded-lg text-[12px] font-bold outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100" })),
@@ -1022,6 +1063,9 @@ const ExportApp = () => {
                     React.createElement("button", { onClick: handleBulkThemeApply, className: "h-9 px-4 rounded-lg bg-purple-600 text-white border border-purple-600 text-[12px] font-black hover:bg-purple-700" },
                         React.createElement("i", { className: "fas fa-tags mr-1.5" }),
                         "표시상품 테마적용"),
+                    React.createElement("div", { className: "h-9 px-2 border border-emerald-200 rounded-lg bg-emerald-50 flex items-center gap-1" },
+                        React.createElement("input", { value: bulkStockInput, onChange: (e) => setBulkStockInput(e.target.value), placeholder: "수량", className: "w-16 h-7 px-2 rounded-md border border-emerald-200 bg-white text-center text-[12px] font-black text-emerald-700 outline-none focus:border-emerald-500" }),
+                        React.createElement("button", { onClick: handleBulkStockApply, className: "h-7 px-2 rounded-md bg-emerald-600 text-white text-[11px] font-black hover:bg-emerald-700" }, "재고적용")),
                     React.createElement("button", { onClick: resetFilters, className: "h-9 px-4 rounded-lg bg-slate-100 text-slate-600 border border-slate-300 text-[12px] font-black hover:bg-slate-200" },
                         React.createElement("i", { className: "fas fa-rotate-left mr-1.5" }),
                         "\uD544\uD130 \uCD08\uAE30\uD654"))),
@@ -1087,7 +1131,7 @@ const ExportApp = () => {
                                 React.createElement("td", { className: "px-3 py-2 text-right" },
                                     React.createElement("input", { type: "text", value: item.행사가, onChange: (e) => handleEdit(item.코드, '행사가', e.target.value), title: "\uD589\uC0AC\uAC00\uAC00 \uC788\uC73C\uBA74 \uCD9C\uB825 \uC801\uC6A9\uAC00\uB294 \uD589\uC0AC\uAC00\uAC00 \uC6B0\uC120\uD569\uB2C8\uB2E4.", className: "w-20 bg-transparent border-b border-transparent focus:border-purple-400 hover:border-slate-300 px-1 py-1 text-right font-black text-purple-700 outline-none" })),
                                 React.createElement("td", { className: "px-2 py-1 bg-slate-50/50" },
-                                    React.createElement("input", { type: "text", value: item.재고수량, onChange: (e) => handleEdit(item.코드, '재고수량', e.target.value), className: "w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 px-1 py-1 text-center font-bold text-slate-600 outline-none" })),
+                                    React.createElement("input", { type: "text", value: getReviewStockQty(item), onChange: (e) => handleEdit(item.코드, '재고수량', e.target.value), title: "0이면 품절, 공란/미전달은 기본 999로 처리됩니다.", className: "w-full bg-transparent border-b border-transparent focus:border-indigo-400 hover:border-slate-300 px-1 py-1 text-center font-bold text-slate-600 outline-none" })),
                                 React.createElement("td", { className: "px-2 py-1 text-center min-w-[210px]" },
                                     React.createElement(ThemeToggleButtons, { value: item.행사테마, onToggle: (themeNo) => handleRowThemeToggle(item.코드, themeNo), compact: true })),
                                 React.createElement("td", { className: "px-2 py-1 text-center" },
