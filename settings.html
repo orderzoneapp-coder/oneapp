@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.17_FilterScenarioMemo]</title>
+    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.18_ConfigSyncFull]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -554,54 +554,175 @@ const App = () => {
         }
     };
 
-    // ☁️ 환경설정 전용 클라우드 백업/복원
-    // 역할: settings.html에서는 양식/매핑/룰 같은 환경설정값만 동기화한다.
-    // 제외: 마스터 상품정보, 카탈로그/견적서 태그, 행사테마, 히스토리 데이터.
-    // 마스터DB는 MerchOps 홈 또는 마스터DB 관리 영역에서만 별도로 다룬다.
+    // ☁️ 환경설정 전용 클라우드 백업/복원 [v1.6.18_ConfigSyncFull]
+    // 역할: 브라우저가 달라도 테이블 보기양식/필터 시나리오/매핑/룰을 동일하게 복구한다.
+    // 핵심: Apps Script appConfig뿐 아니라 localStorage 원본 키도 함께 저장해 구조 변경에 안전하게 대응한다.
+    // 제외: 마스터 상품정보와 히스토리 대용량 데이터는 기존 MasterDB/HistoryLogs 흐름을 사용한다.
+    const CONFIG_SYNC_KEYS = [
+        'parserDict_v870',
+        'merchMarginRules_v878',
+        'merchMappings_v870',
+        'merchMasterLinks_v870',
+        'merchVisUpload_v870',
+        'merchVisMaster_v870',
+        'merchUploadColumnMeta_v870',
+        'merchTableShortcuts_v870',
+        'merchTableViewPresets_v1',
+        'merchActiveTableTarget_v1',
+        'merchActiveTableViewId_v1',
+        'oneapp_cloud_sync_url_v1',
+        'merchCloudUrl_v870'
+    ];
+    const readLocalJSON = (key, fallback) => {
+        try {
+            const raw = localStorage.getItem(key);
+            if (!raw || raw === 'undefined' || raw === 'null') return fallback;
+            return JSON.parse(raw);
+        } catch (e) { return fallback; }
+    };
+    const readLocalRawMap = () => {
+        const out = {};
+        CONFIG_SYNC_KEYS.forEach(key => {
+            try {
+                const value = localStorage.getItem(key);
+                if (value !== null && value !== undefined) out[key] = value;
+            } catch (e) {}
+        });
+        return out;
+    };
+    const getPendingShopStatusForSync = () => {
+        return readLocalJSON('pendingShopStatus', readLocalJSON('pendingShopStatus_v1', [])) || [];
+    };
+    const buildSettingsAppConfig = () => ({
+        mappings: config.mappings,
+        masterLinks: config.masterLinks,
+        visibleUploadCols: config.visibleUploadCols,
+        visibleMasterCols: config.visibleMasterCols,
+        uploadColumnMeta: config.uploadColumnMeta,
+        tableShortcuts: config.tableShortcuts,
+        tableViewPresets: sanitizeTableViewPresets(config.tableViewPresets),
+        activeTableTarget: localStorage.getItem('merchActiveTableTarget_v1') || activeUploadRole || DEFAULT_TABLE_VIEW_TARGET,
+        activeTableViewId: localStorage.getItem('merchActiveTableViewId_v1') || activeTableViewId || ''
+    });
     const buildSettingsCloudPayload = () => {
-        const dict = JSON.parse(localStorage.getItem('parserDict_v870') || '{}');
+        const dict = readLocalJSON('parserDict_v870', {});
+        const appConfig = buildSettingsAppConfig();
+        const settingsKeys = readLocalRawMap();
+        settingsKeys['merchTableViewPresets_v1'] = JSON.stringify(appConfig.tableViewPresets || getDefaultTableViewPresets());
+        settingsKeys['merchVisUpload_v870'] = JSON.stringify(config.visibleUploadCols || {});
+        settingsKeys['merchVisMaster_v870'] = JSON.stringify(config.visibleMasterCols || {});
+        settingsKeys['merchMappings_v870'] = JSON.stringify(config.mappings || {});
+        settingsKeys['merchMasterLinks_v870'] = JSON.stringify(config.masterLinks || {});
+        settingsKeys['merchUploadColumnMeta_v870'] = JSON.stringify(config.uploadColumnMeta || {});
+        settingsKeys['merchTableShortcuts_v870'] = JSON.stringify(config.tableShortcuts || []);
+        settingsKeys['merchMarginRules_v878'] = JSON.stringify(config.marginRules || []);
         return {
             action: 'config',
             data: {
+                schemaVersion: 'Settings_v1.6.18_ConfigSyncFull',
+                updatedAt: new Date().toISOString(),
                 dict,
                 rules: config.marginRules,
-                appConfig: {
-                    mappings: config.mappings,
-                    masterLinks: config.masterLinks,
-                    visibleUploadCols: config.visibleUploadCols,
-                    visibleMasterCols: config.visibleMasterCols,
-                    uploadColumnMeta: config.uploadColumnMeta,
-                    tableShortcuts: config.tableShortcuts,
-                    tableViewPresets: config.tableViewPresets
-                }
+                appConfig,
+                settingsKeys,
+                pendingShopStatus: getPendingShopStatusForSync()
             }
         };
     };
 
     const applySettingsCloudData = (cloudData = {}) => {
-        if (cloudData.dict && Object.keys(cloudData.dict).length > 0) {
-            localStorage.setItem('parserDict_v870', JSON.stringify(cloudData.dict));
+        const appConfig = cloudData.appConfig || {};
+        const settingsKeys = cloudData.settingsKeys || appConfig.settingsKeys || {};
+
+        Object.entries(settingsKeys || {}).forEach(([key, value]) => {
+            try { if (value !== undefined && value !== null) localStorage.setItem(key, String(value)); } catch (e) {}
+        });
+
+        const dict = cloudData.dict || readLocalJSON('parserDict_v870', {});
+        if (dict && Object.keys(dict).length > 0) {
+            localStorage.setItem('parserDict_v870', JSON.stringify(dict));
         }
-        if (Array.isArray(cloudData.rules) && cloudData.rules.length > 0) {
-            config.setMarginRules(cloudData.rules);
+
+        const rules = Array.isArray(cloudData.rules) && cloudData.rules.length > 0
+            ? cloudData.rules
+            : readLocalJSON('merchMarginRules_v878', []);
+        if (Array.isArray(rules) && rules.length > 0) {
+            config.setMarginRules(rules);
+            localStorage.setItem('merchMarginRules_v878', JSON.stringify(rules));
         }
-        if (cloudData.appConfig) {
-            if (cloudData.appConfig.mappings)
-                config.setMappings(cloudData.appConfig.mappings);
-            if (cloudData.appConfig.masterLinks)
-                config.setMasterLinks(cloudData.appConfig.masterLinks);
-            if (cloudData.appConfig.visibleUploadCols)
-                config.setVisibleUploadCols(cloudData.appConfig.visibleUploadCols);
-            if (cloudData.appConfig.visibleMasterCols)
-                config.setVisibleMasterCols(cloudData.appConfig.visibleMasterCols);
-            if (cloudData.appConfig.uploadColumnMeta)
-                config.setUploadColumnMeta(cloudData.appConfig.uploadColumnMeta);
-            if (cloudData.appConfig.tableShortcuts)
-                config.setTableShortcuts(cloudData.appConfig.tableShortcuts);
-            if (cloudData.appConfig.tableViewPresets)
-                config.setTableViewPresets(sanitizeTableViewPresets(cloudData.appConfig.tableViewPresets));
+
+        const nextMappings = appConfig.mappings || readLocalJSON('merchMappings_v870', null);
+        const nextMasterLinks = appConfig.masterLinks || readLocalJSON('merchMasterLinks_v870', null);
+        const nextVisibleUploadCols = appConfig.visibleUploadCols || readLocalJSON('merchVisUpload_v870', null);
+        const nextVisibleMasterCols = appConfig.visibleMasterCols || readLocalJSON('merchVisMaster_v870', null);
+        const nextUploadColumnMeta = appConfig.uploadColumnMeta || readLocalJSON('merchUploadColumnMeta_v870', null);
+        const nextTableShortcuts = appConfig.tableShortcuts || readLocalJSON('merchTableShortcuts_v870', null);
+        const nextTableViewPresets = appConfig.tableViewPresets || readLocalJSON('merchTableViewPresets_v1', null);
+
+        if (nextMappings) config.setMappings(nextMappings);
+        if (nextMasterLinks) config.setMasterLinks(nextMasterLinks);
+        if (nextVisibleUploadCols) config.setVisibleUploadCols(nextVisibleUploadCols);
+        if (nextVisibleMasterCols) config.setVisibleMasterCols(nextVisibleMasterCols);
+        if (nextUploadColumnMeta) config.setUploadColumnMeta(nextUploadColumnMeta);
+        if (Array.isArray(nextTableShortcuts)) config.setTableShortcuts(nextTableShortcuts);
+        if (nextTableViewPresets) {
+            const sanitized = sanitizeTableViewPresets(nextTableViewPresets);
+            config.setTableViewPresets(sanitized);
+            localStorage.setItem('merchTableViewPresets_v1', JSON.stringify(sanitized));
         }
+
+        const restoredTarget = appConfig.activeTableTarget || localStorage.getItem('merchActiveTableTarget_v1') || activeUploadRole || DEFAULT_TABLE_VIEW_TARGET;
+        const restoredViewId = appConfig.activeTableViewId || localStorage.getItem('merchActiveTableViewId_v1') || '';
+        if (TABLE_VIEW_TARGET_IDS.includes(restoredTarget)) {
+            setActiveUploadRole(restoredTarget);
+            setActiveTableViewId(restoredViewId);
+            localStorage.setItem('merchActiveTableTarget_v1', restoredTarget);
+            if (restoredViewId) localStorage.setItem('merchActiveTableViewId_v1', restoredViewId);
+        }
+
+        if (Array.isArray(cloudData.pendingShopStatus)) {
+            localStorage.setItem('pendingShopStatus', JSON.stringify(cloudData.pendingShopStatus));
+        }
+
         localStorage.setItem('config_sync_trigger', Date.now().toString());
+        localStorage.setItem('table_view_presets_sync_trigger', Date.now().toString());
+    };
+
+    const handleExportSettingsJSON = () => {
+        try {
+            const payload = buildSettingsCloudPayload().data;
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `ONEAPP_Settings_${new Date().toISOString().slice(0, 10)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            showToast('✅ 환경설정 JSON을 내보냈습니다.');
+        } catch (e) {
+            console.error(e);
+            showToast('❌ 환경설정 내보내기 실패');
+        }
+    };
+
+    const handleImportSettingsJSON = (file) => {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            try {
+                const parsed = JSON.parse(String(reader.result || '{}'));
+                const data = parsed.data || parsed;
+                applySettingsCloudData(data);
+                showToast('✅ 환경설정 JSON을 가져왔습니다.');
+            } catch (e) {
+                console.error(e);
+                showToast('❌ 환경설정 JSON 가져오기 실패');
+            }
+        };
+        reader.onerror = () => showToast('❌ 파일을 읽지 못했습니다.');
+        reader.readAsText(file, 'utf-8');
     };
 
     const handleCloudSync = async (type) => {
@@ -1114,7 +1235,15 @@ const App = () => {
                             " \uD604\uC7AC \uB370\uC774\uD130\uB97C \uD074\uB77C\uC6B0\uB4DC\uC5D0 \uBC31\uC5C5 (\uC800\uC7A5)"),
                         React.createElement("button", { onClick: () => handleCloudSync('download'), disabled: isProcessing, className: "flex-1 bg-white border border-indigo-300 text-indigo-700 hover:bg-indigo-100 px-4 py-3.5 rounded-xl text-[13px] font-bold transition-colors shadow-sm flex items-center justify-center" },
                             React.createElement("i", { className: "fas fa-cloud-download-alt mr-2 text-[16px]" }),
-                            " \uD074\uB77C\uC6B0\uB4DC\uC5D0\uC11C \uB370\uC774\uD130 \uBCF5\uAD6C (\uBD88\uB7EC\uC624\uAE30)"))),
+                            " \uD074\uB77C\uC6B0\uB4DC\uC5D0\uC11C \uB370\uC774\uD130 \uBCF5\uAD6C (\uBD88\uB7EC\uC624\uAE30)")),
+                    React.createElement("div", { className: "flex gap-3 pt-3" },
+                        React.createElement("button", { onClick: handleExportSettingsJSON, disabled: isProcessing, className: "flex-1 bg-slate-800 hover:bg-slate-700 text-white px-4 py-3 rounded-xl text-[12px] font-black transition-colors shadow-sm flex items-center justify-center" },
+                            React.createElement("i", { className: "fas fa-file-export mr-2" }),
+                            "환경설정 JSON 내보내기"),
+                        React.createElement("label", { className: "flex-1 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-3 rounded-xl text-[12px] font-black transition-colors shadow-sm flex items-center justify-center cursor-pointer" },
+                            React.createElement("i", { className: "fas fa-file-import mr-2" }),
+                            "환경설정 JSON 가져오기",
+                            React.createElement("input", { type: "file", accept: ".json,application/json", className: "hidden", onChange: e => { handleImportSettingsJSON(e.target.files && e.target.files[0]); e.target.value = ''; } })))),
                 React.createElement("div", { className: "bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mt-6" },
                     React.createElement("div", { className: "flex items-center justify-between mb-4 pb-2 border-b" },
                         React.createElement("h3", { className: "text-[15px] font-black flex items-center text-slate-800" },
