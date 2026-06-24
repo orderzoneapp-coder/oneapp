@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzd Master Ledger Link)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzd.3 Code Date Sort + Spacebar Bidirectional + Sales Row Sum)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.99zzd Master Ledger Link.....</div>
+        <div class="loader-text">ONEAPP DataOps v8.99zzd.3 Code Date Sort + Spacebar Bidirectional + Sales Row Sum.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -500,7 +500,7 @@ const defaultMappings = {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'v8.99zzd Master Ledger Link',
+    version: 'v8.99zzd.3 Code Date Sort + Spacebar Bidirectional + Sales Row Sum',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -1142,42 +1142,39 @@ const FILTER_SORT_MODULE = Object.freeze({
         // ERP·MerchOps 호환 기준은 문자열 오름차순이다.
         return rawCode;
     },
-    getStockSortQty: (row = {}) => {
-        var _a, _b, _c, _d, _e, _f, _g, _h;
-        const calcBalance = safeNum((_b = (_a = row.전산잔량) !== null && _a !== void 0 ? _a : row.systemQty) !== null && _b !== void 0 ? _b : (safeNum((_c = row.기초) !== null && _c !== void 0 ? _c : row.baseQty) + safeNum((_d = row.입고) !== null && _d !== void 0 ? _d : row.inQty) + safeNum((_e = row.대체입고) !== null && _e !== void 0 ? _e : row.subInQty) - safeNum((_f = row.출고) !== null && _f !== void 0 ? _f : row.outQty) - safeNum((_g = row.대체출고) !== null && _g !== void 0 ? _g : row.subOutQty)));
-        const actualRaw = (_h = row.실사) !== null && _h !== void 0 ? _h : row.finalQty;
-        const actualQty = (actualRaw === '' || actualRaw === null || actualRaw === undefined) ? calcBalance : safeNum(actualRaw);
-        return Math.max(actualQty, calcBalance);
+    getPurchaseDateSortValue: (row = {}) => {
+        const raw = row._raw || row.raw || {};
+        const direct = row.일자 || row.purchaseDate || row.date || row.구매일자 || row.매입일자 || row.입고일자;
+        const rawDate = getRawCell(raw, ['구매일자', '매입일자', '입고일자', '일자', '날짜', '기록', '최종기록', '재고기록']);
+        const candidates = [direct, rawDate, row._purchaseDate, row._sourcePurchaseDate, row._lotDate];
+        for (const c of candidates) {
+            const n = formatItemDate(c, new Date().getFullYear()) || extractDateNum(c);
+            if (n > 0)
+                return n;
+        }
+        // 구매일자가 없는 행은 같은 품목코드 안의 뒤쪽에 둔다.
+        return 99999999;
     },
-    getStockSortRank: (row = {}) => {
-        const q = FILTER_SORT_MODULE.getStockSortQty(row);
-        if (q > 0)
-            return 0; // 같은 품목코드 안에서는 재고가 남은 Lot을 먼저 보여준다.
-        if (q === 0)
-            return 1;
-        return 2; // 마이너스/부족 Lot은 같은 코드의 마지막으로 내린다.
+    compareByCodeThenPurchaseDate: (a, b) => {
+        const codeCompare = FILTER_SORT_MODULE.getCodeSortValue(a).localeCompare(FILTER_SORT_MODULE.getCodeSortValue(b), 'ko', { numeric: false, sensitivity: 'base' });
+        if (codeCompare)
+            return codeCompare;
+        const dateCompare = FILTER_SORT_MODULE.getPurchaseDateSortValue(a) - FILTER_SORT_MODULE.getPurchaseDateSortValue(b);
+        if (dateCompare)
+            return dateCompare;
+        // 같은 코드·같은 구매일자는 JS stable sort가 원본 입력순을 유지하도록 0을 반환한다.
+        return 0;
     },
-    compareByCodeThenName: (a, b) => {
-        var _a, _b;
-        const sa = FILTER_SORT_MODULE.getStandard(a);
-        const sb = FILTER_SORT_MODULE.getStandard(b);
-        return FILTER_SORT_MODULE.getCodeSortValue(a).localeCompare(FILTER_SORT_MODULE.getCodeSortValue(b), 'ko', { numeric: false, sensitivity: 'base' })
-            || FILTER_SORT_MODULE.getStockSortRank(a) - FILTER_SORT_MODULE.getStockSortRank(b)
-            || FILTER_SORT_MODULE.getStockSortQty(b) - FILTER_SORT_MODULE.getStockSortQty(a)
-            || safeStr(sa.displayName || (a === null || a === void 0 ? void 0 : a.품명)).localeCompare(safeStr(sb.displayName || (b === null || b === void 0 ? void 0 : b.품명)), 'ko', { numeric: false, sensitivity: 'base' })
-            || safeStr(sa.vendor || (a === null || a === void 0 ? void 0 : a.거래처)).localeCompare(safeStr(sb.vendor || (b === null || b === void 0 ? void 0 : b.거래처)), 'ko', { numeric: false, sensitivity: 'base' })
-            || safeNum((_a = sa.price) !== null && _a !== void 0 ? _a : a === null || a === void 0 ? void 0 : a.단가) - safeNum((_b = sb.price) !== null && _b !== void 0 ? _b : b === null || b === void 0 ? void 0 : b.단가);
-    },
+    // v8.99zzd.1: 기본 상품순서를 품목코드순 → 구매일자순(과거→현재)으로 고정한다.
+    // 기존 이름 참조 방어용. 이름은 compareByCodeThenName이지만 실제 정렬은 코드→구매일자다.
+    compareByCodeThenName: (a, b) => FILTER_SORT_MODULE.compareByCodeThenPurchaseDate(a, b),
+    // v8.99zzd.1: 재고수량/단가/구매처 우선 정렬은 기본 정렬에서 제거한다.
+    getStockSortQty: () => 0,
+    getStockSortRank: () => 0,
     sortRows: (rows = [], sortMode = 'DEFAULT') => {
-        return [...rows].sort((a, b) => {
-            const sa = FILTER_SORT_MODULE.getStandard(a);
-            const sb = FILTER_SORT_MODULE.getStandard(b);
-            if (sortMode === 'CATEGORY')
-                return (sa.category2Code || '9999').localeCompare(sb.category2Code || '9999') || FILTER_SORT_MODULE.compareByCodeThenName(a, b);
-            if (sortMode === 'VENDOR')
-                return safeStr(sa.vendor, '미지정').localeCompare(safeStr(sb.vendor, '미지정'), 'ko') || FILTER_SORT_MODULE.compareByCodeThenName(a, b);
-            return FILTER_SORT_MODULE.compareByCodeThenName(a, b);
-        });
+        // sortMode가 CATEGORY/VENDOR 등으로 남아 있어도 기본 화면 정렬은 단순화한다.
+        // 기본 상품순서 = 품목코드순 → 구매일자순(과거→현재)
+        return [...rows].sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenPurchaseDate(a, b));
     },
     getGroupLabel: (row, sortMode = 'DEFAULT') => {
         const standard = FILTER_SORT_MODULE.getStandard(row);
@@ -2123,7 +2120,20 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                         normObj.매입처매칭 = '';
                     }
                     else if (role === 'out') {
-                        const salesVendor = getExactRawVal(rowObj, ['거래처명', '판매처', '매출처명', '매장명', '매장', '고객']);
+                        // v8.99zzd.3: 판매현황의 실제 판매처와 판매그룹/경로를 분리한다.
+                        // 거래/거래처명에 1전송·2전송·3우리 같은 그룹값이 들어오고 판매처/no.가 실제 판매처인 양식에서는
+                        // 거래처(수량) 칩이 그룹값으로 묶이거나 제외거래처 필터에 걸려 판매행이 누락될 수 있다.
+                        const salesGroupVendor = getExactRawVal(rowObj, ['거래', '거래처명', '판매그룹', '전송구분', '출고그룹']);
+                        const explicitSalesVendor = getExactRawVal(rowObj, ['판매처', '매출처명', '매장명', '매장', '고객', 'no.', 'no', 'NO.', 'NO']);
+                        const looksLikeSalesGroup = (val) => {
+                            const v = safeStr(val, '').replace(/\s/g, '').toLowerCase();
+                            if (!v)
+                                return false;
+                            return /^(1|2|3)?전송$|^0?[123]전송$|^3우리$|^1창고$|^2창고$|^창고$|^판매그룹$|^거래$/.test(v) || /전송|창고/.test(v);
+                        };
+                        const salesVendor = explicitSalesVendor !== null && safeStr(explicitSalesVendor, '') !== ''
+                            ? explicitSalesVendor
+                            : (salesGroupVendor !== null && !looksLikeSalesGroup(salesGroupVendor) ? salesGroupVendor : (salesGroupVendor || null));
                         const lotVendor = getExactRawVal(rowObj, ['구매처', '매입처', '원구매처', '매입처(Lot)', '매입처(거래처)']);
                         const salesQty = getExactRawVal(rowObj, ['수량', '출고량', '판매수량']);
                         const salesPrice = getExactRawVal(rowObj, ['단가', '판매단가', '출고가', '출고가(공지)', '출고가 (공지)']);
@@ -2134,6 +2144,10 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                         }
                         if (salesVendor !== null)
                             normObj.거래처 = safeStr(salesVendor, '미지정');
+                        if (salesGroupVendor !== null)
+                            normObj._salesGroupVendor = safeStr(salesGroupVendor, '');
+                        normObj._salesDisplayVendor = safeStr(normObj.거래처, '미지정');
+                        normObj._salesRawRowNo = i + 1;
                         if (lotVendor !== null)
                             normObj.매입처매칭 = safeStr(lotVendor, '');
                         if (salesQty !== null)
@@ -2216,91 +2230,227 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             return nextItem;
         }));
     }, []);
+    /* =======================================================================
+       v8.99zzd.2 Spacebar Bidirectional Manual Substitution
+       - 스페이스바 수기치환은 선택 순서와 무관하게 차감/증가 역할을 자동 판정한다.
+       - 실제 입고/출고 원본 컬럼은 수정하지 않는다.
+       - 수기치환 결과는 기존 정책대로 대체출고/대체입고와 메모/이력에만 반영한다.
+       ======================================================================= */
     const executeImmediateSubstitution = useCallback((key1, key2) => {
         setProductData(prev => {
             const idx1 = prev.findIndex(d => d.batchKey === key1);
-            const realIdx2 = prev.findIndex(d => d.batchKey === key2);
-            if (idx1 < 0 || realIdx2 < 0)
+            const idx2 = prev.findIndex(d => d.batchKey === key2);
+            if (idx1 < 0 || idx2 < 0 || idx1 === idx2)
                 return prev;
-            const sourceItemOrig = { ...prev[idx1], 이슈: [...prev[idx1].이슈] };
-            const targetItemOrig = { ...prev[realIdx2], 이슈: [...prev[realIdx2].이슈] };
-            let sourceItem = { ...sourceItemOrig };
-            let targetItem = { ...targetItemOrig };
-            if (sourceItem.로스 < 0 && targetItem.로스 > 0) { }
-            else if (targetItem.로스 < 0 && sourceItem.로스 > 0) {
-                let temp = sourceItem;
-                sourceItem = targetItem;
-                targetItem = temp;
-            }
-            else if (sourceItem.로스 < 0 && targetItem.로스 === 0) { }
-            else if (targetItem.로스 < 0 && sourceItem.로스 === 0) {
-                let temp = sourceItem;
-                sourceItem = targetItem;
-                targetItem = temp;
-            }
-            else {
-                setAlertMsg(`재고조정 실패!\n\n두 상품을 연결하려면 먼저 실사 수량을 변경하여 오차(로스)를 만들어주세요.\n• 원물(차감 대상): 마이너스(-) 로스 발생\n• 소분(증가 대상): 플러스(+) 로스 발생`);
+
+            const cloneItem = (item = {}) => ({
+                ...item,
+                이슈: [...(item.이슈 || [])],
+                출고내역: item.출고내역 ? JSON.parse(JSON.stringify(item.출고내역)) : {},
+                _costLayers: item._costLayers ? JSON.parse(JSON.stringify(item._costLayers)) : item._costLayers,
+                _operationOutLayers: item._operationOutLayers ? JSON.parse(JSON.stringify(item._operationOutLayers)) : item._operationOutLayers
+            });
+            const item1Orig = cloneItem(prev[idx1]);
+            const item2Orig = cloneItem(prev[idx2]);
+            const EPS = 0.000001;
+            const n = (v) => safeNum(v);
+            const s = (v, fb = '') => safeStr(v, fb);
+            const getCode = (item = {}) => s(item.코드 === 'NO_CODE' ? '' : item.코드).replace(/\.0$/, '').trim();
+            const getActualQty = (item = {}) => {
+                if (item.실사 !== '' && item.실사 !== null && item.실사 !== undefined)
+                    return n(item.실사);
+                if (item.전산잔량 !== '' && item.전산잔량 !== null && item.전산잔량 !== undefined)
+                    return n(item.전산잔량);
+                return n(item.기초) + n(item.입고) + n(item.대체입고) - n(item.출고) - n(item.대체출고);
+            };
+            const getSystemQty = (item = {}) => {
+                if (item.전산잔량 !== '' && item.전산잔량 !== null && item.전산잔량 !== undefined)
+                    return n(item.전산잔량);
+                return n(item.기초) + n(item.입고) + n(item.대체입고) - n(item.출고) - n(item.대체출고);
+            };
+            const getMasterInfo = (item = {}) => {
+                if (item._masterLink)
+                    return item._masterLink;
+                try {
+                    if (typeof DATAOPS_MASTER_LINK_MODULE !== 'undefined' && DATAOPS_MASTER_LINK_MODULE.buildMasterLedgerInfo)
+                        return DATAOPS_MASTER_LINK_MODULE.buildMasterLedgerInfo(item);
+                }
+                catch (e) { }
+                return {};
+            };
+            const getRelation = (rawCandidate = {}, subCandidate = {}) => {
+                const rawCode = getCode(rawCandidate);
+                const subCode = getCode(subCandidate);
+                const rawInfo = getMasterInfo(rawCandidate);
+                const subInfo = getMasterInfo(subCandidate);
+                const subRawCode = s(subInfo.rawCode || subCandidate.원물코드 || subCandidate._rawCode);
+                const subSubCode = s(subInfo.subCode || subCandidate.소분코드 || subCandidate._subCode);
+                const rawRawCode = s(rawInfo.rawCode || rawCandidate.원물코드 || rawCandidate._rawCode);
+                const rawSubCode = s(rawInfo.subCode || rawCandidate.소분코드 || rawCandidate._subCode);
+                const conversionRate = n(subInfo.conversionRate || subInfo.stockConversionQty || subCandidate.소분연산 || subCandidate.치환수량 || rawInfo.conversionRate || rawCandidate.소분연산 || rawCandidate.치환수량);
+                const rawIsSourceForSub = !!(rawCode && subRawCode && rawCode === subRawCode);
+                const sameRaw = !!(rawRawCode && subRawCode && rawRawCode === subRawCode);
+                const sameSub = !!(rawSubCode && subSubCode && rawSubCode === subSubCode);
+                return { rawIsSourceForSub, sameRaw, sameSub, sameMasterPair: rawIsSourceForSub || sameRaw || sameSub, conversionRate };
+            };
+            const scoreAsSource = (item = {}, other = {}) => {
+                const relation = getRelation(item, other);
+                let score = 0;
+                // 기존 스페이스바 정책: 마이너스 오차 행은 대체출고로 계산잔량을 낮추는 출처 역할이다.
+                if (n(item.로스) < -EPS)
+                    score += 120;
+                if (n(item.로스) > EPS)
+                    score -= 120;
+                if (relation.rawIsSourceForSub)
+                    score += 35;
+                if (relation.sameMasterPair)
+                    score += 10;
+                if (n(item.단가) > 0)
+                    score += 5;
+                if (getActualQty(item) < -EPS || getSystemQty(item) < -EPS)
+                    score += 8;
+                return score;
+            };
+            const scoreAsTarget = (item = {}, other = {}) => {
+                const relation = getRelation(other, item);
+                let score = 0;
+                // 기존 스페이스바 정책: 플러스 오차 행은 대체입고로 계산잔량을 올리는 대상 역할이다.
+                if (n(item.로스) > EPS)
+                    score += 120;
+                if (n(item.로스) < -EPS)
+                    score -= 120;
+                if (relation.rawIsSourceForSub)
+                    score += 35;
+                if (relation.sameMasterPair)
+                    score += 10;
+                if (n(item.단가) <= 0)
+                    score += 3;
+                if (getActualQty(item) > getSystemQty(item) + EPS)
+                    score += 8;
+                return score;
+            };
+            const forward = {
+                sourceIndex: idx1,
+                targetIndex: idx2,
+                source: item1Orig,
+                target: item2Orig,
+                score: scoreAsSource(item1Orig, item2Orig) + scoreAsTarget(item2Orig, item1Orig),
+                direction: '정방향'
+            };
+            const reverse = {
+                sourceIndex: idx2,
+                targetIndex: idx1,
+                source: item2Orig,
+                target: item1Orig,
+                score: scoreAsSource(item2Orig, item1Orig) + scoreAsTarget(item1Orig, item2Orig),
+                direction: '역방향자동보정'
+            };
+            const picked = reverse.score > forward.score ? reverse : forward;
+            let sourceItem = cloneItem(picked.source);
+            let targetItem = cloneItem(picked.target);
+
+            // 방향 판정 후에도 기존 수기치환의 핵심 전제는 유지한다.
+            // source는 마이너스 오차, target은 플러스 오차여야 대체출고/대체입고로 오차를 상계할 수 있다.
+            if (!(n(sourceItem.로스) < -EPS && n(targetItem.로스) > EPS)) {
+                const relationHint = getRelation(sourceItem, targetItem);
+                const relationText = relationHint.sameMasterPair ? '\n• 마스터 원물/소분 관계는 확인되었지만 오차 방향이 맞지 않습니다.' : '';
+                setAlertMsg(`재고조정 실패!\n\n두 상품을 연결하려면 먼저 실사 수량을 변경하여 오차(로스)를 만들어주세요.\n• 원물/차감 대상: 마이너스(-) 로스 발생\n• 소분/증가 대상: 플러스(+) 로스 발생${relationText}`);
                 return prev;
             }
-            const sQty = Math.abs(sourceItem.로스);
-            const tQty = Math.abs(targetItem.로스);
-            if (tQty === 0) {
-                setAlertMsg("대체되는 상품(소분품)의 실사 수량이 입력되지 않아 조정 비율을 알 수 없습니다.\n수량을 입력해주세요.");
+
+            const sQty = Math.abs(n(sourceItem.로스));
+            const tQty = Math.abs(n(targetItem.로스));
+            if (sQty <= EPS || tQty <= EPS) {
+                setAlertMsg('재고조정 실패!\n\n치환할 오차수량이 없습니다. 원물/소분 행의 로스 수량을 확인해주세요.');
                 return prev;
             }
-            const transferredCost = sQty * sourceItem.단가;
+            const transferredCost = sQty * n(sourceItem.단가);
             const unitCost = transferredCost / tQty;
-            sourceItem.대체출고 += sQty;
-            sourceItem.전산잔량 = sourceItem.기초 + sourceItem.입고 + sourceItem.대체입고 - sourceItem.출고 - sourceItem.대체출고;
+            const relation = getRelation(sourceItem, targetItem);
+            const relationLabel = relation.rawIsSourceForSub ? '원물→소분' : (relation.sameMasterPair ? '연결상품' : '수기지정');
+
+            sourceItem.대체출고 = n(sourceItem.대체출고) + sQty;
+            sourceItem.전산잔량 = n(sourceItem.기초) + n(sourceItem.입고) + n(sourceItem.대체입고) - n(sourceItem.출고) - n(sourceItem.대체출고);
             sourceItem.실사 = sourceItem.실사 === null || sourceItem.실사 === '' ? sourceItem.전산잔량 : sourceItem.실사;
-            sourceItem.로스 = sourceItem.실사 - sourceItem.전산잔량;
-            // 🌟 대체 차감 후 로스가 0이 되면 수량 관련 경고 칩 완전 삭제
+            sourceItem.로스 = n(sourceItem.실사) - n(sourceItem.전산잔량);
             if (sourceItem.로스 === 0) {
-                sourceItem.이슈 = sourceItem.이슈.filter(msg => !msg.includes('수량변동') && !msg.includes('실사 수기조정') && !msg.includes('과다로스'));
+                sourceItem.이슈 = (sourceItem.이슈 || []).filter(msg => !s(msg).includes('수량변동') && !s(msg).includes('실사 수기조정') && !s(msg).includes('과다로스'));
             }
-            // 🌟 관리자 조작으로 전산잔량이 0 이상이 되면 수량부족(잔량) 이슈 칩 삭제
             if (sourceItem.전산잔량 >= 0) {
-                sourceItem.이슈 = sourceItem.이슈.filter(msg => !msg.includes('수량부족'));
+                sourceItem.이슈 = (sourceItem.이슈 || []).filter(msg => !s(msg).includes('수량부족'));
             }
-            sourceItem.이슈.push(`🔄 (${sQty})`);
+            sourceItem.이슈 = [...(sourceItem.이슈 || []), `🔄 (${sQty})`, '✅수기치환출처', '✅수기확인'];
+            sourceItem.메모 = [s(sourceItem.메모), `[수기치환/${relationLabel}/${picked.direction}] → ${s(targetItem.품명, '대상상품')} (${sQty})`].filter(Boolean).join(' ');
+            sourceItem._manualSubstitutionResolved = true;
+            sourceItem._manualSubstitutionRole = 'source';
+            sourceItem._manualSubstitutionPairKey = targetItem.batchKey;
+            sourceItem._manualSubstitutionQty = sQty;
+            sourceItem._manualSubstitutionDirection = picked.direction;
+            sourceItem._manualSubstitutionRelation = relationLabel;
             sourceItem.수기확인완료 = true;
-            targetItem.대체입고 += tQty;
-            targetItem.전산잔량 = targetItem.기초 + targetItem.입고 + targetItem.대체입고 - targetItem.출고 - targetItem.대체출고;
+
+            targetItem.대체입고 = n(targetItem.대체입고) + tQty;
+            targetItem.전산잔량 = n(targetItem.기초) + n(targetItem.입고) + n(targetItem.대체입고) - n(targetItem.출고) - n(targetItem.대체출고);
             targetItem.실사 = targetItem.실사 === null || targetItem.실사 === '' ? targetItem.전산잔량 : targetItem.실사;
-            targetItem.로스 = targetItem.실사 - targetItem.전산잔량;
-            targetItem.단가 = unitCost;
-            targetItem.매출원가 = targetItem.출고 * unitCost;
-            // v8.99zv: 스페이스바 상계 시 소분/대체 대상은 원물의 구매처/Lot 추적 정보를 승계한다.
-            targetItem.거래처 = safeStr(sourceItem.거래처, targetItem.거래처 || '미지정');
-            targetItem.일자 = safeStr(sourceItem.일자, targetItem.일자 || '');
-            targetItem._substitutionSourceVendor = safeStr(sourceItem.거래처, '');
-            targetItem._substitutionSourceDate = safeStr(sourceItem.일자, '');
-            targetItem._substitutionSourcePrice = safeNum(sourceItem.단가);
-            // 🌟 소분 대상도 로스가 0이 되면 관련 에러 칩 일괄 삭제
+            targetItem.로스 = n(targetItem.실사) - n(targetItem.전산잔량);
+            if (unitCost > 0) {
+                targetItem.단가 = unitCost;
+                targetItem.매출원가 = n(targetItem.출고) * unitCost;
+            }
+            // 스페이스바 상계 시 소분/대체 대상은 원물의 구매처/Lot 추적 정보를 승계한다.
+            targetItem.거래처 = s(sourceItem.거래처, targetItem.거래처 || '미지정');
+            targetItem.일자 = s(sourceItem.일자, targetItem.일자 || '');
+            targetItem._substitutionSourceVendor = s(sourceItem.거래처, '');
+            targetItem._substitutionSourceDate = s(sourceItem.일자, '');
+            targetItem._substitutionSourcePrice = n(sourceItem.단가);
             if (targetItem.로스 === 0) {
-                targetItem.이슈 = targetItem.이슈.filter(msg => !msg.includes('수량변동') && !msg.includes('실사 수기조정') && !msg.includes('과다로스'));
+                targetItem.이슈 = (targetItem.이슈 || []).filter(msg => !s(msg).includes('수량변동') && !s(msg).includes('실사 수기조정') && !s(msg).includes('과다로스'));
             }
-            // 🌟 관리자 조작으로 전산잔량이 0 이상이 되면 수량부족(잔량) 이슈 칩 삭제
             if (targetItem.전산잔량 >= 0) {
-                targetItem.이슈 = targetItem.이슈.filter(msg => !msg.includes('수량부족'));
+                targetItem.이슈 = (targetItem.이슈 || []).filter(msg => !s(msg).includes('수량부족'));
             }
-            targetItem.이슈 = targetItem.이슈.filter(msg => !msg.includes('매입내역 없음') && !msg.includes('전산 재고 부족'));
-            // 🌟 대체 품목(원물) 정보를 거래처 칩과 혼동되지 않도록 우측 '메모' 영역으로 자동 삽입
-            const autoMemo = `🔄 [${sourceItem.품명}]`;
-            if (!(targetItem.메모 || '').includes(autoMemo)) {
-                targetItem.메모 = targetItem.메모 ? targetItem.메모 + ' ' + autoMemo : autoMemo;
-            }
+            targetItem.이슈 = (targetItem.이슈 || []).filter(msg => !s(msg).includes('매입내역 없음') && !s(msg).includes('전산 재고 부족'));
+            const autoMemo = `🔄 [${s(sourceItem.품명, '출처상품')}]`;
+            const directionMemo = `[수기치환/${relationLabel}/${picked.direction}] ← ${s(sourceItem.품명, '출처상품')} (${tQty})`;
+            targetItem.메모 = [s(targetItem.메모), (s(targetItem.메모).includes(autoMemo) ? '' : autoMemo), directionMemo].filter(Boolean).join(' ');
+            targetItem.이슈 = [...(targetItem.이슈 || []), '✅수기치환대상', '✅수기확인'];
+            targetItem._manualSubstitutionResolved = true;
+            targetItem._manualSubstitutionRole = 'target';
+            targetItem._manualSubstitutionPairKey = sourceItem.batchKey;
+            targetItem._manualSubstitutionQty = tQty;
+            targetItem._manualSubstitutionDirection = picked.direction;
+            targetItem._manualSubstitutionRelation = relationLabel;
             targetItem.수기확인완료 = true;
-            setSubstHistory(h => [...h, {
-                    id: Date.now(), sourceKey: sourceItem.batchKey, targetKey: targetItem.batchKey, sourceName: sourceItem.품명, targetName: targetItem.품명,
-                    sQty, tQty, transferredCost, sourceItemPrev: sourceItem.batchKey === sourceItemOrig.batchKey ? sourceItemOrig : targetItemOrig, targetItemPrev: targetItem.batchKey === targetItemOrig.batchKey ? targetItemOrig : sourceItemOrig,
+
+            try {
+                if (DATAOPS_ISSUE_HELPER && DATAOPS_ISSUE_HELPER.unique) {
+                    sourceItem.이슈 = DATAOPS_ISSUE_HELPER.unique(sourceItem.이슈 || []);
+                    targetItem.이슈 = DATAOPS_ISSUE_HELPER.unique(targetItem.이슈 || []);
+                }
+            }
+            catch (e) { }
+
+            setSubstHistory(h => [...(h || []), {
+                    id: Date.now(),
+                    type: 'MANUAL_SPACEBAR_SUBSTITUTION',
+                    direction: picked.direction,
+                    relation: relationLabel,
+                    sourceKey: sourceItem.batchKey,
+                    targetKey: targetItem.batchKey,
+                    sourceName: sourceItem.품명,
+                    targetName: targetItem.품명,
+                    sQty,
+                    tQty,
+                    transferredCost,
+                    sourceItemPrev: picked.sourceIndex === idx1 ? item1Orig : item2Orig,
+                    targetItemPrev: picked.targetIndex === idx1 ? item1Orig : item2Orig,
                 }]);
             const newData = [...prev];
-            newData[prev.findIndex(d => d.batchKey === sourceItem.batchKey)] = sourceItem;
-            newData[prev.findIndex(d => d.batchKey === targetItem.batchKey)] = targetItem;
+            newData[picked.sourceIndex] = sourceItem;
+            newData[picked.targetIndex] = targetItem;
             return newData;
         });
-    }, [setAlertMsg]);
+    }, [setAlertMsg, setProductData, setSubstHistory]);
     const handleSalesMove = useCallback((sourceKey, targetKey, vendorName, qtyToMove) => {
         setProductData(prevP => {
             let sPrice = 0;
@@ -2710,7 +2860,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 const code = String(sale.코드 || 'NO_CODE');
                 if (isExcluded(sale.거래처))
                     return;
-                const vendorKey = safeStr(sale.거래처, '미지정');
+                const vendorKey = safeStr(sale._salesDisplayVendor || sale.거래처, '미지정');
                 const matchKey = safeStr(sale.매입처매칭, '미지정');
                 const qty = sale._computedQty || 0;
                 const rev = sale._finalRevenue || 0;
@@ -2731,11 +2881,18 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 aggregatedSales[aggKey]._rawCombinedStr += ' ' + Object.values(sale._raw || {}).map(v => String(v)).join(' ').toLowerCase();
                 const existingDetail = aggregatedSales[aggKey]._salesVendorDetails.find(d => d.vendor === vendorKey);
                 if (existingDetail) {
+                    // v8.99zzd.3: 같은 판매처/같은 상품 판매행이 여러 줄이면 전체 수량을 누적한다.
+                    // 기존 코드는 qty/rev만 더하고 remainingQty/remainingRev를 첫 행 값으로 남겨,
+                    // Lot 분배 단계에서 거래처(수량) 칩이 첫 행 수량만 표시되는 문제가 있었다.
                     existingDetail.qty += qty;
                     existingDetail.rev += rev;
+                    existingDetail.remainingQty = safeNum(existingDetail.remainingQty) + qty;
+                    existingDetail.remainingRev = safeNum(existingDetail.remainingRev) + rev;
+                    existingDetail.rowCount = safeNum(existingDetail.rowCount) + 1;
+                    existingDetail.sourceRows = [...(existingDetail.sourceRows || []), sale._salesRawRowNo].filter(v => v !== undefined && v !== null && v !== '');
                 }
                 else {
-                    aggregatedSales[aggKey]._salesVendorDetails.push({ vendor: vendorKey, qty, rev, remainingQty: qty, remainingRev: rev });
+                    aggregatedSales[aggKey]._salesVendorDetails.push({ vendor: vendorKey, qty, rev, remainingQty: qty, remainingRev: rev, rowCount: 1, sourceRows: [sale._salesRawRowNo].filter(v => v !== undefined && v !== null && v !== '') });
                 }
             });
             // 3. 병합된 전표 리스트를 우선순위 및 큰 수량부터 차감되도록 정렬
@@ -2903,6 +3060,31 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         pData[bucket.batchKey].출고내역[vendorKey].rev += usedRev;
                         pData[bucket.batchKey].출고내역[vendorKey].cogs += usedCogs;
                     });
+                    // v8.99zzd.3 방어막: 판매 상세 분배 잔여가 남으면 누락시키지 않고 대표 판매처로 합산한다.
+                    // 판매현황은 실제 판매내역이므로, 중복 판매행/동일 거래처 반복행도 최종 거래처(수량)에 반드시 반영한다.
+                    if (remainingTake > 0.000001) {
+                        const displayVendor = safeStr(sale._salesDisplayVendor || sale.거래처, '미지정');
+                        const vendorKey = isPerfect ? `${displayVendor}_perfect` : displayVendor;
+                        const usedQty = remainingTake * sign;
+                        const revPerUnit = qtyToDeduct !== 0 ? finalRevenue / qtyToDeduct : 0;
+                        const usedRev = revPerUnit * usedQty;
+                        const usedCogs = usedQty * bucket.단가;
+                        if (!pData[bucket.batchKey].출고내역[vendorKey]) {
+                            pData[bucket.batchKey].출고내역[vendorKey] = {
+                                qty: 0, rev: 0, cogs: 0,
+                                isLifo: effectiveIsLifo,
+                                isPerfectMatch: isPerfect,
+                                displayVendor,
+                                requestedLot: safeStr(sale.매입처매칭, ''),
+                                appliedLot: safeStr(bucket.거래처, ''),
+                                matchMode: matchMode || 'DETAIL_FALLBACK'
+                            };
+                        }
+                        pData[bucket.batchKey].출고내역[vendorKey].qty += usedQty;
+                        pData[bucket.batchKey].출고내역[vendorKey].rev += usedRev;
+                        pData[bucket.batchKey].출고내역[vendorKey].cogs += usedCogs;
+                        remainingTake = 0;
+                    }
                 };
                 if (remainingQty < 0) {
                     deductFromBucket(pool.buckets[pool.buckets.length - 1], remainingQty, false, 'RETURN');
@@ -3149,23 +3331,8 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             const finalProductData = Object.values(pData)
                 .filter(item => !isSummaryOrInvalidProductRow({ code: item.코드, name: item.품명, raw: item._raw }))
                 .filter(item => !(item.기초 === 0 && item.입고 === 0 && item.출고 === 0 && item.실사 === 0 && item.로스 === 0))
-                .sort((a, b) => {
-                const codeA = safeStr(a.코드 || '').replace(/\.0$/, '').trim();
-                const codeB = safeStr(b.코드 || '').replace(/\.0$/, '').trim();
-                if (codeA !== codeB)
-                    return codeA.localeCompare(codeB, 'ko', { numeric: false, sensitivity: 'base' });
-                const stockRank = FILTER_SORT_MODULE.getStockSortRank(a) - FILTER_SORT_MODULE.getStockSortRank(b);
-                if (stockRank !== 0)
-                    return stockRank;
-                const stockQty = FILTER_SORT_MODULE.getStockSortQty(b) - FILTER_SORT_MODULE.getStockSortQty(a);
-                if (stockQty !== 0)
-                    return stockQty;
-                const dateA = String(a.일자 || '');
-                const dateB = String(b.일자 || '');
-                if (dateA !== dateB)
-                    return dateA.localeCompare(dateB);
-                return (a.단가 || 0) - (b.단가 || 0);
-            });
+                // v8.99zzd.1: 재고수량/단가/구매처 우선 정렬 제거. 품목코드 → 구매일자 과거순으로 고정.
+                .sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenPurchaseDate(a, b));
             setProductData(finalProductData);
             setAckMultiCodes(autoAckCodes);
             setAppStep('closing');
@@ -6332,7 +6499,7 @@ ${changeText}
                     React.createElement("h1", { className: "text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzd Master Ledger Link"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzd.3 Code Date Sort + Spacebar Bidirectional + Sales Row Sum"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
