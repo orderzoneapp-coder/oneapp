@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.77_StatusMaintenanceLite]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.78_AutoFilterApplyFix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -3582,6 +3582,16 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
         const filterApplied = window.applyMerchFilterPresetToState
             ? window.applyMerchFilterPresetToState(applied || view, { setPriceFilter, setCategoryFilters, setDetailFilters, setBasicSearch, setGlobalSearch, setSelectedRows, setFilterSteps, setPendingFilterAction })
             : false;
+        if (!filterApplied) {
+            // 저장된 자동필터가 없는 양식으로 전환할 때 이전 양식의 filterSteps가 남지 않게 정리한다.
+            setFilterSteps([]);
+            setPendingFilterAction?.('include');
+            setPriceFilter('all');
+            if (setCategoryFilters) setCategoryFilters([]);
+            setDetailFilters([]);
+            setBasicSearch('');
+            setGlobalSearch('');
+        }
         setSelectedRows(new Set());
         (_a = actions.showToast) === null || _a === void 0 ? void 0 : _a.call(actions, `✅ [${(applied === null || applied === void 0 ? void 0 : applied.name) || view.name || '양식'}] 테이블 양식 적용${filterApplied ? ' / 필터조건 적용' : ''}`);
     };
@@ -3591,6 +3601,26 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
         const view = displayTableViewList.find(v => (v.fallback ? '__fallback' : (v.id || '')) === selectedId) || displayTableViewList[0];
         if (view) applyTableShortcut(view);
     };
+    const activeViewFilterSignature = useMemo(() => {
+        if (!activeBriefView || activeBriefView.fallback) return '';
+        const steps = window.normalizeMerchFilterSteps
+            ? window.normalizeMerchFilterSteps(activeBriefView.filterSteps || [], activeBriefView.filterPreset || null)
+            : (Array.isArray(activeBriefView.filterSteps) ? activeBriefView.filterSteps : []);
+        return `${activeTableTarget || ''}|${activeBriefView.id || ''}|${JSON.stringify(steps)}`;
+    }, [activeBriefView, activeTableTarget]);
+    useEffect(() => {
+        if (!activeBriefView) return;
+        const hasPreset = window.hasMerchFilterPreset ? window.hasMerchFilterPreset(activeBriefView) : false;
+        if (hasPreset) {
+            const applied = window.applyMerchFilterPresetToState
+                ? window.applyMerchFilterPresetToState(activeBriefView, { setPriceFilter, setCategoryFilters, setDetailFilters, setBasicSearch, setGlobalSearch, setSelectedRows, setFilterSteps, setPendingFilterAction })
+                : false;
+            if (applied) return;
+        }
+        // 양식은 선택되어 있으나 저장된 자동필터가 없으면 이전 양식의 자동필터만 제거한다.
+        setFilterSteps([]);
+        setPendingFilterAction?.('include');
+    }, [activeViewFilterSignature]);
     const applyPriceFilter = (value) => {
         // 상단 필터는 단일 선택으로 유지하되, 상세필터와는 함께 적용된다.
         setPriceFilter(prev => (prev === value && value !== 'all') ? 'all' : value);
@@ -4904,7 +4934,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.77_StatusMaintenanceLite]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.78_AutoFilterApplyFix]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -5225,7 +5255,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.77_StatusMaintenanceLite")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.78_AutoFilterApplyFix")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
