@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.76_PresetOnlyLayout]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.77_StatusMaintenanceLite]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -967,6 +967,100 @@ window.normalizeMerchFilterStep = (step = {}, idx = 0) => {
     if (window.isMerchFilterPresetEmpty(conditions)) return null;
     return { id: String(step.id || `filter_step_${Date.now()}_${idx}`), action, label: String(step.label || window.getMerchFilterStepLabel(action, conditions)), conditions };
 };
+
+
+// ============================================================
+// [M-STATUS-01] 제외/정지 상품 유지관리 기록
+// 역할: 작업 중 제외/정지 처리한 상품을 localStorage에 남겨 환경설정에서 다시 확인/해제/활성화할 수 있게 한다.
+// 정책: 복잡한 승인 플로우 없이 상태목록·사유·연결 자사상품·메모 중심의 최소 유지관리만 제공한다.
+// ============================================================
+window.MERCH_PRODUCT_STATUS_KEY = 'merchProductStatusRecords_v1';
+window.normalizeMerchProductStatusRecords = (records = []) => {
+    const arr = Array.isArray(records) ? records : [];
+    return arr.map((rec, idx) => {
+        const code = String(rec.code || rec.코드 || rec.productCode || '').trim();
+        if (!code) return null;
+        const state = String(rec.state || rec.status || '업데이트 제외').trim() || '업데이트 제외';
+        const active = rec.active === false || state === '해제' || state === '판매활성' ? false : true;
+        return {
+            id: String(rec.id || `${code}_${state}_${idx}_${Date.now()}`),
+            code,
+            name: String(rec.name || rec.상품명 || rec.itemName || '').trim(),
+            supplier: String(rec.supplier || rec.공급사 || rec.구매처 || '').trim(),
+            relatedOwnProduct: String(rec.relatedOwnProduct || rec.연결자사상품 || rec.대표상품 || '').trim(),
+            relationType: String(rec.relationType || rec.관계유형 || '').trim(),
+            state,
+            reason: String(rec.reason || rec.사유 || '').trim(),
+            memo: String(rec.memo || rec.메모 || '').trim(),
+            source: String(rec.source || rec.처리화면 || 'MerchOps').trim(),
+            active,
+            createdAt: String(rec.createdAt || rec.처리일 || new Date().toISOString()),
+            updatedAt: String(rec.updatedAt || rec.수정일 || rec.createdAt || new Date().toISOString()),
+            resolvedAt: String(rec.resolvedAt || '')
+        };
+    }).filter(Boolean);
+};
+window.readMerchProductStatusRecords = () => {
+    try {
+        const raw = localStorage.getItem(window.MERCH_PRODUCT_STATUS_KEY);
+        if (!raw || raw === 'undefined' || raw === 'null') return [];
+        return window.normalizeMerchProductStatusRecords(JSON.parse(raw));
+    } catch (e) { return []; }
+};
+window.saveMerchProductStatusRecords = (records = []) => {
+    const safe = window.normalizeMerchProductStatusRecords(records);
+    localStorage.setItem(window.MERCH_PRODUCT_STATUS_KEY, JSON.stringify(safe));
+    localStorage.setItem('product_status_records_sync_trigger', Date.now().toString());
+    return safe;
+};
+window.resolveMerchStatusRecordFields = (item = {}, code = '') => {
+    const sources = item.sources || {};
+    const finalData = item.finalData || {};
+    const candidates = [finalData, sources.catalog || {}, sources.estimate || {}, sources.purchase || {}, sources.sales || {}, sources.inventory || {}, sources.master || {}, item];
+    const pick = (...keys) => {
+        for (const obj of candidates) {
+            for (const key of keys) {
+                if (obj && obj[key] !== undefined && obj[key] !== null && String(obj[key]).trim() !== '') return String(obj[key]).trim();
+            }
+        }
+        return '';
+    };
+    return {
+        code: String(code || pick('품목코드', '상품코드', '코드')).trim(),
+        name: pick('품목명', '상품명', '상품명(규격)', '품명'),
+        supplier: pick('공급사', '구매처', '거래처명', '매입처', '판매처'),
+        relatedOwnProduct: pick('연결자사상품', '대표상품', '대체상품', '연관상품', '1종코드'),
+        relationType: pick('관계유형', '상품관계')
+    };
+};
+window.upsertMerchProductStatusRecord = (record = {}) => {
+    const code = String(record.code || '').trim();
+    if (!code) return [];
+    const now = new Date().toISOString();
+    const records = window.readMerchProductStatusRecords();
+    const state = String(record.state || '업데이트 제외').trim();
+    const idx = records.findIndex(r => r.code === code && r.state === state && r.active !== false);
+    const nextRecord = {
+        id: idx >= 0 ? records[idx].id : `${code}_${state}_${Date.now()}`,
+        code,
+        name: String(record.name || '').trim(),
+        supplier: String(record.supplier || '').trim(),
+        relatedOwnProduct: String(record.relatedOwnProduct || '').trim(),
+        relationType: String(record.relationType || '').trim(),
+        state,
+        reason: String(record.reason || '').trim(),
+        memo: String(record.memo || '').trim(),
+        source: String(record.source || 'MerchOps').trim(),
+        active: true,
+        createdAt: idx >= 0 ? records[idx].createdAt : now,
+        updatedAt: now,
+        resolvedAt: ''
+    };
+    if (idx >= 0) records[idx] = { ...records[idx], ...nextRecord };
+    else records.unshift(nextRecord);
+    return window.saveMerchProductStatusRecords(records).slice(0, 5000);
+};
+
 window.normalizeMerchFilterSteps = (steps = [], fallbackPreset = null) => {
     const normalized = (Array.isArray(steps) ? steps : []).map((step, idx) => window.normalizeMerchFilterStep(step, idx)).filter(Boolean);
     if (normalized.length > 0) return normalized;
@@ -2451,6 +2545,16 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                 let next = { ...prev };
                 ui.selectedRows.forEach(code => {
                     const current = next[code] || { 코드: code, sources: {}, finalData: {} };
+                    const statusFields = window.resolveMerchStatusRecordFields ? window.resolveMerchStatusRecordFields(current, code) : { code };
+                    if (window.upsertMerchProductStatusRecord) {
+                        window.upsertMerchProductStatusRecord({
+                            ...statusFields,
+                            state: '판매정지',
+                            reason: '자사상품 충돌/공급사상품 정지',
+                            memo: '자사상품 독점 유지를 위해 정지 처리',
+                            source: 'MerchOps 정지'
+                        });
+                    }
                     next[code] = {
                         ...current,
                         finalData: {
@@ -2481,6 +2585,17 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         data.setManagedItems(prev => {
             const next = { ...prev };
             ui.selectedRows.forEach(code => {
+                const current = next[code] || { 코드: code, sources: {}, finalData: {} };
+                const statusFields = window.resolveMerchStatusRecordFields ? window.resolveMerchStatusRecordFields(current, code) : { code };
+                if (window.upsertMerchProductStatusRecord) {
+                    window.upsertMerchProductStatusRecord({
+                        ...statusFields,
+                        state: '업데이트 제외',
+                        reason: '이번 업데이트 대상 제외',
+                        memo: '필요 시 환경설정의 제외/정지 관리에서 해제',
+                        source: 'MerchOps 제외'
+                    });
+                }
                 delete next[code];
             });
             return next;
@@ -4789,7 +4904,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.76_PresetOnlyLayout]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.77_StatusMaintenanceLite]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -5110,7 +5225,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.76_PresetOnlyLayout")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.77_StatusMaintenanceLite")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
