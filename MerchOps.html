@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.75_LayoutRestore]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.76_PresetOnlyLayout]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -3387,7 +3387,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
     // 1단 정렬필터: 가격변동/행사중/행사제외/행사제안/10/20/30/40/50/상세필터/단가변경/검색.
     // 2단 상세필터: 판매중/정지&품절/기본상품/역마진/안전(-)/기본상품 제외/BOX/EA/소분/테마1~5.
     const [priceActionOpen, setPriceActionOpen] = useState(false);
-    // [M-FILTER-WORKFLOW-01] 순차필터 만들기는 양식 선택 후 필요한 때만 여는 고급 작업으로 숨긴다.
+    // [M-FILTER-PRESET-ONLY-01] MerchOps에서는 필터 자동화 편집 UI를 노출하지 않는다. 저장된 양식 필터만 적용한다.
     const [filterScenarioOpen, setFilterScenarioOpen] = useState(false);
     // [M-FILTER-DETAIL-RESTORE] 상세필터 복구: 상세필터 버튼을 눌렀을 때 하단 필터줄을 다시 생성하고,
     // 상세필터 항목이 활성화된 상태에서는 행이 숨지지 않도록 유지한다.
@@ -3624,15 +3624,12 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
             React.createElement("button", { onClick: handleReset, className: "h-9 px-3 rounded-xl flex items-center text-[12px] font-black text-slate-700 bg-white border border-slate-300 shadow-sm hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200 shrink-0", title: "화면 초기화" },
                 React.createElement("i", { className: "fas fa-rotate-left mr-1.5 text-[13px]" }),
                 " 초기화"),
-            React.createElement("div", { className: "flex-1 min-w-[12px]" })),
-        // [M-LAYOUT-RESTORE-01] 양식 선택은 필터줄에 끼워 넣지 않고 별도 행으로 분리한다.
-        // 목적: 자료불러오기/양식선택/필터작업 순서를 화면에서 명확히 보여준다.
-        (displayTableViewList.length > 0 && React.createElement("div", { className: "px-6 pt-2 pb-0 bg-white w-full" },
-            React.createElement("div", { className: "rounded-xl border border-indigo-100 bg-indigo-50/30 px-3 py-2 shadow-sm flex items-center gap-3 w-full overflow-hidden" },
+            React.createElement("div", { className: "flex-1 min-w-[24px]" }),
+            (displayTableViewList.length > 0 && React.createElement("div", { className: "ml-auto min-w-[360px] max-w-[520px] flex items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50/30 px-2 py-1.5 shadow-sm shrink-0 overflow-hidden", title: activeBriefText || activeBriefTags.join(' · ') || '저장된 자동 필터 없음' },
                 React.createElement("span", { className: "text-[10px] font-black text-indigo-500 shrink-0" }, "현재 양식"),
-                React.createElement("select", { value: activeTableViewSelectValue, onChange: handleTableViewSelect, className: "h-8 min-w-[240px] max-w-[420px] rounded-lg border border-slate-200 bg-white px-2 text-[12px] font-black text-slate-700 outline-none focus:border-indigo-400 shrink-0", title: `${displayTableTargetLabel} 작업에 적용할 보기 양식을 선택합니다.` },
+                React.createElement("select", { value: activeTableViewSelectValue, onChange: handleTableViewSelect, className: "h-8 w-[230px] rounded-lg border border-slate-200 bg-white px-2 text-[12px] font-black text-slate-700 outline-none focus:border-indigo-400 shrink-0", title: `${displayTableTargetLabel} 작업에 적용할 보기 양식을 선택합니다.` },
                     displayTableViewList.map(view => React.createElement("option", { key: view.fallback ? '__fallback' : (view.id || view.name), value: view.fallback ? '__fallback' : (view.id || '') }, `${displayTableTargetLabel} / ${view.name}`))),
-                React.createElement("div", { className: "min-w-0 flex-1 text-[10px] text-slate-500 font-bold truncate", title: activeBriefText || activeBriefTags.join(' · ') || '저장된 자동 필터 없음' },
+                React.createElement("div", { className: "min-w-[90px] max-w-[220px] text-[10px] text-slate-500 font-bold truncate hidden xl:block" },
                     React.createElement("i", { className: "fas fa-circle-info mr-1 text-slate-300" }),
                     (activeBriefText || activeBriefTags.length > 0) ? (activeBriefMemo ? activeBriefMemo : activeBriefTags.map(tag => `[${tag}]`).join(' ')) : "저장된 자동 필터 없음")))),
         React.createElement("div", { className: "px-6 pt-3 pb-2 flex flex-col gap-2 w-full" },
@@ -3657,10 +3654,6 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                         React.createElement("input", { type: "number", min: "1", max: "99", value: screenPercent, onChange: e => setScreenPercent(e.target.value), className: "w-[56px] px-2 text-[12px] font-black outline-none text-right" }),
                         React.createElement("span", { className: "px-2 flex items-center bg-slate-50 border-l border-slate-200 text-[12px] font-black text-slate-500" }, "%")),
                     React.createElement("button", { onClick: runScreenPercentApply, disabled: fullDisplayRows.length === 0, className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all shrink-0 ${fullDisplayRows.length > 0 ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터/검색 결과 전체에 행사가를 적용합니다." }, "적용"))),
-                React.createElement("button", { onClick: () => setFilterScenarioOpen(v => !v), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all flex items-center whitespace-nowrap shrink-0 ${filterScenarioOpen ? 'bg-purple-50 text-purple-700 border-purple-300' : 'bg-white text-slate-600 border-slate-300 hover:bg-purple-50'}`, title: "현재 선택 필터를 순차필터 단계로 만들 때만 엽니다. 저장된 양식 필터는 현재 양식 선택으로 자동 적용됩니다." },
-                    React.createElement("i", { className: `fas ${filterScenarioOpen ? 'fa-chevron-up' : 'fa-chevron-down'} mr-1.5 text-[11px]` }),
-                    " 순차필터",
-                    filterSteps.length > 0 && React.createElement("span", { className: "ml-1.5 px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 text-[10px] font-black" }, filterSteps.length)),
                 React.createElement("div", { className: "ml-auto flex items-center justify-end gap-2 shrink-0" },
                     registrationMode && (React.createElement(React.Fragment, null,
                         React.createElement("span", { className: "h-9 px-3 rounded-lg text-[12px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center shadow-sm" },
@@ -3676,18 +3669,6 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                     React.createElement("button", { onClick: handleFilterResetOnly, className: "h-9 w-9 rounded-lg bg-white text-slate-500 border border-slate-300 shadow-sm hover:bg-slate-50 hover:text-indigo-700 hover:border-indigo-300 flex items-center justify-center shrink-0", title: "필터 초기화", "aria-label": "필터 초기화" },
                         React.createElement("i", { className: "fas fa-filter-circle-xmark text-[13px]" })),
                     React.createElement(SearchBar, { value: globalSearch, onChange: setGlobalSearch }))),
-            filterScenarioOpen && React.createElement("div", { className: "mx-6 mt-2 rounded-xl border border-purple-100 bg-purple-50/60 px-3 py-2 flex items-center gap-2 flex-wrap text-[11px] font-bold text-slate-600" },
-                React.createElement("span", { className: "text-purple-700 font-black shrink-0 mr-1" }, "순차필터 만들기"),
-                React.createElement("span", { className: "text-slate-400 shrink-0" }, "현재 선택한 일반 필터를 임시 실행합니다. 먼저 현재 양식을 확인하세요."),
-                React.createElement("div", { className: "w-px h-5 bg-purple-200 mx-1" }),
-                React.createElement("button", { onClick: () => setPendingFilterAction('include'), className: `h-8 px-2.5 rounded-lg text-[11px] font-black border shadow-sm transition-all ${pendingFilterAction === 'include' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-emerald-50'}` }, "조건만 보기"),
-                React.createElement("button", { onClick: () => setPendingFilterAction('exclude'), className: `h-8 px-2.5 rounded-lg text-[11px] font-black border shadow-sm transition-all ${pendingFilterAction === 'exclude' ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-rose-50'}` }, "조건 빼기"),
-                React.createElement("button", { onClick: handleExecuteFilterStep, disabled: !hasPendingFilterCondition, className: `h-8 px-3 rounded-lg text-[11px] font-black border shadow-sm transition-all ${hasPendingFilterCondition ? 'bg-slate-800 text-white border-slate-800 hover:bg-slate-700' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}` }, "조건 적용"),
-                filterSteps.length > 0 && React.createElement("button", { onClick: handleUndoFilterStep, className: "h-8 px-2.5 rounded-lg text-[11px] font-black bg-white text-slate-600 border border-slate-300 shadow-sm hover:bg-slate-50", title: "마지막 필터 실행 취소" }, "마지막 취소")),
-            filterSteps.length > 0 && React.createElement("div", { className: "mx-6 mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 flex items-center gap-2 text-[11px] font-bold text-slate-600" },
-                React.createElement("span", { className: "text-slate-800 font-black shrink-0" }, "실행필터"),
-                React.createElement("span", { className: "truncate" }, filterStepSummary),
-                React.createElement("span", { className: "ml-auto text-slate-400 shrink-0" }, "필터 초기화 시 실행이력 해제")),
             showDetailFilterPanel && (React.createElement("div", { className: "rounded-xl border border-indigo-100 bg-indigo-50/40 px-3 py-2 shadow-inner flex items-center gap-2 flex-wrap" },
                 React.createElement("span", { className: "text-[12px] font-black text-indigo-700 shrink-0 mr-1" }, "상세필터 :"),
                 [
@@ -4808,7 +4789,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.75_LayoutRestore]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.76_PresetOnlyLayout]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -5129,7 +5110,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.75_LayoutRestore")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.76_PresetOnlyLayout")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
