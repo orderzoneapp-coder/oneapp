@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzd Master Ledger Link)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzd.1 Code Date Sort)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.99zzd Master Ledger Link.....</div>
+        <div class="loader-text">ONEAPP DataOps v8.99zzd.1 Code Date Sort.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -500,7 +500,7 @@ const defaultMappings = {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'v8.99zzd Master Ledger Link',
+    version: 'v8.99zzd.1 Code Date Sort',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -1142,42 +1142,39 @@ const FILTER_SORT_MODULE = Object.freeze({
         // ERP·MerchOps 호환 기준은 문자열 오름차순이다.
         return rawCode;
     },
-    getStockSortQty: (row = {}) => {
-        var _a, _b, _c, _d, _e, _f, _g, _h;
-        const calcBalance = safeNum((_b = (_a = row.전산잔량) !== null && _a !== void 0 ? _a : row.systemQty) !== null && _b !== void 0 ? _b : (safeNum((_c = row.기초) !== null && _c !== void 0 ? _c : row.baseQty) + safeNum((_d = row.입고) !== null && _d !== void 0 ? _d : row.inQty) + safeNum((_e = row.대체입고) !== null && _e !== void 0 ? _e : row.subInQty) - safeNum((_f = row.출고) !== null && _f !== void 0 ? _f : row.outQty) - safeNum((_g = row.대체출고) !== null && _g !== void 0 ? _g : row.subOutQty)));
-        const actualRaw = (_h = row.실사) !== null && _h !== void 0 ? _h : row.finalQty;
-        const actualQty = (actualRaw === '' || actualRaw === null || actualRaw === undefined) ? calcBalance : safeNum(actualRaw);
-        return Math.max(actualQty, calcBalance);
+    getPurchaseDateSortValue: (row = {}) => {
+        const raw = row._raw || row.raw || {};
+        const direct = row.일자 || row.purchaseDate || row.date || row.구매일자 || row.매입일자 || row.입고일자;
+        const rawDate = getRawCell(raw, ['구매일자', '매입일자', '입고일자', '일자', '날짜', '기록', '최종기록', '재고기록']);
+        const candidates = [direct, rawDate, row._purchaseDate, row._sourcePurchaseDate, row._lotDate];
+        for (const c of candidates) {
+            const n = formatItemDate(c, new Date().getFullYear()) || extractDateNum(c);
+            if (n > 0)
+                return n;
+        }
+        // 구매일자가 없는 행은 같은 품목코드 안의 뒤쪽에 둔다.
+        return 99999999;
     },
-    getStockSortRank: (row = {}) => {
-        const q = FILTER_SORT_MODULE.getStockSortQty(row);
-        if (q > 0)
-            return 0; // 같은 품목코드 안에서는 재고가 남은 Lot을 먼저 보여준다.
-        if (q === 0)
-            return 1;
-        return 2; // 마이너스/부족 Lot은 같은 코드의 마지막으로 내린다.
+    compareByCodeThenPurchaseDate: (a, b) => {
+        const codeCompare = FILTER_SORT_MODULE.getCodeSortValue(a).localeCompare(FILTER_SORT_MODULE.getCodeSortValue(b), 'ko', { numeric: false, sensitivity: 'base' });
+        if (codeCompare)
+            return codeCompare;
+        const dateCompare = FILTER_SORT_MODULE.getPurchaseDateSortValue(a) - FILTER_SORT_MODULE.getPurchaseDateSortValue(b);
+        if (dateCompare)
+            return dateCompare;
+        // 같은 코드·같은 구매일자는 JS stable sort가 원본 입력순을 유지하도록 0을 반환한다.
+        return 0;
     },
-    compareByCodeThenName: (a, b) => {
-        var _a, _b;
-        const sa = FILTER_SORT_MODULE.getStandard(a);
-        const sb = FILTER_SORT_MODULE.getStandard(b);
-        return FILTER_SORT_MODULE.getCodeSortValue(a).localeCompare(FILTER_SORT_MODULE.getCodeSortValue(b), 'ko', { numeric: false, sensitivity: 'base' })
-            || FILTER_SORT_MODULE.getStockSortRank(a) - FILTER_SORT_MODULE.getStockSortRank(b)
-            || FILTER_SORT_MODULE.getStockSortQty(b) - FILTER_SORT_MODULE.getStockSortQty(a)
-            || safeStr(sa.displayName || (a === null || a === void 0 ? void 0 : a.품명)).localeCompare(safeStr(sb.displayName || (b === null || b === void 0 ? void 0 : b.품명)), 'ko', { numeric: false, sensitivity: 'base' })
-            || safeStr(sa.vendor || (a === null || a === void 0 ? void 0 : a.거래처)).localeCompare(safeStr(sb.vendor || (b === null || b === void 0 ? void 0 : b.거래처)), 'ko', { numeric: false, sensitivity: 'base' })
-            || safeNum((_a = sa.price) !== null && _a !== void 0 ? _a : a === null || a === void 0 ? void 0 : a.단가) - safeNum((_b = sb.price) !== null && _b !== void 0 ? _b : b === null || b === void 0 ? void 0 : b.단가);
-    },
+    // v8.99zzd.1: 기본 상품순서를 품목코드순 → 구매일자순(과거→현재)으로 고정한다.
+    // 기존 이름 참조 방어용. 이름은 compareByCodeThenName이지만 실제 정렬은 코드→구매일자다.
+    compareByCodeThenName: (a, b) => FILTER_SORT_MODULE.compareByCodeThenPurchaseDate(a, b),
+    // v8.99zzd.1: 재고수량/단가/구매처 우선 정렬은 기본 정렬에서 제거한다.
+    getStockSortQty: () => 0,
+    getStockSortRank: () => 0,
     sortRows: (rows = [], sortMode = 'DEFAULT') => {
-        return [...rows].sort((a, b) => {
-            const sa = FILTER_SORT_MODULE.getStandard(a);
-            const sb = FILTER_SORT_MODULE.getStandard(b);
-            if (sortMode === 'CATEGORY')
-                return (sa.category2Code || '9999').localeCompare(sb.category2Code || '9999') || FILTER_SORT_MODULE.compareByCodeThenName(a, b);
-            if (sortMode === 'VENDOR')
-                return safeStr(sa.vendor, '미지정').localeCompare(safeStr(sb.vendor, '미지정'), 'ko') || FILTER_SORT_MODULE.compareByCodeThenName(a, b);
-            return FILTER_SORT_MODULE.compareByCodeThenName(a, b);
-        });
+        // sortMode가 CATEGORY/VENDOR 등으로 남아 있어도 기본 화면 정렬은 단순화한다.
+        // 기본 상품순서 = 품목코드순 → 구매일자순(과거→현재)
+        return [...rows].sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenPurchaseDate(a, b));
     },
     getGroupLabel: (row, sortMode = 'DEFAULT') => {
         const standard = FILTER_SORT_MODULE.getStandard(row);
@@ -3149,23 +3146,8 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             const finalProductData = Object.values(pData)
                 .filter(item => !isSummaryOrInvalidProductRow({ code: item.코드, name: item.품명, raw: item._raw }))
                 .filter(item => !(item.기초 === 0 && item.입고 === 0 && item.출고 === 0 && item.실사 === 0 && item.로스 === 0))
-                .sort((a, b) => {
-                const codeA = safeStr(a.코드 || '').replace(/\.0$/, '').trim();
-                const codeB = safeStr(b.코드 || '').replace(/\.0$/, '').trim();
-                if (codeA !== codeB)
-                    return codeA.localeCompare(codeB, 'ko', { numeric: false, sensitivity: 'base' });
-                const stockRank = FILTER_SORT_MODULE.getStockSortRank(a) - FILTER_SORT_MODULE.getStockSortRank(b);
-                if (stockRank !== 0)
-                    return stockRank;
-                const stockQty = FILTER_SORT_MODULE.getStockSortQty(b) - FILTER_SORT_MODULE.getStockSortQty(a);
-                if (stockQty !== 0)
-                    return stockQty;
-                const dateA = String(a.일자 || '');
-                const dateB = String(b.일자 || '');
-                if (dateA !== dateB)
-                    return dateA.localeCompare(dateB);
-                return (a.단가 || 0) - (b.단가 || 0);
-            });
+                // v8.99zzd.1: 재고수량/단가/구매처 우선 정렬 제거. 품목코드 → 구매일자 과거순으로 고정.
+                .sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenPurchaseDate(a, b));
             setProductData(finalProductData);
             setAckMultiCodes(autoAckCodes);
             setAppStep('closing');
@@ -6332,7 +6314,7 @@ ${changeText}
                     React.createElement("h1", { className: "text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzd Master Ledger Link"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzd.1 Code Date Sort"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
