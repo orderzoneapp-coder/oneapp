@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.79_AutoFilterChipToggle]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.80_QuickF8ShopStock999]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -2876,17 +2876,21 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             const shopBWholesale = getBestNum(row, '도매B');
             const finalTransmission = getBestNumByAliases(row, ['최종전송', '최종(전송)'], inPrice);
             const finalStockRaw = getBestValue(row, '재고수량', '');
-            const finalStock = finalStockRaw !== '' ? window.parseNum(finalStockRaw) : '';
+            // F8 쇼핑몰업로드 재고 정책:
+            // - 쇼핑몰 업로드 양식의 재고수량은 기본 999로 출력한다.
+            // - 단, 엑셀/작업값에 명시 재고가 있으면 그 값을 그대로 보존한다.
+            // - ERP업데이트 시트에는 재고수량을 쓰지 않으므로 영향 없다.
+            const shopUploadStock = !window.isBlankCell(finalStockRaw) ? window.parseNum(finalStockRaw) : 999;
             const themeFlags = buildThemeFlags(row);
             // ERP는 기초정보 셋팅용이다. 출고가는 정상 출고가, 행사는 행사 컬럼으로 분리한다.
             erpData.push([code, inPrice, '0', erpOutPrice, '0', inPriceB, 'n', erpASale, 'n', erpBSale, 'n', finalTransmission, 'n', promoPrice, 'n', saleCode]);
-            // 쇼핑몰은 실제 판매가 설정용이다. 행사가가 있으면 기존 쇼핑몰 양식의 출고가 칸에 행사 우선가를 넣는다.
-            shopData.push([code, getBestStr(row, '품목명'), getBestStr(row, '규격'), shopSalePrice, erpASale, (pMarket !== '' && pMarket > 0 ? pMarket : shopSalePrice), shopBPrice, shopBWholesale, 0, 0, 0, 0, getBestStr(row, '브랜드'), getBestStr(row, '간단설명'), saleCode, finalStock, ...themeFlags, getBestStr(row, '검색어등록')]);
+            // 쇼핑몰은 실제 판매가 설정용이다. 행사가가 있으면 기존 쇼핑몰 양식의 출고가 칸에 행사 우선가를 넣고, 재고수량은 기본 999로 보강한다.
+            shopData.push([code, getBestStr(row, '품목명'), getBestStr(row, '규격'), shopSalePrice, erpASale, (pMarket !== '' && pMarket > 0 ? pMarket : shopSalePrice), shopBPrice, shopBWholesale, 0, 0, 0, 0, getBestStr(row, '브랜드'), getBestStr(row, '간단설명'), saleCode, shopUploadStock, ...themeFlags, getBestStr(row, '검색어등록')]);
             const subInfo = calculateSubInfo(row);
             if (subInfo) {
                 const subMaster = data.masterProducts[subInfo.code] || {};
                 erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', subInfo.subIn, 'n', '', 'n', saleCode]);
-                shopData.push([subInfo.code, subMaster['품목명'] || `${getBestStr(row, '품목명')} (소분)`, subMaster['규격'] || subInfo.spec || '', subInfo.subOut, subInfo.subOut, subInfo.subOut, '', '', 0, 0, 0, 0, subMaster['브랜드'] || getBestStr(row, '브랜드'), subMaster['간단설명'] || getBestStr(row, '간단설명'), saleCode, finalStock, ...themeFlags, subMaster['검색어등록'] || getBestStr(row, '검색어등록')]);
+                shopData.push([subInfo.code, subMaster['품목명'] || `${getBestStr(row, '품목명')} (소분)`, subMaster['규격'] || subInfo.spec || '', subInfo.subOut, subInfo.subOut, subInfo.subOut, '', '', 0, 0, 0, 0, subMaster['브랜드'] || getBestStr(row, '브랜드'), subMaster['간단설명'] || getBestStr(row, '간단설명'), saleCode, shopUploadStock, ...themeFlags, subMaster['검색어등록'] || getBestStr(row, '검색어등록')]);
                 subOutputCount++;
             }
         });
@@ -4980,7 +4984,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.79_AutoFilterChipToggle]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.80_QuickF8ShopStock999]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -5306,7 +5310,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.79_AutoFilterChipToggle")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.80_QuickF8ShopStock999")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
