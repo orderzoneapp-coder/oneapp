@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzd.4 Code Date Sort + Spacebar Bidirectional + Sales Row Sum + Blank Unknown Purchase Date)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzd.6 Excel Download Lag Fix)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.99zzd.4 Code Date Sort + Spacebar Bidirectional + Sales Row Sum + Blank Unknown Purchase Date.....</div>
+        <div class="loader-text">ONEAPP DataOps v8.99zzd.6 Excel Download Lag Fix.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -500,7 +500,7 @@ const defaultMappings = {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'v8.99zzd.4 Code Date Sort + Spacebar Bidirectional + Sales Row Sum + Blank Unknown Purchase Date',
+    version: 'v8.99zzd.6 Excel Download Lag Fix',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -3762,7 +3762,7 @@ const GuideModal = ({ isOpen, onClose }) => {
             React.createElement("div", { className: "mt-6 flex justify-end" },
                 React.createElement("button", { onClick: onClose, className: "px-6 py-2.5 bg-slate-800 text-white rounded-lg text-sm font-bold hover:bg-slate-900 transition shadow-md w-full sm:w-auto" }, "\uD655\uC778 \uBC0F \uB2EB\uAE30")))));
 };
-const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGroupItem, targetDateStr, onStockChange, onSpacebar, onFocusInput, onBaseDataChange, onOpenMemo, onSalesMove, internalLotMapping, isGroupStart, isNewCategory, normalizeDisplayIssues }) => {
+const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGroupItem, targetDateStr, onStockChange, onSpacebar, onFocusInput, onBaseDataChange, onOpenMemo, onSalesMove, onChipDelete, internalLotMapping, isGroupStart, isNewCategory, normalizeDisplayIssues }) => {
     const [isDragOver, setIsDragOver] = useState(false);
     let displayIssues = item.이슈 ? [...item.이슈] : [];
     displayIssues = displayIssues.filter(msg => !msg.includes('매입내역 없음') && !msg.includes('전산 재고 부족') && !msg.includes('재고 부족'));
@@ -3983,7 +3983,9 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                                 safeStr(displayVendor, '미지정'),
                                 "(",
                                 data.qty,
-                                ")")));
+                                ")"),
+                            React.createElement("button", { type: "button", draggable: false, onMouseDown: (e) => { e.preventDefault(); e.stopPropagation(); }, onClick: (e) => { e.preventDefault(); e.stopPropagation(); if (onChipDelete) onChipDelete(item.batchKey, vendor); }, className: "ml-1.5 w-3.5 h-3.5 rounded-full flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200", title: "거래처(수량) 칩 삭제 / 계산 제외" },
+                                React.createElement("i", { className: "fas fa-times text-[9px]" }))));
                     })))),
                 React.createElement("div", { className: "flex flex-col items-end gap-1 text-right shrink-0 ml-2" },
                     React.createElement("button", { onClick: () => onOpenMemo(item.batchKey, item.메모 || ''), className: `transition-colors ${item.메모 ? 'text-blue-500 hover:text-blue-700 mb-0.5' : 'text-slate-300 hover:text-slate-400'}`, title: "\uBA54\uBAA8 \uCD94\uAC00/\uC218\uC815" },
@@ -6149,6 +6151,62 @@ ${changeText}
                 focusTarget.select();
         }, 180);
     }, []);
+    const handleSalesChipDelete = useCallback((batchKey, vendorName) => {
+        const displayName = safeStr(String(vendorName || '').replace('_perfect', ''), '미지정');
+        const ok = window.confirm(`거래처(수량) 칩 [${displayName}]을 계산에서 제외할까요?
+
+원본 엑셀 판매현황은 삭제하지 않고, DataOps 적용값에서만 제외합니다.`);
+        if (!ok)
+            return;
+        let deleted = false;
+        let deletedQty = 0;
+        setProductData(prevP => prevP.map(p => {
+            if (p.batchKey !== batchKey)
+                return p;
+            const outMap = JSON.parse(JSON.stringify(p.출고내역 || {}));
+            const chip = outMap[vendorName];
+            if (!chip)
+                return p;
+            const qty = safeNum(chip.qty);
+            const rev = safeNum(chip.rev);
+            const cogs = safeNum(chip.cogs);
+            const cleanVendor = safeStr(chip.displayVendor || displayName, '미지정');
+            delete outMap[vendorName];
+            const next = { ...p, 출고내역: outMap, 이슈: [...(p.이슈 || [])], _salesChipCorrections: [...(p._salesChipCorrections || [])] };
+            next.출고 = safeNum(next.출고) - qty;
+            if (Math.abs(next.출고) < 0.000001)
+                next.출고 = 0;
+            next.매출액 = safeNum(next.매출액) - rev;
+            next.매출원가 = safeNum(next.매출원가) - cogs;
+            next.전산잔량 = safeNum(next.기초) + safeNum(next.입고) + safeNum(next.대체입고) - safeNum(next.출고) - safeNum(next.대체출고);
+            if (next.실사 === null || next.실사 === undefined || next.실사 === '') {
+                next.실사 = next.전산잔량;
+                next.로스 = 0;
+            }
+            else {
+                next.로스 = safeNum(next.실사) - next.전산잔량;
+            }
+            const correctionMemo = `판매칩삭제(${cleanVendor}:${formatMoney(qty)})`;
+            next.이슈 = DATAOPS_ISSUE_HELPER.unique([...(next.이슈 || []), `✅${correctionMemo}`]);
+            next._salesChipCorrections.push({
+                type: 'DELETE_VENDOR_CHIP',
+                vendorKey: vendorName,
+                vendor: cleanVendor,
+                qty,
+                rev,
+                cogs,
+                deletedAt: new Date().toISOString(),
+                memo: '원본 판매현황은 유지하고 DataOps 적용 계산에서만 제외'
+            });
+            next.수기확인완료 = true;
+            deleted = true;
+            deletedQty = qty;
+            return next;
+        }));
+        setTimeout(() => {
+            setAlertMsg(deleted ? `거래처(수량) 칩을 계산에서 제외했습니다: ${displayName}(${formatMoney(deletedQty)})` : '삭제할 거래처(수량) 칩을 찾지 못했습니다.');
+        }, 0);
+    }, [setProductData, setAlertMsg]);
     const handleChipDropRequest = useCallback((sourceKey, targetKey, vendor, maxQty, sourceCode, targetCode, isCtrlPressed) => {
         if (isCtrlPressed && maxQty > 1) {
             setSplitModal({ isOpen: true, payload: { sourceKey, targetKey, vendor, maxQty } });
@@ -6351,14 +6409,29 @@ ${changeText}
             return null;
         });
     }, [executeImmediateSubstitution]);
-    const handleCombinedExport = useCallback(() => {
+    const handleCombinedExport = useCallback(async () => {
+        if (isProcessing)
+            return;
         if (productData.length === 0) {
             setAlertMsg("다운로드할 데이터가 없습니다.");
             return;
         }
-        const { wb, exportFileNameDate } = EXPORT_MODULE.createCombinedWorkbook({ productData, analysisPeriod, targetDateStr, closingStats });
+        const waitForUiPaint = () => new Promise(resolve => {
+            if (typeof requestAnimationFrame === 'function')
+                requestAnimationFrame(() => setTimeout(resolve, 0));
+            else
+                setTimeout(resolve, 30);
+        });
+        setIsProcessing(true);
+        const startedAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
         try {
-            const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            // v8.99zzd.6: 엑셀 다운로드 버튼 클릭 직후 대용량 XLSX 생성이 메인 스레드를 바로 점유해
+            // 화면이 멈춘 것처럼 보이던 문제를 줄인다.
+            // 처리중 오버레이를 먼저 렌더링한 뒤 워크북 생성/직렬화를 실행한다.
+            await waitForUiPaint();
+            const { wb, exportFileNameDate } = EXPORT_MODULE.createCombinedWorkbook({ productData, analysisPeriod, targetDateStr, closingStats });
+            await waitForUiPaint();
+            const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array', bookSST: false, compression: false });
             const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -6367,14 +6440,19 @@ ${changeText}
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            setTimeout(() => { setAlertMsg("✅ 수불부 마감 데이터가 엑셀로 다운로드되었습니다.\n\n[포함 시트]\n1. 재고현황\n2. 실사양식\n3. 농산류\n4. 식자재\n5. 기타\n6. 재고수불_마감\n7. 보고서"); }, 500);
+            setTimeout(() => URL.revokeObjectURL(url), 3000);
+            const finishedAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+            const elapsedSec = Math.max(0.1, (finishedAt - startedAt) / 1000).toFixed(1);
+            setTimeout(() => { setAlertMsg(`✅ 수불부 마감 데이터가 엑셀로 다운로드되었습니다.\n\n처리시간: ${elapsedSec}초\n\n[포함 시트]\n1. 재고현황\n2. 실사양식\n3. 농산류\n4. 식자재\n5. 기타\n6. 재고수불_마감\n7. 수불마감_분석원장\n8. 마스터_확인필요\n9. 보고서`); }, 100);
         }
         catch (err) {
             console.error('엑셀 생성 중 오류:', err);
             setAlertMsg("엑셀 파일 생성 중 오류가 발생했습니다.");
         }
-    }, [productData, analysisPeriod, targetDateStr, closingStats]);
+        finally {
+            setIsProcessing(false);
+        }
+    }, [productData, analysisPeriod, targetDateStr, closingStats, isProcessing, setIsProcessing]);
     const handlePrintOutput = useCallback(() => {
         const printData = filteredProductDataRef.current || [];
         if (productData.length === 0) {
@@ -6499,12 +6577,12 @@ ${changeText}
                     React.createElement("h1", { className: "text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzd.4 Code Date Sort + Spacebar Bidirectional + Sales Row Sum + Blank Unknown Purchase Date"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzd.6 Excel Download Lag Fix"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
                         React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1 hidden md:block" }),
-                        React.createElement("button", { onClick: handleCombinedExport, className: "px-3 py-1.5 bg-white text-slate-700 hover:bg-slate-50 rounded text-[12px] font-bold shadow-sm transition flex items-center border border-slate-300 hidden md:flex" },
+                        React.createElement("button", { onClick: handleCombinedExport, disabled: isProcessing, className: `px-3 py-1.5 rounded text-[12px] font-bold shadow-sm transition flex items-center border border-slate-300 hidden md:flex ${isProcessing ? 'bg-slate-100 text-slate-400 cursor-wait' : 'bg-white text-slate-700 hover:bg-slate-50'}` },
                             React.createElement("i", { className: "fas fa-file-excel mr-1.5 text-emerald-600" }),
                             "\uC5D1\uC140 \uB2E4\uC6B4\uB85C\uB4DC",
                             React.createElement("span", { className: "ml-1.5 px-1 py-[1px] rounded text-[9px] font-mono border-b-2 border-slate-300 bg-slate-100 text-slate-500 shadow-sm font-black" }, "F9")),
@@ -6945,7 +7023,7 @@ ${changeText}
                                                     "\u2500\u2500\u2500\u2500 ",
                                                     currGroupLabel || '미지정',
                                                     " \u2500\u2500\u2500\u2500")))),
-                                            React.createElement(ProductRow, { key: item.batchKey, item: item, idx: idx, isLinked: linkSourceKey === item.batchKey, isActiveMulti: activeMultiCode === item.코드, isMultiGroupItem: multiPriceCodes.includes(item.코드), targetDateStr: targetDateStr, onStockChange: handleManualStockChange, onSpacebar: handleSpacebarLink, onFocusInput: handleFocusInput, onBaseDataChange: handleBaseDataChange, onOpenMemo: (key, text) => setMemoModal({ isOpen: true, batchKey: key, text }), onSalesMove: handleChipDropRequest, internalLotMapping: mappings.internalLot, isGroupStart: isGroupStart, isNewCategory: isNewCategory })));
+                                            React.createElement(ProductRow, { key: item.batchKey, item: item, idx: idx, isLinked: linkSourceKey === item.batchKey, isActiveMulti: activeMultiCode === item.코드, isMultiGroupItem: multiPriceCodes.includes(item.코드), targetDateStr: targetDateStr, onStockChange: handleManualStockChange, onSpacebar: handleSpacebarLink, onFocusInput: handleFocusInput, onBaseDataChange: handleBaseDataChange, onOpenMemo: (key, text) => setMemoModal({ isOpen: true, batchKey: key, text }), onSalesMove: handleChipDropRequest, onChipDelete: handleSalesChipDelete, internalLotMapping: mappings.internalLot, isGroupStart: isGroupStart, isNewCategory: isNewCategory })));
                                     })))))))))),
         splitModal.isOpen && (React.createElement("div", { className: "fixed inset-0 z-[400] bg-slate-900 bg-opacity-60 flex items-center justify-center p-4" },
             React.createElement("div", { className: "bg-white rounded-xl shadow-2xl p-6 w-full max-w-xs modal-bounce" },
