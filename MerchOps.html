@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.81_RulePriceRoundPolicy]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.82_MasterConditionImport]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -3459,6 +3459,96 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         if (remaining <= 0)
             (_b = ui.setRegistrationMode) === null || _b === void 0 ? void 0 : _b.call(ui, false);
     }, [fullDisplayRows, ui.selectedRows, data.masterProducts, data.managedItems, data.setMasterProducts, data.setManagedItems, ui]);
+    const handleLoadMasterConditionProducts = useCallback(() => {
+        var _a, _b;
+        const target = normalizeMerchTableTarget((config === null || config === void 0 ? void 0 : config.activeTableTarget) || DEFAULT_TABLE_VIEW_TARGET);
+        const masterList = Object.values(data.masterProducts || {}).filter(item => item && (item.코드 || item['품목코드']));
+        if (masterList.length === 0) {
+            ui.showToast('마스터 상품정보가 없습니다.');
+            return;
+        }
+        const existingCodes = new Set(Object.values(data.managedItems || {}).map(item => String((item === null || item === void 0 ? void 0 : item.코드) || '').replace(/\s/g, '')).filter(Boolean));
+        const buildMasterAddedRow = (mItem = {}) => {
+            const code = String(mItem.코드 || mItem['품목코드'] || '').replace(/\s/g, '');
+            const source = {
+                품목코드: code,
+                품목명: mItem['품목명'] || '',
+                규격: mItem['규격'] || '',
+                단위: mItem['단위'] || '',
+                입고가: mItem['입고가'] || '',
+                출고가: mItem['출고가'] || '',
+                도매A: mItem['도매A'] || '',
+                도매B: mItem['도매B'] || '',
+                행사가: mItem['행사가'] || '',
+                행사테마: mItem['행사테마'] || '',
+                재고수량: '',
+                _sourceType: 'master',
+                _masterConditionAdded: true,
+                _fileMissing: true
+            };
+            const sources = { [target]: source };
+            const finalData = window.computeFinalData
+                ? window.computeFinalData(mItem, sources, window.sanitizeMerchMarginRules(config.marginRules))
+                : { ...source };
+            return {
+                코드: code,
+                _managedKey: code,
+                _lastUploadRole: target,
+                _isMasterConditionAdded: true,
+                _isMasterAdded: true,
+                _fileMissing: true,
+                _statusBadge: '마스터추가',
+                _tags: new Set(['마스터추가', '파일없음']),
+                sources,
+                finalData: { ...source, ...(finalData || {}), 품목코드: code, 품목명: source.품목명, 규격: source.규격, 단위: source.단위, 재고수량: '', _masterConditionAdded: true, _fileMissing: true }
+            };
+        };
+        let candidateRows = masterList
+            .map(buildMasterAddedRow)
+            .filter(row => row.코드 && !existingCodes.has(row.코드));
+        const disabledStepIds = new Set((Array.isArray(ui.disabledFilterStepIds) ? ui.disabledFilterStepIds : []).map(v => String(v)));
+        const activeSteps = Array.isArray(ui.filterSteps) ? ui.filterSteps.filter((step, idx) => {
+            const stepId = window.getMerchFilterStepRuntimeId ? window.getMerchFilterStepRuntimeId(step, idx) : String((step === null || step === void 0 ? void 0 : step.id) || idx);
+            return !disabledStepIds.has(stepId);
+        }) : [];
+        if (activeSteps.length > 0 && window.applyMerchFilterStepsToRows) {
+            candidateRows = window.applyMerchFilterStepsToRows(candidateRows, activeSteps, { masterProducts: data.masterProducts, config });
+        }
+        const hasManualFilter = (ui.priceFilter && ui.priceFilter !== 'all') || (Array.isArray(ui.categoryFilters) && ui.categoryFilters.length > 0) || (Array.isArray(ui.detailFilters) && ui.detailFilters.length > 0) || String(ui.basicSearch || '').trim();
+        const hasSearchFilter = String(ui.globalSearch || '').trim();
+        if (activeSteps.length === 0 && !hasManualFilter && !hasSearchFilter) {
+            ui.showToast('마스터 상품을 추가하려면 먼저 테마/카테고리/검색 등 조건을 선택하세요.');
+            return;
+        }
+        if (hasManualFilter) {
+            candidateRows = candidateRows.filter(row => {
+                const mItem = data.masterProducts[row.코드] || {};
+                if (Array.isArray(ui.categoryFilters) && ui.categoryFilters.length > 0 && !matchMerchCategoryFilter(row, mItem, ui.categoryFilters)) return false;
+                if (ui.priceFilter && ui.priceFilter !== 'all' && !matchMerchStepConditions(row, mItem, { priceFilter: ui.priceFilter }, config)) return false;
+                if (Array.isArray(ui.detailFilters) && ui.detailFilters.length > 0 && !matchCompositeDetailFilters(row, mItem, ui.detailFilters, ui.basicSearch || '')) return false;
+                return true;
+            });
+        }
+        const q = String(ui.globalSearch || '').trim().toLowerCase();
+        if (q) {
+            const tokens = q.split(/\s+/).filter(Boolean);
+            candidateRows = candidateRows.filter(row => {
+                const mItem = data.masterProducts[row.코드] || {};
+                const hay = [row.코드, mItem['품목명'], mItem['규격'], mItem['단위'], mItem['구매처'], mItem['검색어등록'], mItem['카탈로그'], mItem['견적서'], mItem['행사테마']]
+                    .map(v => String(v !== null && v !== void 0 ? v : '').toLowerCase()).join(' ');
+                return tokens.every(token => hay.includes(token));
+            });
+        }
+        if (candidateRows.length === 0) {
+            ui.showToast('현재 조건으로 추가할 마스터 상품이 없습니다.');
+            return;
+        }
+        const nextRows = {};
+        candidateRows.forEach(row => { nextRows[window.getManagedRowKey(row)] = row; });
+        data.setManagedItems(prev => ({ ...(prev || {}), ...nextRows }));
+        (_a = ui.setSelectedRows) === null || _a === void 0 ? void 0 : _a.call(ui, new Set(candidateRows.map(row => window.getManagedRowKey(row))));
+        (_b = ui.showToast) === null || _b === void 0 ? void 0 : _b.call(ui, `마스터 조건상품 ${candidateRows.length}건을 작업테이블에 추가했습니다.`);
+    }, [config, data.masterProducts, data.managedItems, data.setManagedItems, ui]);
     const handleExitRegistrationMode = useCallback(() => {
         var _a;
         (_a = ui.setRegistrationMode) === null || _a === void 0 ? void 0 : _a.call(ui, false);
@@ -3466,8 +3556,8 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         ui.showToast('↩️ 신규등록용 양식에서 복귀했습니다.');
     }, [ui]);
     return useMemo(() => ({
-        handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode
-    }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode]);
+        handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleOpenExportCenter, handleRegisterUnregisteredItems, handleLoadMasterConditionProducts, handleExitRegistrationMode
+    }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleOpenExportCenter, handleRegisterUnregisteredItems, handleLoadMasterConditionProducts, handleExitRegistrationMode]);
 };
 // --- UI Components ---
 const SystemConsole = ({ itemCount, isProcessing, processMsg, estimateCount, filteredCount, activeTags }) => {
@@ -3519,7 +3609,7 @@ const SearchBar = ({ value, onChange, placeholder }) => {
 };
 const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
     const { activeTags, selectedRows, globalSearch, priceFilter, detailFilters = [], categoryFilters = [], basicSearch, filterSteps = [], disabledFilterStepIds = [], pendingFilterAction = 'include', fullDisplayRows, config, registrationMode, data } = state;
-    const { handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, setPriceFilter, setDetailFilters, setCategoryFilters, setSelectedRows, setBasicSearch, setFilterSteps, setDisabledFilterStepIds, setPendingFilterAction, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode } = actions;
+    const { handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, handleLoadMasterConditionProducts, setPriceFilter, setDetailFilters, setCategoryFilters, setSelectedRows, setBasicSearch, setFilterSteps, setDisabledFilterStepIds, setPendingFilterAction, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode } = actions;
     const [filterPanelOpen, setFilterPanelOpen] = useState(false);
     const [selectedWarehouseInput, setSelectedWarehouseInput] = useState('');
     // [M-FILTER-ROWS-01] 정렬필터 재배치
@@ -3868,6 +3958,9 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                             React.createElement("i", { className: "fas fa-arrow-left mr-1.5 text-[13px]" }),
                             " 이전 양식"),
                         React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1" }))),
+                    React.createElement("button", { onClick: handleLoadMasterConditionProducts, disabled: !handleLoadMasterConditionProducts, className: "h-9 px-3 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 shadow-sm hover:bg-amber-100 hover:border-amber-300 flex items-center justify-center shrink-0 text-[12px] font-black", title: "현재 필터/자동필터 조건에 맞는 마스터 상품 중 작업파일에 없는 상품을 추가로 불러옵니다." },
+                        React.createElement("i", { className: "fas fa-layer-group mr-1.5 text-[12px]" }),
+                        "마스터추가"),
                     React.createElement("button", { onClick: handleFilterResetOnly, className: "h-9 w-9 rounded-lg bg-white text-slate-500 border border-slate-300 shadow-sm hover:bg-slate-50 hover:text-indigo-700 hover:border-indigo-300 flex items-center justify-center shrink-0", title: "필터 초기화", "aria-label": "필터 초기화" },
                         React.createElement("i", { className: "fas fa-filter-circle-xmark text-[13px]" })),
                     React.createElement(SearchBar, { value: globalSearch, onChange: setGlobalSearch }))),
@@ -4553,9 +4646,10 @@ const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, 
     const isDiff = linkedMasterField && mVal !== undefined && localVal !== '' && String(mVal) !== String(localVal) && isNumeric;
     const isHighlightCol = ['입고가', '출고가', '행사가'].includes(field);
     const isSuspicious = isNumeric && localVal !== '' && localVal !== undefined && isNaN(Number(String(localVal).replace(/,/g, '')));
-    let baseBg = 'bg-white';
-    let textClass = isNumeric ? 'text-right font-bold text-slate-700' : 'text-center text-slate-700';
-    if (isHighlightCol)
+    const isMasterAddedRow = !!(row && (row._isMasterConditionAdded || row._isMasterAdded || row._fileMissing));
+    let baseBg = isMasterAddedRow ? 'bg-amber-50/80' : 'bg-white';
+    let textClass = isNumeric ? (isMasterAddedRow ? 'text-right font-bold text-amber-900' : 'text-right font-bold text-slate-700') : (isMasterAddedRow ? 'text-center text-amber-900' : 'text-center text-slate-700');
+    if (isHighlightCol && !isMasterAddedRow)
         baseBg = 'bg-white';
     if (isDiff) {
         baseBg = 'bg-amber-50';
@@ -4725,6 +4819,8 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
     const stockQty = getStockQty(row, mItem);
     const safeStock = getSafeStock(mItem);
     const purchaseTrendInfo = window.getMerchPurchaseTrend ? window.getMerchPurchaseTrend(row, mItem) : null;
+    const isMasterAddedRow = !!(row && (row._isMasterConditionAdded || row._isMasterAdded || row._fileMissing || ((row.finalData || {})._masterConditionAdded)));
+    const isFileMissingRow = !!(row && (row._fileMissing || ((row.finalData || {})._fileMissing)));
     let issueText = '-';
     let issueSubText = marginText;
     let issueCellBg = 'bg-white';
@@ -4832,6 +4928,12 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
             issueCellBg = 'bg-white';
         }
     }
+    if (!state.registrationMode && isMasterAddedRow) {
+        issueText = '마스터추가';
+        issueSubText = isFileMissingRow ? '파일없음' : '';
+        issueCellBg = 'bg-amber-50/80';
+        issueTextColor = 'text-amber-800';
+    }
     // 이슈 열은 꼭 봐야 할 라벨만 남긴다. 정상 마진/비교 상세/행사 배지는 리포트로 넘긴다.
     if (issueText === '-' || !issueText) {
         issueSubText = '';
@@ -4855,21 +4957,25 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
         '신규등록': 'bg-emerald-50 text-emerald-700 border-emerald-200',
         '신규/재입고': 'bg-emerald-50 text-emerald-700 border-emerald-200',
         '품절/단종': 'bg-slate-100 text-slate-600 border-slate-200',
+        '마스터추가': 'bg-amber-100 text-amber-800 border-amber-300',
         '-': 'bg-slate-50 text-slate-500 border-slate-200'
     };
     const issueBadgeClass = issueBadgeClassMap[issueText] || 'bg-slate-50 text-slate-600 border-slate-200';
-    const displayIssueSubText = state.registrationMode ? issueSubText : ((['품절', '품절임박', '역마진'].includes(issueSubText) || /^테마[1-5]$/.test(issueSubText) || issueSubText === '테마미지정') ? issueSubText : '');
+    const displayIssueSubText = state.registrationMode ? issueSubText : ((['품절', '품절임박', '역마진', '파일없음'].includes(issueSubText) || /^테마[1-5]$/.test(issueSubText) || issueSubText === '테마미지정') ? issueSubText : '');
     const latestParserHistory = findLatestParserHistory(row.코드, getRowCatalogNames(row, mItem), '입고가');
     const reportLines = buildRowReport({ row, mItem, issueText, issueSubText, latestHistory: latestParserHistory, compareSummary, marginInfo, stockQty, safeStock, promoActive });
     const reportTone = reportLines.some(t => String(t).includes('역마진') || String(t).includes('근거 없음') || String(t).includes('근거없음')) ? 'text-rose-700' : (latestParserHistory ? 'text-slate-700' : 'text-slate-500');
-    return (React.createElement("tr", { className: `group border-b border-slate-200 transition-all hover:bg-slate-50 relative z-0 hover:z-10 ${isStopped ? 'opacity-70 bg-slate-50' : ''}` },
-        React.createElement("td", { className: `sticky z-20 px-3 py-2 border-r border-r-slate-200 transition-colors min-w-[230px] w-[230px] max-w-[230px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : 'bg-white group-hover:!bg-slate-50 border-l-4 border-l-transparent group-hover:!border-l-slate-300'}`, style: { left: 0 } },
+    return (React.createElement("tr", { className: `group border-b border-slate-200 transition-all relative z-0 hover:z-10 ${isMasterAddedRow ? 'bg-amber-50/70 hover:bg-amber-100/70' : 'hover:bg-slate-50'} ${isStopped ? 'opacity-70 bg-slate-50' : ''}` },
+        React.createElement("td", { className: `sticky z-20 px-3 py-2 border-r border-r-slate-200 transition-colors min-w-[230px] w-[230px] max-w-[230px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : (isMasterAddedRow ? 'bg-amber-50/95 group-hover:!bg-amber-100/90 border-l-4 border-l-amber-400' : 'bg-white group-hover:!bg-slate-50 border-l-4 border-l-transparent group-hover:!border-l-slate-300')}`, style: { left: 0 } },
             React.createElement("div", { className: "flex gap-2 items-center w-full min-w-0" },
                 isEstimateUploaded && (React.createElement("input", { type: "checkbox", className: "w-4 h-4 rounded border-slate-300 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500", checked: isSel, onChange: () => { const n = new Set(state.selectedRows); n.has(window.getManagedRowKey(row)) ? n.delete(window.getManagedRowKey(row)) : n.add(window.getManagedRowKey(row)); actions.setSelectedRows(n); } })),
                 React.createElement("div", { className: "flex flex-col min-w-0 w-full overflow-hidden ml-1" },
-                    React.createElement("span", { className: "text-[10px] font-mono mb-0.5 truncate block w-full text-indigo-400" }, row.코드),
+                    React.createElement("div", { className: "flex items-center gap-1 mb-0.5 min-w-0" },
+                        React.createElement("span", { className: `text-[10px] font-mono truncate block ${isMasterAddedRow ? 'text-amber-600' : 'text-indigo-400'}` }, row.코드),
+                        isMasterAddedRow && React.createElement("span", { className: "px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 text-[9px] font-black shrink-0" }, "마스터추가"),
+                        isFileMissingRow && React.createElement("span", { className: "px-1.5 py-0.5 rounded-full bg-white/70 text-amber-700 border border-amber-200 text-[9px] font-black shrink-0" }, "파일없음")),
                     React.createElement("div", { className: "flex items-center w-full min-w-0 overflow-hidden" },
-                        React.createElement("span", { className: `text-[13px] font-extrabold truncate block shrink ${!mItem.품목명 ? 'text-rose-500' : 'text-slate-800'}`, title: dName }, dName),
+                        React.createElement("span", { className: `text-[13px] font-extrabold truncate block shrink ${isMasterAddedRow ? 'text-amber-950' : (!mItem.품목명 ? 'text-rose-500' : 'text-slate-800')}`, title: dName }, dName),
                         dSpec && React.createElement("span", { className: "text-[11px] text-slate-400 truncate block shrink-0 ml-1 max-w-[40%]", title: dSpec },
                             "(",
                             dSpec,
@@ -4887,7 +4993,7 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
                 mVal = mVal !== undefined && mVal !== '' ? (isNum ? window.parseNum(mVal).toLocaleString() : mVal) : '-';
             }
             const isNum = window.NUMERIC_HEADERS.includes(h);
-            return (React.createElement("td", { key: `idle-td-${h}`, className: `px-2 py-1.5 border-r border-slate-200 text-slate-600 ${getCellWidthClass(h)} ${isNum ? 'text-right font-bold' : 'text-center'} ${isSel ? '!bg-indigo-100/70' : 'bg-white group-hover:!bg-slate-50'}` },
+            return (React.createElement("td", { key: `idle-td-${h}`, className: `px-2 py-1.5 border-r border-slate-200 ${isMasterAddedRow ? 'text-amber-900' : 'text-slate-600'} ${getCellWidthClass(h)} ${isNum ? 'text-right font-bold' : 'text-center'} ${isSel ? '!bg-indigo-100/70' : (isMasterAddedRow ? 'bg-amber-50/80 group-hover:!bg-amber-100/80' : 'bg-white group-hover:!bg-slate-50')}` },
                 React.createElement("div", { className: `truncate w-full ${h === '판매여부' ? salesClassName : ''}` }, mVal)));
         })) : (React.createElement(React.Fragment, null,
             currentMasterCols.map((h, i, arr) => {
@@ -4912,7 +5018,7 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
                 else {
                     formattedVal = mVal !== undefined && mVal !== '' ? (isNum ? window.parseNum(mVal).toLocaleString() : mVal) : '-';
                 }
-                return (React.createElement("td", { key: `pm-d-${h}`, className: `px-2 py-1.5 border-r border-slate-200 transition-colors ${getCellWidthClass(h)} ${i === arr.length - 1 ? 'border-r-2 !border-r-slate-300' : ''} ${isChanged ? 'bg-amber-50 text-amber-800' : 'bg-white text-slate-600'} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'} ${isNum ? 'text-right font-bold' : 'text-center'}` },
+                return (React.createElement("td", { key: `pm-d-${h}`, className: `px-2 py-1.5 border-r border-slate-200 transition-colors ${getCellWidthClass(h)} ${i === arr.length - 1 ? 'border-r-2 !border-r-slate-300' : ''} ${isChanged ? 'bg-amber-100 text-amber-900' : (isMasterAddedRow ? 'bg-amber-50/80 text-amber-900' : 'bg-white text-slate-600')} ${isSel ? '!bg-indigo-100/70' : (isMasterAddedRow ? 'group-hover:!bg-amber-100/80' : 'group-hover:!bg-slate-50')} ${isNum ? 'text-right font-bold' : 'text-center'}` },
                     React.createElement("div", { className: `truncate w-full ${h === '판매여부' ? salesClassName : ''}` }, formattedVal)));
             }),
             React.createElement("td", { className: `px-2 py-1.5 border-l-2 border-l-slate-300 border-r-2 border-r-slate-300 text-center w-[100px] min-w-[100px] max-w-[100px] ${issueCellBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'}` },
@@ -4926,7 +5032,7 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
                 const mVal = (_f = (linkedMasterField && row.코드 ? mItem[linkedMasterField] : undefined)) !== null && _f !== void 0 ? _f : mItem[h];
                 return (React.createElement(EditableCell, { key: `p-u-e-${h}`, row: row, field: h, linkedMasterField: linkedMasterField, mVal: mVal, config: config, data: data, isSel: isSel, extraClass: i === arr.length - 1 ? 'border-r-2 !border-r-slate-300' : '' }));
             }),
-            !state.registrationMode && (React.createElement("td", { className: `px-3 py-1.5 bg-white border-l-2 border-l-slate-300 border-r border-slate-200 min-w-[220px] w-auto max-w-none ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'}` },
+            !state.registrationMode && (React.createElement("td", { className: `px-3 py-1.5 border-l-2 border-l-slate-300 border-r border-slate-200 min-w-[220px] w-auto max-w-none ${isSel ? '!bg-indigo-100/70' : (isMasterAddedRow ? 'bg-amber-50/80 group-hover:!bg-amber-100/80' : 'bg-white group-hover:!bg-slate-50')}` },
                 React.createElement("div", { className: `flex flex-col justify-center gap-0.5 leading-tight ${reportTone}` },
                     (purchaseTrendInfo && purchaseTrendInfo.reportParts && purchaseTrendInfo.reportParts.length > 0 && reportLines[0] === purchaseTrendInfo.reportText)
                         ? React.createElement("div", { className: "text-[11px] font-black whitespace-nowrap", title: purchaseTrendInfo.reportText || '' },
@@ -4992,7 +5098,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.81_RulePriceRoundPolicy]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.82_MasterConditionImport]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -5318,7 +5424,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.81_RulePriceRoundPolicy")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.82_MasterConditionImport")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
