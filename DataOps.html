@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzd.3 Code Date Sort + Spacebar Bidirectional + Sales Row Sum)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzd.4 Code Date Sort + Spacebar Bidirectional + Sales Row Sum + Blank Unknown Purchase Date)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.99zzd.3 Code Date Sort + Spacebar Bidirectional + Sales Row Sum.....</div>
+        <div class="loader-text">ONEAPP DataOps v8.99zzd.4 Code Date Sort + Spacebar Bidirectional + Sales Row Sum + Blank Unknown Purchase Date.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -500,7 +500,7 @@ const defaultMappings = {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'v8.99zzd.3 Code Date Sort + Spacebar Bidirectional + Sales Row Sum',
+    version: 'v8.99zzd.4 Code Date Sort + Spacebar Bidirectional + Sales Row Sum + Blank Unknown Purchase Date',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -3586,13 +3586,13 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     };
                 }
                 if (remainingQty > 0) {
-                    // 구매현황으로 배정하지 못한 잔여 수량은 오늘 날짜나 수불마감 결산일자를 구매일처럼 표시하지 않는다.
+                    // v8.99zzd.4: 구매현황으로 배정하지 못한 잔여 수량은 구매일자 텍스트를 찍지 않고 공백으로 둔다.
                     const fallbackPrice = origPrice;
                     const fallbackVendor = safeStr(item.거래처, '구매Lot미확정');
                     const fallbackLabel = fallbackPrice > 0 ? `⚠️구매Lot미확정_재고/수불마감값보조(${fallbackVendor})` : '🚨구매Lot없음/단가없음';
                     const groupKey = `${code}|${fallbackPrice}|FALLBACK|${uniqueIdCounter++}`;
                     pData[groupKey] = {
-                        batchKey: groupKey, 코드: code, 품명: stockName, 단가: fallbackPrice, 일자: '구매일자미확정', 거래처: fallbackVendor,
+                        batchKey: groupKey, 코드: code, 품명: stockName, 단가: fallbackPrice, 일자: '', 거래처: fallbackVendor,
                         기초: remainingQty, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: remainingQty, 실사: remainingQty, 로스: 0,
                         매출액: 0, 매출원가: 0, 메모: ((_f = item._raw) === null || _f === void 0 ? void 0 : _f['수기메모']) || '', 이슈: [fallbackLabel],
                         출고내역: {}, _orig: { 기초: remainingQty, 입고: 0, 출고: 0, 단가: fallbackPrice }, isDummy: (!code || code === 'NO_CODE'), 수기확인완료: (fallbackPrice > 0),
@@ -6499,7 +6499,7 @@ ${changeText}
                     React.createElement("h1", { className: "text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzd.3 Code Date Sort + Spacebar Bidirectional + Sales Row Sum"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzd.4 Code Date Sort + Spacebar Bidirectional + Sales Row Sum + Blank Unknown Purchase Date"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
