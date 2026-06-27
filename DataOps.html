@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.19)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.20)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.19.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.20.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -95,7 +95,6 @@
         window.__DATAOPS_DEP_CHECK__();
     </script>
     <script type="text/javascript">
-
 const { useState, useRef, useEffect, useMemo, useCallback } = React;
 /* =======================================================================
    1. 유틸리티 함수 (Data formatting & pure logic)
@@ -369,10 +368,21 @@ const DATAOPS_VENDOR_CHIP_MODULE = Object.freeze({
                     isLifo: false,
                     isPerfectMatch: true,
                     matchMode: safeStr(data.matchMode),
-                    _sample: data
+                    _sample: data,
+                    _sourceAllocations: [],
+                    _sourceKeys: []
                 };
             }
             aggregated[displayVendor].keys.push(key);
+            if (Array.isArray(data._sourceKeys)) {
+                data._sourceKeys.forEach(sourceKey => { if (sourceKey && !aggregated[displayVendor]._sourceKeys.includes(sourceKey)) aggregated[displayVendor]._sourceKeys.push(sourceKey); });
+            }
+            if (Array.isArray(data._sourceAllocations)) {
+                data._sourceAllocations.forEach(allocation => {
+                    if (!allocation) return;
+                    aggregated[displayVendor]._sourceAllocations.push({ ...allocation, vendorKey: safeStr(allocation.vendorKey || key), displayVendor });
+                });
+            }
             aggregated[displayVendor].qty += safeNum(data.qty);
             aggregated[displayVendor].rev += safeNum(data.rev);
             aggregated[displayVendor].cogs += safeNum(data.cogs);
@@ -606,11 +616,11 @@ const normalizeTransferGroupName = (name) => {
 // V1.a22.12: 3.매출 전표에 구매처 정보가 있으면 판매처-구매처 확정 매칭으로 처리하고 Lot/FIFO 검수 이슈를 생성하지 않는다.
 // V1.a22.12: 출고수량과 거래처(수량)는 3.매출 엑셀을 유일 기본값으로 삼고, 구매처가 없는 판매행에만 기존 FIFO/Lot 알고리즘을 적용한다.
 // V1.a22.15: 제외거래처 판정은 2.매입/3.매출 모두 전표의 거래처명(거래처) 기준으로만 적용한다. 구매처/매입처/원구매처는 제외 판정에서 제외한다.
-// V1.a22.15: 코드 통합형 테이블에서도 거래처칩 드래그 이동을 허용한다. 표시행의 합산 칩은 원본 Lot 칩으로 분해해 안전 적용한다.
+// V1.a22.20: 코드 통합형 거래처칩 이동은 단일 원장행만 즉시 적용하고, 통합2 이상은 Lot 상세형에서 수동 처리한다.
 // V1.a22.17: 보기모드(코드 통합형/Lot 상세형)는 버튼형으로 전환하고, 정렬/카테고리는 드롭다운으로 정리한다.
 // V1.a22.17: System.IO는 아래로 스크롤하면 우측 펼치기 버튼만 유지하고, 최상단 복귀 전까지 자동 펼침을 금지해 화면 흔들림을 차단한다.
-// V1.a22.19: 이슈/결과 칸에서 잔량확인 뱃지와 구매일자/구매처 반복 표시를 제거한다. 잔량 마이너스는 잔량 숫자로만 표시한다.
-// V1.a22.19: 코드 통합형 배지는 실제 원장행이 2개 이상 합쳐진 경우에만 표시한다. 통합1은 단일 원장행이므로 숨긴다.
+// V1.a22.20: 이슈/결과 칸에서 잔량확인 뱃지와 구매일자/구매처 반복 표시를 제거한다. 잔량 마이너스는 잔량 숫자로만 표시한다.
+// V1.a22.20: 코드 통합형 배지는 실제 원장행이 2개 이상 합쳐진 경우에만 표시한다. 통합1은 단일 원장행이므로 숨긴다.
 // 단가가 없으면 사용자가 정한 그룹별 후보 외 다른 컬럼으로 자동 대체하지 않고 공백 + 단가확인으로 보낸다.
 // 청과상장은 출고가(공지) 다음 청과 고정가를 바로 적용한다.
 // 청과 고정가가 없을 때 도매A/0.91을 적용하고, 도매A가 없으면 이미 입고가+외주비+노무비/0.91로 계산된 상장가를 적용한다.
@@ -1992,7 +2002,7 @@ const FILTER_SORT_MODULE = Object.freeze({
 /* =======================================================================
    2-A. V1.a22.12 Code Summary View Layer
    - 원본 productData(Lot 원장)는 수정하지 않고, 화면 표시용 viewRows만 별도 생성한다.
-   - 기본 보기: 코드 통합형. 거래처칩 이동은 표시행에서 허용하되 원본 Lot에 안전 분배한다.
+   - 기본 보기: 코드 통합형. 거래처칩 이동은 단일 원장행만 즉시 적용하고 통합2 이상은 Lot 상세형으로 풀어 수동 처리한다.
    ======================================================================= */
 const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
     STORAGE_KEY: 'dataops_view_mode_v1',
@@ -5087,7 +5097,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
         }
     });
     if (splitLotMemo) {
-        // V1.a22.19: 구매일자/구매처는 상품명 하단에 이미 노출되므로 이슈/결과 칸에 반복 표시하지 않는다.
+        // V1.a22.20: 구매일자/구매처는 상품명 하단에 이미 노출되므로 이슈/결과 칸에 반복 표시하지 않는다.
         // splitLotMemo는 출력/내부 참고용으로만 유지하고 화면 뱃지에는 추가하지 않는다.
     }
     const hasIssue = regularIssues.length > 0;
@@ -5244,8 +5254,11 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                     onSalesMove(d.sourceKey, item.batchKey, d.vendor, moveQty, d.code, item.코드, isCtrlPressed, {
                         sourceAllocations: Array.isArray(d.sourceAllocations) ? d.sourceAllocations : [],
                         sourceViewKey: d.sourceViewKey || d.sourceKey,
+                        sourceViewLotCount: safeNum(d.sourceViewLotCount || 0),
+                        sourceViewSourceKeys: Array.isArray(d.sourceViewSourceKeys) ? d.sourceViewSourceKeys : [],
                         sourceIsViewRow: !!d.sourceIsViewRow || DATAOPS_VIEW_LAYER_MODULE.isViewRowKey(d.sourceKey),
                         targetIsViewRow: isCodeSummaryViewRow,
+                        targetViewLotCount: isCodeSummaryViewRow ? safeNum(item._viewLotCount || 0) : 1,
                         targetSourceKeys: Array.isArray(item._viewSourceKeys) ? item._viewSourceKeys : [],
                         targetViewKey: item.batchKey
                     });
@@ -5300,7 +5313,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                         else if (data.isLifo) {
                             chipClass = "bg-sky-50 border-sky-200 text-sky-600 hover:bg-sky-100 hover:border-sky-300";
                         }
-                        return (React.createElement("div", { key: vendor, draggable: true, onDragStart: (e) => { e.stopPropagation(); const payload = { sourceKey: item.batchKey, vendor, qty: data.qty, code: item.코드 }; if (isCodeSummaryViewRow) { payload.sourceIsViewRow = true; payload.sourceViewKey = item.batchKey; payload.sourceAllocations = Array.isArray(data._sourceAllocations) ? data._sourceAllocations : []; } e.dataTransfer.setData('text/plain', JSON.stringify(payload)); e.currentTarget.classList.add('opacity-40', 'scale-95'); }, onDragEnd: (e) => { e.currentTarget.classList.remove('opacity-40', 'scale-95'); }, onDoubleClick: (e) => { e.stopPropagation(); if (rejectCodeSummaryEdit()) return; if (onVendorChipEdit) onVendorChipEdit(item.batchKey, displayVendor, data.qty); }, className: `group flex items-center px-2 py-0.5 rounded text-[10px] font-semibold cursor-grab active:cursor-grabbing border shadow-sm transition-all hover:-translate-y-0.5 ${chipClass}`, title: isCodeSummaryViewRow ? `${formatQty(data.qty)}개 출고 - 드래그 이동 가능 / 더블클릭·삭제는 Lot 상세형에서 수정` : `${formatQty(data.qty)}개 출고 ${data.matchMode === 'LOT_MATCH_FAILED' ? '(Lot매칭실패)' : (data.matchMode && String(data.matchMode).includes('FIXED_LOT') ? '(구매처Lot고정)' : (data.isLifo ? '(당일우선)' : '(순차차감)'))} - 더블클릭: 수량수정 / x: 칩삭제` },
+                        return (React.createElement("div", { key: vendor, draggable: true, onDragStart: (e) => { e.stopPropagation(); const payload = { sourceKey: item.batchKey, vendor, qty: data.qty, code: item.코드 }; if (isCodeSummaryViewRow) { payload.sourceIsViewRow = true; payload.sourceViewKey = item.batchKey; payload.sourceViewLotCount = safeNum(item._viewLotCount || 0); payload.sourceViewSourceKeys = Array.isArray(item._viewSourceKeys) ? item._viewSourceKeys : []; payload.sourceAllocations = Array.isArray(data._sourceAllocations) ? data._sourceAllocations : []; } e.dataTransfer.setData('text/plain', JSON.stringify(payload)); e.currentTarget.classList.add('opacity-40', 'scale-95'); }, onDragEnd: (e) => { e.currentTarget.classList.remove('opacity-40', 'scale-95'); }, onDoubleClick: (e) => { e.stopPropagation(); if (rejectCodeSummaryEdit()) return; if (onVendorChipEdit) onVendorChipEdit(item.batchKey, displayVendor, data.qty); }, className: `group flex items-center px-2 py-0.5 rounded text-[10px] font-semibold cursor-grab active:cursor-grabbing border shadow-sm transition-all hover:-translate-y-0.5 ${chipClass}`, title: isCodeSummaryViewRow ? `${formatQty(data.qty)}개 출고 - 통합1은 즉시 이동 / 통합2 이상은 Lot 상세형에서 수동 이동` : `${formatQty(data.qty)}개 출고 ${data.matchMode === 'LOT_MATCH_FAILED' ? '(Lot매칭실패)' : (data.matchMode && String(data.matchMode).includes('FIXED_LOT') ? '(구매처Lot고정)' : (data.isLifo ? '(당일우선)' : '(순차차감)'))} - 더블클릭: 수량수정 / x: 칩삭제` },
                             React.createElement("span", { className: "truncate max-w-[120px] flex items-center" },
                                 safeStr(displayVendor, '미지정'),
                                 "(",
@@ -5973,7 +5986,7 @@ function App() {
                 return;
             }
             if (msg === '🚨잔량' || msg === '✅잔량' || msg === '🚨계산' || msg === '✅계산') {
-                // V1.a22.19: 잔량/계산 이슈는 테이블의 잔량 숫자 색상으로 이미 충분히 보인다.
+                // V1.a22.20: 잔량/계산 이슈는 테이블의 잔량 숫자 색상으로 이미 충분히 보인다.
                 // 오른쪽 이슈/결과 칸에는 중복 뱃지를 표시하지 않고, 카드 카운트/필터 판단에는 기존 이슈값을 그대로 사용한다.
                 return;
             }
@@ -7880,58 +7893,74 @@ ${balanceText}
     const executeVendorChipMove = useCallback((sourceKey, targetKey, vendor, qtyToMove, moveMeta = {}) => {
         const sourceIsView = DATAOPS_VIEW_LAYER_MODULE.isViewRowKey(sourceKey) || !!moveMeta.sourceIsViewRow;
         const targetIsView = DATAOPS_VIEW_LAYER_MODULE.isViewRowKey(targetKey) || !!moveMeta.targetIsViewRow;
+        const sourceViewKeys = Array.isArray(moveMeta.sourceViewSourceKeys) ? moveMeta.sourceViewSourceKeys : [];
+        const targetViewKeys = Array.isArray(moveMeta.targetSourceKeys) ? moveMeta.targetSourceKeys : [];
+        const sourceViewCount = sourceIsView ? safeNum(moveMeta.sourceViewLotCount || sourceViewKeys.length || 0) : 1;
+        const targetViewCount = targetIsView ? safeNum(moveMeta.targetViewLotCount || targetViewKeys.length || 0) : 1;
+        // V1.a22.20: 통합2 이상은 자동 분배하지 않는다. Lot 상세형으로 풀어 관리자가 수동 이동한다.
+        if ((sourceIsView && sourceViewCount > 1) || (targetIsView && targetViewCount > 1)) {
+            setViewMode('LOT_DETAIL');
+            setAlertMsg('통합2 이상 상품은 자동 이동하지 않습니다. Lot 상세형으로 전환했습니다. 원본 Lot 행을 확인한 뒤 거래처칩을 수동으로 이동하세요.');
+            return;
+        }
         if (!sourceIsView && !targetIsView) {
             handleSalesMove(sourceKey, targetKey, vendor, qtyToMove, moveMeta);
             return;
         }
-        const targetActualKey = resolveViewLayerTargetKey(targetKey, moveMeta);
+        const targetActualKey = targetIsView ? resolveViewLayerTargetKey(targetKey, moveMeta) : targetKey;
         if (!targetActualKey || DATAOPS_VIEW_LAYER_MODULE.isViewRowKey(targetActualKey)) {
             setAlertMsg('코드 통합형 이동 대상 Lot을 찾지 못했습니다. Lot 상세형에서 다시 시도하세요.');
             return;
         }
-        const rawAllocations = sourceIsView && Array.isArray(moveMeta.sourceAllocations) && moveMeta.sourceAllocations.length
+        let rawAllocations = sourceIsView && Array.isArray(moveMeta.sourceAllocations) && moveMeta.sourceAllocations.length
             ? moveMeta.sourceAllocations
-            : [{ sourceKey, vendorKey: vendor, displayVendor: vendor, qty: safeNum(moveMeta.maxQty || qtyToMove), sourceCode: moveMeta.sourceCode }];
-        let remainingDeduct = safeNum(moveMeta.sourceDeductQty !== undefined ? moveMeta.sourceDeductQty : qtyToMove);
-        if (remainingDeduct <= 0) return;
-        const selected = [];
-        rawAllocations.forEach(allocation => {
-            if (remainingDeduct <= 0) return;
-            const allocQty = Math.max(0, safeNum(allocation.qty));
-            if (allocQty <= 0 || !allocation.sourceKey) return;
-            const take = Math.min(allocQty, remainingDeduct);
-            if (take > 0) {
-                selected.push({ ...allocation, takeQty: take });
-                remainingDeduct -= take;
+            : [];
+        if (sourceIsView && rawAllocations.length === 0 && sourceViewKeys.length === 1) {
+            const sourceRow = productData.find(row => row.batchKey === sourceViewKeys[0]);
+            const aggregated = DATAOPS_VENDOR_CHIP_MODULE.aggregateDetails((sourceRow && sourceRow.출고내역) || {});
+            const hit = aggregated[vendor] || Object.values(aggregated || {}).find(data => safeStr(data.displayVendor) === safeStr(vendor));
+            if (hit) {
+                rawAllocations = [{
+                    sourceKey: sourceRow.batchKey,
+                    vendorKey: (hit.keys && hit.keys[0]) || vendor,
+                    displayVendor: safeStr(hit.displayVendor || vendor),
+                    qty: safeNum(hit.qty),
+                    rev: safeNum(hit.rev),
+                    cogs: safeNum(hit.cogs),
+                    sourceCode: sourceRow.코드,
+                    sourceName: sourceRow.품명
+                }];
             }
-        });
-        const totalDeduct = selected.reduce((sum, item) => sum + safeNum(item.takeQty), 0);
-        if (totalDeduct <= 0) {
-            setAlertMsg('이동할 거래처 수량을 찾지 못했습니다. Lot 상세형에서 원본 칩을 확인하세요.');
+        }
+        if (!sourceIsView) {
+            rawAllocations = [{ sourceKey, vendorKey: vendor, displayVendor: vendor, qty: safeNum(moveMeta.maxQty || qtyToMove), sourceCode: moveMeta.sourceCode }];
+        }
+        const allocation = rawAllocations.find(a => a && a.sourceKey && safeNum(a.qty) > 0) || rawAllocations[0];
+        if (!allocation || !allocation.sourceKey) {
+            setAlertMsg('이동할 거래처 원본 Lot을 찾지 못했습니다. Lot 상세형에서 원본 칩을 확인하세요.');
             return;
         }
-        const targetTotalQty = safeNum(moveMeta.targetQty !== undefined ? moveMeta.targetQty : qtyToMove);
-        selected.forEach(allocation => {
-            const targetPartQty = totalDeduct > 0 ? targetTotalQty * (safeNum(allocation.takeQty) / totalDeduct) : safeNum(allocation.takeQty);
-            handleSalesMove(allocation.sourceKey, targetActualKey, allocation.vendorKey || vendor, targetPartQty, {
-                ...moveMeta,
-                sourceKey: allocation.sourceKey,
-                targetKey: targetActualKey,
-                vendor: allocation.vendorKey || vendor,
-                sourceCode: allocation.sourceCode || moveMeta.sourceCode,
-                targetCode: moveMeta.targetCode,
-                maxQty: allocation.takeQty,
-                sourceDeductQty: allocation.takeQty,
-                targetQty: targetPartQty,
-                viewLayerMove: true,
-                viewSourceKey: moveMeta.sourceViewKey || sourceKey,
-                viewTargetKey: moveMeta.targetViewKey || targetKey
-            });
+        const moveQty = safeNum(qtyToMove);
+        const sourceDeductQty = Math.min(safeNum(moveMeta.sourceDeductQty !== undefined ? moveMeta.sourceDeductQty : moveQty), safeNum(allocation.qty || moveQty));
+        if (sourceDeductQty <= 0 || moveQty <= 0) return;
+        handleSalesMove(allocation.sourceKey, targetActualKey, allocation.vendorKey || vendor, moveQty, {
+            ...moveMeta,
+            sourceKey: allocation.sourceKey,
+            targetKey: targetActualKey,
+            vendor: allocation.vendorKey || vendor,
+            sourceCode: allocation.sourceCode || moveMeta.sourceCode,
+            targetCode: moveMeta.targetCode,
+            maxQty: safeNum(allocation.qty || moveMeta.maxQty || moveQty),
+            sourceDeductQty,
+            targetQty: moveQty,
+            viewLayerMove: sourceIsView || targetIsView,
+            viewSourceKey: moveMeta.sourceViewKey || sourceKey,
+            viewTargetKey: moveMeta.targetViewKey || targetKey
         });
-    }, [handleSalesMove, resolveViewLayerTargetKey, setAlertMsg]);
+    }, [handleSalesMove, resolveViewLayerTargetKey, setAlertMsg, setViewMode, productData]);
     const handleChipDropRequest = useCallback((sourceKey, targetKey, vendor, maxQty, sourceCode, targetCode, isCtrlPressed, viewMeta = {}) => {
         const payloadBase = { sourceKey, targetKey, vendor, maxQty, sourceCode, targetCode, ...viewMeta, activeIssueMode: activeIssueModeRef.current || activeIssueMode, reviewType: filters.reviewType };
-        // V1.a22.15: 코드 통합형에서도 거래처칩 이동을 허용한다. 표시행 이동은 원본 Lot 칩으로 안전 분배한다.
+        // V1.a22.20: 코드 통합형 거래처칩 이동은 통합1만 즉시 적용한다. 통합2 이상은 Lot 상세형에서 수동 처리한다.
         // Ctrl 드래그는 수량 1개 칩도 무조건 수량입력창을 띄운다.
         if (isCtrlPressed) {
             setSplitModal({ isOpen: true, payload: { ...payloadBase, isCtrlPressed: true, allowOverMax: true } });
@@ -8377,7 +8406,7 @@ ${balanceText}
                     React.createElement("h1", { className: "text-xl md:text-xl font-black leading-none text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.19"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.20"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
@@ -8452,7 +8481,7 @@ ${balanceText}
                     React.createElement("div", { className: "mb-4" },
                         React.createElement("h4", { className: "text-sm font-bold text-slate-800" },
                             React.createElement("i", { className: "fas fa-star text-amber-500 mr-2" }),
-                            "V1.a22.19 \uC7AC\uACE0\uC218\uBD88\uBD80 \uC2E4\uC0AC \uC5C5\uB85C\uB4DC / \uC774\uC288\uCE78 \uC911\uBCF5\uD45C\uC2DC \uC815\uB9AC"),
+                            "V1.a22.20 \uC7AC\uACE0\uC218\uBD88\uBD80 \uC2E4\uC0AC \uC5C5\uB85C\uB4DC / \uC774\uC288\uCE78 \uC911\uBCF5\uD45C\uC2DC \uC815\uB9AC"),
                         React.createElement("p", { className: "text-xs text-slate-500 mt-1.5 ml-6" }, "\u2605 \uD544\uD130\uC640 BOX/EA/\uC18C\uBD84 \uD544\uD130\uAC00 \uC544\uB798 \uC124\uC815\uAC12\uC744 \uAE30\uC900\uC73C\uB85C \uB3D9\uC791\uD569\uB2C8\uB2E4. \uB2E8\uC704 \uCEEC\uB7FC\uC744 \uC6B0\uC120 \uD310\uC815\uD558\uACE0, \uB2E8\uC704\uAC00 \uC5C6\uC744 \uB54C\uB9CC \uD488\uBA85/\uADDC\uACA9\uC744 \uBCF4\uC870 \uB2E8\uC11C\uB85C \uC0AC\uC6A9\uD569\uB2C8\uB2E4.")),
                     React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-4 bg-amber-50/60 p-4 rounded-lg border border-amber-200" },
                         React.createElement("div", { className: "flex flex-col" },
@@ -8909,8 +8938,6 @@ ${balanceText}
 }
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(App, null));
-
-    
-    </script>
+</script>
 </body>
 </html>
