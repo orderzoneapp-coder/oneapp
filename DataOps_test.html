@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzd.3 Code Date Sort + Spacebar Bidirectional + Sales Row Sum)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (v8.99zzd.9 Sales Vendor + Dropdown Filter Fix)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps v8.99zzd.3 Code Date Sort + Spacebar Bidirectional + Sales Row Sum.....</div>
+        <div class="loader-text">ONEAPP DataOps v8.99zzd.9 Sales Vendor + Dropdown Filter Fix.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -500,7 +500,7 @@ const defaultMappings = {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'v8.99zzd.3 Code Date Sort + Spacebar Bidirectional + Sales Row Sum',
+    version: 'v8.99zzd.9 Sales Vendor + Dropdown Filter Fix',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -1193,6 +1193,150 @@ const FILTER_SORT_MODULE = Object.freeze({
         return standard.batchKey || standard.code;
     }
 });
+/* =======================================================================
+   1-D. v8.99zzd.8 DataOps Integrated Count / Lot Detail View Index
+   - 기본 작업화면은 실사양식 기준(품목코드 통합형)으로 즉시 표시한다.
+   - 단가는 코드 통합형에서 최종단가를 대표값으로 사용한다.
+   - 디테일 판단이 필요할 때만 재고현황 기준(Lot 상세형)으로 전환한다.
+   - 원본 productData는 바꾸지 않고 기준별 인덱스/집계 캐시만 전환한다.
+   ======================================================================= */
+const MANAGEMENT_VIEW_MODULE = Object.freeze({
+    modes: Object.freeze([
+        { key: 'CODE', label: '실사양식', shortLabel: '실사양식', desc: '품목코드 통합형 · 최종단가 기준 · 총량 확인용 기본 화면' },
+        { key: 'LOT', label: '재고현황', shortLabel: '재고현황', desc: '구매일자·매입처·단가별 Lot 상세 확인 화면' }
+    ]),
+    isValidMode: (mode = 'CODE') => ['CODE', 'LOT'].includes(safeStr(mode, 'CODE')),
+    normalizeMode: (mode = 'CODE') => MANAGEMENT_VIEW_MODULE.isValidMode(mode) ? mode : 'CODE',
+    getModeMeta: (mode = 'CODE') => MANAGEMENT_VIEW_MODULE.modes.find(m => m.key === MANAGEMENT_VIEW_MODULE.normalizeMode(mode)) || MANAGEMENT_VIEW_MODULE.modes[0],
+    getDatePart: (item = {}) => {
+        const raw = item._raw || item.raw || {};
+        const direct = item.일자 || item.purchaseDate || item.date || item.구매일자 || item.매입일자 || item.입고일자 || getRawCell(raw, ['구매일자', '매입일자', '입고일자', '일자', '날짜', '기록', '최종기록', '재고기록']);
+        return { display: safeStr(direct, ''), sort: FILTER_SORT_MODULE.getPurchaseDateSortValue(item) };
+    },
+    getKeyInfo: (item = {}, mode = 'CODE') => {
+        const safeMode = MANAGEMENT_VIEW_MODULE.normalizeMode(mode);
+        const code = safeStr(item.코드 || 'NO_CODE', 'NO_CODE').replace(/\.0$/, '').trim() || 'NO_CODE';
+        const price = safeNum(item.단가);
+        const vendor = safeStr(item.거래처, '미지정') || '미지정';
+        const date = MANAGEMENT_VIEW_MODULE.getDatePart(item);
+        if (safeMode === 'CODE') return { key: code, vendor: '통합', date: '' };
+        return { key: safeStr(item.batchKey || `${code}|${price}|${vendor}|${date.display}`, ''), vendor, date: date.display };
+    },
+    mergeIssues: (target = [], source = []) => {
+        const seen = new Set((target || []).map(v => safeStr(v)));
+        (source || []).forEach(issue => {
+            const s = safeStr(issue);
+            if (s && !seen.has(s)) { target.push(issue); seen.add(s); }
+        });
+        return target;
+    },
+    mergeVendorChips: (target = {}, source = {}) => {
+        Object.entries(source || {}).forEach(([vendor, data]) => {
+            const key = safeStr(vendor, '미지정');
+            if (!target[key]) target[key] = { qty: 0, rev: 0, cogs: 0, isLifo: false, isPerfectMatch: false, displayVendor: safeStr(data && data.displayVendor, key), matchMode: data && data.matchMode };
+            target[key].qty += safeNum(data && data.qty);
+            target[key].rev += safeNum(data && data.rev);
+            target[key].cogs += safeNum(data && data.cogs);
+            if (data && data.isLifo) target[key].isLifo = true;
+            if (data && data.isPerfectMatch) target[key].isPerfectMatch = true;
+            if (data && data.matchMode) target[key].matchMode = data.matchMode;
+        });
+        return target;
+    },
+    getFinalPriceCandidate: (current = null, item = {}) => {
+        const price = safeNum(item.단가);
+        if (price <= 0) return current;
+        const issues = Array.isArray(item.이슈) ? item.이슈.map(v => safeStr(v)).join(' ') : safeStr(item.이슈, '');
+        const manualPrice = issues.includes('원가수정') || (item._orig && safeNum(item.단가) !== safeNum(item._orig.단가));
+        const dateSort = MANAGEMENT_VIEW_MODULE.getDatePart(item).sort || 0;
+        const hasPurchase = safeNum(item.입고) > 0 || safeNum(item.기초) > 0;
+        const candidate = {
+            price,
+            dateSort,
+            manualRank: manualPrice ? 1 : 0,
+            purchaseRank: hasPurchase ? 1 : 0,
+            batchKey: safeStr(item.batchKey, '')
+        };
+        if (!current) return candidate;
+        if (candidate.manualRank !== current.manualRank) return candidate.manualRank > current.manualRank ? candidate : current;
+        if (candidate.dateSort !== current.dateSort) return candidate.dateSort > current.dateSort ? candidate : current;
+        if (candidate.purchaseRank !== current.purchaseRank) return candidate.purchaseRank > current.purchaseRank ? candidate : current;
+        return candidate.batchKey > current.batchKey ? candidate : current;
+    },
+    aggregateRows: (rows = [], mode = 'CODE') => {
+        const safeMode = MANAGEMENT_VIEW_MODULE.normalizeMode(mode);
+        if (safeMode === 'LOT') return rows;
+        const map = new Map();
+        rows.forEach(item => {
+            const keyInfo = MANAGEMENT_VIEW_MODULE.getKeyInfo(item, safeMode);
+            const code = safeStr(item.코드 || 'NO_CODE', 'NO_CODE').replace(/\.0$/, '').trim() || 'NO_CODE';
+            const qtyForCost = Math.max(0, safeNum(item.기초) + safeNum(item.입고));
+            const costBase = qtyForCost > 0 ? qtyForCost : Math.max(0, safeNum(item.실사) || safeNum(item.전산잔량) || 1);
+            if (!map.has(keyInfo.key)) {
+                map.set(keyInfo.key, {
+                    ...item,
+                    batchKey: `MGMT|${safeMode}|${keyInfo.key}`,
+                    _managementMode: safeMode,
+                    _managementViewReadOnly: true,
+                    _sourceBatchKeys: [],
+                    코드: code,
+                    일자: '',
+                    거래처: '통합',
+                    기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: 0, 로스: 0,
+                    매출액: 0, 매출원가: 0, 이슈: [], 출고내역: {}, 메모: '',
+                    _totalCostForAvg: 0, _costQtyForAvg: 0, _priceSet: new Set(), _finalPriceCandidate: null,
+                    _lotSortDate: MANAGEMENT_VIEW_MODULE.getDatePart(item).sort,
+                    _dateDisplayMemo: '품목코드 통합형 · 최종단가 기준',
+                    수기확인완료: true
+                });
+            }
+            const agg = map.get(keyInfo.key);
+            if (item.batchKey && !agg._sourceBatchKeys.includes(item.batchKey)) agg._sourceBatchKeys.push(item.batchKey);
+            agg.기초 += safeNum(item.기초);
+            agg.입고 += safeNum(item.입고);
+            agg.출고 += safeNum(item.출고);
+            agg.대체입고 += safeNum(item.대체입고);
+            agg.대체출고 += safeNum(item.대체출고);
+            agg.전산잔량 += safeNum(item.전산잔량);
+            agg.실사 += item.실사 === '' || item.실사 === null || item.실사 === undefined ? safeNum(item.전산잔량) : safeNum(item.실사);
+            agg.로스 += safeNum(item.로스);
+            agg.매출액 += safeNum(item.매출액);
+            agg.매출원가 += safeNum(item.매출원가);
+            const price = safeNum(item.단가);
+            if (price > 0) agg._priceSet.add(Math.round(price));
+            agg._totalCostForAvg += price * costBase;
+            agg._costQtyForAvg += costBase;
+            agg._finalPriceCandidate = MANAGEMENT_VIEW_MODULE.getFinalPriceCandidate(agg._finalPriceCandidate, item);
+            MANAGEMENT_VIEW_MODULE.mergeIssues(agg.이슈, item.이슈 || []);
+            MANAGEMENT_VIEW_MODULE.mergeVendorChips(agg.출고내역, item.출고내역 || {});
+            if (item.메모) agg.메모 = agg.메모 ? `${agg.메모} / ${item.메모}` : item.메모;
+            const d = MANAGEMENT_VIEW_MODULE.getDatePart(item).sort;
+            if (d && (!safeNum(agg._lotSortDate) || d < safeNum(agg._lotSortDate))) agg._lotSortDate = d;
+            agg.수기확인완료 = agg.수기확인완료 && !!item.수기확인완료;
+        });
+        return Array.from(map.values()).map(agg => {
+            const finalCandidate = agg._finalPriceCandidate;
+            const avgPrice = agg._costQtyForAvg > 0 ? (agg._totalCostForAvg / agg._costQtyForAvg) : safeNum(agg.단가);
+            const finalPrice = finalCandidate && finalCandidate.price > 0 ? finalCandidate.price : avgPrice;
+            const priceCount = agg._priceSet ? agg._priceSet.size : 0;
+            if (priceCount > 1) MANAGEMENT_VIEW_MODULE.mergeIssues(agg.이슈, ['최종단가확인(다중Lot단가)']);
+            const sourceCount = (agg._sourceBatchKeys || []).length;
+            const cleanAgg = { ...agg, 단가: finalPrice };
+            delete cleanAgg._priceSet;
+            delete cleanAgg._finalPriceCandidate;
+            return {
+                ...cleanAgg,
+                메모: cleanAgg.메모 || `실사양식 코드 통합형 · ${sourceCount.toLocaleString()} Lot · 최종단가 ${Math.round(finalPrice || 0).toLocaleString()}`,
+                _orig: { 기초: cleanAgg.기초, 입고: cleanAgg.입고, 출고: cleanAgg.출고, 단가: cleanAgg.단가 }
+            };
+        });
+    },
+    buildViewCache: (rows = []) => ({
+        LOT: rows,
+        CODE: MANAGEMENT_VIEW_MODULE.aggregateRows(rows, 'CODE')
+    })
+});
+window.MANAGEMENT_VIEW_MODULE = MANAGEMENT_VIEW_MODULE;
 const EXPORT_MODULE = Object.freeze({
     escapeHtml: (value) => safeStr(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'),
     applySheetLayout: (ws, columns = [], options = {}) => {
@@ -1721,19 +1865,21 @@ const EXPORT_MODULE = Object.freeze({
         w.document.close();
         return true;
     },
-    createCombinedWorkbook: ({ productData = [], analysisPeriod = '', targetDateStr = '', closingStats = {} }) => {
+    createCombinedWorkbook: ({ productData = [], stockProductData = null, countProductData = null, analysisPeriod = '', targetDateStr = '', closingStats = {} }) => {
+        const lotProductData = Array.isArray(stockProductData) ? stockProductData : productData;
+        const countProductDataSafe = Array.isArray(countProductData) ? countProductData : productData;
         const exportFileNameDate = targetDateStr ? targetDateStr.replace(/-/g, '') : (() => { const today = new Date(); return `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`; })();
-        const exportData1 = EXPORT_MODULE.buildClosingSheetRows({ productData, targetDateStr });
-        const analysisLedgerRows = EXPORT_MODULE.buildClosingAnalysisLedgerRows({ productData, targetDateStr });
-        const masterCheckRows = EXPORT_MODULE.buildMasterCheckRows({ productData, targetDateStr });
-        const exportData2 = EXPORT_MODULE.buildStockCountSheetRows({ productData, targetDateStr });
-        const farmRows = EXPORT_MODULE.buildGroupedBaseStockRows({ productData, groupName: '농산류', targetDateStr });
-        const foodRows = EXPORT_MODULE.buildGroupedBaseStockRows({ productData, groupName: '식자재', targetDateStr });
-        const etcRows = EXPORT_MODULE.buildGroupedBaseStockRows({ productData, groupName: '기타', targetDateStr });
+        const exportData1 = EXPORT_MODULE.buildClosingSheetRows({ productData: lotProductData, targetDateStr });
+        const analysisLedgerRows = EXPORT_MODULE.buildClosingAnalysisLedgerRows({ productData: lotProductData, targetDateStr });
+        const masterCheckRows = EXPORT_MODULE.buildMasterCheckRows({ productData: lotProductData, targetDateStr });
+        const exportData2 = EXPORT_MODULE.buildStockCountSheetRows({ productData: countProductDataSafe, targetDateStr });
+        const farmRows = EXPORT_MODULE.buildGroupedBaseStockRows({ productData: countProductDataSafe, groupName: '농산류', targetDateStr });
+        const foodRows = EXPORT_MODULE.buildGroupedBaseStockRows({ productData: countProductDataSafe, groupName: '식자재', targetDateStr });
+        const etcRows = EXPORT_MODULE.buildGroupedBaseStockRows({ productData: countProductDataSafe, groupName: '기타', targetDateStr });
         const wb = XLSX.utils.book_new();
         // v8.99zv: 수불마감 파일은 다음날 기초재고용 재고현황을 1번 시트로 고정한다.
         // 재고수불_마감은 재불러오기용이 아니라 Lot/수불 추적용이며, 보고서는 거래처별 매출·이익률과 미해결 확인필요만 담는다.
-        XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.buildNextBaseStockSheet({ productData, targetDateStr }), '재고현황');
+        XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.buildNextBaseStockSheet({ productData: lotProductData, targetDateStr }), '재고현황');
         if (exportData2.length > 0) {
             const ws2 = EXPORT_MODULE.jsonSheet(exportData2, [12, 8, 10, 8, 14, 34, 10, 18], { emptyMessage: '실사양식 데이터가 없습니다.' });
             Object.keys(ws2).forEach(cellAddress => {
@@ -1760,7 +1906,7 @@ const EXPORT_MODULE = Object.freeze({
         XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(exportData1, [12, 18, 13, 34, 10, 10, 10, 10, 16, 14, 18, 15, 10, 12, 42, 32], { emptyMessage: '유효한 데이터가 없습니다.' }), '재고수불_마감');
         XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(analysisLedgerRows, [12, 14, 34, 10, 18, 10, 10, 10, 10, 10, 10, 10, 10, 14, 14, 12, 16, 20, 14, 24, 10, 24, 12, 10, 24, 12, 10, 10, 20, 14, 14, 14, 14, 14, 14, 42, 32], { emptyMessage: '수불마감 분석원장 데이터가 없습니다.' }), '수불마감_분석원장');
         XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(masterCheckRows, [12, 16, 14, 34, 16, 14, 24, 14, 10, 12, 14, 14, 10, 42], { emptyMessage: '마스터 확인필요 항목이 없습니다.' }), '마스터_확인필요');
-        XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.buildClosingReportSheet({ productData, targetDateStr, analysisPeriod, closingStats }), '보고서');
+        XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.buildClosingReportSheet({ productData: lotProductData, targetDateStr, analysisPeriod, closingStats }), '보고서');
         return { wb, exportFileNameDate };
     }
 });
@@ -2120,20 +2266,47 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                         normObj.매입처매칭 = '';
                     }
                     else if (role === 'out') {
-                        // v8.99zzd.3: 판매현황의 실제 판매처와 판매그룹/경로를 분리한다.
-                        // 거래/거래처명에 1전송·2전송·3우리 같은 그룹값이 들어오고 판매처/no.가 실제 판매처인 양식에서는
-                        // 거래처(수량) 칩이 그룹값으로 묶이거나 제외거래처 필터에 걸려 판매행이 누락될 수 있다.
-                        const salesGroupVendor = getExactRawVal(rowObj, ['거래', '거래처명', '판매그룹', '전송구분', '출고그룹']);
-                        const explicitSalesVendor = getExactRawVal(rowObj, ['판매처', '매출처명', '매장명', '매장', '고객', 'no.', 'no', 'NO.', 'NO']);
+                        // v8.99zzd.9: 쇼핑몰/일반 판매현황의 실제 판매처 후보를 보강한다.
+                        // 2전송 파일처럼 구매처 정보가 있으면 Lot 매칭에는 구매처를 쓰되, 거래처(수량) 칩은 실제 판매처를 우선 표시한다.
+                        // no./NO 컬럼이 단위(EA/BOX)로 들어오는 양식이 있어 판매처 후보에서 단위/그룹/숫자 단독값을 방어한다.
                         const looksLikeSalesGroup = (val) => {
                             const v = safeStr(val, '').replace(/\s/g, '').toLowerCase();
                             if (!v)
                                 return false;
                             return /^(1|2|3)?전송$|^0?[123]전송$|^3우리$|^1창고$|^2창고$|^창고$|^판매그룹$|^거래$/.test(v) || /전송|창고/.test(v);
                         };
-                        const salesVendor = explicitSalesVendor !== null && safeStr(explicitSalesVendor, '') !== ''
+                        const looksLikeNonVendor = (val) => {
+                            const raw = safeStr(val, '').trim();
+                            const v = raw.replace(/\s/g, '').toLowerCase();
+                            if (!v)
+                                return true;
+                            if (looksLikeSalesGroup(raw))
+                                return true;
+                            if (/^(ea|box|b\/o|ct|carton|소분|개|봉|팩|병|캔|단위|통합|미상|미지정|-)$/.test(v))
+                                return true;
+                            if (/^[+-]?[0-9,.]+$/.test(v))
+                                return true;
+                            if (/^20\d{6}$/.test(v) || /^\d{4}[-./]\d{1,2}[-./]\d{1,2}$/.test(v))
+                                return true;
+                            return false;
+                        };
+                        const pickSalesVendor = (names = []) => {
+                            for (const name of names) {
+                                const v = getExactRawVal(rowObj, [name]);
+                                if (v !== null && !looksLikeNonVendor(v))
+                                    return v;
+                            }
+                            return null;
+                        };
+                        const salesGroupVendor = getExactRawVal(rowObj, ['거래', '거래처명', '판매그룹', '전송구분', '출고그룹']);
+                        const explicitSalesVendor = pickSalesVendor([
+                            '판매처명', '판매처', '매출처명', '매출처', '납품처명', '납품처', '배송처명', '배송처',
+                            '거래처', '거래처명', '상호', '업체명', '회사명', '고객사', '고객명', '고객',
+                            '주문처', '주문자', '수취인', '수령인', '받는분', '매장명', '매장', 'no.', 'no', 'NO.', 'NO'
+                        ]);
+                        const salesVendor = explicitSalesVendor !== null
                             ? explicitSalesVendor
-                            : (salesGroupVendor !== null && !looksLikeSalesGroup(salesGroupVendor) ? salesGroupVendor : (salesGroupVendor || null));
+                            : (salesGroupVendor !== null && !looksLikeNonVendor(salesGroupVendor) ? salesGroupVendor : null);
                         const lotVendor = getExactRawVal(rowObj, ['구매처', '매입처', '원구매처', '매입처(Lot)', '매입처(거래처)']);
                         const salesQty = getExactRawVal(rowObj, ['수량', '출고량', '판매수량']);
                         const salesPrice = getExactRawVal(rowObj, ['단가', '판매단가', '출고가', '출고가(공지)', '출고가 (공지)']);
@@ -2146,7 +2319,7 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                             normObj.거래처 = safeStr(salesVendor, '미지정');
                         if (salesGroupVendor !== null)
                             normObj._salesGroupVendor = safeStr(salesGroupVendor, '');
-                        normObj._salesDisplayVendor = safeStr(normObj.거래처, '미지정');
+                        normObj._salesDisplayVendor = !looksLikeNonVendor(normObj.거래처) ? safeStr(normObj.거래처, '미지정') : '판매처미확인';
                         normObj._salesRawRowNo = i + 1;
                         if (lotVendor !== null)
                             normObj.매입처매칭 = safeStr(lotVendor, '');
@@ -3586,13 +3759,13 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     };
                 }
                 if (remainingQty > 0) {
-                    // 구매현황으로 배정하지 못한 잔여 수량은 오늘 날짜나 수불마감 결산일자를 구매일처럼 표시하지 않는다.
+                    // v8.99zzd.4: 구매현황으로 배정하지 못한 잔여 수량은 구매일자 텍스트를 찍지 않고 공백으로 둔다.
                     const fallbackPrice = origPrice;
                     const fallbackVendor = safeStr(item.거래처, '구매Lot미확정');
                     const fallbackLabel = fallbackPrice > 0 ? `⚠️구매Lot미확정_재고/수불마감값보조(${fallbackVendor})` : '🚨구매Lot없음/단가없음';
                     const groupKey = `${code}|${fallbackPrice}|FALLBACK|${uniqueIdCounter++}`;
                     pData[groupKey] = {
-                        batchKey: groupKey, 코드: code, 품명: stockName, 단가: fallbackPrice, 일자: '구매일자미확정', 거래처: fallbackVendor,
+                        batchKey: groupKey, 코드: code, 품명: stockName, 단가: fallbackPrice, 일자: '', 거래처: fallbackVendor,
                         기초: remainingQty, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: remainingQty, 실사: remainingQty, 로스: 0,
                         매출액: 0, 매출원가: 0, 메모: ((_f = item._raw) === null || _f === void 0 ? void 0 : _f['수기메모']) || '', 이슈: [fallbackLabel],
                         출고내역: {}, _orig: { 기초: remainingQty, 입고: 0, 출고: 0, 단가: fallbackPrice }, isDummy: (!code || code === 'NO_CODE'), 수기확인완료: (fallbackPrice > 0),
@@ -3762,7 +3935,7 @@ const GuideModal = ({ isOpen, onClose }) => {
             React.createElement("div", { className: "mt-6 flex justify-end" },
                 React.createElement("button", { onClick: onClose, className: "px-6 py-2.5 bg-slate-800 text-white rounded-lg text-sm font-bold hover:bg-slate-900 transition shadow-md w-full sm:w-auto" }, "\uD655\uC778 \uBC0F \uB2EB\uAE30")))));
 };
-const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGroupItem, targetDateStr, onStockChange, onSpacebar, onFocusInput, onBaseDataChange, onOpenMemo, onSalesMove, internalLotMapping, isGroupStart, isNewCategory, normalizeDisplayIssues }) => {
+const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGroupItem, targetDateStr, onStockChange, onSpacebar, onFocusInput, onBaseDataChange, onOpenMemo, onSalesMove, onChipDelete, internalLotMapping, isGroupStart, isNewCategory, normalizeDisplayIssues }) => {
     const [isDragOver, setIsDragOver] = useState(false);
     let displayIssues = item.이슈 ? [...item.이슈] : [];
     displayIssues = displayIssues.filter(msg => !msg.includes('매입내역 없음') && !msg.includes('전산 재고 부족') && !msg.includes('재고 부족'));
@@ -3983,7 +4156,9 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                                 safeStr(displayVendor, '미지정'),
                                 "(",
                                 data.qty,
-                                ")")));
+                                ")"),
+                            React.createElement("button", { type: "button", draggable: false, onMouseDown: (e) => { e.preventDefault(); e.stopPropagation(); }, onClick: (e) => { e.preventDefault(); e.stopPropagation(); if (onChipDelete) onChipDelete(item.batchKey, vendor); }, className: "ml-1.5 w-3.5 h-3.5 rounded-full flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200", title: "거래처(수량) 칩 삭제 / 계산 제외" },
+                                React.createElement("i", { className: "fas fa-times text-[9px]" }))));
                     })))),
                 React.createElement("div", { className: "flex flex-col items-end gap-1 text-right shrink-0 ml-2" },
                     React.createElement("button", { onClick: () => onOpenMemo(item.batchKey, item.메모 || ''), className: `transition-colors ${item.메모 ? 'text-blue-500 hover:text-blue-700 mb-0.5' : 'text-slate-300 hover:text-slate-400'}`, title: "\uBA54\uBAA8 \uCD94\uAC00/\uC218\uC815" },
@@ -4120,10 +4295,24 @@ function App() {
     const [cloudSyncSummary, setCloudSyncSummary] = useState(() => DATAOPS_CLOUD_MODULE.getSummary());
     const [cloudStatusMsg, setCloudStatusMsg] = useState('');
     const [grouping, setGrouping] = useState(() => { const saved = localStorage.getItem('inventoryGroupingV79'); return saved ? JSON.parse(saved) : { priceMode: 'separate', splitByVendor: false, splitByDate: false }; });
+    const [managementViewMode, setManagementViewMode] = useState(() => {
+        try {
+            const saved = localStorage.getItem('dataopsManagementViewModeV1') || 'CODE';
+            return MANAGEMENT_VIEW_MODULE.normalizeMode(saved);
+        }
+        catch (e) { return 'CODE'; }
+    });
+    useEffect(() => {
+        try { localStorage.setItem('dataopsManagementViewModeV1', managementViewMode); } catch (e) { }
+    }, [managementViewMode]);
     // 비즈니스 로직 엔진 연결
     const { productData, setProductData, analysisPeriod, setAnalysisPeriod, targetDateStr, setTargetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes, resetEngine, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction } = useInventoryEngine({ mappings, grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep });
     const isCostExtractionMode = !files.prev && files.in && !files.out && files.end;
     const hasEndFile = !!files.end;
+    const managementViewCache = useMemo(() => MANAGEMENT_VIEW_MODULE.buildViewCache(productData), [productData]);
+    const safeManagementViewMode = MANAGEMENT_VIEW_MODULE.normalizeMode(managementViewMode);
+    const managementProductData = managementViewCache[safeManagementViewMode] || managementViewCache.CODE || productData;
+    const managementModeMeta = MANAGEMENT_VIEW_MODULE.getModeMeta(safeManagementViewMode);
     const getDefaultFilters = useCallback(() => ({
         issuesOnly: false,
         excludeZeroActual: false,
@@ -6149,6 +6338,62 @@ ${changeText}
                 focusTarget.select();
         }, 180);
     }, []);
+    const handleSalesChipDelete = useCallback((batchKey, vendorName) => {
+        const displayName = safeStr(String(vendorName || '').replace('_perfect', ''), '미지정');
+        const ok = window.confirm(`거래처(수량) 칩 [${displayName}]을 계산에서 제외할까요?
+
+원본 엑셀 판매현황은 삭제하지 않고, DataOps 적용값에서만 제외합니다.`);
+        if (!ok)
+            return;
+        let deleted = false;
+        let deletedQty = 0;
+        setProductData(prevP => prevP.map(p => {
+            if (p.batchKey !== batchKey)
+                return p;
+            const outMap = JSON.parse(JSON.stringify(p.출고내역 || {}));
+            const chip = outMap[vendorName];
+            if (!chip)
+                return p;
+            const qty = safeNum(chip.qty);
+            const rev = safeNum(chip.rev);
+            const cogs = safeNum(chip.cogs);
+            const cleanVendor = safeStr(chip.displayVendor || displayName, '미지정');
+            delete outMap[vendorName];
+            const next = { ...p, 출고내역: outMap, 이슈: [...(p.이슈 || [])], _salesChipCorrections: [...(p._salesChipCorrections || [])] };
+            next.출고 = safeNum(next.출고) - qty;
+            if (Math.abs(next.출고) < 0.000001)
+                next.출고 = 0;
+            next.매출액 = safeNum(next.매출액) - rev;
+            next.매출원가 = safeNum(next.매출원가) - cogs;
+            next.전산잔량 = safeNum(next.기초) + safeNum(next.입고) + safeNum(next.대체입고) - safeNum(next.출고) - safeNum(next.대체출고);
+            if (next.실사 === null || next.실사 === undefined || next.실사 === '') {
+                next.실사 = next.전산잔량;
+                next.로스 = 0;
+            }
+            else {
+                next.로스 = safeNum(next.실사) - next.전산잔량;
+            }
+            const correctionMemo = `판매칩삭제(${cleanVendor}:${formatMoney(qty)})`;
+            next.이슈 = DATAOPS_ISSUE_HELPER.unique([...(next.이슈 || []), `✅${correctionMemo}`]);
+            next._salesChipCorrections.push({
+                type: 'DELETE_VENDOR_CHIP',
+                vendorKey: vendorName,
+                vendor: cleanVendor,
+                qty,
+                rev,
+                cogs,
+                deletedAt: new Date().toISOString(),
+                memo: '원본 판매현황은 유지하고 DataOps 적용 계산에서만 제외'
+            });
+            next.수기확인완료 = true;
+            deleted = true;
+            deletedQty = qty;
+            return next;
+        }));
+        setTimeout(() => {
+            setAlertMsg(deleted ? `거래처(수량) 칩을 계산에서 제외했습니다: ${displayName}(${formatMoney(deletedQty)})` : '삭제할 거래처(수량) 칩을 찾지 못했습니다.');
+        }, 0);
+    }, [setProductData, setAlertMsg]);
     const handleChipDropRequest = useCallback((sourceKey, targetKey, vendor, maxQty, sourceCode, targetCode, isCtrlPressed) => {
         if (isCtrlPressed && maxQty > 1) {
             setSplitModal({ isOpen: true, payload: { sourceKey, targetKey, vendor, maxQty } });
@@ -6351,14 +6596,31 @@ ${changeText}
             return null;
         });
     }, [executeImmediateSubstitution]);
-    const handleCombinedExport = useCallback(() => {
-        if (productData.length === 0) {
+    const handleCombinedExport = useCallback(async () => {
+        if (isProcessing)
+            return;
+        const lotExportData = managementViewCache.LOT || productData || [];
+        const countExportData = managementViewCache.CODE || MANAGEMENT_VIEW_MODULE.aggregateRows(productData || [], 'CODE');
+        if ((lotExportData.length === 0) && (countExportData.length === 0)) {
             setAlertMsg("다운로드할 데이터가 없습니다.");
             return;
         }
-        const { wb, exportFileNameDate } = EXPORT_MODULE.createCombinedWorkbook({ productData, analysisPeriod, targetDateStr, closingStats });
+        const waitForUiPaint = () => new Promise(resolve => {
+            if (typeof requestAnimationFrame === 'function')
+                requestAnimationFrame(() => setTimeout(resolve, 0));
+            else
+                setTimeout(resolve, 30);
+        });
+        setIsProcessing(true);
+        const startedAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
         try {
-            const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            // v8.99zzd.6: 엑셀 다운로드 버튼 클릭 직후 대용량 XLSX 생성이 메인 스레드를 바로 점유해
+            // 화면이 멈춘 것처럼 보이던 문제를 줄인다.
+            // 처리중 오버레이를 먼저 렌더링한 뒤 워크북 생성/직렬화를 실행한다.
+            await waitForUiPaint();
+            const { wb, exportFileNameDate } = EXPORT_MODULE.createCombinedWorkbook({ productData: lotExportData, stockProductData: lotExportData, countProductData: countExportData, analysisPeriod, targetDateStr, closingStats });
+            await waitForUiPaint();
+            const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array', bookSST: false, compression: false });
             const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -6367,14 +6629,19 @@ ${changeText}
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            setTimeout(() => { setAlertMsg("✅ 수불부 마감 데이터가 엑셀로 다운로드되었습니다.\n\n[포함 시트]\n1. 재고현황\n2. 실사양식\n3. 농산류\n4. 식자재\n5. 기타\n6. 재고수불_마감\n7. 보고서"); }, 500);
+            setTimeout(() => URL.revokeObjectURL(url), 3000);
+            const finishedAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+            const elapsedSec = Math.max(0.1, (finishedAt - startedAt) / 1000).toFixed(1);
+            setTimeout(() => { setAlertMsg(`✅ 수불부 마감 데이터가 엑셀로 다운로드되었습니다.\n\n처리시간: ${elapsedSec}초\n\n[포함 시트]\n1. 재고현황(Lot 상세형)\n2. 실사양식(코드 통합형)\n3. 농산류\n4. 식자재\n5. 기타\n6. 재고수불_마감\n7. 수불마감_분석원장\n8. 마스터_확인필요\n9. 보고서`); }, 100);
         }
         catch (err) {
             console.error('엑셀 생성 중 오류:', err);
             setAlertMsg("엑셀 파일 생성 중 오류가 발생했습니다.");
         }
-    }, [productData, analysisPeriod, targetDateStr, closingStats]);
+        finally {
+            setIsProcessing(false);
+        }
+    }, [productData, managementViewCache, analysisPeriod, targetDateStr, closingStats, isProcessing, setIsProcessing]);
     const handlePrintOutput = useCallback(() => {
         const printData = filteredProductDataRef.current || [];
         if (productData.length === 0) {
@@ -6471,7 +6738,7 @@ ${changeText}
         return () => { window.removeEventListener('keydown', handleGlobalEnter); window.removeEventListener('keydown', handleGlobalKeys); };
     }, [linkSourceKey, appStep, isProcessing, files, guideModalOpen]);
     const filteredProductData = useMemo(() => {
-        let data = productData;
+        let data = managementProductData;
         if (filters.reviewType === 'loss')
             data = data.filter(p => p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0) || (p.이슈 && p.이슈.some(i => i.includes('수량변동') || i.includes('잔량') || i.includes('계산') || i.includes('신규추가') || i.includes('삭제됨'))));
         else if (filters.reviewType === 'missingPrice')
@@ -6488,7 +6755,7 @@ ${changeText}
         if (filters.excludeZeroActual)
             data = data.filter(d => { const act = d.실사 === '' || d.실사 === null || d.실사 === undefined ? 0 : Number(d.실사); return act !== 0; });
         return FILTER_SORT_MODULE.sortRows(data, filters.sortMode);
-    }, [productData, filters, multiPriceCodes, mappings, hasLotIssueTotal]);
+    }, [managementProductData, filters, multiPriceCodes, mappings, hasLotIssueTotal]);
     useEffect(() => {
         filteredProductDataRef.current = filteredProductData;
     }, [filteredProductData]);
@@ -6499,12 +6766,12 @@ ${changeText}
                     React.createElement("h1", { className: "text-xl md:text-2xl font-black text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzd.3 Code Date Sort + Spacebar Bidirectional + Sales Row Sum"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "v8.99zzd.9 Sales Vendor + Dropdown Filter Fix"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
                         React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1 hidden md:block" }),
-                        React.createElement("button", { onClick: handleCombinedExport, className: "px-3 py-1.5 bg-white text-slate-700 hover:bg-slate-50 rounded text-[12px] font-bold shadow-sm transition flex items-center border border-slate-300 hidden md:flex" },
+                        React.createElement("button", { onClick: handleCombinedExport, disabled: isProcessing, className: `px-3 py-1.5 rounded text-[12px] font-bold shadow-sm transition flex items-center border border-slate-300 hidden md:flex ${isProcessing ? 'bg-slate-100 text-slate-400 cursor-wait' : 'bg-white text-slate-700 hover:bg-slate-50'}` },
                             React.createElement("i", { className: "fas fa-file-excel mr-1.5 text-emerald-600" }),
                             "\uC5D1\uC140 \uB2E4\uC6B4\uB85C\uB4DC",
                             React.createElement("span", { className: "ml-1.5 px-1 py-[1px] rounded text-[9px] font-mono border-b-2 border-slate-300 bg-slate-100 text-slate-500 shadow-sm font-black" }, "F9")),
@@ -6873,12 +7140,26 @@ ${changeText}
                         React.createElement("div", { className: "px-4 md:px-6 py-4 pb-12 max-w-7xl mx-auto w-full flex-1 flex flex-col" },
                             React.createElement("div", { className: "bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col flex-1 overflow-visible" },
                                 productData.length > 0 && (React.createElement("div", { ref: filterBarRef, className: "shrink-0 sticky bg-white border-b border-slate-200 px-3 py-2 flex flex-nowrap items-center gap-1.5 text-[11px] font-bold z-[38] shadow-sm overflow-x-auto hide-scrollbar", style: { top: showCards ? `${cardHeight}px` : '0px' } },
-                                    React.createElement("span", { className: "text-slate-500 mr-1" }, "\uC815\uB82C"),
-                                    [['DEFAULT', '품목코드순'], ['CATEGORY', '카테고리순'], ['VENDOR', '구매처순']].map(([mode, label]) => (React.createElement("button", { key: mode, onClick: () => setFilters(f => ({ ...f, sortMode: mode })), className: `px-2 py-1 rounded border transition ${filters.sortMode === mode ? 'bg-slate-800 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, label))),
+                                    React.createElement("span", { className: "text-slate-500 mr-1 whitespace-nowrap" }, "\uBCF4\uAE30\uAE30\uC900"),
+                                    MANAGEMENT_VIEW_MODULE.modes.map(mode => (React.createElement("button", { key: mode.key, onClick: () => { setManagementViewMode(mode.key); setActiveIssueMode(null); setLinkSourceKey(null); }, title: mode.desc, className: `px-2 py-1 rounded border transition whitespace-nowrap ${safeManagementViewMode === mode.key ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, mode.shortLabel))),
+                                    React.createElement("span", { className: "ml-1 px-2 py-1 rounded-full whitespace-nowrap bg-indigo-50 border border-indigo-100 text-indigo-700 flex items-center gap-1", title: "관리기준별 캐시를 사용해 원본 재분석 없이 화면 표시만 즉시 전환합니다." },
+                                        React.createElement("i", { className: "fas fa-bolt text-indigo-500" }),
+                                        managementModeMeta.label,
+                                        React.createElement("span", { className: "text-indigo-300 mx-0.5" }, "/"),
+                                        managementProductData.length.toLocaleString(),
+                                        "\uAC74"),
                                     React.createElement("div", { className: "w-px h-5 bg-slate-200 mx-1" }),
-                                    React.createElement("span", { className: "text-slate-500 mr-1" }, "\uCE74\uD14C\uACE0\uB9AC"),
-                                    ['ALL', '10', '20', '30', '40', '50'].map(cat => (React.createElement("button", { key: cat, onClick: () => setFilters(f => ({ ...f, category: cat })), title: cat === 'ALL' ? '전체' : CONFIG_MODULE.categoryMap[cat], className: `px-2 py-1 rounded border transition ${filters.category === cat ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, cat === 'ALL' ? '전체' : cat))),
-                                    React.createElement("button", { onClick: () => setFilters(f => ({ ...f, favoriteVendorOnly: !f.favoriteVendorOnly })), className: `px-2 py-1 rounded border transition ${filters.favoriteVendorOnly ? 'bg-amber-500 text-white border-amber-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, "\u2605"),
+                                    React.createElement("span", { className: "text-slate-500 mr-1 whitespace-nowrap" }, "\uC815\uB82C"),
+                                    React.createElement("select", { value: filters.sortMode || 'DEFAULT', onChange: e => setFilters(f => ({ ...f, sortMode: e.target.value })), className: "h-8 px-2 rounded border border-slate-300 bg-white text-slate-700 font-bold outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 min-w-[104px]" },
+                                        React.createElement("option", { value: "DEFAULT" }, "품목코드순"),
+                                        React.createElement("option", { value: "CATEGORY" }, "카테고리순"),
+                                        React.createElement("option", { value: "VENDOR" }, "구매처순")),
+                                    React.createElement("div", { className: "w-px h-5 bg-slate-200 mx-1" }),
+                                    React.createElement("span", { className: "text-slate-500 mr-1 whitespace-nowrap" }, "\uCE74\uD14C\uACE0\uB9AC"),
+                                    React.createElement("select", { value: filters.category || 'ALL', onChange: e => setFilters(f => ({ ...f, category: e.target.value })), className: "h-8 px-2 rounded border border-slate-300 bg-white text-slate-700 font-bold outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 min-w-[112px]" },
+                                        React.createElement("option", { value: "ALL" }, "전체"),
+                                        ['10', '20', '30', '40', '50'].map(cat => React.createElement("option", { key: cat, value: cat }, `${cat} ${CONFIG_MODULE.categoryMap[cat] || ''}`))),
+                                    React.createElement("button", { onClick: () => setFilters(f => ({ ...f, favoriteVendorOnly: !f.favoriteVendorOnly })), className: `h-8 px-2 rounded border transition whitespace-nowrap ${filters.favoriteVendorOnly ? 'bg-amber-500 text-white border-amber-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, "\u2605"),
                                     React.createElement("div", { className: "w-px h-5 bg-slate-200 mx-1" }),
                                     React.createElement("span", { className: "text-slate-500 mr-1" }, "\uB2E8\uC704"),
                                     ['BOX', 'EA', 'SPLIT'].map(unit => (React.createElement("button", { key: unit, onClick: () => setFilters(f => ({ ...f, unit: { ...f.unit, [unit]: !f.unit[unit] } })), title: `${unit === 'SPLIT' ? '소분' : unit} 단위 상품 노출`, className: `px-2 py-1 rounded border transition ${filters.unit[unit] ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-white text-slate-400 border-slate-300 hover:bg-slate-50'}` }, unit === 'SPLIT' ? '소분' : unit))),
@@ -6890,8 +7171,8 @@ ${changeText}
                                         React.createElement("span", null, "\uAC74"),
                                         React.createElement("span", { className: "text-slate-300 mx-0.5" }, "/"),
                                         React.createElement("span", null,
-                                            "\uC804\uCCB4 ",
-                                            productData.length.toLocaleString(),
+                                            "\uAE30\uC900 ",
+                                            managementProductData.length.toLocaleString(),
                                             "\uAC74")),
                                     React.createElement("button", { onClick: () => setFilters(f => ({ ...f, category: 'ALL', favoriteVendorOnly: false, unit: { ...CONFIG_MODULE.defaultUnitFilter }, sortMode: 'DEFAULT', reviewType: null, excludeZeroActual: false })), className: "ml-auto px-2 py-1 rounded border whitespace-nowrap bg-slate-50 text-slate-500 border-slate-300 hover:bg-slate-100" }, "\u21BA \uD544\uD130 \uCD08\uAE30\uD654"))),
                                 React.createElement("table", { className: "w-full text-left border-collapse whitespace-nowrap text-sm" },
@@ -6933,7 +7214,7 @@ ${changeText}
                                     React.createElement("tbody", { className: "divide-y divide-slate-100 bg-white" }, filteredProductData.length === 0 ? (React.createElement("tr", null,
                                         React.createElement("td", { colSpan: "7", className: "p-12 text-center text-slate-400 font-bold bg-slate-50/50" },
                                             React.createElement("i", { className: "fas fa-box-open mb-3 text-3xl opacity-50 block" }),
-                                            productData.length === 0 ? "상단 '데이터 소스'에 파일을 업로드하고 [분석 실행]을 눌러주세요." : "조건에 맞는 데이터가 없습니다."))) : (filteredProductData.map((item, idx) => {
+                                            productData.length === 0 ? "상단 '데이터 소스'에 파일을 업로드하고 [분석 실행]을 눌러주세요." : "현재 관리기준/필터 조건에 맞는 데이터가 없습니다."))) : (filteredProductData.map((item, idx) => {
                                         const isGroupStart = filters.reviewType === 'multiPrice' && idx > 0 && item.코드 !== filteredProductData[idx - 1].코드;
                                         const currGroupLabel = FILTER_SORT_MODULE.getGroupLabel(item, filters.sortMode);
                                         const prevGroupLabel = idx > 0 ? FILTER_SORT_MODULE.getGroupLabel(filteredProductData[idx - 1], filters.sortMode) : '';
@@ -6945,7 +7226,7 @@ ${changeText}
                                                     "\u2500\u2500\u2500\u2500 ",
                                                     currGroupLabel || '미지정',
                                                     " \u2500\u2500\u2500\u2500")))),
-                                            React.createElement(ProductRow, { key: item.batchKey, item: item, idx: idx, isLinked: linkSourceKey === item.batchKey, isActiveMulti: activeMultiCode === item.코드, isMultiGroupItem: multiPriceCodes.includes(item.코드), targetDateStr: targetDateStr, onStockChange: handleManualStockChange, onSpacebar: handleSpacebarLink, onFocusInput: handleFocusInput, onBaseDataChange: handleBaseDataChange, onOpenMemo: (key, text) => setMemoModal({ isOpen: true, batchKey: key, text }), onSalesMove: handleChipDropRequest, internalLotMapping: mappings.internalLot, isGroupStart: isGroupStart, isNewCategory: isNewCategory })));
+                                            React.createElement(ProductRow, { key: item.batchKey, item: item, idx: idx, isLinked: linkSourceKey === item.batchKey, isActiveMulti: activeMultiCode === item.코드, isMultiGroupItem: multiPriceCodes.includes(item.코드), targetDateStr: targetDateStr, onStockChange: handleManualStockChange, onSpacebar: handleSpacebarLink, onFocusInput: handleFocusInput, onBaseDataChange: handleBaseDataChange, onOpenMemo: (key, text) => setMemoModal({ isOpen: true, batchKey: key, text }), onSalesMove: handleChipDropRequest, onChipDelete: handleSalesChipDelete, internalLotMapping: mappings.internalLot, isGroupStart: isGroupStart, isNewCategory: isNewCategory })));
                                     })))))))))),
         splitModal.isOpen && (React.createElement("div", { className: "fixed inset-0 z-[400] bg-slate-900 bg-opacity-60 flex items-center justify-center p-4" },
             React.createElement("div", { className: "bg-white rounded-xl shadow-2xl p-6 w-full max-w-xs modal-bounce" },
