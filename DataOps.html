@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.13 ChipMove LotPolicy)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.14 ChipMove Hotfix)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.13 ChipMove LotPolicy.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.14 ChipMove Hotfix.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -71,7 +71,7 @@
     <div id="root"></div>
 
     <script>
-        // V1.a22.13: 외부 라이브러리 미로드 시 무한 로딩 방지
+        // V1.a22.14: 외부 라이브러리 미로드 시 무한 로딩 방지
         window.__DATAOPS_DEP_CHECK__ = function() {
             var missing = [];
             if (!window.XLSX) missing.push('XLSX');
@@ -97,11 +97,12 @@
     <script type="text/javascript">
 const { useState, useRef, useEffect, useMemo, useCallback } = React;
 /* =======================================================================
-   V1.a22.13 ChipMove LotPolicy
+   V1.a22.14 ChipMove Hotfix
    - 기준: V1.a22.10
    - 소분치환 실행/후보/전용시트/UI 제거
    - 수기치환, Lot/FIFO 검수, 2전송 검증, 거래처칩, 대체판매/묶음환산 기반은 유지
    - V1.a22.13: 코드 통합형에서도 거래처(수량) 칩 이동 복구, 판매현황 구매처/원가 확정 Lot는 이슈카드 제외
+   - V1.a22.14: 코드통합 거래처칩 이동 시 원본 Lot 키 보존, 드롭 예외 방어, displayVendor→실제칩키 역해석 보강
    ======================================================================= */
 /* =======================================================================
    1. 유틸리티 함수 (Data formatting & pure logic)
@@ -364,6 +365,7 @@ const DATAOPS_VENDOR_CHIP_MODULE = Object.freeze({
         Object.entries(details || {}).forEach(([key, data]) => {
             if (!data) return;
             const displayVendor = DATAOPS_VENDOR_CHIP_MODULE.normalizeDisplayVendor(key, data);
+            const qty = safeNum(data.qty);
             if (!aggregated[displayVendor]) {
                 aggregated[displayVendor] = {
                     key: displayVendor,
@@ -375,16 +377,45 @@ const DATAOPS_VENDOR_CHIP_MODULE = Object.freeze({
                     isLifo: false,
                     isPerfectMatch: true,
                     matchMode: safeStr(data.matchMode),
+                    sourceDetails: [],
                     _sample: data
                 };
             }
             aggregated[displayVendor].keys.push(key);
-            aggregated[displayVendor].qty += safeNum(data.qty);
+            aggregated[displayVendor].qty += qty;
             aggregated[displayVendor].rev += safeNum(data.rev);
             aggregated[displayVendor].cogs += safeNum(data.cogs);
             aggregated[displayVendor].isLifo = aggregated[displayVendor].isLifo || !!data.isLifo;
             aggregated[displayVendor].isPerfectMatch = aggregated[displayVendor].isPerfectMatch && !!data.isPerfectMatch;
             aggregated[displayVendor].matchMode = aggregated[displayVendor].matchMode || safeStr(data.matchMode);
+            // V1.a22.14: 코드통합 칩 이동 시 원본 Lot 키가 사라지지 않도록 보존한다.
+            // 이미 통합행에서 들어온 sourceDetails가 있으면 그대로 승계하고, 일반 Lot 행이면 실제 칩 key를 vendorKey로 보관한다.
+            const nestedDetails = Array.isArray(data.sourceDetails) ? data.sourceDetails : [];
+            if (nestedDetails.length) {
+                nestedDetails.forEach(detail => {
+                    if (!detail) return;
+                    const detailQty = safeNum(detail.qty);
+                    if (detailQty <= 0) return;
+                    aggregated[displayVendor].sourceDetails.push({
+                        ...detail,
+                        vendorKey: safeStr(detail.vendorKey || key, key),
+                        displayVendor: safeStr(detail.displayVendor || displayVendor, displayVendor),
+                        qty: detailQty
+                    });
+                });
+            }
+            else if (qty > 0) {
+                aggregated[displayVendor].sourceDetails.push({
+                    sourceKey: safeStr(data.sourceKey || ''),
+                    vendorKey: key,
+                    displayVendor,
+                    qty,
+                    code: safeStr(data.code || '')
+                });
+            }
+        });
+        Object.values(aggregated).forEach(data => {
+            data.sourceDetails = (data.sourceDetails || []).filter(detail => detail && safeNum(detail.qty) > 0);
         });
         return aggregated;
     },
@@ -402,7 +433,8 @@ const DATAOPS_VENDOR_CHIP_MODULE = Object.freeze({
                 cogs: safeNum(data.cogs),
                 isLifo: !!data.isLifo,
                 isPerfectMatch: !!data.isPerfectMatch,
-                displayVendor
+                displayVendor,
+                sourceDetails: Array.isArray(data.sourceDetails) ? data.sourceDetails : []
             };
         });
         const chipSum = Object.values(reconciledDetails).reduce((sum, data) => sum + safeNum(data.qty), 0);
@@ -755,7 +787,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.13 ChipMove LotPolicy',
+    version: 'V1.a22.14 ChipMove Hotfix',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -1681,7 +1713,7 @@ const PARSER_MODULE = Object.freeze({
 });
 
 /* =======================================================================
-   1-D. V1.a22.13 화면/출력 분리 + 거래처칩 이동 복구 모듈
+   1-D. V1.a22.14 화면/출력 분리 + 거래처칩 이동 안정화 모듈
    - 기본 화면: 실사양식 / 코드 통합형
    - 상세 화면: 재고현황 / Lot 상세형
    - 원본 Lot 데이터는 보존하고 작업자 수정은 통합행 수정내역으로만 반영한다.
@@ -1720,15 +1752,21 @@ const DATAOPS_VIEW_MODULE = Object.freeze({
                 out[displayVendor].isLifo = out[displayVendor].isLifo || !!data.isLifo;
                 out[displayVendor].isPerfectMatch = out[displayVendor].isPerfectMatch || !!data.isPerfectMatch;
                 if (qty > 0) {
-                    out[displayVendor].sourceDetails.push({
-                        sourceKey: row.batchKey,
-                        vendorKey: vendor,
-                        displayVendor,
-                        qty,
-                        code: safeStr(row.코드),
-                        sourceName: safeStr(row.품명),
-                        sourceLotVendor: safeStr(row.거래처, '미지정'),
-                        sourceLotDate: safeStr(row.일자 || row._stockRecordDate || '')
+                    const sourceKeys = Array.isArray(data.keys) && data.keys.length ? data.keys : [vendor];
+                    sourceKeys.forEach(vendorKey => {
+                        const originalDetail = row.출고내역 && row.출고내역[vendorKey] ? row.출고내역[vendorKey] : data;
+                        const detailQty = safeNum(originalDetail.qty !== undefined ? originalDetail.qty : qty);
+                        if (detailQty <= 0) return;
+                        out[displayVendor].sourceDetails.push({
+                            sourceKey: row.batchKey,
+                            vendorKey,
+                            displayVendor,
+                            qty: detailQty,
+                            code: safeStr(row.코드),
+                            sourceName: safeStr(row.품명),
+                            sourceLotVendor: safeStr(row.거래처, '미지정'),
+                            sourceLotDate: safeStr(row.일자 || row._stockRecordDate || '')
+                        });
                     });
                 }
             });
@@ -3295,6 +3333,17 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             const targetCostMoved = targetAddQty * safeNum(targetUnitCost);
             const sourceCostMoved = sourceDeductQty * sPrice;
             const cleanVendorNameGlobal = safeStr(vendorName).replace('_perfect', '');
+            const resolveVendorChipKey = (details = {}, requestedVendor = '') => {
+                const requested = safeStr(requestedVendor);
+                if (requested && details[requested]) return requested;
+                const normalizedRequested = safeStr(requested).replace(/_perfect$/, '');
+                const foundKey = Object.keys(details || {}).find(key => {
+                    const data = details[key] || {};
+                    const display = DATAOPS_VENDOR_CHIP_MODULE.normalizeDisplayVendor(key, data);
+                    return key === requested || display === requested || safeStr(key).replace(/_perfect$/, '') === normalizedRequested || safeStr(display).replace(/_perfect$/, '') === normalizedRequested;
+                });
+                return foundKey || requested;
+            };
             const costLayer = DATAOPS_OPERATION_MODULE.buildCostLayer({
                 type: operationType,
                 sourceItem: sourceItemRef || {},
@@ -3309,15 +3358,17 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 if (p.batchKey === sourceKey) {
                     const cleanVendorName = cleanVendorNameGlobal;
                     const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역 || {})), 이슈: [...(p.이슈 || [])] };
+                    const sourceVendorKey = resolveVendorChipKey(np.출고내역, vendorName);
+                    const sourceChip = sourceVendorKey ? np.출고내역[sourceVendorKey] : null;
                     np.출고 -= sourceDeductQty;
                     np.매출원가 -= sourceCostMoved;
                     np.매출액 -= sourceRevenueMoved;
-                    if (np.출고내역[vendorName]) {
-                        np.출고내역[vendorName].qty -= sourceDeductQty;
-                        np.출고내역[vendorName].rev -= sourceRevenueMoved;
-                        np.출고내역[vendorName].cogs -= sourceCostMoved;
-                        if (np.출고내역[vendorName].qty <= 0)
-                            delete np.출고내역[vendorName];
+                    if (sourceChip) {
+                        sourceChip.qty -= sourceDeductQty;
+                        sourceChip.rev -= sourceRevenueMoved;
+                        sourceChip.cogs -= sourceCostMoved;
+                        if (sourceChip.qty <= 0)
+                            delete np.출고내역[sourceVendorKey];
                     }
                     np.전산잔량 = np.기초 + np.입고 + np.대체입고 - np.출고 - np.대체출고;
                     if (np.실사 !== null && np.실사 !== '') {
@@ -4854,11 +4905,13 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                 const isCtrlPressed = e.ctrlKey || e.metaKey;
                 const targetMoveKey = item._isCodeIntegratedRow ? (item._primaryTargetKey || item.batchKey) : item.batchKey;
                 if (item._isCodeIntegratedRow && safeStr(d.code) === safeStr(item.코드)) return;
-                if (targetMoveKey && d.sourceKey !== targetMoveKey && !isNaN(moveQty) && moveQty > 0) {
+                if (targetMoveKey && d.sourceKey !== targetMoveKey && !isNaN(moveQty) && moveQty > 0 && onSalesMove) {
                     onSalesMove(d.sourceKey, targetMoveKey, d.vendor, moveQty, d.code, item.코드, isCtrlPressed, d);
                 }
             }
-            catch (err) { }
+            catch (err) {
+                console.error('[DataOps] 거래처칩 이동 처리 오류', err);
+            }
         }, className: `transition duration-200 ${isActiveMulti ? 'bg-blue-50/60 outline outline-2 outline-blue-500 z-20 relative shadow-md' : (isLinked ? 'bg-slate-50 ring-1 ring-blue-400 shadow-md relative z-10 scale-[1.01]' : 'border-b border-slate-100 hover:bg-slate-50')} ${isDragOver ? 'bg-blue-50 outline outline-2 outline-blue-400 scale-[1.01] z-20 shadow-md' : ''} ${!isActiveMulti && item.isDummy && item.단가 === 0 ? 'bg-rose-50/30' : ''}` },
         React.createElement("td", { className: `py-2 px-3 sticky left-0 z-10 shadow-[1px_0_0_rgba(0,0,0,0.03)] border-r border-slate-200 ${isMultiGroupItem && !isLinked ? 'border-l-4 border-l-blue-400' : ''} ${isLinked ? 'bg-blue-50/50 border-l-4 border-l-blue-600' : ''} ${isActiveMulti ? 'bg-blue-50/60' : (item.isDummy && item.단가 === 0 ? 'bg-rose-50' : 'bg-white group-hover:bg-slate-50')} ${topBorderClass}` },
             React.createElement("div", { className: "flex items-center justify-between w-full" },
@@ -4907,7 +4960,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                         else if (data.isLifo) {
                             chipClass = "bg-sky-50 border-sky-200 text-sky-600 hover:bg-sky-100 hover:border-sky-300";
                         }
-                        return (React.createElement("div", { key: vendor, draggable: true, onDragStart: (e) => { e.stopPropagation(); const sourceDetails = Array.isArray(data.sourceDetails) && data.sourceDetails.length ? data.sourceDetails : [{ sourceKey: item.batchKey, vendorKey: vendor, displayVendor, qty: safeNum(data.qty), code: item.코드 }]; const primary = sourceDetails[0] || {}; e.dataTransfer.setData('text/plain', JSON.stringify({ sourceKey: primary.sourceKey || item.batchKey, vendor: primary.vendorKey || vendor, qty: safeNum(data.qty), code: primary.code || item.코드, sourceDetails })); e.currentTarget.classList.add('opacity-40', 'scale-95'); }, onDragEnd: (e) => { e.currentTarget.classList.remove('opacity-40', 'scale-95'); }, onDoubleClick: (e) => { e.stopPropagation(); if (!isCodeIntegratedRow && onVendorChipEdit) onVendorChipEdit(item.batchKey, displayVendor, data.qty); }, className: `group flex items-center px-2 py-0.5 rounded text-[10px] font-semibold cursor-grab active:cursor-grabbing border shadow-sm transition-all hover:-translate-y-0.5 ${chipClass}`, title: `${formatQty(data.qty)}개 출고 ${data.matchMode === 'LOT_MATCH_FAILED' ? '(Lot매칭실패)' : (data.matchMode && String(data.matchMode).includes('FIXED_LOT') ? '(구매처Lot고정)' : (data.isLifo ? '(당일우선)' : '(순차차감)'))}${isCodeIntegratedRow ? ' / 코드통합칩: 이동 가능, 수정·삭제는 Lot 상세에서 처리' : ' - 더블클릭: 수량수정 / x: 칩삭제'}` },
+                        return (React.createElement("div", { key: vendor, draggable: true, onDragStart: (e) => { e.stopPropagation(); let sourceDetails = Array.isArray(data.sourceDetails) && data.sourceDetails.length ? data.sourceDetails : [{ sourceKey: item.batchKey, vendorKey: vendor, displayVendor, qty: safeNum(data.qty), code: item.코드 }]; sourceDetails = sourceDetails.map(detail => ({ ...detail, sourceKey: safeStr(detail.sourceKey || item.batchKey), vendorKey: safeStr(detail.vendorKey || vendor), displayVendor: safeStr(detail.displayVendor || displayVendor), qty: safeNum(detail.qty), code: safeStr(detail.code || item.코드) })).filter(detail => detail.sourceKey && safeNum(detail.qty) > 0); const primary = sourceDetails[0] || { sourceKey: item.batchKey, vendorKey: vendor, qty: safeNum(data.qty), code: item.코드 }; e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'DATAOPS_VENDOR_CHIP_V2', sourceKey: primary.sourceKey || item.batchKey, vendor: primary.vendorKey || vendor, qty: safeNum(data.qty), code: primary.code || item.코드, sourceDetails })); e.currentTarget.classList.add('opacity-40', 'scale-95'); }, onDragEnd: (e) => { e.currentTarget.classList.remove('opacity-40', 'scale-95'); }, onDoubleClick: (e) => { e.stopPropagation(); if (!isCodeIntegratedRow && onVendorChipEdit) onVendorChipEdit(item.batchKey, displayVendor, data.qty); }, className: `group flex items-center px-2 py-0.5 rounded text-[10px] font-semibold cursor-grab active:cursor-grabbing border shadow-sm transition-all hover:-translate-y-0.5 ${chipClass}`, title: `${formatQty(data.qty)}개 출고 ${data.matchMode === 'LOT_MATCH_FAILED' ? '(Lot매칭실패)' : (data.matchMode && String(data.matchMode).includes('FIXED_LOT') ? '(구매처Lot고정)' : (data.isLifo ? '(당일우선)' : '(순차차감)'))}${isCodeIntegratedRow ? ' / 코드통합칩: 이동 가능, 수정·삭제는 Lot 상세에서 처리' : ' - 더블클릭: 수량수정 / x: 칩삭제'}` },
                             React.createElement("span", { className: "truncate max-w-[120px] flex items-center" },
                                 safeStr(displayVendor, '미지정'),
                                 "(",
@@ -7428,7 +7481,9 @@ ${balanceText}
     }, []);
     const handleChipDropRequest = useCallback((sourceKey, targetKey, vendor, maxQty, sourceCode, targetCode, isCtrlPressed, dragPayload = null) => {
         const sourceDetails = Array.isArray(dragPayload && dragPayload.sourceDetails)
-            ? dragPayload.sourceDetails.filter(d => d && d.sourceKey && safeNum(d.qty) > 0)
+            ? dragPayload.sourceDetails
+                .map(d => ({ ...d, sourceKey: safeStr(d && d.sourceKey), vendorKey: safeStr((d && d.vendorKey) || vendor), qty: safeNum(d && d.qty), code: safeStr((d && d.code) || sourceCode) }))
+                .filter(d => d && d.sourceKey && safeNum(d.qty) > 0)
             : [];
         const primaryDetail = sourceDetails[0] || { sourceKey, vendorKey: vendor, qty: maxQty, code: sourceCode };
         // V1.a22.10: Ctrl 드래그는 수량 1개 칩도 무조건 수량입력창을 띄운다.
@@ -7438,20 +7493,33 @@ ${balanceText}
             setSplitModal({ isOpen: true, payload: { sourceKey: primaryDetail.sourceKey || sourceKey, targetKey, vendor: primaryDetail.vendorKey || vendor, maxQty: safeNum(primaryDetail.qty) || maxQty, sourceCode: primaryDetail.code || sourceCode, targetCode, isCtrlPressed: true, allowOverMax: true, activeIssueMode: activeIssueModeRef.current || activeIssueMode, reviewType: filters.reviewType } });
         }
         else if (sourceDetails.length > 1) {
-            let remaining = safeNum(maxQty);
-            sourceDetails.forEach(detail => {
-                if (remaining <= 0) return;
-                const takeQty = Math.min(remaining, safeNum(detail.qty));
-                if (takeQty > 0 && detail.sourceKey !== targetKey) {
-                    handleSalesMove(detail.sourceKey, targetKey, detail.vendorKey || vendor, takeQty, { sourceCode: detail.code || sourceCode, targetCode, maxQty: takeQty, isCtrlPressed: false, sourceDeductQty: takeQty });
-                    remaining -= takeQty;
-                }
-            });
+            try {
+                let remaining = safeNum(maxQty);
+                sourceDetails.forEach(detail => {
+                    if (remaining <= 0) return;
+                    const takeQty = Math.min(remaining, safeNum(detail.qty));
+                    if (takeQty > 0 && detail.sourceKey !== targetKey) {
+                        handleSalesMove(detail.sourceKey, targetKey, detail.vendorKey || vendor, takeQty, { sourceCode: detail.code || sourceCode, targetCode, maxQty: takeQty, isCtrlPressed: false, sourceDeductQty: takeQty });
+                        remaining -= takeQty;
+                    }
+                });
+            }
+            catch (err) {
+                console.error('[DataOps] 통합칩 다중 Lot 이동 오류', err);
+                setAlertMsg('거래처칩 이동 중 오류가 발생했습니다. Lot 상세형에서 해당 칩을 다시 이동해 주세요.');
+            }
         }
         else {
-            handleSalesMove(primaryDetail.sourceKey || sourceKey, targetKey, primaryDetail.vendorKey || vendor, safeNum(primaryDetail.qty) || maxQty, { sourceCode: primaryDetail.code || sourceCode, targetCode, maxQty: safeNum(primaryDetail.qty) || maxQty, isCtrlPressed: false, sourceDeductQty: safeNum(primaryDetail.qty) || maxQty });
+            try {
+                const oneQty = safeNum(primaryDetail.qty) || maxQty;
+                handleSalesMove(primaryDetail.sourceKey || sourceKey, targetKey, primaryDetail.vendorKey || vendor, oneQty, { sourceCode: primaryDetail.code || sourceCode, targetCode, maxQty: oneQty, isCtrlPressed: false, sourceDeductQty: oneQty });
+            }
+            catch (err) {
+                console.error('[DataOps] 거래처칩 이동 오류', err);
+                setAlertMsg('거래처칩 이동 중 오류가 발생했습니다. Lot 상세형에서 해당 칩을 다시 이동해 주세요.');
+            }
         }
-    }, [handleSalesMove, activeIssueMode, filters.reviewType]);
+    }, [handleSalesMove, activeIssueMode, filters.reviewType, setAlertMsg]);
     const handleVendorChipDelete = useCallback((batchKey, displayVendor, qty) => {
         const label = safeStr(displayVendor, '미지정');
         if (!window.confirm(`${label}(${formatQty(qty)}) 판매칩을 삭제할까요?\n해당 상품 행에 매칭된 이 거래처 출고배정만 취소됩니다.`)) return;
