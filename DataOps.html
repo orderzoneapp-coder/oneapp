@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.21)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.23)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.21.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.23.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -616,12 +616,12 @@ const normalizeTransferGroupName = (name) => {
 // V1.a22.12: 3.매출 전표에 구매처 정보가 있으면 판매처-구매처 확정 매칭으로 처리하고 Lot/FIFO 검수 이슈를 생성하지 않는다.
 // V1.a22.12: 출고수량과 거래처(수량)는 3.매출 엑셀을 유일 기본값으로 삼고, 구매처가 없는 판매행에만 기존 FIFO/Lot 알고리즘을 적용한다.
 // V1.a22.15: 제외거래처 판정은 2.매입/3.매출 모두 전표의 거래처명(거래처) 기준으로만 적용한다. 구매처/매입처/원구매처는 제외 판정에서 제외한다.
-// V1.a22.21: 코드 통합형 거래처칩 이동은 단일 원장행만 즉시 적용하고, 통합2 이상은 Lot 상세형에서 수동 처리한다.
+// V1.a22.23: 코드 통합형 거래처칩 이동은 단일 원장행만 즉시 적용하고, 통합2 이상은 Lot 상세형에서 수동 처리한다.
 // V1.a22.17: 보기모드(코드 통합형/Lot 상세형)는 버튼형으로 전환하고, 정렬/카테고리는 드롭다운으로 정리한다.
 // V1.a22.17: System.IO는 아래로 스크롤하면 우측 펼치기 버튼만 유지하고, 최상단 복귀 전까지 자동 펼침을 금지해 화면 흔들림을 차단한다.
-// V1.a22.21: 이슈/결과 칸에서 잔량확인 뱃지와 구매일자/구매처 반복 표시를 제거한다. 잔량 마이너스는 잔량 숫자로만 표시한다.
-// V1.a22.21: 코드 통합형 배지는 실제 원장행이 2개 이상 합쳐진 경우에만 표시한다. 통합1은 단일 원장행이므로 숨긴다.
-// V1.a22.21: System.IO 상단은 원본 파일 상태 1줄만 표시하고, 현재화면 건수/분석시각은 하단 상태박스로 이동한다. 필터/정렬바의 보조 텍스트와 중복 건수 표시는 제거한다.
+// V1.a22.23: 이슈/결과 칸에서 잔량확인 뱃지와 구매일자/구매처 반복 표시를 제거한다. 잔량 마이너스는 잔량 숫자로만 표시한다.
+// V1.a22.23: 코드 통합형 배지는 실제 원장행이 2개 이상 합쳐진 경우에만 표시한다. 통합1은 단일 원장행이므로 숨긴다.
+// V1.a22.23: System.IO 상단은 원본 파일 상태 1줄만 표시하고, 현재화면 건수/분석시각은 하단 상태박스로 이동한다. 필터/정렬바의 보조 텍스트와 중복 건수 표시는 제거한다.
 // 단가가 없으면 사용자가 정한 그룹별 후보 외 다른 컬럼으로 자동 대체하지 않고 공백 + 단가확인으로 보낸다.
 // 청과상장은 출고가(공지) 다음 청과 고정가를 바로 적용한다.
 // 청과 고정가가 없을 때 도매A/0.91을 적용하고, 도매A가 없으면 이미 입고가+외주비+노무비/0.91로 계산된 상장가를 적용한다.
@@ -1715,8 +1715,11 @@ const DATA_MODEL_MODULE = Object.freeze({
             categoryName: DATA_MODEL_MODULE.getCategoryName(code),
             unit: safeStr(rawUnitValue, ''),
             unitType: DATA_MODEL_MODULE.detectUnitType(rawUnitValue),
-            vendor: safeStr(item.거래처, '미지정'),
-            lotVendor: safeStr(item.매입처매칭, ''),
+            // V1.a22.23: 표준 vendor는 화면/정렬용 구매처 기준이다. 판매처는 salesVendor로 별도 유지한다.
+            vendor: safeStr(item._displayPurchaseVendor || item._purchaseLotVendor || item._confirmedPurchaseVendor || (item._uploadRole === 'out' || item._fromSalesConfirmedPurchase ? '' : item.거래처), '미지정'),
+            salesVendor: safeStr(item._salesVendor || item._salesDisplayVendor || '', ''),
+            transactionVendor: safeStr(item._transactionVendor || '', ''),
+            lotVendor: safeStr(item.매입처매칭 || item._confirmedPurchaseVendor || item._purchaseLotVendor || '', ''),
             baseQty: safeNum(item.기초),
             inQty: safeNum(item.입고),
             outQty: safeNum(item.출고),
@@ -1954,8 +1957,19 @@ const FILTER_SORT_MODULE = Object.freeze({
             || FILTER_SORT_MODULE.getStockSortRank(a) - FILTER_SORT_MODULE.getStockSortRank(b)
             || FILTER_SORT_MODULE.getStockSortQty(b) - FILTER_SORT_MODULE.getStockSortQty(a);
     },
-    compareByDateThenCode: (a, b) => FILTER_SORT_MODULE.getPurchaseDateSortValue(a) - FILTER_SORT_MODULE.getPurchaseDateSortValue(b)
-        || FILTER_SORT_MODULE.compareByCodeThenName(a, b),
+    // V1.a22.23: 구매일순은 최신 구매일자를 우선한다. 구매일자가 없는 행은 정렬방향과 무관하게 항상 최하단으로 보낸다.
+// V1.a22.23: 거래처 공용 필드 혼선을 막기 위해 거래처명/구매처/판매처/확정구매처 역할 필드를 분리 고정한다.
+    isMissingPurchaseDate: (row = {}) => FILTER_SORT_MODULE.getPurchaseDateSortValue(row) === 99999999,
+    compareByDateThenCode: (a, b) => {
+        const missingA = FILTER_SORT_MODULE.isMissingPurchaseDate(a);
+        const missingB = FILTER_SORT_MODULE.isMissingPurchaseDate(b);
+        if (missingA !== missingB)
+            return missingA ? 1 : -1;
+        if (missingA && missingB)
+            return FILTER_SORT_MODULE.compareByCodeThenName(a, b);
+        return FILTER_SORT_MODULE.getPurchaseDateSortValue(b) - FILTER_SORT_MODULE.getPurchaseDateSortValue(a)
+            || FILTER_SORT_MODULE.compareByCodeThenName(a, b);
+    },
     compareByPriceThenCode: (a, b) => {
         const sa = FILTER_SORT_MODULE.getStandard(a);
         const sb = FILTER_SORT_MODULE.getStandard(b);
@@ -1974,6 +1988,9 @@ const FILTER_SORT_MODULE = Object.freeze({
                 return safeStr(sa.vendor, '미지정').localeCompare(safeStr(sb.vendor, '미지정'), 'ko') || FILTER_SORT_MODULE.compareByCodeThenName(a, b);
             return FILTER_SORT_MODULE.compareByCodeThenName(a, b);
         });
+        // V1.a22.23: 구매일순은 항상 최신순이며, 미지정 구매일자는 reverse에도 최하단을 유지한다.
+        if (sortMode === 'DATE')
+            return sorted;
         return sortDesc ? sorted.reverse() : sorted;
     },
     getGroupLabel: (row, sortMode = 'DEFAULT') => {
@@ -1990,8 +2007,10 @@ const FILTER_SORT_MODULE = Object.freeze({
     },
     getSortGroupKey: (row, sortMode = 'DEFAULT') => {
         const standard = FILTER_SORT_MODULE.getStandard(row);
-        if (sortMode === 'DATE')
-            return `${FILTER_SORT_MODULE.getPurchaseDateSortValue(row)}|${standard.code}`;
+        if (sortMode === 'DATE') {
+            const d = FILTER_SORT_MODULE.getPurchaseDateSortValue(row);
+            return `${d === 99999999 ? 99999999 : 99999999 - d}|${standard.code}`;
+        }
         if (sortMode === 'CATEGORY')
             return `${standard.category2Code}|${standard.code}`;
         if (sortMode === 'VENDOR')
@@ -2096,7 +2115,8 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
         const latestDateNum = validDates.length ? Math.max(...validDates) : 99999999;
         const nonZeroPriceRows = sourceRows.filter(r => safeNum(r.단가) > 0);
         const latestPriceRow = DATAOPS_VIEW_LAYER_MODULE.pickLatestRow(nonZeroPriceRows.length ? nonZeroPriceRows : sourceRows);
-        const vendorSet = [...new Set(sourceRows.map(r => safeStr(r.거래처 || r._purchaseLotVendor || r._salesGroupVendor || '')).filter(Boolean))];
+        // V1.a22.23: 코드 통합형 상품명 하단의 구매정보는 구매처 계열만 사용한다. 판매처/거래처명은 거래처칩 영역 전용이다.
+        const vendorSet = [...new Set(sourceRows.map(r => safeStr(r._displayPurchaseVendor || r._purchaseLotVendor || r._confirmedPurchaseVendor || (r._uploadRole === 'out' ? '' : r.거래처) || '')).filter(Boolean))];
         return {
             ...latest,
             batchKey: `VIEW_CODE|${safeStr(code || 'NO_CODE')}`,
@@ -3039,6 +3059,7 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                         수량: parseNumber(getValByKeywords(rowObj, keywords.qty)), 단가: parseNumber(getValByKeywords(rowObj, keywords.price)),
                         거래처: safeStr(getValByKeywords(rowObj, keywords.vendor), '미지정'), 매입처매칭: safeStr(getValByKeywords(rowObj, keywords.matchVendor), ''),
                         일자: safeStr(dateCell.value, ''), _dateSource: safeStr(dateCell.key, ''), 기본: safeStr(basicCell.value, ''), _basicSource: safeStr(basicCell.key, ''), 메모: '', _raw: rowObj,
+                        _transactionVendor: '', _purchaseGroupVendor: '', _purchaseLotVendor: '', _displayPurchaseVendor: '', _salesVendor: '', _salesDisplayVendor: '', _salesGroupVendor: '', _confirmedPurchaseVendor: '',
                         _sourceSheet: sheetName || '', _sourceFileName: file.name || '', _sourceTitleText: sourceTitleText, _uploadRole: role, _fileType: isClosingRestoreRow ? 'CLOSING_RESTORE' : 'RAW_DATA',
                         _sheetBasisDate: sheetBasisDate.dateNum || 0, _sheetBasisDateSource: sheetBasisDate.source || '', _sheetBasisDateRaw: sheetBasisDate.raw || ''
                     };
@@ -3092,8 +3113,12 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                             normObj.일자 = safeStr(purchaseDate, '');
                             normObj._dateSource = '매입일자';
                         }
+                        // V1.a22.23 역할 고정:
+                        // 거래처명은 제외판정용 전표 거래처, 구매처는 Lot/구매정보 표시용이다.
+                        normObj._transactionVendor = safeStr(purchaseGroupVendor, '');
                         normObj._purchaseGroupVendor = safeStr(purchaseGroupVendor, '');
                         normObj._purchaseLotVendor = safeStr(purchaseLotVendor, '');
+                        normObj._displayPurchaseVendor = safeStr(purchaseLotVendor !== null ? purchaseLotVendor : purchaseGroupVendor, '미지정');
                         if (purchaseLotVendor !== null)
                             normObj.거래처 = safeStr(purchaseLotVendor, '미지정');
                         else if (purchaseGroupVendor !== null)
@@ -3116,11 +3141,19 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                             normObj.일자 = safeStr(salesDate, '');
                             normObj._dateSource = '판매일자';
                         }
-                        if (salesVendor !== null)
-                            normObj.거래처 = safeStr(salesVendor, '미지정');
+                        if (salesVendor !== null) {
+                            const saleVendorText = safeStr(salesVendor, '미지정');
+                            normObj.거래처 = saleVendorText;
+                            normObj._transactionVendor = saleVendorText;
+                            normObj._salesVendor = saleVendorText;
+                            normObj._salesDisplayVendor = saleVendorText;
+                            normObj._salesGroupVendor = saleVendorText;
+                        }
                         if (lotVendor !== null) {
                             const confirmedVendor = safeStr(lotVendor, '');
                             normObj.매입처매칭 = confirmedVendor;
+                            normObj._confirmedPurchaseVendor = confirmedVendor;
+                            normObj._displayPurchaseVendor = confirmedVendor;
                             normObj._salesConfirmedPurchaseVendor = confirmedVendor;
                             normObj._hasSalesConfirmedPurchase = !!confirmedVendor && confirmedVendor !== '미지정';
                         }
@@ -3795,6 +3828,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         Object.values(vendors).forEach(v => { tRev += v.rev; tCogs += v.cogs; });
                         pData[batchKey] = {
                             batchKey, 코드: code, 품명: name, 단위: safeStr(item.단위 || ((_a = item._raw) === null || _a === void 0 ? void 0 : _a['단위']) || ((_b = item._raw) === null || _b === void 0 ? void 0 : _b['규격단위']) || ((_c = item._raw) === null || _c === void 0 ? void 0 : _c['포장단위']), ''), 단가: price, 일자: date, 거래처: vendor,
+                            _transactionVendor: safeStr(item._transactionVendor || '', ''), _purchaseLotVendor: safeStr(item._purchaseLotVendor || vendor, ''), _displayPurchaseVendor: safeStr(item._displayPurchaseVendor || item._purchaseLotVendor || vendor, '미지정'),
                             기초: baseQty, 입고: inQty, 출고: outQty,
                             대체입고: 0, 대체출고: 0, 전산잔량: baseQty + inQty - outQty,
                             실사: actualQty, 로스: adjustQty,
@@ -3921,7 +3955,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 if (type === 'prev' && isClosingItem(item) && safeNum(qtyToApply) <= 0)
                     return;
                 // 제외거래처는 외부 구매/판매 계산에서 제외한다.
-                // V1.a22.15: 구매현황은 item.거래처 단일값만 보지 않고 구매처/Lot·거래처명·창고명·적요 후보를 함께 판정한다.
+                // V1.a22.23: 제외거래처는 거래처명(_transactionVendor) 기준만 사용한다. 구매처/Lot 필드는 제외 판정에 사용하지 않는다.
                 if (type === 'in' && isExcludedTransactionRow(item, 'in'))
                     return;
                 const code = String(item.코드 || 'NO_CODE');
@@ -3944,6 +3978,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 if (!pData[batchKey]) {
                     pData[batchKey] = {
                         batchKey, 코드: code, 품명: name, 단위: unit, 단가: price, 일자: date, 거래처: vendor,
+                        _transactionVendor: safeStr(item._transactionVendor, ''), _purchaseGroupVendor: safeStr(item._purchaseGroupVendor, ''), _purchaseLotVendor: safeStr(item._purchaseLotVendor || vendor, ''), _displayPurchaseVendor: safeStr(item._displayPurchaseVendor || item._purchaseLotVendor || vendor, '미지정'), _salesVendor: safeStr(item._salesVendor, ''), _salesDisplayVendor: safeStr(item._salesDisplayVendor, ''), _salesGroupVendor: safeStr(item._salesGroupVendor, ''), _confirmedPurchaseVendor: safeStr(item._confirmedPurchaseVendor || item._salesConfirmedPurchaseVendor || '', ''), _uploadRole: type,
                         기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0,
                         매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig: { 기초: 0, 입고: 0, 출고: 0, 단가: price },
                         isDummy: (!code || code === 'NO_CODE'), 수기확인완료: false, _fromClosingBase: (type === 'prev' && isClosingItem(item)), 기본: getBasicRawValue(item), _totalCostForAvg: qtyToApply * price, _latestDateNum: extractDateNum(date), _lotSortDate: getLotDateNum(date), _lotSourceRank: getLotSourceRank(type, item), _dateDisplayMemo: getDateDisplayMemo(item, type)
@@ -3964,6 +3999,15 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         pData[batchKey].일자 = date || pData[batchKey].일자;
                     }
                 }
+                // V1.a22.23: 병합된 원장행에도 역할별 거래처 필드를 보강한다. 화면 구매정보는 판매처가 아니라 구매처 기준으로만 표시한다.
+                pData[batchKey]._transactionVendor = pData[batchKey]._transactionVendor || safeStr(item._transactionVendor, '');
+                pData[batchKey]._purchaseGroupVendor = pData[batchKey]._purchaseGroupVendor || safeStr(item._purchaseGroupVendor, '');
+                pData[batchKey]._purchaseLotVendor = pData[batchKey]._purchaseLotVendor || safeStr(item._purchaseLotVendor || vendor, '');
+                pData[batchKey]._displayPurchaseVendor = pData[batchKey]._displayPurchaseVendor || safeStr(item._displayPurchaseVendor || item._purchaseLotVendor || vendor, '미지정');
+                pData[batchKey]._salesVendor = pData[batchKey]._salesVendor || safeStr(item._salesVendor, '');
+                pData[batchKey]._salesDisplayVendor = pData[batchKey]._salesDisplayVendor || safeStr(item._salesDisplayVendor, '');
+                pData[batchKey]._salesGroupVendor = pData[batchKey]._salesGroupVendor || safeStr(item._salesGroupVendor, '');
+                pData[batchKey]._confirmedPurchaseVendor = pData[batchKey]._confirmedPurchaseVendor || safeStr(item._confirmedPurchaseVendor || item._salesConfirmedPurchaseVendor || '', '');
                 pData[batchKey].기초 += type === 'prev' ? qtyToApply : 0;
                 pData[batchKey].입고 += type === 'in' ? qtyToApply : 0;
                 const lotDateNum = getLotDateNum(date);
@@ -4217,6 +4261,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     if (!pData[bKey]) {
                         pData[bKey] = {
                             batchKey: bKey, 코드: code, 품명: sale.품명, 단위: safeStr(sale.단위, ''), 단가: unitCost, 일자: safeStr(sale.일자, ''), 거래처: confirmedVendor,
+                            _transactionVendor: safeStr(sale._transactionVendor || sale._salesVendor || sale.거래처 || '', ''), _salesVendor: safeStr(sale._salesVendor || sale.거래처 || '', ''), _salesDisplayVendor: safeStr(sale._salesDisplayVendor || sale.거래처 || '', ''), _salesGroupVendor: safeStr(sale._salesGroupVendor || sale.거래처 || '', ''), _confirmedPurchaseVendor: confirmedVendor, _purchaseLotVendor: confirmedVendor, _displayPurchaseVendor: confirmedVendor, _uploadRole: 'out',
                             기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0,
                             매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig: { 기초: 0, 입고: 0, 출고: 0, 단가: unitCost },
                             isDummy: (!code || code === 'NO_CODE'), 수기확인완료: false, _fromSalesConfirmedPurchase: true, _totalCostForAvg: 0, _latestDateNum: extractDateNum(safeStr(sale.일자, '')), _lotSortDate: getLotDateNum(safeStr(sale.일자, '')), _lotSourceRank: 2, _dateDisplayMemo: getDateDisplayMemo(sale, 'out')
@@ -4236,6 +4281,13 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         confirmedUnitCost = safeNum(confirmedBucket.단가);
                     const bKey = ensureConfirmedPurchaseRow(confirmedBucket, confirmedUnitCost, confirmedVendor);
                     const row = pData[bKey];
+                    row._transactionVendor = row._transactionVendor || safeStr(sale._transactionVendor || sale._salesVendor || sale.거래처 || '', '');
+                    row._salesVendor = row._salesVendor || safeStr(sale._salesVendor || sale.거래처 || '', '');
+                    row._salesDisplayVendor = row._salesDisplayVendor || safeStr(sale._salesDisplayVendor || sale.거래처 || '', '');
+                    row._salesGroupVendor = row._salesGroupVendor || safeStr(sale._salesGroupVendor || sale.거래처 || '', '');
+                    row._confirmedPurchaseVendor = row._confirmedPurchaseVendor || confirmedVendor;
+                    row._purchaseLotVendor = row._purchaseLotVendor || confirmedVendor;
+                    row._displayPurchaseVendor = row._displayPurchaseVendor || row._purchaseLotVendor || confirmedVendor;
                     const rowUnitCost = confirmedUnitCost > 0 ? confirmedUnitCost : safeNum(row.단가);
                     const cogsTotal = rowUnitCost > 0 ? Math.abs(qtyToDeduct) * rowUnitCost * (qtyToDeduct < 0 ? -1 : 1) : 0;
                     if (confirmedBucket && confirmedBucket.수량 !== undefined)
@@ -5098,7 +5150,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
         }
     });
     if (splitLotMemo) {
-        // V1.a22.21: 구매일자/구매처는 상품명 하단에 이미 노출되므로 이슈/결과 칸에 반복 표시하지 않는다.
+        // V1.a22.23: 구매일자/구매처는 상품명 하단에 이미 노출되므로 이슈/결과 칸에 반복 표시하지 않는다.
         // splitLotMemo는 출력/내부 참고용으로만 유지하고 화면 뱃지에는 추가하지 않는다.
     }
     const hasIssue = regularIssues.length > 0;
@@ -5243,6 +5295,8 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
         // 3차 카테고리(품목코드 앞 6자리) 변경 시 연하고 살짝만 구분되는 테두리 적용
         topBorderClass = 'border-t-[2px] border-t-slate-200';
     }
+    // V1.a22.23: 상품명 하단 구매정보에는 구매처 계열만 표시한다. 3.매출 거래처명(판매처)은 오른쪽 거래처칩 전용이다.
+    const displayPurchaseVendor = safeStr(item._displayPurchaseVendor || item._purchaseLotVendor || item._confirmedPurchaseVendor || (item._uploadRole === 'out' || item._fromSalesConfirmedPurchase ? '' : item.거래처) || '미지정', '미지정');
     return (React.createElement("tr", { "data-code": item.코드, "data-batch": item.batchKey, onDragOver: (e) => { e.preventDefault(); setIsDragOver(true); }, onDragLeave: (e) => { e.preventDefault(); setIsDragOver(false); }, onDrop: (e) => {
             e.preventDefault();
             setIsDragOver(false);
@@ -5278,7 +5332,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                         item.코드 !== '-' && item.코드 !== 'NO_CODE' ? React.createElement("span", { className: "mr-1" }, item.코드) : '',
                         React.createElement("span", { title: item._dateDisplayMemo || (item.일자 ? item.일자 : '미상(과거처리)'), className: isToday ? "text-blue-700 bg-blue-100 px-1 rounded border border-blue-200 font-bold" : (item._dateDisplayMemo && item._dateDisplayMemo.includes('과거처리') ? "text-slate-500 bg-slate-100 px-1 rounded border border-slate-200 font-bold" : "") }, item.일자 || '미상'),
                         React.createElement("span", { className: "mx-1 text-slate-300" }, "|"),
-                        React.createElement("span", { className: `truncate ${isToday ? 'text-blue-700 font-bold' : ''}` }, item.거래처 || '미지정'),
+                        React.createElement("span", { className: `truncate ${isToday ? 'text-blue-700 font-bold' : ''}`, title: displayPurchaseVendor }, displayPurchaseVendor),
                         isCodeSummaryViewRow && safeNum(item._viewLotCount) > 1 && React.createElement("span", { className: "ml-1 px-1 py-[1px] rounded bg-indigo-50 text-indigo-600 border border-indigo-100 text-[9px] font-black whitespace-nowrap", title: item._viewSummaryText || '코드 통합형 표시행' }, "통합", item._viewLotCount ? ` ${item._viewLotCount}` : ''),
                         item.대체입고 > 0 && React.createElement("span", { className: "text-[9px] text-blue-500 font-semibold whitespace-nowrap ml-1 shrink-0" }, "(\uC870\uC815\uB428)"))),
                 React.createElement("div", { className: "flex items-center justify-end shrink-0 pl-3 border-l border-slate-200" },
@@ -5987,7 +6041,7 @@ function App() {
                 return;
             }
             if (msg === '🚨잔량' || msg === '✅잔량' || msg === '🚨계산' || msg === '✅계산') {
-                // V1.a22.21: 잔량/계산 이슈는 테이블의 잔량 숫자 색상으로 이미 충분히 보인다.
+                // V1.a22.23: 잔량/계산 이슈는 테이블의 잔량 숫자 색상으로 이미 충분히 보인다.
                 // 오른쪽 이슈/결과 칸에는 중복 뱃지를 표시하지 않고, 카드 카운트/필터 판단에는 기존 이슈값을 그대로 사용한다.
                 return;
             }
@@ -7898,7 +7952,7 @@ ${balanceText}
         const targetViewKeys = Array.isArray(moveMeta.targetSourceKeys) ? moveMeta.targetSourceKeys : [];
         const sourceViewCount = sourceIsView ? safeNum(moveMeta.sourceViewLotCount || sourceViewKeys.length || 0) : 1;
         const targetViewCount = targetIsView ? safeNum(moveMeta.targetViewLotCount || targetViewKeys.length || 0) : 1;
-        // V1.a22.21: 통합2 이상은 자동 분배하지 않는다. Lot 상세형으로 풀어 관리자가 수동 이동한다.
+        // V1.a22.23: 통합2 이상은 자동 분배하지 않는다. Lot 상세형으로 풀어 관리자가 수동 이동한다.
         if ((sourceIsView && sourceViewCount > 1) || (targetIsView && targetViewCount > 1)) {
             setViewMode('LOT_DETAIL');
             setAlertMsg('통합2 이상 상품은 자동 이동하지 않습니다. Lot 상세형으로 전환했습니다. 원본 Lot 행을 확인한 뒤 거래처칩을 수동으로 이동하세요.');
@@ -7961,7 +8015,7 @@ ${balanceText}
     }, [handleSalesMove, resolveViewLayerTargetKey, setAlertMsg, setViewMode, productData]);
     const handleChipDropRequest = useCallback((sourceKey, targetKey, vendor, maxQty, sourceCode, targetCode, isCtrlPressed, viewMeta = {}) => {
         const payloadBase = { sourceKey, targetKey, vendor, maxQty, sourceCode, targetCode, ...viewMeta, activeIssueMode: activeIssueModeRef.current || activeIssueMode, reviewType: filters.reviewType };
-        // V1.a22.21: 코드 통합형 거래처칩 이동은 통합1만 즉시 적용한다. 통합2 이상은 Lot 상세형에서 수동 처리한다.
+        // V1.a22.23: 코드 통합형 거래처칩 이동은 통합1만 즉시 적용한다. 통합2 이상은 Lot 상세형에서 수동 처리한다.
         // Ctrl 드래그는 수량 1개 칩도 무조건 수량입력창을 띄운다.
         if (isCtrlPressed) {
             setSplitModal({ isOpen: true, payload: { ...payloadBase, isCtrlPressed: true, allowOverMax: true } });
@@ -8407,7 +8461,7 @@ ${balanceText}
                     React.createElement("h1", { className: "text-xl md:text-xl font-black leading-none text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.21"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.23"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
@@ -8482,7 +8536,7 @@ ${balanceText}
                     React.createElement("div", { className: "mb-4" },
                         React.createElement("h4", { className: "text-sm font-bold text-slate-800" },
                             React.createElement("i", { className: "fas fa-star text-amber-500 mr-2" }),
-                            "V1.a22.21 \uC7AC\uACE0\uC218\uBD88\uBD80 \uC2E4\uC0AC \uC5C5\uB85C\uB4DC / \uC774\uC288\uCE78 \uC911\uBCF5\uD45C\uC2DC \uC815\uB9AC"),
+                            "V1.a22.23 \uC7AC\uACE0\uC218\uBD88\uBD80 \uC2E4\uC0AC \uC5C5\uB85C\uB4DC / \uC774\uC288\uCE78 \uC911\uBCF5\uD45C\uC2DC \uC815\uB9AC"),
                         React.createElement("p", { className: "text-xs text-slate-500 mt-1.5 ml-6" }, "\u2605 \uD544\uD130\uC640 BOX/EA/\uC18C\uBD84 \uD544\uD130\uAC00 \uC544\uB798 \uC124\uC815\uAC12\uC744 \uAE30\uC900\uC73C\uB85C \uB3D9\uC791\uD569\uB2C8\uB2E4. \uB2E8\uC704 \uCEEC\uB7FC\uC744 \uC6B0\uC120 \uD310\uC815\uD558\uACE0, \uB2E8\uC704\uAC00 \uC5C6\uC744 \uB54C\uB9CC \uD488\uBA85/\uADDC\uACA9\uC744 \uBCF4\uC870 \uB2E8\uC11C\uB85C \uC0AC\uC6A9\uD569\uB2C8\uB2E4.")),
                     React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-4 bg-amber-50/60 p-4 rounded-lg border border-amber-200" },
                         React.createElement("div", { className: "flex flex-col" },
