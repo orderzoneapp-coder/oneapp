@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.12)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.14)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.12.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.14.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -604,6 +604,7 @@ const normalizeTransferGroupName = (name) => {
 // V1.a22.12: 대체/묶음 원가 레이어를 동일 Lot·동일 단가 기준으로 병합해 누적 표시와 단가검증 연동을 안정화한다.
 // V1.a22.12: 3.매출 전표에 구매처 정보가 있으면 판매처-구매처 확정 매칭으로 처리하고 Lot/FIFO 검수 이슈를 생성하지 않는다.
 // V1.a22.12: 출고수량과 거래처(수량)는 3.매출 엑셀을 유일 기본값으로 삼고, 구매처가 없는 판매행에만 기존 FIFO/Lot 알고리즘을 적용한다.
+// V1.a22.14: 제외거래처 판정은 2.매입/3.매출 모두 전표의 거래처명(거래처) 기준으로만 적용한다. 구매처/매입처/원구매처는 제외 판정에서 제외한다.
 // 단가가 없으면 사용자가 정한 그룹별 후보 외 다른 컬럼으로 자동 대체하지 않고 공백 + 단가확인으로 보낸다.
 // 청과상장은 출고가(공지) 다음 청과 고정가를 바로 적용한다.
 // 청과 고정가가 없을 때 도매A/0.91을 적용하고, 도매A가 없으면 이미 입고가+외주비+노무비/0.91로 계산된 상장가를 적용한다.
@@ -750,7 +751,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.12',
+    version: 'V1.a22.14',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -3798,8 +3799,60 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             }
             const stockPool = {};
             let lotSequence = 0;
-            const excludeList = (mappings.excludeVendor || '').split(',').map(s => s.trim().toLowerCase()).filter(s => s);
-            const isExcluded = (vendorName) => vendorName && excludeList.some(keyword => vendorName.toLowerCase().includes(keyword));
+            const excludeList = (mappings.excludeVendor || '').split(/[\n,]+/).map(s => s.trim()).filter(s => s);
+            const normalizeExcludeText = (val = '') => safeStr(val, '').replace(/\s/g, '').toLowerCase();
+            const excludeKeywords = excludeList.map(normalizeExcludeText).filter(Boolean);
+            const isExcluded = (vendorName) => {
+                const hay = normalizeExcludeText(vendorName);
+                return !!(hay && excludeKeywords.some(keyword => hay.includes(keyword)));
+            };
+            const getRawExactValue = (raw = {}, names = []) => {
+                const keys = Object.keys(raw || {});
+                const normalizeHeader = (v) => safeStr(v, '').replace(/\s/g, '').replace(/[()（）\[\]{}]/g, '').toLowerCase();
+                for (const name of names) {
+                    const target = normalizeHeader(name);
+                    const found = keys.find(k => normalizeHeader(k) === target);
+                    if (found !== undefined && raw[found] !== undefined && raw[found] !== null && String(raw[found]).trim() !== '')
+                        return raw[found];
+                }
+                return '';
+            };
+            const getRawFuzzyValues = (raw = {}, hints = []) => {
+                const normalizeHeader = (v) => safeStr(v, '').replace(/\s/g, '').replace(/[()（）\[\]{}]/g, '').toLowerCase();
+                const normalizedHints = hints.map(normalizeHeader).filter(Boolean);
+                return Object.entries(raw || {})
+                    .filter(([key, value]) => {
+                    if (value === undefined || value === null || String(value).trim() === '') return false;
+                    const nk = normalizeHeader(key);
+                    return normalizedHints.some(h => nk === h || nk.includes(h) || h.includes(nk));
+                })
+                    .map(([, value]) => value);
+            };
+            const getExcludedVendorHit = (row = {}, role = '') => {
+                const raw = row._raw || row.raw || {};
+                // V1.a22.14 확정 정책:
+                // 제외거래처는 2.매입/3.매출 전표의 거래처명(또는 동일 의미의 거래처) 값에만 적용한다.
+                // 구매처/구매처명/매입처/원구매처/매입처(Lot)는 원가·Lot 매칭 정보이므로 제외 판정에 절대 사용하지 않는다.
+                const transactionVendor = (() => {
+                    if (role === 'in') {
+                        return getRawExactValue(raw, ['거래처명', '거래처']) || row._purchaseGroupVendor || '';
+                    }
+                    if (role === 'out') {
+                        return getRawExactValue(raw, ['거래처명', '거래처']) || row._salesDisplayVendor || row._salesGroupVendor || row.거래처 || '';
+                    }
+                    return getRawExactValue(raw, ['거래처명', '거래처']) || row.거래처 || '';
+                })();
+                const hay = normalizeExcludeText(transactionVendor);
+                if (!hay)
+                    return null;
+                for (const keyword of excludeKeywords) {
+                    if (keyword && hay.includes(keyword))
+                        return { keyword, candidate: safeStr(transactionVendor, ''), role };
+                }
+                return null;
+            };
+
+            const isExcludedTransactionRow = (row = {}, role = '') => !!getExcludedVendorHit(row, role);
             const normalizeLotNameForMatch = (val) => safeStr(val, '')
                 .replace(/\s/g, '')
                 .replace(/[()（）\[\]{}]/g, '')
@@ -3824,8 +3877,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 // 과거 입출고 흔적만 있고 최종 보유재고가 없는 Lot의 입고가가 화면에 뜨는 문제를 차단한다.
                 if (type === 'prev' && isClosingItem(item) && safeNum(qtyToApply) <= 0)
                     return;
-                // 제외거래처는 외부 구매/판매 계산에서 제외한다. V1.a22.12 기준 3우리도 확인용 내부전표라 입고 계산에서 제외한다.
-                if (type === 'in' && isExcluded(item.거래처))
+                // 제외거래처는 외부 구매/판매 계산에서 제외한다.
+                // V1.a22.14: 구매현황은 item.거래처 단일값만 보지 않고 구매처/Lot·거래처명·창고명·적요 후보를 함께 판정한다.
+                if (type === 'in' && isExcludedTransactionRow(item, 'in'))
                     return;
                 const code = String(item.코드 || 'NO_CODE');
                 const price = parseNumber(item.단가);
@@ -3964,7 +4018,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             const aggregatedSales = {};
             outItems.forEach(sale => {
                 const code = String(sale.코드 || 'NO_CODE');
-                if (isExcluded(sale.거래처))
+                // V1.a22.14: 판매현황은 판매처/거래처명/no. 기준으로 제외한다.
+                // 단, 구매처는 사람이 확정한 원가 출처 팩트이므로 제외거래처 판정에 사용하지 않는다.
+                if (isExcludedTransactionRow(sale, 'out'))
                     return;
                 const vendorKey = safeStr(sale.거래처, '미지정');
                 const matchKey = safeStr(sale.매입처매칭, '미지정');
@@ -5329,7 +5385,7 @@ function App() {
         };
         // V1.a22.12 정책: 3우리는 02 통합구매분 중 01창고 입고 확인용 내부전표이므로 DataOps 계산에서 제외한다.
         // 기존 브라우저 localStorage에 V1.a22.12 설정이 남아 있어도 3우리는 자동 보강한다.
-        merged.excludeVendor = ensureCsvValue(merged.excludeVendor, ['우리농산', '1전송', '3우리']);
+        merged.excludeVendor = ensureCsvValue(merged.excludeVendor, ['우리농산', '1전송', '3우리', '가구매', '가판매']);
         // V1.a22.12 정책: 구매전표 거래처명 '우리농산'이 판매전표 Lot 매칭값으로도 유입될 수 있으므로
         // 내부 분배/공용 Lot 예외에는 '우리'와 '우리농산'을 함께 보강한다.
         merged.internalLot = ensureCsvValue(merged.internalLot, ['우리', '우리농산']);
