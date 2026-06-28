@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.26)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.27)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.26.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.27.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -616,13 +616,14 @@ const normalizeTransferGroupName = (name) => {
 // V1.a22.12: 3.매출 전표에 구매처 정보가 있으면 판매처-구매처 확정 매칭으로 처리하고 Lot/FIFO 검수 이슈를 생성하지 않는다.
 // V1.a22.12: 출고수량과 거래처(수량)는 3.매출 엑셀을 유일 기본값으로 삼고, 구매처가 없는 판매행에만 기존 FIFO/Lot 알고리즘을 적용한다.
 // V1.a22.15: 제외거래처 판정은 2.매입/3.매출 모두 전표의 거래처명(거래처) 기준으로만 적용한다. 구매처/매입처/원구매처는 제외 판정에서 제외한다.
-// V1.a22.26: 코드 통합형 거래처칩 이동은 단일 원장행만 즉시 적용하고, 통합2 이상은 Lot 상세형에서 수동 처리한다.
+// V1.a22.27: 코드 통합형 거래처칩 이동은 단일 원장행만 즉시 적용하고, 통합2 이상은 Lot 상세형에서 수동 처리한다.
 // V1.a22.17: 보기모드(코드 통합형/Lot 상세형)는 버튼형으로 전환하고, 정렬/카테고리는 드롭다운으로 정리한다.
 // V1.a22.17: System.IO는 아래로 스크롤하면 우측 펼치기 버튼만 유지하고, 최상단 복귀 전까지 자동 펼침을 금지해 화면 흔들림을 차단한다.
-// V1.a22.26: 이슈/결과 칸에서 잔량확인 뱃지와 구매일자/구매처 반복 표시를 제거한다. 잔량 마이너스는 잔량 숫자로만 표시한다.
-// V1.a22.26: 코드 통합형 배지는 실제 원장행이 2개 이상 합쳐진 경우에만 표시한다. 통합1은 단일 원장행이므로 숨긴다.
-// V1.a22.26: System.IO 상단은 원본 파일 상태 1줄만 표시하고, 현재화면 건수/분석시각은 하단 상태박스로 이동한다. 필터/정렬바의 보조 텍스트와 중복 건수 표시는 제거한다.
-// V1.a22.26: 판매업로드 생성 시 구매처가 내부값이면 출고지시 기준으로 보정한다. 출고지시=재고는 보정하지 않고, 공백은 구매처 공백, 재고가 아닌 지시값은 3우리 내부 구매분과 품목·수량·단가를 매칭해 원구매처로 대체한다.
+// V1.a22.27: 이슈/결과 칸에서 잔량확인 뱃지와 구매일자/구매처 반복 표시를 제거한다. 잔량 마이너스는 잔량 숫자로만 표시한다.
+// V1.a22.27: 코드 통합형 배지는 실제 원장행이 2개 이상 합쳐진 경우에만 표시한다. 통합1은 단일 원장행이므로 숨긴다.
+// V1.a22.27: System.IO 상단은 원본 파일 상태 1줄만 표시하고, 현재화면 건수/분석시각은 하단 상태박스로 이동한다. 필터/정렬바의 보조 텍스트와 중복 건수 표시는 제거한다.
+// V1.a22.27: 판매업로드 생성 시 구매처가 내부값이면 출고지시 기준으로 보정한다. 출고지시=재고는 보정하지 않고, 공백은 구매처 공백, 재고가 아닌 지시값은 3우리 내부 구매분과 품목·수량·단가를 매칭해 원구매처로 대체한다.
+// V1.a22.27: DataOps 검수에서도 판매전표 생성일자를 구매일자로 쓰지 않는다. 내부값+재고 출고는 판매전표 구매처 확정매칭을 금지하고 기존 재고/FIFO Lot에서 차감한다.
 // 단가가 없으면 사용자가 정한 그룹별 후보 외 다른 컬럼으로 자동 대체하지 않고 공백 + 단가확인으로 보낸다.
 // 청과상장은 출고가(공지) 다음 청과 고정가를 바로 적용한다.
 // 청과 고정가가 없을 때 도매A/0.91을 적용하고, 도매A가 없으면 이미 입고가+외주비+노무비/0.91로 계산된 상장가를 적용한다.
@@ -1716,7 +1717,7 @@ const DATA_MODEL_MODULE = Object.freeze({
             categoryName: DATA_MODEL_MODULE.getCategoryName(code),
             unit: safeStr(rawUnitValue, ''),
             unitType: DATA_MODEL_MODULE.detectUnitType(rawUnitValue),
-            // V1.a22.26: 표준 vendor는 화면/정렬용 구매처 기준이다. 판매처는 salesVendor로 별도 유지한다.
+            // V1.a22.27: 표준 vendor는 화면/정렬용 구매처 기준이다. 판매처는 salesVendor로 별도 유지한다.
             vendor: safeStr(item._displayPurchaseVendor || item._purchaseLotVendor || item._confirmedPurchaseVendor || (item._uploadRole === 'out' || item._fromSalesConfirmedPurchase ? '' : item.거래처), '미지정'),
             salesVendor: safeStr(item._salesVendor || item._salesDisplayVendor || '', ''),
             transactionVendor: safeStr(item._transactionVendor || '', ''),
@@ -1958,8 +1959,8 @@ const FILTER_SORT_MODULE = Object.freeze({
             || FILTER_SORT_MODULE.getStockSortRank(a) - FILTER_SORT_MODULE.getStockSortRank(b)
             || FILTER_SORT_MODULE.getStockSortQty(b) - FILTER_SORT_MODULE.getStockSortQty(a);
     },
-    // V1.a22.26: 구매일순은 최신 구매일자를 우선한다. 구매일자가 없는 행은 정렬방향과 무관하게 항상 최하단으로 보낸다.
-// V1.a22.26: 거래처 공용 필드 혼선을 막기 위해 거래처명/구매처/판매처/확정구매처 역할 필드를 분리 고정한다.
+    // V1.a22.27: 구매일순은 최신 구매일자를 우선한다. 구매일자가 없는 행은 정렬방향과 무관하게 항상 최하단으로 보낸다.
+// V1.a22.27: 거래처 공용 필드 혼선을 막기 위해 거래처명/구매처/판매처/확정구매처 역할 필드를 분리 고정한다.
     isMissingPurchaseDate: (row = {}) => FILTER_SORT_MODULE.getPurchaseDateSortValue(row) === 99999999,
     compareByDateThenCode: (a, b) => {
         const missingA = FILTER_SORT_MODULE.isMissingPurchaseDate(a);
@@ -1989,7 +1990,7 @@ const FILTER_SORT_MODULE = Object.freeze({
                 return safeStr(sa.vendor, '미지정').localeCompare(safeStr(sb.vendor, '미지정'), 'ko') || FILTER_SORT_MODULE.compareByCodeThenName(a, b);
             return FILTER_SORT_MODULE.compareByCodeThenName(a, b);
         });
-        // V1.a22.26: 구매일순은 항상 최신순이며, 미지정 구매일자는 reverse에도 최하단을 유지한다.
+        // V1.a22.27: 구매일순은 항상 최신순이며, 미지정 구매일자는 reverse에도 최하단을 유지한다.
         if (sortMode === 'DATE')
             return sorted;
         return sortDesc ? sorted.reverse() : sorted;
@@ -2116,7 +2117,7 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
         const latestDateNum = validDates.length ? Math.max(...validDates) : 99999999;
         const nonZeroPriceRows = sourceRows.filter(r => safeNum(r.단가) > 0);
         const latestPriceRow = DATAOPS_VIEW_LAYER_MODULE.pickLatestRow(nonZeroPriceRows.length ? nonZeroPriceRows : sourceRows);
-        // V1.a22.26: 코드 통합형 상품명 하단의 구매정보는 구매처 계열만 사용한다. 판매처/거래처명은 거래처칩 영역 전용이다.
+        // V1.a22.27: 코드 통합형 상품명 하단의 구매정보는 구매처 계열만 사용한다. 판매처/거래처명은 거래처칩 영역 전용이다.
         const vendorSet = [...new Set(sourceRows.map(r => safeStr(r._displayPurchaseVendor || r._purchaseLotVendor || r._confirmedPurchaseVendor || (r._uploadRole === 'out' ? '' : r.거래처) || '')).filter(Boolean))];
         const confirmedSalesRows = sourceRows.filter(r => r._salesConfirmedPurchase || r._fromSalesConfirmedPurchase || r._hasSalesConfirmedPurchase || safeStr(r._salesConfirmedPurchaseVendor || r._confirmedPurchaseVendor, ''));
         const issueRows = sourceRows.filter(r => !confirmedSalesRows.includes(r));
@@ -3121,7 +3122,7 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                             normObj.일자 = safeStr(purchaseDate, '');
                             normObj._dateSource = '매입일자';
                         }
-                        // V1.a22.26 역할 재고정:
+                        // V1.a22.27 역할 재고정:
                         // 2.매입 엑셀에서는 '거래처명'이 실제 매입/Lot 구매정보 기준이다.
                         // '구매처' 컬럼은 내부 경로/대상처일 수 있으므로 제외판정·상품명 옆 구매정보·Lot 원장 기준에 사용하지 않는다.
                         normObj._transactionVendor = safeStr(purchaseGroupVendor, '');
@@ -3144,6 +3145,7 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                         const salesPrice = getExactRawVal(rowObj, ['단가', '판매단가', '출고가', '출고가(공지)', '출고가 (공지)']);
                         const salesPurchaseUnitCost = getExactRawVal(rowObj, ['구매단가', '매입단가', '매입단가(원가)', '입고단가', '입고가', '원가', '매입가', '구매가']);
                         const salesPurchaseAmount = getExactRawVal(rowObj, ['구매금액', '매입금액', '구매합계', '매입합계', '원가금액', '매출원가', '총원가']);
+                        const salesShipmentInstruction = getExactRawVal(rowObj, ['출고지시', '출고 지시', '지시', '전달사항', '비고', '적요']);
                         const salesDate = getExactRawVal(rowObj, ['판매일자', '출고일자', '일자', '날짜', '기록']);
                         if (salesDate !== null) {
                             normObj.일자 = safeStr(salesDate, '');
@@ -3173,6 +3175,10 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                             normObj._salesPurchaseUnitCost = parseNumber(salesPurchaseUnitCost);
                         if (salesPurchaseAmount !== null)
                             normObj._salesPurchaseAmount = parseNumber(salesPurchaseAmount);
+                        if (salesShipmentInstruction !== null)
+                            normObj._shipmentInstruction = safeStr(salesShipmentInstruction, '');
+                        // 판매전표의 일자는 판매/전표 생성일이다. 구매일자 표시·Lot 매칭 근거로 쓰지 않는다.
+                        normObj._salesSlipDate = normObj.일자;
                         if (safeNum(normObj._salesPurchaseUnitCost) <= 0 && safeNum(normObj._salesPurchaseAmount) > 0 && safeNum(normObj.수량) !== 0)
                             normObj._salesPurchaseUnitCost = Math.abs(safeNum(normObj._salesPurchaseAmount) / safeNum(normObj.수량));
                     }
@@ -3811,6 +3817,32 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     return source ? `${item.일자}(${source})` : item.일자;
                 return type === 'prev' ? '미상(기초재고-과거처리)' : '미상(과거처리)';
             };
+            // V1.a22.27: 구매처 역할 방어. 판매전표의 구매처가 내부값이면 확정 Lot으로 쓰지 않는다.
+            // 특히 출고지시=재고인 경우 판매전표 일자는 구매일자가 아니므로 기존 재고/FIFO Lot에서 차감한다.
+            const normalizeVendorIdentity = (val = '') => safeStr(val, '').replace(/\s/g, '').replace(/[\[\]\(\)（）]/g, '').toLowerCase();
+            const splitVendorSettings = (val = '') => safeStr(val, '').split(/[\n,>]+/).map(v => v.trim()).filter(Boolean);
+            const getInternalPurchaseVendorNames = () => Array.from(new Set([
+                '우리농산', '우리', '1전송', '3우리', '가구매', '가판매',
+                ...splitVendorSettings(mappings.internalLot || ''),
+                ...splitVendorSettings(mappings.excludeVendor || '')
+            ].map(v => safeStr(v, '')).filter(Boolean)));
+            const isInternalPurchaseVendorValue = (val = '') => {
+                const target = normalizeVendorIdentity(val);
+                if (!target) return false;
+                return getInternalPurchaseVendorNames().some(name => {
+                    const n = normalizeVendorIdentity(name);
+                    return n && (target === n || target.includes(n) || n.includes(target));
+                });
+            };
+            const getSalesOrderInstruction = (sale = {}) => {
+                const raw = sale._raw || sale.raw || {};
+                const direct = getRawCell(raw, ['출고지시', '출고 지시', '지시', '전달사항', '비고', '적요']);
+                return safeStr(sale._shipmentInstruction || direct || '', '');
+            };
+            const isStockShipmentInstructionValue = (val = '') => {
+                const compact = safeStr(val, '').replace(/\s/g, '');
+                return !!compact && compact.includes('재고');
+            };
             let pData = {};
             let autoAckCodes = new Set();
             if (hasClosingEnd) {
@@ -3919,7 +3951,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 // 제외거래처는 2.매입/3.매출 전표의 거래처명(또는 동일 의미의 거래처) 값에만 적용한다.
                 // 구매처/구매처명/매입처/원구매처/매입처(Lot)는 원가·Lot 매칭 정보이므로 제외 판정에 절대 사용하지 않는다.
                 const transactionVendor = (() => {
-                    // V1.a22.26: 제외거래처는 원본 전표의 거래처명만 우선한다.
+                    // V1.a22.27: 제외거래처는 원본 전표의 거래처명만 우선한다.
                     // 구매처/매입처/확정구매처/화면표시용 거래처는 제외판정에 절대 섞지 않는다.
                     const exact = getRawExactValue(raw, ['거래처명']) || getRawExactValue(raw, ['거래처']);
                     if (exact) return exact;
@@ -3961,7 +3993,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 if (type === 'prev' && isClosingItem(item) && safeNum(qtyToApply) <= 0)
                     return;
                 // 제외거래처는 외부 구매/판매 계산에서 제외한다.
-                // V1.a22.26: 제외거래처는 거래처명(_transactionVendor) 기준만 사용한다. 구매처/Lot 필드는 제외 판정에 사용하지 않는다.
+                // V1.a22.27: 제외거래처는 거래처명(_transactionVendor) 기준만 사용한다. 구매처/Lot 필드는 제외 판정에 사용하지 않는다.
                 if (type === 'in' && isExcludedTransactionRow(item, 'in'))
                     return;
                 const code = String(item.코드 || 'NO_CODE');
@@ -4005,7 +4037,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         pData[batchKey].일자 = date || pData[batchKey].일자;
                     }
                 }
-                // V1.a22.26: 병합된 원장행에도 역할별 거래처 필드를 보강한다. 화면 구매정보는 판매처가 아니라 구매처 기준으로만 표시한다.
+                // V1.a22.27: 병합된 원장행에도 역할별 거래처 필드를 보강한다. 화면 구매정보는 판매처가 아니라 구매처 기준으로만 표시한다.
                 pData[batchKey]._transactionVendor = pData[batchKey]._transactionVendor || safeStr(item._transactionVendor, '');
                 pData[batchKey]._purchaseGroupVendor = pData[batchKey]._purchaseGroupVendor || safeStr(item._purchaseGroupVendor, '');
                 pData[batchKey]._purchaseLotVendor = pData[batchKey]._purchaseLotVendor || safeStr(item._purchaseLotVendor || vendor, '');
@@ -4186,12 +4218,23 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 const lifoKeywords = (mappings.lifoVendor || '').split(',').map(s => s.trim().toLowerCase()).filter(s => s);
                 const isLifo = lifoKeywords.some(kw => kw && sale._rawCombinedStr.includes(kw));
                 const internalLotKeywords = (mappings.internalLot || '').split(',').map(s => s.trim().toLowerCase()).filter(s => s);
-                // 🌟 핵심 변경: 매입처 매칭 키워드를 미리 검사하여 내부분배 여부를 판단
+                // V1.a22.27: 3.매출 구매처가 내부값이면 확정 Lot이 아니다.
+                // 출고지시=재고는 과거 재고분 출고이므로 판매전표 일자를 구매일자로 쓰지 않고 기존 재고/FIFO에서 차감한다.
+                const saleOrderInstruction = getSalesOrderInstruction(sale);
+                const isStockShipmentInstruction = isStockShipmentInstructionValue(saleOrderInstruction);
+                const salesPurchaseVendorRaw = safeStr(sale.매입처매칭, '');
+                const isInternalPurchaseVendor = isInternalPurchaseVendorValue(salesPurchaseVendorRaw);
                 let isInternalDistribution = false;
                 let matchStr = '';
-                if (sale.매입처매칭 && sale.매입처매칭 !== '미지정') {
-                    matchStr = normalizeLotNameForMatch(sale.매입처매칭);
-                    isInternalDistribution = internalLotKeywords.some(kw => matchStr.includes(kw.replace(/\s/g, '').toLowerCase()));
+                if (salesPurchaseVendorRaw && salesPurchaseVendorRaw !== '미지정') {
+                    matchStr = normalizeLotNameForMatch(salesPurchaseVendorRaw);
+                    isInternalDistribution = isInternalPurchaseVendor || internalLotKeywords.some(kw => matchStr.includes(kw.replace(/\s/g, '').toLowerCase()));
+                    if (isInternalPurchaseVendor) {
+                        sale._internalPurchaseVendorInSales = true;
+                        if (isStockShipmentInstruction) sale._internalStockOut = true;
+                        // 내부값은 원가/구매처 확정값이 아니므로 이후 확정매칭 방어 조건에서 제외한다.
+                        sale._hasSalesConfirmedPurchase = false;
+                    }
                 }
                 // 🌟 당일우선(LIFO) 거래처라도, 내부분배용으로 지정된 전표면 LIFO를 무시하고 FIFO(기존 재고 우선 선출) 적용
                 const effectiveIsLifo = isInternalDistribution ? false : isLifo;
@@ -4219,9 +4262,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     const row = pData[bucket.batchKey];
                     const requestedLot = safeStr(sale.매입처매칭, '미지정');
                     const appliedLot = safeStr(bucket.거래처, '미지정');
-                    // V1.a22.26: 3.매출에 구매처가 있으면 이미 확정매칭이다.
-                    // 방어적으로 여기까지 내려오더라도 Lot 검수/대체 이슈를 생성하지 않는다.
-                    if (hasSalesConfirmedPurchase || sale._hasSalesConfirmedPurchase || safeStr(sale._confirmedPurchaseVendor || sale._salesConfirmedPurchaseVendor, '')) {
+                    // V1.a22.27: 외부 구매처가 판매전표에 확정되어 있을 때만 Lot 검수/대체 이슈를 막는다.
+                    // 우리농산/1전송/3우리 같은 내부값, 특히 출고지시=재고는 확정 Lot이 아니므로 기존 재고/FIFO 흐름을 탄다.
+                    if (hasSalesConfirmedPurchase) {
                         appendLotMemo(row, `판매전표확정매칭: 요청=${requestedLot} / 적용=${appliedLot}`);
                         return;
                     }
@@ -4249,7 +4292,8 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         }
                     }
                 };
-                const hasSalesConfirmedPurchase = !!(safeStr(sale.매입처매칭, '') && safeStr(sale.매입처매칭, '') !== '미지정');
+                const hasRawSalesPurchaseVendor = !!(salesPurchaseVendorRaw && salesPurchaseVendorRaw !== '미지정');
+                const hasSalesConfirmedPurchase = !!(hasRawSalesPurchaseVendor && !isInternalPurchaseVendor);
                 const findConfirmedPurchaseBucket = () => {
                     if (!pool || !Array.isArray(pool.buckets) || !hasSalesConfirmedPurchase)
                         return null;
@@ -4269,14 +4313,14 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 const ensureConfirmedPurchaseRow = (bucket, unitCost, confirmedVendor) => {
                     if (bucket && pData[bucket.batchKey])
                         return bucket.batchKey;
-                    const bKey = generateBatchKey(code, sale.품명, unitCost, confirmedVendor, safeStr(sale.일자, ''));
+                    const bKey = generateBatchKey(code, sale.품명, unitCost, confirmedVendor, '');
                     if (!pData[bKey]) {
                         pData[bKey] = {
-                            batchKey: bKey, 코드: code, 품명: sale.품명, 단위: safeStr(sale.단위, ''), 단가: unitCost, 일자: safeStr(sale.일자, ''), 거래처: confirmedVendor,
+                            batchKey: bKey, 코드: code, 품명: sale.품명, 단위: safeStr(sale.단위, ''), 단가: unitCost, 일자: '', 거래처: confirmedVendor,
                             _transactionVendor: safeStr(sale._transactionVendor || sale._salesVendor || sale.거래처 || '', ''), _salesVendor: safeStr(sale._salesVendor || sale.거래처 || '', ''), _salesDisplayVendor: safeStr(sale._salesDisplayVendor || sale.거래처 || '', ''), _salesGroupVendor: safeStr(sale._salesGroupVendor || sale.거래처 || '', ''), _confirmedPurchaseVendor: confirmedVendor, _purchaseLotVendor: confirmedVendor, _displayPurchaseVendor: confirmedVendor, _uploadRole: 'out',
                             기초: 0, 입고: 0, 출고: 0, 대체입고: 0, 대체출고: 0, 전산잔량: 0, 실사: null, 로스: 0,
                             매출액: 0, 매출원가: 0, 메모: '', 이슈: [], 출고내역: {}, _orig: { 기초: 0, 입고: 0, 출고: 0, 단가: unitCost },
-                            isDummy: (!code || code === 'NO_CODE'), 수기확인완료: false, _fromSalesConfirmedPurchase: true, _totalCostForAvg: 0, _latestDateNum: extractDateNum(safeStr(sale.일자, '')), _lotSortDate: getLotDateNum(safeStr(sale.일자, '')), _lotSourceRank: 2, _dateDisplayMemo: getDateDisplayMemo(sale, 'out')
+                            isDummy: (!code || code === 'NO_CODE'), 수기확인완료: false, _fromSalesConfirmedPurchase: true, _totalCostForAvg: 0, _latestDateNum: 0, _lotSortDate: UNKNOWN_LOT_SORT_DATE, _lotSourceRank: 2, _dateDisplayMemo: '판매전표 생성일자는 구매일자가 아니므로 표시하지 않습니다.'
                         };
                     }
                     return bKey;
@@ -4346,8 +4390,8 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     });
                     return true;
                 };
-                // V1.a22.12 확정: 3.매출 전표에 구매처가 있으면 사람이 확정한 매칭값이다.
-                // 이 경우 구매현황 Lot 재검색/FIFO/Lot검수로 내려가지 않고 바로 출고·거래처(수량)를 반영한다.
+                // V1.a22.27 확정: 3.매출 전표의 구매처가 외부값일 때만 사람이 확정한 매칭값이다.
+                // 내부값 또는 출고지시=재고는 확정매칭이 아니므로 기존 재고/FIFO로 내려간다.
                 if (hasSalesConfirmedPurchase) {
                     applySalesConfirmedPurchase();
                     return;
@@ -5162,7 +5206,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
         }
     });
     if (splitLotMemo) {
-        // V1.a22.26: 구매일자/구매처는 상품명 하단에 이미 노출되므로 이슈/결과 칸에 반복 표시하지 않는다.
+        // V1.a22.27: 구매일자/구매처는 상품명 하단에 이미 노출되므로 이슈/결과 칸에 반복 표시하지 않는다.
         // splitLotMemo는 출력/내부 참고용으로만 유지하고 화면 뱃지에는 추가하지 않는다.
     }
     const hasIssue = regularIssues.length > 0;
@@ -5307,7 +5351,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
         // 3차 카테고리(품목코드 앞 6자리) 변경 시 연하고 살짝만 구분되는 테두리 적용
         topBorderClass = 'border-t-[2px] border-t-slate-200';
     }
-    // V1.a22.26: 상품명 하단 구매정보에는 구매처 계열만 표시한다. 3.매출 거래처명(판매처)은 오른쪽 거래처칩 전용이다.
+    // V1.a22.27: 상품명 하단 구매정보에는 구매처 계열만 표시한다. 3.매출 거래처명(판매처)은 오른쪽 거래처칩 전용이다.
     const displayPurchaseVendor = safeStr(item._displayPurchaseVendor || item._purchaseLotVendor || item._confirmedPurchaseVendor || (item._uploadRole === 'out' || item._fromSalesConfirmedPurchase ? '' : item.거래처) || '미지정', '미지정');
     return (React.createElement("tr", { "data-code": item.코드, "data-batch": item.batchKey, onDragOver: (e) => { e.preventDefault(); setIsDragOver(true); }, onDragLeave: (e) => { e.preventDefault(); setIsDragOver(false); }, onDrop: (e) => {
             e.preventDefault();
@@ -6064,7 +6108,7 @@ function App() {
                 return;
             }
             if (msg === '🚨잔량' || msg === '✅잔량' || msg === '🚨계산' || msg === '✅계산') {
-                // V1.a22.26: 잔량/계산 이슈는 테이블의 잔량 숫자 색상으로 이미 충분히 보인다.
+                // V1.a22.27: 잔량/계산 이슈는 테이블의 잔량 숫자 색상으로 이미 충분히 보인다.
                 // 오른쪽 이슈/결과 칸에는 중복 뱃지를 표시하지 않고, 카드 카운트/필터 판단에는 기존 이슈값을 그대로 사용한다.
                 return;
             }
@@ -6496,7 +6540,7 @@ function App() {
         const warnings = [];
         const addFatal = (info) => fatalErrors.push({ ...info, level: '업로드불가', action: '원본 구매현황을 수정한 뒤 다시 업로드' });
         const addWarning = (info) => warnings.push({ ...info, level: '확인필요', action: info.action || '판매업로드 후 추가 입력/최종 검증' });
-        // V1.a22.26: 판매업로드 구매처 보정 원칙
+        // V1.a22.27: 판매업로드 구매처 보정 원칙
         // - 구매처가 외부값이면 그대로 인정한다.
         // - 구매처가 내부값(우리농산/1전송/3우리/가구매/가판매 등)이면서 출고지시가 '재고'이면 과거 재고분으로 보고 보정하지 않는다.
         // - 구매처가 내부값이면서 출고지시가 공백이면 근거 없음으로 보고 구매처를 공백 처리한다.
@@ -8056,7 +8100,7 @@ ${balanceText}
         const targetViewKeys = Array.isArray(moveMeta.targetSourceKeys) ? moveMeta.targetSourceKeys : [];
         const sourceViewCount = sourceIsView ? safeNum(moveMeta.sourceViewLotCount || sourceViewKeys.length || 0) : 1;
         const targetViewCount = targetIsView ? safeNum(moveMeta.targetViewLotCount || targetViewKeys.length || 0) : 1;
-        // V1.a22.26: 통합2 이상은 자동 분배하지 않는다. Lot 상세형으로 풀어 관리자가 수동 이동한다.
+        // V1.a22.27: 통합2 이상은 자동 분배하지 않는다. Lot 상세형으로 풀어 관리자가 수동 이동한다.
         if ((sourceIsView && sourceViewCount > 1) || (targetIsView && targetViewCount > 1)) {
             setViewMode('LOT_DETAIL');
             setAlertMsg('통합2 이상 상품은 자동 이동하지 않습니다. Lot 상세형으로 전환했습니다. 원본 Lot 행을 확인한 뒤 거래처칩을 수동으로 이동하세요.');
@@ -8119,7 +8163,7 @@ ${balanceText}
     }, [handleSalesMove, resolveViewLayerTargetKey, setAlertMsg, setViewMode, productData]);
     const handleChipDropRequest = useCallback((sourceKey, targetKey, vendor, maxQty, sourceCode, targetCode, isCtrlPressed, viewMeta = {}) => {
         const payloadBase = { sourceKey, targetKey, vendor, maxQty, sourceCode, targetCode, ...viewMeta, activeIssueMode: activeIssueModeRef.current || activeIssueMode, reviewType: filters.reviewType };
-        // V1.a22.26: 코드 통합형 거래처칩 이동은 통합1만 즉시 적용한다. 통합2 이상은 Lot 상세형에서 수동 처리한다.
+        // V1.a22.27: 코드 통합형 거래처칩 이동은 통합1만 즉시 적용한다. 통합2 이상은 Lot 상세형에서 수동 처리한다.
         // Ctrl 드래그는 수량 1개 칩도 무조건 수량입력창을 띄운다.
         if (isCtrlPressed) {
             setSplitModal({ isOpen: true, payload: { ...payloadBase, isCtrlPressed: true, allowOverMax: true } });
@@ -8161,8 +8205,8 @@ ${balanceText}
     // - 카드 새 선택: 이전 이동 경로를 초기화하고 해당 이슈 모드의 첫 항목부터 새로 시작한다.
     const handleIssueJump = useCallback((type, direction = 'next', fromCardClick = false) => {
         setActiveIssueMode(type);
-        // V1.a22.26: 이슈카드/Tab 점프는 조회 동작이므로 현재 보기모드(코드 통합형/Lot 상세형)를 유지한다.
-// V1.a22.26: 2.매입의 구매정보는 거래처명 기준으로 고정하고, 3.매출 구매처는 확정매칭이면 Lot 이슈에서 제외한다.
+        // V1.a22.27: 이슈카드/Tab 점프는 조회 동작이므로 현재 보기모드(코드 통합형/Lot 상세형)를 유지한다.
+// V1.a22.27: 2.매입의 구매정보는 거래처명 기준으로 고정하고, 3.매출 구매처는 확정매칭이면 Lot 이슈에서 제외한다.
         // 통합2 이상 거래처칩 이동 같은 수정 작업에서만 별도 상세 전환을 유도한다.
         setSearchInputVal('');
         setFilters(prev => ({ ...prev, search: '', issuesOnly: false, excludeZeroActual: false, reviewType: null, category: 'ALL', favoriteVendorOnly: false, showHiddenMoveRows: false, unit: { ...CONFIG_MODULE.defaultUnitFilter } }));
@@ -8186,7 +8230,7 @@ ${balanceText}
                 setActiveMultiCode(targetItem.코드);
             else
                 setActiveMultiCode(null);
-            // V1.a22.26: 코드 통합형에서는 원장 batchKey가 화면에 없으므로 해당 품목코드의 통합행으로 점프한다.
+            // V1.a22.27: 코드 통합형에서는 원장 batchKey가 화면에 없으므로 해당 품목코드의 통합행으로 점프한다.
             // Lot 상세형에서는 기존처럼 실제 원장 batchKey로 점프한다.
             const focusBatchKey = viewMode === 'CODE_SUMMARY'
                 ? `VIEW_CODE|${safeStr(targetItem.코드 || 'NO_CODE').replace(/\.0$/, '').trim() || 'NO_CODE'}`
@@ -8572,7 +8616,7 @@ ${balanceText}
                     React.createElement("h1", { className: "text-xl md:text-xl font-black leading-none text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.26"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.27"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
@@ -8647,7 +8691,7 @@ ${balanceText}
                     React.createElement("div", { className: "mb-4" },
                         React.createElement("h4", { className: "text-sm font-bold text-slate-800" },
                             React.createElement("i", { className: "fas fa-star text-amber-500 mr-2" }),
-                            "V1.a22.26 \uC7AC\uACE0\uC218\uBD88\uBD80 \uC2E4\uC0AC \uC5C5\uB85C\uB4DC / \uC774\uC288\uCE78 \uC911\uBCF5\uD45C\uC2DC \uC815\uB9AC"),
+                            "V1.a22.27 \uC7AC\uACE0\uC218\uBD88\uBD80 \uC2E4\uC0AC \uC5C5\uB85C\uB4DC / \uC774\uC288\uCE78 \uC911\uBCF5\uD45C\uC2DC \uC815\uB9AC"),
                         React.createElement("p", { className: "text-xs text-slate-500 mt-1.5 ml-6" }, "\u2605 \uD544\uD130\uC640 BOX/EA/\uC18C\uBD84 \uD544\uD130\uAC00 \uC544\uB798 \uC124\uC815\uAC12\uC744 \uAE30\uC900\uC73C\uB85C \uB3D9\uC791\uD569\uB2C8\uB2E4. \uB2E8\uC704 \uCEEC\uB7FC\uC744 \uC6B0\uC120 \uD310\uC815\uD558\uACE0, \uB2E8\uC704\uAC00 \uC5C6\uC744 \uB54C\uB9CC \uD488\uBA85/\uADDC\uACA9\uC744 \uBCF4\uC870 \uB2E8\uC11C\uB85C \uC0AC\uC6A9\uD569\uB2C8\uB2E4.")),
                     React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-4 bg-amber-50/60 p-4 rounded-lg border border-amber-200" },
                         React.createElement("div", { className: "flex flex-col" },
