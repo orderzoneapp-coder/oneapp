@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.31)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.33)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.31.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.33.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -479,17 +479,41 @@ const DATAOPS_VENDOR_CHIP_MODULE = Object.freeze({
     }
 });
 
-// V1.a22.12: ERP 출력물의 소계/합계/총합계 또는 상품이 아닌 숫자형 요약행 방어막.
-// 예: 품명 2593, 상품코드 없음, 매입내역 없음 형태로 하단에 상품처럼 올라오는 행을 차단한다.
+// V1.a22.33: ERP 출력물의 소계/합계/총합계 요약행 방어막.
+// 중요: 메모성 필드(간단설명/적요/출고지시/전달사항/비고)에 '합계 확인', '재고 확인' 같은 문구가 있어도 정상 상품행이다.
+// 따라서 행 전체 텍스트 includes 검색을 금지하고, 상품 식별/거래처 구조값이 정확히 요약 토큰일 때만 제외한다.
+const DATAOPS_SUMMARY_ROW_TOKENS = ['총합계', '총계', '합계', '소계', '월계', '일계', 'subtotal', 'total'];
+const normalizeSummaryTokenText = (value = '') => safeStr(value, '').trim().replace(/\s/g, '').toLowerCase();
+const isExactSummaryRowToken = (value = '') => DATAOPS_SUMMARY_ROW_TOKENS.includes(normalizeSummaryTokenText(value));
+const getRawExactHeaderValue = (raw = {}, headers = []) => {
+    const keys = Object.keys(raw || {});
+    const normalizeHeader = (v) => safeStr(v, '').replace(/\s/g, '').replace(/[()（）]/g, '').toLowerCase();
+    for (const header of headers) {
+        const target = normalizeHeader(header);
+        const found = keys.find(k => normalizeHeader(k) === target);
+        if (found !== undefined)
+            return raw[found];
+    }
+    return '';
+};
 const isSummaryOrInvalidProductRow = ({ code = '', name = '', raw = {} } = {}) => {
     const codeText = safeStr(code, '').trim();
     const nameText = safeStr(name, '').trim();
     const codeNorm = codeText.replace(/\s/g, '').toLowerCase();
     const nameNorm = nameText.replace(/\s/g, '').toLowerCase();
-    const rawValues = Object.values(raw || {}).map(v => safeStr(v, '')).filter(Boolean);
-    const joined = [codeText, nameText, ...rawValues].join(' ').replace(/\s/g, '').toLowerCase();
-    const summaryWords = ['합계', '총합계', '총계', '소계', 'subtotal', 'total'];
-    if (summaryWords.some(word => joined.includes(word)))
+    const productIdentityValues = [
+        codeText,
+        nameText,
+        getRawExactHeaderValue(raw, ['품목코드', '상품코드', '코드']),
+        getRawExactHeaderValue(raw, ['품목명(규격)', '품목명', '상품명', '품명'])
+    ];
+    if (productIdentityValues.some(v => isExactSummaryRowToken(v)))
+        return true;
+    const customerIdentityValues = [
+        getRawExactHeaderValue(raw, ['거래처', '거래처명', '매입처', '구매처', '판매처'])
+    ];
+    // 거래처/품목 식별값이 정확히 합계류이고 실제 상품코드가 없으면 요약행으로 본다.
+    if ((!codeNorm || codeNorm === 'no_code') && customerIdentityValues.some(v => isExactSummaryRowToken(v)))
         return true;
     const noRealCode = !codeNorm || codeNorm === 'no_code' || codeNorm === '-' || codeNorm === '미상' || codeNorm === '없음';
     const numericOnlyName = /^[+-]?[\d,\.]+$/.test(nameNorm);
@@ -622,12 +646,12 @@ const normalizeTransferGroupName = (name) => {
 // V1.a22.29: 이슈/결과 칸에서 잔량확인 뱃지와 구매일자/구매처 반복 표시를 제거한다. 잔량 마이너스는 잔량 숫자로만 표시한다.
 // V1.a22.29: 코드 통합형 배지는 실제 원장행이 2개 이상 합쳐진 경우에만 표시한다. 통합1은 단일 원장행이므로 숨긴다.
 // V1.a22.29: System.IO 상단은 원본 파일 상태 1줄만 표시하고, 현재화면 건수/분석시각은 하단 상태박스로 이동한다. 필터/정렬바의 보조 텍스트와 중복 건수 표시는 제거한다.
-// V1.a22.29: 판매업로드 생성 시 구매처가 내부값이면 출고지시 기준으로 보정한다. 출고지시=재고는 보정하지 않고, 공백은 구매처 공백, 재고가 아닌 지시값은 3우리 내부 구매분과 품목·수량·단가를 매칭해 원구매처로 대체한다.
 // V1.a22.29: DataOps 검수에서도 판매전표 생성일자를 구매일자로 쓰지 않는다. 내부값+재고 출고는 판매전표 구매처 확정매칭을 금지하고 기존 재고/FIFO Lot에서 차감한다.
 // V1.a22.29: 판매전표에 구매처+구매단가가 있으면 동일 구매처+동일 단가 Lot에만 매칭하고, 잔량 0이 된 확정 Lot에는 추가 판매분을 붙이지 않는다.
 // V1.a22.29: 수불마감 엑셀 출력의 기록/거래 열은 원장 기록값만 출력하고, 구매일자미확정·미지정·매입내역 없음 같은 이슈성 문구는 공백 처리한다.
 // V1.a22.30: 매핑센터 관리기준을 관리방식(코드통합형/Lot상세형)과 대표단가 기준(최신/가중평균/최고/FIFO추정)으로 분리한다. 기본 출력/실사양식/MerchOps 연동은 코드통합형으로 유지하고 단가검증 탭에서만 상세 근거를 펼친다.
-// V1.a22.31: 판매업로드 생성은 Lot 분배/재고출고 판단과 분리한다. 출고지시·적요·전달사항·비고는 메모로 보존하고, 거래처명·품목코드·수량이 있으면 판매입력 행을 생성한다.
+// V1.a22.33: 판매업로드 생성 단계에서 Lot 분배/재고출고/FIFO/3우리 원구매처 역매칭 잔여 로직을 제거한다. 구매처·출고지시·적요·전달사항·비고는 원본 보존값이며 행 제외/구매처 공백 처리 조건이 아니다.
+// V1.a22.33: 판매업로드 생성에서 합계/소계 판정은 행 전체 includes 검색을 금지한다. 간단설명·적요·출고지시·전달사항·비고의 메모 문구(예: 합계 확인)는 행 제외 조건이 아니다.
 // 단가가 없으면 사용자가 정한 그룹별 후보 외 다른 컬럼으로 자동 대체하지 않고 공백 + 단가확인으로 보낸다.
 // 청과상장은 출고가(공지) 다음 청과 고정가를 바로 적용한다.
 // 청과 고정가가 없을 때 도매A/0.91을 적용하고, 도매A가 없으면 이미 입고가+외주비+노무비/0.91로 계산된 상장가를 적용한다.
@@ -3113,7 +3137,7 @@ const parseExcelData = (file, currentMappings, uploadRole = '') => {
                         continue;
                     if (isSummaryOrInvalidProductRow({ code: codeStr, name: baseName, raw: rowObj }))
                         continue;
-                    if (codeStr.includes('합계') || codeStr.includes('총계') || baseName.includes('합계') || baseName.includes('총계') || baseName.includes('총합'))
+                    if (isExactSummaryRowToken(codeStr) || isExactSummaryRowToken(baseName))
                         continue;
                     if (/^\d{4}[\/\-]\d{2}[\/\-]\d{2}/.test(codeStr) || /^\d{4}[\/\-]\d{2}[\/\-]\d{2}/.test(baseName))
                         continue;
@@ -6548,15 +6572,32 @@ function App() {
         const notice = getTransferRawValue(raw, '출고가(공지)');
         return { raw, code, name, spec, groupCustomer, detailCustomer, qty, dateValue, purchaseVendor, cost, wholesaleA, outsourceCost, laborCost, memo, orderNote, deliveryMessage, notice };
     }, [getTransferRawValue, transferStrictNumber]);
+    const isTransferSummaryLikeRow = useCallback((f = {}) => {
+        const code = safeStr(f.code, '').trim();
+        const name = safeStr(f.name, '').trim();
+        const groupCustomer = safeStr(f.groupCustomer, '').trim();
+        const detailCustomer = safeStr(f.detailCustomer, '').trim();
+        const noProductCode = !code || normalizeSummaryTokenText(code) === 'no_code';
+        // V1.a22.33: 판매업로드 요약행 제외는 거래처/품목 식별값의 정확한 구조값으로만 판단한다.
+        // 메모성 필드(간단설명/적요/출고지시/전달사항/비고)에 합계·소계·재고 문구가 있어도 제외하지 않는다.
+        if (isExactSummaryRowToken(groupCustomer) || isExactSummaryRowToken(detailCustomer))
+            return true;
+        if (isExactSummaryRowToken(code))
+            return true;
+        if (noProductCode && (isExactSummaryRowToken(name) || isSummaryOrInvalidProductRow({ code, name, raw: f.raw || {} })))
+            return true;
+        return false;
+    }, []);
     const isTransferGenerationValidPurchaseRow = useCallback((item = {}) => {
         const f = getTransferBaseFields(item);
-        const joined = Object.values(f.raw || {}).map(v => safeStr(v, '')).join(' ').replace(/\s/g, '');
         if (!f.code || !f.name || !f.groupCustomer || safeNum(f.qty) === 0)
             return false;
-        if (['총합계', '총계', '합계', '소계', '월계'].some(word => joined.includes(word)))
+        // V1.a22.33: 판매업로드 생성에서 합계행 제외는 구조값 정확일치만 허용한다.
+        // 간단설명/적요/출고지시/비고의 '합계 확인' 같은 메모 문구는 정상 판매행으로 유지한다.
+        if (isTransferSummaryLikeRow(f))
             return false;
         return true;
-    }, [getTransferBaseFields]);
+    }, [getTransferBaseFields, isTransferSummaryLikeRow]);
     const resolveTransferEffectiveRule = useCallback((group = {}) => {
         // V1.a22.12: 판매업로드 단가/판매가 칸은 확정된 단가 후보만 사용한다.
         // 식자재는 출고가(공지) > 식자재 > 도매A > 출고(외노) 순서로 적용한다.
@@ -6664,25 +6705,15 @@ function App() {
         const warnings = [];
         const addFatal = (info) => fatalErrors.push({ ...info, level: '업로드불가', action: '원본 구매현황을 수정한 뒤 다시 업로드' });
         const addWarning = (info) => warnings.push({ ...info, level: '확인필요', action: info.action || '판매업로드 후 추가 입력/최종 검증' });
-        // V1.a22.31: 판매업로드 생성은 업로드파일 생성 단계다.
-        // Lot 분배, 재고출고 판단, 3우리 원구매처 역매칭은 판매업로드 이후 판매현황 검증/DataOps 수불 단계에서 처리한다.
-        // 출고지시/적요/전달사항/비고는 메모로만 보존하며, 해당 문구 때문에 판매입력 행을 누락하거나 구매처를 공백 처리하지 않는다.
-        const normalizeTransferTextKey = (value = '') => safeStr(value, '').replace(/\s/g, '').replace(/\.0$/, '').toLowerCase();
-        const normalizeTransferVendorText = (value = '') => safeStr(value, '').replace(/\s/g, '');
-        const isTransferInternalPurchaseVendor = (value = '') => {
-            const s = normalizeTransferVendorText(value);
-            return ['우리농산', '우리', '1전송', '3우리', '가구매', '가판매'].includes(s);
-        };
-        const isTransferStockOrderNote = (value = '') => normalizeTransferVendorText(value) === '재고';
-        const buildMatchCodeKey = (f = {}) => normalizeTransferTextKey(f.code || f.name);
-        const buildMatchNameKey = (f = {}) => normalizeTransferTextKey(f.name || '');
-        const buildMatchPrice = (price, f = {}) => safeNum(price) || safeNum(f.cost);
+        // V1.a22.33: 판매업로드 생성은 업로드파일 생성 단계다.
+        // Lot 분배, 재고출고 판단, FIFO, 3우리 원구매처 역매칭은 여기서 실행하지 않는다.
+        // 출고지시/적요/전달사항/비고/간단설명은 원본 메모로만 보존하며 행 제외·구매처 공백 처리 조건으로 쓰지 않는다.
         const rowInfos = [];
         parsedIn.forEach((item, idx) => {
             const f = getTransferBaseFields(item);
-            const joined = Object.values(f.raw || {}).map(v => safeStr(v, '')).join(' ').replace(/\s/g, '');
-            const isSummaryRow = ['총합계', '총계', '합계', '소계', '월계'].some(word => joined.includes(word));
-            if (isSummaryRow)
+            // V1.a22.33: 행 전체 텍스트에 '합계'가 포함된다는 이유로 제외하지 않는다.
+            // 합계/소계 행은 거래처·품목 식별값의 정확일치 구조로만 판단한다.
+            if (isTransferSummaryLikeRow(f))
                 return;
             const rowNo = idx + 1;
             const rowBase = { rowNo, customer: f.groupCustomer, spec: f.spec, outputCustomer: f.detailCustomer || f.groupCustomer, code: f.code, name: f.name, qty: f.qty };
@@ -6709,51 +6740,15 @@ function App() {
             const price = resolved.status === 'MATCHED' ? safeNum(resolved.price) : '';
             rowInfos.push({ item, idx, rowNo, f, rowBase, resolved, outputCustomer, checkReasons, price });
         });
-        const threeWooriSources = rowInfos
-            .filter(info => normalizeTransferVendorText(info.outputCustomer) === '3우리')
-            .map(info => ({
-                rowNo: info.rowNo,
-                codeKey: buildMatchCodeKey(info.f),
-                nameKey: buildMatchNameKey(info.f),
-                price: buildMatchPrice(info.price, info.f),
-                qty: Math.abs(safeNum(info.f.qty)),
-                remainingQty: Math.abs(safeNum(info.f.qty)),
-                purchaseVendor: safeStr(info.f.purchaseVendor, ''),
-                info
-            }))
-            .filter(src => src.codeKey && src.qty > 0 && src.price > 0 && src.purchaseVendor && !isTransferInternalPurchaseVendor(src.purchaseVendor));
-        const findThreeWooriOriginalPurchaseVendor = (info, price) => {
-            const f = info.f || {};
-            const codeKey = buildMatchCodeKey(f);
-            const nameKey = buildMatchNameKey(f);
-            const targetQty = Math.abs(safeNum(f.qty));
-            const targetPrice = buildMatchPrice(price, f);
-            if (!codeKey || targetQty <= 0 || targetPrice <= 0)
-                return { status: 'NO_KEY', vendor: '', candidates: [] };
-            let candidates = threeWooriSources.filter(src => src.remainingQty >= targetQty - 0.0000001 && src.price === targetPrice && (src.codeKey === codeKey || (nameKey && src.nameKey === nameKey)));
-            if (!candidates.length)
-                candidates = threeWooriSources.filter(src => src.remainingQty >= targetQty - 0.0000001 && (src.codeKey === codeKey || (nameKey && src.nameKey === nameKey)));
-            const vendorNames = [...new Set(candidates.map(c => c.purchaseVendor).filter(Boolean))];
-            if (vendorNames.length === 1) {
-                const chosen = candidates.find(c => c.purchaseVendor === vendorNames[0]);
-                if (chosen)
-                    chosen.remainingQty = Math.max(0, safeNum(chosen.remainingQty) - targetQty);
-                return { status: 'MATCHED', vendor: vendorNames[0], candidates };
-            }
-            return { status: candidates.length ? 'MULTIPLE' : 'NOT_FOUND', vendor: '', candidates };
-        };
         rowInfos.forEach(info => {
             const { f, rowBase, resolved, outputCustomer, checkReasons } = info;
             let price = info.price;
             let supply = price === '' ? '' : safeNum(f.qty) * safeNum(price);
             const originalPurchaseVendor = safeStr(f.purchaseVendor, '');
-            let finalPurchaseVendor = originalPurchaseVendor;
-            let purchaseVendorFixNote = '';
-            if (isTransferInternalPurchaseVendor(originalPurchaseVendor)) {
-                // V1.a22.31: 판매업로드 생성 단계에서는 내부 구매처를 Lot 분배/재고출고 신호로 해석하지 않는다.
-                // 구매처 원본은 그대로 보존하고, 재고·3우리·FIFO 판단은 업로드 이후 판매현황 검증/DataOps 수불 단계에서 처리한다.
-                purchaseVendorFixNote = '판매업로드-내부구매처원본유지';
-            }
+            const finalPurchaseVendor = originalPurchaseVendor;
+            const purchaseVendorFixNote = '';
+            // V1.a22.33: 판매업로드 단계에서는 구매처 원본을 그대로 보존한다.
+            // 내부값(우리농산/1전송/3우리 등)도 Lot 분배 신호로 해석하지 않고, 판매현황 검증/DataOps 수불 단계에서만 판단한다.
             // V1.a22.12: 치명 에러는 거래처명/품목코드/수량 없음만 막는다.
             // 단가그룹 없음·기준단가 없음·단가오염 의심은 실무상 후속 입력 가능성이 있으므로 업로드 행은 생성하고 확인필요로 안내한다.
             // V1.a22.12: 확정 단가룰에서 가져온 값은 공급가액성 금액으로 임의 공백 처리하지 않는다.
@@ -6809,7 +6804,7 @@ function App() {
             safeStr(a['규격']).localeCompare(safeStr(b['규격']), 'ko') ||
             safeStr(a['품목코드']).localeCompare(safeStr(b['품목코드']), 'ko'));
         return { rows, fatalErrors, warnings, excluded: fatalErrors, notices: warnings };
-    }, [getTransferBaseFields, getTransferOutputCustomerName, getTransferPriceMissingReason, getTransferRawValue, resolveTransferSalesPrice, transferStrictNumber]);
+    }, [getTransferBaseFields, getTransferOutputCustomerName, getTransferPriceMissingReason, getTransferRawValue, isTransferSummaryLikeRow, resolveTransferSalesPrice, transferStrictNumber]);
     const downloadWorkbook = useCallback((wb, filename) => {
         const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
         const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
