@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.33)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.34)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.33.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.34.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -479,7 +479,7 @@ const DATAOPS_VENDOR_CHIP_MODULE = Object.freeze({
     }
 });
 
-// V1.a22.33: ERP 출력물의 소계/합계/총합계 요약행 방어막.
+// V1.a22.34: ERP 출력물의 소계/합계/총합계 요약행 방어막.
 // 중요: 메모성 필드(간단설명/적요/출고지시/전달사항/비고)에 '합계 확인', '재고 확인' 같은 문구가 있어도 정상 상품행이다.
 // 따라서 행 전체 텍스트 includes 검색을 금지하고, 상품 식별/거래처 구조값이 정확히 요약 토큰일 때만 제외한다.
 const DATAOPS_SUMMARY_ROW_TOKENS = ['총합계', '총계', '합계', '소계', '월계', '일계', 'subtotal', 'total'];
@@ -650,8 +650,8 @@ const normalizeTransferGroupName = (name) => {
 // V1.a22.29: 판매전표에 구매처+구매단가가 있으면 동일 구매처+동일 단가 Lot에만 매칭하고, 잔량 0이 된 확정 Lot에는 추가 판매분을 붙이지 않는다.
 // V1.a22.29: 수불마감 엑셀 출력의 기록/거래 열은 원장 기록값만 출력하고, 구매일자미확정·미지정·매입내역 없음 같은 이슈성 문구는 공백 처리한다.
 // V1.a22.30: 매핑센터 관리기준을 관리방식(코드통합형/Lot상세형)과 대표단가 기준(최신/가중평균/최고/FIFO추정)으로 분리한다. 기본 출력/실사양식/MerchOps 연동은 코드통합형으로 유지하고 단가검증 탭에서만 상세 근거를 펼친다.
-// V1.a22.33: 판매업로드 생성 단계에서 Lot 분배/재고출고/FIFO/3우리 원구매처 역매칭 잔여 로직을 제거한다. 구매처·출고지시·적요·전달사항·비고는 원본 보존값이며 행 제외/구매처 공백 처리 조건이 아니다.
-// V1.a22.33: 판매업로드 생성에서 합계/소계 판정은 행 전체 includes 검색을 금지한다. 간단설명·적요·출고지시·전달사항·비고의 메모 문구(예: 합계 확인)는 행 제외 조건이 아니다.
+// V1.a22.34: 판매업로드 생성 단계에서 Lot 분배/재고출고/FIFO/3우리 원구매처 역매칭 잔여 로직을 제거한다. 구매처·출고지시·적요·전달사항·비고는 원본 보존값이며 행 제외/구매처 공백 처리 조건이 아니다.
+// V1.a22.34: 판매업로드 생성에서 합계/소계 판정은 행 전체 includes 검색을 금지한다. 간단설명·적요·출고지시·전달사항·비고의 메모 문구(예: 합계 확인)는 행 제외 조건이 아니다.
 // 단가가 없으면 사용자가 정한 그룹별 후보 외 다른 컬럼으로 자동 대체하지 않고 공백 + 단가확인으로 보낸다.
 // 청과상장은 출고가(공지) 다음 청과 고정가를 바로 적용한다.
 // 청과 고정가가 없을 때 도매A/0.91을 적용하고, 도매A가 없으면 이미 입고가+외주비+노무비/0.91로 계산된 상장가를 적용한다.
@@ -1389,6 +1389,15 @@ const DATAOPS_OPERATION_MODULE = Object.freeze({
         if (type === DATAOPS_OPERATION_MODULE.TYPES.MANUAL_ASSIST) return '수기보조';
         return '일반이동';
     },
+    calcConvertedUnitCost: ({ sourceUnitCost = 0, sourceQty = 0, targetQty = 0 } = {}) => {
+        const unitCost = safeNum(sourceUnitCost);
+        const sQty = Math.abs(safeNum(sourceQty));
+        const tQty = Math.abs(safeNum(targetQty));
+        if (unitCost <= 0 || sQty <= 0 || tQty <= 0) return 0;
+        // V1.a22.34: 수량 단위가 바뀌면 총원가를 보존한다.
+        // 예: 300원 × 3개를 1개로 통합하면 대상 단가는 900원이다.
+        return Math.round(((unitCost * sQty) / tQty) * 100) / 100;
+    },
     buildCostLayer: ({ type = 'NORMAL', sourceItem = {}, targetItem = {}, vendorName = '', sourceQty = 0, targetQty = 0, unitCost = 0, revenue = 0 } = {}) => ({
         id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         type,
@@ -2014,7 +2023,7 @@ const FILTER_SORT_MODULE = Object.freeze({
             || FILTER_SORT_MODULE.getStockSortRank(a) - FILTER_SORT_MODULE.getStockSortRank(b)
             || FILTER_SORT_MODULE.getStockSortQty(b) - FILTER_SORT_MODULE.getStockSortQty(a);
     },
-    // V1.a22.29: 구매일순은 최신 구매일자를 우선한다. 구매일자가 없는 행은 정렬방향과 무관하게 항상 최하단으로 보낸다.
+    // V1.a22.34: 구매일순은 과거 구매일자를 우선한다. 구매일자가 없는 행은 정렬방향과 무관하게 항상 최하단으로 보낸다.
 // V1.a22.29: 거래처 공용 필드 혼선을 막기 위해 거래처명/구매처/판매처/확정구매처 역할 필드를 분리 고정한다.
     isMissingPurchaseDate: (row = {}) => FILTER_SORT_MODULE.getPurchaseDateSortValue(row) === 99999999,
     compareByDateThenCode: (a, b) => {
@@ -2024,7 +2033,7 @@ const FILTER_SORT_MODULE = Object.freeze({
             return missingA ? 1 : -1;
         if (missingA && missingB)
             return FILTER_SORT_MODULE.compareByCodeThenName(a, b);
-        return FILTER_SORT_MODULE.getPurchaseDateSortValue(b) - FILTER_SORT_MODULE.getPurchaseDateSortValue(a)
+        return FILTER_SORT_MODULE.getPurchaseDateSortValue(a) - FILTER_SORT_MODULE.getPurchaseDateSortValue(b)
             || FILTER_SORT_MODULE.compareByCodeThenName(a, b);
     },
     compareByPriceThenCode: (a, b) => {
@@ -2045,7 +2054,7 @@ const FILTER_SORT_MODULE = Object.freeze({
                 return safeStr(sa.vendor, '미지정').localeCompare(safeStr(sb.vendor, '미지정'), 'ko') || FILTER_SORT_MODULE.compareByCodeThenName(a, b);
             return FILTER_SORT_MODULE.compareByCodeThenName(a, b);
         });
-        // V1.a22.29: 구매일순은 항상 최신순이며, 미지정 구매일자는 reverse에도 최하단을 유지한다.
+        // V1.a22.34: 구매일순은 항상 과거일자 우선이며, 미지정 구매일자는 reverse에도 최하단을 유지한다.
         if (sortMode === 'DATE')
             return sorted;
         return sortDesc ? sorted.reverse() : sorted;
@@ -2066,7 +2075,7 @@ const FILTER_SORT_MODULE = Object.freeze({
         const standard = FILTER_SORT_MODULE.getStandard(row);
         if (sortMode === 'DATE') {
             const d = FILTER_SORT_MODULE.getPurchaseDateSortValue(row);
-            return `${d === 99999999 ? 99999999 : 99999999 - d}|${standard.code}`;
+            return `${d === 99999999 ? 99999999 : d}|${standard.code}`;
         }
         if (sortMode === 'CATEGORY')
             return `${standard.category2Code}|${standard.code}`;
@@ -2233,7 +2242,9 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
     buildCodeSummaryRows: (rows = []) => {
         const groups = {};
         (rows || []).forEach(row => { const code = DATAOPS_VIEW_LAYER_MODULE.normalizeCode(row); if (!groups[code]) groups[code] = []; groups[code].push(row); });
-        return Object.entries(groups).map(([code, list]) => DATAOPS_VIEW_LAYER_MODULE.buildCodeSummaryRow(code, list));
+        return Object.entries(groups)
+            .map(([code, list]) => DATAOPS_VIEW_LAYER_MODULE.buildCodeSummaryRow(code, [...list].sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b))))
+            .sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b));
     },
     buildViewRows: (rows = [], options = {}) => {
         const mode = options.viewMode === 'LOT_DETAIL' ? 'LOT_DETAIL' : 'CODE_SUMMARY';
@@ -2541,7 +2552,10 @@ const EXPORT_MODULE = Object.freeze({
         // V1.a22.12: 소분치환 후보 시트는 실행 가능한 자동치환 대상만 추출한다. 확인필요 후보는 Lot/재고 검수에서 확인한다.
         return DATAOPS_SUBSTITUTION_CANDIDATE_MODULE.buildExecutableRows({ productData, targetDateStr });
     },
-    buildClosingSheetRows: ({ productData = [], targetDateStr = '' }) => productData.filter(item => item.품명 || item.코드).map(item => {
+    buildClosingSheetRows: ({ productData = [], targetDateStr = '' }) => productData
+        .filter(item => item.품명 || item.코드)
+        .sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b))
+        .map(item => {
         var _a, _b, _c;
         let displayIssues = item.이슈 ? [...item.이슈] : [];
         displayIssues = displayIssues.filter(msg => !msg.includes('매입내역 없음'));
@@ -2571,7 +2585,10 @@ const EXPORT_MODULE = Object.freeze({
             if (aggregated[key].수량 !== 0)
                 rows.push({ '일자': targetDateStr, '순번': '', '담당자': '', '창고': '01', '상품코드': aggregated[key].코드, '상품명(규격)': aggregated[key].품명, '수량': aggregated[key].수량, '적요': '' });
         });
-        return rows;
+        return rows.sort((a, b) =>
+            safeStr(a['상품코드'] || '~~~~').localeCompare(safeStr(b['상품코드'] || '~~~~'), 'ko', { numeric: false, sensitivity: 'base' })
+            || safeStr(a['상품명(규격)'] || '').localeCompare(safeStr(b['상품명(규격)'] || ''), 'ko', { numeric: false, sensitivity: 'base' })
+        );
     },
     buildSalesDetailRows: ({ productData = [], targetDateStr = '' }) => {
         const rows = [];
@@ -2818,7 +2835,7 @@ const EXPORT_MODULE = Object.freeze({
     createCombinedWorkbook: ({ productData = [], analysisPeriod = '', targetDateStr = '', closingStats = {} }) => {
         const exportFileNameDate = targetDateStr ? targetDateStr.replace(/-/g, '') : (() => { const today = new Date(); return `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`; })();
         // V1.a22.30: 운영 출력은 코드통합형을 기본으로 한다. Lot/일자/구매처 상세는 분석원장에만 보존한다.
-        const operationalProductData = DATAOPS_VIEW_LAYER_MODULE.buildCodeSummaryRows(productData || []);
+        const operationalProductData = DATAOPS_VIEW_LAYER_MODULE.buildCodeSummaryRows(productData || []).sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b));
         const exportData1 = EXPORT_MODULE.buildClosingSheetRows({ productData: operationalProductData, targetDateStr });
         const analysisLedgerRows = EXPORT_MODULE.buildClosingAnalysisLedgerRows({ productData, targetDateStr });
         const masterCheckRows = EXPORT_MODULE.buildMasterCheckRows({ productData, targetDateStr });
@@ -3515,9 +3532,11 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             let targetAfter = makeManualIssue(targetItem, sourceItem, '+', targetLossQty);
             sourceAfter = applyManualSubPricePatch(sourceAfter, subPricePatch);
             targetAfter = applyManualSubPricePatch(targetAfter, subPricePatch);
-            // V1.a22.12: 수기치환은 판매상품을 바꾸지 않고, source Lot 원가를 target 원가 레이어로 생성한다.
+            // V1.a22.34: 수기치환은 총원가를 보존해 대상 단가를 환산한다.
+            // 예: 300원 3개를 1개로 묶으면 대상 단가는 900원이다.
             const manualUnitCost = safeNum(sourceItem.단가);
-            if (manualUnitCost > 0) {
+            const manualTargetUnitCost = DATAOPS_OPERATION_MODULE.calcConvertedUnitCost({ sourceUnitCost: manualUnitCost, sourceQty: sourceLossQty, targetQty: targetLossQty }) || manualUnitCost;
+            if (manualTargetUnitCost > 0) {
                 const manualCostLayer = DATAOPS_OPERATION_MODULE.buildCostLayer({
                     type: DATAOPS_OPERATION_MODULE.TYPES.MANUAL_ASSIST,
                     sourceItem,
@@ -3525,19 +3544,22 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     vendorName: '수기치환',
                     sourceQty: sourceLossQty,
                     targetQty: targetLossQty,
-                    unitCost: manualUnitCost,
+                    unitCost: manualTargetUnitCost,
                     revenue: 0
                 });
                 const targetWithLayer = DATAOPS_OPERATION_MODULE.appendCostLayer(targetAfter, manualCostLayer);
                 targetAfter = {
                     ...targetWithLayer,
+                    단가: manualTargetUnitCost,
+                    _convertedUnitCostApplied: safeNum(sourceLossQty) !== safeNum(targetLossQty),
+                    _convertedUnitCostFormula: `${formatMoney(manualUnitCost)} × ${formatQty(sourceLossQty)} ÷ ${formatQty(targetLossQty)}`,
                     이슈: DATAOPS_ISSUE_HELPER.unique(DATAOPS_ISSUE_HELPER.stripPriceIssues(targetWithLayer.이슈 || [])),
                     _operationType: DATAOPS_OPERATION_MODULE.TYPES.MANUAL_ASSIST,
                     _manualCostSourceKey: sourceAfter.batchKey,
                     _manualCostSourceName: safeStr(sourceAfter.품명, '출처상품')
                 };
                 sourceAfter._operationOutLayers = DATAOPS_OPERATION_MODULE.normalizeCostLayers(Array.isArray(sourceAfter._operationOutLayers) ? [...sourceAfter._operationOutLayers, manualCostLayer] : [manualCostLayer]);
-                const costMemo = `[수기치환원가] ${safeStr(sourceAfter.품명, '출처상품')} ${formatQty(sourceLossQty)} → ${safeStr(targetAfter.품명, '대상상품')} ${formatQty(targetLossQty)} / 원가 ${formatMoney(manualUnitCost)}`;
+                const costMemo = `[수기치환원가] ${safeStr(sourceAfter.품명, '출처상품')} ${formatQty(sourceLossQty)} → ${safeStr(targetAfter.품명, '대상상품')} ${formatQty(targetLossQty)} / 원가 ${formatMoney(manualTargetUnitCost)}`;
                 if (!safeStr(targetAfter.메모, '').includes(costMemo))
                     targetAfter.메모 = `${safeStr(targetAfter.메모, '')}${safeStr(targetAfter.메모, '') ? ' ' : ''}${costMemo}`;
             }
@@ -3697,7 +3719,8 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             });
             const isBundleConvert = operationType === DATAOPS_OPERATION_MODULE.TYPES.BUNDLE_CONVERT;
             const sourceRevenueMoved = sourceDeductQty * sRevUnit;
-            const targetUnitCost = isBundleConvert && tPrice > 0 ? tPrice : sPrice;
+            const convertedUnitCost = DATAOPS_OPERATION_MODULE.calcConvertedUnitCost({ sourceUnitCost: sPrice, sourceQty: sourceDeductQty, targetQty: targetAddQty });
+            const targetUnitCost = operationType !== DATAOPS_OPERATION_MODULE.TYPES.NORMAL && convertedUnitCost > 0 ? convertedUnitCost : sPrice;
             const targetCostMoved = targetAddQty * safeNum(targetUnitCost);
             const sourceCostMoved = sourceDeductQty * sPrice;
             const cleanVendorNameGlobal = safeStr(vendorName).replace('_perfect', '');
@@ -3769,6 +3792,11 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     // V1.a22.12: 대체/묶음 작업은 SKU 단가를 덮어쓰지 않는다. 원가는 Lot 원가 레이어로만 분리한다.
                     np.매출원가 += targetCostMoved;
                     np.매출액 += sourceRevenueMoved;
+                    if (operationType !== DATAOPS_OPERATION_MODULE.TYPES.NORMAL && safeNum(targetUnitCost) > 0 && safeNum(sourceDeductQty) !== safeNum(targetAddQty)) {
+                        np.단가 = targetUnitCost;
+                        np._convertedUnitCostApplied = true;
+                        np._convertedUnitCostFormula = `${formatMoney(sPrice)} × ${formatQty(sourceDeductQty)} ÷ ${formatQty(targetAddQty)}`;
+                    }
                     const cleanVendorName = cleanVendorNameGlobal;
                     if (!np.출고내역[cleanVendorName])
                         np.출고내역[cleanVendorName] = { qty: 0, rev: 0, cogs: 0, isLifo: false, isPerfectMatch: false, displayVendor: cleanVendorName };
@@ -6578,7 +6606,7 @@ function App() {
         const groupCustomer = safeStr(f.groupCustomer, '').trim();
         const detailCustomer = safeStr(f.detailCustomer, '').trim();
         const noProductCode = !code || normalizeSummaryTokenText(code) === 'no_code';
-        // V1.a22.33: 판매업로드 요약행 제외는 거래처/품목 식별값의 정확한 구조값으로만 판단한다.
+        // V1.a22.34: 판매업로드 요약행 제외는 거래처/품목 식별값의 정확한 구조값으로만 판단한다.
         // 메모성 필드(간단설명/적요/출고지시/전달사항/비고)에 합계·소계·재고 문구가 있어도 제외하지 않는다.
         if (isExactSummaryRowToken(groupCustomer) || isExactSummaryRowToken(detailCustomer))
             return true;
@@ -6592,7 +6620,7 @@ function App() {
         const f = getTransferBaseFields(item);
         if (!f.code || !f.name || !f.groupCustomer || safeNum(f.qty) === 0)
             return false;
-        // V1.a22.33: 판매업로드 생성에서 합계행 제외는 구조값 정확일치만 허용한다.
+        // V1.a22.34: 판매업로드 생성에서 합계행 제외는 구조값 정확일치만 허용한다.
         // 간단설명/적요/출고지시/비고의 '합계 확인' 같은 메모 문구는 정상 판매행으로 유지한다.
         if (isTransferSummaryLikeRow(f))
             return false;
@@ -6705,13 +6733,13 @@ function App() {
         const warnings = [];
         const addFatal = (info) => fatalErrors.push({ ...info, level: '업로드불가', action: '원본 구매현황을 수정한 뒤 다시 업로드' });
         const addWarning = (info) => warnings.push({ ...info, level: '확인필요', action: info.action || '판매업로드 후 추가 입력/최종 검증' });
-        // V1.a22.33: 판매업로드 생성은 업로드파일 생성 단계다.
+        // V1.a22.34: 판매업로드 생성은 업로드파일 생성 단계다.
         // Lot 분배, 재고출고 판단, FIFO, 3우리 원구매처 역매칭은 여기서 실행하지 않는다.
         // 출고지시/적요/전달사항/비고/간단설명은 원본 메모로만 보존하며 행 제외·구매처 공백 처리 조건으로 쓰지 않는다.
         const rowInfos = [];
         parsedIn.forEach((item, idx) => {
             const f = getTransferBaseFields(item);
-            // V1.a22.33: 행 전체 텍스트에 '합계'가 포함된다는 이유로 제외하지 않는다.
+            // V1.a22.34: 행 전체 텍스트에 '합계'가 포함된다는 이유로 제외하지 않는다.
             // 합계/소계 행은 거래처·품목 식별값의 정확일치 구조로만 판단한다.
             if (isTransferSummaryLikeRow(f))
                 return;
@@ -6747,7 +6775,7 @@ function App() {
             const originalPurchaseVendor = safeStr(f.purchaseVendor, '');
             const finalPurchaseVendor = originalPurchaseVendor;
             const purchaseVendorFixNote = '';
-            // V1.a22.33: 판매업로드 단계에서는 구매처 원본을 그대로 보존한다.
+            // V1.a22.34: 판매업로드 단계에서는 구매처 원본을 그대로 보존한다.
             // 내부값(우리농산/1전송/3우리 등)도 Lot 분배 신호로 해석하지 않고, 판매현황 검증/DataOps 수불 단계에서만 판단한다.
             // V1.a22.12: 치명 에러는 거래처명/품목코드/수량 없음만 막는다.
             // 단가그룹 없음·기준단가 없음·단가오염 의심은 실무상 후속 입력 가능성이 있으므로 업로드 행은 생성하고 확인필요로 안내한다.
