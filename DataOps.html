@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.30)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.31)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.30.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.31.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -627,6 +627,7 @@ const normalizeTransferGroupName = (name) => {
 // V1.a22.29: 판매전표에 구매처+구매단가가 있으면 동일 구매처+동일 단가 Lot에만 매칭하고, 잔량 0이 된 확정 Lot에는 추가 판매분을 붙이지 않는다.
 // V1.a22.29: 수불마감 엑셀 출력의 기록/거래 열은 원장 기록값만 출력하고, 구매일자미확정·미지정·매입내역 없음 같은 이슈성 문구는 공백 처리한다.
 // V1.a22.30: 매핑센터 관리기준을 관리방식(코드통합형/Lot상세형)과 대표단가 기준(최신/가중평균/최고/FIFO추정)으로 분리한다. 기본 출력/실사양식/MerchOps 연동은 코드통합형으로 유지하고 단가검증 탭에서만 상세 근거를 펼친다.
+// V1.a22.31: 판매업로드 생성은 Lot 분배/재고출고 판단과 분리한다. 출고지시·적요·전달사항·비고는 메모로 보존하고, 거래처명·품목코드·수량이 있으면 판매입력 행을 생성한다.
 // 단가가 없으면 사용자가 정한 그룹별 후보 외 다른 컬럼으로 자동 대체하지 않고 공백 + 단가확인으로 보낸다.
 // 청과상장은 출고가(공지) 다음 청과 고정가를 바로 적용한다.
 // 청과 고정가가 없을 때 도매A/0.91을 적용하고, 도매A가 없으면 이미 입고가+외주비+노무비/0.91로 계산된 상장가를 적용한다.
@@ -6541,10 +6542,11 @@ function App() {
         const wholesaleA = transferStrictNumber(getTransferRawValue(raw, '도매A'));
         const outsourceCost = transferStrictNumber(getTransferRawValue(raw, '외주비')) || transferStrictNumber(getRawCell(raw, ['외주비', '외주', '가공비']));
         const laborCost = transferStrictNumber(getTransferRawValue(raw, '노무비')) || transferStrictNumber(getRawCell(raw, ['노무비', '노무', '인건비']));
-        const memo = safeStr((_k = getRawCell(raw, ['적요'])) !== null && _k !== void 0 ? _k : '', '');
+        const memo = safeStr((_k = getRawCell(raw, ['적요'])) !== null && _k !== void 0 ? _k : getRawCell(raw, ['비고']), '');
         const orderNote = safeStr((_l = getRawCell(raw, ['출고지시'])) !== null && _l !== void 0 ? _l : '', '');
+        const deliveryMessage = safeStr(getRawCell(raw, ['전달사항', '전달 사항', '메모', '비고']), '');
         const notice = getTransferRawValue(raw, '출고가(공지)');
-        return { raw, code, name, spec, groupCustomer, detailCustomer, qty, dateValue, purchaseVendor, cost, wholesaleA, outsourceCost, laborCost, memo, orderNote, notice };
+        return { raw, code, name, spec, groupCustomer, detailCustomer, qty, dateValue, purchaseVendor, cost, wholesaleA, outsourceCost, laborCost, memo, orderNote, deliveryMessage, notice };
     }, [getTransferRawValue, transferStrictNumber]);
     const isTransferGenerationValidPurchaseRow = useCallback((item = {}) => {
         const f = getTransferBaseFields(item);
@@ -6662,11 +6664,9 @@ function App() {
         const warnings = [];
         const addFatal = (info) => fatalErrors.push({ ...info, level: '업로드불가', action: '원본 구매현황을 수정한 뒤 다시 업로드' });
         const addWarning = (info) => warnings.push({ ...info, level: '확인필요', action: info.action || '판매업로드 후 추가 입력/최종 검증' });
-        // V1.a22.29: 판매업로드 구매처 보정 원칙
-        // - 구매처가 외부값이면 그대로 인정한다.
-        // - 구매처가 내부값(우리농산/1전송/3우리/가구매/가판매 등)이면서 출고지시가 '재고'이면 과거 재고분으로 보고 보정하지 않는다.
-        // - 구매처가 내부값이면서 출고지시가 공백이면 근거 없음으로 보고 구매처를 공백 처리한다.
-        // - 구매처가 내부값이면서 출고지시가 있고 '재고'가 아니면 3우리 내부 판매/구매분과 품목·수량·단가를 매칭해 원구매처로 대체한다.
+        // V1.a22.31: 판매업로드 생성은 업로드파일 생성 단계다.
+        // Lot 분배, 재고출고 판단, 3우리 원구매처 역매칭은 판매업로드 이후 판매현황 검증/DataOps 수불 단계에서 처리한다.
+        // 출고지시/적요/전달사항/비고는 메모로만 보존하며, 해당 문구 때문에 판매입력 행을 누락하거나 구매처를 공백 처리하지 않는다.
         const normalizeTransferTextKey = (value = '') => safeStr(value, '').replace(/\s/g, '').replace(/\.0$/, '').toLowerCase();
         const normalizeTransferVendorText = (value = '') => safeStr(value, '').replace(/\s/g, '');
         const isTransferInternalPurchaseVendor = (value = '') => {
@@ -6750,26 +6750,9 @@ function App() {
             let finalPurchaseVendor = originalPurchaseVendor;
             let purchaseVendorFixNote = '';
             if (isTransferInternalPurchaseVendor(originalPurchaseVendor)) {
-                if (isTransferStockOrderNote(f.orderNote)) {
-                    purchaseVendorFixNote = '재고출고-내부구매처유지';
-                }
-                else if (!safeStr(f.orderNote, '')) {
-                    finalPurchaseVendor = '';
-                    purchaseVendorFixNote = '출고지시없음-구매처공백';
-                    checkReasons.push('구매처확인(출고지시 없음)');
-                }
-                else {
-                    const matched = findThreeWooriOriginalPurchaseVendor(info, price);
-                    if (matched.status === 'MATCHED' && matched.vendor) {
-                        finalPurchaseVendor = matched.vendor;
-                        purchaseVendorFixNote = `3우리매칭:${originalPurchaseVendor}->${matched.vendor}`;
-                    }
-                    else {
-                        finalPurchaseVendor = '';
-                        purchaseVendorFixNote = matched.status === 'MULTIPLE' ? '3우리매칭복수-구매처공백' : '3우리매칭없음-구매처공백';
-                        checkReasons.push(matched.status === 'MULTIPLE' ? '구매처확인(3우리 후보 복수)' : '구매처확인(3우리 근거 없음)');
-                    }
-                }
+                // V1.a22.31: 판매업로드 생성 단계에서는 내부 구매처를 Lot 분배/재고출고 신호로 해석하지 않는다.
+                // 구매처 원본은 그대로 보존하고, 재고·3우리·FIFO 판단은 업로드 이후 판매현황 검증/DataOps 수불 단계에서 처리한다.
+                purchaseVendorFixNote = '판매업로드-내부구매처원본유지';
             }
             // V1.a22.12: 치명 에러는 거래처명/품목코드/수량 없음만 막는다.
             // 단가그룹 없음·기준단가 없음·단가오염 의심은 실무상 후속 입력 가능성이 있으므로 업로드 행은 생성하고 확인필요로 안내한다.
@@ -6797,7 +6780,7 @@ function App() {
                 '출하창고': '02',
                 '거래유형': '',
                 '전잔액': '',
-                '전달사항': checkReasons.length ? `확인필요: ${checkReasons.join(', ')}` : '',
+                '전달사항': f.deliveryMessage || '',
                 '품목코드': f.code,
                 '품목명': f.name,
                 // V1.a22.12: K열 규격은 구매현황 원본 정보값(거래처명/규격)을 그대로 사용한다.
@@ -7047,24 +7030,15 @@ function App() {
             }));
             XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(groupRows), '단가설정');
             downloadWorkbook(wb, `2전송_판매업로드_생성_${ymd}.xlsx`);
+            const issueCount = warnings.length + fatalErrors.length;
+            const issueLine = issueCount > 0 ? '특이사항: 확인필요 시트를 확인하세요.' : '특이사항: 없음';
             setAlertMsg(`✅ 판매업로드 생성 완료
 
 생성 행: ${rows.length}개
-전송출고 가전표: ${transferOutboundVoucherRows.length}개
-전송구매 가전표: ${transferPurchaseVoucherRows.length}개
-거래처별 미리보기: ${previewRows.length}개
-확인필요: ${warnings.length + fatalErrors.length}개
+확인필요: ${issueCount}개
 업로드불가: ${fatalErrors.length}개
 
-시트 구성: 판매입력 / 전송출고 / 전송구매 / 거래처별 / 확인필요 / 단가설정
-전송출고는 구매처=우리농산 행을 1전송·40창고 가전표로 생성하되, 수량까지만 입력하고 단가부터 이하 컬럼은 공란 처리합니다.
-전송구매는 거래처명=3우리 행을 3우리·03창고 가전표로 생성하며, 단가/공급가액/구매값은 판매입력 값을 그대로 복사합니다.
-판매입력의 단가/판매가 칸에는 단가그룹별 알고리즘 적용 단가를 입력했습니다.
-식자재: 출고가(공지) > 식자재 > 도매A > 출고(외노) > 단가확인
-창고출고: 출고가(공지) > 도매A > 출고(외노) > 단가확인
-청과상장: 출고가(공지) > 청과 > 도매A 기준원가 / 0.91 후 100단위 반올림 > 입고가+외주비+노무비 기준원가 / 0.91 후 100단위 반올림 > 단가확인
-내부이동: 입고가
-※ 단가가 없으면 다른 단가로 임의 대체하지 않고 공백으로 생성합니다.`);
+${issueLine}`);
         }
         catch (err) {
             console.error(err);
