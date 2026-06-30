@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.82_MasterConditionImport]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.83_ColumnWidthResize]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -1118,6 +1118,8 @@ window.createMerchTableView = (target, name, masterColumns = ['입고가'], work
         workColumns: window.normalizeMerchTableColumns(workColumns).filter(c => c !== '품목코드'),
         updatedAt: options.updatedAt || new Date().toISOString()
     };
+    const columnWidths = window.normalizeMerchColumnWidths ? window.normalizeMerchColumnWidths(options.columnWidths || {}) : (options.columnWidths || {});
+    if (columnWidths && Object.keys(columnWidths).length > 0) view.columnWidths = columnWidths;
     const filterMemo = String(options.filterMemo || '').trim();
     if (filterMemo) view.filterMemo = filterMemo;
     const filterSteps = window.normalizeMerchFilterSteps ? window.normalizeMerchFilterSteps(options.filterSteps || [], options.filterPreset || null) : (Array.isArray(options.filterSteps) ? options.filterSteps : []);
@@ -1153,6 +1155,7 @@ window.sanitizeMerchTableViewPresets = (raw = {}) => {
                 if (Array.isArray(v.filterSteps)) options.filterSteps = v.filterSteps || [];
                 if (Object.prototype.hasOwnProperty.call(v, 'filterPreset')) options.filterPreset = v.filterPreset || {};
                 if (v.filterMemo !== undefined) options.filterMemo = v.filterMemo || '';
+                if (v.columnWidths !== undefined) options.columnWidths = v.columnWidths || {};
                 return window.createMerchTableView(target.id, String(v.name || `맞춤양식 ${idx + 1}`).trim(), v.masterColumns || ['입고가'], v.workColumns || v.columns || [], options);
             });
         result[target.id] = { views };
@@ -1499,6 +1502,79 @@ const getCellWidthClass = (h) => {
     if (window.NUMERIC_HEADERS.includes(key)) return 'min-w-[82px] w-[82px] max-w-[82px]';
     return 'min-w-[86px] w-[86px] max-w-[86px]';
 };
+
+const getDefaultMerchColumnWidth = (h, fallback = 86) => {
+    const key = String(h || '').trim();
+    const fixed = {
+        '마스터 정보': 230,
+        '이슈': 100,
+        '상태': 100,
+        '리포트': 220,
+        '창고': 54,
+        '단위': 56,
+        '구매처': 74,
+        '거래처명': 74,
+        '거래처': 74,
+        '일자': 68,
+        '기준일자': 76,
+        '상품 구매일자': 82,
+        '기록': 70,
+        '품목명': 138,
+        '상품명': 138,
+        '규격': 68,
+        '1종규격': 68,
+        '입고수량': 70,
+        '출고량': 70,
+        '판매수량': 70,
+        '재고수량': 76,
+        '수량': 64,
+        '입고가': 82,
+        '출고가': 82,
+        '입고B': 78,
+        '도매A': 78,
+        '도매B': 78,
+        '행사가': 82,
+        '상장가': 82,
+        '최종(창고)': 82,
+        '최신단가': 82,
+        '카탈로그': 88,
+        '견적서': 88,
+        '판매여부': 74,
+        '행사테마': 74,
+        '브랜드': 76,
+        '간단설명': 68,
+        '지시사항': 68,
+        '상품정보': 68,
+        '적요2': 68,
+        '검색어등록': 96
+    };
+    if (fixed[key]) return fixed[key];
+    if (window.NUMERIC_HEADERS && window.NUMERIC_HEADERS.includes(key)) return 82;
+    return fallback;
+};
+window.normalizeMerchColumnWidths = (widths = {}) => {
+    const result = {};
+    Object.entries(widths || {}).forEach(([key, value]) => {
+        const n = Number(value);
+        if (!key || !Number.isFinite(n) || n <= 0) return;
+        result[String(key)] = Math.max(48, Math.min(720, Math.round(n)));
+    });
+    return result;
+};
+window.getMerchColumnWidthValue = (widths = {}, key = '', label = '', fallback = 86) => {
+    const safe = window.normalizeMerchColumnWidths(widths || {});
+    const byKey = safe[String(key || '')];
+    if (byKey) return byKey;
+    const byLabel = safe[String(label || '')];
+    if (byLabel) return byLabel;
+    return getDefaultMerchColumnWidth(label, fallback);
+};
+window.getMerchColumnWidthStyle = (widths = {}, key = '', label = '', fallback = 86) => {
+    const w = window.getMerchColumnWidthValue(widths || {}, key, label, fallback);
+    return { width: `${w}px`, minWidth: `${w}px`, maxWidth: `${w}px` };
+};
+const MERCH_RESIZE_HANDLE_CLASS = "absolute right-0 top-0 h-full w-2 cursor-col-resize z-[90] hover:bg-indigo-300/50 active:bg-indigo-400/70";
+
 const createHeaderMap = (actualHeaders, mappingConfig) => {
     const headerMap = {};
     if (!mappingConfig)
@@ -4633,7 +4709,7 @@ window.getMerchPurchaseTrend = (row = {}, mItem = {}) => {
     }
     return lines.slice(0, 2);
 };
-const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, data, isSel, extraClass = '' }) => {
+const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, data, isSel, extraClass = '', cellStyle = {} }) => {
     var _a, _b, _c;
     const isComparePrice = ((_b = (_a = config.uploadColumnMeta) === null || _a === void 0 ? void 0 : _a[field]) === null || _b === void 0 ? void 0 : _b.type) === 'comparePrice';
     const isNumeric = isComparePrice || window.NUMERIC_HEADERS.includes(linkedMasterField) || window.NUMERIC_HEADERS.includes(field);
@@ -4783,7 +4859,7 @@ const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, 
         const nextInput = findNextEditableInput(td, tr, tbody, rowIdx, colIdx, direction);
         focusGridInput(nextInput);
     };
-    return (React.createElement("td", { className: `px-1 py-1 border-r border-slate-200 ${extraClass} ${getCellWidthClass(linkedMasterField || field)} ${baseBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'} transition-colors relative` },
+    return (React.createElement("td", { className: `px-1 py-1 border-r border-slate-200 ${extraClass} ${getCellWidthClass(linkedMasterField || field)} ${baseBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'} transition-colors relative`, style: cellStyle },
         React.createElement("div", { className: "flex flex-col justify-center h-full" },
             React.createElement("div", { className: `flex items-center w-full ${isNumeric ? 'justify-end' : 'justify-center'}` },
                 React.createElement("input", { type: "text", className: `w-full bg-transparent hover:bg-white/60 focus:bg-white focus:ring-1 focus:ring-indigo-300 rounded px-1.5 outline-none ${textClass} text-[12px] py-1`, value: localVal, placeholder: mVal || '', onChange: (e) => setLocalVal(e.target.value), onBlur: (e) => commitChange(e.target.value), onKeyDown: handleKeyDown, onClick: (e) => e.target.select() })))));
@@ -4797,6 +4873,8 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
     const currentMasterCols = registrationMode ? [] : (Array.isArray(targetMasterCols) ? targetMasterCols : (getInitialVisibleMasterCols()[activeTableTarget] || [])).filter(h => !requiredCoreFields.includes(h));
     const isParserListTableMode = !registrationMode && (state.activeTags || []).some(t => String(t?.type || '') === 'catalog');
     const currentWorkCols = registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : (Array.isArray(targetWorkCols) ? targetWorkCols : (getInitialVisibleUploadCols()[activeTableTarget] || [])).filter(h => h !== '품목코드' && h !== '구매리포트' && h !== '구매검증리포트');
+    const columnWidths = window.normalizeMerchColumnWidths(state.columnWidths || {});
+    const widthStyle = (key, label, fallback) => window.getMerchColumnWidthStyle(columnWidths, key, label, fallback);
     const hasUploadNameField = !!(row.finalData && Object.prototype.hasOwnProperty.call(row.finalData, '품목명'));
     const hasUploadSpecField = !!(row.finalData && Object.prototype.hasOwnProperty.call(row.finalData, '규격'));
     const hasUploadSourceForOriginal = typeof window.hasAnyUploadSource === 'function' ? window.hasAnyUploadSource(row.sources || {}) : !!(row.sources && Object.keys(row.sources || {}).length > 0);
@@ -4966,7 +5044,7 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
     const reportLines = buildRowReport({ row, mItem, issueText, issueSubText, latestHistory: latestParserHistory, compareSummary, marginInfo, stockQty, safeStock, promoActive });
     const reportTone = reportLines.some(t => String(t).includes('역마진') || String(t).includes('근거 없음') || String(t).includes('근거없음')) ? 'text-rose-700' : (latestParserHistory ? 'text-slate-700' : 'text-slate-500');
     return (React.createElement("tr", { className: `group border-b border-slate-200 transition-all relative z-0 hover:z-10 ${isMasterAddedRow ? 'bg-amber-50/70 hover:bg-amber-100/70' : 'hover:bg-slate-50'} ${isStopped ? 'opacity-70 bg-slate-50' : ''}` },
-        React.createElement("td", { className: `sticky z-20 px-3 py-2 border-r border-r-slate-200 transition-colors min-w-[230px] w-[230px] max-w-[230px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : (isMasterAddedRow ? 'bg-amber-50/95 group-hover:!bg-amber-100/90 border-l-4 border-l-amber-400' : 'bg-white group-hover:!bg-slate-50 border-l-4 border-l-transparent group-hover:!border-l-slate-300')}`, style: { left: 0 } },
+        React.createElement("td", { className: `sticky z-20 px-3 py-2 border-r border-r-slate-200 transition-colors min-w-[230px] w-[230px] max-w-[230px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : (isMasterAddedRow ? 'bg-amber-50/95 group-hover:!bg-amber-100/90 border-l-4 border-l-amber-400' : 'bg-white group-hover:!bg-slate-50 border-l-4 border-l-transparent group-hover:!border-l-slate-300')}`, style: { left: 0, ...widthStyle('core:마스터 정보', '마스터 정보', 230) } },
             React.createElement("div", { className: "flex gap-2 items-center w-full min-w-0" },
                 isEstimateUploaded && (React.createElement("input", { type: "checkbox", className: "w-4 h-4 rounded border-slate-300 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500", checked: isSel, onChange: () => { const n = new Set(state.selectedRows); n.has(window.getManagedRowKey(row)) ? n.delete(window.getManagedRowKey(row)) : n.add(window.getManagedRowKey(row)); actions.setSelectedRows(n); } })),
                 React.createElement("div", { className: "flex flex-col min-w-0 w-full overflow-hidden ml-1" },
@@ -4993,7 +5071,7 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
                 mVal = mVal !== undefined && mVal !== '' ? (isNum ? window.parseNum(mVal).toLocaleString() : mVal) : '-';
             }
             const isNum = window.NUMERIC_HEADERS.includes(h);
-            return (React.createElement("td", { key: `idle-td-${h}`, className: `px-2 py-1.5 border-r border-slate-200 ${isMasterAddedRow ? 'text-amber-900' : 'text-slate-600'} ${getCellWidthClass(h)} ${isNum ? 'text-right font-bold' : 'text-center'} ${isSel ? '!bg-indigo-100/70' : (isMasterAddedRow ? 'bg-amber-50/80 group-hover:!bg-amber-100/80' : 'bg-white group-hover:!bg-slate-50')}` },
+            return (React.createElement("td", { key: `idle-td-${h}`, className: `px-2 py-1.5 border-r border-slate-200 ${isMasterAddedRow ? 'text-amber-900' : 'text-slate-600'} ${getCellWidthClass(h)} ${isNum ? 'text-right font-bold' : 'text-center'} ${isSel ? '!bg-indigo-100/70' : (isMasterAddedRow ? 'bg-amber-50/80 group-hover:!bg-amber-100/80' : 'bg-white group-hover:!bg-slate-50')}`, style: widthStyle(`master:${h}`, h) },
                 React.createElement("div", { className: `truncate w-full ${h === '판매여부' ? salesClassName : ''}` }, mVal)));
         })) : (React.createElement(React.Fragment, null,
             currentMasterCols.map((h, i, arr) => {
@@ -5018,10 +5096,10 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
                 else {
                     formattedVal = mVal !== undefined && mVal !== '' ? (isNum ? window.parseNum(mVal).toLocaleString() : mVal) : '-';
                 }
-                return (React.createElement("td", { key: `pm-d-${h}`, className: `px-2 py-1.5 border-r border-slate-200 transition-colors ${getCellWidthClass(h)} ${i === arr.length - 1 ? 'border-r-2 !border-r-slate-300' : ''} ${isChanged ? 'bg-amber-100 text-amber-900' : (isMasterAddedRow ? 'bg-amber-50/80 text-amber-900' : 'bg-white text-slate-600')} ${isSel ? '!bg-indigo-100/70' : (isMasterAddedRow ? 'group-hover:!bg-amber-100/80' : 'group-hover:!bg-slate-50')} ${isNum ? 'text-right font-bold' : 'text-center'}` },
+                return (React.createElement("td", { key: `pm-d-${h}`, className: `px-2 py-1.5 border-r border-slate-200 transition-colors ${getCellWidthClass(h)} ${i === arr.length - 1 ? 'border-r-2 !border-r-slate-300' : ''} ${isChanged ? 'bg-amber-100 text-amber-900' : (isMasterAddedRow ? 'bg-amber-50/80 text-amber-900' : 'bg-white text-slate-600')} ${isSel ? '!bg-indigo-100/70' : (isMasterAddedRow ? 'group-hover:!bg-amber-100/80' : 'group-hover:!bg-slate-50')} ${isNum ? 'text-right font-bold' : 'text-center'}`, style: widthStyle(`master:${h}`, h) },
                     React.createElement("div", { className: `truncate w-full ${h === '판매여부' ? salesClassName : ''}` }, formattedVal)));
             }),
-            React.createElement("td", { className: `px-2 py-1.5 border-l-2 border-l-slate-300 border-r-2 border-r-slate-300 text-center w-[100px] min-w-[100px] max-w-[100px] ${issueCellBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'}` },
+            React.createElement("td", { className: `px-2 py-1.5 border-l-2 border-l-slate-300 border-r-2 border-r-slate-300 text-center w-[100px] min-w-[100px] max-w-[100px] ${issueCellBg} ${isSel ? '!bg-indigo-100/70' : 'group-hover:!bg-slate-50'}`, style: widthStyle('issue:이슈', state.registrationMode ? '상태' : '이슈', 100) },
                 React.createElement("div", { className: "flex flex-col items-center justify-center gap-1 min-w-0" },
                     issueText && issueText !== '-' && (React.createElement("span", { className: `inline-flex items-center max-w-full px-2 py-0.5 rounded-full border text-[11px] font-black whitespace-nowrap ${issueBadgeClass}`, title: issueText }, issueText)),
                     displayIssueSubText && (React.createElement("div", { className: "flex items-center justify-center gap-1 min-w-0 max-w-full" },
@@ -5030,9 +5108,9 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
                 var _a, _b, _c, _d, _e, _f;
                 const linkedMasterField = (_c = (_b = (_a = config.masterLinks) === null || _a === void 0 ? void 0 : _a[activeTableTarget]) === null || _b === void 0 ? void 0 : _b[h]) !== null && _c !== void 0 ? _c : (_e = (_d = config.masterLinks) === null || _d === void 0 ? void 0 : _d.estimate) === null || _e === void 0 ? void 0 : _e[h];
                 const mVal = (_f = (linkedMasterField && row.코드 ? mItem[linkedMasterField] : undefined)) !== null && _f !== void 0 ? _f : mItem[h];
-                return (React.createElement(EditableCell, { key: `p-u-e-${h}`, row: row, field: h, linkedMasterField: linkedMasterField, mVal: mVal, config: config, data: data, isSel: isSel, extraClass: i === arr.length - 1 ? 'border-r-2 !border-r-slate-300' : '' }));
+                return (React.createElement(EditableCell, { key: `p-u-e-${h}`, row: row, field: h, linkedMasterField: linkedMasterField, mVal: mVal, config: config, data: data, isSel: isSel, extraClass: i === arr.length - 1 ? 'border-r-2 !border-r-slate-300' : '', cellStyle: widthStyle(`work:${h}`, h) }));
             }),
-            !state.registrationMode && (React.createElement("td", { className: `px-3 py-1.5 border-l-2 border-l-slate-300 border-r border-slate-200 min-w-[220px] w-auto max-w-none ${isSel ? '!bg-indigo-100/70' : (isMasterAddedRow ? 'bg-amber-50/80 group-hover:!bg-amber-100/80' : 'bg-white group-hover:!bg-slate-50')}` },
+            !state.registrationMode && (React.createElement("td", { className: `px-3 py-1.5 border-l-2 border-l-slate-300 border-r border-slate-200 min-w-[220px] w-auto max-w-none ${isSel ? '!bg-indigo-100/70' : (isMasterAddedRow ? 'bg-amber-50/80 group-hover:!bg-amber-100/80' : 'bg-white group-hover:!bg-slate-50')}`, style: { ...widthStyle('report:리포트', '리포트', 220), maxWidth: 'none' } },
                 React.createElement("div", { className: `flex flex-col justify-center gap-0.5 leading-tight ${reportTone}` },
                     (purchaseTrendInfo && purchaseTrendInfo.reportParts && purchaseTrendInfo.reportParts.length > 0 && reportLines[0] === purchaseTrendInfo.reportText)
                         ? React.createElement("div", { className: "text-[11px] font-black whitespace-nowrap", title: purchaseTrendInfo.reportText || '' },
@@ -5041,7 +5119,7 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
                     React.createElement("div", { className: "text-[10px] font-bold text-slate-500 whitespace-nowrap", title: reportLines[1] || '' }, reportLines[1] || ''))))))));
 });
 const ExcelDataGrid = ({ state, actions }) => {
-    const { isEstimateUploaded, selectedRows, fullDisplayRows, visibleMasterCols, visibleUploadCols, masterProducts, activeTableTarget = 'estimate', registrationMode = false } = state;
+    const { isEstimateUploaded, selectedRows, fullDisplayRows, visibleMasterCols, visibleUploadCols, masterProducts, activeTableTarget = 'estimate', registrationMode = false, config = {} } = state;
     const [visibleCount, setVisibleCount] = useState(100);
     useEffect(() => { setVisibleCount(100); }, [fullDisplayRows]);
     const handleScroll = useCallback((e) => {
@@ -5057,33 +5135,115 @@ const ExcelDataGrid = ({ state, actions }) => {
     const currentMasterCols = registrationMode ? [] : (Array.isArray(targetMasterCols) ? targetMasterCols : (getInitialVisibleMasterCols()[activeTableTarget] || [])).filter(h => !requiredCoreFields.includes(h));
     const isParserListTableMode = !registrationMode && (state.activeTags || []).some(t => String(t?.type || '') === 'catalog');
     const currentWorkCols = registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : (Array.isArray(targetWorkCols) ? targetWorkCols : (getInitialVisibleUploadCols()[activeTableTarget] || [])).filter(h => h !== '품목코드' && h !== '구매리포트' && h !== '구매검증리포트');
+    const activeView = useMemo(() => window.findMerchTableView ? window.findMerchTableView(config.tableViewPresets || {}, activeTableTarget, config.activeTableViewId || '') : null, [config.tableViewPresets, activeTableTarget, config.activeTableViewId]);
+    const activeViewColumnWidths = activeView && activeView.columnWidths ? activeView.columnWidths : {};
+    const [columnWidthDraft, setColumnWidthDraft] = useState(() => window.normalizeMerchColumnWidths(activeViewColumnWidths));
+    const [columnWidthDirty, setColumnWidthDirty] = useState(false);
+    useEffect(() => {
+        setColumnWidthDraft(window.normalizeMerchColumnWidths(activeViewColumnWidths));
+        setColumnWidthDirty(false);
+    }, [activeTableTarget, config.activeTableViewId, config.tableViewPresets]);
+    const currentColumnWidths = window.normalizeMerchColumnWidths(columnWidthDraft || activeViewColumnWidths || {});
+    const widthStyle = (key, label, fallback) => window.getMerchColumnWidthStyle(currentColumnWidths, key, label, fallback);
+    const getColumnWidthValue = (key, label, fallback) => window.getMerchColumnWidthValue(currentColumnWidths, key, label, fallback);
+    const resizeHandle = (key, label, fallback = 86) => React.createElement("span", {
+        className: MERCH_RESIZE_HANDLE_CLASS,
+        title: "드래그해서 열폭 조정",
+        onMouseDown: (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const startX = e.clientX;
+            const startWidth = getColumnWidthValue(key, label, fallback);
+            const minWidth = key === 'core:마스터 정보' ? 160 : (key === 'report:리포트' ? 140 : 48);
+            const onMove = (moveEvent) => {
+                const nextWidth = Math.max(minWidth, Math.min(720, Math.round(startWidth + moveEvent.clientX - startX)));
+                setColumnWidthDraft(prev => ({ ...(prev || {}), [key]: nextWidth }));
+                setColumnWidthDirty(true);
+            };
+            const onUp = () => {
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onUp);
+            };
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+        }
+    });
+    const saveColumnWidths = () => {
+        if (!activeView || !config.setTableViewPresets) {
+            alert('저장할 양식을 먼저 선택하세요.');
+            return;
+        }
+        const widths = window.normalizeMerchColumnWidths(columnWidthDraft || {});
+        config.setTableViewPresets(prev => {
+            const safe = window.sanitizeMerchTableViewPresets(prev || window.getDefaultMerchTableViewPresets());
+            const group = safe[activeTableTarget] || { views: [] };
+            return {
+                ...safe,
+                [activeTableTarget]: {
+                    ...group,
+                    views: (group.views || []).map(v => v.id === activeView.id ? { ...v, columnWidths: widths, updatedAt: new Date().toISOString() } : v)
+                }
+            };
+        });
+        setColumnWidthDirty(false);
+    };
+    const resetColumnWidths = () => {
+        if (!activeView || !config.setTableViewPresets) {
+            setColumnWidthDraft({});
+            setColumnWidthDirty(false);
+            return;
+        }
+        config.setTableViewPresets(prev => {
+            const safe = window.sanitizeMerchTableViewPresets(prev || window.getDefaultMerchTableViewPresets());
+            const group = safe[activeTableTarget] || { views: [] };
+            return {
+                ...safe,
+                [activeTableTarget]: {
+                    ...group,
+                    views: (group.views || []).map(v => {
+                        if (v.id !== activeView.id) return v;
+                        const next = { ...v, updatedAt: new Date().toISOString() };
+                        delete next.columnWidths;
+                        return next;
+                    })
+                }
+            };
+        });
+        setColumnWidthDraft({});
+        setColumnWidthDirty(false);
+    };
     return (React.createElement("div", { className: "bg-white border border-slate-200 rounded-xl shadow-sm h-full flex flex-col relative overflow-hidden" },
+        React.createElement("div", { className: "absolute right-3 top-2 z-[95] flex items-center gap-1 bg-white/90 backdrop-blur border border-slate-200 rounded-lg shadow-sm px-1.5 py-1" },
+            React.createElement("button", { className: `px-2 py-1 rounded text-[11px] font-black border ${columnWidthDirty ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`, onClick: saveColumnWidths, title: "현재 열넓이를 선택 양식에 저장" }, "열폭 저장"),
+            React.createElement("button", { className: "px-2 py-1 rounded text-[11px] font-black border bg-white text-slate-500 border-slate-200 hover:bg-slate-50", onClick: resetColumnWidths, title: "선택 양식의 열폭 저장값 초기화" }, "초기화")),
         React.createElement("div", { className: "flex-1 overflow-auto custom-scrollbar relative", onScroll: handleScroll },
             React.createElement("table", { className: "text-left border-collapse table-fixed text-[13px] whitespace-nowrap relative z-0 w-max bg-white" },
                 React.createElement("thead", { className: "text-[12px] font-extrabold sticky top-0 z-[60] shadow-sm border-b border-slate-200" },
                     React.createElement("tr", null,
-                        React.createElement("th", { className: "sticky top-0 left-0 z-[70] bg-slate-100 px-3 py-2 border-r border-r-slate-200 text-slate-700 min-w-[230px] w-[230px] max-w-[230px]" },
+                        React.createElement("th", { className: "sticky top-0 left-0 z-[70] bg-slate-100 px-3 py-2 border-r border-r-slate-200 text-slate-700 min-w-[230px] w-[230px] max-w-[230px] relative", style: { left: 0, ...widthStyle('core:마스터 정보', '마스터 정보', 230) } },
                             React.createElement("div", { className: "flex items-center gap-2 pl-1" },
                                 isEstimateUploaded && (React.createElement("input", { type: "checkbox", className: "rounded w-4 h-4 border-slate-400 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500", checked: selectedRows.size === fullDisplayRows.length && displayRows.length > 0, onChange: actions.toggleAllRows })),
-                                React.createElement("span", { className: "truncate font-black" }, registrationMode ? '미등록 상품' : '마스터 정보'))),
-                        !isEstimateUploaded ? (currentMasterCols.map(h => (React.createElement("th", { key: `idle-th-${h}`, className: `sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-r border-b border-slate-200 text-center text-slate-700 font-bold ${getCellWidthClass(h)}` }, h === '판매여부' ? '판매상태' : h)))) : (React.createElement(React.Fragment, null,
-                            currentMasterCols.map((h, i, arr) => (React.createElement("th", { key: `pm-${h}`, className: `sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-b text-center text-slate-700 font-bold ${getCellWidthClass(h)} ${i === arr.length - 1 ? 'border-r-2 border-r-slate-300' : 'border-r border-r-slate-200'}` }, h === '판매여부' ? '판매상태' : h))),
-                            React.createElement("th", { className: "sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-b border-slate-200 border-l-2 border-l-slate-300 border-r-2 border-r-slate-300 text-center text-slate-700 font-black min-w-[100px] w-[100px] max-w-[100px]" }, registrationMode ? '상태' : '이슈'),
+                                React.createElement("span", { className: "truncate font-black" }, registrationMode ? '미등록 상품' : '마스터 정보'),
+                                resizeHandle('core:마스터 정보', '마스터 정보', 230))),
+                        !isEstimateUploaded ? (currentMasterCols.map(h => (React.createElement("th", { key: `idle-th-${h}`, className: `sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-r border-b border-slate-200 text-center text-slate-700 font-bold ${getCellWidthClass(h)} relative`, style: widthStyle(`master:${h}`, h) }, h === '판매여부' ? '판매상태' : h, resizeHandle(`master:${h}`, h))))) : (React.createElement(React.Fragment, null,
+                            currentMasterCols.map((h, i, arr) => (React.createElement("th", { key: `pm-${h}`, className: `sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-b text-center text-slate-700 font-bold ${getCellWidthClass(h)} ${i === arr.length - 1 ? 'border-r-2 border-r-slate-300' : 'border-r border-r-slate-200'} relative`, style: widthStyle(`master:${h}`, h) }, h === '판매여부' ? '판매상태' : h, resizeHandle(`master:${h}`, h)))),
+                            React.createElement("th", { className: "sticky top-0 z-[60] bg-slate-100 px-2 py-3 border-b border-slate-200 border-l-2 border-l-slate-300 border-r-2 border-r-slate-300 text-center text-slate-700 font-black min-w-[100px] w-[100px] max-w-[100px] relative", style: widthStyle('issue:이슈', registrationMode ? '상태' : '이슈', 100) }, registrationMode ? '상태' : '이슈', resizeHandle('issue:이슈', registrationMode ? '상태' : '이슈', 100)),
                             currentWorkCols.map((h, i, arr) => {
                                 const isHighlight = ['입고가', '도매A', '행사가', '출고가'].includes(h);
-                                return (React.createElement("th", { key: `pu-e-${h}`, className: `sticky top-0 z-[60] bg-slate-100 text-slate-700 ${isHighlight ? 'font-black' : 'font-bold'} px-2 py-3 border-b text-center ${getCellWidthClass(h)} ${i === arr.length - 1 ? 'border-r-2 border-r-slate-300' : 'border-r border-r-slate-200'}` },
+                                return (React.createElement("th", { key: `pu-e-${h}`, className: `sticky top-0 z-[60] bg-slate-100 text-slate-700 ${isHighlight ? 'font-black' : 'font-bold'} px-2 py-3 border-b text-center ${getCellWidthClass(h)} ${i === arr.length - 1 ? 'border-r-2 border-r-slate-300' : 'border-r border-r-slate-200'} relative`, style: widthStyle(`work:${h}`, h) },
                                     h,
                                     " ",
-                                    isHighlight && React.createElement("i", { className: "fas fa-bolt text-amber-500 ml-1 text-[10px]" })));
+                                    isHighlight && React.createElement("i", { className: "fas fa-bolt text-amber-500 ml-1 text-[10px]" }),
+                                    resizeHandle(`work:${h}`, h)));
                             }),
-                            !registrationMode && (React.createElement("th", { className: "sticky top-0 z-[60] bg-slate-100 px-3 py-3 border-b border-l-2 border-l-slate-300 border-slate-200 text-center text-slate-700 font-black min-w-[220px] w-auto max-w-none" }, "\uB9AC\uD3EC\uD2B8")))))),
+                            !registrationMode && (React.createElement("th", { className: "sticky top-0 z-[60] bg-slate-100 px-3 py-3 border-b border-l-2 border-l-slate-300 border-slate-200 text-center text-slate-700 font-black min-w-[220px] w-auto max-w-none relative", style: { ...widthStyle('report:리포트', '리포트', 220), maxWidth: 'none' } }, "\uB9AC\uD3EC\uD2B8", resizeHandle('report:리포트', '리포트', 220))))))),
                 React.createElement("tbody", { className: "divide-y divide-slate-100 text-slate-700" },
                     displayRows.length === 0 ? (React.createElement("tr", null,
                         React.createElement("td", { colSpan: "50", className: "p-16 text-center text-slate-400 bg-white" },
                             React.createElement("i", { className: "fas fa-folder-open text-4xl mb-4 block" }),
                             isEstimateUploaded ? "작업 버퍼에 일치하는 항목이 없습니다." : "조건에 일치하는 상품이 없거나, 데이터가 비어있습니다.\n상단의 [파서리스트] 또는 [카탈로그]를 통해 목록을 띄우세요."))) : displayRows.map((row, idx) => {
                         const isSel = selectedRows.has(window.getManagedRowKey(row));
-                        return React.createElement(MemoizedTableRow, { key: window.getManagedRowKey(row), row: row, idx: idx, state: state, actions: actions, isSel: isSel, mItem: masterProducts[row.코드] || {} });
+                        return React.createElement(MemoizedTableRow, { key: window.getManagedRowKey(row), row: row, idx: idx, state: { ...state, columnWidths: currentColumnWidths }, actions: actions, isSel: isSel, mItem: masterProducts[row.코드] || {} });
                     }),
                     React.createElement("tr", null,
                         React.createElement("td", { colSpan: "50", className: "h-[80px] bg-slate-50 border-t border-slate-200 text-center align-middle" }, hiddenCount > 0 ? (React.createElement("div", { className: "inline-flex items-center justify-center text-[12px] font-bold text-slate-500 bg-white px-6 py-2 rounded-full border shadow-sm mt-5" },
@@ -5098,7 +5258,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.82_MasterConditionImport]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.83_ColumnWidthResize]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -5424,7 +5584,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.82_MasterConditionImport")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.83_ColumnWidthResize")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
