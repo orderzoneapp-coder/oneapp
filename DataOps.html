@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.34)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.37)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.34.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.37.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -651,6 +651,7 @@ const normalizeTransferGroupName = (name) => {
 // V1.a22.29: 수불마감 엑셀 출력의 기록/거래 열은 원장 기록값만 출력하고, 구매일자미확정·미지정·매입내역 없음 같은 이슈성 문구는 공백 처리한다.
 // V1.a22.30: 매핑센터 관리기준을 관리방식(코드통합형/Lot상세형)과 대표단가 기준(최신/가중평균/최고/FIFO추정)으로 분리한다. 기본 출력/실사양식/MerchOps 연동은 코드통합형으로 유지하고 단가검증 탭에서만 상세 근거를 펼친다.
 // V1.a22.34: 판매업로드 생성 단계에서 Lot 분배/재고출고/FIFO/3우리 원구매처 역매칭 잔여 로직을 제거한다. 구매처·출고지시·적요·전달사항·비고는 원본 보존값이며 행 제외/구매처 공백 처리 조건이 아니다.
+// V1.a22.37: Lot 매칭 단순화. 판매현황의 구매처+구매단가가 모두 있는 행만 1순위 확정매칭으로 선처리한다. 확정매칭에 성공하면 FIFO/재고/구매현황 고도화 로직을 보지 않는다. 확정값이 없거나 확정 Lot을 못 찾은 행은 기본 FIFO로만 처리하고, 구매처만 있음/단가만 있음/경매분/재고분 추정 고도화는 후보 알고리즘으로 별도 기획한다.
 // V1.a22.34: 판매업로드 생성에서 합계/소계 판정은 행 전체 includes 검색을 금지한다. 간단설명·적요·출고지시·전달사항·비고의 메모 문구(예: 합계 확인)는 행 제외 조건이 아니다.
 // 단가가 없으면 사용자가 정한 그룹별 후보 외 다른 컬럼으로 자동 대체하지 않고 공백 + 단가확인으로 보낸다.
 // 청과상장은 출고가(공지) 다음 청과 고정가를 바로 적용한다.
@@ -1394,7 +1395,8 @@ const DATAOPS_OPERATION_MODULE = Object.freeze({
         const sQty = Math.abs(safeNum(sourceQty));
         const tQty = Math.abs(safeNum(targetQty));
         if (unitCost <= 0 || sQty <= 0 || tQty <= 0) return 0;
-        // V1.a22.34: 수량 단위가 바뀌면 총원가를 보존한다.
+        // V1.a22.37: 수량 단위가 바뀌면 총원가를 보존한다. 화면 표시 버전도 실제 패치 버전과 동기화한다.
+// V1.a22.37: 화면 헤더/설정창/loader/title 버전명은 파일 버전과 항상 동일하게 유지한다.
         // 예: 300원 × 3개를 1개로 통합하면 대상 단가는 900원이다.
         return Math.round(((unitCost * sQty) / tQty) * 100) / 100;
     },
@@ -4340,6 +4342,14 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 const codeB = String(b.코드 || 'NO_CODE');
                 if (codeA !== codeB)
                     return codeA.localeCompare(codeB, 'ko', { numeric: false, sensitivity: 'base' });
+                // V1.a22.37: 판매현황에 구매처/구매단가 확정값이 있는 행은 일반 FIFO/거래처 우선순위보다 먼저 처리한다.
+                // 예: 애호박_상 1마산 5박스(가락(고창)/9000)는 경매 Lot보다 반드시 가락(고창)/9000 Lot에 먼저 잠근다.
+                const confirmedVendorA = safeStr(a._salesConfirmedPurchaseVendor || a._confirmedPurchaseVendor || a.매입처매칭 || '', '');
+                const confirmedVendorB = safeStr(b._salesConfirmedPurchaseVendor || b._confirmedPurchaseVendor || b.매입처매칭 || '', '');
+                const confirmedA = confirmedVendorA && !isInternalPurchaseVendorValue(confirmedVendorA) && safeNum(a._salesPurchaseUnitCost) > 0 ? 0 : 1;
+                const confirmedB = confirmedVendorB && !isInternalPurchaseVendorValue(confirmedVendorB) && safeNum(b._salesPurchaseUnitCost) > 0 ? 0 : 1;
+                if (confirmedA !== confirmedB)
+                    return confirmedA - confirmedB;
                 const rankA = getVendorRank(a.거래처);
                 const rankB = getVendorRank(b.거래처);
                 if (rankA !== rankB)
@@ -4360,7 +4370,11 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 // 출고지시=재고는 과거 재고분 출고이므로 판매전표 일자를 구매일자로 쓰지 않고 기존 재고/FIFO에서 차감한다.
                 const saleOrderInstruction = getSalesOrderInstruction(sale);
                 const isStockShipmentInstruction = isStockShipmentInstructionValue(saleOrderInstruction);
-                const salesPurchaseVendorRaw = safeStr(sale.매입처매칭, '');
+                const getConfirmedPurchaseVendorForLot = (saleRow = {}) => safeStr(saleRow.매입처매칭 || saleRow._salesConfirmedPurchaseVendor || saleRow._confirmedPurchaseVendor || '', '');
+                const salesPurchaseVendorRaw = getConfirmedPurchaseVendorForLot(sale);
+                if (salesPurchaseVendorRaw && salesPurchaseVendorRaw !== '미지정' && !safeStr(sale.매입처매칭, '')) {
+                    sale.매입처매칭 = salesPurchaseVendorRaw;
+                }
                 const isInternalPurchaseVendor = isInternalPurchaseVendorValue(salesPurchaseVendorRaw);
                 let isInternalDistribution = false;
                 let matchStr = '';
@@ -4402,7 +4416,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     const appliedLot = safeStr(bucket.거래처, '미지정');
                     // V1.a22.29: 외부 구매처가 판매전표에 확정되어 있을 때만 Lot 검수/대체 이슈를 막는다.
                     // 우리농산/1전송/3우리 같은 내부값, 특히 출고지시=재고는 확정 Lot이 아니므로 기존 재고/FIFO 흐름을 탄다.
-                    if (hasSalesConfirmedPurchase) {
+                    if (hasSalesConfirmedPurchase && !sale._confirmedMatchFailed) {
                         appendLotMemo(row, `판매전표확정매칭: 요청=${requestedLot} / 적용=${appliedLot}`);
                         return;
                     }
@@ -4421,9 +4435,11 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     // V1.a22.12: 자동 FIFO 정상 차감은 Lot 검수/메모 대상이 아니다.
                     // Lot 이슈는 요청 Lot이 실제 적용 Lot과 달라 관리자가 판단해야 하는 경우에만 남긴다.
                     if (options.matchFailed) {
-                        const memoPrefix = '1창고FIFO_Lot대체';
+                        const memoPrefix = sale._confirmedMatchFailed ? '판매현황확정값_FIFO대체' : '1창고FIFO_Lot대체';
                         appendLotMemo(row, `${memoPrefix}: 요청=${requestedLot} / 적용=${appliedLot} / 원가=${formatMoney(bucket.단가)}`);
-                        const issueMsg = `🚨Lot매치확인(${requestedLot})`;
+                        const issueMsg = sale._confirmedMatchFailed
+                            ? `🚨${safeStr(sale._confirmedMatchFailedMemo || `구매처단가확인(${requestedLot})`)}`
+                            : `🚨Lot매치확인(${requestedLot})`;
                         if (!row.이슈.includes(issueMsg)) {
                             row.이슈.push(issueMsg);
                             row.수기확인완료 = false;
@@ -4431,7 +4447,6 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     }
                 };
                 const hasRawSalesPurchaseVendor = !!(salesPurchaseVendorRaw && salesPurchaseVendorRaw !== '미지정');
-                const hasSalesConfirmedPurchase = !!(hasRawSalesPurchaseVendor && !isInternalPurchaseVendor);
                 const getSalesConfirmedUnitCost = () => {
                     const unitCostFromSales = safeNum(sale._salesPurchaseUnitCost);
                     const amountFromSales = safeNum(sale._salesPurchaseAmount);
@@ -4440,6 +4455,10 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         return Math.abs(amountFromSales / qtyToDeduct);
                     return 0;
                 };
+                const salesConfirmedUnitCostForCheck = getSalesConfirmedUnitCost();
+                // V1.a22.37: 1순위 확정매칭은 판매현황에 구매처와 구매단가가 모두 있을 때만 성립한다.
+                // 구매처만 있거나 단가만 있는 행은 확률 추정 영역이므로 기본 FIFO fallback으로 보낸다.
+                const hasSalesConfirmedPurchase = !!(hasRawSalesPurchaseVendor && !isInternalPurchaseVendor && salesConfirmedUnitCostForCheck > 0);
                 const isSameUnitCost = (a, b) => {
                     const na = safeNum(a);
                     const nb = safeNum(b);
@@ -4447,15 +4466,14 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     return Math.abs(na - nb) < 0.0001;
                 };
                 const findConfirmedPurchaseBucket = (expectedUnitCost = 0) => {
-                    if (!pool || !Array.isArray(pool.buckets) || !hasSalesConfirmedPurchase)
+                    if (!pool || !Array.isArray(pool.buckets) || !hasSalesConfirmedPurchase || safeNum(expectedUnitCost) <= 0)
                         return null;
                     let sameVendorBuckets = pool.buckets
                         .filter(bucket => bucket && !bucket._confirmedLotClosed && safeNum(bucket.수량) > 0)
-                        .filter(bucket => bucket && (normalizeLotName(bucket.거래처) === matchStr || isSameLotName(bucket.거래처, sale.매입처매칭)));
-                    // V1.a22.29: 판매전표 구매단가가 있으면 동일 구매처+동일 단가 Lot만 확정매칭한다.
-                    // 단가가 다른 Lot으로 자동 대체하면 확정 판매데이터에 추가 매핑되어 재고 0 구조가 깨진다.
-                    if (safeNum(expectedUnitCost) > 0)
-                        sameVendorBuckets = sameVendorBuckets.filter(bucket => isSameUnitCost(bucket.단가, expectedUnitCost));
+                        .filter(bucket => bucket && (normalizeLotName(bucket.거래처) === matchStr || isSameLotName(bucket.거래처, sale.매입처매칭)))
+                        .filter(bucket => isSameUnitCost(bucket.단가, expectedUnitCost));
+                    // V1.a22.37: 확정매칭은 동일 구매처+동일 구매단가 Lot만 허용한다.
+                    // 구매처만 맞거나 단가만 맞는 것은 확정이 아니므로 기본 FIFO fallback으로 넘긴다.
                     sameVendorBuckets.sort((a, b) => {
                         const dateA = safeNum(a._lotSortDate) || UNKNOWN_LOT_SORT_DATE;
                         const dateB = safeNum(b._lotSortDate) || UNKNOWN_LOT_SORT_DATE;
@@ -4483,8 +4501,8 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     const confirmedVendor = safeStr(sale.매입처매칭, '미지정');
                     let confirmedUnitCost = getSalesConfirmedUnitCost();
                     const confirmedBucket = findConfirmedPurchaseBucket(confirmedUnitCost);
-                    if (confirmedUnitCost <= 0 && confirmedBucket)
-                        confirmedUnitCost = safeNum(confirmedBucket.단가);
+                    if (!confirmedBucket)
+                        return false;
                     const bKey = ensureConfirmedPurchaseRow(confirmedBucket, confirmedUnitCost, confirmedVendor);
                     const row = pData[bKey];
                     row._transactionVendor = row._transactionVendor || safeStr(sale._transactionVendor || sale._salesVendor || sale.거래처 || '', '');
@@ -4550,11 +4568,15 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     });
                     return true;
                 };
-                // V1.a22.29 확정: 3.매출 전표의 구매처가 외부값일 때만 사람이 확정한 매칭값이다.
-                // 내부값 또는 출고지시=재고는 확정매칭이 아니므로 기존 재고/FIFO로 내려간다.
+                // V1.a22.37 확정: 판매현황의 구매처+구매단가가 모두 있는 행만 1순위 확정매칭한다.
+                // 일치 Lot에 매칭되면 즉시 종료하고, 매칭 실패 또는 정보 부족 행은 기본 FIFO fallback으로 보낸다.
                 if (hasSalesConfirmedPurchase) {
-                    applySalesConfirmedPurchase();
-                    return;
+                    if (applySalesConfirmedPurchase())
+                        return;
+                    // V1.a22.37: 판매현황 확정값으로 일치 Lot을 못 찾으면 확정매칭은 중단한다.
+                    // 이후는 기존 기본 FIFO로 처리하되, 적용 Lot에는 구매처/단가확인 이슈를 남긴다.
+                    sale._confirmedMatchFailed = true;
+                    sale._confirmedMatchFailedMemo = `구매처단가확인(${salesPurchaseVendorRaw}/${formatMoney(salesConfirmedUnitCostForCheck)})`;
                 }
                 if (!pool || pool.buckets.length === 0) {
                     const bKey = generateBatchKey(code, sale.품명, 0, '매입내역 없음', '');
@@ -4669,6 +4691,22 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     const stockOtherBuckets = stockFifoBuckets.filter(bucket => !isRequestedBucket(bucket));
                     const hasRequestedPositive = requestedBuckets.some(hasPositiveQty);
                     const buildLotStages = () => {
+                        const salesUnitCostForLot = getSalesConfirmedUnitCost();
+                        const costMatchedBuckets = salesUnitCostForLot > 0
+                            ? allBuckets.filter(bucket => hasPositiveQty(bucket) && isSameUnitCost(bucket.단가, salesUnitCostForLot))
+                            : [];
+                        const costOtherBuckets = salesUnitCostForLot > 0
+                            ? allBuckets.filter(bucket => hasPositiveQty(bucket) && !isSameUnitCost(bucket.단가, salesUnitCostForLot))
+                            : [];
+                        // V1.a22.37: 1순위 확정매칭이 완료되지 않은 나머지 행은 고도화 추정으로 확정하지 않는다.
+                        // 구매처만 있음/단가만 있음/경매분/재고분 추정은 이후 별도 케이스로 기획하고, 현재는 기본 FIFO를 적용한다.
+                        if (!hasSalesConfirmedPurchase || sale._confirmedMatchFailed) {
+                            const failed = !!sale._confirmedMatchFailed;
+                            return [
+                                { buckets: stockFifoBuckets, mode: failed ? 'FIFO_AFTER_CONFIRMED_FAIL_STOCK' : 'FIFO_STOCK', matchFailed: failed, fifoReview: failed },
+                                { buckets: todayBuckets, mode: failed ? 'TODAY_AFTER_CONFIRMED_FAIL_STOCK' : 'TODAY_PURCHASE_AFTER_STOCK', matchFailed: failed, fifoReview: failed }
+                            ];
+                        }
                         // V1.a22.12 최종 확정: 우리농산/우리/3우리 계열은 2전송이어도 내부분배로 먼저 판정한다.
                         // 내부분배/매칭실패/구매처미지정은 기존 재고 FIFO → 부족분만 당일 같은상품 Lot 순서로 분할 배정한다.
                         if (isInternalDistribution) {
@@ -4690,10 +4728,25 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                             ];
                         }
                         if (isTransferLotContext) {
+                            if (salesUnitCostForLot > 0 && costMatchedBuckets.length > 0) {
+                                // V1.a22.37: 구매처는 없지만 판매현황 구매단가가 있으면 동일 단가 Lot을 먼저 사용한다.
+                                // 예: 농협44/45 애호박 5,600원 판매분은 경매 5,600원 Lot에 우선 매칭한다.
+                                return [
+                                    { buckets: costMatchedBuckets, mode: 'SALES_COST_MATCH', matchFailed: false, fifoReview: false },
+                                    { buckets: stockFifoBuckets.filter(bucket => !costMatchedBuckets.includes(bucket)), mode: 'FIFO_STOCK_AFTER_COST', matchFailed: false, fifoReview: false },
+                                    { buckets: todayBuckets.filter(bucket => !costMatchedBuckets.includes(bucket)), mode: 'TODAY_PURCHASE_AFTER_COST', matchFailed: false, fifoReview: false }
+                                ];
+                            }
                             matchFailedFlag = true;
                             return [
                                 { buckets: stockFifoBuckets, mode: 'FIFO_STOCK_NO_VENDOR', matchFailed: true, fifoReview: false },
                                 { buckets: todayBuckets, mode: 'TODAY_PURCHASE_AFTER_STOCK', matchFailed: true, fifoReview: false }
+                            ];
+                        }
+                        if (!matchStr && salesUnitCostForLot > 0 && costMatchedBuckets.length > 0) {
+                            return [
+                                { buckets: costMatchedBuckets, mode: 'SALES_COST_MATCH', matchFailed: false, fifoReview: false },
+                                { buckets: costOtherBuckets, mode: 'COST_FALLBACK_REVIEW', matchFailed: true, fifoReview: true }
                             ];
                         }
                         if (matchStr) {
@@ -8738,7 +8791,7 @@ ${balanceText}
                     React.createElement("h1", { className: "text-xl md:text-xl font-black leading-none text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.29"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.37"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
@@ -8813,7 +8866,7 @@ ${balanceText}
                     React.createElement("div", { className: "mb-4" },
                         React.createElement("h4", { className: "text-sm font-bold text-slate-800" },
                             React.createElement("i", { className: "fas fa-star text-amber-500 mr-2" }),
-                            "V1.a22.29 \uC7AC\uACE0\uC218\uBD88\uBD80 \uC2E4\uC0AC \uC5C5\uB85C\uB4DC / \uC774\uC288\uCE78 \uC911\uBCF5\uD45C\uC2DC \uC815\uB9AC"),
+                            "V1.a22.37 \uC18C\uBD84\uB2E8\uAC00 \uD658\uC0B0 / \uC815\uB82C / \uD654\uBA74\uBC84\uC804 \uB3D9\uAE30\uD654"),
                         React.createElement("p", { className: "text-xs text-slate-500 mt-1.5 ml-6" }, "\u2605 \uD544\uD130\uC640 BOX/EA/\uC18C\uBD84 \uD544\uD130\uAC00 \uC544\uB798 \uC124\uC815\uAC12\uC744 \uAE30\uC900\uC73C\uB85C \uB3D9\uC791\uD569\uB2C8\uB2E4. \uB2E8\uC704 \uCEEC\uB7FC\uC744 \uC6B0\uC120 \uD310\uC815\uD558\uACE0, \uB2E8\uC704\uAC00 \uC5C6\uC744 \uB54C\uB9CC \uD488\uBA85/\uADDC\uACA9\uC744 \uBCF4\uC870 \uB2E8\uC11C\uB85C \uC0AC\uC6A9\uD569\uB2C8\uB2E4.")),
                     React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-4 bg-amber-50/60 p-4 rounded-lg border border-amber-200" },
                         React.createElement("div", { className: "flex flex-col" },
