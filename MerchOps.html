@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.83_ColumnWidthResize]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.84_F9MasterReturnSync]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -1952,6 +1952,7 @@ const useMerchData = () => {
     const [masterProducts, setMasterProducts] = useState({});
     const [managedItems, setManagedItems] = useState({});
     const [historyLogs, setHistoryLogs] = useState([]);
+    const masterSyncTriggerRef = useRef(localStorage.getItem('merchMaster_sync_trigger') || '');
     useEffect(() => {
         window.getAllIDB('master_products').then(items => {
             if (items && items.length > 0) {
@@ -2002,6 +2003,59 @@ const useMerchData = () => {
             console.error(e);
         }
     }, []);
+    const reloadMasterFromLocal = useCallback(async (options = {}) => {
+        try {
+            const currentTrigger = localStorage.getItem('merchMaster_sync_trigger') || '';
+            if (!options.force && options.toast && currentTrigger && currentTrigger === masterSyncTriggerRef.current) return;
+            let dict = null;
+            const items = await window.getAllIDB('master_products');
+            if (items && items.length > 0) {
+                dict = {};
+                items.forEach(i => { if (i && i.코드) dict[i.코드] = i; });
+            }
+            if (!dict || Object.keys(dict).length === 0) {
+                const saved = await window.getIDB('merchMaster_v870');
+                if (saved && typeof saved === 'object') dict = saved;
+            }
+            if (dict && Object.keys(dict).length > 0) {
+                setMasterProducts(prev => {
+                    const prevKeys = Object.keys(prev || {});
+                    const nextKeys = Object.keys(dict || {});
+                    if (prevKeys.length === nextKeys.length && JSON.stringify(prev) === JSON.stringify(dict)) return prev;
+                    return dict;
+                });
+                masterSyncTriggerRef.current = currentTrigger || String(Date.now());
+                if (options.toast && window.dispatchEvent) {
+                    window.dispatchEvent(new CustomEvent('merch_master_return_synced', { detail: { count: Object.keys(dict).length } }));
+                }
+            }
+        }
+        catch (e) {
+            console.warn('[MerchOps Master Return Sync]', e);
+        }
+    }, []);
+    useEffect(() => {
+        // F9 출력검증센터에서 마스터 반영 후 history.back/pageshow로 복귀하면
+        // React 상태가 bfcache에 남아 최신 마스터가 작업테이블 필터에 반영되지 않을 수 있다.
+        // 복귀·포커스·가시성 변경 시 IndexedDB의 최신 마스터를 다시 읽어 행사중/행사제외/테마 필터를 재계산한다.
+        const syncOnReturn = () => reloadMasterFromLocal({ toast: true });
+        const onPageShow = () => syncOnReturn();
+        const onFocus = () => syncOnReturn();
+        const onVisibilityChange = () => {
+            if (document.visibilityState === 'visible') syncOnReturn();
+        };
+        const onCustomSync = () => syncOnReturn();
+        window.addEventListener('pageshow', onPageShow);
+        window.addEventListener('focus', onFocus);
+        document.addEventListener('visibilitychange', onVisibilityChange);
+        window.addEventListener('merch_force_master_reload', onCustomSync);
+        return () => {
+            window.removeEventListener('pageshow', onPageShow);
+            window.removeEventListener('focus', onFocus);
+            document.removeEventListener('visibilitychange', onVisibilityChange);
+            window.removeEventListener('merch_force_master_reload', onCustomSync);
+        };
+    }, [reloadMasterFromLocal]);
     const addHistoryLogs = useCallback((newLogs) => {
         setHistoryLogs(prev => {
             const allLogs = [...newLogs, ...prev];
@@ -5258,7 +5312,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.83_ColumnWidthResize]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.84_F9MasterReturnSync]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -5466,6 +5520,14 @@ const App = () => {
         }
         return baseList;
     }, [isEstimateUploaded, data.managedItems, data.masterProducts, ui.globalSearch, ui.priceFilter, ui.detailFilters, ui.categoryFilters, ui.basicSearch, ui.filterSteps, ui.disabledFilterStepIds, ui.registrationMode, config.uploadColumnMeta]);
+    useEffect(() => {
+        const handler = (e) => {
+            const count = (e && e.detail && e.detail.count) ? e.detail.count : 0;
+            if (count > 0) ui.showToast('✅ 최신 마스터 정보를 다시 동기화했습니다.');
+        };
+        window.addEventListener('merch_master_return_synced', handler);
+        return () => window.removeEventListener('merch_master_return_synced', handler);
+    }, [ui.showToast]);
     const customActions = useMerchActions(config, data, ui, fullDisplayRows);
     const appState = useMemo(() => ({
         config, data, activeTags: ui.activeTags, isEstimateUploaded, selectedRows: ui.selectedRows, globalSearch: ui.globalSearch, isProcessing: ui.isProcessing, processMsg: ui.processMsg, registrationMode: ui.registrationMode,
@@ -5584,7 +5646,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.83_ColumnWidthResize")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.84_F9MasterReturnSync")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
