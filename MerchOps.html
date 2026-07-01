@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.84_F9MasterReturnSync]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.85_F9PromoFilterRecalc]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -442,6 +442,35 @@
             const bv = window.normalizeProductCodeText(b);
             if (av === bv) return 0;
             return av.localeCompare(bv, 'ko-KR', { numeric: false, sensitivity: 'base' });
+        };
+
+        // F9 출력검증센터에서 마스터 반영 후 복귀했을 때,
+        // 현재 작업행의 코드 표기(공백/품목코드/상품코드/내부키)와 마스터 키가 다르면
+        // 행사중/행사제외/테마 필터가 최신 마스터를 못 찾는다.
+        // 필터/렌더링에서는 반드시 이 헬퍼로 최신 마스터를 조회한다.
+        window.getMerchMasterItemForRow = (masterProducts = {}, row = {}) => {
+            if (!masterProducts || !row) return {};
+            const src = row.sources || {};
+            const fd = row.finalData || {};
+            const candidates = [
+                row.코드,
+                fd['품목코드'], fd['상품코드'], fd['코드'],
+                src.estimate?.['품목코드'], src.estimate?.['상품코드'], src.estimate?.['코드'],
+                src.purchase?.['품목코드'], src.purchase?.['상품코드'], src.purchase?.['코드'],
+                src.sales?.['품목코드'], src.sales?.['상품코드'], src.sales?.['코드'],
+                src.inventory?.['품목코드'], src.inventory?.['상품코드'], src.inventory?.['코드'],
+                row._managedKey
+            ].map(v => window.normalizeProductCodeText ? window.normalizeProductCodeText(v) : String(v ?? '').trim()).filter(Boolean);
+            for (const code of candidates) {
+                if (masterProducts[code]) return masterProducts[code];
+            }
+            const candidateSet = new Set(candidates);
+            for (const item of Object.values(masterProducts || {})) {
+                if (!item) continue;
+                const mCode = window.normalizeProductCodeText ? window.normalizeProductCodeText(item.코드 || item['품목코드']) : String(item.코드 || item['품목코드'] || '').trim();
+                if (mCode && candidateSet.has(mCode)) return item;
+            }
+            return {};
         };
 
 
@@ -2038,7 +2067,7 @@ const useMerchData = () => {
         // F9 출력검증센터에서 마스터 반영 후 history.back/pageshow로 복귀하면
         // React 상태가 bfcache에 남아 최신 마스터가 작업테이블 필터에 반영되지 않을 수 있다.
         // 복귀·포커스·가시성 변경 시 IndexedDB의 최신 마스터를 다시 읽어 행사중/행사제외/테마 필터를 재계산한다.
-        const syncOnReturn = () => reloadMasterFromLocal({ toast: true });
+        const syncOnReturn = () => reloadMasterFromLocal({ force: true, toast: true });
         const onPageShow = () => syncOnReturn();
         const onFocus = () => syncOnReturn();
         const onVisibilityChange = () => {
@@ -2959,7 +2988,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         const buildThemeFlags = (row) => {
             const finalData = row.finalData || {};
             const sources = row.sources || {};
-            const master = data.masterProducts[row.코드] || {};
+            const master = (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(data.masterProducts, row) : data.masterProducts[row.코드]) || {};
             const themeValue = window.resolvePromotionThemeByPriority
                 ? window.resolvePromotionThemeByPriority(finalData, sources, master)
                 : window.normalizePromotionThemeValue(finalData, sources.estimate || {}, sources.purchase || {}, sources.sales || {}, sources.inventory || {}, master);
@@ -3512,7 +3541,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
     }, [data.managedItems, ui.activeTags, ui.selectedRows]);
     const handleRegisterUnregisteredItems = useCallback(() => {
         var _a, _b;
-        const candidateRows = (fullDisplayRows || []).filter(row => row && row.코드 && !data.masterProducts[row.코드]);
+        const candidateRows = (fullDisplayRows || []).filter(row => row && row.코드 && !(window.getMerchMasterItemForRow ? (window.getMerchMasterItemForRow(data.masterProducts, row)?.코드 || window.getMerchMasterItemForRow(data.masterProducts, row)?.['품목코드']) : data.masterProducts[row.코드]));
         if (candidateRows.length === 0) {
             ui.showToast('✅ 등록할 미등록 상품이 없습니다.');
             (_a = ui.setRegistrationMode) === null || _a === void 0 ? void 0 : _a.call(ui, false);
@@ -3652,7 +3681,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         }
         if (hasManualFilter) {
             candidateRows = candidateRows.filter(row => {
-                const mItem = data.masterProducts[row.코드] || {};
+                const mItem = (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(data.masterProducts, row) : data.masterProducts[row.코드]) || {};
                 if (Array.isArray(ui.categoryFilters) && ui.categoryFilters.length > 0 && !matchMerchCategoryFilter(row, mItem, ui.categoryFilters)) return false;
                 if (ui.priceFilter && ui.priceFilter !== 'all' && !matchMerchStepConditions(row, mItem, { priceFilter: ui.priceFilter }, config)) return false;
                 if (Array.isArray(ui.detailFilters) && ui.detailFilters.length > 0 && !matchCompositeDetailFilters(row, mItem, ui.detailFilters, ui.basicSearch || '')) return false;
@@ -3663,7 +3692,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         if (q) {
             const tokens = q.split(/\s+/).filter(Boolean);
             candidateRows = candidateRows.filter(row => {
-                const mItem = data.masterProducts[row.코드] || {};
+                const mItem = (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(data.masterProducts, row) : data.masterProducts[row.코드]) || {};
                 const hay = [row.코드, mItem['품목명'], mItem['규격'], mItem['단위'], mItem['구매처'], mItem['검색어등록'], mItem['카탈로그'], mItem['견적서'], mItem['행사테마']]
                     .map(v => String(v !== null && v !== void 0 ? v : '').toLowerCase()).join(' ');
                 return tokens.every(token => hay.includes(token));
@@ -4477,7 +4506,7 @@ window.applyMerchFilterStepsToRows = (rows = [], filterSteps = [], context = {})
     let result = [...rows];
     steps.forEach(step => {
         result = result.filter(item => {
-            const mItem = masterProducts[item.코드] || {};
+            const mItem = (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(masterProducts, item) : masterProducts[item.코드]) || {};
             const matched = matchMerchStepConditions(item, mItem, step.conditions || {}, config);
             return step.action === 'exclude' ? !matched : matched;
         });
@@ -5297,7 +5326,7 @@ const ExcelDataGrid = ({ state, actions }) => {
                             React.createElement("i", { className: "fas fa-folder-open text-4xl mb-4 block" }),
                             isEstimateUploaded ? "작업 버퍼에 일치하는 항목이 없습니다." : "조건에 일치하는 상품이 없거나, 데이터가 비어있습니다.\n상단의 [파서리스트] 또는 [카탈로그]를 통해 목록을 띄우세요."))) : displayRows.map((row, idx) => {
                         const isSel = selectedRows.has(window.getManagedRowKey(row));
-                        return React.createElement(MemoizedTableRow, { key: window.getManagedRowKey(row), row: row, idx: idx, state: { ...state, columnWidths: currentColumnWidths }, actions: actions, isSel: isSel, mItem: masterProducts[row.코드] || {} });
+                        return React.createElement(MemoizedTableRow, { key: window.getManagedRowKey(row), row: row, idx: idx, state: { ...state, columnWidths: currentColumnWidths }, actions: actions, isSel: isSel, mItem: (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(masterProducts, row) : masterProducts[row.코드]) || {} });
                     }),
                     React.createElement("tr", null,
                         React.createElement("td", { colSpan: "50", className: "h-[80px] bg-slate-50 border-t border-slate-200 text-center align-middle" }, hiddenCount > 0 ? (React.createElement("div", { className: "inline-flex items-center justify-center text-[12px] font-bold text-slate-500 bg-white px-6 py-2 rounded-full border shadow-sm mt-5" },
@@ -5312,7 +5341,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.84_F9MasterReturnSync]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.85_F9PromoFilterRecalc]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -5417,7 +5446,7 @@ const App = () => {
             const tokens = ui.globalSearch.toLowerCase().replace(/[()[\]{},./]/g, ' ').split(/\s+/).filter(t => t.length > 0);
             if (tokens.length > 0) {
                 baseList = baseList.map(item => {
-                    const mItem = data.masterProducts[item.코드] || {};
+                    const mItem = (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(data.masterProducts, item) : data.masterProducts[item.코드]) || {};
                     const finalItem = item.finalData || {};
                     const getVal = (key) => String(finalItem[key] !== undefined ? finalItem[key] : (mItem[key] || '')).toLowerCase();
                     const getSourceVals = (key) => {
@@ -5467,17 +5496,17 @@ const App = () => {
         }
         if (Array.isArray(ui.categoryFilters) && ui.categoryFilters.length > 0) {
             baseList = baseList.filter(item => {
-                const mItem = data.masterProducts[item.코드] || {};
+                const mItem = (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(data.masterProducts, item) : data.masterProducts[item.코드]) || {};
                 return matchMerchCategoryFilter(item, mItem, ui.categoryFilters);
             });
         }
         if (ui.registrationMode) {
-            baseList = baseList.filter(item => item && item.코드 && !data.masterProducts[item.코드]);
+            baseList = baseList.filter(item => item && item.코드 && !(window.getMerchMasterItemForRow ? (window.getMerchMasterItemForRow(data.masterProducts, item)?.코드 || window.getMerchMasterItemForRow(data.masterProducts, item)?.['품목코드']) : data.masterProducts[item.코드]));
         }
         if (!ui.registrationMode && ui.priceFilter !== 'all') {
             baseList = baseList.filter(item => {
                 var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
-                const mItem = data.masterProducts[item.코드] || {};
+                const mItem = (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(data.masterProducts, item) : data.masterProducts[item.코드]) || {};
                 // 구매 이슈(상승/하락/기타상품)는 상단 필터로 사용하지 않는다.
                 // 이 값은 테이블 [이슈] 열의 뱃지로만 노출한다.
                 const oldIn = window.parseNum(mItem['입고가']);
@@ -5497,7 +5526,7 @@ const App = () => {
         }
         if (!ui.registrationMode && Array.isArray(ui.detailFilters) && ui.detailFilters.length > 0) {
             baseList = baseList.filter(item => {
-                const mItem = data.masterProducts[item.코드] || {};
+                const mItem = (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(data.masterProducts, item) : data.masterProducts[item.코드]) || {};
                 return matchCompositeDetailFilters(item, mItem, ui.detailFilters, ui.basicSearch);
             });
         }
@@ -5646,7 +5675,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.84_F9MasterReturnSync")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.85_F9PromoFilterRecalc")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
