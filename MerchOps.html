@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.85_F9PromoFilterRecalc]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.86_PromoResetFlow]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -76,6 +76,8 @@
         //       예) 테마1+테마3이면 행사테마='1,3', 테마1='1', 테마3='1'로 저장한다.
         // ============================================================
         window.resolvePromotionThemeByPriority = window.resolvePromotionThemeByPriority || ((finalData = {}, sources = {}, master = {}) => {
+            // 행사초기화는 명시적 작업값이다. 마스터/업로드 테마 fallback보다 우선하여 테마 없음으로 판정한다.
+            if ((finalData || {})._promoResetRequested === true) return '';
             const currentTheme = window.normalizePromotionThemeValue(finalData || {});
             if (currentTheme) return currentTheme;
 
@@ -2987,6 +2989,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         };
         const buildThemeFlags = (row) => {
             const finalData = row.finalData || {};
+            if (finalData._promoResetRequested === true) return ['', '', '', '', ''];
             const sources = row.sources || {};
             const master = (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(data.masterProducts, row) : data.masterProducts[row.코드]) || {};
             const themeValue = window.resolvePromotionThemeByPriority
@@ -3085,22 +3088,46 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             const oldItem = data.masterProducts[code] || {};
             newMaster[item.코드] = { ...(newMaster[item.코드] || { 코드: item.코드 }) };
             if (item.finalData) {
-                const themeValue = window.resolvePromotionThemeByPriority
-                    ? window.resolvePromotionThemeByPriority(item.finalData || {}, item.sources || {}, oldItem)
-                    : window.normalizePromotionThemeValue(item.finalData || {}, oldItem);
-                const hasThemeChangeTarget = !!window.normalizePromotionThemeValue(
-                    item.finalData || {},
-                    (item.sources || {}).estimate || {},
-                    (item.sources || {}).purchase || {},
-                    (item.sources || {}).sales || {},
-                    (item.sources || {}).inventory || {},
-                    (item.sources || {}).catalog || {},
-                    (item.sources || {}).parser || {},
-                    oldItem || {}
-                );
-                if (hasThemeChangeTarget) {
-                    newMaster[item.코드]['행사테마'] = themeValue;
-                    [1, 2, 3, 4, 5].forEach(n => { newMaster[item.코드][`테마${n}`] = themeValue.split(',').includes(String(n)) ? '1' : ''; });
+                const promoResetRequested = item.finalData._promoResetRequested === true;
+                if (promoResetRequested) {
+                    newMaster[item.코드]['행사가'] = 0;
+                    newMaster[item.코드]['행사테마'] = '';
+                    [1, 2, 3, 4, 5].forEach(n => { newMaster[item.코드][`테마${n}`] = ''; });
+                    const oldPromo = window.parseNum(oldItem['행사가']);
+                    const oldTheme = window.normalizePromotionThemeValue(oldItem || {});
+                    if (oldPromo > 0 || oldTheme) {
+                        localLogs.push({
+                            id: window.generateUUID(),
+                            timestamp: nowStr,
+                            code: code,
+                            name: oldItem.품목명 || (item.sources?.estimate?.품목명) || '',
+                            spec: oldItem.규격 || (item.sources?.estimate?.규격) || '',
+                            field: '행사초기화',
+                            oldVal: `행사가 ${oldPromo || 0}${oldTheme ? ` / 테마 ${oldTheme}` : ''}`,
+                            newVal: '행사가 0 / 테마 삭제',
+                            diff: 0,
+                            actionType: '행사초기화',
+                            source: 'MerchOps'
+                        });
+                    }
+                } else {
+                    const themeValue = window.resolvePromotionThemeByPriority
+                        ? window.resolvePromotionThemeByPriority(item.finalData || {}, item.sources || {}, oldItem)
+                        : window.normalizePromotionThemeValue(item.finalData || {}, oldItem);
+                    const hasThemeChangeTarget = !!window.normalizePromotionThemeValue(
+                        item.finalData || {},
+                        (item.sources || {}).estimate || {},
+                        (item.sources || {}).purchase || {},
+                        (item.sources || {}).sales || {},
+                        (item.sources || {}).inventory || {},
+                        (item.sources || {}).catalog || {},
+                        (item.sources || {}).parser || {},
+                        oldItem || {}
+                    );
+                    if (hasThemeChangeTarget) {
+                        newMaster[item.코드]['행사테마'] = themeValue;
+                        [1, 2, 3, 4, 5].forEach(n => { newMaster[item.코드][`테마${n}`] = themeValue.split(',').includes(String(n)) ? '1' : ''; });
+                    }
                 }
                 // 판매중지는 사용자가 체크 후 명시적으로 요청한 경우에만 마스터 판매여부에 반영한다.
                 // 일반 가격/재고 작업 중에는 판매여부를 자동 판단해서 덮어쓰지 않는다.
@@ -3355,6 +3382,77 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
     }, [fullDisplayRows, ui.selectedRows, data.masterProducts, data.setManagedItems, data.addHistoryLogs, ui]);
 
     // ============================================================
+    // [M-ACTION-05] 행사값 초기화
+    // 역할: 어제/기존 행사 단가가 남아 있는 상품을 정상가 검증 대상으로 되돌리기 위해
+    //       현재 작업 범위의 행사가와 행사테마를 명시적으로 0/공란 처리한다.
+    // 정책: 테마만 제거하지 않는다. 행사가와 테마를 함께 초기화하고,
+    //       마스터 반영/F8/F9 출력 시 기존 마스터 테마 fallback이 되살아나지 않도록 _promoResetRequested를 남긴다.
+    // ============================================================
+    const handleResetPromoValues = useCallback(() => {
+        if (fullDisplayRows.length === 0)
+            return ui.showToast('⚠️ 행사값을 초기화할 상품이 없습니다.');
+        const targetRows = ui.selectedRows.size > 0
+            ? fullDisplayRows.filter(r => ui.selectedRows.has(window.getManagedRowKey(r)))
+            : fullDisplayRows;
+        if (targetRows.length === 0)
+            return ui.showToast('⚠️ 초기화 대상이 없습니다.');
+        const targetText = ui.selectedRows.size > 0 ? `선택 ${targetRows.length}건` : `현재 화면 ${targetRows.length}건`;
+        if (!window.confirm(`${targetText}의 행사가와 행사테마를 초기화하시겠습니까?\n\n- 행사가: 0\n- 행사테마/테마1~5: 공란\n- 마스터 반영 또는 F8/F9 출력 시 행사값 해제로 전달됩니다.`))
+            return;
+        const nowStr = new Date().toLocaleString('ko-KR');
+        const logs = [];
+        let count = 0;
+        data.setManagedItems(prev => {
+            const next = { ...(prev || {}) };
+            targetRows.forEach(row => {
+                const key = window.getManagedRowKey(row);
+                const code = row.코드;
+                const current = next[key] || row || { 코드: code, sources: {}, finalData: {} };
+                const mItem = (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(data.masterProducts, current) : data.masterProducts[code]) || {};
+                const oldPromo = window.parseNum((current.finalData || {})['행사가'] !== undefined ? (current.finalData || {})['행사가'] : getRowValueByField(current, '행사가'));
+                const oldTheme = window.resolvePromotionThemeByPriority
+                    ? window.resolvePromotionThemeByPriority(current.finalData || {}, current.sources || {}, mItem)
+                    : window.normalizePromotionThemeValue(current.finalData || {}, current.sources?.estimate || {}, current.sources?.inventory || {}, mItem || {});
+                next[key] = {
+                    ...current,
+                    finalData: {
+                        ...(current.finalData || {}),
+                        행사가: 0,
+                        행사테마: '',
+                        테마1: '',
+                        테마2: '',
+                        테마3: '',
+                        테마4: '',
+                        테마5: '',
+                        _promoResetRequested: true,
+                        _promoResetAt: new Date().toISOString(),
+                        확인: '행사초기화'
+                    }
+                };
+                logs.push({
+                    id: window.generateUUID(),
+                    timestamp: nowStr,
+                    code,
+                    name: mItem['품목명'] || getRowValueByField(current, '품목명') || '',
+                    spec: mItem['규격'] || getRowValueByField(current, '규격') || '',
+                    field: '행사초기화',
+                    oldVal: `행사가 ${oldPromo || 0}${oldTheme ? ` / 테마 ${oldTheme}` : ''}`,
+                    newVal: '행사가 0 / 테마 삭제',
+                    diff: 0,
+                    actionType: '행사초기화',
+                    source: 'MerchOps'
+                });
+                count++;
+            });
+            return next;
+        });
+        if (logs.length > 0)
+            data.addHistoryLogs(logs);
+        ui.setSelectedRows(new Set());
+        ui.showToast(`✅ ${count}건 행사값 초기화 완료`);
+    }, [fullDisplayRows, ui.selectedRows, data.masterProducts, data.setManagedItems, data.addHistoryLogs, ui]);
+
+    // ============================================================
     // [M-BRIDGE-01] 출력검증센터 전달 브릿지
     // 역할: 현재 선택/검색/화면 작업범위만 merch_export_draft로 패키징한다.
     // 금지: masterProducts 전체, finalData 전체 객체, sources 전체 객체를 그대로 넘기지 않는다.
@@ -3434,10 +3532,12 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                 ? { 재고수량: actualStockQty, _actualStockQty: actualStockQty, _hasActualStock: true }
                 : { _actualStockQty: '', _hasActualStock: false };
             const masterSalesState = window.getMasterSalesState(master);
-            const promoThemeCodes = (window.resolvePromotionThemeByPriority
-                ? window.resolvePromotionThemeByPriority(finalData, sources, master)
-                : window.normalizePromotionThemeValue(finalData, estimate, purchase, sales, inventory, master)
-            ).split(',').filter(Boolean);
+            const promoThemeCodes = finalData._promoResetRequested === true
+                ? []
+                : (window.resolvePromotionThemeByPriority
+                    ? window.resolvePromotionThemeByPriority(finalData, sources, master)
+                    : window.normalizePromotionThemeValue(finalData, estimate, purchase, sales, inventory, master)
+                ).split(',').filter(Boolean);
             const hasPromoTheme = (n) => promoThemeCodes.includes(String(n));
             return {
                 코드: code,
@@ -3715,8 +3815,8 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         ui.showToast('↩️ 신규등록용 양식에서 복귀했습니다.');
     }, [ui]);
     return useMemo(() => ({
-        handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleOpenExportCenter, handleRegisterUnregisteredItems, handleLoadMasterConditionProducts, handleExitRegistrationMode
-    }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleOpenExportCenter, handleRegisterUnregisteredItems, handleLoadMasterConditionProducts, handleExitRegistrationMode]);
+        handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleLoadMasterConditionProducts, handleExitRegistrationMode
+    }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleLoadMasterConditionProducts, handleExitRegistrationMode]);
 };
 // --- UI Components ---
 const SystemConsole = ({ itemCount, isProcessing, processMsg, estimateCount, filteredCount, activeTags }) => {
@@ -3768,7 +3868,7 @@ const SearchBar = ({ value, onChange, placeholder }) => {
 };
 const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
     const { activeTags, selectedRows, globalSearch, priceFilter, detailFilters = [], categoryFilters = [], basicSearch, filterSteps = [], disabledFilterStepIds = [], pendingFilterAction = 'include', fullDisplayRows, config, registrationMode, data } = state;
-    const { handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, handleLoadMasterConditionProducts, setPriceFilter, setDetailFilters, setCategoryFilters, setSelectedRows, setBasicSearch, setFilterSteps, setDisabledFilterStepIds, setPendingFilterAction, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode } = actions;
+    const { handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleLoadMasterConditionProducts, setPriceFilter, setDetailFilters, setCategoryFilters, setSelectedRows, setBasicSearch, setFilterSteps, setDisabledFilterStepIds, setPendingFilterAction, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode } = actions;
     const [filterPanelOpen, setFilterPanelOpen] = useState(false);
     const [selectedWarehouseInput, setSelectedWarehouseInput] = useState('');
     // [M-FILTER-ROWS-01] 정렬필터 재배치
@@ -4104,7 +4204,10 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                     React.createElement("div", { className: "flex h-9 rounded-lg border border-slate-300 overflow-hidden bg-white shadow-sm shrink-0" },
                         React.createElement("input", { type: "number", min: "1", max: "99", value: screenPercent, onChange: e => setScreenPercent(e.target.value), className: "w-[56px] px-2 text-[12px] font-black outline-none text-right" }),
                         React.createElement("span", { className: "px-2 flex items-center bg-slate-50 border-l border-slate-200 text-[12px] font-black text-slate-500" }, "%")),
-                    React.createElement("button", { onClick: runScreenPercentApply, disabled: fullDisplayRows.length === 0, className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all shrink-0 ${fullDisplayRows.length > 0 ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터/검색 결과 전체에 행사가를 적용합니다." }, "적용"))),
+                    React.createElement("button", { onClick: runScreenPercentApply, disabled: fullDisplayRows.length === 0, className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all shrink-0 ${fullDisplayRows.length > 0 ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터/검색 결과 전체에 행사가를 적용합니다." }, "적용"),
+                    React.createElement("button", { onClick: handleResetPromoValues, disabled: fullDisplayRows.length === 0, className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all shrink-0 ${fullDisplayRows.length > 0 ? 'bg-white text-rose-700 border-rose-200 hover:bg-rose-50' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터/검색 결과 전체의 행사가와 행사테마를 함께 초기화합니다." },
+                        React.createElement("i", { className: "fas fa-eraser mr-1.5 text-[12px]" }),
+                        "행사초기화"))),
                 React.createElement("div", { className: "ml-auto flex items-center justify-end gap-2 shrink-0" },
                     registrationMode && (React.createElement(React.Fragment, null,
                         React.createElement("span", { className: "h-9 px-3 rounded-lg text-[12px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center shadow-sm" },
@@ -4347,6 +4450,7 @@ const getPromoThemeLabel = (item = {}) => {
 // 기준: 현재 작업 명시값 → 업로드 파일 명시값 → 마스터 저장값 순서로 행사테마/테마1~5 값을 판정한다.
 // ============================================================
 const getPromotionThemeCodesForFilter = (row = {}, mItem = {}) => {
+    if ((row.finalData || {})._promoResetRequested === true) return [];
     const sources = row.sources || {};
     const normalized = window.resolvePromotionThemeByPriority
         ? window.resolvePromotionThemeByPriority(row.finalData || {}, sources, mItem || {})
@@ -5341,7 +5445,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.85_F9PromoFilterRecalc]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.86_PromoResetFlow]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -5675,7 +5779,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.85_F9PromoFilterRecalc")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.86_PromoResetFlow")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
