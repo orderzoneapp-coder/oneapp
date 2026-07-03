@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.86_PromoResetFlow]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.89_PromoBaseStrict]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -3330,6 +3330,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             const nowStr = new Date().toLocaleString('ko-KR');
             const logs = [];
             let count = 0;
+            let skippedMissingBase = 0;
             data.setManagedItems(prev => {
                 const next = { ...prev };
                 targetRows.forEach(row => {
@@ -3338,6 +3339,10 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                     const current = next[key] || row || { 코드: code, sources: {}, finalData: {} };
                     const mItem = data.masterProducts[code] || {};
                     const calc = calculateScreenPromoPrice(current, mItem, { baseField, extraFields, rate });
+                    if (calc.invalidBase) {
+                        skippedMissingBase++;
+                        return;
+                    }
                     if (calc.price > 0) {
                         const oldVal = window.parseNum((current.finalData || {})[targetField] !== undefined ? (current.finalData || {})[targetField] : getRowValueByField(current, targetField));
                         next[key] = {
@@ -3377,7 +3382,8 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             ui.setSelectedRows(new Set());
             ui.setIsProcessing(false);
             ui.setProcessMsg('');
-            ui.showToast(`✅ ${count}건 행사가 적용 완료 (${rate}%)`);
+            const skipMsg = skippedMissingBase > 0 ? ` / 입고가 없음 ${skippedMissingBase}건 제외` : '';
+            ui.showToast(`✅ ${count}건 행사가 적용 완료 (${rate}%)${skipMsg}`);
         }, 100);
     }, [fullDisplayRows, ui.selectedRows, data.masterProducts, data.setManagedItems, data.addHistoryLogs, ui]);
 
@@ -4204,10 +4210,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                     React.createElement("div", { className: "flex h-9 rounded-lg border border-slate-300 overflow-hidden bg-white shadow-sm shrink-0" },
                         React.createElement("input", { type: "number", min: "1", max: "99", value: screenPercent, onChange: e => setScreenPercent(e.target.value), className: "w-[56px] px-2 text-[12px] font-black outline-none text-right" }),
                         React.createElement("span", { className: "px-2 flex items-center bg-slate-50 border-l border-slate-200 text-[12px] font-black text-slate-500" }, "%")),
-                    React.createElement("button", { onClick: runScreenPercentApply, disabled: fullDisplayRows.length === 0, className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all shrink-0 ${fullDisplayRows.length > 0 ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터/검색 결과 전체에 행사가를 적용합니다." }, "적용"),
-                    React.createElement("button", { onClick: handleResetPromoValues, disabled: fullDisplayRows.length === 0, className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all shrink-0 ${fullDisplayRows.length > 0 ? 'bg-white text-rose-700 border-rose-200 hover:bg-rose-50' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터/검색 결과 전체의 행사가와 행사테마를 함께 초기화합니다." },
-                        React.createElement("i", { className: "fas fa-eraser mr-1.5 text-[12px]" }),
-                        "행사초기화"))),
+                    React.createElement("button", { onClick: runScreenPercentApply, disabled: fullDisplayRows.length === 0, className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all shrink-0 ${fullDisplayRows.length > 0 ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터/검색 결과 전체에 행사가를 적용합니다." }, "적용"))),
                 React.createElement("div", { className: "ml-auto flex items-center justify-end gap-2 shrink-0" },
                     registrationMode && (React.createElement(React.Fragment, null,
                         React.createElement("span", { className: "h-9 px-3 rounded-lg text-[12px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center shadow-sm" },
@@ -4244,6 +4247,9 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                     ['theme4', '테마4'],
                     ['theme5', '테마5']
                 ].map(([value, label]) => (React.createElement("button", { key: value, onClick: () => toggleDetailFilter(value), className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${detailFilters.includes(value) ? 'bg-purple-700 text-white border-purple-700' : value.startsWith('theme') ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: `${label}: 다른 상세조건과 중복 적용 / 다시 누르면 해제` }, label))),
+                React.createElement("button", { onClick: handleResetPromoValues, disabled: fullDisplayRows.length === 0, className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${fullDisplayRows.length > 0 ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터/검색 결과 전체의 행사가와 행사테마를 함께 초기화합니다." },
+                    React.createElement("i", { className: "fas fa-eraser mr-1.5 text-[12px]" }),
+                    "행사초기화"),
                 selectedRows.size > 0 && !registrationMode && (React.createElement("div", { className: "ml-auto flex items-center justify-end gap-2 shrink-0" },
                     React.createElement("span", { className: "text-[12px] font-black text-slate-600 whitespace-nowrap" }, "창고"),
                     React.createElement("input", { type: "text", value: selectedWarehouseInput, onChange: e => setSelectedWarehouseInput(e.target.value), onKeyDown: e => { if (e.key === 'Enter') handleApplySelectedWarehouse(selectedWarehouseInput); }, placeholder: "예: 01", className: "h-8 w-[74px] px-2 rounded-lg border border-slate-300 bg-white text-[12px] font-black text-center outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100" }),
@@ -4394,6 +4400,15 @@ const getScreenApplyCostValue = (row = {}, mItem = {}, field = '입고가') => {
         return window.parseNum(v);
     return window.parseNum(mItem === null || mItem === void 0 ? void 0 : mItem[field]);
 };
+const getScreenBaseCostValueStrict = (row = {}, field = '입고가') => {
+    // 행사가 산출 기준 입고가는 현재 작업테이블/엑셀 행에 명시된 값만 인정한다.
+    // 마스터 입고가 fallback으로 행사가가 생성되면, 화면상 입고가가 없는 상품도 산출되는 오류가 발생한다.
+    const v = getRowValueByField(row, field);
+    if (v === undefined || v === null || String(v).trim() === '')
+        return { value: 0, hasValue: false };
+    const n = window.parseNum(v);
+    return { value: n, hasValue: n > 0 };
+};
 const roundScreenPromoPrice = (rawPrice, row = {}, mItem = {}) => {
     if (window.roundMerchRuleSalePrice)
         return window.roundMerchRuleSalePrice(rawPrice);
@@ -4407,13 +4422,19 @@ const calculateScreenPromoPrice = (row = {}, mItem = {}, options = {}) => {
     const baseField = options.baseField || '입고가';
     const rate = window.parseNum(options.rate);
     const extraFields = Array.isArray(options.extraFields) ? options.extraFields : [];
-    const baseCost = getScreenApplyCostValue(row, mItem, baseField);
+    const baseResult = getScreenBaseCostValueStrict(row, baseField);
+    const baseCost = baseResult.value;
     const extraCost = extraFields.reduce((sum, field) => sum + getScreenApplyCostValue(row, mItem, field), 0);
     const totalCost = baseCost + extraCost;
+    // 외주비/노무비는 추가원가일 뿐, 입고가를 대체하는 기준원가가 아니다.
+    // 입고가는 현재 작업테이블/엑셀 행에 명시된 값만 산출 기준으로 인정한다.
+    // 마스터 입고가 fallback은 금지한다.
+    if (!baseResult.hasValue)
+        return { price: 0, baseCost, extraCost, totalCost, rate, invalidBase: true, reason: `${baseField} 없음` };
     if (totalCost <= 0 || rate <= 0 || rate >= 100)
-        return { price: 0, baseCost, extraCost, totalCost, rate };
+        return { price: 0, baseCost, extraCost, totalCost, rate, invalidBase: false };
     const rawPrice = totalCost / (1 - (rate / 100));
-    return { price: roundScreenPromoPrice(rawPrice, row, mItem), baseCost, extraCost, totalCost, rate };
+    return { price: roundScreenPromoPrice(rawPrice, row, mItem), baseCost, extraCost, totalCost, rate, invalidBase: false };
 };
 const getStockQty = (row = {}, mItem = {}) => {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
@@ -5445,7 +5466,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.86_PromoResetFlow]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.89_PromoBaseStrict]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -5779,7 +5800,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.86_PromoResetFlow")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.89_PromoBaseStrict")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
