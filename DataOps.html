@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.43)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.46)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.43.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.46.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -657,8 +657,10 @@ const normalizeTransferGroupName = (name) => {
 // V1.a22.34: 판매업로드 생성에서 합계/소계 판정은 행 전체 includes 검색을 금지한다. 간단설명·적요·출고지시·전달사항·비고의 메모 문구(예: 합계 확인)는 행 제외 조건이 아니다.
 // V1.a22.42: 판매업로드 생성 시 판매가/도매가/행사가가 입고가보다 낮으면 자동 보정하지 않고 역마진/입고가초과 검수대상으로 확인요청 시트와 완료 팝업에 노출한다.
 // V1.a22.42: 판매업로드 완료 팝업에서 확인요청 총건수 문구는 업로드불가/역마진 세부 건수와 중복되므로 제거한다.
-// V1.a22.43: 수불마감 엑셀보고서는 구매잔량을 메인 시트로 두고, 남은 재고를 구매현황 양식처럼 일자·구매처·단가별 Lot 잔량으로 출력한다.
-// V1.a22.43: 구매 Lot으로 설명되지 않는 소분·치환·묶음·매입내역 없음 재고는 기타재고 시트로 분리한다. 실사양식은 ERP 재고실사 업로드용이므로 기존 양식을 변경하지 않는다.
+// V1.a22.46: 수불마감 엑셀보고서는 구매잔량을 메인 시트로 두고, 남은 재고를 재고현황형 양식으로 기록하되 기록·거래·구매가에는 구매 Lot의 일자·구매처·단가를 출력한다.
+// V1.a22.46: 구매 Lot으로 설명되지 않는 소분·치환·묶음·매입내역 없음 재고는 기타재고 시트로 분리한다. 실사양식은 ERP 재고실사 업로드용이므로 기존 양식을 변경하지 않는다.
+// V1.a22.46: 소분/치환/묶음 원가환산 반올림 기준을 유지한다. 환산원가가 1,000원 이상이면 100원 단위, 1,000원 미만이면 10원 단위로 반올림한다. 예: 11,000÷9=1,222.22 → 1,200원.
+// V1.a22.46: 구매잔량 시트는 재고현황형 양식 순서(단위/품목코드/품명/규격/재고/기록/거래/구매가/기본/적요)를 사용한다. 품명/규격은 언더바로 추정 분리하지 않고, 구매현황·재고현황 원본의 분리 컬럼을 우선 사용한다.
 // 단가가 없으면 사용자가 정한 그룹별 후보 외 다른 컬럼으로 자동 대체하지 않고 공백 + 단가확인으로 보낸다.
 // 청과상장은 출고가(공지) 다음 청과 고정가를 바로 적용한다.
 // 청과 고정가가 없을 때 도매A/0.91을 적용하고, 도매A가 없으면 이미 입고가+외주비+노무비/0.91로 계산된 상장가를 적용한다.
@@ -874,7 +876,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.43',
+    version: 'V1.a22.46',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -1443,9 +1445,13 @@ const DATAOPS_OPERATION_MODULE = Object.freeze({
         const sQty = Math.abs(safeNum(sourceQty));
         const tQty = Math.abs(safeNum(targetQty));
         if (unitCost <= 0 || sQty <= 0 || tQty <= 0) return 0;
-        // V1.a22.42: 수량 단위가 바뀌면 출처 총원가를 대상 생성수량으로 나눠 단가를 환산한다.
+        // V1.a22.46: 수량 단위가 바뀌면 출처 총원가를 대상 생성수량으로 나눠 단가를 환산한다.
+        // 반올림 기준: 1,000원 이상은 100원 단위, 1,000원 미만은 10원 단위.
         // 예: 12,000원 10kg 2박스 → 20kg 1박스 = 24,000원.
-        return Math.round(((unitCost * sQty) / tQty) * 100) / 100;
+        // 예: 11,000원 1kg 1박스 → 100g 9EA = 1,222.22원 → 1,200원.
+        const rawUnitCost = (unitCost * sQty) / tQty;
+        const roundUnit = rawUnitCost >= 1000 ? 100 : 10;
+        return Math.round(rawUnitCost / roundUnit) * roundUnit;
     },
     resolveSplitMoveQuantities: (payload = {}, targetQtyInput = 0) => {
         const targetQty = safeNum(targetQtyInput);
@@ -2336,6 +2342,45 @@ const EXPORT_MODULE = Object.freeze({
         if (invalidTexts.some(v => compact === v || compact.includes(v))) return '';
         return text;
     },
+    // V1.a22.46: 품명/규격은 언더바로 추정 분리하지 않는다.
+    // 구매현황·재고현황 원본 엑셀에 분리된 품명/규격/단위 컬럼이 있으므로 그 값을 그대로 우선 사용한다.
+    splitPurchaseNameSpec: (nameValue = '', specValue = '', unitValue = '') => {
+        const name = safeStr(nameValue, '').replace(/\s*\[[^\]]+\]\s*$/, '').trim();
+        const spec = safeStr(specValue, '').trim();
+        const unit = safeStr(unitValue, '').trim();
+        return { name: name || safeStr(nameValue, ''), spec: spec || unit, unit };
+    },
+    getPurchaseBalanceProductFields: (item = {}) => {
+        const raw = item._raw || {};
+        const purchaseName = safeStr(item._purchaseLotName, '');
+        const purchaseSpec = safeStr(item._purchaseLotSpec, '');
+        const purchaseUnit = safeStr(item._purchaseLotUnit, '');
+        const stockName = safeStr(item._stockLotName || item._stockName || raw['품명'] || raw['품목명'] || raw['상품명'] || raw['상품명(규격)'] || item.품명, '');
+        const stockSpec = safeStr(item._stockLotSpec || item._stockSpec || raw['규격'] || item.규격 || '', '');
+        const stockUnit = safeStr(item._stockLotUnit || item._stockUnit || item.단위 || raw['단위'] || raw['규격단위'] || raw['포장단위'], '');
+        const sourceName = purchaseName || stockName;
+        const sourceSpec = purchaseSpec || stockSpec;
+        const sourceUnit = purchaseUnit || stockUnit;
+        return EXPORT_MODULE.splitPurchaseNameSpec(sourceName, sourceSpec, sourceUnit);
+    },
+    buildPurchaseBalanceSheet: ({ rows = [], targetDateStr = '' }) => {
+        const headers = ['단위', '품목코드', '품명', '규격', '재고', '기록', '거래', '구매가', '기본', '적요'];
+        const displayDate = safeStr(targetDateStr, '').replace(/-/g, '/');
+        const title = `회사명 : 원앱 / 1창고 / ${displayDate || '기준일미상'} / 구매잔량`;
+        const dataRows = rows && rows.length ? rows : [{ '단위': '', '품목코드': '', '품명': '구매잔량 데이터가 없습니다.', '규격': '', '재고': '', '기록': '', '거래': '', '구매가': '', '기본': '', '적요': '' }];
+        const aoa = [
+            [title, '', '', '', '', '', '', '', '', ''],
+            headers,
+            ...dataRows.map(row => headers.map(h => row[h] !== undefined && row[h] !== null ? row[h] : ''))
+        ];
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        EXPORT_MODULE.forceTextColumnsByHeader(ws, 1, ['품목코드']);
+        ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 9 } }];
+        ws['!cols'] = [10, 14, 34, 10, 10, 12, 14, 14, 12, 18].map(wch => ({ wch }));
+        ws['!autofilter'] = { ref: `A2:J${Math.max(2, aoa.length)}` };
+        ws['!freeze'] = { xSplit: 0, ySplit: 2 };
+        return ws;
+    },
     applySheetLayout: (ws, columns = [], options = {}) => {
         if (!ws)
             return ws;
@@ -2526,22 +2571,19 @@ const EXPORT_MODULE = Object.freeze({
         const raw = item._raw || {};
         const qty = STOCK_ENGINE_MODULE.getActualQty(item);
         const price = Math.round(safeNum(item.단가));
-        const unit = safeStr(item.단위 || raw['단위'] || raw['규격단위'] || raw['포장단위'], '');
-        const spec = safeStr(raw['규격'] || item.규격 || unit, '');
+        const productFields = EXPORT_MODULE.getPurchaseBalanceProductFields(item);
         const status = item._manualLotOverrideApplied ? '관리자확정' : '자동추정';
         return {
-            '일자': EXPORT_MODULE.sanitizeLedgerRecordValue(item.일자) || targetDateStr,
-            '거래처명': safeStr(item.거래처, '미지정'),
-            '창고명': safeStr(raw['창고명'] || raw['창고'] || item.창고 || '1창고'),
-            '코드': item.코드 === 'NO_CODE' ? '' : safeStr(item.코드, '').replace(/\.0$/, '').trim(),
-            '품명': safeStr(raw['품명'] || raw['상품명'] || item.품명),
-            '규격': spec,
-            '단위': unit,
-            '수량': qty,
-            '단가': price,
-            '합계': qty * price,
-            '적요': status,
-            '구매처': safeStr(item.거래처, '미지정')
+            '단위': productFields.unit || safeStr(raw['단위'] || item.단위, ''),
+            '품목코드': item.코드 === 'NO_CODE' ? '' : safeStr(item.코드, '').replace(/\.0$/, '').trim(),
+            '품명': productFields.name,
+            '규격': productFields.spec,
+            '재고': qty,
+            '기록': EXPORT_MODULE.sanitizeLedgerRecordValue(item.일자) || targetDateStr,
+            '거래': safeStr(item.거래처, '미지정'),
+            '구매가': price,
+            '기본': getBasicDisplayValue(item),
+            '적요': status
         };
     }),
     buildOtherStockRows: ({ productData = [], targetDateStr = '' }) => productData
@@ -2989,10 +3031,10 @@ const EXPORT_MODULE = Object.freeze({
         const otherStockRows = EXPORT_MODULE.buildOtherStockRows({ productData: operationalProductData, targetDateStr });
         const checkRequestRows = EXPORT_MODULE.buildManagementIssueRows({ productData: operationalProductData });
         const wb = XLSX.utils.book_new();
-        // V1.a22.43: 수불마감 기본 보고서는 구매잔량을 메인으로 둔다.
+        // V1.a22.46: 수불마감 기본 보고서는 구매잔량을 메인으로 둔다.
         // 구매잔량은 남은 재고를 구매현황 양식처럼 일자/구매처/단가별 Lot 잔량으로 보여준다.
         // 실사양식은 ERP 재고실사 업로드용이므로 기존 출력 로직을 그대로 유지한다.
-        XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(purchaseBalanceRows, [12, 18, 12, 14, 34, 12, 10, 10, 12, 12, 18, 18], { emptyMessage: '구매잔량 데이터가 없습니다.' }), '구매잔량');
+        XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.buildPurchaseBalanceSheet({ rows: purchaseBalanceRows, targetDateStr }), '구매잔량');
         XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(otherStockRows, [16, 12, 14, 34, 12, 10, 10, 10, 12, 12, 14, 42], { emptyMessage: '기타재고 데이터가 없습니다.' }), '기타재고');
         if (exportData2.length > 0) {
             const ws2 = EXPORT_MODULE.jsonSheet(exportData2, [12, 8, 10, 8, 14, 34, 10, 18], { emptyMessage: '실사양식 데이터가 없습니다.' });
@@ -5395,7 +5437,10 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             parsedEnd.forEach((item) => {
                 var _a, _b, _c, _d, _e, _f;
                 const code = String(item.코드 || 'NO_CODE');
-                const stockName = ((_a = item._raw) === null || _a === void 0 ? void 0 : _a['상품명(규격)']) || item.품명;
+                const stockRaw = item._raw || {};
+                const stockName = stockRaw['품명'] || stockRaw['품목명'] || stockRaw['상품명'] || stockRaw['상품명(규격)'] || item.품명;
+                const stockSpec = stockRaw['규격'] || item.규격 || '';
+                const stockUnit = item.단위 || stockRaw['단위'] || stockRaw['규격단위'] || stockRaw['포장단위'] || '';
                 let origPrice = parseNumber(((_b = item._raw) === null || _b === void 0 ? void 0 : _b['매입단가(원가)']) !== undefined ? item._raw['매입단가(원가)'] : item.단가);
                 let actualQty = parseNumber(item.수량);
                 if (((_c = item._raw) === null || _c === void 0 ? void 0 : _c['기말실사(이월수량)']) !== undefined)
@@ -5413,6 +5458,10 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     const purchaseDate = toDateDisplay(inItem._purchaseDateNum);
                     const purchaseVendor = safeStr(inItem.거래처 || inItem._purchaseLotVendor || inItem._displayPurchaseVendor, '구매처미상');
                     const unitPrice = parseNumber(inItem.단가);
+                    const inRaw = inItem._raw || {};
+                    const purchaseName = safeStr(inRaw['품명'] || inRaw['상품명'] || inRaw['상품명(규격)'] || inItem.품명, '');
+                    const purchaseSpec = safeStr(inRaw['규격'] || inItem.규격 || '', '');
+                    const purchaseUnit = safeStr(inItem.단위 || inRaw['단위'] || inRaw['규격단위'] || inRaw['포장단위'], '');
                     const lotKey = `${adjustGroupKey}|${purchaseDate}|${purchaseVendor}|${unitPrice}|${inItem._seq}`;
                     return {
                         lotKey,
@@ -5423,7 +5472,10 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         originalQty: parseNumber(inItem.수량),
                         remainQty: parseNumber(inItem._remainQty),
                         seq: inItem._seq,
-                        source: inItem._purchaseDateSource || '구매현황'
+                        source: inItem._purchaseDateSource || '구매현황',
+                        name: purchaseName,
+                        spec: purchaseSpec,
+                        unit: purchaseUnit
                     };
                 };
                 const purchaseCandidates = inList.map((lot, candidateIndex) => buildCandidateLot(lot, candidateIndex)).filter(c => c.unitPrice > 0);
@@ -5445,7 +5497,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         _costExtractMode: mode, _stockRecordDate: item.일자 || '', _stockRecordVendor: item.거래처 || '', _stockRecordPrice: origPrice, 기본: getBasicRawValue(item),
                         _dateDisplayMemo: fallback ? '구매현황에서 해당 재고수량에 배정할 구매일자를 찾지 못했습니다. 오늘 날짜로 보정하지 않았습니다.' : `${purchaseDate}(${candidate.source || '구매현황'})`,
                         _matchedBy: inPoolByCode[codeKey] ? 'code' : 'name', _costExtractAdjustGroupKey: adjustGroupKey, _purchaseCandidateLots: purchaseCandidates,
-                        _purchaseLotKey: candidate ? candidate.lotKey : '', _manualLotOverrideApplied: mode === 'MANUAL_PURCHASE_LOT_OVERRIDE'
+                        _raw: stockRaw, _stockLotName: safeStr(stockName), _stockLotSpec: safeStr(stockSpec), _stockLotUnit: safeStr(stockUnit),
+                        _purchaseLotKey: candidate ? candidate.lotKey : '', _manualLotOverrideApplied: mode === 'MANUAL_PURCHASE_LOT_OVERRIDE',
+                        _purchaseLotName: candidate ? safeStr(candidate.name) : '', _purchaseLotSpec: candidate ? safeStr(candidate.spec) : '', _purchaseLotUnit: candidate ? safeStr(candidate.unit) : ''
                     };
                 };
                 const override = manualLotOverrides[adjustGroupKey];
@@ -9062,7 +9116,7 @@ ${balanceText}
                     React.createElement("h1", { className: "text-xl md:text-xl font-black leading-none text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.43"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.46"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
@@ -9137,7 +9191,7 @@ ${balanceText}
                     React.createElement("div", { className: "mb-4" },
                         React.createElement("h4", { className: "text-sm font-bold text-slate-800" },
                             React.createElement("i", { className: "fas fa-star text-amber-500 mr-2" }),
-                            "V1.a22.43 구매잔량/기타재고 보고서 정리"),
+                            "V1.a22.46 구매잔량 원본규격/양식 재정리"),
                         React.createElement("p", { className: "text-xs text-slate-500 mt-1.5 ml-6" }, "\u2605 \uD544\uD130\uC640 BOX/EA/\uC18C\uBD84 \uD544\uD130\uAC00 \uC544\uB798 \uC124\uC815\uAC12\uC744 \uAE30\uC900\uC73C\uB85C \uB3D9\uC791\uD569\uB2C8\uB2E4. \uB2E8\uC704 \uCEEC\uB7FC\uC744 \uC6B0\uC120 \uD310\uC815\uD558\uACE0, \uB2E8\uC704\uAC00 \uC5C6\uC744 \uB54C\uB9CC \uD488\uBA85/\uADDC\uACA9\uC744 \uBCF4\uC870 \uB2E8\uC11C\uB85C \uC0AC\uC6A9\uD569\uB2C8\uB2E4.")),
                     React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-4 bg-amber-50/60 p-4 rounded-lg border border-amber-200" },
                         React.createElement("div", { className: "flex flex-col" },
