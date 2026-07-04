@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.40)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.41)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.40.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.41.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -321,7 +321,7 @@ const parseIssuesAndVendors = (str, price) => {
     const parts = splitIssueVendorParts(str);
     const issues = [];
     const vendors = {};
-    const knownIssues = ['과다로스', '원가수정', '수기조정', '매입내역 없음', '전산 재고 부족', '재고 부족', '변동됨', '변경됨', '삭제됨', '신규추가', '수량변동', '단가변경', '매치변경', '원가추출됨', '원가추출', '단가없음', 'Lot불일치', 'Lot원가확인', 'Lot매치실패', 'Lot확인필요', 'Lot매치확인', '1창고FIFO', '매입처없음', '수량부족', '🔄', '🚨', '✅'];
+    const knownIssues = ['과다로스', '원가수정', '수기조정', '매입내역 없음', '전산 재고 부족', '재고 부족', '변동됨', '변경됨', '삭제됨', '신규추가', '수량변동', '단가변경', '매치변경', '원가추출됨', '원가추출', '단가없음', '역마진', '입고가초과', '도매가확인', '행사가확인', 'Lot불일치', 'Lot원가확인', 'Lot매치실패', 'Lot확인필요', 'Lot매치확인', '1창고FIFO', '매입처없음', '수량부족', '🔄', '🚨', '✅'];
     parts.forEach(p => {
         const part = safeStr(p, '').trim();
         if (!part)
@@ -652,9 +652,10 @@ const normalizeTransferGroupName = (name) => {
 // V1.a22.30: 매핑센터 관리기준을 관리방식(코드통합형/Lot상세형)과 대표단가 기준(최신/가중평균/최고/FIFO추정)으로 분리한다. 기본 출력/실사양식/MerchOps 연동은 코드통합형으로 유지하고 단가검증 탭에서만 상세 근거를 펼친다.
 // V1.a22.34: 판매업로드 생성 단계에서 Lot 분배/재고출고/FIFO/3우리 원구매처 역매칭 잔여 로직을 제거한다. 구매처·출고지시·적요·전달사항·비고는 원본 보존값이며 행 제외/구매처 공백 처리 조건이 아니다.
 // V1.a22.37: Lot 매칭 단순화. 판매현황의 구매처+구매단가가 모두 있는 행만 1순위 확정매칭으로 선처리한다. 확정매칭에 성공하면 FIFO/재고/구매현황 고도화 로직을 보지 않는다. 확정값이 없거나 확정 Lot을 못 찾은 행은 기본 FIFO로만 처리하고, 구매처만 있음/단가만 있음/경매분/재고분 추정 고도화는 후보 알고리즘으로 별도 기획한다.
-// V1.a22.40: 확정매칭 보강. 동일 구매처+동일단가 Lot이 여러 개면 순서대로 분할 차감하고, 확정 Lot 수량이 부족하면 다른 Lot으로 대체하지 않고 Lot수량부족/구매처단가확인 이슈를 남긴다. 확정값이 전혀 매칭되지 않을 때만 기본 FIFO fallback으로 내려간다.
-// V1.a22.40: 대체/묶음/소분 이동은 출처 총원가를 보존한다. Ctrl 대체이동은 출처 차감수량과 대상 생성수량을 분리해 10kg 2박스→20kg 1박스 같은 경우 대상 단가를 24,000원으로 환산한다.
+// V1.a22.41: 확정매칭 보강. 동일 구매처+동일단가 Lot이 여러 개면 순서대로 분할 차감하고, 확정 Lot 수량이 부족하면 다른 Lot으로 대체하지 않고 Lot수량부족/구매처단가확인 이슈를 남긴다. 확정값이 전혀 매칭되지 않을 때만 기본 FIFO fallback으로 내려간다.
+// V1.a22.41: 대체/묶음/소분 이동은 출처 총원가를 보존한다. Ctrl 대체이동은 출처 차감수량과 대상 생성수량을 분리해 10kg 2박스→20kg 1박스 같은 경우 대상 단가를 24,000원으로 환산한다.
 // V1.a22.34: 판매업로드 생성에서 합계/소계 판정은 행 전체 includes 검색을 금지한다. 간단설명·적요·출고지시·전달사항·비고의 메모 문구(예: 합계 확인)는 행 제외 조건이 아니다.
+// V1.a22.41: 판매업로드 생성 시 판매가/도매가/행사가가 입고가보다 낮으면 자동 보정하지 않고 역마진/입고가초과 검수대상으로 확인요청 시트와 완료 팝업에 노출한다.
 // 단가가 없으면 사용자가 정한 그룹별 후보 외 다른 컬럼으로 자동 대체하지 않고 공백 + 단가확인으로 보낸다.
 // 청과상장은 출고가(공지) 다음 청과 고정가를 바로 적용한다.
 // 청과 고정가가 없을 때 도매A/0.91을 적용하고, 도매A가 없으면 이미 입고가+외주비+노무비/0.91로 계산된 상장가를 적용한다.
@@ -767,7 +768,7 @@ const readSavedDataOpsGrouping = () => {
     catch (e) { return normalizeDataOpsGrouping({}); }
 };
 
-// V1.a22.40: 구매잔량 Lot 수동 재배정 저장소
+// V1.a22.41: 구매잔량 Lot 수동 재배정 저장소
 // - 자동 원가추출은 구매현황 FIFO 역산값이다.
 // - 관리자가 실제 재고 Lot을 이전 구매분으로 판단하면 최근 Lot을 0 처리하고 이전 Lot 수량을 입력한다.
 // - 원본 구매현황은 수정하지 않고 override layer에만 저장한다.
@@ -870,7 +871,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.40',
+    version: 'V1.a22.41',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -1439,7 +1440,7 @@ const DATAOPS_OPERATION_MODULE = Object.freeze({
         const sQty = Math.abs(safeNum(sourceQty));
         const tQty = Math.abs(safeNum(targetQty));
         if (unitCost <= 0 || sQty <= 0 || tQty <= 0) return 0;
-        // V1.a22.40: 수량 단위가 바뀌면 출처 총원가를 대상 생성수량으로 나눠 단가를 환산한다.
+        // V1.a22.41: 수량 단위가 바뀌면 출처 총원가를 대상 생성수량으로 나눠 단가를 환산한다.
         // 예: 12,000원 10kg 2박스 → 20kg 1박스 = 24,000원.
         return Math.round(((unitCost * sQty) / tQty) * 100) / 100;
     },
@@ -3926,7 +3927,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 if (p.batchKey === targetKey) {
                     const np = { ...p, 출고내역: JSON.parse(JSON.stringify(p.출고내역 || {})), 이슈: [...(p.이슈 || [])] };
                     np.출고 += targetAddQty;
-                    // V1.a22.40: 대체/묶음 작업은 화면 단가도 총원가 보존 단가로 갱신한다.
+                    // V1.a22.41: 대체/묶음 작업은 화면 단가도 총원가 보존 단가로 갱신한다.
                     // 예: 10kg 2박스(12,000원) → 20kg 1박스는 대상 단가 24,000원.
                     np.매출원가 += targetCostMoved;
                     np.매출액 += sourceRevenueMoved;
@@ -4609,7 +4610,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         .filter(bucket => bucket && !bucket._confirmedLotClosed && safeNum(bucket.수량) > 0)
                         .filter(bucket => bucket && (normalizeLotName(bucket.거래처) === matchStr || isSameLotName(bucket.거래처, sale.매입처매칭)))
                         .filter(bucket => isSameUnitCost(bucket.단가, expectedUnitCost));
-                    // V1.a22.40: 확정매칭은 동일 구매처+동일 구매단가 Lot 전체를 후보로 잡는다.
+                    // V1.a22.41: 확정매칭은 동일 구매처+동일 구매단가 Lot 전체를 후보로 잡는다.
                     // 같은 구매처+단가 Lot이 여러 줄이면 FIFO 순서로 분할 차감한다.
                     sameVendorBuckets.sort((a, b) => {
                         const dateA = safeNum(a._lotSortDate) || UNKNOWN_LOT_SORT_DATE;
@@ -4767,7 +4768,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         remainingConfirmedQty = 0;
                     }
 
-                    // V1.a22.40: 확정 Lot이 하나라도 매칭되면 다른 Lot/FIFO로 잔여분을 자동 대체하지 않는다.
+                    // V1.a22.41: 확정 Lot이 하나라도 매칭되면 다른 Lot/FIFO로 잔여분을 자동 대체하지 않는다.
                     // 잔여 부족분은 이슈로 보고하고, 구매처/단가가 전혀 매칭되지 않은 경우에만 기본 FIFO fallback으로 내려간다.
                     return allocatedQty > 0;
                 };
@@ -4894,7 +4895,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     const stockOtherBuckets = stockFifoBuckets.filter(bucket => !isRequestedBucket(bucket));
                     const hasRequestedPositive = requestedBuckets.some(hasPositiveQty);
                     const buildLotStages = () => {
-                        // V1.a22.40: 확정매칭이 안 된 나머지 행은 복잡한 추정 알고리즘을 쓰지 않는다.
+                        // V1.a22.41: 확정매칭이 안 된 나머지 행은 복잡한 추정 알고리즘을 쓰지 않는다.
                         // 기본값은 기존 재고 FIFO → 당일 구매 FIFO이며, 구매처만/단가만/경매분/재고분 추정은 후보 알고리즘으로 별도 기획한다.
                         const failed = !!sale._confirmedMatchFailed;
                         return [
@@ -6994,6 +6995,13 @@ function App() {
             if (!f.name)
                 checkReasons.push('품명 없음');
             const price = resolved.status === 'MATCHED' ? safeNum(resolved.price) : '';
+            // V1.a22.41: 입고가보다 판매가/도매가/행사가가 낮으면 관리자 타이핑 실수 가능성이 높으므로 확인요청 시트로 보낸다.
+            // 자동 보정은 금지하고, ERP 업로드 전 관리자가 직접 수정하도록 안내한다.
+            const baseCost = safeNum(f.cost);
+            if (price !== '' && safeNum(price) > 0 && baseCost > 0 && safeNum(price) < baseCost) {
+                const priceSourceName = safeStr(resolved.priceKey || resolved.columnName || '판매가', '판매가');
+                checkReasons.push(`역마진/입고가초과: 입고가 ${formatMoney(baseCost)} > 판매가 ${formatMoney(price)} (${priceSourceName})`);
+            }
             rowInfos.push({ item, idx, rowNo, f, rowBase, resolved, outputCustomer, checkReasons, price });
         });
         rowInfos.forEach(info => {
@@ -7089,7 +7097,7 @@ function App() {
             }
             const parsedIn = await parseExcelData(targetFiles.in, mappings, 'in');
             const { rows, fatalErrors, warnings } = buildTransferSalesUploadRows(parsedIn);
-            // V1.a22.12: 업로드불가 항목은 별도 시트로 분리하지 않고 확인필요 시트 최상단에 병합한다.
+            // V1.a22.41: 업로드불가/검수대상 항목은 확인요청 시트 최상단에 병합한다.
             // 치명 항목은 판매입력 행에서는 제외하되, 나머지 정상 행의 엑셀 생성은 계속 진행한다.
             const wb = XLSX.utils.book_new();
             const uploadColumns = ['일자', '순번', '거래처코드', '거래처명', '출하창고', '거래유형', '전잔액', '전달사항', '품목코드', '품목명', '규격', '수량', '단가', '외화금액', '공급가액', '적요', '출고지시', '공지', '구매처', '날짜', '구매', '생산전표생성'];
@@ -7267,7 +7275,7 @@ function App() {
             const checkRows = [...fatalCheckRows, ...warningCheckRows];
             const wsCheck = XLSX.utils.json_to_sheet(checkRows.length ? checkRows : [{ '그룹': '', '거래처': '', '품목코드': '', '품명': '', '수량': '', '확인사항': '확인필요 항목 없음' }], { header: checkColumns });
             wsCheck['!cols'] = [14, 16, 14, 34, 10, 42].map(wch => ({ wch }));
-            XLSX.utils.book_append_sheet(wb, wsCheck, '확인필요');
+            XLSX.utils.book_append_sheet(wb, wsCheck, '확인요청');
             const config = buildTransferPriceConfig();
             const groupRows = Object.values(config.groups).map(g => ({
                 '거래처명': g.customer,
@@ -7282,12 +7290,18 @@ function App() {
             XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(groupRows), '단가설정');
             downloadWorkbook(wb, `2전송_판매업로드_생성_${ymd}.xlsx`);
             const issueCount = warnings.length + fatalErrors.length;
-            const issueLine = issueCount > 0 ? '특이사항: 확인필요 시트를 확인하세요.' : '특이사항: 없음';
+            const reverseMarginCount = warnings.filter(w => {
+                const reason = safeStr(w.reason || '');
+                return reason.includes('역마진') || reason.includes('입고가초과');
+            }).length;
+            const issueLine = issueCount > 0 ? '특이사항: 확인요청 시트를 확인하세요.' : '특이사항: 없음';
+            const reverseMarginLine = reverseMarginCount > 0 ? `
+역마진/입고가초과: ${reverseMarginCount}개` : '';
             setAlertMsg(`✅ 판매업로드 생성 완료
 
 생성 행: ${rows.length}개
-확인필요: ${issueCount}개
-업로드불가: ${fatalErrors.length}개
+확인요청: ${issueCount}개
+업로드불가: ${fatalErrors.length}개${reverseMarginLine}
 
 ${issueLine}`);
         }
@@ -8966,7 +8980,7 @@ ${balanceText}
                     React.createElement("h1", { className: "text-xl md:text-xl font-black leading-none text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.40"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.41"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
@@ -9041,7 +9055,7 @@ ${balanceText}
                     React.createElement("div", { className: "mb-4" },
                         React.createElement("h4", { className: "text-sm font-bold text-slate-800" },
                             React.createElement("i", { className: "fas fa-star text-amber-500 mr-2" }),
-                            "V1.a22.40 구매잔량 Lot 수동재배정"),
+                            "V1.a22.41 역마진 확인요청"),
                         React.createElement("p", { className: "text-xs text-slate-500 mt-1.5 ml-6" }, "\u2605 \uD544\uD130\uC640 BOX/EA/\uC18C\uBD84 \uD544\uD130\uAC00 \uC544\uB798 \uC124\uC815\uAC12\uC744 \uAE30\uC900\uC73C\uB85C \uB3D9\uC791\uD569\uB2C8\uB2E4. \uB2E8\uC704 \uCEEC\uB7FC\uC744 \uC6B0\uC120 \uD310\uC815\uD558\uACE0, \uB2E8\uC704\uAC00 \uC5C6\uC744 \uB54C\uB9CC \uD488\uBA85/\uADDC\uACA9\uC744 \uBCF4\uC870 \uB2E8\uC11C\uB85C \uC0AC\uC6A9\uD569\uB2C8\uB2E4.")),
                     React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-4 bg-amber-50/60 p-4 rounded-lg border border-amber-200" },
                         React.createElement("div", { className: "flex flex-col" },
