@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.91_WholesalePairCheck]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.92_WholesaleConfirmDetailModal]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -25,6 +25,100 @@
         };
 
         window.parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
+
+        // v2.1.92: 네이티브 confirm은 크기/상세표시 제어가 불가하므로 F8 확인요청 전용 큰 확인창을 제공한다.
+        window.showMerchopsLargeConfirm = window.showMerchopsLargeConfirm || ((options = {}) => {
+            const {
+                title = '확인',
+                lead = '',
+                body = '',
+                items = [],
+                confirmText = '확인',
+                cancelText = '취소',
+                danger = false
+            } = options;
+            return new Promise(resolve => {
+                const old = document.getElementById('merchops-large-confirm-modal');
+                if (old) old.remove();
+                const overlay = document.createElement('div');
+                overlay.id = 'merchops-large-confirm-modal';
+                overlay.style.cssText = [
+                    'position:fixed', 'inset:0', 'z-index:999999',
+                    'background:rgba(15,23,42,.55)', 'display:flex',
+                    'align-items:center', 'justify-content:center', 'padding:24px'
+                ].join(';');
+                const box = document.createElement('div');
+                box.style.cssText = [
+                    'width:min(920px,96vw)', 'max-height:88vh', 'background:#fff',
+                    'border-radius:18px', 'box-shadow:0 24px 80px rgba(15,23,42,.32)',
+                    'border:1px solid #e2e8f0', 'overflow:hidden',
+                    'font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+                    'color:#0f172a'
+                ].join(';');
+                const header = document.createElement('div');
+                header.style.cssText = [
+                    'padding:18px 22px', 'border-bottom:1px solid #e2e8f0',
+                    `background:${danger ? '#fff1f2' : '#f8fafc'}`
+                ].join(';');
+                header.innerHTML = `<div style="font-size:18px;font-weight:900;line-height:1.35;color:${danger ? '#be123c' : '#0f172a'};">${title}</div>${lead ? `<div style="margin-top:6px;font-size:14px;font-weight:800;color:${danger ? '#e11d48' : '#334155'};white-space:pre-wrap;">${lead}</div>` : ''}`;
+                const content = document.createElement('div');
+                content.style.cssText = 'padding:18px 22px;max-height:58vh;overflow:auto;background:#fff;';
+                const bodyEl = document.createElement('div');
+                bodyEl.style.cssText = 'font-size:14px;font-weight:700;line-height:1.65;white-space:pre-wrap;color:#334155;margin-bottom:14px;';
+                bodyEl.textContent = body || '';
+                content.appendChild(bodyEl);
+                if (Array.isArray(items) && items.length > 0) {
+                    const tableWrap = document.createElement('div');
+                    tableWrap.style.cssText = 'border:1px solid #e2e8f0;border-radius:12px;overflow:auto;max-height:38vh;';
+                    const table = document.createElement('table');
+                    table.style.cssText = 'width:100%;border-collapse:collapse;font-size:13px;min-width:700px;';
+                    table.innerHTML = `
+                        <thead>
+                            <tr style="background:#f8fafc;color:#475569;">
+                                <th style="text-align:left;padding:9px 10px;border-bottom:1px solid #e2e8f0;">상품명</th>
+                                <th style="text-align:right;padding:9px 10px;border-bottom:1px solid #e2e8f0;">기준입고</th>
+                                <th style="text-align:right;padding:9px 10px;border-bottom:1px solid #e2e8f0;">도매가</th>
+                                <th style="text-align:right;padding:9px 10px;border-bottom:1px solid #e2e8f0;">차이</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>`;
+                    const tbody = table.querySelector('tbody');
+                    const fmt = (v) => Number(v || 0).toLocaleString('ko-KR');
+                    items.forEach((item, idx) => {
+                        const tr = document.createElement('tr');
+                        tr.style.cssText = idx % 2 ? 'background:#fff;' : 'background:#fff7ed;';
+                        const diff = Number(item.diff || 0);
+                        tr.innerHTML = `
+                            <td style="padding:9px 10px;border-bottom:1px solid #f1f5f9;font-weight:800;color:#0f172a;">${item.name || '-'}<div style="font-size:11px;color:#64748b;font-weight:700;">${item.code || ''}${item.spec ? ' / ' + item.spec : ''}</div></td>
+                            <td style="padding:9px 10px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:800;">${item.baseField || '입고'} ${fmt(item.basePrice)}</td>
+                            <td style="padding:9px 10px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:900;color:#ea580c;">${item.wholesaleField || '도매'} ${fmt(item.wholesalePrice)}</td>
+                            <td style="padding:9px 10px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:900;color:#e11d48;">${fmt(diff)}</td>`;
+                        tbody.appendChild(tr);
+                    });
+                    tableWrap.appendChild(table);
+                    content.appendChild(tableWrap);
+                }
+                const footer = document.createElement('div');
+                footer.style.cssText = 'display:flex;justify-content:flex-end;gap:10px;padding:16px 22px;border-top:1px solid #e2e8f0;background:#f8fafc;';
+                const cancelBtn = document.createElement('button');
+                cancelBtn.type = 'button';
+                cancelBtn.textContent = cancelText;
+                cancelBtn.style.cssText = 'height:40px;padding:0 18px;border-radius:10px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-weight:900;cursor:pointer;';
+                const okBtn = document.createElement('button');
+                okBtn.type = 'button';
+                okBtn.textContent = confirmText;
+                okBtn.style.cssText = `height:40px;padding:0 20px;border-radius:10px;border:1px solid ${danger ? '#fb7185' : '#22c55e'};background:${danger ? '#e11d48' : '#16a34a'};color:#fff;font-weight:900;cursor:pointer;`;
+                const close = (result) => { overlay.remove(); resolve(result); };
+                cancelBtn.onclick = () => close(false);
+                okBtn.onclick = () => close(true);
+                overlay.addEventListener('click', (ev) => { if (ev.target === overlay) close(false); });
+                footer.append(cancelBtn, okBtn);
+                box.append(header, content, footer);
+                overlay.appendChild(box);
+                document.body.appendChild(overlay);
+                okBtn.focus();
+            });
+        });
 
         window.PROMOTION_THEMES = window.PROMOTION_THEMES || [
             { code: '1', label: '오늘의행사', type: '탭' },
@@ -3118,27 +3212,31 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         quickExcelReadyRef.current = { ready: false, at: 0, count: 0, codes: [] };
         ui.showToast(`✅ F8 빠른 엑셀 출력 완료: 원물 ${targetRows.length}건 + 소분 ${subOutputCount}건${confirmData.length > 1 ? ` / 확인요청 ${confirmData.length - 1}건` : ''}`);
     }, [fullDisplayRows, ui.selectedRows, data.masterProducts, ui, collectWholesaleBelowCostWarnings]);
-    const handleCommitEstimate = useCallback(() => {
+    const handleCommitEstimate = useCallback(async () => {
         const targets = ui.selectedRows.size > 0 ? ui.selectedRows : new Set(fullDisplayRows.map(r => window.getManagedRowKey(r)));
         if (targets.size === 0)
             return ui.showToast('⚠️ 반영할 항목이 없습니다.');
         const targetModeText = ui.selectedRows.size > 0 ? '선택한 상품' : '현재 화면 전체';
         const targetRowsForConfirm = fullDisplayRows.filter(row => targets.has(window.getManagedRowKey(row)));
         const wholesaleWarningsForConfirm = collectWholesaleBelowCostWarnings(targetRowsForConfirm);
-        const wholesaleWarningText = wholesaleWarningsForConfirm.length > 0
-            ? `⚠️ 확인요청 ${wholesaleWarningsForConfirm.length}건
-도매가가 매칭 입고가보다 낮은 항목이 있습니다.
-비교기준: 입고가↔도매A, 입고B↔도매B
-출력 엑셀에 [확인요청] 시트를 추가합니다.
-
-`
-            : '';
-        if (!window.confirm(`${wholesaleWarningText}F8 마스터 적용 + 즉시 엑셀 출력
+        if (wholesaleWarningsForConfirm.length > 0) {
+            const confirmed = await window.showMerchopsLargeConfirm({
+                title: `⚠️ 확인요청 ${wholesaleWarningsForConfirm.length}건`,
+                lead: '도매가가 매칭 입고가보다 낮은 항목이 있습니다.',
+                body: `비교기준: 입고가↔도매A, 입고B↔도매B\n출력 엑셀에 [확인요청] 시트를 추가합니다.\n\nF8 마스터 적용 + 즉시 엑셀 출력\n${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증센터를 거치지 않고 엑셀을 바로 생성합니다.`,
+                items: wholesaleWarningsForConfirm,
+                confirmText: '계속 진행',
+                cancelText: '취소',
+                danger: true
+            });
+            if (!confirmed) return;
+        } else if (!window.confirm(`F8 마스터 적용 + 즉시 엑셀 출력
 
 ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증센터를 거치지 않고 엑셀을 바로 생성합니다.
 
-계속 진행하시겠습니까?`))
+계속 진행하시겠습니까?`)) {
             return;
+        }
         let newMaster = { ...data.masterProducts }, commitCount = 0;
         let localLogs = [];
         const nowStr = new Date().toLocaleString('ko-KR');
@@ -5529,7 +5627,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.91_WholesalePairCheck]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.92_WholesaleConfirmDetailModal]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -5863,7 +5961,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.91_WholesalePairCheck")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.92_WholesaleConfirmDetailModal")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
