@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.50)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.51)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.50.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.51.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -642,6 +642,7 @@ const normalizeTransferGroupName = (name) => {
 // V1.a22.15: 제외거래처 판정은 2.매입/3.매출 모두 전표의 거래처명(거래처) 기준으로만 적용한다. 구매처/매입처/원구매처는 제외 판정에서 제외한다.
 // V1.a22.29: 코드 통합형 거래처칩 이동은 단일 원장행만 즉시 적용하고, 통합2 이상은 Lot 상세형에서 수동 처리한다.
 // V1.a22.17: 보기모드(코드 통합형/Lot 상세형)는 버튼형으로 전환하고, 정렬/카테고리는 드롭다운으로 정리한다.
+// V1.a22.51: 카테고리는 다시 버튼형 중복선택으로 변경한다.
 // V1.a22.17: System.IO는 아래로 스크롤하면 우측 펼치기 버튼만 유지하고, 최상단 복귀 전까지 자동 펼침을 금지해 화면 흔들림을 차단한다.
 // V1.a22.29: 이슈/결과 칸에서 잔량확인 뱃지와 구매일자/구매처 반복 표시를 제거한다. 잔량 마이너스는 잔량 숫자로만 표시한다.
 // V1.a22.29: 코드 통합형 배지는 실제 원장행이 2개 이상 합쳐진 경우에만 표시한다. 통합1은 단일 원장행이므로 숨긴다.
@@ -657,14 +658,15 @@ const normalizeTransferGroupName = (name) => {
 // V1.a22.34: 판매업로드 생성에서 합계/소계 판정은 행 전체 includes 검색을 금지한다. 간단설명·적요·출고지시·전달사항·비고의 메모 문구(예: 합계 확인)는 행 제외 조건이 아니다.
 // V1.a22.42: 판매업로드 생성 시 판매가/도매가/행사가가 입고가보다 낮으면 자동 보정하지 않고 역마진/입고가초과 검수대상으로 확인요청 시트와 완료 팝업에 노출한다.
 // V1.a22.42: 판매업로드 완료 팝업에서 확인요청 총건수 문구는 업로드불가/역마진 세부 건수와 중복되므로 제거한다.
-// V1.a22.50: 수불마감 엑셀보고서는 구매잔량을 메인 시트로 두고, 남은 재고를 재고현황형 양식으로 기록하되 기록·거래·구매가에는 구매 Lot의 일자·구매처·단가를 출력한다.
-// V1.a22.50: 구매 Lot으로 설명되지 않는 소분·치환·묶음·매입내역 없음 재고는 기타재고 시트로 분리한다. 실사양식은 ERP 재고실사 업로드용이므로 기존 양식을 변경하지 않는다.
-// V1.a22.50: 소분/치환/묶음 원가환산 반올림 기준을 유지한다. 환산원가가 1,000원 이상이면 100원 단위, 1,000원 미만이면 10원 단위로 반올림한다. 예: 11,000÷9=1,222.22 → 1,200원.
-// V1.a22.50: 구매잔량 시트는 재고현황형 양식 순서(단위/품목코드/품명/규격/재고/기록/거래/구매가/기본/적요)를 사용한다. 품명/규격은 언더바로 추정 분리하지 않고, 구매현황·재고현황 원본의 분리 컬럼을 우선 사용한다.
-// V1.a22.50: 재고/Lot 화면에 구매잔량/기타상품 분리 필터를 추가한다. 이 필터는 BOX/EA/소분·카테고리·검색 필터와 중복 조합된다.
-// V1.a22.50: 구매가 추출 보강. 1재고/4실사/수불마감 파일의 구매가 컬럼을 원가 후보로 인식하고, 구매잔량 시트는 품목코드순으로 정렬한다.
-// V1.a22.50: 구매잔량은 코드통합형으로 합치지 않고 원본 Lot 행 기준으로 출력한다. 같은 품목코드라도 구매일·구매처·구매가가 다르면 분리한다.
-// V1.a22.50: 구매잔량/기타상품 화면 필터는 이슈 유무가 아니라 구매 Lot 근거 기준으로 분류한다. 구매일·구매처·구매가가 확정된 행은 수기치환오차/실사오차/과다로스 이슈가 있어도 구매잔량에 남긴다.
+// V1.a22.51: 수불마감 엑셀보고서는 구매잔량을 메인 시트로 두고, 남은 재고를 재고현황형 양식으로 기록하되 기록·거래·구매가에는 구매 Lot의 일자·구매처·단가를 출력한다.
+// V1.a22.51: 구매 Lot으로 설명되지 않는 소분·치환·묶음·매입내역 없음 재고는 기타재고 시트로 분리한다. 실사양식은 ERP 재고실사 업로드용이므로 기존 양식을 변경하지 않는다.
+// V1.a22.51: 소분/치환/묶음 원가환산 반올림 기준을 유지한다. 환산원가가 1,000원 이상이면 100원 단위, 1,000원 미만이면 10원 단위로 반올림한다. 예: 11,000÷9=1,222.22 → 1,200원.
+// V1.a22.51: 구매잔량 시트는 재고현황형 양식 순서(단위/품목코드/품명/규격/재고/기록/거래/구매가/기본/적요)를 사용한다. 품명/규격은 언더바로 추정 분리하지 않고, 구매현황·재고현황 원본의 분리 컬럼을 우선 사용한다.
+// V1.a22.51: 재고/Lot 화면에 구매잔량/기타상품 분리 필터를 추가한다. 이 필터는 BOX/EA/소분·카테고리·검색 필터와 중복 조합된다.
+// V1.a22.51: 카테고리 필터를 드롭다운 단일선택에서 버튼형 중복선택으로 전환한다. 10/20/30/40/50은 복수 선택 가능하며 구매잔량/기타상품·BOX/EA/소분·검색 필터와 교차 적용된다.
+// V1.a22.51: 구매가 추출 보강. 1재고/4실사/수불마감 파일의 구매가 컬럼을 원가 후보로 인식하고, 구매잔량 시트는 품목코드순으로 정렬한다.
+// V1.a22.51: 구매잔량은 코드통합형으로 합치지 않고 원본 Lot 행 기준으로 출력한다. 같은 품목코드라도 구매일·구매처·구매가가 다르면 분리한다.
+// V1.a22.51: 구매잔량/기타상품 화면 필터는 이슈 유무가 아니라 구매 Lot 근거 기준으로 분류한다. 구매일·구매처·구매가가 확정된 행은 수기치환오차/실사오차/과다로스 이슈가 있어도 구매잔량에 남긴다.
 // 단가가 없으면 사용자가 정한 그룹별 후보 외 다른 컬럼으로 자동 대체하지 않고 공백 + 단가확인으로 보낸다.
 // 청과상장은 출고가(공지) 다음 청과 고정가를 바로 적용한다.
 // 청과 고정가가 없을 때 도매A/0.91을 적용하고, 도매A가 없으면 이미 입고가+외주비+노무비/0.91로 계산된 상장가를 적용한다.
@@ -880,7 +882,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.50',
+    version: 'V1.a22.51',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -1449,7 +1451,7 @@ const DATAOPS_OPERATION_MODULE = Object.freeze({
         const sQty = Math.abs(safeNum(sourceQty));
         const tQty = Math.abs(safeNum(targetQty));
         if (unitCost <= 0 || sQty <= 0 || tQty <= 0) return 0;
-        // V1.a22.50: 수량 단위가 바뀌면 출처 총원가를 대상 생성수량으로 나눠 단가를 환산한다.
+        // V1.a22.51: 수량 단위가 바뀌면 출처 총원가를 대상 생성수량으로 나눠 단가를 환산한다.
         // 반올림 기준: 1,000원 이상은 100원 단위, 1,000원 미만은 10원 단위.
         // 예: 12,000원 10kg 2박스 → 20kg 1박스 = 24,000원.
         // 예: 11,000원 1kg 1박스 → 100g 9EA = 1,222.22원 → 1,200원.
@@ -2041,7 +2043,12 @@ const FILTER_SORT_MODULE = Object.freeze({
         const unitRules = options.unitRules || CONFIG_MODULE.getUnitRules(defaultMappings);
         return rows.filter(row => {
             const standard = FILTER_SORT_MODULE.getStandard(row, { unitRules });
-            if (filterState.category && filterState.category !== 'ALL' && standard.categoryCode !== filterState.category)
+            // V1.a22.51: 카테고리 필터는 버튼형 중복선택이다.
+            // 과거 저장값('ALL' 또는 단일 문자열)과 신규 배열값을 모두 호환한다.
+            const selectedCategories = Array.isArray(filterState.category)
+                ? filterState.category.filter(v => safeStr(v) && safeStr(v) !== 'ALL')
+                : (filterState.category && filterState.category !== 'ALL' ? [filterState.category] : []);
+            if (selectedCategories.length > 0 && !selectedCategories.includes(standard.categoryCode))
                 return false;
             if (filterState.favoriteVendorOnly && !FILTER_SORT_MODULE.isFavoriteVendor(row, favoriteVendors))
                 return false;
@@ -2346,7 +2353,7 @@ const EXPORT_MODULE = Object.freeze({
         if (invalidTexts.some(v => compact === v || compact.includes(v))) return '';
         return text;
     },
-    // V1.a22.50: 품명/규격은 언더바로 추정 분리하지 않는다.
+    // V1.a22.51: 품명/규격은 언더바로 추정 분리하지 않는다.
     // 구매현황·재고현황 원본 엑셀에 분리된 품명/규격/단위 컬럼이 있으므로 그 값을 그대로 우선 사용한다.
     splitPurchaseNameSpec: (nameValue = '', specValue = '', unitValue = '') => {
         const name = safeStr(nameValue, '').replace(/\s*\[[^\]]+\]\s*$/, '').trim();
@@ -2555,7 +2562,7 @@ const EXPORT_MODULE = Object.freeze({
             && vendor !== '구매처미상'
             && price > 0;
         if (!validPurchaseFields) return false;
-        // V1.a22.50: 구매잔량/기타상품 필터는 이슈칩 기준이 아니라 구매 Lot 근거 기준으로 분류한다.
+        // V1.a22.51: 구매잔량/기타상품 필터는 이슈칩 기준이 아니라 구매 Lot 근거 기준으로 분류한다.
         // 실사오차·수기치환오차·과다로스 같은 확인 이슈가 있어도 구매일/구매처/구매가 Lot이 확정된 행은 구매잔량이다.
         // 반대로 구매 Lot이 없는 소분·치환·묶음·매입내역 없음·fallback 재고만 기타상품이다.
         if (modeText === 'STOCK_FALLBACK') return false;
@@ -3043,14 +3050,14 @@ const EXPORT_MODULE = Object.freeze({
         const masterCheckRows = EXPORT_MODULE.buildMasterCheckRows({ productData, targetDateStr });
         const substitutionCandidateRows = EXPORT_MODULE.buildSubstitutionCandidateRows({ productData, targetDateStr });
         const exportData2 = EXPORT_MODULE.buildStockCountSheetRows({ productData: operationalProductData, targetDateStr });
-        // V1.a22.50: 구매잔량은 현황/원가 근거 시트이므로 코드통합형 데이터가 아니라 원본 Lot 행(productData) 기준으로 만든다.
+        // V1.a22.51: 구매잔량은 현황/원가 근거 시트이므로 코드통합형 데이터가 아니라 원본 Lot 행(productData) 기준으로 만든다.
         // 같은 품목이라도 구매일·구매처·구매가가 다르면 반드시 별도 행으로 분리한다.
         // 코드통합형 operationalProductData를 쓰면 2개 구매처/2개 단가 Lot이 1행으로 합쳐져 구매잔량 개념이 깨진다.
         const purchaseBalanceRows = EXPORT_MODULE.buildPurchaseBalanceRows({ productData, targetDateStr });
         const otherStockRows = EXPORT_MODULE.buildOtherStockRows({ productData: operationalProductData, targetDateStr });
         const checkRequestRows = EXPORT_MODULE.buildManagementIssueRows({ productData: operationalProductData });
         const wb = XLSX.utils.book_new();
-        // V1.a22.50: 수불마감 기본 보고서는 구매잔량을 메인으로 둔다.
+        // V1.a22.51: 수불마감 기본 보고서는 구매잔량을 메인으로 둔다.
         // 구매잔량은 남은 재고를 구매현황 양식처럼 일자/구매처/단가별 Lot 잔량으로 보여준다.
         // 실사양식은 ERP 재고실사 업로드용이므로 기존 출력 로직을 그대로 유지한다.
         XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.buildPurchaseBalanceSheet({ rows: purchaseBalanceRows, targetDateStr }), '구매잔량');
@@ -6023,7 +6030,7 @@ function App() {
     const [appStep, setAppStep] = useState('closing');
     const [files, setFiles] = useState({ prev: null, in: null, out: null, end: null });
     const [analysisMeta, setAnalysisMeta] = useState({ fileLabel: '', analyzedAt: '', status: 'idle' });
-    const [filters, setFilters] = useState({ issuesOnly: false, excludeZeroActual: false, search: '', reviewType: null, category: 'ALL', stockListType: 'ALL', favoriteVendorOnly: false, showHiddenMoveRows: false, unit: { ...CONFIG_MODULE.defaultUnitFilter }, sortMode: getSavedTableSortMode(), sortDesc: getSavedTableSortDesc() });
+    const [filters, setFilters] = useState({ issuesOnly: false, excludeZeroActual: false, search: '', reviewType: null, category: [], stockListType: 'ALL', favoriteVendorOnly: false, showHiddenMoveRows: false, unit: { ...CONFIG_MODULE.defaultUnitFilter }, sortMode: getSavedTableSortMode(), sortDesc: getSavedTableSortDesc() });
     const [activeIssueMode, setActiveIssueMode] = useState(null);
     const [activeMultiCode, setActiveMultiCode] = useState(null);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -6100,7 +6107,7 @@ function App() {
         // V1.a22.12: 1재고현황의 날짜 컬럼명 '기록'을 Lot 기준일로 인식한다.
         // 과거 저장된 localStorage 매핑에 date 항목이 남아 있어도 자동 보강한다.
         merged.date = ensureCsvValue(merged.date || defaultMappings.date, ['기록', '최종기록', '재고기록', '등록일', '등록일자', '기준일']);
-        // V1.a22.50: 과거 저장된 매핑에도 1재고/4실사/수불마감의 '구매가' 컬럼을 원가 후보로 자동 보강한다.
+        // V1.a22.51: 과거 저장된 매핑에도 1재고/4실사/수불마감의 '구매가' 컬럼을 원가 후보로 자동 보강한다.
         merged.price = ensureCsvValue(merged.price || defaultMappings.price, ['구매가', '최종(창고)', '매입단가(원가)', '입고가']);
         return merged;
     };
@@ -8728,7 +8735,7 @@ ${balanceText}
 // V1.a22.29: 2.매입의 구매정보는 거래처명 기준으로 고정하고, 3.매출 구매처는 확정매칭이면 Lot 이슈에서 제외한다.
         // 통합2 이상 거래처칩 이동 같은 수정 작업에서만 별도 상세 전환을 유도한다.
         setSearchInputVal('');
-        setFilters(prev => ({ ...prev, search: '', issuesOnly: false, excludeZeroActual: false, reviewType: null, category: 'ALL', stockListType: 'ALL', favoriteVendorOnly: false, showHiddenMoveRows: false, unit: { ...CONFIG_MODULE.defaultUnitFilter } }));
+        setFilters(prev => ({ ...prev, search: '', issuesOnly: false, excludeZeroActual: false, reviewType: null, category: [], stockListType: 'ALL', favoriteVendorOnly: false, showHiddenMoveRows: false, unit: { ...CONFIG_MODULE.defaultUnitFilter } }));
         if (fromCardClick)
             issueJumpHistoryRef.current = [];
         const activeEl = document.activeElement;
@@ -9093,7 +9100,7 @@ ${balanceText}
                 });
         }
         data = FILTER_SORT_MODULE.applyFilters(data, filters, { favoriteVendors: CONFIG_MODULE.getFavoriteVendors(mappings), unitRules: CONFIG_MODULE.getUnitRules(mappings) });
-        // V1.a22.50: 엑셀 보고서 개념과 동일하게 구매잔량/기타상품 필터를 화면에 추가한다. 구매잔량 여부는 이슈칩이 아니라 구매 Lot 근거로 판단한다.
+        // V1.a22.51: 엑셀 보고서 개념과 동일하게 구매잔량/기타상품 필터를 화면에 추가한다. 구매잔량 여부는 이슈칩이 아니라 구매 Lot 근거로 판단한다.
         // 기존 BOX/EA/소분, 카테고리, 검색, 이슈 필터와 중복 조합되어야 하므로 applyFilters 이후 별도 교차 필터로 처리한다.
         if (filters.stockListType === 'PURCHASE_BALANCE')
             data = data.filter(d => EXPORT_MODULE.isPurchaseBalanceStockItem(d));
@@ -9144,7 +9151,7 @@ ${balanceText}
                     React.createElement("h1", { className: "text-xl md:text-xl font-black leading-none text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.50"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.51"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
@@ -9219,7 +9226,7 @@ ${balanceText}
                     React.createElement("div", { className: "mb-4" },
                         React.createElement("h4", { className: "text-sm font-bold text-slate-800" },
                             React.createElement("i", { className: "fas fa-star text-amber-500 mr-2" }),
-                            "V1.a22.50 구매잔량 Lot분리/구매처별 분리"),
+                            "V1.a22.51 구매잔량 Lot분리/구매처별 분리"),
                         React.createElement("p", { className: "text-xs text-slate-500 mt-1.5 ml-6" }, "\u2605 \uD544\uD130\uC640 BOX/EA/\uC18C\uBD84 \uD544\uD130\uAC00 \uC544\uB798 \uC124\uC815\uAC12\uC744 \uAE30\uC900\uC73C\uB85C \uB3D9\uC791\uD569\uB2C8\uB2E4. \uB2E8\uC704 \uCEEC\uB7FC\uC744 \uC6B0\uC120 \uD310\uC815\uD558\uACE0, \uB2E8\uC704\uAC00 \uC5C6\uC744 \uB54C\uB9CC \uD488\uBA85/\uADDC\uACA9\uC744 \uBCF4\uC870 \uB2E8\uC11C\uB85C \uC0AC\uC6A9\uD569\uB2C8\uB2E4.")),
                     React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-4 bg-amber-50/60 p-4 rounded-lg border border-amber-200" },
                         React.createElement("div", { className: "flex flex-col" },
@@ -9519,13 +9526,22 @@ ${balanceText}
                                         React.createElement("option", { value: "VENDOR" }, "구매처순")),
                                     React.createElement("button", { onClick: () => setFilters(f => ({ ...f, sortDesc: !f.sortDesc })), title: "현재 정렬 방향을 전환합니다.", className: `px-2 py-1 rounded border whitespace-nowrap transition ${filters.sortDesc ? 'bg-slate-800 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}` }, filters.sortDesc ? '내림↓' : '오름↑'),
                                     React.createElement("div", { className: "w-px h-5 bg-slate-200 mx-0.5" }),
-                                    React.createElement("select", { value: filters.category, onChange: (e) => setFilters(f => ({ ...f, category: e.target.value, favoriteVendorOnly: false })), title: "카테고리 필터를 선택합니다.", className: "px-2 py-1 rounded border border-blue-200 bg-white text-blue-700 font-black shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-400" },
-                                        React.createElement("option", { value: "ALL" }, "전체"),
-                                        React.createElement("option", { value: "10" }, "10 채소.과일"),
-                                        React.createElement("option", { value: "20" }, "20 수산.축산"),
-                                        React.createElement("option", { value: "30" }, "30 식품.음료"),
-                                        React.createElement("option", { value: "40" }, "40 양념.소스"),
-                                        React.createElement("option", { value: "50" }, "50 주방.잡화")),
+                                    (() => {
+                                        const selectedCategories = Array.isArray(filters.category) ? filters.category : (filters.category && filters.category !== 'ALL' ? [filters.category] : []);
+                                        const toggleCategory = (categoryCode) => setFilters(f => {
+                                            const current = Array.isArray(f.category) ? f.category : (f.category && f.category !== 'ALL' ? [f.category] : []);
+                                            if (categoryCode === 'ALL') return { ...f, category: [], favoriteVendorOnly: false };
+                                            const next = current.includes(categoryCode) ? current.filter(v => v !== categoryCode) : [...current, categoryCode];
+                                            return { ...f, category: next, favoriteVendorOnly: false };
+                                        });
+                                        return React.createElement("div", { className: "flex items-center gap-1 whitespace-nowrap", title: "카테고리 필터는 중복 선택 가능합니다. 기존 구매잔량/기타상품·BOX/EA/소분·검색 필터와 교차 적용됩니다." },
+                                            React.createElement("button", { onClick: () => toggleCategory('ALL'), className: `px-2 py-1 rounded border transition ${selectedCategories.length === 0 ? 'bg-blue-600 text-white border-blue-700 shadow-sm' : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'}` }, "전체"),
+                                            [['10', '10'], ['20', '20'], ['30', '30'], ['40', '40'], ['50', '50']].map(([code, label]) => {
+                                                const isActive = selectedCategories.includes(code);
+                                                return React.createElement("button", { key: code, onClick: () => toggleCategory(code), className: `px-2 py-1 rounded border transition ${isActive ? 'bg-blue-600 text-white border-blue-700 shadow-sm' : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'}` }, label);
+                                            })
+                                        );
+                                    })(),
                                     React.createElement("div", { className: "w-px h-5 bg-slate-200 mx-0.5" }),
                                     [['PURCHASE_BALANCE', '구매잔량'], ['OTHER_STOCK', '기타상품']].map(([type, label]) => (React.createElement("button", { key: type, onClick: () => setFilters(f => ({ ...f, stockListType: f.stockListType === type ? 'ALL' : type })), title: `${label}만 보기. 기존 BOX/EA/소분·카테고리·검색 필터와 중복 적용됩니다.`, className: `px-2 py-1 rounded border whitespace-nowrap transition ${filters.stockListType === type ? 'bg-sky-600 text-white border-sky-700 shadow-sm' : 'bg-white text-sky-600 border-sky-200 hover:bg-sky-50'}` }, label))),
                                     React.createElement("div", { className: "w-px h-5 bg-slate-200 mx-0.5" }),
