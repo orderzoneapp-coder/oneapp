@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.90_WholesaleBelowCostCheck]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.91_WholesalePairCheck]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -2953,6 +2953,11 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         ui.showToast(`✅ ${count}개의 상품에서 [${tagName}] 태그를 삭제했습니다.`);
     }, [data.masterProducts, data.setMasterProducts, data.addHistoryLogs, ui, handleRemoveFilter]);
     const collectWholesaleBelowCostWarnings = useCallback((rows = []) => {
+        // v2.1.91 정책 정정:
+        // - 같은 코드라도 정품/비품 단가 체계가 다르므로 교차 비교하지 않는다.
+        // - 입고가  ↔ 도매A 만 비교한다.
+        // - 입고B   ↔ 도매B 만 비교한다.
+        // - 입고가와 도매B, 입고B와 도매A는 비교 대상이 아니다.
         const warnings = [];
         const getValue = (row, key, defaultValue = '') => window.getTableValueFromRow(row, key, defaultValue);
         const getNum = (row, key) => {
@@ -2965,24 +2970,24 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         };
         rows.forEach(row => {
             const code = window.normalizeProductCodeText(row.코드);
-            const inPrice = getNum(row, '입고가');
-            if (!(inPrice > 0))
-                return;
             [
-                { field: '도매A', label: '도매A' },
-                { field: '도매B', label: '도매B' }
-            ].forEach(({ field, label }) => {
-                const wholesalePrice = getNum(row, field);
-                if (wholesalePrice > 0 && wholesalePrice < inPrice) {
+                { baseField: '입고가', wholesaleField: '도매A', label: '입고가↔도매A' },
+                { baseField: '입고B', wholesaleField: '도매B', label: '입고B↔도매B' }
+            ].forEach(({ baseField, wholesaleField, label }) => {
+                const basePrice = getNum(row, baseField);
+                const wholesalePrice = getNum(row, wholesaleField);
+                if (basePrice > 0 && wholesalePrice > 0 && wholesalePrice < basePrice) {
                     warnings.push({
                         code,
                         name: getStr(row, '품목명'),
                         spec: getStr(row, '규격'),
-                        inPrice,
-                        field: label,
+                        baseField,
+                        basePrice,
+                        wholesaleField,
                         wholesalePrice,
-                        diff: wholesalePrice - inPrice,
-                        message: `${label}가 입고가보다 낮음`
+                        diff: wholesalePrice - basePrice,
+                        label,
+                        message: `${wholesaleField}가 ${baseField}보다 낮음`
                     });
                 }
             });
@@ -3068,8 +3073,8 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         const wb = window.XLSX.utils.book_new();
         const erpData = [['품목코드', '입고가', '0', '출고가', '0', '입고B', 'n', '도매A', 'n', '도매B', 'n', '최종(전송)', 'n', '행사', 'n', '1']];
         const shopData = [['상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', '도매B', 'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량', '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그']];
-        const confirmData = [['확인구분', '상품코드', '상품명', '규격', '입고가', '도매항목', '도매가', '차이', '확인요청']];
-        wholesaleBelowCostWarnings.forEach(w => confirmData.push(['입고가보다 도매가 낮음', w.code, w.name, w.spec, w.inPrice, w.field, w.wholesalePrice, w.diff, w.message]));
+        const confirmData = [['확인구분', '상품코드', '상품명', '규격', '기준입고항목', '기준입고가', '도매항목', '도매가', '차이', '확인요청']];
+        wholesaleBelowCostWarnings.forEach(w => confirmData.push(['매칭 도매가 낮음', w.code, w.name, w.spec, w.baseField, w.basePrice, w.wholesaleField, w.wholesalePrice, w.diff, w.message]));
         let subOutputCount = 0;
         targetRows.forEach(row => {
             const code = window.normalizeProductCodeText(row.코드);
@@ -3121,9 +3126,18 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         const targetRowsForConfirm = fullDisplayRows.filter(row => targets.has(window.getManagedRowKey(row)));
         const wholesaleWarningsForConfirm = collectWholesaleBelowCostWarnings(targetRowsForConfirm);
         const wholesaleWarningText = wholesaleWarningsForConfirm.length > 0
-            ? `\n\n⚠️ 확인요청 ${wholesaleWarningsForConfirm.length}건\n입고가보다 도매가가 낮은 항목이 있습니다.\n출력 엑셀에 [확인요청] 시트를 추가합니다.`
+            ? `⚠️ 확인요청 ${wholesaleWarningsForConfirm.length}건
+도매가가 매칭 입고가보다 낮은 항목이 있습니다.
+비교기준: 입고가↔도매A, 입고B↔도매B
+출력 엑셀에 [확인요청] 시트를 추가합니다.
+
+`
             : '';
-        if (!window.confirm(`F8 마스터 적용 + 즉시 엑셀 출력\n\n${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증센터를 거치지 않고 엑셀을 바로 생성합니다.${wholesaleWarningText}\n\n계속 진행하시겠습니까?`))
+        if (!window.confirm(`${wholesaleWarningText}F8 마스터 적용 + 즉시 엑셀 출력
+
+${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증센터를 거치지 않고 엑셀을 바로 생성합니다.
+
+계속 진행하시겠습니까?`))
             return;
         let newMaster = { ...data.masterProducts }, commitCount = 0;
         let localLogs = [];
@@ -5515,7 +5529,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.90_WholesaleBelowCostCheck]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.91_WholesalePairCheck]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -5849,7 +5863,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.90_WholesaleBelowCostCheck")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.91_WholesalePairCheck")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
