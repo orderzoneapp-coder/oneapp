@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.99_ViewSelectExcelOnlyToolbarFix]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.100_PricePromoTopControls]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -28,6 +28,7 @@
         window.isMerchMasterAddedRow = window.isMerchMasterAddedRow || ((row = {}) => !!(row && (row._isMasterConditionAdded || row._isMasterAdded || row._fileMissing || ((row.finalData || {})._masterConditionAdded))));
 
         // v2.1.95: 행사정리 파이프라인 레이아웃에 맞춰 테마 버튼은 상단 작업줄로 올리고, 단가 작업은 상세필터 영역으로 이동한다. 단위 필터는 상세필터에 유지한다.
+        // v2.1.100: 룰적용은 상단 노출 유지, 행사가 버튼을 추가해 상단 행사가 설정 UI를 열고, 룰적용은 출고가+시중가에 적용한다.
         // v2.1.99: 양식선택은 엑셀 작업시에만 노출하고, 테마/행사초기화가 세로 전체폭으로 밀리는 툴바 괄호 구조를 수정한다.
         // v2.1.98: 상단 그룹명 텍스트를 제거해 공간을 확보하고, 견적/구매/판매/재고 양식선택 필터가 항상 노출되도록 복구한다. 마스터정보 작업은 선택 테마 + 행사초기화 파이프라인으로 유지한다.
         // v2.1.96: 마스터 테마 초기화 F8은 상품명/규격/가격 등 마스터 정보값을 보존해 출력하고, 마스터 반영은 행사 관련 필드만 변경한다.
@@ -3460,8 +3461,8 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
             ? fullDisplayRows.filter(r => ui.selectedRows.has(window.getManagedRowKey(r)))
             : fullDisplayRows;
         const confirmMsg = ui.selectedRows.size > 0
-            ? `선택된 ${targetRows.length}개 상품에 마진 룰을 강제 재계산 하시겠습니까?\n(출고가만 현재 마진룰 계산값으로 덮어씁니다.)`
-            : `현재 화면의 전체 ${targetRows.length}개 상품에 마진 룰을 강제 재계산 하시겠습니까?\n(출고가만 현재 마진룰 계산값으로 덮어씁니다.)`;
+            ? `선택된 ${targetRows.length}개 상품에 마진 룰을 강제 재계산 하시겠습니까?\n(출고가와 시중가를 현재 마진룰 계산값으로 덮어씁니다.)`
+            : `현재 화면의 전체 ${targetRows.length}개 상품에 마진 룰을 강제 재계산 하시겠습니까?\n(출고가와 시중가를 현재 마진룰 계산값으로 덮어씁니다.)`;
         if (!window.confirm(confirmMsg))
             return;
         ui.setIsProcessing(true);
@@ -3495,6 +3496,7 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
                         recalculated._calculatedOutPrice = recalculatedOutPrice || 0;
                         if (window.parseNum(recalculated['입고가']) > 0) {
                             recalculated['출고가'] = recalculatedOutPrice || 0;
+                            recalculated['시중가'] = recalculatedOutPrice || 0;
                         }
                         next[managedKey] = {
                             ...currentItem,
@@ -3503,7 +3505,7 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
                         count++;
                     }
                 });
-                ui.showToast(`✅ ${count}개 상품에 마진 룰 강제 적용 완료`);
+                ui.showToast(`✅ ${count}개 상품에 룰적용 완료 (출고가/시중가)`);
                 return next;
             });
             ui.setIsProcessing(false);
@@ -4101,8 +4103,8 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
     // 전체 버튼은 제거하고, 모든 필터는 같은 버튼을 다시 누르면 해제되어 전체 상태로 복귀한다.
     // 1단 정렬필터: 가격변동/행사중/행사제외/행사제안/10/20/30/40/50/상세필터/검색.
     // 상단 작업버튼: 테마1~5는 행사정리 파이프라인 핵심 선택값으로 즉시 노출한다.
-    // 2단 상세필터: 판매중/정지&품절/기본상품/역마진/안전(-)/기본상품 제외/BOX/EA/소분/단가작업.
-    const [priceActionOpen, setPriceActionOpen] = useState(false);
+    // 2단 상세필터: 판매중/정지&품절/기본상품/역마진/안전(-)/기본상품 제외/BOX/EA/소분. 룰적용/행사가 설정은 상단 작업줄에서 분리한다.
+    const [promoActionOpen, setPromoActionOpen] = useState(false);
     // [M-FILTER-PRESET-ONLY-01] MerchOps에서는 필터 자동화 편집 UI를 노출하지 않는다. 저장된 양식 필터만 적용한다.
     const [filterScenarioOpen, setFilterScenarioOpen] = useState(false);
     // [M-FILTER-DETAIL-RESTORE] 상세필터 복구: 상세필터 버튼을 눌렀을 때 하단 필터줄을 다시 생성하고,
@@ -4344,7 +4346,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
         setBasicSearch('');
         setSelectedRows(new Set());
         setFilterPanelOpen(false);
-        setPriceActionOpen(false);
+        setPromoActionOpen(false);
         setFilterScenarioOpen(false);
     };
     return (React.createElement("div", { className: "flex flex-col w-full border-b border-slate-200 bg-white pb-2 shadow-sm relative z-10" },
@@ -4415,6 +4417,13 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                 React.createElement("button", { onClick: () => setFilterPanelOpen(v => !v), className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all flex items-center whitespace-nowrap shrink-0 ${showDetailFilterPanel ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: "상세 열기/닫기" },
                     React.createElement("i", { className: `fas ${showDetailFilterPanel ? 'fa-chevron-up' : 'fa-chevron-down'} mr-1.5 text-[11px]` }),
                     " 상세"),
+                React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1 shrink-0" }),
+                React.createElement("button", { onClick: handleForceApplyMarginRules, disabled: fullDisplayRows.length === 0, className: `h-9 px-3 rounded-lg text-[12px] font-black shadow-sm flex items-center border transition-all whitespace-nowrap shrink-0 ${fullDisplayRows.length > 0 ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터/검색 결과 전체에 룰을 적용합니다. 산출가는 출고가와 시중가에 함께 반영됩니다." },
+                    React.createElement("i", { className: "fas fa-magic mr-1.5 text-[13px]" }),
+                    "룰적용"),
+                React.createElement("button", { onClick: () => setPromoActionOpen(v => !v), disabled: fullDisplayRows.length === 0, className: `h-9 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all flex items-center whitespace-nowrap shrink-0 ${promoActionOpen ? 'bg-rose-600 text-white border-rose-600' : (fullDisplayRows.length > 0 ? 'bg-white text-rose-700 border-rose-200 hover:bg-rose-50' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed')}`, title: "행사가 설정 UI를 열고 닫습니다. 행사가 적용은 행사가 필드에만 반영됩니다." },
+                    React.createElement("i", { className: `fas ${promoActionOpen ? 'fa-chevron-up' : 'fa-tag'} mr-1.5 text-[12px]` }),
+                    "행사가"),
                 React.createElement("div", { className: "ml-auto flex items-center justify-end gap-2 shrink-0" },
                     registrationMode && (React.createElement(React.Fragment, null,
                         React.createElement("span", { className: "h-9 px-3 rounded-lg text-[12px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center shadow-sm" },
@@ -4430,6 +4439,16 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                     React.createElement("button", { onClick: handleFilterResetOnly, className: "h-9 w-9 rounded-lg bg-white text-slate-500 border border-slate-300 shadow-sm hover:bg-slate-50 hover:text-indigo-700 hover:border-indigo-300 flex items-center justify-center shrink-0", title: "필터 초기화", "aria-label": "필터 초기화" },
                         React.createElement("i", { className: "fas fa-filter-circle-xmark text-[13px]" })),
                     React.createElement(SearchBar, { value: globalSearch, onChange: setGlobalSearch }))),
+            promoActionOpen && (React.createElement("div", { className: "rounded-xl border border-rose-100 bg-rose-50/50 px-3 py-2 shadow-inner flex items-center gap-2 flex-wrap" },
+                React.createElement("span", { className: "text-[12px] font-black text-rose-700 shrink-0 mr-1" }, "행사가 설정 :"),
+                React.createElement("select", { value: screenBaseField, onChange: e => setScreenBaseField(e.target.value), className: "h-8 px-2 rounded-lg border border-slate-300 bg-white text-[12px] font-bold outline-none shrink-0", title: "행사가 산출 원가기준" },
+                    ['입고가', '최종(창고)', '도매A', '도매B'].map(field => React.createElement("option", { key: field, value: field }, field))),
+                ['외주비', '노무비'].map(field => (React.createElement("button", { key: `promo-extra-${field}`, onClick: () => toggleScreenExtra(field), className: `h-8 px-2.5 rounded-lg text-[12px] font-black border shadow-sm transition-all shrink-0 ${screenExtras[field] ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-slate-600 border-slate-300 hover:bg-rose-50'}`, title: `${field}를 행사가 산출 원가에 포함/제외` }, field))),
+                React.createElement("div", { className: "flex h-8 rounded-lg border border-slate-300 overflow-hidden bg-white shadow-sm shrink-0" },
+                    React.createElement("input", { type: "number", min: "1", max: "99", value: screenPercent, onChange: e => setScreenPercent(e.target.value), className: "w-[54px] px-2 text-[12px] font-black outline-none text-right" }),
+                    React.createElement("span", { className: "px-2 flex items-center bg-slate-50 border-l border-slate-200 text-[12px] font-black text-slate-500" }, "%")),
+                React.createElement("button", { onClick: runScreenPercentApply, disabled: fullDisplayRows.length === 0, className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all shrink-0 ${fullDisplayRows.length > 0 ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터/검색 결과 전체에 행사가만 적용합니다. 출고가와 시중가는 변경하지 않습니다." }, "행사가 적용"),
+                React.createElement("span", { className: "text-[11px] font-bold text-slate-500 ml-1" }, "※ 행사가만 변경 / 출고가·시중가 유지"))),
             showDetailFilterPanel && (React.createElement("div", { className: "rounded-xl border border-indigo-100 bg-indigo-50/40 px-3 py-2 shadow-inner flex items-center gap-2 flex-wrap" },
                 React.createElement("span", { className: "text-[12px] font-black text-indigo-700 shrink-0 mr-1" }, "상세필터 :"),
                 [
@@ -4443,21 +4462,6 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                     ['unitEa', 'EA'],
                     ['unitSub', '소분']
                 ].map(([value, label]) => (React.createElement("button", { key: value, onClick: () => toggleDetailFilter(value), className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${detailFilters.includes(value) ? 'bg-purple-700 text-white border-purple-700' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: `${label}: 다른 상세조건과 중복 적용 / 다시 누르면 해제` }, label))),
-                React.createElement("div", { className: "w-px h-5 bg-indigo-200 mx-1 shrink-0" }),
-                React.createElement("button", { onClick: () => setPriceActionOpen(v => !v), className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all flex items-center whitespace-nowrap shrink-0 ${priceActionOpen ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-white text-slate-600 border-slate-300 hover:bg-amber-50'}`, title: "단가변경 작업 열기/닫기" },
-                    React.createElement("i", { className: `fas ${priceActionOpen ? 'fa-chevron-up' : 'fa-chevron-down'} mr-1.5 text-[11px]` }),
-                    " 단가"),
-                priceActionOpen && (React.createElement("div", { className: "flex items-center gap-1.5 flex-nowrap min-w-0 shrink-0" },
-                    React.createElement("button", { onClick: handleForceApplyMarginRules, disabled: fullDisplayRows.length === 0, className: `h-8 px-3 rounded-lg text-[12px] font-black shadow-sm flex items-center border transition-all shrink-0 ${fullDisplayRows.length > 0 ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터/검색 결과 전체에 현재 마진룰을 적용합니다." },
-                        React.createElement("i", { className: "fas fa-magic mr-1.5 text-[13px]" }),
-                        "룰적용"),
-                    React.createElement("select", { value: screenBaseField, onChange: e => setScreenBaseField(e.target.value), className: "h-8 px-2 rounded-lg border border-slate-300 bg-white text-[12px] font-bold outline-none shrink-0" },
-                        ['입고가', '최종(창고)', '도매A', '도매B'].map(field => React.createElement("option", { key: field, value: field }, field))),
-                    ['외주비', '노무비'].map(field => (React.createElement("button", { key: `detail-extra-${field}`, onClick: () => toggleScreenExtra(field), className: `h-8 px-2.5 rounded-lg text-[12px] font-black border shadow-sm transition-all shrink-0 ${screenExtras[field] ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-slate-600 border-slate-300 hover:bg-amber-50'}` }, field))),
-                    React.createElement("div", { className: "flex h-8 rounded-lg border border-slate-300 overflow-hidden bg-white shadow-sm shrink-0" },
-                        React.createElement("input", { type: "number", min: "1", max: "99", value: screenPercent, onChange: e => setScreenPercent(e.target.value), className: "w-[54px] px-2 text-[12px] font-black outline-none text-right" }),
-                        React.createElement("span", { className: "px-2 flex items-center bg-slate-50 border-l border-slate-200 text-[12px] font-black text-slate-500" }, "%")),
-                    React.createElement("button", { onClick: runScreenPercentApply, disabled: fullDisplayRows.length === 0, className: `h-8 px-3 rounded-lg text-[12px] font-black border shadow-sm transition-all shrink-0 ${fullDisplayRows.length > 0 ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터/검색 결과 전체에 행사가를 적용합니다." }, "적용"))),
                 selectedRows.size > 0 && !registrationMode && (React.createElement("div", { className: "ml-auto flex items-center justify-end gap-2 shrink-0" },
                     React.createElement("span", { className: "text-[12px] font-black text-slate-600 whitespace-nowrap" }, "창고"),
                     React.createElement("input", { type: "text", value: selectedWarehouseInput, onChange: e => setSelectedWarehouseInput(e.target.value), onKeyDown: e => { if (e.key === 'Enter') handleApplySelectedWarehouse(selectedWarehouseInput); }, placeholder: "예: 01", className: "h-8 w-[74px] px-2 rounded-lg border border-slate-300 bg-white text-[12px] font-black text-center outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100" }),
@@ -5677,7 +5681,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.99_ViewSelectExcelOnlyToolbarFix]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.100_PricePromoTopControls]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -6014,7 +6018,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.99_ViewSelectExcelOnlyToolbarFix")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.100_PricePromoTopControls")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
