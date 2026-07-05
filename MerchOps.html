@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.103_PromoApplySourceFallback]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.106_EstimateShopUploadPolicy]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -31,6 +31,8 @@
         // v2.1.101: 관리코드는 환경설정 저장목록 기준으로 상품리스트/카탈로그/행사/룰적용/업로드 대상에서 기본 제외한다.
         // v2.1.102: 상단 순서를 마스터 카테고리 → 카탈로그 → 엑셀로 재정리하고, 카테고리 전체 버튼을 추가한다. 테마/행사초기화는 하단 행사 영역으로 내리며 행사중 필터명은 행사가로 변경한다.
         // v2.1.103: 행사가 적용 시 finalData 0값에 막히지 않고 현재 업로드 source의 입고가/재고단가를 기준으로 계산하며, 결과를 finalData와 현재 source에 함께 반영한다.
+        // v2.1.104: 재고파일 행사가는 입고가 변동 여부와 무관하게 재고 source의 최종(창고)/최신단가/_latestWarehousePrice를 최우선 원가로 사용해 생성한다.
+        // v2.1.105: 기준정책 정정. 마스터는 이전가격/비교기준이고, 엑셀·카탈로그·파서는 오늘 작업 source다. 룰/행사가 계산은 현재 활성 source의 표준 입고가만 사용하고 마스터 fallback을 금지한다.
         // v2.1.99: 양식선택은 엑셀 작업시에만 노출하고, 테마/행사초기화가 세로 전체폭으로 밀리는 툴바 괄호 구조를 수정한다.
         // v2.1.98: 상단 그룹명 텍스트를 제거해 공간을 확보하고, 견적/구매/판매/재고 양식선택 필터가 항상 노출되도록 복구한다. 마스터정보 작업은 선택 테마 + 행사초기화 파이프라인으로 유지한다.
         // v2.1.96: 마스터 테마 초기화 F8은 상품명/규격/가격 등 마스터 정보값을 보존해 출력하고, 마스터 반영은 행사 관련 필드만 변경한다.
@@ -186,15 +188,17 @@
             if (currentTheme) return currentTheme;
 
             const uploadTheme = window.normalizePromotionThemeValue(
+                sources?.catalog || {},
                 sources?.estimate || {},
                 sources?.purchase || {},
                 sources?.sales || {},
                 sources?.inventory || {},
-                sources?.catalog || {},
                 sources?.parser || {}
             );
             if (uploadTheme) return uploadTheme;
 
+            // 마스터는 이전가격/기준값이다. 오늘 source가 존재하면 마스터 테마를 오늘 작업테마로 주입하지 않는다.
+            if (window.hasAnyUploadSource && window.hasAnyUploadSource(sources || {})) return '';
             return window.normalizePromotionThemeValue(master || {});
         });
 
@@ -382,14 +386,24 @@
             if (String(v).trim() === '') return '';
             return isNumeric ? window.parseNum(v) : v;
         };
-        window.getWorkingSourcePriority = () => ['estimate', 'purchase', 'sales', 'inventory', 'parser'];
-        window.hasAnyUploadSource = (sources = {}) => window.getWorkingSourcePriority().some(role => sources?.[role] && Object.keys(sources[role]).length > 0);
-        window.mergeExcelSourcesForTable = (sources = {}, rolePriority = window.getWorkingSourcePriority()) => {
+        window.MERCH_CURRENT_SOURCE_ROLES = ['catalog', 'estimate', 'purchase', 'sales', 'inventory', 'parser'];
+        window.getCurrentMerchSourceRole = (sources = {}, fallback = '') => {
+            const active = String(sources?._activeRole || sources?._lastUploadRole || fallback || '').trim();
+            if (active && window.MERCH_CURRENT_SOURCE_ROLES.includes(active) && sources?.[active] && Object.keys(sources[active]).length > 0) return active;
+            return window.MERCH_CURRENT_SOURCE_ROLES.find(role => sources?.[role] && Object.keys(sources[role]).length > 0) || '';
+        };
+        window.getWorkingSourcePriority = (sources = {}) => {
+            const base = [...window.MERCH_CURRENT_SOURCE_ROLES];
+            const active = window.getCurrentMerchSourceRole ? window.getCurrentMerchSourceRole(sources) : '';
+            return active ? [active, ...base.filter(role => role !== active)] : base;
+        };
+        window.hasAnyUploadSource = (sources = {}) => window.getWorkingSourcePriority(sources).some(role => sources?.[role] && Object.keys(sources[role]).length > 0);
+        window.mergeExcelSourcesForTable = (sources = {}, rolePriority = window.getWorkingSourcePriority(sources)) => {
             const merged = {};
             rolePriority.forEach(role => {
                 const src = sources?.[role] || {};
                 Object.keys(src).forEach(key => {
-                    // 먼저 들어온 역할의 항목 존재 여부를 우선한다. 값이 공란이어도 덮어쓰지 않는다.
+                    // 현재 활성 source의 항목 존재 여부를 우선한다. 값이 공란/0이어도 마스터나 다른 source로 덮지 않는다.
                     if (!window.hasOwnField(merged, key)) merged[key] = src[key];
                 });
             });
@@ -399,7 +413,7 @@
             const finalData = row.finalData || {};
             const sources = row.sources || {};
             if (window.hasOwnField(finalData, field)) return finalData[field] ?? '';
-            for (const role of window.getWorkingSourcePriority()) {
+            for (const role of window.getWorkingSourcePriority(sources)) {
                 const src = sources?.[role] || {};
                 if (window.hasOwnField(src, field)) return src[field] ?? '';
             }
@@ -782,7 +796,7 @@
         window.computeFinalData = (mItem = {}, sources = {}, marginRules = [], forceRecalc = false) => {
             const hasUploadSource = window.hasAnyUploadSource(sources);
             const targetSource = hasUploadSource
-                ? window.mergeExcelSourcesForTable(sources)
+                ? window.mergeExcelSourcesForTable(sources, window.getWorkingSourcePriority ? window.getWorkingSourcePriority(sources) : undefined)
                 : { ...(mItem || {}) };
 
             const working = { ...targetSource };
@@ -807,8 +821,8 @@
             // 명시 행사테마/테마1~5/_theme 값이 있을 때만 정규화하고,
             // 없으면 마스터 저장값을 후속 표시/출력 단계에서 우선순위로 참조한다.
             const resolvedWorkingTheme = window.resolvePromotionThemeByPriority
-                ? window.resolvePromotionThemeByPriority(working, sources, mItem || {})
-                : window.normalizePromotionThemeValue(working, mItem || {});
+                ? window.resolvePromotionThemeByPriority(working, sources, hasUploadSource ? {} : (mItem || {}))
+                : window.normalizePromotionThemeValue(working, hasUploadSource ? {} : (mItem || {}));
             if (resolvedWorkingTheme) {
                 working['행사테마'] = resolvedWorkingTheme;
                 [1, 2, 3, 4, 5].forEach(n => {
@@ -2522,6 +2536,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                     if (!mItem.sources[role])
                         mItem.sources[role] = {};
                     mItem = { ...mItem, _lastUploadRole: role, _tags: new Set([...(mItem._tags || []), `excel:${roleMeta.icon}업로드`]) };
+                    mItem.sources._activeRole = role;
                     const specKey = headerCache['규격'] || findActualHeader(['규격', '규격명', '단량', '사이즈']);
                     const vendorKey = headerCache['구매처'] || findActualHeader(['구매처', '거래처', '거래처명', '거래']);
                     const unitKey = headerCache['단위'] || findActualHeader(['단위', '포장단위', '판매단위', '매입단위', 'UNIT', 'unit']);
@@ -2790,8 +2805,8 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                                 const mockSource = {};
                                 newManaged[mItem.코드] = {
                                     코드: mItem.코드,
-                                    sources: { parser: mockSource },
-                                    finalData: window.computeFinalData(mItem, { parser: mockSource }, safeMarginRules, false),
+                                    sources: { catalog: { ...(mItem || {}), _catalogListOnly: true }, _activeRole: 'catalog' },
+                                    finalData: window.computeFinalData(mItem, { catalog: { ...(mItem || {}), _catalogListOnly: true }, _activeRole: 'catalog' }, safeMarginRules, false),
                                     _tags: new Set([`catalog:전체리스트`])
                                 };
                                 addedCount++;
@@ -2839,10 +2854,10 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                     if (isMatch) {
                         if (!newManaged[mItem.코드]) {
                             const mockSource = {};
-                            const finalData = window.computeFinalData(mItem, { parser: mockSource }, safeMarginRules);
+                            const finalData = window.computeFinalData(mItem, { catalog: { ...(mItem || {}), _catalogListOnly: true }, _activeRole: 'catalog' }, safeMarginRules);
                             newManaged[mItem.코드] = {
                                 코드: mItem.코드,
-                                sources: { parser: mockSource },
+                                sources: { catalog: { ...(mItem || {}), _catalogListOnly: true }, _activeRole: 'catalog' },
                                 finalData: finalData,
                                 _tags: new Set([`${type}:${filterName}`])
                             };
@@ -3200,6 +3215,37 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             const code = window.normalizeProductCodeText((row && row.코드) || '');
             return (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(data.masterProducts, row) : data.masterProducts[code]) || data.masterProducts[code] || {};
         };
+        // v2.1.106: 견적서 QuickF8 쇼핑몰업로드는 마스터 fallback으로 오늘 작업값을 보강하지 않는다.
+        // 마스터는 이전 기준값/비교대상이며, 견적서 엑셀은 오늘 업로드 source다.
+        const getQuickActiveRole = (row = {}) => window.getCurrentMerchSourceRole ? window.getCurrentMerchSourceRole(row.sources || {}, row._lastUploadRole || '') : '';
+        const isEstimateQuickRow = (row = {}) => getQuickActiveRole(row) === 'estimate' || !!(row.sources && row.sources.estimate && Object.keys(row.sources.estimate).length > 0 && !['inventory', 'purchase', 'sales'].includes(getQuickActiveRole(row)));
+        const getQuickSource = (row = {}, role = '') => {
+            const sources = row.sources || {};
+            if (role && sources[role]) return sources[role] || {};
+            const active = getQuickActiveRole(row);
+            return active && sources[active] ? sources[active] : {};
+        };
+        const readQuickSourceValue = (row = {}, aliases = [], defaultValue = '') => {
+            const source = getQuickSource(row, isEstimateQuickRow(row) ? 'estimate' : '');
+            const finalData = row.finalData || {};
+            const keys = Array.isArray(aliases) ? aliases : [aliases];
+            // 수기 수정값은 오늘 작업값으로 인정한다. 단, source에 항목이 공란으로 존재하면 마스터로 보강하지 않는다.
+            for (const key of keys) {
+                if (window.hasOwnField(finalData, key) && !window.isBlankCell(finalData[key])) return finalData[key];
+            }
+            for (const key of keys) {
+                if (window.hasOwnField(source, key)) return window.isBlankCell(source[key]) ? defaultValue : source[key];
+            }
+            return defaultValue;
+        };
+        const readQuickSourceNum = (row = {}, aliases = [], defaultValue = 0) => {
+            const value = readQuickSourceValue(row, aliases, defaultValue);
+            return window.isBlankCell(value) ? defaultValue : window.parseNum(value);
+        };
+        const readQuickSourceStr = (row = {}, aliases = [], defaultValue = '') => {
+            const value = readQuickSourceValue(row, aliases, defaultValue);
+            return value !== undefined && value !== null ? String(value) : defaultValue;
+        };
         const isPromoResetQuickRow = (row = {}) => !!((row.finalData || {})._promoResetRequested === true);
         const isMasterThemeResetQuickRow = (row = {}) => isPromoResetQuickRow(row) && (window.isMerchMasterAddedRow ? window.isMerchMasterAddedRow(row) : !!(row && (row._isMasterConditionAdded || row._isMasterAdded || row._fileMissing)));
         const getBestValue = (row, key, defaultValue = '') => window.getTableValueFromRow(row, key, defaultValue);
@@ -3253,13 +3299,28 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                 // 행사초기화는 관리자가 선택한 테마의 행사해제가 목적이다. 출력값은 테마 전체 해제 상태로 전달한다.
                 return [1, 2, 3, 4, 5].map(() => '');
             }
+            if (isEstimateQuickRow(row)) {
+                const src = sources.estimate || {};
+                const explicit = [1, 2, 3, 4, 5].map(n => {
+                    const key = `테마${n}`;
+                    const v = window.hasOwnField(finalData, key) ? finalData[key] : (window.hasOwnField(src, key) ? src[key] : '');
+                    return String(v).trim() === '1' ? '1' : '';
+                });
+                const hasDirect = explicit.some(Boolean);
+                if (hasDirect) return explicit;
+                const rawTheme = window.hasOwnField(finalData, '행사테마') ? finalData['행사테마'] : (window.hasOwnField(src, '행사테마') ? src['행사테마'] : '');
+                const codes = String(rawTheme || '').split(/[,\s]+/).map(s => s.trim()).filter(s => ['1', '2', '3', '4', '5'].includes(s));
+                return [1, 2, 3, 4, 5].map(n => codes.includes(String(n)) ? '1' : '');
+            }
             const themeValue = window.resolvePromotionThemeByPriority
                 ? window.resolvePromotionThemeByPriority(finalData, sources, master)
                 : window.normalizePromotionThemeValue(finalData, sources.estimate || {}, sources.purchase || {}, sources.sales || {}, sources.inventory || {}, master);
-            const codes = themeValue ? themeValue.split(',') : [];
+            const codes = String(themeValue || '').split(/[,\s]+/).map(s => s.trim()).filter(s => ['1', '2', '3', '4', '5'].includes(s));
             return [1, 2, 3, 4, 5].map(n => codes.includes(String(n)) ? '1' : '');
         };
         const getSaleCode = (row) => {
+            // v2.1.106 견적서 쇼핑몰업로드 정책: 견적서 상품은 판매여부를 무조건 1로 출력한다.
+            if (isEstimateQuickRow(row)) return '1';
             const finalData = row.finalData || {};
             if (finalData._salesStopRequested === true || String(finalData['판매여부']) === '0')
                 return '0';
@@ -3294,35 +3355,70 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         wholesaleBelowCostWarnings.forEach(w => confirmData.push(['매칭 도매가 낮음', w.code, w.name, w.spec, w.baseField, w.basePrice, w.wholesaleField, w.wholesalePrice, w.diff, w.message]));
         let subOutputCount = 0;
         targetRows.forEach(row => {
-            const code = window.normalizeProductCodeText(row.코드);
+            const isEstimateRow = isEstimateQuickRow(row);
+            const code = window.normalizeProductCodeText(isEstimateRow ? (readQuickSourceStr(row, ['품목코드', '상품코드', '코드'], row.코드) || row.코드) : row.코드);
             const saleCode = getSaleCode(row);
-            const inPrice = getBestNum(row, '입고가');
-            const erpOutPrice = getBestNum(row, '출고가');
-            const promoPrice = getBestNum(row, '행사가');
-            const shopSalePrice = getShopSalePrice(row);
-            const inPriceB = getBestNum(row, '입고B');
-            const erpASale = getBestNum(row, '도매A');
-            const erpBSale = getBestNum(row, '도매B');
-            const pMarket = getBestNum(row, '시중가');
-            const shopBPrice = getBestNumByAliases(row, ['B판매가', 'B 판매가']);
-            const shopBWholesale = getBestNum(row, '도매B');
-            const finalTransmission = getBestNumByAliases(row, ['최종전송', '최종(전송)', '최종입고'], inPrice);
-            const finalStockRaw = getBestValue(row, '재고수량', '');
-            // F8 쇼핑몰업로드 재고 정책:
-            // - 쇼핑몰 업로드 양식의 재고수량은 기본 999로 출력한다.
-            // - 단, 엑셀/작업값에 명시 재고가 있으면 그 값을 그대로 보존한다.
-            // - ERP업데이트 시트에는 재고수량을 쓰지 않으므로 영향 없다.
-            const shopUploadStock = !window.isBlankCell(finalStockRaw) ? window.parseNum(finalStockRaw) : 999;
+            let inPrice, erpOutPrice, promoPrice, shopSalePrice, inPriceB, erpASale, erpBSale, pMarket, shopBPrice, shopBWholesale, finalTransmission, shopUploadStock, name, spec, brand, description, tag;
             const themeFlags = buildThemeFlags(row);
+            if (isEstimateRow) {
+                // 견적서 QuickF8 쇼핑몰업로드 정책
+                // 1) 견적서 상품은 품목코드 기준으로 읽는다.
+                // 2) 판매여부는 무조건 1.
+                // 3) 판매가가 없으면 재고수량은 0.
+                // 4) 입고가가 없으면 시중가는 0.
+                // 5) 도매A는 견적서 엑셀 단가를 우선 사용하며, 없으면 0.
+                inPrice = readQuickSourceNum(row, ['입고가'], 0);
+                erpOutPrice = readQuickSourceNum(row, ['출고가', '판매가'], 0);
+                promoPrice = readQuickSourceNum(row, ['행사가'], 0);
+                shopSalePrice = promoPrice > 0 ? promoPrice : erpOutPrice;
+                inPriceB = readQuickSourceNum(row, ['입고B'], 0);
+                erpASale = readQuickSourceNum(row, ['도매A', 'A판매', 'A판매가'], 0);
+                erpBSale = readQuickSourceNum(row, ['도매B', 'B도매', 'B도매가'], 0);
+                const explicitMarket = readQuickSourceNum(row, ['시중가', '시중단가'], 0);
+                pMarket = inPrice > 0 ? (explicitMarket > 0 ? explicitMarket : shopSalePrice) : 0;
+                shopBPrice = readQuickSourceNum(row, ['B판매가', 'B 판매가'], 0);
+                shopBWholesale = erpBSale;
+                finalTransmission = readQuickSourceNum(row, ['최종전송', '최종(전송)', '최종입고'], inPrice);
+                const stockCandidate = readQuickSourceValue(row, ['재고수량'], '');
+                shopUploadStock = shopSalePrice > 0 ? (!window.isBlankCell(stockCandidate) ? window.parseNum(stockCandidate) : 999) : 0;
+                name = readQuickSourceStr(row, ['품목명', '상품명'], '');
+                spec = readQuickSourceStr(row, ['규격', '단위'], '');
+                brand = readQuickSourceStr(row, ['브랜드'], '');
+                description = readQuickSourceStr(row, ['간단설명', '기본설명'], '');
+                tag = readQuickSourceStr(row, ['검색어등록', '상품태그'], '');
+            } else {
+                inPrice = getBestNum(row, '입고가');
+                erpOutPrice = getBestNum(row, '출고가');
+                promoPrice = getBestNum(row, '행사가');
+                shopSalePrice = getShopSalePrice(row);
+                inPriceB = getBestNum(row, '입고B');
+                erpASale = getBestNum(row, '도매A');
+                erpBSale = getBestNum(row, '도매B');
+                pMarket = getBestNum(row, '시중가');
+                shopBPrice = getBestNumByAliases(row, ['B판매가', 'B 판매가']);
+                shopBWholesale = getBestNum(row, '도매B');
+                finalTransmission = getBestNumByAliases(row, ['최종전송', '최종(전송)', '최종입고'], inPrice);
+                const finalStockRaw = getBestValue(row, '재고수량', '');
+                // F8 쇼핑몰업로드 재고 정책:
+                // - 쇼핑몰 업로드 양식의 재고수량은 기본 999로 출력한다.
+                // - 단, 엑셀/작업값에 명시 재고가 있으면 그 값을 그대로 보존한다.
+                // - ERP업데이트 시트에는 재고수량을 쓰지 않으므로 영향 없다.
+                shopUploadStock = !window.isBlankCell(finalStockRaw) ? window.parseNum(finalStockRaw) : 999;
+                name = getBestStrByAliases(row, ['품목명', '상품명']);
+                spec = getBestStr(row, '규격');
+                brand = getBestStr(row, '브랜드');
+                description = getBestStr(row, '간단설명');
+                tag = getBestStrByAliases(row, ['검색어등록', '상품태그']);
+            }
             // ERP는 기초정보 셋팅용이다. 출고가는 정상 출고가, 행사는 행사 컬럼으로 분리한다.
             erpData.push([code, inPrice, '0', erpOutPrice, '0', inPriceB, 'n', erpASale, 'n', erpBSale, 'n', finalTransmission, 'n', promoPrice, 'n', saleCode]);
-            // 쇼핑몰은 실제 판매가 설정용이다. 행사가가 있으면 기존 쇼핑몰 양식의 출고가 칸에 행사 우선가를 넣고, 재고수량은 기본 999로 보강한다.
-            shopData.push([code, getBestStrByAliases(row, ['품목명', '상품명']), getBestStr(row, '규격'), shopSalePrice, erpASale, (pMarket !== '' && pMarket > 0 ? pMarket : shopSalePrice), shopBPrice, shopBWholesale, 0, 0, 0, 0, getBestStr(row, '브랜드'), getBestStr(row, '간단설명'), saleCode, shopUploadStock, ...themeFlags, getBestStrByAliases(row, ['검색어등록', '상품태그'])]);
+            // 쇼핑몰업로드는 견적서 작업 시 마스터값을 오늘 작업값으로 보강하지 않는다.
+            shopData.push([code, name, spec, shopSalePrice, erpASale, pMarket, shopBPrice, shopBWholesale, 0, 0, 0, 0, brand, description, saleCode, shopUploadStock, ...themeFlags, tag]);
             const subInfo = isMasterThemeResetQuickRow(row) ? null : calculateSubInfo(row);
             if (subInfo) {
                 const subMaster = data.masterProducts[subInfo.code] || {};
                 erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', subInfo.subIn, 'n', '', 'n', saleCode]);
-                shopData.push([subInfo.code, subMaster['품목명'] || `${getBestStr(row, '품목명')} (소분)`, subMaster['규격'] || subInfo.spec || '', subInfo.subOut, subInfo.subOut, subInfo.subOut, '', '', 0, 0, 0, 0, subMaster['브랜드'] || getBestStr(row, '브랜드'), subMaster['간단설명'] || getBestStr(row, '간단설명'), saleCode, shopUploadStock, ...themeFlags, subMaster['검색어등록'] || getBestStr(row, '검색어등록')]);
+                shopData.push([subInfo.code, subMaster['품목명'] || `${name} (소분)`, subMaster['규격'] || subInfo.spec || '', subInfo.subOut, subInfo.subOut, subInfo.subOut, '', '', 0, 0, 0, 0, subMaster['브랜드'] || brand, subMaster['간단설명'] || description, saleCode, shopUploadStock, ...themeFlags, subMaster['검색어등록'] || tag]);
                 subOutputCount++;
             }
         });
@@ -3620,12 +3716,13 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
             const logs = [];
             let count = 0;
             let skippedMissingBase = 0;
+            let skippedCalcZero = 0;
             data.setManagedItems(prev => {
                 const next = { ...prev };
                 targetRows.forEach(row => {
                     const key = window.getManagedRowKey(row);
                     const code = row.코드;
-                    const current = next[key] || row || { 코드: code, sources: {}, finalData: {} };
+                    const current = next[key] || next[code] || row || { 코드: code, sources: {}, finalData: {} };
                     const mItem = data.masterProducts[code] || {};
                     const calc = calculateScreenPromoPrice(current, mItem, { baseField, extraFields, rate });
                     if (calc.invalidBase) {
@@ -3642,10 +3739,10 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
                             inventory: current.sources?.inventory ? { ...current.sources.inventory } : current.sources?.inventory,
                             parser: current.sources?.parser ? { ...current.sources.parser } : current.sources?.parser
                         };
-                        // 화면 테이블/출력 모두 즉시 같은 값을 보도록, 존재하는 현재 source에도 행사가를 반영한다.
-                        ['estimate', 'purchase', 'sales', 'inventory', 'parser'].forEach(role => {
-                            if (nextSources[role]) nextSources[role][targetField] = calc.price;
-                        });
+                        // 화면 테이블/출력 모두 즉시 같은 값을 보도록, 현재 활성 source에만 행사가를 반영한다.
+                        // 견적/재고/구매 source 전체에 쓰면 오늘 작업값과 비교 기준이 오염된다.
+                        const activeSourceRole = window.getCurrentMerchSourceRole ? window.getCurrentMerchSourceRole(nextSources, current._lastUploadRole) : '';
+                        if (activeSourceRole && nextSources[activeSourceRole]) nextSources[activeSourceRole][targetField] = calc.price;
                         next[key] = {
                             ...current,
                             sources: nextSources,
@@ -3677,6 +3774,9 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
                         });
                         count++;
                     }
+                    else {
+                        skippedCalcZero++;
+                    }
                 });
                 return next;
             });
@@ -3685,7 +3785,10 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
             ui.setSelectedRows(new Set());
             ui.setIsProcessing(false);
             ui.setProcessMsg('');
-            const skipMsg = skippedMissingBase > 0 ? ` / 입고가 없음 ${skippedMissingBase}건 제외` : '';
+            const skipParts = [];
+            if (skippedMissingBase > 0) skipParts.push(`재고단가/입고가 없음 ${skippedMissingBase}건 제외`);
+            if (skippedCalcZero > 0) skipParts.push(`계산값 0 ${skippedCalcZero}건 제외`);
+            const skipMsg = skipParts.length ? ` / ${skipParts.join(' / ')}` : '';
             ui.showToast(`✅ ${count}건 행사가 적용 완료 (${rate}%)${skipMsg}`);
         }, 100);
     }, [fullDisplayRows, ui.selectedRows, data.masterProducts, data.setManagedItems, data.addHistoryLogs, ui]);
@@ -4708,30 +4811,56 @@ const getScreenApplyCostValue = (row = {}, mItem = {}, field = '입고가') => {
         return window.parseNum(v);
     return window.parseNum(mItem === null || mItem === void 0 ? void 0 : mItem[field]);
 };
-const getScreenBaseCostValueStrict = (row = {}, field = '입고가') => {
-    // 행사가 산출 기준은 현재 작업테이블/엑셀 row의 값만 인정한다.
-    // 단, finalData에 0/공란이 먼저 잡혀 있어도 실제 업로드 source에 값이 있으면 그 source 값을 사용한다.
-    // 마스터 입고가 fallback은 금지한다.
-    const sources = row.sources || {};
-    const aliases = field === '입고가'
-        ? ['입고가', '최종(창고)', '최종단가', '재고단가', '최신단가']
-        : [field];
-    const finalData = row.finalData || {};
+const normalizeScreenCostHeaderKey = (key = '') => String(key || '').replace(/[\s()（）\[\]{}_.-]/g, '').toLowerCase();
+const getScreenCostAliases = (field = '입고가') => {
+    const clean = normalizeScreenCostHeaderKey(field);
+    const isInventoryCost = ['입고가', '최종창고', '최종단가', '재고단가', '최신단가', '원가', '단가', '매입가', '매입단가', '구매단가'].some(k => normalizeScreenCostHeaderKey(k) === clean);
+    if (isInventoryCost) {
+        return [
+            '최종(창고)', '최종창고', '최신단가', '_latestWarehousePrice', '재고단가', '최종단가',
+            '입고가', '매입단가', '매입가', '구매단가', '원가', '단가', '최종입고'
+        ];
+    }
+    return [field];
+};
+const readPositiveScreenCostFromObject = (obj = {}, aliases = [], sourceLabel = '') => {
+    if (!obj)
+        return null;
     for (const key of aliases) {
-        if (window.hasOwnField(finalData, key)) {
-            const n = window.parseNum(finalData[key]);
-            if (n > 0) return { value: n, hasValue: true, source: `finalData.${key}` };
+        if (window.hasOwnField(obj, key)) {
+            const n = window.parseNum(obj[key]);
+            if (n > 0)
+                return { value: n, hasValue: true, source: `${sourceLabel}.${key}` };
         }
     }
-    const roles = window.getWorkingSourcePriority ? window.getWorkingSourcePriority() : ['estimate', 'purchase', 'sales', 'inventory', 'parser'];
-    for (const role of roles) {
-        const src = sources?.[role] || {};
-        for (const key of aliases) {
-            if (window.hasOwnField(src, key)) {
-                const n = window.parseNum(src[key]);
-                if (n > 0) return { value: n, hasValue: true, source: `${role}.${key}` };
-            }
-        }
+    const normalizedAliases = aliases.map(normalizeScreenCostHeaderKey).filter(Boolean);
+    for (const actualKey of Object.keys(obj || {})) {
+        const cleanKey = normalizeScreenCostHeaderKey(actualKey);
+        if (!normalizedAliases.includes(cleanKey))
+            continue;
+        const n = window.parseNum(obj[actualKey]);
+        if (n > 0)
+            return { value: n, hasValue: true, source: `${sourceLabel}.${actualKey}` };
+    }
+    return null;
+};
+const getScreenBaseCostValueStrict = (row = {}, field = '입고가') => {
+    // 행사가/룰 산출 기준은 파일 종류가 아니라 현재 불러온 작업 source의 표준 입고가다.
+    // 마스터는 이전가격/비교기준이므로 기준원가 fallback으로 사용하지 않는다.
+    const sources = row.sources || {};
+    const aliases = getScreenCostAliases(field);
+    const objectQueue = [];
+    const hasCurrentSource = window.hasAnyUploadSource ? window.hasAnyUploadSource(sources) : false;
+    if (hasCurrentSource) objectQueue.push(['finalData', row.finalData || {}]);
+    const roles = window.getWorkingSourcePriority ? window.getWorkingSourcePriority(sources) : ['catalog', 'estimate', 'purchase', 'sales', 'inventory', 'parser'];
+    roles.forEach(role => {
+        if (sources?.[role]) objectQueue.push([role, sources[role]]);
+    });
+    if (hasCurrentSource) objectQueue.push(['row', row || {}]);
+    for (const [label, obj] of objectQueue) {
+        const found = readPositiveScreenCostFromObject(obj, aliases, label);
+        if (found)
+            return found;
     }
     return { value: 0, hasValue: false, source: '' };
 };
@@ -4794,7 +4923,7 @@ const getPromoThemeLabel = (item = {}) => {
 // ============================================================
 // [M-FILTER-THEME-01] 상세필터 행사테마 분리
 // 역할: 상세필터에서 테마1~테마5 버튼으로 행사테마 값을 나눠 본다.
-// 기준: 현재 작업 명시값 → 업로드 파일 명시값 → 마스터 저장값 순서로 행사테마/테마1~5 값을 판정한다.
+// 기준: 오늘 작업 명시값 → 오늘 source 명시값 순서로 본다. 오늘 source가 있으면 마스터 테마는 비교기준일 뿐 현재 작업테마로 주입하지 않는다.
 // ============================================================
 const getPromotionThemeCodesForFilter = (row = {}, mItem = {}) => {
     if ((row.finalData || {})._promoResetRequested === true) {
@@ -5284,7 +5413,7 @@ const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, 
             const normalizedVal = isNumeric ? window.keepExcelCellValue(v, true) : v;
             const effectiveField = linkedMasterField || field;
             const basePriceFields = ['입고가', '외주비', '노무비'];
-            const directPriceFields = ['출고가', '행사가'];
+            const directPriceFields = ['출고가', '시중가', '행사가'];
             const shouldRecalcInfo = basePriceFields.includes(field) || basePriceFields.includes(effectiveField);
             const isDirectOutPriceEdit = field === '출고가' || effectiveField === '출고가';
             const isDirectPromoEdit = field === '행사가' || effectiveField === '행사가';
@@ -5306,15 +5435,15 @@ const EditableCell = React.memo(({ row, field, linkedMasterField, mVal, config, 
             if (effectiveField && effectiveField !== field) {
                 nextItem.finalData[effectiveField] = normalizedVal;
             }
-            // 업로드 source는 원본 역할을 유지하되, 관리자가 셀에서 수정한 값은 현재 작업 source에 반영한다.
-            ['estimate', 'purchase', 'sales', 'inventory', 'parser'].forEach(sourceKey => {
-                if (!nextItem.sources[sourceKey])
-                    return;
-                nextItem.sources[sourceKey][field] = normalizedVal;
+            // 관리자가 셀에서 수정한 값은 현재 활성 source에만 반영한다.
+            // 여러 source 전체에 쓰면 견적/재고/구매 원본값이 서로 오염되어 마스터 비교 기준이 무너진다.
+            const activeSourceRole = window.getCurrentMerchSourceRole ? window.getCurrentMerchSourceRole(nextItem.sources || {}, currentItem._lastUploadRole) : '';
+            if (activeSourceRole && nextItem.sources[activeSourceRole]) {
+                nextItem.sources[activeSourceRole][field] = normalizedVal;
                 if (effectiveField && effectiveField !== field) {
-                    nextItem.sources[sourceKey][effectiveField] = normalizedVal;
+                    nextItem.sources[activeSourceRole][effectiveField] = normalizedVal;
                 }
-            });
+            }
             if (shouldRecalcInfo) {
                 const baseInPrice = window.parseNum(effectiveField === '입고가' || field === '입고가'
                     ? normalizedVal
@@ -5795,7 +5924,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.103_PromoApplySourceFallback]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.106_EstimateShopUploadPolicy]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -6135,7 +6264,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.103_PromoApplySourceFallback")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.106_EstimateShopUploadPolicy")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
