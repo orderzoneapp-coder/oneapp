@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.95_PipelineThemeTopLayout]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.96_ThemeResetMasterInfoOnly]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -28,6 +28,7 @@
         window.isMerchMasterAddedRow = window.isMerchMasterAddedRow || ((row = {}) => !!(row && (row._isMasterConditionAdded || row._isMasterAdded || row._fileMissing || ((row.finalData || {})._masterConditionAdded))));
 
         // v2.1.95: 행사정리 파이프라인 레이아웃에 맞춰 테마 버튼은 상단 작업줄로 올리고, 단가 작업은 상세필터 영역으로 이동한다. 단위 필터는 상세필터에 유지한다.
+        // v2.1.96: 마스터 테마 초기화 F8은 상품명/규격/가격 등 마스터 정보값을 보존해 출력하고, 마스터 반영은 행사 관련 필드만 변경한다.
         // v2.1.94: 마스터 버튼은 1회 터치 마스터조건상품 표시, 2회 터치 숨김으로 토글하고, 상단 저장 자동필터 텍스트는 공간 확보를 위해 노출하지 않는다.
         // v2.1.93: 마스터추가/행사초기화는 상단 작업버튼으로 노출하고, 양식 라벨/자동필터 칩은 공간을 적게 쓰는 코치마크형으로 축소한다.
         // v2.1.92: 네이티브 confirm은 크기/상세표시 제어가 불가하므로 F8 확인요청 전용 큰 확인창을 제공한다.
@@ -3113,18 +3114,49 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         if (targetRows.length === 0)
             return ui.showToast('⚠️ 선택된 빠른 출력 대상이 없습니다.');
         const wholesaleBelowCostWarnings = collectWholesaleBelowCostWarnings(targetRows);
+        const getMasterForQuickRow = (row = {}) => {
+            const code = window.normalizeProductCodeText((row && row.코드) || '');
+            return (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(data.masterProducts, row) : data.masterProducts[code]) || data.masterProducts[code] || {};
+        };
+        const isPromoResetQuickRow = (row = {}) => !!((row.finalData || {})._promoResetRequested === true);
+        const isMasterThemeResetQuickRow = (row = {}) => isPromoResetQuickRow(row) && (window.isMerchMasterAddedRow ? window.isMerchMasterAddedRow(row) : !!(row && (row._isMasterConditionAdded || row._isMasterAdded || row._fileMissing)));
         const getBestValue = (row, key, defaultValue = '') => window.getTableValueFromRow(row, key, defaultValue);
         const getBestValueByAliases = (row, aliases, defaultValue = '') => window.getTableValueByAliases(row, aliases, defaultValue);
+        const getOutputValueByAliases = (row, aliases, defaultValue = '') => {
+            const keys = Array.isArray(aliases) ? aliases : [aliases];
+            const master = getMasterForQuickRow(row);
+            const resetWriteFields = new Set(['행사가', '행사테마', '테마1', '테마2', '테마3', '테마4', '테마5']);
+            const isResetWriteField = keys.some(key => resetWriteFields.has(key));
+            // 마스터 테마 초기화 행은 쇼핑몰 업데이트 필수 정보가 비면 안 된다.
+            // 단, 행사가/행사테마/테마1~5는 초기화 작업값을 우선 사용한다.
+            if (isMasterThemeResetQuickRow(row) && !isResetWriteField) {
+                for (const key of keys) {
+                    if (window.hasOwnField(master, key) && !window.isBlankCell(master[key])) return master[key];
+                }
+            }
+            for (const key of keys) {
+                const value = getBestValue(row, key, undefined);
+                if (value !== undefined && !window.isBlankCell(value)) return value;
+            }
+            for (const key of keys) {
+                if (window.hasOwnField(master, key) && !window.isBlankCell(master[key])) return master[key];
+            }
+            return defaultValue;
+        };
         const getBestNum = (row, key, defaultValue = '') => {
-            const value = getBestValue(row, key, defaultValue);
+            const value = getOutputValueByAliases(row, [key], defaultValue);
             return window.isBlankCell(value) ? '' : window.parseNum(value);
         };
         const getBestNumByAliases = (row, aliases, defaultValue = '') => {
-            const value = getBestValueByAliases(row, aliases, defaultValue);
+            const value = getOutputValueByAliases(row, aliases, defaultValue);
             return window.isBlankCell(value) ? '' : window.parseNum(value);
         };
         const getBestStr = (row, key, defaultValue = '') => {
-            const value = getBestValue(row, key, defaultValue);
+            const value = getOutputValueByAliases(row, [key], defaultValue);
+            return value !== undefined && value !== null ? String(value) : defaultValue;
+        };
+        const getBestStrByAliases = (row, aliases, defaultValue = '') => {
+            const value = getOutputValueByAliases(row, aliases, defaultValue);
             return value !== undefined && value !== null ? String(value) : defaultValue;
         };
         const isValidSubItemCode = (code) => {
@@ -3133,9 +3165,14 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         };
         const buildThemeFlags = (row) => {
             const finalData = row.finalData || {};
-            if (finalData._promoResetRequested === true) return ['', '', '', '', ''];
             const sources = row.sources || {};
-            const master = (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(data.masterProducts, row) : data.masterProducts[row.코드]) || {};
+            const master = getMasterForQuickRow(row);
+            if (finalData._promoResetRequested === true) {
+                // 행사초기화는 테마1·2 변동행사 해제가 목적이다. 테마3 고정행사는 출력에서도 보호한다.
+                const masterCodes = String(window.normalizePromotionThemeValue(master || {}) || '').split(',').map(v => v.trim()).filter(Boolean);
+                const keepCodes = masterCodes.filter(code => code === '3');
+                return [1, 2, 3, 4, 5].map(n => keepCodes.includes(String(n)) ? '1' : '');
+            }
             const themeValue = window.resolvePromotionThemeByPriority
                 ? window.resolvePromotionThemeByPriority(finalData, sources, master)
                 : window.normalizePromotionThemeValue(finalData, sources.estimate || {}, sources.purchase || {}, sources.sales || {}, sources.inventory || {}, master);
@@ -3187,9 +3224,9 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             const erpASale = getBestNum(row, '도매A');
             const erpBSale = getBestNum(row, '도매B');
             const pMarket = getBestNum(row, '시중가');
-            const shopBPrice = getBestNum(row, 'B판매가');
+            const shopBPrice = getBestNumByAliases(row, ['B판매가', 'B 판매가']);
             const shopBWholesale = getBestNum(row, '도매B');
-            const finalTransmission = getBestNumByAliases(row, ['최종전송', '최종(전송)'], inPrice);
+            const finalTransmission = getBestNumByAliases(row, ['최종전송', '최종(전송)', '최종입고'], inPrice);
             const finalStockRaw = getBestValue(row, '재고수량', '');
             // F8 쇼핑몰업로드 재고 정책:
             // - 쇼핑몰 업로드 양식의 재고수량은 기본 999로 출력한다.
@@ -3200,8 +3237,8 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             // ERP는 기초정보 셋팅용이다. 출고가는 정상 출고가, 행사는 행사 컬럼으로 분리한다.
             erpData.push([code, inPrice, '0', erpOutPrice, '0', inPriceB, 'n', erpASale, 'n', erpBSale, 'n', finalTransmission, 'n', promoPrice, 'n', saleCode]);
             // 쇼핑몰은 실제 판매가 설정용이다. 행사가가 있으면 기존 쇼핑몰 양식의 출고가 칸에 행사 우선가를 넣고, 재고수량은 기본 999로 보강한다.
-            shopData.push([code, getBestStr(row, '품목명'), getBestStr(row, '규격'), shopSalePrice, erpASale, (pMarket !== '' && pMarket > 0 ? pMarket : shopSalePrice), shopBPrice, shopBWholesale, 0, 0, 0, 0, getBestStr(row, '브랜드'), getBestStr(row, '간단설명'), saleCode, shopUploadStock, ...themeFlags, getBestStr(row, '검색어등록')]);
-            const subInfo = calculateSubInfo(row);
+            shopData.push([code, getBestStrByAliases(row, ['품목명', '상품명']), getBestStr(row, '규격'), shopSalePrice, erpASale, (pMarket !== '' && pMarket > 0 ? pMarket : shopSalePrice), shopBPrice, shopBWholesale, 0, 0, 0, 0, getBestStr(row, '브랜드'), getBestStr(row, '간단설명'), saleCode, shopUploadStock, ...themeFlags, getBestStrByAliases(row, ['검색어등록', '상품태그'])]);
+            const subInfo = isMasterThemeResetQuickRow(row) ? null : calculateSubInfo(row);
             if (subInfo) {
                 const subMaster = data.masterProducts[subInfo.code] || {};
                 erpData.push([subInfo.code, subInfo.subIn, '0', subInfo.subOut, '0', '', 'n', '', 'n', '', 'n', subInfo.subIn, 'n', '', 'n', saleCode]);
@@ -3257,11 +3294,21 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
             if (item.finalData) {
                 const promoResetRequested = item.finalData._promoResetRequested === true;
                 if (promoResetRequested) {
-                    newMaster[item.코드]['행사가'] = 0;
-                    newMaster[item.코드]['행사테마'] = '';
-                    [1, 2, 3, 4, 5].forEach(n => { newMaster[item.코드][`테마${n}`] = ''; });
-                    const oldPromo = window.parseNum(oldItem['행사가']);
                     const oldTheme = window.normalizePromotionThemeValue(oldItem || {});
+                    const oldThemeCodes = String(oldTheme || '').split(',').map(v => v.trim()).filter(Boolean);
+                    const keepThemeCodes = oldThemeCodes.filter(v => v === '3');
+                    const nextThemeValue = keepThemeCodes.join(',');
+                    // 마스터 행사정리 단계에서는 상품정보/가격값을 건드리지 않고 테마 관련 활성값만 정리한다.
+                    // 테마3 특가상품은 고정행사이므로 보호한다.
+                    if (nextThemeValue) {
+                        newMaster[item.코드]['행사테마'] = nextThemeValue;
+                        [1, 2, 3, 4, 5].forEach(n => { newMaster[item.코드][`테마${n}`] = keepThemeCodes.includes(String(n)) ? '1' : ''; });
+                    } else {
+                        newMaster[item.코드]['행사가'] = 0;
+                        newMaster[item.코드]['행사테마'] = '';
+                        [1, 2, 3, 4, 5].forEach(n => { newMaster[item.코드][`테마${n}`] = ''; });
+                    }
+                    const oldPromo = window.parseNum(oldItem['행사가']);
                     if (oldPromo > 0 || oldTheme) {
                         localLogs.push({
                             id: window.generateUUID(),
@@ -3271,7 +3318,7 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
                             spec: oldItem.규격 || (item.sources?.estimate?.규격) || '',
                             field: '행사초기화',
                             oldVal: `행사가 ${oldPromo || 0}${oldTheme ? ` / 테마 ${oldTheme}` : ''}`,
-                            newVal: '행사가 0 / 테마 삭제',
+                            newVal: nextThemeValue ? `테마3 보호 / 테마 ${oldTheme} → ${nextThemeValue}` : '행사가 0 / 테마 삭제',
                             diff: 0,
                             actionType: '행사초기화',
                             source: 'MerchOps'
@@ -3315,45 +3362,47 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
                     }
                     newMaster[item.코드]['판매여부'] = 0;
                 }
-                Object.keys(item.finalData).forEach(field => {
-                    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
-                    if (field.startsWith('_') || field === '판매여부')
-                        return;
-                    const linked = ((_a = config.masterLinks['estimate']) === null || _a === void 0 ? void 0 : _a[field]) || (window.MASTER_HEADERS.includes(field) ? field : null);
-                    if (linked && item.finalData[field] !== undefined && item.finalData[field] !== '오류') {
-                        const newVal = window.NUMERIC_HEADERS.includes(linked) ? window.parseNum(item.finalData[field]) : item.finalData[field];
-                        const oldVal = window.NUMERIC_HEADERS.includes(linked) ? window.parseNum(oldItem[linked]) : (oldItem[linked] || '');
-                        if (oldVal !== newVal) {
-                            if (['입고가', '출고가'].includes(linked) && oldVal > 0) {
-                                localLogs.push({
-                                    id: window.generateUUID(),
-                                    timestamp: nowStr,
-                                    code: code,
-                                    name: oldItem.품목명 || ((_c = (_b = item.sources) === null || _b === void 0 ? void 0 : _b.estimate) === null || _c === void 0 ? void 0 : _c.품목명) || '',
-                                    spec: oldItem.규격 || ((_e = (_d = item.sources) === null || _d === void 0 ? void 0 : _d.estimate) === null || _e === void 0 ? void 0 : _e.규격) || '',
-                                    field: linked,
-                                    oldVal: oldVal,
-                                    newVal: newVal,
-                                    diff: newVal - oldVal
-                                });
+                if (!promoResetRequested) {
+                    Object.keys(item.finalData).forEach(field => {
+                        var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+                        if (field.startsWith('_') || field === '판매여부')
+                            return;
+                        const linked = ((_a = config.masterLinks['estimate']) === null || _a === void 0 ? void 0 : _a[field]) || (window.MASTER_HEADERS.includes(field) ? field : null);
+                        if (linked && item.finalData[field] !== undefined && item.finalData[field] !== '오류') {
+                            const newVal = window.NUMERIC_HEADERS.includes(linked) ? window.parseNum(item.finalData[field]) : item.finalData[field];
+                            const oldVal = window.NUMERIC_HEADERS.includes(linked) ? window.parseNum(oldItem[linked]) : (oldItem[linked] || '');
+                            if (oldVal !== newVal) {
+                                if (['입고가', '출고가'].includes(linked) && oldVal > 0) {
+                                    localLogs.push({
+                                        id: window.generateUUID(),
+                                        timestamp: nowStr,
+                                        code: code,
+                                        name: oldItem.품목명 || ((_c = (_b = item.sources) === null || _b === void 0 ? void 0 : _b.estimate) === null || _c === void 0 ? void 0 : _c.품목명) || '',
+                                        spec: oldItem.규격 || ((_e = (_d = item.sources) === null || _d === void 0 ? void 0 : _d.estimate) === null || _e === void 0 ? void 0 : _e.규격) || '',
+                                        field: linked,
+                                        oldVal: oldVal,
+                                        newVal: newVal,
+                                        diff: newVal - oldVal
+                                    });
+                                }
+                                else if (['카탈로그', '견적서'].includes(linked)) {
+                                    localLogs.push({
+                                        id: window.generateUUID(),
+                                        timestamp: nowStr,
+                                        code: code,
+                                        name: oldItem.품목명 || ((_g = (_f = item.sources) === null || _f === void 0 ? void 0 : _f.estimate) === null || _g === void 0 ? void 0 : _g.품목명) || '',
+                                        spec: oldItem.규격 || ((_j = (_h = item.sources) === null || _h === void 0 ? void 0 : _h.estimate) === null || _j === void 0 ? void 0 : _j.규격) || '',
+                                        field: linked,
+                                        oldVal: oldVal || '없음',
+                                        newVal: newVal || '삭제됨',
+                                        diff: 0
+                                    });
+                                }
                             }
-                            else if (['카탈로그', '견적서'].includes(linked)) {
-                                localLogs.push({
-                                    id: window.generateUUID(),
-                                    timestamp: nowStr,
-                                    code: code,
-                                    name: oldItem.품목명 || ((_g = (_f = item.sources) === null || _f === void 0 ? void 0 : _f.estimate) === null || _g === void 0 ? void 0 : _g.품목명) || '',
-                                    spec: oldItem.규격 || ((_j = (_h = item.sources) === null || _h === void 0 ? void 0 : _h.estimate) === null || _j === void 0 ? void 0 : _j.규격) || '',
-                                    field: linked,
-                                    oldVal: oldVal || '없음',
-                                    newVal: newVal || '삭제됨',
-                                    diff: 0
-                                });
-                            }
+                            newMaster[item.코드][linked] = newVal;
                         }
-                        newMaster[item.코드][linked] = newVal;
-                    }
-                });
+                    });
+                }
             }
             commitCount++;
         });
@@ -3564,13 +3613,30 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
     const handleResetPromoValues = useCallback(() => {
         if (fullDisplayRows.length === 0)
             return ui.showToast('⚠️ 행사값을 초기화할 상품이 없습니다.');
-        const targetRows = ui.selectedRows.size > 0
+        const rawTargetRows = ui.selectedRows.size > 0
             ? fullDisplayRows.filter(r => ui.selectedRows.has(window.getManagedRowKey(r)))
             : fullDisplayRows;
-        if (targetRows.length === 0)
+        if (rawTargetRows.length === 0)
             return ui.showToast('⚠️ 초기화 대상이 없습니다.');
+        const hasProtectedTheme3 = (row) => {
+            const mItem = (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(data.masterProducts, row) : data.masterProducts[row.코드]) || {};
+            const theme = window.resolvePromotionThemeByPriority
+                ? window.resolvePromotionThemeByPriority((row.finalData || {}), (row.sources || {}), mItem)
+                : window.normalizePromotionThemeValue(row.finalData || {}, row.sources?.estimate || {}, row.sources?.inventory || {}, mItem || {});
+            return String(theme || '').split(',').map(v => v.trim()).includes('3');
+        };
+        const targetRows = rawTargetRows.filter(row => !hasProtectedTheme3(row));
+        const protectedCount = rawTargetRows.length - targetRows.length;
+        if (targetRows.length === 0)
+            return ui.showToast(`⚠️ 초기화 대상이 없습니다. 테마3 고정행사 ${protectedCount}건은 보호 제외되었습니다.`);
         const targetText = ui.selectedRows.size > 0 ? `선택 ${targetRows.length}건` : `현재 화면 ${targetRows.length}건`;
-        if (!window.confirm(`${targetText}의 행사가와 행사테마를 초기화하시겠습니까?\n\n- 행사가: 0\n- 행사테마/테마1~5: 공란\n- 마스터 반영 또는 F8/F9 출력 시 행사값 해제로 전달됩니다.`))
+        const protectedText = protectedCount > 0 ? `
+- 테마3 고정행사 ${protectedCount}건 보호 제외` : '';
+        if (!window.confirm(`${targetText}의 테마1·2 행사값을 초기화하시겠습니까?
+
+- 행사가: 0
+- 행사테마/테마1·2: 공란
+- 마스터 반영 또는 F8/F9 출력 시 행사해제로 전달됩니다.${protectedText}`))
             return;
         const nowStr = new Date().toLocaleString('ko-KR');
         const logs = [];
@@ -3916,13 +3982,20 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
             const code = String(mItem.코드 || mItem['품목코드'] || '').replace(/\s/g, '');
             const source = {
                 품목코드: code,
-                품목명: mItem['품목명'] || '',
+                품목명: mItem['품목명'] || mItem['상품명'] || '',
+                상품명: mItem['상품명'] || mItem['품목명'] || '',
                 규격: mItem['규격'] || '',
                 단위: mItem['단위'] || '',
                 입고가: mItem['입고가'] || '',
                 출고가: mItem['출고가'] || '',
                 도매A: mItem['도매A'] || '',
                 도매B: mItem['도매B'] || '',
+                시중가: mItem['시중가'] || '',
+                B판매가: mItem['B판매가'] || mItem['B 판매가'] || '',
+                브랜드: mItem['브랜드'] || '',
+                간단설명: mItem['간단설명'] || '',
+                검색어등록: mItem['검색어등록'] || mItem['상품태그'] || '',
+                판매여부: mItem['판매여부'] || '',
                 행사가: mItem['행사가'] || '',
                 행사테마: mItem['행사테마'] || '',
                 재고수량: '',
@@ -5638,7 +5711,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.95_PipelineThemeTopLayout]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.96_ThemeResetMasterInfoOnly]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -5975,7 +6048,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.95_PipelineThemeTopLayout")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.96_ThemeResetMasterInfoOnly")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
