@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.97_MasterlessPipelineLayout]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.98_RestoreViewSelectNoGroupLabels]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -28,7 +28,7 @@
         window.isMerchMasterAddedRow = window.isMerchMasterAddedRow || ((row = {}) => !!(row && (row._isMasterConditionAdded || row._isMasterAdded || row._fileMissing || ((row.finalData || {})._masterConditionAdded))));
 
         // v2.1.95: 행사정리 파이프라인 레이아웃에 맞춰 테마 버튼은 상단 작업줄로 올리고, 단가 작업은 상세필터 영역으로 이동한다. 단위 필터는 상세필터에 유지한다.
-        // v2.1.97: 마스터 버튼을 제거하고, 상단을 저장리스트/엑셀불러오기/마스터정보 3개 그룹으로 재정리한다. 행사초기화는 선택 테마 기준 마스터정보 작업으로 처리한다.
+        // v2.1.98: 상단 그룹명 텍스트를 제거해 공간을 확보하고, 견적/구매/판매/재고 양식선택 필터가 항상 노출되도록 복구한다. 마스터정보 작업은 선택 테마 + 행사초기화 파이프라인으로 유지한다.
         // v2.1.96: 마스터 테마 초기화 F8은 상품명/규격/가격 등 마스터 정보값을 보존해 출력하고, 마스터 반영은 행사 관련 필드만 변경한다.
         // v2.1.94: 마스터 버튼은 1회 터치 마스터조건상품 표시, 2회 터치 숨김으로 토글하고, 상단 저장 자동필터 텍스트는 공간 확보를 위해 노출하지 않는다.
         // v2.1.93: 마스터추가/행사초기화는 상단 작업버튼으로 노출하고, 양식 라벨/자동필터 칩은 공간을 적게 쓰는 코치마크형으로 축소한다.
@@ -4032,7 +4032,7 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
         if (remaining <= 0)
             (_b = ui.setRegistrationMode) === null || _b === void 0 ? void 0 : _b.call(ui, false);
     }, [fullDisplayRows, ui.selectedRows, data.masterProducts, data.managedItems, data.setMasterProducts, data.setManagedItems, ui]);
-    // v2.1.97: 마스터 조건상품 불러오기 버튼/액션은 제거했다. 마스터 상태 작업은 선택 테마 + 행사초기화 파이프라인으로 처리한다.
+    // v2.1.98: 상단 구분 라벨은 제거했다. 마스터 조건상품 불러오기 버튼/액션은 제거하고, 마스터 상태 작업은 선택 테마 + 행사초기화 파이프라인으로 처리한다.
     const handleExitRegistrationMode = useCallback(() => {
         var _a;
         (_a = ui.setRegistrationMode) === null || _a === void 0 ? void 0 : _a.call(ui, false);
@@ -4345,11 +4345,10 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
         setFilterScenarioOpen(false);
     };
     return (React.createElement("div", { className: "flex flex-col w-full border-b border-slate-200 bg-white pb-2 shadow-sm relative z-10" },
-        React.createElement("div", { className: "px-6 py-3 bg-slate-50 border-b border-slate-200 flex items-center gap-2 overflow-hidden w-full" },
-            React.createElement("span", { className: "h-9 px-2 rounded-lg bg-white border border-slate-200 text-[10px] font-black text-slate-500 flex items-center shrink-0", title: "카탈로그/저장된 리스트 영역" }, "저장리스트"),
+        React.createElement("div", { className: "px-5 py-3 bg-slate-50 border-b border-slate-200 flex items-center gap-1.5 overflow-hidden w-full" },
             React.createElement("div", { className: "relative shrink-0" },
                 React.createElement("i", { className: "fas fa-bolt absolute left-3 top-2.5 text-indigo-500 pointer-events-none text-[13px]" }),
-                React.createElement("select", { value: "", onChange: (e) => handleLoadFilter('catalog', e.target.value), className: `appearance-none font-bold text-[12px] py-2 pl-8 pr-8 rounded-xl outline-none w-[180px] cursor-pointer h-9 border ${isParserListLoaded ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-300 text-slate-700 shadow-sm focus:border-indigo-400'}` },
+                React.createElement("select", { value: "", onChange: (e) => handleLoadFilter('catalog', e.target.value), className: `appearance-none font-bold text-[12px] py-2 pl-8 pr-8 rounded-xl outline-none w-[160px] cursor-pointer h-9 border ${isParserListLoaded ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-300 text-slate-700 shadow-sm focus:border-indigo-400'}` },
                     React.createElement("option", { value: "", disabled: true }, "\uD30C\uC11C\uB9AC\uC2A4\uD2B8"),
                     React.createElement("option", { value: "all_catalogs" }, "\uC804\uCCB4\uB9AC\uC2A4\uD2B8"),
                     availableCatalogs.map(cat => React.createElement("option", { key: cat.name, value: cat.name },
@@ -4360,7 +4359,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                 React.createElement("i", { className: "fas fa-chevron-down absolute right-3 top-3 text-slate-400 text-[10px] pointer-events-none" })),
             React.createElement("div", { className: "relative shrink-0" },
                 React.createElement("i", { className: "fas fa-folder absolute left-3 top-2.5 text-blue-500 pointer-events-none text-[13px]" }),
-                React.createElement("select", { value: "", onChange: (e) => handleLoadFilter('category', e.target.value), className: `appearance-none font-bold text-[12px] py-2 pl-8 pr-8 rounded-xl outline-none w-[180px] cursor-pointer h-9 border ${isCategoryLoaded ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-slate-300 text-slate-700 shadow-sm focus:border-indigo-400'}` },
+                React.createElement("select", { value: "", onChange: (e) => handleLoadFilter('category', e.target.value), className: `appearance-none font-bold text-[12px] py-2 pl-8 pr-8 rounded-xl outline-none w-[160px] cursor-pointer h-9 border ${isCategoryLoaded ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-slate-300 text-slate-700 shadow-sm focus:border-indigo-400'}` },
                     React.createElement("option", { value: "", disabled: true }, "\uCE74\uD0C8\uB85C\uADF8"),
                     availableCategories.map(cat => React.createElement("option", { key: cat.name, value: cat.name },
                         cat.name,
@@ -4372,7 +4371,6 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                 React.createElement("i", { className: "fas fa-plus-circle mr-1.5 text-[13px]" }),
                 " 생성"),
             React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1 shrink-0" }),
-            React.createElement("span", { className: "h-9 px-2 rounded-lg bg-white border border-slate-200 text-[10px] font-black text-slate-500 flex items-center shrink-0", title: "견적/구매/판매/재고 엑셀 불러오기 영역" }, "엑셀"),
             React.createElement("label", { className: getLoadButtonClass(isEstimateLoaded, 'blue'), title: "\uACF5\uAE09\uC0AC \uACAC\uC801/\uC2DC\uC138 \uC5D1\uC140\uC744 \uC5C5\uB85C\uB4DC\uD569\uB2C8\uB2E4." },
                 React.createElement("i", { className: "fas fa-file-excel mr-2 text-[14px]" }),
                 " 견적",
@@ -4392,22 +4390,20 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
             React.createElement("button", { onClick: handleReset, className: "h-9 px-3 rounded-xl flex items-center text-[12px] font-black text-slate-700 bg-white border border-slate-300 shadow-sm hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200 shrink-0", title: "화면 초기화" },
                 React.createElement("i", { className: "fas fa-rotate-left mr-1.5 text-[13px]" }),
                 " 초기화"),
+            (displayTableViewList.length > 0 && React.createElement("div", { className: "w-[200px] max-w-[200px] flex items-center rounded-xl border border-indigo-100 bg-indigo-50/30 px-2 py-1.5 shadow-sm shrink-0 overflow-hidden", title: activeBriefText || activeBriefTags.join(' · ') || '보기 양식' },
+                React.createElement("select", { value: activeTableViewSelectValue, onChange: handleTableViewSelect, className: "h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-[12px] font-black text-slate-700 outline-none focus:border-indigo-400 shrink-0", title: `${displayTableTargetLabel} 작업에 적용할 보기 양식을 선택합니다.` },
+                    displayTableViewList.map(view => React.createElement("option", { key: view.fallback ? '__fallback' : (view.id || view.name), value: view.fallback ? '__fallback' : (view.id || '') }, `양식: ${view.name}`)))))),
             React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1 shrink-0" }),
-            React.createElement("span", { className: "h-9 px-2 rounded-lg bg-amber-50 border border-amber-200 text-[10px] font-black text-amber-700 flex items-center shrink-0", title: "마스터 기준정보 작업 영역: 행사테마와 카테고리 구분은 마스터 정보에 속합니다." }, "마스터정보"),
             [
                 ['theme1', '테마1'],
                 ['theme2', '테마2'],
                 ['theme3', '테마3'],
                 ['theme4', '테마4'],
                 ['theme5', '테마5']
-            ].map(([value, label]) => (React.createElement("button", { key: `top-theme-${value}`, onClick: () => toggleDetailFilter(value), className: `h-9 px-2.5 rounded-xl text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${detailFilters.includes(value) ? 'bg-purple-700 text-white border-purple-700' : 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100'}`, title: `${label}: 행사테마 바로 선택 / 다시 누르면 해제` }, label))),
+            ].map(([value, label]) => (React.createElement("button", { key: `top-theme-${value}`, onClick: () => toggleDetailFilter(value), className: `h-9 px-2 rounded-xl text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${detailFilters.includes(value) ? 'bg-purple-700 text-white border-purple-700' : 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100'}`, title: `${label}: 행사테마 바로 선택 / 다시 누르면 해제` }, label))),
             React.createElement("button", { onClick: handleResetPromoValues, disabled: fullDisplayRows.length === 0 && !(Array.isArray(detailFilters) && detailFilters.some(v => /^theme[1-5]$/.test(String(v)))), className: `h-9 px-3 rounded-xl text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${(fullDisplayRows.length > 0 || (Array.isArray(detailFilters) && detailFilters.some(v => /^theme[1-5]$/.test(String(v))))) ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택 테마 또는 현재 작업범위의 행사값을 초기화합니다. 마스터 상태에서는 선택 테마가 대상입니다." },
                 React.createElement("i", { className: "fas fa-eraser mr-1.5 text-[12px]" }),
                 "행사초기화"),
-            React.createElement("div", { className: "flex-1 min-w-[8px]" }),
-            (displayTableViewList.length > 0 && React.createElement("div", { className: "ml-auto w-[230px] max-w-[230px] flex items-center rounded-xl border border-indigo-100 bg-indigo-50/30 px-2 py-1.5 shadow-sm shrink-0 overflow-hidden", title: activeBriefText || activeBriefTags.join(' · ') || '보기 양식' },
-                React.createElement("select", { value: activeTableViewSelectValue, onChange: handleTableViewSelect, className: "h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-[12px] font-black text-slate-700 outline-none focus:border-indigo-400 shrink-0", title: `${displayTableTargetLabel} 작업에 적용할 보기 양식을 선택합니다.` },
-                    displayTableViewList.map(view => React.createElement("option", { key: view.fallback ? '__fallback' : (view.id || view.name), value: view.fallback ? '__fallback' : (view.id || '') }, `${displayTableTargetLabel} / ${view.name}`)))))),
         React.createElement("div", { className: "px-6 pt-3 pb-2 flex flex-col gap-2 w-full" },
             React.createElement("div", { className: "rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm flex items-center gap-1.5 flex-nowrap w-full overflow-hidden" },
                 [['changed', '변동'], ['promo', '행사중'], ['promoExclude', '행사제외'], ['promoSuggest', '제안']].map(([value, label]) => (React.createElement("button", { key: value, onClick: () => applyPriceFilter(value), className: `h-9 px-2.5 rounded-lg text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`, title: `${label}: 한 번 누르면 선택, 다시 누르면 해제되어 전체로 복귀` }, label))),
@@ -5678,7 +5674,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.97_MasterlessPipelineLayout]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.98_RestoreViewSelectNoGroupLabels]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -6015,7 +6011,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.97_MasterlessPipelineLayout")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.98_RestoreViewSelectNoGroupLabels")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
