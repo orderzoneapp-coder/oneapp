@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.96_ThemeResetMasterInfoOnly]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.97_MasterlessPipelineLayout]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -28,6 +28,7 @@
         window.isMerchMasterAddedRow = window.isMerchMasterAddedRow || ((row = {}) => !!(row && (row._isMasterConditionAdded || row._isMasterAdded || row._fileMissing || ((row.finalData || {})._masterConditionAdded))));
 
         // v2.1.95: 행사정리 파이프라인 레이아웃에 맞춰 테마 버튼은 상단 작업줄로 올리고, 단가 작업은 상세필터 영역으로 이동한다. 단위 필터는 상세필터에 유지한다.
+        // v2.1.97: 마스터 버튼을 제거하고, 상단을 저장리스트/엑셀불러오기/마스터정보 3개 그룹으로 재정리한다. 행사초기화는 선택 테마 기준 마스터정보 작업으로 처리한다.
         // v2.1.96: 마스터 테마 초기화 F8은 상품명/규격/가격 등 마스터 정보값을 보존해 출력하고, 마스터 반영은 행사 관련 필드만 변경한다.
         // v2.1.94: 마스터 버튼은 1회 터치 마스터조건상품 표시, 2회 터치 숨김으로 토글하고, 상단 저장 자동필터 텍스트는 공간 확보를 위해 노출하지 않는다.
         // v2.1.93: 마스터추가/행사초기화는 상단 작업버튼으로 노출하고, 양식 라벨/자동필터 칩은 공간을 적게 쓰는 코치마크형으로 축소한다.
@@ -3168,10 +3169,8 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             const sources = row.sources || {};
             const master = getMasterForQuickRow(row);
             if (finalData._promoResetRequested === true) {
-                // 행사초기화는 테마1·2 변동행사 해제가 목적이다. 테마3 고정행사는 출력에서도 보호한다.
-                const masterCodes = String(window.normalizePromotionThemeValue(master || {}) || '').split(',').map(v => v.trim()).filter(Boolean);
-                const keepCodes = masterCodes.filter(code => code === '3');
-                return [1, 2, 3, 4, 5].map(n => keepCodes.includes(String(n)) ? '1' : '');
+                // 행사초기화는 관리자가 선택한 테마의 행사해제가 목적이다. 출력값은 테마 전체 해제 상태로 전달한다.
+                return [1, 2, 3, 4, 5].map(() => '');
             }
             const themeValue = window.resolvePromotionThemeByPriority
                 ? window.resolvePromotionThemeByPriority(finalData, sources, master)
@@ -3295,19 +3294,11 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
                 const promoResetRequested = item.finalData._promoResetRequested === true;
                 if (promoResetRequested) {
                     const oldTheme = window.normalizePromotionThemeValue(oldItem || {});
-                    const oldThemeCodes = String(oldTheme || '').split(',').map(v => v.trim()).filter(Boolean);
-                    const keepThemeCodes = oldThemeCodes.filter(v => v === '3');
-                    const nextThemeValue = keepThemeCodes.join(',');
                     // 마스터 행사정리 단계에서는 상품정보/가격값을 건드리지 않고 테마 관련 활성값만 정리한다.
-                    // 테마3 특가상품은 고정행사이므로 보호한다.
-                    if (nextThemeValue) {
-                        newMaster[item.코드]['행사테마'] = nextThemeValue;
-                        [1, 2, 3, 4, 5].forEach(n => { newMaster[item.코드][`테마${n}`] = keepThemeCodes.includes(String(n)) ? '1' : ''; });
-                    } else {
-                        newMaster[item.코드]['행사가'] = 0;
-                        newMaster[item.코드]['행사테마'] = '';
-                        [1, 2, 3, 4, 5].forEach(n => { newMaster[item.코드][`테마${n}`] = ''; });
-                    }
+                    // 별도 테마 보호는 하지 않는다. 관리자가 선택한 테마 초기화 작업이 기준이다.
+                    newMaster[item.코드]['행사가'] = 0;
+                    newMaster[item.코드]['행사테마'] = '';
+                    [1, 2, 3, 4, 5].forEach(n => { newMaster[item.코드][`테마${n}`] = ''; });
                     const oldPromo = window.parseNum(oldItem['행사가']);
                     if (oldPromo > 0 || oldTheme) {
                         localLogs.push({
@@ -3318,7 +3309,7 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
                             spec: oldItem.규격 || (item.sources?.estimate?.규격) || '',
                             field: '행사초기화',
                             oldVal: `행사가 ${oldPromo || 0}${oldTheme ? ` / 테마 ${oldTheme}` : ''}`,
-                            newVal: nextThemeValue ? `테마3 보호 / 테마 ${oldTheme} → ${nextThemeValue}` : '행사가 0 / 테마 삭제',
+                            newVal: '행사가 0 / 테마 삭제',
                             diff: 0,
                             actionType: '행사초기화',
                             source: 'MerchOps'
@@ -3611,36 +3602,82 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
     //       마스터 반영/F8/F9 출력 시 기존 마스터 테마 fallback이 되살아나지 않도록 _promoResetRequested를 남긴다.
     // ============================================================
     const handleResetPromoValues = useCallback(() => {
-        if (fullDisplayRows.length === 0)
-            return ui.showToast('⚠️ 행사값을 초기화할 상품이 없습니다.');
-        const rawTargetRows = ui.selectedRows.size > 0
+        const selectedThemeNums = (Array.isArray(ui.detailFilters) ? ui.detailFilters : [])
+            .map(v => String(v).match(/^theme([1-5])$/)?.[1])
+            .filter(Boolean);
+        const buildMasterThemeResetRow = (mItem = {}) => {
+            const code = window.normalizeProductCodeText((mItem.코드 || mItem['품목코드'] || '') + '');
+            const source = {
+                품목코드: code,
+                상품코드: code,
+                품목명: mItem['품목명'] || mItem['상품명'] || '',
+                상품명: mItem['상품명'] || mItem['품목명'] || '',
+                규격: mItem['규격'] || '',
+                단위: mItem['단위'] || '',
+                입고가: mItem['입고가'] || '',
+                출고가: mItem['출고가'] || '',
+                도매A: mItem['도매A'] || '',
+                도매B: mItem['도매B'] || '',
+                시중가: mItem['시중가'] || '',
+                브랜드: mItem['브랜드'] || '',
+                간단설명: mItem['간단설명'] || '',
+                검색어등록: mItem['검색어등록'] || mItem['상품태그'] || '',
+                판매여부: mItem['판매여부'] || '',
+                행사가: mItem['행사가'] || '',
+                행사테마: mItem['행사테마'] || '',
+                재고수량: mItem['재고수량'] || 999,
+                _sourceType: 'master',
+                _masterThemeResetSource: true
+            };
+            return {
+                코드: code,
+                _managedKey: code,
+                _lastUploadRole: 'masterThemeReset',
+                _sourceType: 'master',
+                _masterThemeResetSource: true,
+                sources: { master: source },
+                finalData: { ...source }
+            };
+        };
+        let rawTargetRows = ui.selectedRows.size > 0
             ? fullDisplayRows.filter(r => ui.selectedRows.has(window.getManagedRowKey(r)))
             : fullDisplayRows;
-        if (rawTargetRows.length === 0)
-            return ui.showToast('⚠️ 초기화 대상이 없습니다.');
-        const hasProtectedTheme3 = (row) => {
-            const mItem = (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(data.masterProducts, row) : data.masterProducts[row.코드]) || {};
-            const theme = window.resolvePromotionThemeByPriority
-                ? window.resolvePromotionThemeByPriority((row.finalData || {}), (row.sources || {}), mItem)
-                : window.normalizePromotionThemeValue(row.finalData || {}, row.sources?.estimate || {}, row.sources?.inventory || {}, mItem || {});
-            return String(theme || '').split(',').map(v => v.trim()).includes('3');
-        };
-        const targetRows = rawTargetRows.filter(row => !hasProtectedTheme3(row));
-        const protectedCount = rawTargetRows.length - targetRows.length;
-        if (targetRows.length === 0)
-            return ui.showToast(`⚠️ 초기화 대상이 없습니다. 테마3 고정행사 ${protectedCount}건은 보호 제외되었습니다.`);
-        const targetText = ui.selectedRows.size > 0 ? `선택 ${targetRows.length}건` : `현재 화면 ${targetRows.length}건`;
-        const protectedText = protectedCount > 0 ? `
-- 테마3 고정행사 ${protectedCount}건 보호 제외` : '';
-        if (!window.confirm(`${targetText}의 테마1·2 행사값을 초기화하시겠습니까?
+        if ((!rawTargetRows || rawTargetRows.length === 0) && selectedThemeNums.length > 0) {
+            rawTargetRows = Object.values(data.masterProducts || {})
+                .filter(mItem => {
+                    const theme = window.normalizePromotionThemeValue ? window.normalizePromotionThemeValue(mItem || {}) : String((mItem || {})['행사테마'] || '');
+                    const codes = new Set(String(theme || '').split(',').map(v => v.trim()).filter(Boolean));
+                    selectedThemeNums.forEach(n => { if (String(mItem[`테마${n}`] || '').trim() === '1') codes.add(String(n)); });
+                    return selectedThemeNums.some(n => codes.has(String(n)));
+                })
+                .map(buildMasterThemeResetRow)
+                .filter(row => row.코드);
+        }
+        if (!rawTargetRows || rawTargetRows.length === 0)
+            return ui.showToast('⚠️ 초기화 대상이 없습니다. 테마 버튼을 선택하거나 작업대상을 먼저 불러오세요.');
+        const targetRows = rawTargetRows;
+        const targetText = ui.selectedRows.size > 0 ? `선택 ${targetRows.length}건` : (selectedThemeNums.length > 0 ? `선택 테마 ${selectedThemeNums.join(',')} / 마스터 ${targetRows.length}건` : `현재 화면 ${targetRows.length}건`);
+        if (!window.confirm(`${targetText}의 행사값을 초기화하시겠습니까?
 
 - 행사가: 0
-- 행사테마/테마1·2: 공란
-- 마스터 반영 또는 F8/F9 출력 시 행사해제로 전달됩니다.${protectedText}`))
+- 행사테마/테마1~5: 공란
+- 마스터 정보값은 유지하고 행사 필드만 초기화합니다.`))
             return;
         const nowStr = new Date().toLocaleString('ko-KR');
         const logs = [];
         let count = 0;
+        const resetShopRows = [[
+            '상품코드\n코드', '상품명', '규격', '출고가', '도매A', '시중가', 'B판매가', '도매B',
+            'C 판매가', 'C 도매가', 'D 판매가', 'D 도매가', '브랜드', '기본설명', '판매여부', '재고수량',
+            '테마1', '테마2', '테마3', '테마4', '테마5', '상품태그'
+        ]];
+        const nextMasterProducts = { ...(data.masterProducts || {}) };
+        const getResetUploadValue = (mItem = {}, keys = [], fallback = '') => {
+            for (const key of keys) {
+                if (window.hasOwnField(mItem, key) && !window.isBlankCell(mItem[key])) return mItem[key];
+            }
+            return fallback;
+        };
         data.setManagedItems(prev => {
             const next = { ...(prev || {}) };
             targetRows.forEach(row => {
@@ -3652,6 +3689,33 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
                 const oldTheme = window.resolvePromotionThemeByPriority
                     ? window.resolvePromotionThemeByPriority(current.finalData || {}, current.sources || {}, mItem)
                     : window.normalizePromotionThemeValue(current.finalData || {}, current.sources?.estimate || {}, current.sources?.inventory || {}, mItem || {});
+                if (code) {
+                    nextMasterProducts[code] = { ...(nextMasterProducts[code] || mItem || { 코드: code }), 행사가: 0, 행사테마: '', 테마1: '', 테마2: '', 테마3: '', 테마4: '', 테마5: '' };
+                    const outPrice = getResetUploadValue(mItem, ['출고가', '판매가'], '');
+                    const bSale = getResetUploadValue(mItem, ['B판매가', 'B 판매가'], '');
+                    const wholesaleA = getResetUploadValue(mItem, ['도매A'], '');
+                    const wholesaleB = getResetUploadValue(mItem, ['도매B'], '');
+                    const marketPrice = getResetUploadValue(mItem, ['시중가'], outPrice);
+                    const saleCode = String(getResetUploadValue(mItem, ['판매여부'], '1')) === '0' ? '0' : '1';
+                    const stockQty = getResetUploadValue(mItem, ['재고수량', '재고'], 999);
+                    resetShopRows.push([
+                        code,
+                        getResetUploadValue(mItem, ['상품명', '품목명'], getRowValueByField(current, '품목명') || ''),
+                        getResetUploadValue(mItem, ['규격'], getRowValueByField(current, '규격') || ''),
+                        outPrice,
+                        wholesaleA,
+                        marketPrice,
+                        bSale,
+                        wholesaleB,
+                        0, 0, 0, 0,
+                        getResetUploadValue(mItem, ['브랜드'], ''),
+                        getResetUploadValue(mItem, ['기본설명', '간단설명'], ''),
+                        saleCode,
+                        stockQty,
+                        '', '', '', '', '',
+                        getResetUploadValue(mItem, ['상품태그', '검색어등록'], '')
+                    ]);
+                }
                 next[key] = {
                     ...current,
                     finalData: {
@@ -3664,6 +3728,7 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
                         테마4: '',
                         테마5: '',
                         _promoResetRequested: true,
+                        _promoResetThemeCodes: selectedThemeNums.length > 0 ? selectedThemeNums.join(',') : oldTheme,
                         _promoResetAt: new Date().toISOString(),
                         확인: '행사초기화'
                     }
@@ -3687,9 +3752,19 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
         });
         if (logs.length > 0)
             data.addHistoryLogs(logs);
+        data.setMasterProducts(nextMasterProducts);
+        if (window.XLSX && resetShopRows.length > 1) {
+            const wb = window.XLSX.utils.book_new();
+            const ws = window.XLSX.utils.aoa_to_sheet(resetShopRows);
+            window.XLSX.utils.book_append_sheet(wb, ws, '쇼핑몰업로드');
+            const d = new Date();
+            const pad = n => String(n).padStart(2, '0');
+            const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
+            window.XLSX.writeFile(wb, `행사초기화_업로드_${stamp}.xlsx`);
+        }
         ui.setSelectedRows(new Set());
-        ui.showToast(`✅ ${count}건 행사값 초기화 완료`);
-    }, [fullDisplayRows, ui.selectedRows, data.masterProducts, data.setManagedItems, data.addHistoryLogs, ui]);
+        ui.showToast(`✅ ${count}건 행사값 초기화 및 업로드 엑셀 생성 완료`);
+    }, [fullDisplayRows, ui.selectedRows, ui.detailFilters, data.masterProducts, data.setMasterProducts, data.setManagedItems, data.addHistoryLogs, ui]);
 
     // ============================================================
     // [M-BRIDGE-01] 출력검증센터 전달 브릿지
@@ -3957,116 +4032,7 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
         if (remaining <= 0)
             (_b = ui.setRegistrationMode) === null || _b === void 0 ? void 0 : _b.call(ui, false);
     }, [fullDisplayRows, ui.selectedRows, data.masterProducts, data.managedItems, data.setMasterProducts, data.setManagedItems, ui]);
-    const handleLoadMasterConditionProducts = useCallback(() => {
-        var _a, _b;
-        const target = normalizeMerchTableTarget((config === null || config === void 0 ? void 0 : config.activeTableTarget) || DEFAULT_TABLE_VIEW_TARGET);
-        const masterList = Object.values(data.masterProducts || {}).filter(item => item && (item.코드 || item['품목코드']));
-        if (masterList.length === 0) {
-            ui.showToast('마스터 상품정보가 없습니다.');
-            return;
-        }
-        const masterAddedRows = Object.values(data.managedItems || {}).filter(row => window.isMerchMasterAddedRow ? window.isMerchMasterAddedRow(row) : !!(row && (row._isMasterConditionAdded || row._isMasterAdded || row._fileMissing)));
-        if (masterAddedRows.length > 0) {
-            if (ui.hideMasterAddedRows) {
-                (_a = ui.setHideMasterAddedRows) === null || _a === void 0 ? void 0 : _a.call(ui, false);
-                (_b = ui.showToast) === null || _b === void 0 ? void 0 : _b.call(ui, `마스터 상품 ${masterAddedRows.length}건을 다시 표시했습니다.`);
-            } else {
-                (_a = ui.setHideMasterAddedRows) === null || _a === void 0 ? void 0 : _a.call(ui, true);
-                (_b = ui.setSelectedRows) === null || _b === void 0 ? void 0 : _b.call(ui, new Set());
-                ui.showToast(`마스터 상품 ${masterAddedRows.length}건을 숨겼습니다. 견적서 원본행만 계속 작업합니다.`);
-            }
-            return;
-        }
-        const existingCodes = new Set(Object.values(data.managedItems || {}).map(item => String((item === null || item === void 0 ? void 0 : item.코드) || '').replace(/\s/g, '')).filter(Boolean));
-        const buildMasterAddedRow = (mItem = {}) => {
-            const code = String(mItem.코드 || mItem['품목코드'] || '').replace(/\s/g, '');
-            const source = {
-                품목코드: code,
-                품목명: mItem['품목명'] || mItem['상품명'] || '',
-                상품명: mItem['상품명'] || mItem['품목명'] || '',
-                규격: mItem['규격'] || '',
-                단위: mItem['단위'] || '',
-                입고가: mItem['입고가'] || '',
-                출고가: mItem['출고가'] || '',
-                도매A: mItem['도매A'] || '',
-                도매B: mItem['도매B'] || '',
-                시중가: mItem['시중가'] || '',
-                B판매가: mItem['B판매가'] || mItem['B 판매가'] || '',
-                브랜드: mItem['브랜드'] || '',
-                간단설명: mItem['간단설명'] || '',
-                검색어등록: mItem['검색어등록'] || mItem['상품태그'] || '',
-                판매여부: mItem['판매여부'] || '',
-                행사가: mItem['행사가'] || '',
-                행사테마: mItem['행사테마'] || '',
-                재고수량: '',
-                _sourceType: 'master',
-                _masterConditionAdded: true,
-                _fileMissing: true
-            };
-            const sources = { [target]: source };
-            const finalData = window.computeFinalData
-                ? window.computeFinalData(mItem, sources, window.sanitizeMerchMarginRules(config.marginRules))
-                : { ...source };
-            return {
-                코드: code,
-                _managedKey: code,
-                _lastUploadRole: target,
-                _isMasterConditionAdded: true,
-                _isMasterAdded: true,
-                _fileMissing: true,
-                _statusBadge: '마스터추가',
-                _tags: new Set(['마스터추가', '파일없음']),
-                sources,
-                finalData: { ...source, ...(finalData || {}), 품목코드: code, 품목명: source.품목명, 규격: source.규격, 단위: source.단위, 재고수량: '', _masterConditionAdded: true, _fileMissing: true }
-            };
-        };
-        let candidateRows = masterList
-            .map(buildMasterAddedRow)
-            .filter(row => row.코드 && !existingCodes.has(row.코드));
-        const disabledStepIds = new Set((Array.isArray(ui.disabledFilterStepIds) ? ui.disabledFilterStepIds : []).map(v => String(v)));
-        const activeSteps = Array.isArray(ui.filterSteps) ? ui.filterSteps.filter((step, idx) => {
-            const stepId = window.getMerchFilterStepRuntimeId ? window.getMerchFilterStepRuntimeId(step, idx) : String((step === null || step === void 0 ? void 0 : step.id) || idx);
-            return !disabledStepIds.has(stepId);
-        }) : [];
-        if (activeSteps.length > 0 && window.applyMerchFilterStepsToRows) {
-            candidateRows = window.applyMerchFilterStepsToRows(candidateRows, activeSteps, { masterProducts: data.masterProducts, config });
-        }
-        const hasManualFilter = (ui.priceFilter && ui.priceFilter !== 'all') || (Array.isArray(ui.categoryFilters) && ui.categoryFilters.length > 0) || (Array.isArray(ui.detailFilters) && ui.detailFilters.length > 0) || String(ui.basicSearch || '').trim();
-        const hasSearchFilter = String(ui.globalSearch || '').trim();
-        if (activeSteps.length === 0 && !hasManualFilter && !hasSearchFilter) {
-            ui.showToast('마스터 상품을 추가하려면 먼저 테마/카테고리/검색 등 조건을 선택하세요.');
-            return;
-        }
-        if (hasManualFilter) {
-            candidateRows = candidateRows.filter(row => {
-                const mItem = (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(data.masterProducts, row) : data.masterProducts[row.코드]) || {};
-                if (Array.isArray(ui.categoryFilters) && ui.categoryFilters.length > 0 && !matchMerchCategoryFilter(row, mItem, ui.categoryFilters)) return false;
-                if (ui.priceFilter && ui.priceFilter !== 'all' && !matchMerchStepConditions(row, mItem, { priceFilter: ui.priceFilter }, config)) return false;
-                if (Array.isArray(ui.detailFilters) && ui.detailFilters.length > 0 && !matchCompositeDetailFilters(row, mItem, ui.detailFilters, ui.basicSearch || '')) return false;
-                return true;
-            });
-        }
-        const q = String(ui.globalSearch || '').trim().toLowerCase();
-        if (q) {
-            const tokens = q.split(/\s+/).filter(Boolean);
-            candidateRows = candidateRows.filter(row => {
-                const mItem = (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(data.masterProducts, row) : data.masterProducts[row.코드]) || {};
-                const hay = [row.코드, mItem['품목명'], mItem['규격'], mItem['단위'], mItem['구매처'], mItem['검색어등록'], mItem['카탈로그'], mItem['견적서'], mItem['행사테마']]
-                    .map(v => String(v !== null && v !== void 0 ? v : '').toLowerCase()).join(' ');
-                return tokens.every(token => hay.includes(token));
-            });
-        }
-        if (candidateRows.length === 0) {
-            ui.showToast('현재 조건으로 추가할 마스터 상품이 없습니다.');
-            return;
-        }
-        const nextRows = {};
-        candidateRows.forEach(row => { nextRows[window.getManagedRowKey(row)] = row; });
-        data.setManagedItems(prev => ({ ...(prev || {}), ...nextRows }));
-        (_a = ui.setHideMasterAddedRows) === null || _a === void 0 ? void 0 : _a.call(ui, false);
-        (_a = ui.setSelectedRows) === null || _a === void 0 ? void 0 : _a.call(ui, new Set(candidateRows.map(row => window.getManagedRowKey(row))));
-        (_b = ui.showToast) === null || _b === void 0 ? void 0 : _b.call(ui, `마스터 조건상품 ${candidateRows.length}건을 작업테이블에 추가했습니다.`);
-    }, [config, data.masterProducts, data.managedItems, data.setManagedItems, ui, ui.hideMasterAddedRows]);
+    // v2.1.97: 마스터 조건상품 불러오기 버튼/액션은 제거했다. 마스터 상태 작업은 선택 테마 + 행사초기화 파이프라인으로 처리한다.
     const handleExitRegistrationMode = useCallback(() => {
         var _a;
         (_a = ui.setRegistrationMode) === null || _a === void 0 ? void 0 : _a.call(ui, false);
@@ -4074,8 +4040,8 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
         ui.showToast('↩️ 신규등록용 양식에서 복귀했습니다.');
     }, [ui]);
     return useMemo(() => ({
-        handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleLoadMasterConditionProducts, handleExitRegistrationMode
-    }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleLoadMasterConditionProducts, handleExitRegistrationMode]);
+        handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode
+    }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode]);
 };
 // --- UI Components ---
 const SystemConsole = ({ itemCount, isProcessing, processMsg, estimateCount, filteredCount, activeTags }) => {
@@ -4127,7 +4093,7 @@ const SearchBar = ({ value, onChange, placeholder }) => {
 };
 const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
     const { activeTags, selectedRows, globalSearch, priceFilter, detailFilters = [], categoryFilters = [], basicSearch, filterSteps = [], disabledFilterStepIds = [], pendingFilterAction = 'include', hideMasterAddedRows = false, fullDisplayRows, config, registrationMode, data } = state;
-    const { handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleLoadMasterConditionProducts, setPriceFilter, setDetailFilters, setCategoryFilters, setSelectedRows, setBasicSearch, setFilterSteps, setDisabledFilterStepIds, setPendingFilterAction, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode } = actions;
+    const { handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, setPriceFilter, setDetailFilters, setCategoryFilters, setSelectedRows, setBasicSearch, setFilterSteps, setDisabledFilterStepIds, setPendingFilterAction, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode } = actions;
     const [filterPanelOpen, setFilterPanelOpen] = useState(false);
     const [selectedWarehouseInput, setSelectedWarehouseInput] = useState('');
     // [M-FILTER-ROWS-01] 정렬필터 재배치
@@ -4177,8 +4143,6 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
     const isPurchaseLoaded = currentExcelRole === 'purchase';
     const isSalesLoaded = currentExcelRole === 'sales';
     const isInventoryLoaded = currentExcelRole === 'inventory';
-    const masterAddedRowCount = useMemo(() => Object.values((data && data.managedItems) || {}).filter(row => window.isMerchMasterAddedRow ? window.isMerchMasterAddedRow(row) : !!(row && (row._isMasterConditionAdded || row._isMasterAdded || row._fileMissing))).length, [data && data.managedItems]);
-    const masterButtonActive = masterAddedRowCount > 0 && !hideMasterAddedRows;
     // 파서리스트와 카탈로그는 같은 선택 UI 영역에 있어도 상태 배색은 분리한다.
     // type='catalog'는 파서리스트, type='category'는 카탈로그로만 판정한다.
     const isParserListLoaded = (activeTags || []).some(t => String(t?.type || '') === 'catalog');
@@ -4381,7 +4345,8 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
         setFilterScenarioOpen(false);
     };
     return (React.createElement("div", { className: "flex flex-col w-full border-b border-slate-200 bg-white pb-2 shadow-sm relative z-10" },
-        React.createElement("div", { className: "px-6 py-3 bg-slate-50 border-b border-slate-200 flex items-center gap-3 overflow-hidden w-full" },
+        React.createElement("div", { className: "px-6 py-3 bg-slate-50 border-b border-slate-200 flex items-center gap-2 overflow-hidden w-full" },
+            React.createElement("span", { className: "h-9 px-2 rounded-lg bg-white border border-slate-200 text-[10px] font-black text-slate-500 flex items-center shrink-0", title: "카탈로그/저장된 리스트 영역" }, "저장리스트"),
             React.createElement("div", { className: "relative shrink-0" },
                 React.createElement("i", { className: "fas fa-bolt absolute left-3 top-2.5 text-indigo-500 pointer-events-none text-[13px]" }),
                 React.createElement("select", { value: "", onChange: (e) => handleLoadFilter('catalog', e.target.value), className: `appearance-none font-bold text-[12px] py-2 pl-8 pr-8 rounded-xl outline-none w-[180px] cursor-pointer h-9 border ${isParserListLoaded ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-300 text-slate-700 shadow-sm focus:border-indigo-400'}` },
@@ -4407,6 +4372,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                 React.createElement("i", { className: "fas fa-plus-circle mr-1.5 text-[13px]" }),
                 " 생성"),
             React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1 shrink-0" }),
+            React.createElement("span", { className: "h-9 px-2 rounded-lg bg-white border border-slate-200 text-[10px] font-black text-slate-500 flex items-center shrink-0", title: "견적/구매/판매/재고 엑셀 불러오기 영역" }, "엑셀"),
             React.createElement("label", { className: getLoadButtonClass(isEstimateLoaded, 'blue'), title: "\uACF5\uAE09\uC0AC \uACAC\uC801/\uC2DC\uC138 \uC5D1\uC140\uC744 \uC5C5\uB85C\uB4DC\uD569\uB2C8\uB2E4." },
                 React.createElement("i", { className: "fas fa-file-excel mr-2 text-[14px]" }),
                 " 견적",
@@ -4426,13 +4392,8 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
             React.createElement("button", { onClick: handleReset, className: "h-9 px-3 rounded-xl flex items-center text-[12px] font-black text-slate-700 bg-white border border-slate-300 shadow-sm hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200 shrink-0", title: "화면 초기화" },
                 React.createElement("i", { className: "fas fa-rotate-left mr-1.5 text-[13px]" }),
                 " 초기화"),
-            React.createElement("button", { onClick: handleLoadMasterConditionProducts, disabled: !handleLoadMasterConditionProducts, className: `h-9 px-3 rounded-xl border shadow-sm flex items-center justify-center shrink-0 text-[12px] font-black transition-all ${masterButtonActive ? 'bg-amber-500 text-white border-amber-600 hover:bg-amber-600' : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 hover:border-amber-300'}`, title: masterAddedRowCount > 0 ? (hideMasterAddedRows ? "숨긴 마스터추가 상품을 다시 표시합니다." : "마스터추가 상품을 숨기고 원본 견적서 행만 표시합니다.") : "현재 필터/자동필터 조건에 맞는 마스터 상품 중 작업파일에 없는 상품을 추가로 불러옵니다." },
-                React.createElement("i", { className: "fas fa-layer-group mr-1.5 text-[12px]" }),
-                "마스터"),
-            React.createElement("button", { onClick: handleResetPromoValues, disabled: fullDisplayRows.length === 0, className: `h-9 px-3 rounded-xl text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${fullDisplayRows.length > 0 ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터/검색 결과 전체의 행사가와 행사테마를 함께 초기화합니다." },
-                React.createElement("i", { className: "fas fa-eraser mr-1.5 text-[12px]" }),
-                "행사초기화"),
             React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1 shrink-0" }),
+            React.createElement("span", { className: "h-9 px-2 rounded-lg bg-amber-50 border border-amber-200 text-[10px] font-black text-amber-700 flex items-center shrink-0", title: "마스터 기준정보 작업 영역: 행사테마와 카테고리 구분은 마스터 정보에 속합니다." }, "마스터정보"),
             [
                 ['theme1', '테마1'],
                 ['theme2', '테마2'],
@@ -4440,6 +4401,9 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                 ['theme4', '테마4'],
                 ['theme5', '테마5']
             ].map(([value, label]) => (React.createElement("button", { key: `top-theme-${value}`, onClick: () => toggleDetailFilter(value), className: `h-9 px-2.5 rounded-xl text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${detailFilters.includes(value) ? 'bg-purple-700 text-white border-purple-700' : 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100'}`, title: `${label}: 행사테마 바로 선택 / 다시 누르면 해제` }, label))),
+            React.createElement("button", { onClick: handleResetPromoValues, disabled: fullDisplayRows.length === 0 && !(Array.isArray(detailFilters) && detailFilters.some(v => /^theme[1-5]$/.test(String(v)))), className: `h-9 px-3 rounded-xl text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${(fullDisplayRows.length > 0 || (Array.isArray(detailFilters) && detailFilters.some(v => /^theme[1-5]$/.test(String(v))))) ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택 테마 또는 현재 작업범위의 행사값을 초기화합니다. 마스터 상태에서는 선택 테마가 대상입니다." },
+                React.createElement("i", { className: "fas fa-eraser mr-1.5 text-[12px]" }),
+                "행사초기화"),
             React.createElement("div", { className: "flex-1 min-w-[8px]" }),
             (displayTableViewList.length > 0 && React.createElement("div", { className: "ml-auto w-[230px] max-w-[230px] flex items-center rounded-xl border border-indigo-100 bg-indigo-50/30 px-2 py-1.5 shadow-sm shrink-0 overflow-hidden", title: activeBriefText || activeBriefTags.join(' · ') || '보기 양식' },
                 React.createElement("select", { value: activeTableViewSelectValue, onChange: handleTableViewSelect, className: "h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-[12px] font-black text-slate-700 outline-none focus:border-indigo-400 shrink-0", title: `${displayTableTargetLabel} 작업에 적용할 보기 양식을 선택합니다.` },
@@ -4716,7 +4680,10 @@ const getPromoThemeLabel = (item = {}) => {
 // 기준: 현재 작업 명시값 → 업로드 파일 명시값 → 마스터 저장값 순서로 행사테마/테마1~5 값을 판정한다.
 // ============================================================
 const getPromotionThemeCodesForFilter = (row = {}, mItem = {}) => {
-    if ((row.finalData || {})._promoResetRequested === true) return [];
+    if ((row.finalData || {})._promoResetRequested === true) {
+        const resetCodes = String((row.finalData || {})._promoResetThemeCodes || '').split(',').map(v => v.trim()).filter(Boolean);
+        return resetCodes;
+    }
     const sources = row.sources || {};
     const normalized = window.resolvePromotionThemeByPriority
         ? window.resolvePromotionThemeByPriority(row.finalData || {}, sources, mItem || {})
@@ -5711,7 +5678,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.96_ThemeResetMasterInfoOnly]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.97_MasterlessPipelineLayout]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -6048,7 +6015,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.96_ThemeResetMasterInfoOnly")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.97_MasterlessPipelineLayout")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
