@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.102_CategoryTopThemeBottom]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.103_PromoApplySourceFallback]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -30,6 +30,7 @@
         // v2.1.95: 행사정리 파이프라인 레이아웃에 맞춰 테마 버튼은 상단 작업줄로 올리고, 단가 작업은 상세필터 영역으로 이동한다. 단위 필터는 상세필터에 유지한다.
         // v2.1.101: 관리코드는 환경설정 저장목록 기준으로 상품리스트/카탈로그/행사/룰적용/업로드 대상에서 기본 제외한다.
         // v2.1.102: 상단 순서를 마스터 카테고리 → 카탈로그 → 엑셀로 재정리하고, 카테고리 전체 버튼을 추가한다. 테마/행사초기화는 하단 행사 영역으로 내리며 행사중 필터명은 행사가로 변경한다.
+        // v2.1.103: 행사가 적용 시 finalData 0값에 막히지 않고 현재 업로드 source의 입고가/재고단가를 기준으로 계산하며, 결과를 finalData와 현재 source에 함께 반영한다.
         // v2.1.99: 양식선택은 엑셀 작업시에만 노출하고, 테마/행사초기화가 세로 전체폭으로 밀리는 툴바 괄호 구조를 수정한다.
         // v2.1.98: 상단 그룹명 텍스트를 제거해 공간을 확보하고, 견적/구매/판매/재고 양식선택 필터가 항상 노출되도록 복구한다. 마스터정보 작업은 선택 테마 + 행사초기화 파이프라인으로 유지한다.
         // v2.1.96: 마스터 테마 초기화 F8은 상품명/규격/가격 등 마스터 정보값을 보존해 출력하고, 마스터 반영은 행사 관련 필드만 변경한다.
@@ -3633,14 +3634,28 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
                     }
                     if (calc.price > 0) {
                         const oldVal = window.parseNum((current.finalData || {})[targetField] !== undefined ? (current.finalData || {})[targetField] : getRowValueByField(current, targetField));
+                        const nextSources = {
+                            ...(current.sources || {}),
+                            estimate: current.sources?.estimate ? { ...current.sources.estimate } : current.sources?.estimate,
+                            purchase: current.sources?.purchase ? { ...current.sources.purchase } : current.sources?.purchase,
+                            sales: current.sources?.sales ? { ...current.sources.sales } : current.sources?.sales,
+                            inventory: current.sources?.inventory ? { ...current.sources.inventory } : current.sources?.inventory,
+                            parser: current.sources?.parser ? { ...current.sources.parser } : current.sources?.parser
+                        };
+                        // 화면 테이블/출력 모두 즉시 같은 값을 보도록, 존재하는 현재 source에도 행사가를 반영한다.
+                        ['estimate', 'purchase', 'sales', 'inventory', 'parser'].forEach(role => {
+                            if (nextSources[role]) nextSources[role][targetField] = calc.price;
+                        });
                         next[key] = {
                             ...current,
+                            sources: nextSources,
                             finalData: {
                                 ...(current.finalData || {}),
                                 [targetField]: calc.price,
                                 _screenPercentApplied: true,
                                 _screenPercentRate: rate,
                                 _screenPercentBaseField: baseField,
+                                _screenPercentBaseSource: calc.baseSource || '',
                                 _screenPercentExtraFields: extraFields.join('+'),
                                 _screenPercentCost: calc.totalCost,
                                 확인: `화면프로테지 ${rate}% 행사가`
@@ -4694,13 +4709,31 @@ const getScreenApplyCostValue = (row = {}, mItem = {}, field = '입고가') => {
     return window.parseNum(mItem === null || mItem === void 0 ? void 0 : mItem[field]);
 };
 const getScreenBaseCostValueStrict = (row = {}, field = '입고가') => {
-    // 행사가 산출 기준 입고가는 현재 작업테이블/엑셀 행에 명시된 값만 인정한다.
-    // 마스터 입고가 fallback으로 행사가가 생성되면, 화면상 입고가가 없는 상품도 산출되는 오류가 발생한다.
-    const v = getRowValueByField(row, field);
-    if (v === undefined || v === null || String(v).trim() === '')
-        return { value: 0, hasValue: false };
-    const n = window.parseNum(v);
-    return { value: n, hasValue: n > 0 };
+    // 행사가 산출 기준은 현재 작업테이블/엑셀 row의 값만 인정한다.
+    // 단, finalData에 0/공란이 먼저 잡혀 있어도 실제 업로드 source에 값이 있으면 그 source 값을 사용한다.
+    // 마스터 입고가 fallback은 금지한다.
+    const sources = row.sources || {};
+    const aliases = field === '입고가'
+        ? ['입고가', '최종(창고)', '최종단가', '재고단가', '최신단가']
+        : [field];
+    const finalData = row.finalData || {};
+    for (const key of aliases) {
+        if (window.hasOwnField(finalData, key)) {
+            const n = window.parseNum(finalData[key]);
+            if (n > 0) return { value: n, hasValue: true, source: `finalData.${key}` };
+        }
+    }
+    const roles = window.getWorkingSourcePriority ? window.getWorkingSourcePriority() : ['estimate', 'purchase', 'sales', 'inventory', 'parser'];
+    for (const role of roles) {
+        const src = sources?.[role] || {};
+        for (const key of aliases) {
+            if (window.hasOwnField(src, key)) {
+                const n = window.parseNum(src[key]);
+                if (n > 0) return { value: n, hasValue: true, source: `${role}.${key}` };
+            }
+        }
+    }
+    return { value: 0, hasValue: false, source: '' };
 };
 const roundScreenPromoPrice = (rawPrice, row = {}, mItem = {}) => {
     if (window.roundMerchRuleSalePrice)
@@ -4723,11 +4756,11 @@ const calculateScreenPromoPrice = (row = {}, mItem = {}, options = {}) => {
     // 입고가는 현재 작업테이블/엑셀 행에 명시된 값만 산출 기준으로 인정한다.
     // 마스터 입고가 fallback은 금지한다.
     if (!baseResult.hasValue)
-        return { price: 0, baseCost, extraCost, totalCost, rate, invalidBase: true, reason: `${baseField} 없음` };
+        return { price: 0, baseCost, extraCost, totalCost, rate, invalidBase: true, reason: `${baseField} 없음`, baseSource: baseResult.source || '' };
     if (totalCost <= 0 || rate <= 0 || rate >= 100)
         return { price: 0, baseCost, extraCost, totalCost, rate, invalidBase: false };
     const rawPrice = totalCost / (1 - (rate / 100));
-    return { price: roundScreenPromoPrice(rawPrice, row, mItem), baseCost, extraCost, totalCost, rate, invalidBase: false };
+    return { price: roundScreenPromoPrice(rawPrice, row, mItem), baseCost, extraCost, totalCost, rate, invalidBase: false, baseSource: baseResult.source || '' };
 };
 const getStockQty = (row = {}, mItem = {}) => {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
@@ -5762,7 +5795,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.102_CategoryTopThemeBottom]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.103_PromoApplySourceFallback]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -6102,7 +6135,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.102_CategoryTopThemeBottom")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.103_PromoApplySourceFallback")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
