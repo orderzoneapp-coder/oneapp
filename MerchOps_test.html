@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.113_CompactToolbarViewSelect]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.114_EstimateBasicMasterCommit]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -3529,8 +3529,38 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
             return;
         }
         let newMaster = { ...data.masterProducts }, commitCount = 0;
+        let nextManagedForBasic = { ...data.managedItems };
         let localLogs = [];
         const nowStr = new Date().toLocaleString('ko-KR');
+        const getCommitActiveRole = (item = {}) => window.getCurrentMerchSourceRole ? window.getCurrentMerchSourceRole(item.sources || {}, item._lastUploadRole || '') : '';
+        const isCommitEstimateRow = (item = {}) => {
+            const active = getCommitActiveRole(item);
+            return active === 'estimate' || !!(item.sources && item.sources.estimate && Object.keys(item.sources.estimate).length > 0 && !['inventory', 'purchase', 'sales'].includes(active));
+        };
+        const getEstimateSourceCostForBasic = (item = {}) => {
+            const src = (item.sources && item.sources.estimate) || {};
+            const aliases = ['입고가', '최종입고', '매입단가', '매입가', '구매단가', '원가', '단가'];
+            // 기본상품 판정은 마스터 fallback을 쓰지 않는다. 견적서 원본/수정 source에 항목이 있으면 그 값이 0/공란이어도 그대로 판정한다.
+            for (const key of aliases) {
+                if (window.hasOwnField(src, key)) return window.parseNum(src[key]);
+            }
+            const finalData = item.finalData || {};
+            for (const key of aliases) {
+                if (window.hasOwnField(finalData, key)) return window.parseNum(finalData[key]);
+            }
+            return 0;
+        };
+        const applyEstimateBasicState = (managedKey, item, basicFlag) => {
+            const prevItem = nextManagedForBasic[managedKey];
+            if (!prevItem) return;
+            nextManagedForBasic[managedKey] = { ...prevItem };
+            const target = nextManagedForBasic[managedKey];
+            target.finalData = { ...(target.finalData || {}), 기본: basicFlag, '기본여부': basicFlag, '구분(기본)': basicFlag, 관리구분: basicFlag };
+            target.sources = { ...(target.sources || {}) };
+            if (target.sources.estimate) {
+                target.sources.estimate = { ...(target.sources.estimate || {}), 기본: basicFlag, '기본여부': basicFlag, '구분(기본)': basicFlag, 관리구분: basicFlag };
+            }
+        };
         targets.forEach(managedKey => {
             var _a, _b, _c, _d;
             const item = data.managedItems[managedKey];
@@ -3539,6 +3569,32 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
                 return;
             const oldItem = data.masterProducts[code] || {};
             newMaster[item.코드] = { ...(newMaster[item.코드] || { 코드: item.코드 }) };
+            if (isCommitEstimateRow(item)) {
+                const estimateCostForBasic = getEstimateSourceCostForBasic(item);
+                const estimateBasicFlag = estimateCostForBasic > 0 ? '1' : '';
+                const oldBasic = String(oldItem['기본'] ?? oldItem['기본여부'] ?? oldItem['구분(기본)'] ?? oldItem['관리구분'] ?? '').trim();
+                if (oldBasic !== String(estimateBasicFlag)) {
+                    localLogs.push({
+                        id: window.generateUUID(),
+                        timestamp: nowStr,
+                        code: code,
+                        name: oldItem.품목명 || item.sources?.estimate?.품목명 || '',
+                        spec: oldItem.규격 || item.sources?.estimate?.규격 || '',
+                        field: '기본',
+                        oldVal: oldBasic || '공백',
+                        newVal: estimateBasicFlag || '공백',
+                        diff: 0,
+                        actionType: '견적서 기본여부 반영',
+                        source: 'MerchOps'
+                    });
+                }
+                // 견적서 F8 저장 정책: 입고가가 없는 상품은 기본상품이 아니므로 마스터와 현재 테이블 모두 공백으로 둔다.
+                newMaster[item.코드]['기본'] = estimateBasicFlag;
+                newMaster[item.코드]['기본여부'] = estimateBasicFlag;
+                newMaster[item.코드]['구분(기본)'] = estimateBasicFlag;
+                newMaster[item.코드]['관리구분'] = estimateBasicFlag;
+                applyEstimateBasicState(managedKey, item, estimateBasicFlag);
+            }
             if (item.finalData) {
                 const promoResetRequested = item.finalData._promoResetRequested === true;
                 if (promoResetRequested) {
@@ -3650,11 +3706,12 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
             data.addHistoryLogs(localLogs);
         }
         data.setMasterProducts(newMaster);
+        data.setManagedItems(nextManagedForBasic);
         quickExcelReadyRef.current = { ready: true, at: Date.now(), count: commitCount, codes: Array.from(targets) };
         handleQuickExcelExport();
         ui.setSelectedRows(new Set());
         ui.showToast(`✅ ${commitCount}건 마스터 적용 후 엑셀을 바로 출력했습니다.`);
-    }, [ui.selectedRows, fullDisplayRows, data.masterProducts, data.managedItems, data.setMasterProducts, data.addHistoryLogs, config.masterLinks, ui, handleQuickExcelExport, collectWholesaleBelowCostWarnings]);
+    }, [ui.selectedRows, fullDisplayRows, data.masterProducts, data.managedItems, data.setMasterProducts, data.setManagedItems, data.addHistoryLogs, config.masterLinks, ui, handleQuickExcelExport, collectWholesaleBelowCostWarnings]);
     const toggleAllRows = useCallback(() => {
         if (ui.selectedRows.size === fullDisplayRows.length && fullDisplayRows.length > 0) {
             ui.setSelectedRows(new Set());
@@ -6058,7 +6115,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.113_CompactToolbarViewSelect]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.114_EstimateBasicMasterCommit]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -6398,7 +6455,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.113_CompactToolbarViewSelect")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.114_EstimateBasicMasterCommit")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
