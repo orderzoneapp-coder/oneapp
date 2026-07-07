@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.122_InfoImportExportFix]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.123_HistoryCompareReport]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -28,6 +28,7 @@
         window.isMerchMasterAddedRow = window.isMerchMasterAddedRow || ((row = {}) => !!(row && (row._isMasterConditionAdded || row._isMasterAdded || row._fileMissing || ((row.finalData || {})._masterConditionAdded))));
 
         // v2.1.120: 시중가 적용 정책을 source별로 분리한다. 견적 작업은 견적서 시중가/계산값을 적용하고, 구매·재고 작업은 마스터 시중가를 표시·출력 기준으로 사용하되 구매/재고 원가로 시중가를 갱신하지 않는다.
+        // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결하며 오더즈판매가/오더즈구매가는 작업·출력에서 제외한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
         // v2.1.117: 테마 상세필터가 테이블 표시값과 동일한 작업값/finalData/source/info 값을 보도록 보정한다. 행사테마=3 또는 테마3=1이면 테마3 필터에 반드시 포함된다.
@@ -5817,6 +5818,141 @@ const formatSignedRate = (v) => {
     return `${n > 0 ? '+' : ''}${n.toFixed(1)}%`;
 };
 
+
+// ============================================================
+// [M-HISTORY-COMPARE-01] 히스토리 비교 리포트
+// 역할: 구매/재고 작업 리포트에서 현재 마스터, 전일값, 최근 7일/30일 평균 대비 차이를 표시한다.
+// 기준: 보관함이 아니라 merchHistory_v870 히스토리를 비교 기준으로 사용한다.
+// ============================================================
+window.MERCH_HISTORY_COMPARE_FIELDS = window.MERCH_HISTORY_COMPARE_FIELDS || ['입고가', '출고가', '시중가', '행사가', '판매여부'];
+const getMerchHistoryDateKey = (log = {}) => {
+    const t = parseHistoryTime(log);
+    const d = t ? new Date(t) : null;
+    if (!d || Number.isNaN(d.getTime())) return '';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+const getMerchTodayDateKey = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+const getHistorySourceRole = (log = {}) => String(log.sourceRole || log.role || log.source || log.origin || '').trim();
+const getMerchRowWorkValueForCompare = (row = {}, field = '입고가') => {
+    const sources = row.sources || {};
+    const finalData = row.finalData || {};
+    const direct = finalData[field];
+    if (direct !== undefined && direct !== null && String(direct).trim() !== '') return window.parseNum(direct);
+    const roles = window.getWorkingSourcePriority ? window.getWorkingSourcePriority(sources) : ['purchase', 'inventory', 'estimate', 'info', 'catalog', 'sales'];
+    for (const role of roles) {
+        const source = sources[role] || {};
+        if (source[field] !== undefined && source[field] !== null && String(source[field]).trim() !== '') return window.parseNum(source[field]);
+        if (field === '입고가') {
+            const aliases = ['입고가', '구매가', '구매단가', '매입가', '매입단가', '단가', '원가', '최종(창고)', '최종창고', '최신단가', '재고단가'];
+            for (const key of aliases) {
+                if (source[key] !== undefined && source[key] !== null && String(source[key]).trim() !== '') {
+                    const n = window.parseNum(source[key]);
+                    if (n > 0) return n;
+                }
+            }
+        }
+    }
+    return 0;
+};
+const collectMerchHistoryFieldLogs = (code, field = '입고가') => {
+    const targetCode = String(code || '').trim();
+    if (!targetCode) return [];
+    return getHistoryLogsFromLocal()
+        .map(log => normalizeHistoryLogForField(log, field))
+        .filter(Boolean)
+        .filter(log => getHistoryLogCode(log) === targetCode)
+        .filter(log => {
+            const f = getHistoryFieldName(log) || field;
+            return !field || !f || f === field;
+        })
+        .map(log => {
+            const value = field === '판매여부' ? getHistoryNewValue(log) : window.parseNum(getHistoryNewValue(log));
+            const oldValue = field === '판매여부' ? getHistoryOldValue(log) : window.parseNum(getHistoryOldValue(log));
+            return { ...log, value, oldValue, dateKey: getMerchHistoryDateKey(log), ts: parseHistoryTime(log), sourceRole: getHistorySourceRole(log) };
+        })
+        .filter(log => field === '판매여부' ? String(log.value || '').trim() !== '' : window.parseNum(log.value) > 0)
+        .sort((a, b) => a.ts - b.ts);
+};
+const getMerchHistoryStats = (logs = [], days = 7, nowTs = Date.now()) => {
+    const start = nowTs - (Number(days || 0) * 86400000);
+    const target = logs.filter(log => log.ts && log.ts >= start && log.ts <= nowTs).map(log => window.parseNum(log.value)).filter(v => v > 0);
+    if (!target.length) return null;
+    const sum = target.reduce((a, b) => a + b, 0);
+    return {
+        count: target.length,
+        avg: Math.round(sum / target.length),
+        min: Math.min(...target),
+        max: Math.max(...target)
+    };
+};
+const getMerchHistoryCompareSummary = (row = {}, mItem = {}, field = '입고가') => {
+    const code = String(row.코드 || mItem.코드 || mItem['품목코드'] || '').trim();
+    if (!code) return { hasHistory: false, text: '', parts: [] };
+    const workValue = getMerchRowWorkValueForCompare(row, field);
+    const masterValue = field === '판매여부' ? (mItem[field] ?? '') : window.parseNum(mItem[field]);
+    const logs = collectMerchHistoryFieldLogs(code, field);
+    const numericMode = field !== '판매여부';
+    const todayKey = getMerchTodayDateKey();
+    const nowTs = Date.now();
+    const parts = [];
+    const diffText = (label, baseValue) => {
+        const base = window.parseNum(baseValue);
+        const target = window.parseNum(workValue);
+        if (!(target > 0 && base > 0)) return '';
+        const diff = target - base;
+        const rate = base > 0 ? (diff / base) * 100 : 0;
+        if (diff === 0) return `${label} 동일`;
+        return `${label} ${formatSignedNumber(diff)} / ${formatSignedRate(rate)}`;
+    };
+    if (numericMode) {
+        const currentText = diffText('현재', masterValue);
+        if (currentText) parts.push(currentText);
+        const prevLog = [...logs].reverse().find(log => log.dateKey && log.dateKey < todayKey) || logs[logs.length - 1] || null;
+        if (prevLog) {
+            const txt = diffText('전일', prevLog.value);
+            if (txt && !parts.includes(txt)) parts.push(txt);
+        }
+        const stats7 = getMerchHistoryStats(logs, 7, nowTs);
+        if (stats7) {
+            const txt = diffText('7일평균', stats7.avg);
+            if (txt && !parts.includes(txt)) parts.push(txt);
+        }
+        const stats30 = getMerchHistoryStats(logs, 30, nowTs);
+        if (stats30) {
+            const txt = diffText('30일평균', stats30.avg);
+            if (txt && !parts.includes(txt)) parts.push(txt);
+        }
+        return { hasHistory: logs.length > 0, text: parts.slice(0, 4).join(' · '), parts, workValue, masterValue, logs, stats7, stats30 };
+    }
+    const latest = logs[logs.length - 1] || null;
+    if (latest && String(latest.value) !== String(workValue || masterValue || '')) parts.push(`최근 ${latest.value}`);
+    return { hasHistory: logs.length > 0, text: parts.join(' · '), parts, workValue, masterValue, logs };
+};
+window.getMerchHistoryCompareSummary = window.getMerchHistoryCompareSummary || getMerchHistoryCompareSummary;
+window.getMerchHistoryCompareText = (row = {}, mItem = {}, field = '입고가') => {
+    const summary = getMerchHistoryCompareSummary(row, mItem, field);
+    return summary && summary.text ? summary.text : '';
+};
+const getMerchInventoryReportText = (row = {}) => {
+    const inv = (row.sources && row.sources.inventory) || {};
+    if (!inv || Object.keys(inv).length === 0) return '';
+    const qty = window.parseNum(inv['재고수량'] ?? inv['재고'] ?? inv['잔량'] ?? inv['수량']);
+    const price = window.parseNum(inv['입고가'] || inv['최종(창고)'] || inv['구매가'] || inv['구매단가'] || inv['매입가'] || inv['매입단가'] || inv['단가'] || inv['원가']);
+    const vendor = inv['구매처'] || inv['거래'] || inv['매입처'] || '';
+    const wh = window.normalizeMerchWarehouseDisplay ? window.normalizeMerchWarehouseDisplay(inv['창고'] || '') : (inv['창고'] || '');
+    const dateText = inv['상품 구매일자'] || inv['기록'] || inv['기준일자'] || '';
+    const parts = [];
+    if (qty > 0) parts.push(`재고 ${qty.toLocaleString()}개`);
+    if (price > 0) parts.push(`재고단가 ${price.toLocaleString()}`);
+    if (vendor) parts.push(String(vendor));
+    if (wh) parts.push(String(wh));
+    if (dateText) parts.push(String(dateText));
+    return parts.join(' / ');
+};
+
 // ============================================================
 // [M-PURCHASE-ISSUE-01] 구매 불러오기 고도화
 // 역할: 구매현황의 최근 7일 리포트와 상승/하락/기타상품 이슈를 분리 산출한다.
@@ -5942,7 +6078,15 @@ window.getMerchPurchaseTrend = (row = {}, mItem = {}) => {
     const newIn = window.parseNum(((_a = row.finalData) === null || _a === void 0 ? void 0 : _a['입고가']) !== undefined ? row.finalData['입고가'] : ((_o = (_k = (_g = (_d = (_c = (_b = row.sources) === null || _b === void 0 ? void 0 : _b.estimate) === null || _c === void 0 ? void 0 : _c['입고가']) !== null && _d !== void 0 ? _d : (_f = (_e = row.sources) === null || _e === void 0 ? void 0 : _e.purchase) === null || _f === void 0 ? void 0 : _f['입고가']) !== null && _g !== void 0 ? _g : (_j = (_h = row.sources) === null || _h === void 0 ? void 0 : _h.sales) === null || _j === void 0 ? void 0 : _j['입고가']) !== null && _k !== void 0 ? _k : (_m = (_l = row.sources) === null || _l === void 0 ? void 0 : _l.inventory) === null || _m === void 0 ? void 0 : _m['입고가']) !== null && _o !== void 0 ? _o : oldIn));
     const purchaseTrend = window.getMerchPurchaseTrend ? window.getMerchPurchaseTrend(row, mItem) : null;
     if (purchaseTrend && purchaseTrend.hasPurchaseData && purchaseTrend.reportText) {
-        return [purchaseTrend.reportText, purchaseTrend.inventoryReportText || ''];
+        const historyCompareText = window.getMerchHistoryCompareText ? window.getMerchHistoryCompareText(row, mItem, '입고가') : '';
+        const subLine = [historyCompareText, purchaseTrend.inventoryReportText || ''].filter(Boolean).join(' / ');
+        return [purchaseTrend.reportText, subLine];
+    }
+    const activeReportRole = window.getQuickActiveRole ? window.getQuickActiveRole(row) : '';
+    if (activeReportRole === 'inventory' && row.sources && row.sources.inventory) {
+        const inventoryReportText = getMerchInventoryReportText(row);
+        const historyCompareText = window.getMerchHistoryCompareText ? window.getMerchHistoryCompareText(row, mItem, '입고가') : '';
+        if (inventoryReportText || historyCompareText) return [inventoryReportText, historyCompareText];
     }
     if (latestHistory) {
         const catalog = normalizeHistoryCatalog(latestHistory) || '파서리스트';
@@ -6549,7 +6693,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.122_InfoImportExportFix]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.123_HistoryCompareReport]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -6919,7 +7063,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.122_InfoImportExportFix")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.123_HistoryCompareReport")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
