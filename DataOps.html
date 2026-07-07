@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.60)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.61)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.60.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.61.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -642,7 +642,7 @@ const normalizeTransferGroupName = (name) => {
 // V1.a22.15: 제외거래처 판정은 2.매입/3.매출 모두 전표의 거래처명(거래처) 기준으로만 적용한다. 구매처/매입처/원구매처는 제외 판정에서 제외한다.
 // V1.a22.29: 코드 통합형 거래처칩 이동은 단일 원장행만 즉시 적용하고, 통합2 이상은 Lot 상세형에서 수동 처리한다.
 // V1.a22.17: 보기모드(코드 통합형/Lot 상세형)는 버튼형으로 전환하고, 정렬/카테고리는 드롭다운으로 정리한다.
-// V1.a22.60: 카테고리는 다시 버튼형 중복선택으로 변경한다.
+// V1.a22.61: 카테고리는 다시 버튼형 중복선택으로 변경한다.
 // V1.a22.17: System.IO는 아래로 스크롤하면 우측 펼치기 버튼만 유지하고, 최상단 복귀 전까지 자동 펼침을 금지해 화면 흔들림을 차단한다.
 // V1.a22.29: 이슈/결과 칸에서 잔량확인 뱃지와 구매일자/구매처 반복 표시를 제거한다. 잔량 마이너스는 잔량 숫자로만 표시한다.
 // V1.a22.29: 코드 통합형 배지는 실제 원장행이 2개 이상 합쳐진 경우에만 표시한다. 통합1은 단일 원장행이므로 숨긴다.
@@ -658,23 +658,23 @@ const normalizeTransferGroupName = (name) => {
 // V1.a22.34: 판매업로드 생성에서 합계/소계 판정은 행 전체 includes 검색을 금지한다. 간단설명·적요·출고지시·전달사항·비고의 메모 문구(예: 합계 확인)는 행 제외 조건이 아니다.
 // V1.a22.42: 판매업로드 생성 시 판매가/도매가/행사가가 입고가보다 낮으면 자동 보정하지 않고 역마진/입고가초과 검수대상으로 확인요청 시트와 완료 팝업에 노출한다.
 // V1.a22.42: 판매업로드 완료 팝업에서 확인요청 총건수 문구는 업로드불가/역마진 세부 건수와 중복되므로 제거한다.
-// V1.a22.60: 수불마감 엑셀보고서는 구매잔량을 메인 시트로 두고, 남은 재고를 재고현황형 양식으로 기록하되 기록·거래·구매가에는 구매 Lot의 일자·구매처·단가를 출력한다.
-// V1.a22.60: 구매 Lot으로 설명되지 않는 소분·치환·묶음·매입내역 없음 재고는 기타재고 시트로 분리한다. 실사양식은 ERP 재고실사 업로드용이므로 기존 양식을 변경하지 않는다.
-// V1.a22.60: 소분/치환/묶음 원가환산 반올림 기준을 유지한다. 환산원가가 1,000원 이상이면 100원 단위, 1,000원 미만이면 10원 단위로 반올림한다. 예: 11,000÷9=1,222.22 → 1,200원.
-// V1.a22.60: 구매잔량 시트는 재고현황형 양식 순서(단위/품목코드/품명/규격/재고/기록/거래/구매가/기본/적요)를 사용한다. 품명/규격은 언더바로 추정 분리하지 않고, 구매현황·재고현황 원본의 분리 컬럼을 우선 사용한다.
-// V1.a22.60: 재고 실사 출력은 품명/규격 폭을 기존 대비 약 절반으로 줄이고, 이슈메모 열을 확장한다. ERP 실사 업로드용 구조는 유지하고 프린터용 폭 비율만 조정한다.
-// V1.a22.60: 재고/Lot 화면에 구매잔량/기타상품 분리 필터를 추가한다. 이 필터는 BOX/EA/소분·카테고리·검색 필터와 중복 조합된다.
-// V1.a22.60: 카테고리 필터를 드롭다운 단일선택에서 버튼형 중복선택으로 전환한다. 10/20/30/40/50은 복수 선택 가능하며 구매잔량/기타상품·BOX/EA/소분·검색 필터와 교차 적용된다.
-// V1.a22.60: 구매가 추출 보강. 1재고/4실사/수불마감 파일의 구매가 컬럼을 원가 후보로 인식하고, 구매잔량 시트는 품목코드순으로 정렬한다.
-// V1.a22.60: 구매잔량은 코드통합형으로 합치지 않고 원본 Lot 행 기준으로 출력한다. 같은 품목코드라도 구매일·구매처·구매가가 다르면 분리한다.
-// V1.a22.60: 구매잔량/기타상품 화면 필터는 이슈 유무가 아니라 구매 Lot 근거 기준으로 분류한다. 구매일·구매처·구매가가 확정된 행은 수기치환오차/실사오차/과다로스 이슈가 있어도 구매잔량에 남긴다.
-// V1.a22.60: 재고현황 자체에 기록·거래·구매가가 있으면 구매현황 파일 매칭 여부와 관계없이 기존 구매 Lot 잔량으로 보고 구매잔량에 포함한다.
-// V1.a22.60: 수불마감 엑셀은 전체재고 / 구매잔량 / 기타상품 3단계 시트를 기본 축으로 둔다. 전체재고는 앞으로 재고현황 입력 시트로 사용한다.
-// V1.a22.60: 구매잔량/기타상품/전체재고는 모두 동일한 재고현황형 양식(단위/품목코드/품명/규격/재고/기록/거래/구매가/기본/적요)을 사용한다.
-// V1.a22.60: 구매잔량 적요에는 자동추정 같은 내부 상태값을 노출하지 않고 원본 적요/관리자확정 같은 실무 메모만 남긴다.
-// V1.a22.60: 창고출고 거래처 기본목록을 농협/창원/현금/구매처 계열로 확장하고, 확정 Lot이 없는 창고출고 판매행은 당일구매 Lot을 기존재고 FIFO보다 먼저 배정한다.
-// V1.a22.60: 전체재고/구매잔량/기타상품 엑셀의 적요 컬럼에는 자동추정·구매잔량·기타상품·STOCK_FALLBACK 같은 시스템 메시지를 넣지 않는다. 적요는 상품설명/원본 메모만 보존한다.
-// V1.a22.60: 엑셀 다운로드 1번 시트(전체재고)는 현재 화면 보기모드 그대로 출력한다. 코드통합형 화면이면 통합형, Lot 상세형 화면이면 상세형 rows를 사용하고, 구매잔량/기타상품/상세원장은 원가 근거용으로 보존한다.
+// V1.a22.61: 수불마감 엑셀보고서는 구매잔량을 메인 시트로 두고, 남은 재고를 재고현황형 양식으로 기록하되 기록·거래·구매가에는 구매 Lot의 일자·구매처·단가를 출력한다.
+// V1.a22.61: 구매 Lot으로 설명되지 않는 소분·치환·묶음·매입내역 없음 재고는 기타재고 시트로 분리한다. 실사양식은 ERP 재고실사 업로드용이므로 기존 양식을 변경하지 않는다.
+// V1.a22.61: 소분/치환/묶음 원가환산 반올림 기준을 유지한다. 환산원가가 1,000원 이상이면 100원 단위, 1,000원 미만이면 10원 단위로 반올림한다. 예: 11,000÷9=1,222.22 → 1,200원.
+// V1.a22.61: 구매잔량 시트는 재고현황형 양식 순서(단위/품목코드/품명/규격/재고/기록/거래/구매가/기본/적요)를 사용한다. 품명/규격은 언더바로 추정 분리하지 않고, 구매현황·재고현황 원본의 분리 컬럼을 우선 사용한다.
+// V1.a22.61: 재고 실사 출력은 품명/규격 폭을 기존 대비 약 절반으로 줄이고, 이슈메모 열을 확장한다. ERP 실사 업로드용 구조는 유지하고 프린터용 폭 비율만 조정한다.
+// V1.a22.61: 재고/Lot 화면에 구매잔량/기타상품 분리 필터를 추가한다. 이 필터는 BOX/EA/소분·카테고리·검색 필터와 중복 조합된다.
+// V1.a22.61: 카테고리 필터를 드롭다운 단일선택에서 버튼형 중복선택으로 전환한다. 10/20/30/40/50은 복수 선택 가능하며 구매잔량/기타상품·BOX/EA/소분·검색 필터와 교차 적용된다.
+// V1.a22.61: 구매가 추출 보강. 1재고/4실사/수불마감 파일의 구매가 컬럼을 원가 후보로 인식하고, 구매잔량 시트는 품목코드순으로 정렬한다.
+// V1.a22.61: 구매잔량은 코드통합형으로 합치지 않고 원본 Lot 행 기준으로 출력한다. 같은 품목코드라도 구매일·구매처·구매가가 다르면 분리한다.
+// V1.a22.61: 구매잔량/기타상품 화면 필터는 이슈 유무가 아니라 구매 Lot 근거 기준으로 분류한다. 구매일·구매처·구매가가 확정된 행은 수기치환오차/실사오차/과다로스 이슈가 있어도 구매잔량에 남긴다.
+// V1.a22.61: 재고현황 자체에 기록·거래·구매가가 있으면 구매현황 파일 매칭 여부와 관계없이 기존 구매 Lot 잔량으로 보고 구매잔량에 포함한다.
+// V1.a22.61: 수불마감 엑셀은 전체재고 / 구매잔량 / 기타상품 3단계 시트를 기본 축으로 둔다. 전체재고는 앞으로 재고현황 입력 시트로 사용한다.
+// V1.a22.61: 구매잔량/기타상품/전체재고는 모두 동일한 재고현황형 양식(단위/품목코드/품명/규격/재고/기록/거래/구매가/기본/적요)을 사용한다.
+// V1.a22.61: 구매잔량 적요에는 자동추정 같은 내부 상태값을 노출하지 않고 원본 적요/관리자확정 같은 실무 메모만 남긴다.
+// V1.a22.61: 창고출고 거래처 기본목록을 농협/창원/현금/구매처 계열로 확장하고, 확정 Lot이 없는 창고출고 판매행은 당일구매 Lot을 기존재고 FIFO보다 먼저 배정한다.
+// V1.a22.61: 전체재고/구매잔량/기타상품 엑셀의 적요 컬럼에는 자동추정·구매잔량·기타상품·STOCK_FALLBACK 같은 시스템 메시지를 넣지 않는다. 적요는 상품설명/원본 메모만 보존한다.
+// V1.a22.61: 엑셀 다운로드 1번 시트(전체재고)는 현재 화면 보기모드 그대로 출력한다. 코드통합형 화면이면 통합형, Lot 상세형 화면이면 상세형 rows를 사용하고, 구매잔량/기타상품/상세원장은 원가 근거용으로 보존한다.
 // 단가가 없으면 사용자가 정한 그룹별 후보 외 다른 컬럼으로 자동 대체하지 않고 공백 + 단가확인으로 보낸다.
 // 청과상장은 출고가(공지) 다음 청과 고정가를 바로 적용한다.
 // 청과 고정가가 없을 때 도매A/0.91을 적용하고, 도매A가 없으면 이미 입고가+외주비+노무비/0.91로 계산된 상장가를 적용한다.
@@ -908,7 +908,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.60',
+    version: 'V1.a22.61',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -1477,7 +1477,7 @@ const DATAOPS_OPERATION_MODULE = Object.freeze({
         const sQty = Math.abs(safeNum(sourceQty));
         const tQty = Math.abs(safeNum(targetQty));
         if (unitCost <= 0 || sQty <= 0 || tQty <= 0) return 0;
-        // V1.a22.60: 수량 단위가 바뀌면 출처 총원가를 대상 생성수량으로 나눠 단가를 환산한다.
+        // V1.a22.61: 수량 단위가 바뀌면 출처 총원가를 대상 생성수량으로 나눠 단가를 환산한다.
         // 반올림 기준: 1,000원 이상은 100원 단위, 1,000원 미만은 10원 단위.
         // 예: 12,000원 10kg 2박스 → 20kg 1박스 = 24,000원.
         // 예: 11,000원 1kg 1박스 → 100g 9EA = 1,222.22원 → 1,200원.
@@ -2069,7 +2069,7 @@ const FILTER_SORT_MODULE = Object.freeze({
         const unitRules = options.unitRules || CONFIG_MODULE.getUnitRules(defaultMappings);
         return rows.filter(row => {
             const standard = FILTER_SORT_MODULE.getStandard(row, { unitRules });
-            // V1.a22.60: 카테고리 필터는 버튼형 중복선택이다.
+            // V1.a22.61: 카테고리 필터는 버튼형 중복선택이다.
             // 과거 저장값('ALL' 또는 단일 문자열)과 신규 배열값을 모두 호환한다.
             const selectedCategories = Array.isArray(filterState.category)
                 ? filterState.category.filter(v => safeStr(v) && safeStr(v) !== 'ALL')
@@ -2198,12 +2198,12 @@ const FILTER_SORT_MODULE = Object.freeze({
    - 기본 보기: 코드 통합형. 거래처칩 이동은 단일 원장행만 즉시 적용하고 통합2 이상은 Lot 상세형으로 풀어 수동 처리한다.
    ======================================================================= */
 
-// V1.a22.60: 코드통합형 해제/다시 통합 상태 관리.
+// V1.a22.61: 코드통합형 해제/다시 통합 상태 관리.
 // 원본 Lot은 수정하지 않고 화면 보기/엑셀 1번 시트 출력에만 반영한다.
 const DATAOPS_CODE_MERGE_OVERRIDE_MODULE = Object.freeze({
     STORAGE_KEY: 'dataops_code_merge_override_v1',
     normalizeCode: (code = '') => safeStr(code, '').replace(/\.0$/, '').trim() || 'NO_CODE',
-    getDisabledMap: () => {
+    getStateMap: () => {
         try {
             const raw = localStorage.getItem(DATAOPS_CODE_MERGE_OVERRIDE_MODULE.STORAGE_KEY);
             const parsed = raw ? JSON.parse(raw) : {};
@@ -2213,24 +2213,47 @@ const DATAOPS_CODE_MERGE_OVERRIDE_MODULE = Object.freeze({
             return {};
         }
     },
-    saveDisabledMap: (map = {}) => {
+    saveStateMap: (map = {}) => {
         try { localStorage.setItem(DATAOPS_CODE_MERGE_OVERRIDE_MODULE.STORAGE_KEY, JSON.stringify(map || {})); } catch (e) { }
         return map || {};
     },
-    isDisabled: (code = '') => {
+    getState: (code = '') => {
         const key = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.normalizeCode(code);
-        const map = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.getDisabledMap();
-        return !!map[key];
+        const map = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.getStateMap();
+        const state = map[key];
+        if (!state) return {};
+        // V1.a22.61: 기존 V1.a22.60 저장값({disabled:true})도 그대로 호환한다.
+        return typeof state === 'object' ? state : {};
     },
-    toggle: (code = '') => {
+    isDisabled: (code = '') => !!DATAOPS_CODE_MERGE_OVERRIDE_MODULE.getState(code).disabled,
+    getRepresentativeKey: (code = '') => safeStr(DATAOPS_CODE_MERGE_OVERRIDE_MODULE.getState(code).representativeKey || ''),
+    split: (code = '') => {
         const key = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.normalizeCode(code);
-        const map = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.getDisabledMap();
-        if (map[key]) delete map[key];
-        else map[key] = { disabled: true, updatedAt: new Date().toISOString() };
-        DATAOPS_CODE_MERGE_OVERRIDE_MODULE.saveDisabledMap(map);
-        return !map[key] ? false : true;
+        const map = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.getStateMap();
+        map[key] = { ...(map[key] || {}), disabled: true, updatedAt: new Date().toISOString() };
+        DATAOPS_CODE_MERGE_OVERRIDE_MODULE.saveStateMap(map);
+        return true;
+    },
+    mergeWithRepresentative: (code = '', representativeKey = '') => {
+        const key = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.normalizeCode(code);
+        const map = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.getStateMap();
+        map[key] = {
+            ...(map[key] || {}),
+            disabled: false,
+            representativeKey: safeStr(representativeKey || ''),
+            updatedAt: new Date().toISOString()
+        };
+        DATAOPS_CODE_MERGE_OVERRIDE_MODULE.saveStateMap(map);
+        return false;
+    },
+    toggle: (code = '', representativeKey = '') => {
+        if (DATAOPS_CODE_MERGE_OVERRIDE_MODULE.isDisabled(code)) {
+            return DATAOPS_CODE_MERGE_OVERRIDE_MODULE.mergeWithRepresentative(code, representativeKey);
+        }
+        return DATAOPS_CODE_MERGE_OVERRIDE_MODULE.split(code);
     }
 });
+
 
 const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
     STORAGE_KEY: 'dataops_view_mode_v1',
@@ -2306,7 +2329,9 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
     sumField: (rows = [], field = '') => (rows || []).reduce((sum, row) => sum + safeNum(row[field]), 0),
     buildCodeSummaryRow: (code = '', rows = []) => {
         const sourceRows = rows || [];
-        const latest = DATAOPS_VIEW_LAYER_MODULE.pickLatestRow(sourceRows);
+        const representativeKey = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.getRepresentativeKey(code);
+        const selectedRepresentativeRow = representativeKey ? sourceRows.find(r => safeStr(r.batchKey) === safeStr(representativeKey)) : null;
+        const latest = selectedRepresentativeRow || DATAOPS_VIEW_LAYER_MODULE.pickLatestRow(sourceRows);
         const sourceKeys = sourceRows.map(r => r.batchKey).filter(Boolean);
         const base = DATAOPS_VIEW_LAYER_MODULE.sumField(sourceRows, '기초');
         const inQty = DATAOPS_VIEW_LAYER_MODULE.sumField(sourceRows, '입고');
@@ -2336,11 +2361,13 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
         const weightedQty = priceRows.reduce((s, r) => s + qtyForPrice(r), 0);
         const weightedCost = priceRows.reduce((s, r) => s + (qtyForPrice(r) * safeNum(r.단가)), 0);
         const highestPrice = priceRows.reduce((max, r) => Math.max(max, safeNum(r.단가)), 0);
-        const representativePrice = costBasisMode === 'average'
-            ? (weightedQty > 0 ? weightedCost / weightedQty : safeNum(latestPriceRow.단가))
-            : (costBasisMode === 'highest'
-                ? (highestPrice || safeNum(latestPriceRow.단가))
-                : safeNum(latestPriceRow.단가));
+        const representativePrice = selectedRepresentativeRow
+            ? safeNum(selectedRepresentativeRow.단가)
+            : (costBasisMode === 'average'
+                ? (weightedQty > 0 ? weightedCost / weightedQty : safeNum(latestPriceRow.단가))
+                : (costBasisMode === 'highest'
+                    ? (highestPrice || safeNum(latestPriceRow.단가))
+                    : safeNum(latestPriceRow.단가)));
         const distinctPrices = new Set(priceRows.map(r => String(safeNum(r.단가))).filter(v => v && v !== '0'));
         const distinctDates = new Set(sourceRows.map(r => safeStr(r.일자 || '')).filter(Boolean));
         const costReviewNeeded = sourceRows.length > 1 && (distinctPrices.size > 1 || distinctDates.size > 1 || vendorSet.length > 1);
@@ -2351,6 +2378,8 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
             if (!confirmedSalesRows.length) return true;
             return !(s.includes('Lot매치확인') || s.includes('Lot확인필요') || s.includes('Lot불일치') || s.includes('Lot원가확인') || s.includes('매입처없음'));
         });
+        const representativeVendor = safeStr(latest._displayPurchaseVendor || latest._purchaseLotVendor || latest._confirmedPurchaseVendor || (latest._uploadRole === 'out' ? '' : latest.거래처) || '');
+        const representativeDateNum = selectedRepresentativeRow ? FILTER_SORT_MODULE.getPurchaseDateSortValue(latest) : latestDateNum;
         return {
             ...latest,
             batchKey: `VIEW_CODE|${safeStr(code || 'NO_CODE')}`,
@@ -2362,9 +2391,9 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
             _sourceLedgerRows: sourceRows,
             코드: code,
             품명: safeStr(latest.품명 || latest.name || '이름없음'),
-            거래처: vendorSet.length <= 1 ? (vendorSet[0] || safeStr(latest.거래처 || '미지정')) : `${vendorSet.length}개 구매처`,
-            일자: latestDateNum === 99999999 ? safeStr(latest.일자 || '') : formatStrForPeriod(latestDateNum),
-            _purchaseDateNum: latestDateNum === 99999999 ? safeNum(latest._purchaseDateNum) : latestDateNum,
+            거래처: selectedRepresentativeRow ? (representativeVendor || safeStr(latest.거래처 || '미지정')) : (vendorSet.length <= 1 ? (vendorSet[0] || safeStr(latest.거래처 || '미지정')) : `${vendorSet.length}개 구매처`),
+            일자: representativeDateNum === 99999999 ? safeStr(latest.일자 || '') : formatStrForPeriod(representativeDateNum),
+            _purchaseDateNum: representativeDateNum === 99999999 ? safeNum(latest._purchaseDateNum) : representativeDateNum,
             단가: representativePrice,
             _costBasisMode: costBasisMode,
             _costBasisLabel: DATAOPS_VIEW_LAYER_MODULE.getCostBasisLabel(costBasisMode),
@@ -2386,14 +2415,18 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
         (rows || []).forEach(row => { const code = DATAOPS_VIEW_LAYER_MODULE.normalizeCode(row); if (!groups[code]) groups[code] = []; groups[code].push(row); });
         return Object.entries(groups)
             .flatMap(([code, list]) => {
+                // V1.a22.61: 같은 품목코드 안에서는 구매일자 오름차순이 기본이다.
+                // 마지막 입고분은 같은 코드 그룹의 마지막에 노출된다.
                 const sortedList = [...list].sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b));
-                if (DATAOPS_CODE_MERGE_OVERRIDE_MODULE.isDisabled(code)) {
+                const isMergeCandidate = sortedList.length > 1;
+                if (isMergeCandidate && DATAOPS_CODE_MERGE_OVERRIDE_MODULE.isDisabled(code)) {
                     return sortedList.map(row => ({
                         ...row,
                         _isViewRow: false,
                         _viewMode: 'CODE_SUMMARY_SPLIT',
                         _mergeDisabled: true,
                         _mergeOverrideCode: code,
+                        _mergeGroupLotCount: sortedList.length,
                         _viewSourceKeys: [row.batchKey]
                     }));
                 }
@@ -2427,7 +2460,7 @@ const EXPORT_MODULE = Object.freeze({
         if (invalidTexts.some(v => compact === v || compact.includes(v))) return '';
         return text;
     },
-    // V1.a22.60: 적요는 쇼핑몰/ERP로 넘어갈 수 있는 상품설명 영역이다.
+    // V1.a22.61: 적요는 쇼핑몰/ERP로 넘어갈 수 있는 상품설명 영역이다.
     // 자동추정/구매잔량/기타상품/STOCK_FALLBACK 같은 내부 상태값은 적요에 절대 쓰지 않는다.
     sanitizeStockRemark: (value = '') => {
         const text = safeStr(value, '');
@@ -2444,7 +2477,7 @@ const EXPORT_MODULE = Object.freeze({
         if (systemTokens.some(token => compact.includes(safeStr(token).replace(/\s/g, '').toLowerCase()))) return '';
         return text;
     },
-    // V1.a22.60: 품명/규격은 언더바로 추정 분리하지 않는다.
+    // V1.a22.61: 품명/규격은 언더바로 추정 분리하지 않는다.
     // 구매현황·재고현황 원본 엑셀에 분리된 품명/규격/단위 컬럼이 있으므로 그 값을 그대로 우선 사용한다.
     splitPurchaseNameSpec: (nameValue = '', specValue = '', unitValue = '') => {
         const name = safeStr(nameValue, '').replace(/\s*\[[^\]]+\]\s*$/, '').trim();
@@ -2611,12 +2644,12 @@ const EXPORT_MODULE = Object.freeze({
             '기록': EXPORT_MODULE.sanitizeLedgerRecordValue(item.일자),
             '거래': EXPORT_MODULE.sanitizeLedgerTradeValue(item.거래처),
             '구매가': Math.round(safeNum(item.단가)),
-            // V1.a22.60: 전체재고는 앞으로 재고현황 입력 시트로 사용하므로 원본 재고현황의 기본값을 그대로 보존한다.
+            // V1.a22.61: 전체재고는 앞으로 재고현황 입력 시트로 사용하므로 원본 재고현황의 기본값을 그대로 보존한다.
             '기본': getBasicDisplayValue(item),
             '적요': EXPORT_MODULE.sanitizeStockRemark(raw['적요'] || raw['비고'] || raw['메모'] || '')
         };
     }),
-    // V1.a22.60: 엑셀 다운로드 1번 시트는 현재 화면 보기모드 그대로 출력한다.
+    // V1.a22.61: 엑셀 다운로드 1번 시트는 현재 화면 보기모드 그대로 출력한다.
     // 코드통합형/상세형/필터 결과를 보존하기 위해 화면 rows 순서를 유지한다.
     buildScreenStockRows: ({ productData = [], targetDateStr = '' } = {}) => (productData || [])
         .filter(item => STOCK_ENGINE_MODULE.getActualQty(item) > 0)
@@ -2642,7 +2675,7 @@ const EXPORT_MODULE = Object.freeze({
         const rowsToUse = Array.isArray(rows) ? rows : EXPORT_MODULE.buildNextBaseStockRows({ productData, targetDateStr });
         const displayDate = safeStr(targetDateStr, '').replace(/-/g, '/');
         const title = `회사명 : 원앱 / 1창고 / ${displayDate || '기준일미상'} / 전체재고`;
-        // V1.a22.60: 전체재고는 재고현황 입력으로 계속 사용할 시트다.
+        // V1.a22.61: 전체재고는 재고현황 입력으로 계속 사용할 시트다.
         // 양식은 단위/품목코드/품명/규격/재고/기록/거래/구매가/기본/적요 순서로 고정한다.
         const headers = ['단위', '품목코드', '품명', '규격', '재고', '기록', '거래', '구매가', '기본', '적요'];
         const aoa = [
@@ -2657,7 +2690,7 @@ const EXPORT_MODULE = Object.freeze({
         ws['!autofilter'] = { ref: `A2:J${Math.max(2, aoa.length)}` };
         return ws;
     },
-    // V1.a22.60: 전체재고는 실사양식/코드통합형 집계가 아니라 구매잔량 + 기타상품을 합친 현황이다.
+    // V1.a22.61: 전체재고는 실사양식/코드통합형 집계가 아니라 구매잔량 + 기타상품을 합친 현황이다.
     // 구매잔량은 구매일·구매처·구매가 Lot별로 분리하고, 기타상품도 같은 재고현황형 컬럼으로 맞춰 합산한다.
     buildWholeStockRowsFromBalance: ({ purchaseBalanceRows = [], otherStockRows = [] } = {}) => {
         const normalizeCode = (value = '') => safeStr(value, '').replace(/\.0$/, '').trim();
@@ -2701,7 +2734,7 @@ const EXPORT_MODULE = Object.freeze({
             && vendor !== '구매처미상'
             && price > 0;
         if (!validPurchaseFields) return false;
-        // V1.a22.60: 구매잔량/기타상품 필터는 이슈칩 기준이 아니라 구매 Lot 근거 기준으로 분류한다.
+        // V1.a22.61: 구매잔량/기타상품 필터는 이슈칩 기준이 아니라 구매 Lot 근거 기준으로 분류한다.
         // 실사오차·수기치환오차·과다로스 같은 확인 이슈가 있어도 구매일/구매처/구매가 Lot이 확정된 행은 구매잔량이다.
         // 반대로 구매 Lot이 없는 소분·치환·묶음·매입내역 없음·fallback 재고만 기타상품이다.
         if (lotKey || item._manualLotOverrideApplied || modeText === 'REVERSE_PURCHASE' || modeText === 'MANUAL_PURCHASE_LOT_OVERRIDE') return true;
@@ -2709,7 +2742,7 @@ const EXPORT_MODULE = Object.freeze({
         const structuralText = `${unit} ${modeText}`;
         if (/소분|치환|묶음|대체/.test(structuralText)) return false;
         if (safeNum(item.대체입고) !== 0 || safeNum(item.대체출고) !== 0) return false;
-        // V1.a22.60: 구매현황 매칭으로 생성된 Lot이 아니더라도 재고현황 원본에 기록·거래·구매가가 있으면 기존 구매잔량이다.
+        // V1.a22.61: 구매현황 매칭으로 생성된 Lot이 아니더라도 재고현황 원본에 기록·거래·구매가가 있으면 기존 구매잔량이다.
         // STOCK_FALLBACK이라는 이유만으로 기타상품으로 떨어뜨리면 기존 재고 Lot이 기타상품 필터에 섞인다.
         return true;
     },
@@ -3191,20 +3224,20 @@ const EXPORT_MODULE = Object.freeze({
         const masterCheckRows = EXPORT_MODULE.buildMasterCheckRows({ productData, targetDateStr });
         const substitutionCandidateRows = EXPORT_MODULE.buildSubstitutionCandidateRows({ productData, targetDateStr });
         const exportData2 = EXPORT_MODULE.buildStockCountSheetRows({ productData: operationalProductData, targetDateStr });
-        // V1.a22.60: 구매잔량은 현황/원가 근거 시트이므로 코드통합형 데이터가 아니라 원본 Lot 행(productData) 기준으로 만든다.
+        // V1.a22.61: 구매잔량은 현황/원가 근거 시트이므로 코드통합형 데이터가 아니라 원본 Lot 행(productData) 기준으로 만든다.
         // 같은 품목이라도 구매일·구매처·구매가가 다르면 반드시 별도 행으로 분리한다.
         // 코드통합형 operationalProductData를 쓰면 2개 구매처/2개 단가 Lot이 1행으로 합쳐져 구매잔량 개념이 깨진다.
         const purchaseBalanceRows = EXPORT_MODULE.buildPurchaseBalanceRows({ productData, targetDateStr });
         const otherStockRows = EXPORT_MODULE.buildOtherStockRows({ productData, targetDateStr });
         const screenRowsForExport = Array.isArray(screenRows) && screenRows.length ? screenRows : null;
-        // V1.a22.60: 1번 시트 전체재고는 현재 화면 보기모드 그대로 출력한다.
+        // V1.a22.61: 1번 시트 전체재고는 현재 화면 보기모드 그대로 출력한다.
         // 화면 rows가 있으면 코드통합형/상세형/필터 상태를 그대로 반영하고, 없을 때만 구매잔량+기타상품 합본을 fallback으로 사용한다.
         const wholeStockRows = screenRowsForExport
             ? EXPORT_MODULE.buildScreenStockRows({ productData: screenRowsForExport, targetDateStr })
             : EXPORT_MODULE.buildWholeStockRowsFromBalance({ purchaseBalanceRows, otherStockRows });
         const checkRequestRows = EXPORT_MODULE.buildManagementIssueRows({ productData: operationalProductData });
         const wb = XLSX.utils.book_new();
-        // V1.a22.60: 수불마감 기본 보고서는 전체재고 / 구매잔량 / 기타상품 3단계로 분리한다.
+        // V1.a22.61: 수불마감 기본 보고서는 전체재고 / 구매잔량 / 기타상품 3단계로 분리한다.
         // 전체재고는 앞으로 재고현황 입력으로 계속 사용할 기준 시트다.
         // 단, 실사양식/코드통합형 집계가 아니라 구매잔량 + 기타상품을 그대로 합친다.
         // 구매잔량은 남은 재고를 구매현황 양식처럼 일자/구매처/단가별 Lot 잔량으로 보여준다.
@@ -4778,7 +4811,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 return priorityGroups.length; // 매핑 안 된 거래처는 가장 후순위
             };
             const mergedOutItems = Object.values(aggregatedSales);
-            // V1.a22.60: 창고출고 거래처는 같은 품목에 여러 Lot이 있을 때 당일구매/당일판매 연결 가능성을 우선 본다.
+            // V1.a22.61: 창고출고 거래처는 같은 품목에 여러 Lot이 있을 때 당일구매/당일판매 연결 가능성을 우선 본다.
             const warehouseOutboundCustomerSet = new Set(
                 parseTransferPriceGroupCards(mappings.transferPriceGroups || defaultMappings.transferPriceGroups)
                     .filter(card => normalizeTransferGroupName(card.groupName) === '창고출고')
@@ -5211,7 +5244,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     const stockOtherBuckets = stockFifoBuckets.filter(bucket => !isRequestedBucket(bucket));
                     const hasRequestedPositive = requestedBuckets.some(hasPositiveQty);
                     const buildLotStages = () => {
-                        // V1.a22.60: 확정매칭이 안 된 나머지 행은 기본 FIFO를 유지하되,
+                        // V1.a22.61: 확정매칭이 안 된 나머지 행은 기본 FIFO를 유지하되,
                         // 창고출고 거래처는 당일 구매·당일 판매 흐름 가능성이 높으므로 당일구매 Lot을 먼저 배정한다.
                         // 단, 구매처+구매단가 확정값이 있는 판매현황 1순위 매칭은 이 fallback보다 항상 먼저 적용된다.
                         const failed = !!sale._confirmedMatchFailed;
@@ -5938,8 +5971,9 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
     const totalOut = item.출고 + addedOut;
     const isToday = item.일자 && targetDateStr && item.일자 === targetDateStr;
     const isCodeSummaryViewRow = !!item._isViewRow && item._viewMode === 'CODE_SUMMARY';
-    const isMergeDisabledRow = !!item._mergeDisabled;
-    const mergeSourceRows = isCodeSummaryViewRow && Array.isArray(item._sourceLedgerRows) ? item._sourceLedgerRows : [];
+    const isMergeCandidateRow = isCodeSummaryViewRow && safeNum(item._viewLotCount) > 1;
+    const isMergeDisabledRow = !!item._mergeDisabled && safeNum(item._mergeGroupLotCount || 0) > 1;
+    const mergeSourceRows = isMergeCandidateRow && Array.isArray(item._sourceLedgerRows) ? item._sourceLedgerRows : [];
     const mergeDetailText = mergeSourceRows.length > 1
         ? mergeSourceRows.slice(0, 3).map(r => {
             const d = safeStr(r.일자 || r._stockRecordDate || r._purchaseDate || '');
@@ -6086,7 +6120,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
     }
     // V1.a22.29: 상품명 하단 구매정보에는 구매처 계열만 표시한다. 3.매출 거래처명(판매처)은 오른쪽 거래처칩 전용이다.
     const displayPurchaseVendor = safeStr(item._displayPurchaseVendor || item._purchaseLotVendor || item._confirmedPurchaseVendor || (item._uploadRole === 'out' || item._fromSalesConfirmedPurchase ? '' : item.거래처) || '미지정', '미지정');
-    return (React.createElement("tr", { "data-code": item.코드, "data-batch": item.batchKey, onDragOver: (e) => { e.preventDefault(); setIsDragOver(true); }, onDragLeave: (e) => { e.preventDefault(); setIsDragOver(false); }, onDrop: (e) => {
+    return (React.createElement("tr", { "data-code": item.코드, "data-batch": item.batchKey, "data-merge-candidate": (isMergeCandidateRow || isMergeDisabledRow) ? "1" : undefined, tabIndex: (isMergeCandidateRow || isMergeDisabledRow) ? 0 : undefined, onDragOver: (e) => { e.preventDefault(); setIsDragOver(true); }, onDragLeave: (e) => { e.preventDefault(); setIsDragOver(false); }, onDrop: (e) => {
             e.preventDefault();
             setIsDragOver(false);
             try {
@@ -6117,7 +6151,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                         isLinked && React.createElement("i", { className: "fas fa-link text-blue-500 mr-1 mt-0.5 animate-pulse" }),
                         isActiveMulti && React.createElement("i", { className: "fas fa-tags text-blue-500 mr-1 mt-0.5" }),
                         React.createElement("span", { title: item.품명, className: "truncate leading-tight text-slate-900" }, item.품명),
-                        (isCodeSummaryViewRow || isMergeDisabledRow) && onToggleCodeMerge && React.createElement("button", { type: "button", onClick: (e) => { e.preventDefault(); e.stopPropagation(); onToggleCodeMerge(item.코드 || item._mergeOverrideCode); }, className: `ml-2 shrink-0 px-2 py-[2px] rounded border text-[10px] font-black ${isMergeDisabledRow ? 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200' : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'}`, title: isMergeDisabledRow ? '해제한 상품을 다시 코드통합형으로 표시합니다.' : '이 상품은 다음에도 Lot별로 나눠서 표시합니다.' }, isMergeDisabledRow ? '다시 통합' : '해제')),
+                        (isMergeCandidateRow || isMergeDisabledRow) && onToggleCodeMerge && React.createElement("button", { type: "button", onClick: (e) => { e.preventDefault(); e.stopPropagation(); onToggleCodeMerge(item.코드 || item._mergeOverrideCode, isMergeDisabledRow ? item.batchKey : '', isMergeDisabledRow ? 'merge' : 'split'); }, className: `ml-2 shrink-0 px-2 py-[2px] rounded border text-[10px] font-black ${isMergeDisabledRow ? 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200' : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'}`, title: isMergeDisabledRow ? '이 Lot의 일자/거래처/단가를 기준으로 재고수량을 합쳐 표시합니다.' : '이 상품은 다음에도 Lot별로 나눠서 표시합니다.' }, isMergeDisabledRow ? '다시 통합' : '해제')),
                     React.createElement("div", { className: "text-[10px] text-slate-500 truncate font-medium tracking-tight flex items-center" },
                         item.코드 !== '-' && item.코드 !== 'NO_CODE' ? React.createElement("span", { className: "mr-1" }, item.코드) : '',
                         React.createElement("span", { title: item._dateDisplayMemo || (item.일자 ? item.일자 : '미상(과거처리)'), className: isToday ? "text-blue-700 bg-blue-100 px-1 rounded border border-blue-200 font-bold" : (item._dateDisplayMemo && item._dateDisplayMemo.includes('과거처리') ? "text-slate-500 bg-slate-100 px-1 rounded border border-slate-200 font-bold" : "") }, item.일자 || '미상'),
@@ -6291,9 +6325,9 @@ function App() {
         // V1.a22.12: 1재고현황의 날짜 컬럼명 '기록'을 Lot 기준일로 인식한다.
         // 과거 저장된 localStorage 매핑에 date 항목이 남아 있어도 자동 보강한다.
         merged.date = ensureCsvValue(merged.date || defaultMappings.date, ['기록', '최종기록', '재고기록', '등록일', '등록일자', '기준일']);
-        // V1.a22.60: 과거 저장된 매핑에도 1재고/4실사/수불마감의 '구매가' 컬럼을 원가 후보로 자동 보강한다.
+        // V1.a22.61: 과거 저장된 매핑에도 1재고/4실사/수불마감의 '구매가' 컬럼을 원가 후보로 자동 보강한다.
         merged.price = ensureCsvValue(merged.price || defaultMappings.price, ['구매가', '최종(창고)', '매입단가(원가)', '입고가']);
-        // V1.a22.60: 과거 저장 설정에도 창고출고 거래처 기본목록을 자동 보강한다.
+        // V1.a22.61: 과거 저장 설정에도 창고출고 거래처 기본목록을 자동 보강한다.
         merged.transferPriceGroups = ensureTransferPriceGroupDefaultCustomers(merged.transferPriceGroups || defaultMappings.transferPriceGroups);
         return merged;
     };
@@ -6315,10 +6349,20 @@ function App() {
     const [viewMode, setViewMode] = useState(() => DATAOPS_VIEW_LAYER_MODULE.getSavedViewMode());
     useEffect(() => { DATAOPS_VIEW_LAYER_MODULE.saveViewMode(viewMode); }, [viewMode]);
     const [mergeOverrideVersion, setMergeOverrideVersion] = useState(0);
-    const handleToggleCodeMerge = useCallback((code) => {
-        const disabled = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.toggle(code);
+    const mergeCandidateIndexRef = useRef(-1);
+    const handleToggleCodeMerge = useCallback((code, representativeKey = '', action = '') => {
+        let disabled;
+        if (action === 'merge') {
+            disabled = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.mergeWithRepresentative(code, representativeKey);
+        }
+        else if (action === 'split') {
+            disabled = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.split(code);
+        }
+        else {
+            disabled = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.toggle(code, representativeKey);
+        }
         setMergeOverrideVersion(v => v + 1);
-        setAlertMsg(disabled ? '해당 상품은 다음부터 코드통합형에서도 Lot별로 나눠서 표시합니다.' : '해당 상품을 다시 코드통합형으로 표시합니다.');
+        setAlertMsg(disabled ? '해당 상품은 다음부터 코드통합형에서도 Lot별로 나눠서 표시합니다.' : '선택한 Lot의 일자/거래처/단가를 기준으로 다시 코드통합형 표시합니다.');
     }, [setAlertMsg]);
     // 비즈니스 로직 엔진 연결
     const { productData, setProductData, analysisPeriod, setAnalysisPeriod, targetDateStr, setTargetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes, resetEngine, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, handlePurchaseLotManualAdjust, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction } = useInventoryEngine({ mappings, grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep });
@@ -7353,7 +7397,7 @@ function App() {
             if (!f.name)
                 checkReasons.push('품명 없음');
             const price = resolved.status === 'MATCHED' ? safeNum(resolved.price) : '';
-            // V1.a22.60: 입고가보다 판매가/도매가/행사가가 낮으면 관리자 타이핑 실수 가능성이 높으므로 확인요청 시트로 보낸다.
+            // V1.a22.61: 입고가보다 판매가/도매가/행사가가 낮으면 관리자 타이핑 실수 가능성이 높으므로 확인요청 시트로 보낸다.
             // 자동 보정은 금지하고, ERP 업로드 전 관리자가 직접 수정하도록 안내한다.
             const baseCost = safeNum(f.cost);
             const wholesaleAForCheck = safeNum(f.wholesaleA);
@@ -7361,7 +7405,7 @@ function App() {
                 const priceSourceName = safeStr(resolved.priceKey || resolved.columnName || '판매가', '판매가');
                 checkReasons.push(`역마진/입고가초과: 입고가 ${formatMoney(baseCost)} > 판매가 ${formatMoney(price)} (${priceSourceName})`);
             }
-            // V1.a22.60: 도매A는 업로드 양식 생성값과 별개로 수기입력 오류 확인용 이상치 검수를 한다.
+            // V1.a22.61: 도매A는 업로드 양식 생성값과 별개로 수기입력 오류 확인용 이상치 검수를 한다.
             // 예: 입고가 2,800 / 정상 도매A 3,800인데 38,000으로 입력된 경우는 4배 이상 조건으로 확인요청한다.
             if (baseCost > 0 && wholesaleAForCheck > 0) {
                 if (wholesaleAForCheck < baseCost && !checkReasons.some(reason => safeStr(reason).includes('역마진/입고가초과'))) {
@@ -9260,6 +9304,28 @@ ${balanceText}
                 if (activeIssueModeRef.current)
                     setActiveIssueMode(null);
             }
+            if (e.key === 'Tab' && viewMode === 'CODE_SUMMARY' && !activeIssueModeRef.current) {
+                const activeEl = document.activeElement;
+                const tag = activeEl ? activeEl.tagName.toLowerCase() : '';
+                const type = activeEl ? activeEl.type : '';
+                const isTyping = tag === 'textarea' || (tag === 'input' && (type === 'text' || type === 'number' || type === 'search'));
+                const candidates = Array.from(document.querySelectorAll('tr[data-merge-candidate="1"]'));
+                if (!isTyping && candidates.length > 0) {
+                    e.preventDefault();
+                    let currentIdx = candidates.findIndex(row => row === activeEl || row.contains(activeEl));
+                    if (currentIdx < 0) currentIdx = mergeCandidateIndexRef.current;
+                    const nextIdx = e.shiftKey
+                        ? (currentIdx <= 0 ? candidates.length - 1 : currentIdx - 1)
+                        : (currentIdx < 0 || currentIdx >= candidates.length - 1 ? 0 : currentIdx + 1);
+                    mergeCandidateIndexRef.current = nextIdx;
+                    const target = candidates[nextIdx];
+                    candidates.forEach(row => row.classList.remove('ring-2', 'ring-amber-400', 'relative', 'z-30'));
+                    target.classList.add('ring-2', 'ring-amber-400', 'relative', 'z-30');
+                    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    if (typeof target.focus === 'function') target.focus({ preventScroll: true });
+                    return;
+                }
+            }
             if (e.key === 'Tab' && activeIssueModeRef.current) {
                 e.preventDefault();
                 latestHandlers.current.handleIssueJump(activeIssueModeRef.current, e.shiftKey ? 'prev' : 'next');
@@ -9268,7 +9334,7 @@ ${balanceText}
         window.addEventListener('keydown', handleGlobalEnter);
         window.addEventListener('keydown', handleGlobalKeys);
         return () => { window.removeEventListener('keydown', handleGlobalEnter); window.removeEventListener('keydown', handleGlobalKeys); };
-    }, [linkSourceKey, appStep, isProcessing, files, guideModalOpen]);
+    }, [linkSourceKey, appStep, isProcessing, files, guideModalOpen, viewMode]);
     const viewProductData = useMemo(() => DATAOPS_VIEW_LAYER_MODULE.buildViewRows(productData, { viewMode }), [productData, viewMode, mergeOverrideVersion]);
     const handleViewLayerEditBlocked = useCallback(() => {
         setAlertMsg('코드 통합형은 표시 전용입니다. 수량/단가/거래처칩 수정은 [보기: Lot 상세형]에서 진행하세요.');
@@ -9277,7 +9343,7 @@ ${balanceText}
         let sourceRows = productData;
         if (!filters.showHiddenMoveRows)
             sourceRows = sourceRows.filter(p => !p._hiddenBySalesMove);
-        // V1.a22.60: 구매잔량/기타상품 필터는 원본 Lot 행 기준으로 먼저 적용한 뒤 보기 계층을 만든다.
+        // V1.a22.61: 구매잔량/기타상품 필터는 원본 Lot 행 기준으로 먼저 적용한 뒤 보기 계층을 만든다.
         // 코드통합형을 먼저 만들면 구매잔량 Lot과 기타상품 Lot이 한 행으로 섞여 필터 결과가 틀어진다.
         if (filters.stockListType === 'PURCHASE_BALANCE')
             sourceRows = sourceRows.filter(p => EXPORT_MODULE.isPurchaseBalanceStockItem(p));
@@ -9316,7 +9382,7 @@ ${balanceText}
                 });
         }
         data = FILTER_SORT_MODULE.applyFilters(data, filters, { favoriteVendors: CONFIG_MODULE.getFavoriteVendors(mappings), unitRules: CONFIG_MODULE.getUnitRules(mappings) });
-        // V1.a22.60: 구매잔량/기타상품 필터는 sourceRows 단계에서 이미 적용된다.
+        // V1.a22.61: 구매잔량/기타상품 필터는 sourceRows 단계에서 이미 적용된다.
         // 이후 BOX/EA/소분·카테고리·검색 필터와 교차 적용된다.
         if (filters.search) {
             const q = filters.search.toLowerCase();
@@ -9363,7 +9429,7 @@ ${balanceText}
                     React.createElement("h1", { className: "text-xl md:text-xl font-black leading-none text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.60"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.61"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
@@ -9438,7 +9504,7 @@ ${balanceText}
                     React.createElement("div", { className: "mb-4" },
                         React.createElement("h4", { className: "text-sm font-bold text-slate-800" },
                             React.createElement("i", { className: "fas fa-star text-amber-500 mr-2" }),
-                            "V1.a22.60 구매잔량 Lot분리/구매처별 분리"),
+                            "V1.a22.61 구매잔량 Lot분리/구매처별 분리"),
                         React.createElement("p", { className: "text-xs text-slate-500 mt-1.5 ml-6" }, "\u2605 \uD544\uD130\uC640 BOX/EA/\uC18C\uBD84 \uD544\uD130\uAC00 \uC544\uB798 \uC124\uC815\uAC12\uC744 \uAE30\uC900\uC73C\uB85C \uB3D9\uC791\uD569\uB2C8\uB2E4. \uB2E8\uC704 \uCEEC\uB7FC\uC744 \uC6B0\uC120 \uD310\uC815\uD558\uACE0, \uB2E8\uC704\uAC00 \uC5C6\uC744 \uB54C\uB9CC \uD488\uBA85/\uADDC\uACA9\uC744 \uBCF4\uC870 \uB2E8\uC11C\uB85C \uC0AC\uC6A9\uD569\uB2C8\uB2E4.")),
                     React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-4 bg-amber-50/60 p-4 rounded-lg border border-amber-200" },
                         React.createElement("div", { className: "flex flex-col" },
