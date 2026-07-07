@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.54)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.55)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.54.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.55.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -642,7 +642,7 @@ const normalizeTransferGroupName = (name) => {
 // V1.a22.15: 제외거래처 판정은 2.매입/3.매출 모두 전표의 거래처명(거래처) 기준으로만 적용한다. 구매처/매입처/원구매처는 제외 판정에서 제외한다.
 // V1.a22.29: 코드 통합형 거래처칩 이동은 단일 원장행만 즉시 적용하고, 통합2 이상은 Lot 상세형에서 수동 처리한다.
 // V1.a22.17: 보기모드(코드 통합형/Lot 상세형)는 버튼형으로 전환하고, 정렬/카테고리는 드롭다운으로 정리한다.
-// V1.a22.54: 카테고리는 다시 버튼형 중복선택으로 변경한다.
+// V1.a22.55: 카테고리는 다시 버튼형 중복선택으로 변경한다.
 // V1.a22.17: System.IO는 아래로 스크롤하면 우측 펼치기 버튼만 유지하고, 최상단 복귀 전까지 자동 펼침을 금지해 화면 흔들림을 차단한다.
 // V1.a22.29: 이슈/결과 칸에서 잔량확인 뱃지와 구매일자/구매처 반복 표시를 제거한다. 잔량 마이너스는 잔량 숫자로만 표시한다.
 // V1.a22.29: 코드 통합형 배지는 실제 원장행이 2개 이상 합쳐진 경우에만 표시한다. 통합1은 단일 원장행이므로 숨긴다.
@@ -658,18 +658,18 @@ const normalizeTransferGroupName = (name) => {
 // V1.a22.34: 판매업로드 생성에서 합계/소계 판정은 행 전체 includes 검색을 금지한다. 간단설명·적요·출고지시·전달사항·비고의 메모 문구(예: 합계 확인)는 행 제외 조건이 아니다.
 // V1.a22.42: 판매업로드 생성 시 판매가/도매가/행사가가 입고가보다 낮으면 자동 보정하지 않고 역마진/입고가초과 검수대상으로 확인요청 시트와 완료 팝업에 노출한다.
 // V1.a22.42: 판매업로드 완료 팝업에서 확인요청 총건수 문구는 업로드불가/역마진 세부 건수와 중복되므로 제거한다.
-// V1.a22.54: 수불마감 엑셀보고서는 구매잔량을 메인 시트로 두고, 남은 재고를 재고현황형 양식으로 기록하되 기록·거래·구매가에는 구매 Lot의 일자·구매처·단가를 출력한다.
-// V1.a22.54: 구매 Lot으로 설명되지 않는 소분·치환·묶음·매입내역 없음 재고는 기타재고 시트로 분리한다. 실사양식은 ERP 재고실사 업로드용이므로 기존 양식을 변경하지 않는다.
-// V1.a22.54: 소분/치환/묶음 원가환산 반올림 기준을 유지한다. 환산원가가 1,000원 이상이면 100원 단위, 1,000원 미만이면 10원 단위로 반올림한다. 예: 11,000÷9=1,222.22 → 1,200원.
-// V1.a22.54: 구매잔량 시트는 재고현황형 양식 순서(단위/품목코드/품명/규격/재고/기록/거래/구매가/기본/적요)를 사용한다. 품명/규격은 언더바로 추정 분리하지 않고, 구매현황·재고현황 원본의 분리 컬럼을 우선 사용한다.
-// V1.a22.54: 재고 실사 출력은 품명/규격 폭을 기존 대비 약 절반으로 줄이고, 이슈메모 열을 확장한다. ERP 실사 업로드용 구조는 유지하고 프린터용 폭 비율만 조정한다.
-// V1.a22.54: 재고/Lot 화면에 구매잔량/기타상품 분리 필터를 추가한다. 이 필터는 BOX/EA/소분·카테고리·검색 필터와 중복 조합된다.
-// V1.a22.54: 카테고리 필터를 드롭다운 단일선택에서 버튼형 중복선택으로 전환한다. 10/20/30/40/50은 복수 선택 가능하며 구매잔량/기타상품·BOX/EA/소분·검색 필터와 교차 적용된다.
-// V1.a22.54: 구매가 추출 보강. 1재고/4실사/수불마감 파일의 구매가 컬럼을 원가 후보로 인식하고, 구매잔량 시트는 품목코드순으로 정렬한다.
-// V1.a22.54: 구매잔량은 코드통합형으로 합치지 않고 원본 Lot 행 기준으로 출력한다. 같은 품목코드라도 구매일·구매처·구매가가 다르면 분리한다.
-// V1.a22.54: 구매잔량/기타상품 화면 필터는 이슈 유무가 아니라 구매 Lot 근거 기준으로 분류한다. 구매일·구매처·구매가가 확정된 행은 수기치환오차/실사오차/과다로스 이슈가 있어도 구매잔량에 남긴다.
-// V1.a22.54: 재고현황 자체에 기록·거래·구매가가 있으면 구매현황 파일 매칭 여부와 관계없이 기존 구매 Lot 잔량으로 보고 구매잔량에 포함한다.
-// V1.a22.54: 수불마감 엑셀은 전체재고 / 구매잔량 / 기타상품 3단계 시트를 기본 축으로 둔다. 전체재고는 앞으로 재고현황 입력 시트로 사용한다.
+// V1.a22.55: 수불마감 엑셀보고서는 구매잔량을 메인 시트로 두고, 남은 재고를 재고현황형 양식으로 기록하되 기록·거래·구매가에는 구매 Lot의 일자·구매처·단가를 출력한다.
+// V1.a22.55: 구매 Lot으로 설명되지 않는 소분·치환·묶음·매입내역 없음 재고는 기타재고 시트로 분리한다. 실사양식은 ERP 재고실사 업로드용이므로 기존 양식을 변경하지 않는다.
+// V1.a22.55: 소분/치환/묶음 원가환산 반올림 기준을 유지한다. 환산원가가 1,000원 이상이면 100원 단위, 1,000원 미만이면 10원 단위로 반올림한다. 예: 11,000÷9=1,222.22 → 1,200원.
+// V1.a22.55: 구매잔량 시트는 재고현황형 양식 순서(단위/품목코드/품명/규격/재고/기록/거래/구매가/기본/적요)를 사용한다. 품명/규격은 언더바로 추정 분리하지 않고, 구매현황·재고현황 원본의 분리 컬럼을 우선 사용한다.
+// V1.a22.55: 재고 실사 출력은 품명/규격 폭을 기존 대비 약 절반으로 줄이고, 이슈메모 열을 확장한다. ERP 실사 업로드용 구조는 유지하고 프린터용 폭 비율만 조정한다.
+// V1.a22.55: 재고/Lot 화면에 구매잔량/기타상품 분리 필터를 추가한다. 이 필터는 BOX/EA/소분·카테고리·검색 필터와 중복 조합된다.
+// V1.a22.55: 카테고리 필터를 드롭다운 단일선택에서 버튼형 중복선택으로 전환한다. 10/20/30/40/50은 복수 선택 가능하며 구매잔량/기타상품·BOX/EA/소분·검색 필터와 교차 적용된다.
+// V1.a22.55: 구매가 추출 보강. 1재고/4실사/수불마감 파일의 구매가 컬럼을 원가 후보로 인식하고, 구매잔량 시트는 품목코드순으로 정렬한다.
+// V1.a22.55: 구매잔량은 코드통합형으로 합치지 않고 원본 Lot 행 기준으로 출력한다. 같은 품목코드라도 구매일·구매처·구매가가 다르면 분리한다.
+// V1.a22.55: 구매잔량/기타상품 화면 필터는 이슈 유무가 아니라 구매 Lot 근거 기준으로 분류한다. 구매일·구매처·구매가가 확정된 행은 수기치환오차/실사오차/과다로스 이슈가 있어도 구매잔량에 남긴다.
+// V1.a22.55: 재고현황 자체에 기록·거래·구매가가 있으면 구매현황 파일 매칭 여부와 관계없이 기존 구매 Lot 잔량으로 보고 구매잔량에 포함한다.
+// V1.a22.55: 수불마감 엑셀은 전체재고 / 구매잔량 / 기타상품 3단계 시트를 기본 축으로 둔다. 전체재고는 앞으로 재고현황 입력 시트로 사용한다.
 // 단가가 없으면 사용자가 정한 그룹별 후보 외 다른 컬럼으로 자동 대체하지 않고 공백 + 단가확인으로 보낸다.
 // 청과상장은 출고가(공지) 다음 청과 고정가를 바로 적용한다.
 // 청과 고정가가 없을 때 도매A/0.91을 적용하고, 도매A가 없으면 이미 입고가+외주비+노무비/0.91로 계산된 상장가를 적용한다.
@@ -885,7 +885,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.54',
+    version: 'V1.a22.55',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -1454,7 +1454,7 @@ const DATAOPS_OPERATION_MODULE = Object.freeze({
         const sQty = Math.abs(safeNum(sourceQty));
         const tQty = Math.abs(safeNum(targetQty));
         if (unitCost <= 0 || sQty <= 0 || tQty <= 0) return 0;
-        // V1.a22.54: 수량 단위가 바뀌면 출처 총원가를 대상 생성수량으로 나눠 단가를 환산한다.
+        // V1.a22.55: 수량 단위가 바뀌면 출처 총원가를 대상 생성수량으로 나눠 단가를 환산한다.
         // 반올림 기준: 1,000원 이상은 100원 단위, 1,000원 미만은 10원 단위.
         // 예: 12,000원 10kg 2박스 → 20kg 1박스 = 24,000원.
         // 예: 11,000원 1kg 1박스 → 100g 9EA = 1,222.22원 → 1,200원.
@@ -2046,7 +2046,7 @@ const FILTER_SORT_MODULE = Object.freeze({
         const unitRules = options.unitRules || CONFIG_MODULE.getUnitRules(defaultMappings);
         return rows.filter(row => {
             const standard = FILTER_SORT_MODULE.getStandard(row, { unitRules });
-            // V1.a22.54: 카테고리 필터는 버튼형 중복선택이다.
+            // V1.a22.55: 카테고리 필터는 버튼형 중복선택이다.
             // 과거 저장값('ALL' 또는 단일 문자열)과 신규 배열값을 모두 호환한다.
             const selectedCategories = Array.isArray(filterState.category)
                 ? filterState.category.filter(v => safeStr(v) && safeStr(v) !== 'ALL')
@@ -2356,7 +2356,7 @@ const EXPORT_MODULE = Object.freeze({
         if (invalidTexts.some(v => compact === v || compact.includes(v))) return '';
         return text;
     },
-    // V1.a22.54: 품명/규격은 언더바로 추정 분리하지 않는다.
+    // V1.a22.55: 품명/규격은 언더바로 추정 분리하지 않는다.
     // 구매현황·재고현황 원본 엑셀에 분리된 품명/규격/단위 컬럼이 있으므로 그 값을 그대로 우선 사용한다.
     splitPurchaseNameSpec: (nameValue = '', specValue = '', unitValue = '') => {
         const name = safeStr(nameValue, '').replace(/\s*\[[^\]]+\]\s*$/, '').trim();
@@ -2521,22 +2521,22 @@ const EXPORT_MODULE = Object.freeze({
             '기록': EXPORT_MODULE.sanitizeLedgerRecordValue(item.일자),
             '거래': EXPORT_MODULE.sanitizeLedgerTradeValue(item.거래처),
             '구매가': Math.round(safeNum(item.단가)),
-            // V1.a22.54: 전체재고는 앞으로 재고현황 입력 시트로 사용하므로 원본 재고현황의 기본값을 그대로 보존한다.
+            // V1.a22.55: 전체재고는 앞으로 재고현황 입력 시트로 사용하므로 원본 재고현황의 기본값을 그대로 보존한다.
             '기본': getBasicDisplayValue(item),
             '적요': safeStr(item.메모 || raw['적요'] || raw['비고'] || '')
         };
     }),
-    buildNextBaseStockSheet: ({ productData = [], targetDateStr = '' }) => {
-        const rows = EXPORT_MODULE.buildNextBaseStockRows({ productData, targetDateStr });
+    buildNextBaseStockSheet: ({ productData = [], rows = null, targetDateStr = '' }) => {
+        const rowsToUse = Array.isArray(rows) ? rows : EXPORT_MODULE.buildNextBaseStockRows({ productData, targetDateStr });
         const displayDate = safeStr(targetDateStr, '').replace(/-/g, '/');
         const title = `회사명 : 원앱 / 1창고 / ${displayDate || '기준일미상'} / 전체재고`;
-        // V1.a22.54: 전체재고는 재고현황 입력으로 계속 사용할 시트다.
+        // V1.a22.55: 전체재고는 재고현황 입력으로 계속 사용할 시트다.
         // 양식은 단위/품목코드/품명/규격/재고/기록/거래/구매가/기본/적요 순서로 고정한다.
         const headers = ['단위', '품목코드', '품명', '규격', '재고', '기록', '거래', '구매가', '기본', '적요'];
         const aoa = [
             [title, '', '', '', '', '', '', '', '', ''],
             headers,
-            ...rows.map(row => headers.map(h => { var _a; return (_a = row[h]) !== null && _a !== void 0 ? _a : ''; }))
+            ...rowsToUse.map(row => headers.map(h => { var _a; return (_a = row[h]) !== null && _a !== void 0 ? _a : ''; }))
         ];
         const ws = XLSX.utils.aoa_to_sheet(aoa);
         EXPORT_MODULE.forceTextColumnsByHeader(ws, 1);
@@ -2544,6 +2544,32 @@ const EXPORT_MODULE = Object.freeze({
         ws['!cols'] = [10, 14, 34, 10, 10, 12, 14, 14, 12, 18].map(wch => ({ wch }));
         ws['!autofilter'] = { ref: `A2:J${Math.max(2, aoa.length)}` };
         return ws;
+    },
+    // V1.a22.55: 전체재고는 실사양식/코드통합형 집계가 아니라 구매잔량 + 기타상품을 합친 현황이다.
+    // 구매잔량은 구매일·구매처·구매가 Lot별로 분리하고, 기타상품도 같은 재고현황형 컬럼으로 맞춰 합산한다.
+    buildWholeStockRowsFromBalance: ({ purchaseBalanceRows = [], otherStockRows = [] } = {}) => {
+        const normalizeCode = (value = '') => safeStr(value, '').replace(/\.0$/, '').trim();
+        const toUnified = (row = {}, sourceType = '') => ({
+            '단위': safeStr(row['단위'], ''),
+            '품목코드': normalizeCode(row['품목코드']),
+            '품명': safeStr(row['품명'], ''),
+            '규격': safeStr(row['규격'], ''),
+            '재고': safeNum(row['재고'] !== undefined ? row['재고'] : row['수량']),
+            '기록': EXPORT_MODULE.sanitizeLedgerRecordValue(row['기록'] || row['기준일'] || ''),
+            '거래': EXPORT_MODULE.sanitizeLedgerTradeValue(row['거래'] || ''),
+            '구매가': Math.round(safeNum(row['구매가'] !== undefined ? row['구매가'] : row['단가'])),
+            '기본': row['기본'] !== undefined ? row['기본'] : '',
+            '적요': safeStr(row['적요'] || row['근거/메모'] || sourceType, '')
+        });
+        return [
+            ...(purchaseBalanceRows || []).map(row => toUnified(row, '구매잔량')),
+            ...(otherStockRows || []).map(row => toUnified(row, '기타상품'))
+        ].filter(row => safeNum(row['재고']) > 0)
+         .sort((a, b) => normalizeCode(a['품목코드']).localeCompare(normalizeCode(b['품목코드']), 'ko')
+            || extractDateNum(a['기록']) - extractDateNum(b['기록'])
+            || safeStr(a['거래']).localeCompare(safeStr(b['거래']), 'ko')
+            || safeNum(a['구매가']) - safeNum(b['구매가'])
+            || safeStr(a['품명']).localeCompare(safeStr(b['품명']), 'ko'));
     },
     isPurchaseBalanceStockItem: (item = {}) => {
         const qty = STOCK_ENGINE_MODULE.getActualQty(item);
@@ -2563,7 +2589,7 @@ const EXPORT_MODULE = Object.freeze({
             && vendor !== '구매처미상'
             && price > 0;
         if (!validPurchaseFields) return false;
-        // V1.a22.54: 구매잔량/기타상품 필터는 이슈칩 기준이 아니라 구매 Lot 근거 기준으로 분류한다.
+        // V1.a22.55: 구매잔량/기타상품 필터는 이슈칩 기준이 아니라 구매 Lot 근거 기준으로 분류한다.
         // 실사오차·수기치환오차·과다로스 같은 확인 이슈가 있어도 구매일/구매처/구매가 Lot이 확정된 행은 구매잔량이다.
         // 반대로 구매 Lot이 없는 소분·치환·묶음·매입내역 없음·fallback 재고만 기타상품이다.
         if (lotKey || item._manualLotOverrideApplied || modeText === 'REVERSE_PURCHASE' || modeText === 'MANUAL_PURCHASE_LOT_OVERRIDE') return true;
@@ -2571,7 +2597,7 @@ const EXPORT_MODULE = Object.freeze({
         const structuralText = `${unit} ${modeText}`;
         if (/소분|치환|묶음|대체/.test(structuralText)) return false;
         if (safeNum(item.대체입고) !== 0 || safeNum(item.대체출고) !== 0) return false;
-        // V1.a22.54: 구매현황 매칭으로 생성된 Lot이 아니더라도 재고현황 원본에 기록·거래·구매가가 있으면 기존 구매잔량이다.
+        // V1.a22.55: 구매현황 매칭으로 생성된 Lot이 아니더라도 재고현황 원본에 기록·거래·구매가가 있으면 기존 구매잔량이다.
         // STOCK_FALLBACK이라는 이유만으로 기타상품으로 떨어뜨리면 기존 재고 Lot이 기타상품 필터에 섞인다.
         return true;
     },
@@ -3052,18 +3078,20 @@ const EXPORT_MODULE = Object.freeze({
         const masterCheckRows = EXPORT_MODULE.buildMasterCheckRows({ productData, targetDateStr });
         const substitutionCandidateRows = EXPORT_MODULE.buildSubstitutionCandidateRows({ productData, targetDateStr });
         const exportData2 = EXPORT_MODULE.buildStockCountSheetRows({ productData: operationalProductData, targetDateStr });
-        // V1.a22.54: 구매잔량은 현황/원가 근거 시트이므로 코드통합형 데이터가 아니라 원본 Lot 행(productData) 기준으로 만든다.
+        // V1.a22.55: 구매잔량은 현황/원가 근거 시트이므로 코드통합형 데이터가 아니라 원본 Lot 행(productData) 기준으로 만든다.
         // 같은 품목이라도 구매일·구매처·구매가가 다르면 반드시 별도 행으로 분리한다.
         // 코드통합형 operationalProductData를 쓰면 2개 구매처/2개 단가 Lot이 1행으로 합쳐져 구매잔량 개념이 깨진다.
         const purchaseBalanceRows = EXPORT_MODULE.buildPurchaseBalanceRows({ productData, targetDateStr });
         const otherStockRows = EXPORT_MODULE.buildOtherStockRows({ productData, targetDateStr });
+        const wholeStockRows = EXPORT_MODULE.buildWholeStockRowsFromBalance({ purchaseBalanceRows, otherStockRows });
         const checkRequestRows = EXPORT_MODULE.buildManagementIssueRows({ productData: operationalProductData });
         const wb = XLSX.utils.book_new();
-        // V1.a22.54: 수불마감 기본 보고서는 전체재고 / 구매잔량 / 기타상품 3단계로 분리한다.
+        // V1.a22.55: 수불마감 기본 보고서는 전체재고 / 구매잔량 / 기타상품 3단계로 분리한다.
         // 전체재고는 앞으로 재고현황 입력으로 계속 사용할 기준 시트다.
+        // 단, 실사양식/코드통합형 집계가 아니라 구매잔량 + 기타상품을 그대로 합친다.
         // 구매잔량은 남은 재고를 구매현황 양식처럼 일자/구매처/단가별 Lot 잔량으로 보여준다.
         // 실사양식은 ERP 재고실사 업로드용이므로 기존 출력 로직을 그대로 유지한다.
-        XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.buildNextBaseStockSheet({ productData: operationalProductData, targetDateStr }), '전체재고');
+        XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.buildNextBaseStockSheet({ rows: wholeStockRows, targetDateStr }), '전체재고');
         XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.buildPurchaseBalanceSheet({ rows: purchaseBalanceRows, targetDateStr }), '구매잔량');
         XLSX.utils.book_append_sheet(wb, EXPORT_MODULE.jsonSheet(otherStockRows, [16, 12, 14, 34, 12, 10, 10, 10, 12, 12, 14, 42], { emptyMessage: '기타상품 데이터가 없습니다.' }), '기타상품');
         if (exportData2.length > 0) {
@@ -6113,7 +6141,7 @@ function App() {
         // V1.a22.12: 1재고현황의 날짜 컬럼명 '기록'을 Lot 기준일로 인식한다.
         // 과거 저장된 localStorage 매핑에 date 항목이 남아 있어도 자동 보강한다.
         merged.date = ensureCsvValue(merged.date || defaultMappings.date, ['기록', '최종기록', '재고기록', '등록일', '등록일자', '기준일']);
-        // V1.a22.54: 과거 저장된 매핑에도 1재고/4실사/수불마감의 '구매가' 컬럼을 원가 후보로 자동 보강한다.
+        // V1.a22.55: 과거 저장된 매핑에도 1재고/4실사/수불마감의 '구매가' 컬럼을 원가 후보로 자동 보강한다.
         merged.price = ensureCsvValue(merged.price || defaultMappings.price, ['구매가', '최종(창고)', '매입단가(원가)', '입고가']);
         return merged;
     };
@@ -7167,7 +7195,7 @@ function App() {
             if (!f.name)
                 checkReasons.push('품명 없음');
             const price = resolved.status === 'MATCHED' ? safeNum(resolved.price) : '';
-            // V1.a22.54: 입고가보다 판매가/도매가/행사가가 낮으면 관리자 타이핑 실수 가능성이 높으므로 확인요청 시트로 보낸다.
+            // V1.a22.55: 입고가보다 판매가/도매가/행사가가 낮으면 관리자 타이핑 실수 가능성이 높으므로 확인요청 시트로 보낸다.
             // 자동 보정은 금지하고, ERP 업로드 전 관리자가 직접 수정하도록 안내한다.
             const baseCost = safeNum(f.cost);
             const wholesaleAForCheck = safeNum(f.wholesaleA);
@@ -7175,7 +7203,7 @@ function App() {
                 const priceSourceName = safeStr(resolved.priceKey || resolved.columnName || '판매가', '판매가');
                 checkReasons.push(`역마진/입고가초과: 입고가 ${formatMoney(baseCost)} > 판매가 ${formatMoney(price)} (${priceSourceName})`);
             }
-            // V1.a22.54: 도매A는 업로드 양식 생성값과 별개로 수기입력 오류 확인용 이상치 검수를 한다.
+            // V1.a22.55: 도매A는 업로드 양식 생성값과 별개로 수기입력 오류 확인용 이상치 검수를 한다.
             // 예: 입고가 2,800 / 정상 도매A 3,800인데 38,000으로 입력된 경우는 4배 이상 조건으로 확인요청한다.
             if (baseCost > 0 && wholesaleAForCheck > 0) {
                 if (wholesaleAForCheck < baseCost && !checkReasons.some(reason => safeStr(reason).includes('역마진/입고가초과'))) {
@@ -9091,7 +9119,7 @@ ${balanceText}
         let sourceRows = productData;
         if (!filters.showHiddenMoveRows)
             sourceRows = sourceRows.filter(p => !p._hiddenBySalesMove);
-        // V1.a22.54: 구매잔량/기타상품 필터는 원본 Lot 행 기준으로 먼저 적용한 뒤 보기 계층을 만든다.
+        // V1.a22.55: 구매잔량/기타상품 필터는 원본 Lot 행 기준으로 먼저 적용한 뒤 보기 계층을 만든다.
         // 코드통합형을 먼저 만들면 구매잔량 Lot과 기타상품 Lot이 한 행으로 섞여 필터 결과가 틀어진다.
         if (filters.stockListType === 'PURCHASE_BALANCE')
             sourceRows = sourceRows.filter(p => EXPORT_MODULE.isPurchaseBalanceStockItem(p));
@@ -9130,7 +9158,7 @@ ${balanceText}
                 });
         }
         data = FILTER_SORT_MODULE.applyFilters(data, filters, { favoriteVendors: CONFIG_MODULE.getFavoriteVendors(mappings), unitRules: CONFIG_MODULE.getUnitRules(mappings) });
-        // V1.a22.54: 구매잔량/기타상품 필터는 sourceRows 단계에서 이미 적용된다.
+        // V1.a22.55: 구매잔량/기타상품 필터는 sourceRows 단계에서 이미 적용된다.
         // 이후 BOX/EA/소분·카테고리·검색 필터와 교차 적용된다.
         if (filters.search) {
             const q = filters.search.toLowerCase();
@@ -9177,7 +9205,7 @@ ${balanceText}
                     React.createElement("h1", { className: "text-xl md:text-xl font-black leading-none text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.54"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.55"))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
@@ -9252,7 +9280,7 @@ ${balanceText}
                     React.createElement("div", { className: "mb-4" },
                         React.createElement("h4", { className: "text-sm font-bold text-slate-800" },
                             React.createElement("i", { className: "fas fa-star text-amber-500 mr-2" }),
-                            "V1.a22.54 구매잔량 Lot분리/구매처별 분리"),
+                            "V1.a22.55 구매잔량 Lot분리/구매처별 분리"),
                         React.createElement("p", { className: "text-xs text-slate-500 mt-1.5 ml-6" }, "\u2605 \uD544\uD130\uC640 BOX/EA/\uC18C\uBD84 \uD544\uD130\uAC00 \uC544\uB798 \uC124\uC815\uAC12\uC744 \uAE30\uC900\uC73C\uB85C \uB3D9\uC791\uD569\uB2C8\uB2E4. \uB2E8\uC704 \uCEEC\uB7FC\uC744 \uC6B0\uC120 \uD310\uC815\uD558\uACE0, \uB2E8\uC704\uAC00 \uC5C6\uC744 \uB54C\uB9CC \uD488\uBA85/\uADDC\uACA9\uC744 \uBCF4\uC870 \uB2E8\uC11C\uB85C \uC0AC\uC6A9\uD569\uB2C8\uB2E4.")),
                     React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-4 bg-amber-50/60 p-4 rounded-lg border border-amber-200" },
                         React.createElement("div", { className: "flex flex-col" },
