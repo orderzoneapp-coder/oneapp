@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.117_ThemeFilterInfoFix]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.118_PurchaseInventoryFlowFix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -29,6 +29,7 @@
 
         // v2.1.117: 테마 상세필터가 테이블 표시값과 동일한 작업값/finalData/source/info 값을 보도록 보정한다. 행사테마=3 또는 테마3=1이면 테마3 필터에 반드시 포함된다.
         // v2.1.116: 정보 엑셀불러오기 작업군을 추가한다. 쇼핑몰/ERP 상품정보 엑셀은 원본 컬럼을 보존해 수정·다운로드하며, F8에서는 마스터 반영 없이 상품정보 업로드 엑셀을 생성한다.
+        // v2.1.118: 재고 후 구매 작업 플로우를 분리한다. 구매파일이 현재 작업이면 구매 source 행만 기본 표시하고, 기존 재고 Lot는 참고 레이어로 리포트/상세에만 사용한다. 창고 표시는 1창고/1을 01로 정규화하고, 구매 리포트의 (7)13,000 축약표현을 구매수량/단가/구매처/창고 형식으로 변경한다.
         // v2.1.115: F7 가저장을 추가한다. 가저장은 마스터에 반영하지 않고 보관함 레이어에 저장하며, 현재 파일과 교차되는 가저장상품 필터를 조건부 노출한다. F8은 최신 마스터/보관값을 즉시 병합해 출력한다.
         // v2.1.108: 판매불러오기는 DataOps 성과분석 영역으로 이관해 상단 판매 버튼을 제거하고, 카테고리 좌측/카탈로그 중앙/견적·구매·재고·초기화·양식 우측 정렬로 재배치한다.
         // v2.1.110: 양식 선택을 하단 작업줄로 이동하고 기본상품 버튼을 상세필터에서 하단 필터줄로 승격해 4등분 상단 레이아웃 깨짐을 줄인다.
@@ -403,6 +404,37 @@
             const base = [...window.MERCH_CURRENT_SOURCE_ROLES];
             const active = window.getCurrentMerchSourceRole ? window.getCurrentMerchSourceRole(sources) : '';
             return active ? [active, ...base.filter(role => role !== active)] : base;
+        };
+        window.hasMerchSourceRoleData = (item = {}, role = '') => {
+            const src = item?.sources?.[role];
+            if (!src || typeof src !== 'object') return false;
+            return Object.keys(src).some(key => !String(key || '').startsWith('_'));
+        };
+        window.normalizeMerchWarehouseDisplay = (v) => {
+            const raw = String(v ?? '').trim();
+            if (!raw) return '';
+            if (window.normalizeWarehouseCode) {
+                const code = window.normalizeWarehouseCode(raw);
+                if (/^\d{2,3}$/.test(String(code || ''))) return code;
+            }
+            const m = raw.match(/(\d{1,3})\s*(?:창고)?/);
+            return m ? String(Number(m[1])).padStart(2, '0') : raw;
+        };
+        window.buildMerchInventoryRefSummary = (items = [], code = '') => {
+            const refs = (Array.isArray(items) ? items : Object.values(items || {}))
+                .filter(item => item && String(item.코드 || '').replace(/\s/g, '') === String(code || '').replace(/\s/g, '') && item.sources && item.sources.inventory)
+                .map(item => item.sources.inventory || {});
+            if (!refs.length) return null;
+            const stockQty = refs.reduce((sum, inv) => sum + window.parseNum(inv['재고수량'] ?? inv['재고'] ?? inv['수량']), 0);
+            const priceRows = refs.map(inv => ({
+                price: window.parseNum(inv['최종(창고)'] ?? inv['최신단가'] ?? inv['_latestWarehousePrice'] ?? inv['재고단가'] ?? inv['입고가']),
+                dateKey: inv['_inventoryFifoKey'] ?? (window.getInventoryPurchaseDateKey ? window.getInventoryPurchaseDateKey(inv['상품 구매일자'] || inv['기록']) : 99999999),
+                vendor: inv['거래'] || inv['구매처'] || '',
+                warehouse: inv['_calcWarehouse'] || inv['창고'] || ''
+            })).filter(r => r.price > 0).sort((a, b) => (a.dateKey || 99999999) - (b.dateKey || 99999999));
+            const firstPrice = priceRows.length ? priceRows[0].price : 0;
+            const warehouses = [...new Set(refs.map(inv => window.normalizeMerchWarehouseDisplay(inv['_calcWarehouse'] || inv['창고'] || '')).filter(Boolean))];
+            return { count: refs.length, stockQty, price: firstPrice, warehouses, rows: priceRows.slice(0, 10) };
         };
         window.hasAnyUploadSource = (sources = {}) => window.getWorkingSourcePriority(sources).some(role => sources?.[role] && Object.keys(sources[role]).length > 0);
         window.mergeExcelSourcesForTable = (sources = {}, rolePriority = window.getWorkingSourcePriority(sources)) => {
@@ -2671,6 +2703,11 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                             }
                         }
                     });
+                    if ((role === 'purchase' || role === 'inventory') && mItem.sources[role] && mItem.sources[role]['창고'] !== undefined) {
+                        const rawWarehouse = mItem.sources[role]['창고'];
+                        mItem.sources[role]['_sourceWarehouseRaw'] = rawWarehouse;
+                        mItem.sources[role]['창고'] = window.normalizeMerchWarehouseDisplay ? window.normalizeMerchWarehouseDisplay(rawWarehouse) : rawWarehouse;
+                    }
                     // 구매현황 고도화: 같은 상품의 최근 7일 구매단가 흐름을 보존한다.
                     // 단일 행으로 덮어쓰지 않고 _purchaseRows에 원본 구매일자/단가를 누적한다.
                     if (role === 'purchase') {
@@ -2678,9 +2715,11 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                         const actualPurchaseDateKey = headerCache['상품 구매일자'] || headerCache['기준일자'] || actualHeaders.find(h => ['상품구매일자', '구매일자', '입고일자', '일자', '기준일자'].includes(String(h).replace(/\s/g, '')));
                         const actualPurchasePriceKey = headerCache['입고가'] || actualHeaders.find(h => ['입고가', '매입가', '구매단가', '매입단가', '단가', '최종(창고)', '최종창고'].includes(String(h).replace(/\s/g, '')));
                         const actualPurchaseQtyKey = headerCache['입고수량'] || headerCache['수량'] || actualHeaders.find(h => ['입고수량', '구매수량', '수량'].includes(String(h).replace(/\s/g, '')));
+                        const actualWarehouseKey = headerCache['창고'] || actualHeaders.find(h => ['창고', '창고코드'].includes(String(h).replace(/\s/g, '')));
                         const dateRaw = actualPurchaseDateKey ? row[actualPurchaseDateKey] : '';
                         const priceRaw = actualPurchasePriceKey ? row[actualPurchasePriceKey] : source['입고가'];
                         const qtyRaw = actualPurchaseQtyKey ? row[actualPurchaseQtyKey] : source['입고수량'];
+                        const warehouseRaw = actualWarehouseKey ? row[actualWarehouseKey] : source['창고'];
                         const purchasePrice = window.parseNum(priceRaw);
                         if (purchasePrice > 0) {
                             if (!Array.isArray(source._purchaseRows)) source._purchaseRows = [];
@@ -2691,10 +2730,13 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                                 price: purchasePrice,
                                 qty: window.parseNum(qtyRaw),
                                 vendor: vendorKey ? row[vendorKey] : '',
+                                warehouse: window.normalizeMerchWarehouseDisplay ? window.normalizeMerchWarehouseDisplay(warehouseRaw) : warehouseRaw,
                                 fileName: file.name || '',
                                 rowIdx
                             });
-                            source['구매리포트'] = window.getMerchPurchaseTrend ? window.getMerchPurchaseTrend({ sources: { purchase: source } }, newMaster[cleanCode] || {}).reportText : '';
+                            const invSummary = window.buildMerchInventoryRefSummary ? window.buildMerchInventoryRefSummary(newManaged, cleanCode) : null;
+                            if (invSummary) mItem.sources._inventoryRefSummary = invSummary;
+                            source['구매리포트'] = window.getMerchPurchaseTrend ? window.getMerchPurchaseTrend({ sources: { purchase: source, _inventoryRefSummary: invSummary } }, newMaster[cleanCode] || {}).reportText : '';
                         }
                     }
                     // 1재고현황 전용 컬럼 의미 보정:
@@ -5690,9 +5732,9 @@ window.formatMerchPurchaseReportDate = (dateKey, prevMonth, hasMonthChange) => {
     if (parts.length < 3) return '';
     const mm = parts[1];
     const dd = parts[2];
-    if (!hasMonthChange) return `(${Number(dd)})`;
-    if (!prevMonth || prevMonth !== mm) return `(${mm}/${dd})`;
-    return `(${Number(dd)})`;
+    if (!hasMonthChange) return `${Number(dd)}일`;
+    if (!prevMonth || prevMonth !== mm) return `${Number(mm)}/${Number(dd)}`;
+    return `${Number(dd)}일`;
 };
 window.getMerchPurchaseTrend = (row = {}, mItem = {}) => {
     const purchaseSource = (row.sources && row.sources.purchase) || {};
@@ -5705,7 +5747,7 @@ window.getMerchPurchaseTrend = (row = {}, mItem = {}) => {
         .map(r => {
             const price = window.parseNum(r.price !== undefined ? r.price : (r['입고가'] || r['단가']));
             const dateKey = r.dateKey || window.normalizeMerchPurchaseDateKey(r.rawDate || r.date || r['일자'] || r['구매일자'], systemToday);
-            return { ...r, price, dateKey: dateKey || systemTodayKey };
+            return { ...r, price, dateKey: dateKey || systemTodayKey, qty: window.parseNum(r.qty ?? r['입고수량'] ?? r['수량']), vendor: r.vendor || r['구매처'] || '', warehouse: window.normalizeMerchWarehouseDisplay ? window.normalizeMerchWarehouseDisplay(r.warehouse || r['창고'] || '') : (r.warehouse || r['창고'] || '') };
         })
         .filter(r => r.price > 0);
     if (!rows.length) return { hasPurchaseData: false, issue: '', reportText: '', reportParts: [] };
@@ -5743,9 +5785,17 @@ window.getMerchPurchaseTrend = (row = {}, mItem = {}) => {
         let tone = 'normal';
         if (hasRange && r.price === maxPrice) tone = 'high';
         else if (hasRange && r.price === minPrice) tone = 'low';
-        return { text: `${dateText}${r.price.toLocaleString()}`, tone, dateKey: r.dateKey, price: r.price };
+        const qtyText = r.qty > 0 ? `구매 ${r.qty.toLocaleString()}개 × ` : '구매 ';
+        const vendorText = r.vendor ? ` / ${r.vendor}` : '';
+        const whText = r.warehouse ? ` / ${r.warehouse}` : '';
+        const datePrefix = dateText ? `${dateText} ` : '';
+        return { text: `${datePrefix}${qtyText}${r.price.toLocaleString()}${vendorText}${whText}`, tone, dateKey: r.dateKey, price: r.price, qty: r.qty, vendor: r.vendor, warehouse: r.warehouse };
     });
-    const reportText = reportParts.map(p => p.text).join(' ');
+    const reportText = reportParts.map(p => p.text).join(' | ');
+    const invSummary = row.sources && row.sources._inventoryRefSummary;
+    const inventoryReportText = invSummary && (invSummary.stockQty > 0 || invSummary.price > 0)
+        ? `재고 ${Number(invSummary.stockQty || 0).toLocaleString()}개${invSummary.price > 0 ? ` / 재고단가 ${Number(invSummary.price || 0).toLocaleString()}` : ''}${Array.isArray(invSummary.warehouses) && invSummary.warehouses.length ? ` / ${invSummary.warehouses.join(',')}` : ''}`
+        : '';
     const hasMaster = !!(mItem && (mItem['품목코드'] || mItem['품목명'] || mItem['입고가'] !== undefined || mItem['출고가'] !== undefined));
     const basePrice = window.parseNum(mItem && mItem['입고가']);
     const todayRows = rows.filter(r => r.dateKey === todayKey);
@@ -5757,7 +5807,7 @@ window.getMerchPurchaseTrend = (row = {}, mItem = {}) => {
         else if (todayMax < basePrice) issue = '하락';
         else issue = '';
     }
-    return { hasPurchaseData: true, issue, reportText, reportParts, todayKey, todayCount: todayRows.length, basePrice };
+    return { hasPurchaseData: true, issue, reportText, reportParts, inventoryReportText, todayKey, todayCount: todayRows.length, basePrice };
 };const buildRowReport = ({ row, mItem, issueText, issueSubText, latestHistory, compareSummary, marginInfo, stockQty, safeStock, promoActive }) => {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t;
     const lines = [];
@@ -5765,7 +5815,7 @@ window.getMerchPurchaseTrend = (row = {}, mItem = {}) => {
     const newIn = window.parseNum(((_a = row.finalData) === null || _a === void 0 ? void 0 : _a['입고가']) !== undefined ? row.finalData['입고가'] : ((_o = (_k = (_g = (_d = (_c = (_b = row.sources) === null || _b === void 0 ? void 0 : _b.estimate) === null || _c === void 0 ? void 0 : _c['입고가']) !== null && _d !== void 0 ? _d : (_f = (_e = row.sources) === null || _e === void 0 ? void 0 : _e.purchase) === null || _f === void 0 ? void 0 : _f['입고가']) !== null && _g !== void 0 ? _g : (_j = (_h = row.sources) === null || _h === void 0 ? void 0 : _h.sales) === null || _j === void 0 ? void 0 : _j['입고가']) !== null && _k !== void 0 ? _k : (_m = (_l = row.sources) === null || _l === void 0 ? void 0 : _l.inventory) === null || _m === void 0 ? void 0 : _m['입고가']) !== null && _o !== void 0 ? _o : oldIn));
     const purchaseTrend = window.getMerchPurchaseTrend ? window.getMerchPurchaseTrend(row, mItem) : null;
     if (purchaseTrend && purchaseTrend.hasPurchaseData && purchaseTrend.reportText) {
-        return [purchaseTrend.reportText, ''];
+        return [purchaseTrend.reportText, purchaseTrend.inventoryReportText || ''];
     }
     if (latestHistory) {
         const catalog = normalizeHistoryCatalog(latestHistory) || '파서리스트';
@@ -6370,7 +6420,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.117_ThemeFilterInfoFix]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.118_PurchaseInventoryFlowFix]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -6462,6 +6512,15 @@ const App = () => {
         }
         else {
             baseList = Object.values(data.masterProducts).map(m => data.managedItems[m.코드] || { 코드: m.코드, sources: {}, finalData: {} });
+        }
+        if (!ui.registrationMode && isEstimateUploaded) {
+            const activeWorkRole = normalizeMerchTableTarget((config && config.activeTableTarget) || DEFAULT_TABLE_VIEW_TARGET);
+            if (['estimate', 'purchase', 'sales', 'inventory', 'info', 'catalog'].includes(activeWorkRole)) {
+                const hasActiveRows = baseList.some(item => (window.hasMerchSourceRoleData ? window.hasMerchSourceRoleData(item, activeWorkRole) : !!(item?.sources?.[activeWorkRole])) || item?._lastUploadRole === activeWorkRole);
+                if (hasActiveRows) {
+                    baseList = baseList.filter(item => (window.hasMerchSourceRoleData ? window.hasMerchSourceRoleData(item, activeWorkRole) : !!(item?.sources?.[activeWorkRole])) || item?._lastUploadRole === activeWorkRole);
+                }
+            }
         }
         if (!ui.registrationMode && window.filterMerchProductWorkRows) {
             baseList = window.filterMerchProductWorkRows(baseList, data.masterProducts);
@@ -6594,7 +6653,7 @@ const App = () => {
             });
         }
         return baseList;
-    }, [isEstimateUploaded, data.managedItems, data.masterProducts, ui.globalSearch, ui.priceFilter, ui.detailFilters, ui.categoryFilters, ui.basicSearch, ui.filterSteps, ui.disabledFilterStepIds, ui.registrationMode, ui.hideMasterAddedRows, ui.workArchiveGroups, config.uploadColumnMeta]);
+    }, [isEstimateUploaded, data.managedItems, data.masterProducts, ui.globalSearch, ui.priceFilter, ui.detailFilters, ui.categoryFilters, ui.basicSearch, ui.filterSteps, ui.disabledFilterStepIds, ui.registrationMode, ui.hideMasterAddedRows, ui.workArchiveGroups, config.uploadColumnMeta, config.activeTableTarget]);
     useEffect(() => {
         const handler = (e) => {
             const count = (e && e.detail && e.detail.count) ? e.detail.count : 0;
@@ -6731,7 +6790,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.117_ThemeFilterInfoFix")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.118_PurchaseInventoryFlowFix")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
