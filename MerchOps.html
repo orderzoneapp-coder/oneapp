@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.123_HistoryCompareReport]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.124_EstimateHistoryCompare]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -5821,7 +5821,7 @@ const formatSignedRate = (v) => {
 
 // ============================================================
 // [M-HISTORY-COMPARE-01] 히스토리 비교 리포트
-// 역할: 구매/재고 작업 리포트에서 현재 마스터, 전일값, 최근 7일/30일 평균 대비 차이를 표시한다.
+// 역할: 견적/구매/재고 작업 리포트에서 현재 마스터, 전일값, 최근 7일/30일 평균 대비 차이를 표시한다.
 // 기준: 보관함이 아니라 merchHistory_v870 히스토리를 비교 기준으로 사용한다.
 // ============================================================
 window.MERCH_HISTORY_COMPARE_FIELDS = window.MERCH_HISTORY_COMPARE_FIELDS || ['입고가', '출고가', '시중가', '행사가', '판매여부'];
@@ -5936,6 +5936,38 @@ window.getMerchHistoryCompareText = (row = {}, mItem = {}, field = '입고가') 
     const summary = getMerchHistoryCompareSummary(row, mItem, field);
     return summary && summary.text ? summary.text : '';
 };
+const getMerchHistoryCompareBundleText = (row = {}, mItem = {}, fields = ['입고가']) => {
+    const labels = [];
+    (Array.isArray(fields) ? fields : [fields]).forEach(field => {
+        const text = window.getMerchHistoryCompareText ? window.getMerchHistoryCompareText(row, mItem, field) : '';
+        if (text) labels.push(`${field} ${text}`);
+    });
+    return labels.join(' / ');
+};
+window.getMerchHistoryCompareBundleText = window.getMerchHistoryCompareBundleText || getMerchHistoryCompareBundleText;
+const getMerchEstimateReportText = (row = {}) => {
+    const est = (row.sources && row.sources.estimate) || {};
+    const finalData = row.finalData || {};
+    if (!est || Object.keys(est).length === 0) return '';
+    const readNum = (...keys) => {
+        for (const key of keys) {
+            if (finalData[key] !== undefined && finalData[key] !== null && String(finalData[key]).trim() !== '') return window.parseNum(finalData[key]);
+            if (est[key] !== undefined && est[key] !== null && String(est[key]).trim() !== '') return window.parseNum(est[key]);
+        }
+        return 0;
+    };
+    const inPrice = readNum('입고가', '매입가', '구매단가');
+    const outPrice = readNum('출고가', '판매가', '판매가격');
+    const marketPrice = readNum('시중가', '시중가격');
+    const promoPrice = readNum('행사가', '특가');
+    const parts = [];
+    if (inPrice > 0) parts.push(`입고가 ${inPrice.toLocaleString()}`);
+    if (outPrice > 0) parts.push(`출고가 ${outPrice.toLocaleString()}`);
+    if (marketPrice > 0) parts.push(`시중가 ${marketPrice.toLocaleString()}`);
+    if (promoPrice > 0) parts.push(`행사가 ${promoPrice.toLocaleString()}`);
+    return parts.length ? `견적 ${parts.join(' / ')}` : '견적 기준값 확인';
+};
+window.getMerchEstimateReportText = window.getMerchEstimateReportText || getMerchEstimateReportText;
 const getMerchInventoryReportText = (row = {}) => {
     const inv = (row.sources && row.sources.inventory) || {};
     if (!inv || Object.keys(inv).length === 0) return '';
@@ -6076,13 +6108,21 @@ window.getMerchPurchaseTrend = (row = {}, mItem = {}) => {
     const lines = [];
     const oldIn = window.parseNum(mItem === null || mItem === void 0 ? void 0 : mItem['입고가']);
     const newIn = window.parseNum(((_a = row.finalData) === null || _a === void 0 ? void 0 : _a['입고가']) !== undefined ? row.finalData['입고가'] : ((_o = (_k = (_g = (_d = (_c = (_b = row.sources) === null || _b === void 0 ? void 0 : _b.estimate) === null || _c === void 0 ? void 0 : _c['입고가']) !== null && _d !== void 0 ? _d : (_f = (_e = row.sources) === null || _e === void 0 ? void 0 : _e.purchase) === null || _f === void 0 ? void 0 : _f['입고가']) !== null && _g !== void 0 ? _g : (_j = (_h = row.sources) === null || _h === void 0 ? void 0 : _h.sales) === null || _j === void 0 ? void 0 : _j['입고가']) !== null && _k !== void 0 ? _k : (_m = (_l = row.sources) === null || _l === void 0 ? void 0 : _l.inventory) === null || _m === void 0 ? void 0 : _m['입고가']) !== null && _o !== void 0 ? _o : oldIn));
+    const activeReportRole = window.getCurrentMerchSourceRole ? window.getCurrentMerchSourceRole(row.sources || {}, row._lastUploadRole || '') : (window.getQuickActiveRole ? window.getQuickActiveRole(row) : '');
+    if (activeReportRole === 'estimate' && row.sources && row.sources.estimate) {
+        const estimateReportText = getMerchEstimateReportText(row);
+        const compareFields = ['입고가', '출고가', '시중가'];
+        const promoValue = window.parseNum((row.finalData || {})['행사가'] ?? (row.sources.estimate || {})['행사가']);
+        if (promoValue > 0) compareFields.push('행사가');
+        const historyCompareText = getMerchHistoryCompareBundleText(row, mItem, compareFields);
+        if (estimateReportText || historyCompareText) return [estimateReportText, historyCompareText];
+    }
     const purchaseTrend = window.getMerchPurchaseTrend ? window.getMerchPurchaseTrend(row, mItem) : null;
     if (purchaseTrend && purchaseTrend.hasPurchaseData && purchaseTrend.reportText) {
         const historyCompareText = window.getMerchHistoryCompareText ? window.getMerchHistoryCompareText(row, mItem, '입고가') : '';
         const subLine = [historyCompareText, purchaseTrend.inventoryReportText || ''].filter(Boolean).join(' / ');
         return [purchaseTrend.reportText, subLine];
     }
-    const activeReportRole = window.getQuickActiveRole ? window.getQuickActiveRole(row) : '';
     if (activeReportRole === 'inventory' && row.sources && row.sources.inventory) {
         const inventoryReportText = getMerchInventoryReportText(row);
         const historyCompareText = window.getMerchHistoryCompareText ? window.getMerchHistoryCompareText(row, mItem, '입고가') : '';
@@ -6693,7 +6733,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.123_HistoryCompareReport]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.124_EstimateHistoryCompare]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -7063,7 +7103,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.123_HistoryCompareReport")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.124_EstimateHistoryCompare")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
