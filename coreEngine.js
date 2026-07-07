@@ -1,6 +1,6 @@
 /**
  * ONEAPP MerchOps - coreEngine.js
- * v1.0.6 / Promotion Theme Master Column
+ * v1.0.7 / Info WorkGroup Mapping Fix
  *
  * 목적:
  * - HTML 화면 파일에서 중복되는 저장소, 가격계산, 히스토리, F9 전달, 클라우드 로직을 중앙화한다.
@@ -12,13 +12,19 @@
  * - window.ONEAPP.HISTORY
  * - window.ONEAPP.EXPORT
  * - window.ONEAPP.CLOUD
+ *
+ * v1.0.7_InfoMappingFix:
+ * - 쇼핑몰 정보(info) 파일 매핑 보강: 상품코드→품목코드, 판매가격→출고가, 시중가격→시중가, 판매→판매여부, 재고→재고수량.
+ * - 테마1~테마5를 내부 행사테마 값으로 정규화한다.
+ * - 오더즈판매가/오더즈구매가는 입점사 전용 필드이므로 마스터 가격 필드 연결에서 제외한다.
+ * - EXPORT.buildWorkingPayload의 purchase/sales 참조 누락을 수정한다.
  */
 
 (function initOneAppCore(global) {
   'use strict';
 
   const ONEAPP = global.ONEAPP = global.ONEAPP || {};
-  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.0.6 PromotionTheme';
+  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.0.7 InfoMappingFix';
 
   const DEFAULT_DB_NAME = 'MerchOpsDB';
   const DEFAULT_DB_VERSION = 2;
@@ -108,6 +114,18 @@
 
   const normalizePromotionThemeValue = (...items) => parsePromotionThemeCodes(...items).join(',');
   global.normalizePromotionThemeValue = global.normalizePromotionThemeValue || ((...items) => normalizePromotionThemeValue(...items));
+
+  // 쇼핑몰 정보(info) 파일 전용 보조 정규화.
+  // 판매: 1=판매, 0=정지. 그 외 값은 원문을 유지한다.
+  const normalizeShopSaleValue = (value) => {
+    const raw = String(value ?? '').trim();
+    if (raw === '') return '';
+    if (raw === '1' || raw === '판매' || raw === '판매중' || raw.toLowerCase() === 'true') return '1';
+    if (raw === '0' || raw === '정지' || raw === '정지중' || raw === '판매중단' || raw.toLowerCase() === 'false') return '0';
+    return value;
+  };
+
+  const INFO_EXCLUDED_MASTER_FIELDS = ['오더즈판매가', '오더즈구매가'];
 
   const safeJSONParseRaw = (raw, defaultVal) => {
     try {
@@ -537,7 +555,8 @@
       id: log.id || generateUUID(),
       timestamp: log.timestamp || new Date().toLocaleString('ko-KR'),
       timestampISO: log.timestampISO || log.createdAtISO || log.savedAtISO || getNowISO(),
-      source: String(log.source || log.origin || 'unknown'),
+      source: String(log.source || log.origin || log.sourceRole || 'unknown'),
+      sourceRole: String(log.sourceRole || log.role || log.source || log.origin || 'unknown'),
       sourceLabel: String(log.sourceLabel || ''),
       actionType: String(log.actionType || log.action || 'change'),
       applyMode: String(log.applyMode || ''),
@@ -647,9 +666,12 @@
 
     const inventory = row.sources?.inventory || {};
     const estimate = row.sources?.estimate || {};
-    const stockRaw = finalData['재고수량'] ?? inventory['재고수량'] ?? inventory['안전재고'] ?? estimate['재고수량'];
+    const purchase = row.sources?.purchase || {};
+    const sales = row.sources?.sales || {};
+    const info = row.sources?.info || {};
+    const stockRaw = finalData['재고수량'] ?? info['재고수량'] ?? info['재고'] ?? inventory['재고수량'] ?? inventory['안전재고'] ?? estimate['재고수량'];
     const stockQty = stockRaw !== undefined && stockRaw !== null && stockRaw !== '' ? parseNum(stockRaw) : 999;
-    const promoThemeCodes = parsePromotionThemeCodes(finalData, inventory, estimate, purchase, sales, master);
+    const promoThemeCodes = parsePromotionThemeCodes(finalData, info, inventory, estimate, purchase, sales, master);
     const hasPromoTheme = (n) => promoThemeCodes.includes(String(n));
 
     return {
@@ -1168,6 +1190,18 @@
     '카테고리': '견적서',
     '템플릿': '견적서',
     '견적분류': '견적서',
+    // 쇼핑몰 정보(info) 파일 컬럼 매핑
+    '판매가격': '출고가',
+    '시중가격': '시중가',
+    '판매': '판매여부',
+    '재고': '재고수량',
+    '기본설명': '간단설명',
+    '상품태그': '검색어등록',
+    '테마1': '행사테마',
+    '테마2': '행사테마',
+    '테마3': '행사테마',
+    '테마4': '행사테마',
+    '테마5': '행사테마',
     '기본여부': '기본',
     '관리구분': '기본'
   };
@@ -1175,6 +1209,8 @@
   MASTER.canonicalMasterFieldName = (field = '') => {
     const clean = String(field ?? '').trim();
     if (!clean) return '';
+    // 오더즈판매가/오더즈구매가는 입점사 전용 노출가격이므로 MerchOps 표준 가격 필드로 연결하지 않는다.
+    if (INFO_EXCLUDED_MASTER_FIELDS.includes(clean)) return '';
     return MASTER_FIELD_ALIASES[clean] || clean;
   };
 
@@ -1194,6 +1230,7 @@
     if (value === undefined || value === null) return '';
     const raw = String(value).trim();
     if (raw === '') return '';
+    if (field === '판매여부') return normalizeShopSaleValue(value);
     if ((global.NUMERIC_HEADERS || []).includes(field)) return parseNum(value);
     if (field === '품목코드' || field === '코드') return MASTER.normalizeMasterCode(value);
     return value;
@@ -1203,14 +1240,32 @@
     const headers = Array.isArray(sourceHeaders) && sourceHeaders.length > 0 ? sourceHeaders : Object.keys(row || {});
     const out = {};
     const sourceColumns = [];
+    const themeSource = {};
+
     headers.forEach(header => {
       if (header === undefined || header === null || String(header).trim() === '') return;
-      const field = MASTER.canonicalMasterFieldName(header);
+      const cleanHeader = String(header).trim();
+      const field = MASTER.canonicalMasterFieldName(cleanHeader);
       if (!field) return;
+
+      // 테마1~테마5는 개별 컬럼값을 덮어쓰지 않고 내부 행사테마 코드로 합산한다.
+      if (/^테마[1-5]$/.test(cleanHeader)) {
+        themeSource[cleanHeader] = row[header];
+        if (!sourceColumns.includes('행사테마')) sourceColumns.push('행사테마');
+        return;
+      }
+
       // 엑셀에 존재하는 컬럼만 sourceColumns에 넣는다. 값이 공란이어도 존재 컬럼이다.
       if (!sourceColumns.includes(field)) sourceColumns.push(field);
       out[field] = MASTER.normalizeMasterCellValue(field, row[header]);
     });
+
+    if (Object.keys(themeSource).length > 0) {
+      const normalizedTheme = normalizePromotionThemeValue(themeSource);
+      // 테마 컬럼이 존재했으면 모두 공란인 경우도 행사테마 초기화 의도로 보존한다.
+      out['행사테마'] = normalizedTheme;
+    }
+
     const code = MASTER.getMasterCode(out);
     if (code) {
       out['품목코드'] = code;
@@ -1427,6 +1482,9 @@
       totalCount: items.length
     };
   };
+
+  // Info workgroup helper aliases.
+  global.normalizeShopSaleValue = global.normalizeShopSaleValue || normalizeShopSaleValue;
 
   // ============================================================
   // Backward-compatible aliases.
