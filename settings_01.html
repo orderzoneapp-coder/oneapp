@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.18_ConfigSyncFull]</title>
+    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.21_ColumnWidthPreset]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -236,6 +236,15 @@ const getDefaultVisibleUploadCols = () => ({
     sales: ['창고', '구매처', '단위', '출고가', '출고량'],
     inventory: ['창고', '구매처', '단위', '재고수량', '입고가', '재고금액', '오차', '이슈요약']
 });
+const normalizeColumnWidths = (widths = {}) => {
+    const result = {};
+    Object.entries(widths || {}).forEach(([key, value]) => {
+        const n = Number(value);
+        if (!key || !Number.isFinite(n) || n <= 0) return;
+        result[String(key)] = Math.max(48, Math.min(720, Math.round(n)));
+    });
+    return result;
+};
 const createTableView = (target, name, masterColumns = ['입고가'], workColumns = [], options = {}) => {
     const view = {
         id: options.id || `${target}_view_${Date.now()}`,
@@ -245,6 +254,8 @@ const createTableView = (target, name, masterColumns = ['입고가'], workColumn
         workColumns: normalizeTableColumns(workColumns).filter(c => c !== '품목코드'),
         updatedAt: options.updatedAt || new Date().toISOString()
     };
+    const columnWidths = normalizeColumnWidths(options.columnWidths || {});
+    if (Object.keys(columnWidths).length > 0) view.columnWidths = columnWidths;
     const filterSteps = normalizeTableFilterSteps(options.filterSteps || [], options.filterPreset || null);
     if (filterSteps.length > 0) view.filterSteps = filterSteps;
     const filterMemo = String(options.filterMemo || '').trim();
@@ -271,6 +282,7 @@ const sanitizeTableViewPresets = (raw = {}) => {
                 if (Array.isArray(v.filterSteps)) options.filterSteps = v.filterSteps || [];
                 if (Object.prototype.hasOwnProperty.call(v, 'filterPreset')) options.filterPreset = v.filterPreset || {};
                 if (v.filterMemo !== undefined) options.filterMemo = v.filterMemo || '';
+                if (v.columnWidths !== undefined) options.columnWidths = v.columnWidths || {};
                 return createTableView(target.id, String(v.name || `맞춤보기 ${idx + 1}`).trim(), v.masterColumns || ['입고가'], v.workColumns || v.columns || [], options);
             });
         result[target.id] = { views };
@@ -554,7 +566,7 @@ const App = () => {
         }
     };
 
-    // ☁️ 환경설정 전용 클라우드 백업/복원 [v1.6.18_ConfigSyncFull]
+    // ☁️ 환경설정 전용 클라우드 백업/복원 [v1.6.21_ColumnWidthPreset]
     // 역할: 브라우저가 달라도 테이블 보기양식/필터 시나리오/매핑/룰을 동일하게 복구한다.
     // 핵심: Apps Script appConfig뿐 아니라 localStorage 원본 키도 함께 저장해 구조 변경에 안전하게 대응한다.
     // 제외: 마스터 상품정보와 히스토리 대용량 데이터는 기존 MasterDB/HistoryLogs 흐름을 사용한다.
@@ -568,6 +580,7 @@ const App = () => {
         'merchUploadColumnMeta_v870',
         'merchTableShortcuts_v870',
         'merchTableViewPresets_v1',
+        'merchProductStatusRecords_v1',
         'merchActiveTableTarget_v1',
         'merchActiveTableViewId_v1',
         'oneapp_cloud_sync_url_v1',
@@ -609,6 +622,7 @@ const App = () => {
         const appConfig = buildSettingsAppConfig();
         const settingsKeys = readLocalRawMap();
         settingsKeys['merchTableViewPresets_v1'] = JSON.stringify(appConfig.tableViewPresets || getDefaultTableViewPresets());
+        settingsKeys['merchProductStatusRecords_v1'] = localStorage.getItem('merchProductStatusRecords_v1') || '[]';
         settingsKeys['merchVisUpload_v870'] = JSON.stringify(config.visibleUploadCols || {});
         settingsKeys['merchVisMaster_v870'] = JSON.stringify(config.visibleMasterCols || {});
         settingsKeys['merchMappings_v870'] = JSON.stringify(config.mappings || {});
@@ -619,7 +633,7 @@ const App = () => {
         return {
             action: 'config',
             data: {
-                schemaVersion: 'Settings_v1.6.18_ConfigSyncFull',
+                schemaVersion: 'Settings_v1.6.21_ColumnWidthPreset',
                 updatedAt: new Date().toISOString(),
                 dict,
                 rules: config.marginRules,
@@ -813,16 +827,67 @@ const App = () => {
         var _a, _b, _c;
         return ((_c = (_b = (_a = config.uploadColumnMeta) === null || _a === void 0 ? void 0 : _a[type]) === null || _b === void 0 ? void 0 : _b[header]) === null || _c === void 0 ? void 0 : _c.type) === 'comparePrice';
     }, [config.uploadColumnMeta]);
+    const persistWorkColumnToActiveView = (type, header) => {
+        const cleanHeader = canonicalMerchFieldName(header);
+        if (!cleanHeader || cleanHeader === '품목코드')
+            return;
+        const safeTarget = normalizeTableViewTarget(type);
+        const targetViewId = safeTarget === activeUploadRole ? activeTableViewId : '';
+        config.setTableViewPresets(prev => {
+            const safe = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
+            const group = safe[safeTarget] || { views: [] };
+            let views = group.views || [];
+            if (views.length === 0) {
+                const roleLabel = ((UPLOAD_ROLES.find(r => r.id === safeTarget) || {}).label) || '작업';
+                views = [createTableView(safeTarget, `${roleLabel} 기본양식`, getDefaultVisibleMasterCols()[safeTarget] || ['입고가'], getDefaultVisibleUploadCols()[safeTarget] || [], { id: `${safeTarget}_custom_${Date.now()}` })];
+                if (safeTarget === activeUploadRole) {
+                    setActiveTableViewId(views[0].id);
+                    localStorage.setItem('merchActiveTableViewId_v1', views[0].id);
+                }
+            }
+            const selectedId = targetViewId || ((views[0] || {}).id);
+            const nextViews = views.map(view => {
+                if (view.id !== selectedId)
+                    return view;
+                const nextWorkColumns = normalizeTableColumns([...(view.workColumns || []), cleanHeader]).filter(c => c !== '품목코드');
+                return createTableView(safeTarget, view.name, view.masterColumns || ['입고가'], nextWorkColumns, { id: view.id, updatedAt: new Date().toISOString(), filterSteps: normalizeTableFilterSteps(view.filterSteps || []), filterMemo: String(view.filterMemo || '').trim() });
+            });
+            return { ...safe, [safeTarget]: { views: nextViews } };
+        });
+    };
+    const removeWorkColumnFromActiveView = (type, header) => {
+        const cleanHeader = canonicalMerchFieldName(header);
+        if (!cleanHeader || cleanHeader === '품목코드')
+            return;
+        const safeTarget = normalizeTableViewTarget(type);
+        const targetViewId = safeTarget === activeUploadRole ? activeTableViewId : '';
+        config.setTableViewPresets(prev => {
+            const safe = sanitizeTableViewPresets(prev || getDefaultTableViewPresets());
+            const group = safe[safeTarget] || { views: [] };
+            const views = group.views || [];
+            const selectedId = targetViewId || ((views[0] || {}).id);
+            const nextViews = views.map(view => {
+                if (view.id !== selectedId)
+                    return view;
+                const nextWorkColumns = normalizeTableColumns((view.workColumns || []).filter(c => c !== cleanHeader)).filter(c => c !== '품목코드');
+                return createTableView(safeTarget, view.name, view.masterColumns || ['입고가'], nextWorkColumns, { id: view.id, updatedAt: new Date().toISOString(), filterSteps: normalizeTableFilterSteps(view.filterSteps || []), filterMemo: String(view.filterMemo || '').trim() });
+            });
+            return { ...safe, [safeTarget]: { views: nextViews } };
+        });
+    };
     const addCustomUploadCol = (type, val, comparePrice = false) => {
         if (!val || !val.trim())
             return;
-        const cleanVal = val.trim();
-        if ((config.visibleUploadCols[type] || []).includes(cleanVal))
+        const cleanVal = canonicalMerchFieldName(val.trim());
+        const alreadyVisible = (config.visibleUploadCols[type] || []).includes(cleanVal);
+        if (alreadyVisible && type === activeUploadRole && editView && (editView.workColumns || []).includes(cleanVal))
             return showToast('⚠️ 이미 추가된 항목입니다.');
-        config.setVisibleUploadCols(prev => ({ ...prev, [type]: [...(prev[type] || []), cleanVal] }));
+        if (!alreadyVisible)
+            config.setVisibleUploadCols(prev => ({ ...prev, [type]: normalizeTableColumns([...(prev[type] || []), cleanVal]).filter(c => c !== '품목코드') }));
         if (type === activeUploadRole && editView && !(editView.workColumns || []).includes(cleanVal)) {
             updateDraft({ workColumns: normalizeTableColumns([...(editView.workColumns || []), cleanVal]).filter(c => c !== '품목코드') });
         }
+        persistWorkColumnToActiveView(type, cleanVal);
         config.setMappings(prev => ({ ...prev, [type]: { ...prev[type], [cleanVal]: cleanVal } }));
         config.setMasterLinks(prev => ({ ...prev, [type]: { ...prev[type], [cleanVal]: '' } }));
         config.setUploadColumnMeta(prev => ({
@@ -832,25 +897,32 @@ const App = () => {
                 [cleanVal]: { type: comparePrice ? 'comparePrice' : 'normal' }
             }
         }));
+        localStorage.setItem('config_sync_trigger', Date.now().toString());
+        localStorage.setItem('table_view_sync_trigger', Date.now().toString());
         setCustomEstColInput('');
         setIsComparePriceCol(false);
         showToast(comparePrice ? '✅ 비교단가 항목이 추가되었습니다.' : '✅ 항목이 추가되었습니다.');
     };
     const removeUploadCol = (type, header) => {
-        config.setVisibleUploadCols(prev => ({ ...prev, [type]: (prev[type] || []).filter(x => x !== header) }));
+        const cleanHeader = canonicalMerchFieldName(header);
+        config.setVisibleUploadCols(prev => ({ ...prev, [type]: (prev[type] || []).filter(x => x !== cleanHeader) }));
+        if (type === activeUploadRole && editView && (editView.workColumns || []).includes(cleanHeader)) {
+            updateDraft({ workColumns: normalizeTableColumns((editView.workColumns || []).filter(c => c !== cleanHeader)).filter(c => c !== '품목코드') });
+        }
+        removeWorkColumnFromActiveView(type, cleanHeader);
         config.setMappings(prev => {
             const nextType = { ...((prev === null || prev === void 0 ? void 0 : prev[type]) || {}) };
-            delete nextType[header];
+            delete nextType[cleanHeader];
             return { ...prev, [type]: nextType };
         });
         config.setMasterLinks(prev => {
             const nextType = { ...((prev === null || prev === void 0 ? void 0 : prev[type]) || {}) };
-            delete nextType[header];
+            delete nextType[cleanHeader];
             return { ...prev, [type]: nextType };
         });
         config.setUploadColumnMeta(prev => {
             const nextType = { ...((prev === null || prev === void 0 ? void 0 : prev[type]) || {}) };
-            delete nextType[header];
+            delete nextType[cleanHeader];
             return { ...prev, [type]: nextType };
         });
         showToast('✅ 작업 항목이 삭제되었습니다.');
@@ -1299,7 +1371,7 @@ const App = () => {
                                         React.createElement("i", { className: "fas fa-edit text-emerald-500 mr-1.5" }),
                                         "\uC791\uC5C5\uD14C\uC774\uBE14 \uB178\uCD9C\uD56D\uBAA9"),
                                     React.createElement("button", { className: "hidden" }, " ")),
-                                React.createElement("div", { className: "flex flex-wrap gap-2 mb-4" }, Array.from(new Set([...(window.MASTER_HEADERS || []), ...((editView === null || editView === void 0 ? void 0 : editView.workColumns) || [])])).filter(h => h && h !== '품목코드').map(h => {
+                                React.createElement("div", { className: "flex flex-wrap gap-2 mb-4" }, Array.from(new Set([...(window.MASTER_HEADERS || []), ...((config.visibleUploadCols && config.visibleUploadCols[activeUploadRole]) || []), ...((editView === null || editView === void 0 ? void 0 : editView.workColumns) || [])])).filter(h => h && h !== '품목코드').map(h => {
                                     const selected = ((editView === null || editView === void 0 ? void 0 : editView.workColumns) || []).includes(h);
                                     const isCompare = isComparePriceField(activeUploadRole, h);
                                     return React.createElement("button", { key: `view-work-${activeUploadRole}-${(editView === null || editView === void 0 ? void 0 : editView.id) || 'none'}-${h}`, onClick: () => toggleActiveWorkColumn(h), className: `px-3 py-1.5 rounded-full border text-[12px] font-bold transition-all ${selected ? 'bg-emerald-100 border-emerald-300 text-emerald-800 shadow-inner' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}` },
@@ -1447,5 +1519,258 @@ const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(App, null));
 
 </script>
+
+<script>
+(function(){
+    if (window.ONEAPP_STATUS_MAINTENANCE_LITE_LOADED) return;
+    window.ONEAPP_STATUS_MAINTENANCE_LITE_LOADED = true;
+    var KEY = 'merchProductStatusRecords_v1';
+    var styleId = 'oneapp-status-maintenance-lite-style';
+    function nowISO(){ return new Date().toISOString(); }
+    function safeParse(raw, fallback){
+        try { return raw ? JSON.parse(raw) : fallback; } catch(e) { return fallback; }
+    }
+    function esc(v){
+        return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){
+            return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
+        });
+    }
+    function pick(obj, names){
+        obj = obj || {};
+        for (var i=0; i<names.length; i++) {
+            var value = obj[names[i]];
+            if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+        }
+        return '';
+    }
+    function normalizeRecords(input){
+        var arr = Array.isArray(input) ? input : [];
+        return arr.map(function(r, idx){
+            r = r || {};
+            var state = pick(r, ['state','status','상태']) || '업데이트 제외';
+            var code = pick(r, ['code','상품코드','품목코드','코드']);
+            var name = pick(r, ['name','상품명','품명']);
+            var vendor = pick(r, ['vendor','supplier','공급사','구매처','거래처']);
+            var ownProduct = pick(r, ['ownProduct','relatedOwnProduct','자사상품','연결자사상품','대표상품']);
+            var reason = pick(r, ['reason','사유','처리사유']);
+            var memo = pick(r, ['memo','메모','비고']);
+            var createdAt = pick(r, ['createdAt','processedAt','처리일','created']) || nowISO();
+            var id = pick(r, ['id','recordId']) || [code || 'NOCD', state, createdAt, idx].join('_');
+            return Object.assign({}, r, {
+                id: String(id),
+                state: String(state),
+                code: String(code || ''),
+                name: String(name || ''),
+                vendor: String(vendor || ''),
+                ownProduct: String(ownProduct || ''),
+                reason: String(reason || ''),
+                memo: String(memo || ''),
+                createdAt: String(createdAt || ''),
+                updatedAt: String(pick(r, ['updatedAt','수정일']) || createdAt || ''),
+                active: r.active === false ? false : true
+            });
+        });
+    }
+    function readRecords(){ return normalizeRecords(safeParse(localStorage.getItem(KEY), [])); }
+    function writeRecords(records){
+        localStorage.setItem(KEY, JSON.stringify(normalizeRecords(records).slice(0, 5000)));
+        localStorage.setItem('product_status_records_sync_trigger', String(Date.now()));
+        localStorage.setItem('config_sync_trigger', String(Date.now()));
+    }
+    async function activateMasterProduct(code){
+        if (!code) return false;
+        var touched = false;
+        try {
+            if (typeof window.getAllIDB === 'function' && typeof window.bulkPutIDB === 'function') {
+                var rows = await window.getAllIDB('master_products');
+                if (Array.isArray(rows) && rows.length) {
+                    var next = rows.map(function(item){
+                        if (item && String(item['코드']) === String(code)) {
+                            touched = true;
+                            return Object.assign({}, item, {'판매여부': 1, '상태': item['상태'] || '판매'});
+                        }
+                        return item;
+                    });
+                    if (touched) await window.bulkPutIDB('master_products', next);
+                }
+            }
+        } catch (e) { console.warn('[StatusMaintenance] IDB 판매활성 반영 실패', e); }
+        try {
+            var raw = safeParse(localStorage.getItem('merchMaster_v870'), null);
+            if (raw && typeof raw === 'object' && raw[code]) {
+                raw[code]['판매여부'] = 1;
+                localStorage.setItem('merchMaster_v870', JSON.stringify(raw));
+                touched = true;
+            }
+        } catch (e) { console.warn('[StatusMaintenance] localStorage 판매활성 반영 실패', e); }
+        if (touched) localStorage.setItem('merchMaster_sync_trigger', String(Date.now()));
+        return touched;
+    }
+    function addStyle(){
+        if (document.getElementById(styleId)) return;
+        var style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = [
+            '.oneapp-status-lite-btn{position:fixed;right:18px;bottom:18px;z-index:9998;background:#0f172a;color:#fff;border:0;border-radius:999px;padding:10px 14px;font-size:12px;font-weight:900;box-shadow:0 12px 30px rgba(15,23,42,.25);}',
+            '.oneapp-status-lite-panel{position:fixed;right:18px;bottom:70px;width:min(980px,calc(100vw - 36px));max-height:min(720px,calc(100vh - 100px));z-index:9999;background:#fff;border:1px solid #cbd5e1;border-radius:18px;box-shadow:0 24px 70px rgba(15,23,42,.28);overflow:hidden;display:none;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}',
+            '.oneapp-status-lite-panel.open{display:block;}',
+            '.oneapp-status-lite-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc;}',
+            '.oneapp-status-lite-title{font-size:15px;font-weight:950;color:#0f172a;}',
+            '.oneapp-status-lite-sub{font-size:11px;color:#64748b;margin-top:2px;}',
+            '.oneapp-status-lite-close{width:30px;height:30px;border-radius:10px;border:1px solid #cbd5e1;background:#fff;color:#475569;font-weight:900;}',
+            '.oneapp-status-lite-controls{display:flex;gap:8px;padding:12px 16px;border-bottom:1px solid #e2e8f0;background:#fff;}',
+            '.oneapp-status-lite-controls input{flex:1;border:1px solid #cbd5e1;border-radius:10px;padding:9px 11px;font-size:12px;outline:none;}',
+            '.oneapp-status-lite-controls select{border:1px solid #cbd5e1;border-radius:10px;padding:9px 10px;font-size:12px;background:#fff;font-weight:800;color:#334155;}',
+            '.oneapp-status-lite-body{overflow:auto;max-height:560px;}',
+            '.oneapp-status-lite-table{width:100%;border-collapse:collapse;font-size:12px;}',
+            '.oneapp-status-lite-table th{position:sticky;top:0;background:#f1f5f9;color:#475569;text-align:left;padding:10px;border-bottom:1px solid #cbd5e1;font-size:11px;white-space:nowrap;}',
+            '.oneapp-status-lite-table td{padding:10px;border-bottom:1px solid #e2e8f0;color:#334155;vertical-align:top;}',
+            '.oneapp-status-lite-empty{padding:36px;text-align:center;color:#94a3b8;font-weight:800;}',
+            '.oneapp-status-lite-badge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:11px;font-weight:900;background:#e2e8f0;color:#334155;white-space:nowrap;}',
+            '.oneapp-status-lite-badge.stop{background:#fee2e2;color:#b91c1c;}',
+            '.oneapp-status-lite-badge.exclude{background:#fef3c7;color:#92400e;}',
+            '.oneapp-status-lite-badge.done{background:#dcfce7;color:#166534;}',
+            '.oneapp-status-lite-actions{display:flex;gap:5px;flex-wrap:wrap;}',
+            '.oneapp-status-lite-actions button{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:5px 7px;font-size:11px;font-weight:900;color:#334155;}',
+            '.oneapp-status-lite-actions button:hover{background:#f8fafc;}',
+            '.oneapp-status-lite-muted{font-size:11px;color:#94a3b8;line-height:1.35;}',
+            '.oneapp-status-lite-main{font-weight:900;color:#0f172a;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
+            '.oneapp-status-lite-small{font-size:11px;color:#64748b;margin-top:2px;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'
+        ].join('');
+        document.head.appendChild(style);
+    }
+    function ensureUI(){
+        addStyle();
+        if (document.getElementById('oneapp-status-lite-panel')) return;
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'oneapp-status-lite-open';
+        btn.className = 'oneapp-status-lite-btn';
+        btn.textContent = '제외/정지 관리';
+        var panel = document.createElement('div');
+        panel.id = 'oneapp-status-lite-panel';
+        panel.className = 'oneapp-status-lite-panel';
+        panel.innerHTML = '' +
+            '<div class="oneapp-status-lite-head">' +
+                '<div><div class="oneapp-status-lite-title">제외/정지 상품 관리</div><div class="oneapp-status-lite-sub">이전에 제외·정지 처리한 상품을 검색하고 해제/판매활성/메모수정합니다.</div></div>' +
+                '<button type="button" class="oneapp-status-lite-close" id="oneapp-status-lite-close">×</button>' +
+            '</div>' +
+            '<div class="oneapp-status-lite-controls">' +
+                '<input id="oneapp-status-lite-search" placeholder="상품명, 코드, 공급사, 자사상품, 사유 검색" />' +
+                '<select id="oneapp-status-lite-filter">' +
+                    '<option value="active">처리중</option>' +
+                    '<option value="all">전체</option>' +
+                    '<option value="exclude">업데이트 제외</option>' +
+                    '<option value="stop">판매정지</option>' +
+                    '<option value="done">처리완료</option>' +
+                '</select>' +
+            '</div>' +
+            '<div class="oneapp-status-lite-body" id="oneapp-status-lite-body"></div>';
+        document.body.appendChild(btn);
+        document.body.appendChild(panel);
+        btn.addEventListener('click', function(){ panel.classList.toggle('open'); render(); });
+        panel.querySelector('#oneapp-status-lite-close').addEventListener('click', function(){ panel.classList.remove('open'); });
+        panel.querySelector('#oneapp-status-lite-search').addEventListener('input', render);
+        panel.querySelector('#oneapp-status-lite-filter').addEventListener('change', render);
+        panel.addEventListener('click', async function(e){
+            var actionBtn = e.target.closest('[data-status-action]');
+            if (!actionBtn) return;
+            var action = actionBtn.getAttribute('data-status-action');
+            var id = actionBtn.getAttribute('data-id');
+            var records = readRecords();
+            var rec = records.find(function(item){ return String(item.id) === String(id); });
+            if (!rec) return;
+            if (action === 'memo') {
+                var memo = prompt('메모/사유를 입력하세요.', rec.memo || rec.reason || '');
+                if (memo === null) return;
+                rec.memo = memo;
+                rec.updatedAt = nowISO();
+                writeRecords(records);
+                render();
+                return;
+            }
+            if (action === 'release') {
+                if (!confirm('이 상품의 제외/정지 상태를 해제 처리할까요?')) return;
+                rec.active = false;
+                rec.state = '해제';
+                rec.resolvedAt = nowISO();
+                rec.updatedAt = rec.resolvedAt;
+                rec.memo = rec.memo || '관리화면에서 해제 처리';
+                writeRecords(records);
+                render();
+                return;
+            }
+            if (action === 'activate') {
+                if (!confirm('판매활성 처리할까요? 마스터 상품이 있으면 판매여부=1로 반영을 시도합니다.')) return;
+                var changed = await activateMasterProduct(rec.code);
+                rec.active = false;
+                rec.state = '판매활성';
+                rec.resolvedAt = nowISO();
+                rec.updatedAt = rec.resolvedAt;
+                rec.memo = rec.memo || '관리화면에서 판매활성 처리';
+                writeRecords(records);
+                render();
+                alert(changed ? '판매활성 처리 및 마스터 반영을 시도했습니다.' : '판매활성 처리했습니다. 단, 로컬 마스터 상품은 찾지 못했습니다.');
+            }
+        });
+        render();
+    }
+    function matchesFilter(rec, mode){
+        if (mode === 'all') return true;
+        if (mode === 'active') return rec.active !== false;
+        if (mode === 'done') return rec.active === false;
+        if (mode === 'exclude') return String(rec.state || '').indexOf('제외') >= 0;
+        if (mode === 'stop') return String(rec.state || '').indexOf('정지') >= 0;
+        return true;
+    }
+    function stateBadge(rec){
+        var state = rec.state || '처리중';
+        var cls = 'oneapp-status-lite-badge';
+        if (String(state).indexOf('정지') >= 0) cls += ' stop';
+        else if (String(state).indexOf('제외') >= 0) cls += ' exclude';
+        else if (rec.active === false) cls += ' done';
+        return '<span class="' + cls + '">' + esc(state) + '</span>';
+    }
+    function render(){
+        var body = document.getElementById('oneapp-status-lite-body');
+        if (!body) return;
+        var qEl = document.getElementById('oneapp-status-lite-search');
+        var fEl = document.getElementById('oneapp-status-lite-filter');
+        var q = String((qEl && qEl.value) || '').trim().toLowerCase();
+        var mode = (fEl && fEl.value) || 'active';
+        var records = readRecords().filter(function(rec){
+            if (!matchesFilter(rec, mode)) return false;
+            if (!q) return true;
+            var hay = [rec.state, rec.code, rec.name, rec.vendor, rec.ownProduct, rec.reason, rec.memo].join(' ').toLowerCase();
+            return hay.indexOf(q) >= 0;
+        }).sort(function(a,b){ return String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')); });
+        if (!records.length) {
+            body.innerHTML = '<div class="oneapp-status-lite-empty">제외/정지 관리 기록이 없습니다.</div>';
+            return;
+        }
+        body.innerHTML = '<table class="oneapp-status-lite-table"><thead><tr>' +
+            '<th>상태</th><th>상품</th><th>공급사</th><th>연결 자사상품</th><th>사유/메모</th><th>처리일</th><th>관리</th>' +
+            '</tr></thead><tbody>' + records.map(function(rec){
+                var date = (rec.updatedAt || rec.createdAt || '').slice(0, 10);
+                return '<tr>' +
+                    '<td>' + stateBadge(rec) + '</td>' +
+                    '<td><div class="oneapp-status-lite-main">' + esc(rec.name || '-') + '</div><div class="oneapp-status-lite-small">' + esc(rec.code || '-') + '</div></td>' +
+                    '<td>' + esc(rec.vendor || '-') + '</td>' +
+                    '<td>' + esc(rec.ownProduct || '-') + '</td>' +
+                    '<td><div>' + esc(rec.reason || '-') + '</div><div class="oneapp-status-lite-muted">' + esc(rec.memo || '') + '</div></td>' +
+                    '<td>' + esc(date || '-') + '</td>' +
+                    '<td><div class="oneapp-status-lite-actions">' +
+                        '<button type="button" data-status-action="release" data-id="' + esc(rec.id) + '">해제</button>' +
+                        '<button type="button" data-status-action="activate" data-id="' + esc(rec.id) + '">판매활성</button>' +
+                        '<button type="button" data-status-action="memo" data-id="' + esc(rec.id) + '">메모</button>' +
+                    '</div></td>' +
+                '</tr>';
+            }).join('') + '</tbody></table>';
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ensureUI);
+    else ensureUI();
+})();
+</script>
+
 </body>
 </html>
