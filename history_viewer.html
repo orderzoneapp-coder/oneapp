@@ -4,13 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="google" content="notranslate" />
-  <title>ONEAPP MerchOps - HistoryViewer [v1.1.0 RuntimeOpenFix]</title>
+  <title>ONEAPP MerchOps - HistoryViewer [v1.2.0 HistoryAnalytics]</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
   <style>
     @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
     body{font-family:'Pretendard',-apple-system,BlinkMacSystemFont,sans-serif;background:#f8fafc;color:#1e293b;margin:0;overflow:hidden}
     ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:10px}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
+    .chip{display:inline-flex;align-items:center;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:900;white-space:nowrap}.metric-card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:12px;box-shadow:0 1px 2px rgba(15,23,42,.04)}.row-selected{background:#eef2ff!important}
   </style>
 </head>
 <body>
@@ -18,13 +19,11 @@
     <header class="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shadow-sm shrink-0">
       <div class="flex items-center gap-3">
         <div class="w-10 h-10 rounded-xl bg-slate-900 text-emerald-400 flex items-center justify-center"><i class="fas fa-clock-rotate-left"></i></div>
-        <div>
-          <h1 class="text-xl font-black tracking-tight">ONEAPP HistoryViewer</h1>
-          <p class="text-xs text-slate-500 font-bold">v1.1.0 RuntimeOpenFix · MerchOps 변경 이력 조회</p>
-        </div>
+        <div><h1 class="text-xl font-black tracking-tight">ONEAPP HistoryViewer</h1><p class="text-xs text-slate-500 font-bold">v1.2.0 HistoryAnalytics · 전일/7일/30일 가격 흐름 분석</p></div>
       </div>
       <div class="flex items-center gap-2">
         <button id="btnReload" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-black"><i class="fas fa-rotate mr-2"></i>새로고침</button>
+        <button id="btnCloud" class="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-sm font-black"><i class="fas fa-cloud-arrow-down mr-2"></i>클라우드 조회</button>
         <button id="btnJson" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-black"><i class="fas fa-download mr-2"></i>JSON</button>
         <button id="btnCsv" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-black"><i class="fas fa-file-csv mr-2"></i>CSV</button>
         <button id="btnBack" class="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-black"><i class="fas fa-arrow-left mr-2"></i>MerchOps</button>
@@ -32,43 +31,35 @@
     </header>
 
     <section class="px-6 py-4 bg-slate-50 border-b border-slate-200 shrink-0">
-      <div class="grid grid-cols-4 gap-3 mb-4">
-        <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm"><div class="text-xs font-black text-slate-400">전체 이력</div><div id="statTotal" class="text-2xl font-black mt-1">0</div></div>
-        <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm"><div class="text-xs font-black text-slate-400">가격 변경</div><div id="statPrice" class="text-2xl font-black text-rose-600 mt-1">0</div></div>
-        <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm"><div class="text-xs font-black text-slate-400">오늘 기록</div><div id="statToday" class="text-2xl font-black text-emerald-600 mt-1">0</div></div>
-        <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm"><div class="text-xs font-black text-slate-400">소스</div><div id="statSource" class="text-lg font-black text-indigo-600 mt-2 truncate">-</div></div>
+      <div class="grid grid-cols-6 gap-3 mb-4">
+        <div class="metric-card"><div class="text-xs font-black text-slate-400">전체 이력</div><div id="statTotal" class="text-2xl font-black mt-1">0</div></div>
+        <div class="metric-card"><div class="text-xs font-black text-slate-400">가격 변경</div><div id="statPrice" class="text-2xl font-black text-rose-600 mt-1">0</div></div>
+        <div class="metric-card"><div class="text-xs font-black text-slate-400">오늘 기록</div><div id="statToday" class="text-2xl font-black text-emerald-600 mt-1">0</div></div>
+        <div class="metric-card"><div class="text-xs font-black text-slate-400">분석 상품</div><div id="statSelected" class="text-lg font-black text-indigo-700 mt-2 truncate">-</div></div>
+        <div class="metric-card"><div class="text-xs font-black text-slate-400">최근 7일 추세</div><div id="statTrend7" class="text-lg font-black mt-2 truncate">-</div></div>
+        <div class="metric-card"><div class="text-xs font-black text-slate-400">소스</div><div id="statSource" class="text-lg font-black text-sky-700 mt-2 truncate">-</div></div>
       </div>
       <div class="flex flex-wrap gap-2 items-center">
-        <div class="relative flex-1 min-w-[320px]">
-          <i class="fas fa-search absolute left-3 top-3 text-slate-400 text-sm"></i>
-          <input id="searchInput" class="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-300 outline-none focus:border-indigo-500 text-sm font-bold" placeholder="품목코드 / 품명 / 경로 / 액션 / 변경값 검색" />
-        </div>
+        <div class="relative flex-1 min-w-[320px]"><i class="fas fa-search absolute left-3 top-3 text-slate-400 text-sm"></i><input id="searchInput" class="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-300 outline-none focus:border-indigo-500 text-sm font-bold" placeholder="품목코드 / 품명 / 경로 / 액션 / 변경값 검색" /></div>
         <select id="sourceFilter" class="h-10 px-3 rounded-xl border border-slate-300 bg-white text-sm font-bold"><option value="">전체 소스</option></select>
         <select id="actionFilter" class="h-10 px-3 rounded-xl border border-slate-300 bg-white text-sm font-bold"><option value="">전체 액션</option></select>
+        <select id="fieldFilter" class="h-10 px-3 rounded-xl border border-slate-300 bg-white text-sm font-bold"><option value="">전체 필드</option></select>
+        <select id="analysisField" class="h-10 px-3 rounded-xl border border-indigo-300 bg-white text-sm font-black text-indigo-700"><option value="입고가">분석: 입고가</option><option value="출고가">분석: 출고가</option><option value="시중가">분석: 시중가</option><option value="행사가">분석: 행사가</option><option value="판매여부">분석: 판매여부</option></select>
         <select id="sortMode" class="h-10 px-3 rounded-xl border border-slate-300 bg-white text-sm font-bold"><option value="newest">최신순</option><option value="oldest">오래된순</option><option value="code">코드순</option><option value="diff">변동폭순</option></select>
       </div>
+      <div id="statusLine" class="mt-2 text-xs font-bold text-slate-500"></div>
     </section>
 
-    <main class="flex-1 overflow-auto p-6">
-      <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-        <table class="w-full text-left text-sm whitespace-nowrap">
-          <thead class="sticky top-0 bg-slate-100 border-b border-slate-200 text-xs text-slate-500 uppercase z-10">
-            <tr>
-              <th class="px-3 py-3 w-40">시간</th>
-              <th class="px-3 py-3 w-28">소스</th>
-              <th class="px-3 py-3 w-28">액션</th>
-              <th class="px-3 py-3 w-28">코드</th>
-              <th class="px-3 py-3">품명/규격</th>
-              <th class="px-3 py-3 w-44">경로</th>
-              <th class="px-3 py-3 w-36 text-right">이전값</th>
-              <th class="px-3 py-3 w-36 text-right">변경값</th>
-              <th class="px-3 py-3 w-28 text-right">차이</th>
-            </tr>
-          </thead>
-          <tbody id="historyTbody" class="divide-y divide-slate-100"></tbody>
-        </table>
-        <div id="emptyBox" class="hidden p-16 text-center text-slate-400 font-black"><i class="fas fa-box-open text-4xl mb-3 block"></i>표시할 히스토리가 없습니다.</div>
+    <main class="flex-1 overflow-hidden p-6 grid grid-cols-[1fr_420px] gap-4">
+      <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex flex-col min-w-0">
+        <div class="px-4 py-3 border-b border-slate-100 bg-white flex items-center justify-between shrink-0"><div class="font-black text-sm text-slate-700">변경 이력</div><div id="rowCount" class="text-xs font-black text-slate-400">0건</div></div>
+        <div class="overflow-auto flex-1"><table class="w-full text-left text-sm whitespace-nowrap"><thead class="sticky top-0 bg-slate-100 border-b border-slate-200 text-xs text-slate-500 uppercase z-10"><tr><th class="px-3 py-3 w-24">분석</th><th class="px-3 py-3 w-40">시간</th><th class="px-3 py-3 w-28">소스</th><th class="px-3 py-3 w-28">액션</th><th class="px-3 py-3 w-28">코드</th><th class="px-3 py-3">품명/규격</th><th class="px-3 py-3 w-40">필드/경로</th><th class="px-3 py-3 w-32 text-right">이전값</th><th class="px-3 py-3 w-32 text-right">변경값</th><th class="px-3 py-3 w-28 text-right">차이</th><th class="px-3 py-3 w-24 text-right">%</th></tr></thead><tbody id="historyTbody" class="divide-y divide-slate-100"></tbody></table><div id="emptyBox" class="hidden p-16 text-center text-slate-400 font-black"><i class="fas fa-box-open text-4xl mb-3 block"></i>표시할 히스토리가 없습니다.</div></div>
       </div>
+
+      <aside class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex flex-col min-w-0">
+        <div class="px-4 py-3 border-b border-slate-100 bg-slate-50 shrink-0"><div class="flex items-center justify-between gap-2"><div><div class="font-black text-slate-800">상품별 분석</div><div id="panelSubtitle" class="text-xs font-bold text-slate-400 mt-1">행을 선택하면 전일/7일/30일 기준을 계산합니다.</div></div><button id="btnClearSelection" class="px-3 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-xs font-black text-slate-600">선택해제</button></div></div>
+        <div class="p-4 space-y-4 overflow-auto flex-1"><section><div class="text-xs font-black text-slate-400 mb-2">현재 선택</div><div id="selectedBox" class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-bold text-slate-500">선택된 상품이 없습니다.</div></section><section><div class="text-xs font-black text-slate-400 mb-2">기준 비교</div><div class="grid grid-cols-2 gap-2" id="compareCards"></div></section><section><div class="text-xs font-black text-slate-400 mb-2">가격 흐름 요약</div><div id="trendSummary" class="rounded-2xl border border-slate-200 p-4 text-sm leading-7 text-slate-700 font-bold">-</div></section><section><div class="text-xs font-black text-slate-400 mb-2">최근 변경</div><div id="recentList" class="space-y-2"></div></section></div>
+      </aside>
     </main>
   </div>
 
@@ -76,119 +67,80 @@
 (function(){
   'use strict';
   const HISTORY_KEY='merchHistory_v870';
+  const MASTER_KEYS=['merchMaster_v870'];
+  const CLOUD_KEYS=['oneapp_cloud_sync_url_v1','merchCloudUrl_v870'];
   const $=id=>document.getElementById(id);
   const safeStr=v=>v===undefined||v===null?'':String(v);
   const parseNum=v=>{const n=Number(String(v??'').replace(/,/g,'').replace(/[^\d.-]/g,''));return Number.isFinite(n)?n:0;};
-  const fmtNum=v=>{const n=parseNum(v);return n===0&&String(v??'').trim()===''?'':n.toLocaleString('ko-KR');};
+  const fmtNum=v=>{const raw=String(v??'').trim(); const n=parseNum(v); return n===0&&raw===''?'':n.toLocaleString('ko-KR');};
+  const fmtPct=v=>{if(v===null||v===undefined||v==='') return ''; const n=Number(v); return Number.isFinite(n)?`${n>0?'+':''}${n.toFixed(1)}%`:'';};
   const escapeHtml=s=>safeStr(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
-  let rawLogs=[];
-  let normalized=[];
-
-  function readHistory(){
-    try{
-      const raw=localStorage.getItem(HISTORY_KEY);
-      if(!raw||raw==='undefined'||raw==='null') return [];
-      const parsed=JSON.parse(raw);
-      if(Array.isArray(parsed)) return parsed;
-      if(parsed&&Array.isArray(parsed.logs)) return parsed.logs;
-      if(parsed&&typeof parsed==='object') return Object.values(parsed).flat().filter(Boolean);
-      return [];
-    }catch(e){ console.error('[HistoryViewer] parse error',e); return []; }
-  }
+  const canonicalField=(v='')=>{
+    const clean=String(v||'').trim();
+    const map={'판매가격':'출고가','판매가':'출고가','판매단가':'출고가','시중가격':'시중가','상품태그':'검색어등록','기본설명':'간단설명','판매':'판매여부','상품코드':'품목코드','상품명':'품목명','재고':'재고수량','테마1':'행사테마','테마2':'행사테마','테마3':'행사테마','테마4':'행사테마','테마5':'행사테마','프로모션테마':'행사테마','테마':'행사테마'};
+    return map[clean]||clean;
+  };
+  const priceFieldRe=/(가격|단가|입고가|출고가|행사가|시중가|price|판매가격|시중가격)/i;
+  let rawLogs=[]; let normalized=[]; let filteredRows=[]; let selectedCode=''; let selectedName='';
+  function readLocalJSON(key, fallback){try{const raw=localStorage.getItem(key); if(!raw||raw==='undefined'||raw==='null') return fallback; return JSON.parse(raw)||fallback;}catch(e){return fallback;}}
+  function readHistory(){const parsed=readLocalJSON(HISTORY_KEY, []); if(Array.isArray(parsed)) return parsed; if(parsed&&Array.isArray(parsed.logs)) return parsed.logs; if(parsed&&typeof parsed==='object') return Object.values(parsed).flat().filter(Boolean); return [];}
+  function readMasterMap(){for(const key of MASTER_KEYS){const parsed=readLocalJSON(key, null); if(parsed&&typeof parsed==='object') return parsed;} return {};}
+  function getCloudUrl(){for(const key of CLOUD_KEYS){try{const val=String(localStorage.getItem(key)||'').trim(); if(val) return val;}catch(e){}} return '';}
+  function calcDiffRate(oldVal,newVal){const oldNum=parseNum(oldVal); const newNum=parseNum(newVal); if(!oldNum) return ''; return Math.round(((newNum-oldNum)/oldNum)*1000)/10;}
   function norm(log,idx){
-    const oldVal=log.oldVal??log.beforeVal??log.oldValue??log.prev??'';
-    const newVal=log.newVal??log.afterVal??log.newValue??log.next??'';
-    const diffRaw=log.diff!==undefined?log.diff:(String(oldVal).match(/\d/)||String(newVal).match(/\d/)?parseNum(newVal)-parseNum(oldVal):'');
+    const oldVal=log.oldVal??log.beforeVal??log.oldValue??log.prev??log.old??'';
+    const newVal=log.newVal??log.afterVal??log.newValue??log.next??log.new??'';
+    const hasNumeric=String(oldVal).match(/[0-9]/)||String(newVal).match(/[0-9]/);
+    const diffRaw=log.diff!==undefined?log.diff:(hasNumeric?parseNum(newVal)-parseNum(oldVal):'');
+    const diffRate=log.diffRate!==undefined?log.diffRate:(hasNumeric?calcDiffRate(oldVal,newVal):'');
     const ts=log.timestampISO||log.createdAtISO||log.savedAtISO||log.timestamp||log.time||log.date||'';
-    return {
-      id:log.id||String(idx),
-      timestamp:ts,
-      source:safeStr(log.source||log.origin||log.sourceLabel||'unknown'),
-      action:safeStr(log.actionType||log.action||log.applyMode||'change'),
-      code:safeStr(log.code||log.코드||log.productCode||''),
-      name:safeStr(log.name||log.품명||log.productName||''),
-      spec:safeStr(log.spec||log.규격||''),
-      path:safeStr(log.path||log.route||log.field||log.column||''),
-      oldVal, newVal, diff:diffRaw,
-      raw:log
-    };
+    const field=canonicalField(log.field||log.path||log.route||log.column||'');
+    const sourceRole=String(log.sourceRole||log.source||log.origin||log.sourceLabel||'unknown');
+    return {id:log.id||String(idx),timestamp:ts,source:safeStr(log.source||log.origin||log.sourceLabel||log.sourceRole||'unknown'),sourceRole,action:safeStr(log.actionType||log.action||log.applyMode||'change'),code:safeStr(log.code||log.코드||log.productCode||log['품목코드']||''),name:safeStr(log.name||log.품명||log.productName||log['품목명']||''),spec:safeStr(log.spec||log.규격||''),field,path:safeStr(log.path||log.route||log.field||log.column||''),oldVal,newVal,diff:diffRaw,diffRate,raw:log};
   }
+  function parseDate(v){const d=new Date(v); return Number.isNaN(d.getTime())?null:d;}
+  function formatTime(v){const d=parseDate(v); if(d) return d.toLocaleString('ko-KR'); return v?safeStr(v):'-';}
+  function isToday(v){const d=parseDate(v); if(!d) return false; const n=new Date(); return d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth()&&d.getDate()===n.getDate();}
   function fillFilters(){
-    const src=$('sourceFilter'), act=$('actionFilter');
-    const curS=src.value, curA=act.value;
-    const sources=[...new Set(normalized.map(x=>x.source).filter(Boolean))].sort();
-    const actions=[...new Set(normalized.map(x=>x.action).filter(Boolean))].sort();
-    src.innerHTML='<option value="">전체 소스</option>'+sources.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
-    act.innerHTML='<option value="">전체 액션</option>'+actions.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
-    src.value=curS; act.value=curA;
+    const src=$('sourceFilter'), act=$('actionFilter'), field=$('fieldFilter'); const curS=src.value, curA=act.value, curF=field.value;
+    const sources=[...new Set(normalized.map(x=>x.sourceRole||x.source).filter(Boolean))].sort(); const actions=[...new Set(normalized.map(x=>x.action).filter(Boolean))].sort(); const fields=[...new Set(normalized.map(x=>x.field||x.path).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ko'));
+    src.innerHTML='<option value="">전체 소스</option>'+sources.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join(''); act.innerHTML='<option value="">전체 액션</option>'+actions.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join(''); field.innerHTML='<option value="">전체 필드</option>'+fields.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join(''); src.value=curS; act.value=curA; field.value=curF;
   }
-  function formatTime(v){
-    if(!v) return '-';
-    const d=new Date(v);
-    if(!Number.isNaN(d.getTime())) return d.toLocaleString('ko-KR');
-    return safeStr(v);
-  }
-  function isToday(v){const d=new Date(v); if(Number.isNaN(d.getTime())) return false; const n=new Date(); return d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth()&&d.getDate()===n.getDate();}
   function apply(){
-    const q=$('searchInput').value.trim().toLowerCase();
-    const src=$('sourceFilter').value; const act=$('actionFilter').value; const sort=$('sortMode').value;
-    let rows=normalized.filter(x=>{
-      if(src&&x.source!==src) return false;
-      if(act&&x.action!==act) return false;
-      if(q){
-        const hay=[x.timestamp,x.source,x.action,x.code,x.name,x.spec,x.path,x.oldVal,x.newVal,x.diff].join(' ').toLowerCase();
-        if(!q.split(/\s+/).every(t=>hay.includes(t))) return false;
-      }
-      return true;
-    });
-    rows.sort((a,b)=>{
-      if(sort==='oldest') return new Date(a.timestamp||0)-new Date(b.timestamp||0);
-      if(sort==='code') return a.code.localeCompare(b.code,'ko')||a.name.localeCompare(b.name,'ko');
-      if(sort==='diff') return Math.abs(parseNum(b.diff))-Math.abs(parseNum(a.diff));
-      return new Date(b.timestamp||0)-new Date(a.timestamp||0);
-    });
-    render(rows);
+    const q=$('searchInput').value.trim().toLowerCase(); const src=$('sourceFilter').value; const act=$('actionFilter').value; const field=$('fieldFilter').value; const sort=$('sortMode').value;
+    let rows=normalized.filter(x=>{if(src&&(x.sourceRole||x.source)!==src)return false; if(act&&x.action!==act)return false; if(field&&x.field!==field&&x.path!==field)return false; if(q){const hay=[x.timestamp,x.source,x.sourceRole,x.action,x.code,x.name,x.spec,x.field,x.path,x.oldVal,x.newVal,x.diff,x.diffRate].join(' ').toLowerCase(); if(!q.split(/\s+/).every(t=>hay.includes(t)))return false;} return true;});
+    rows.sort((a,b)=>{if(sort==='oldest')return(parseDate(a.timestamp)?.getTime()||0)-(parseDate(b.timestamp)?.getTime()||0); if(sort==='code')return a.code.localeCompare(b.code,'ko')||a.name.localeCompare(b.name,'ko'); if(sort==='diff')return Math.abs(parseNum(b.diff))-Math.abs(parseNum(a.diff)); return(parseDate(b.timestamp)?.getTime()||0)-(parseDate(a.timestamp)?.getTime()||0);});
+    filteredRows=rows; render(rows); renderAnalysis();
   }
   function render(rows){
-    $('historyTbody').innerHTML=rows.map(x=>`<tr class="hover:bg-slate-50">
-      <td class="px-3 py-2 text-xs text-slate-500">${escapeHtml(formatTime(x.timestamp))}</td>
-      <td class="px-3 py-2"><span class="px-2 py-1 rounded-lg bg-slate-100 text-slate-600 text-xs font-black">${escapeHtml(x.source)}</span></td>
-      <td class="px-3 py-2 text-xs font-black text-indigo-700">${escapeHtml(x.action)}</td>
-      <td class="px-3 py-2 mono text-xs text-slate-500">${escapeHtml(x.code)}</td>
-      <td class="px-3 py-2 font-bold">${escapeHtml(x.name)} <span class="text-slate-400 font-normal text-xs">${x.spec?`(${escapeHtml(x.spec)})`:''}</span></td>
-      <td class="px-3 py-2 text-xs text-slate-500 max-w-[240px] truncate">${escapeHtml(x.path)}</td>
-      <td class="px-3 py-2 text-right text-slate-500">${escapeHtml(safeStr(x.oldVal))}</td>
-      <td class="px-3 py-2 text-right font-black text-slate-800">${escapeHtml(safeStr(x.newVal))}</td>
-      <td class="px-3 py-2 text-right font-black ${parseNum(x.diff)>0?'text-rose-600':parseNum(x.diff)<0?'text-blue-600':'text-slate-400'}">${escapeHtml(fmtNum(x.diff))}</td>
-    </tr>`).join('');
-    $('emptyBox').classList.toggle('hidden', rows.length>0);
+    $('rowCount').textContent=`${rows.length.toLocaleString('ko-KR')}건`;
+    $('historyTbody').innerHTML=rows.map(x=>`<tr class="hover:bg-slate-50 ${x.code&&x.code===selectedCode?'row-selected':''}"><td class="px-3 py-2"><button class="btnSelect px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-black" data-code="${escapeHtml(x.code)}" data-name="${escapeHtml(x.name)}">분석</button></td><td class="px-3 py-2 text-xs text-slate-500">${escapeHtml(formatTime(x.timestamp))}</td><td class="px-3 py-2"><span class="chip bg-slate-100 text-slate-600">${escapeHtml(x.sourceRole||x.source)}</span></td><td class="px-3 py-2 text-xs font-black text-indigo-700">${escapeHtml(x.action)}</td><td class="px-3 py-2 mono text-xs text-slate-500">${escapeHtml(x.code)}</td><td class="px-3 py-2 font-bold max-w-[280px] truncate">${escapeHtml(x.name)} <span class="text-slate-400 font-normal text-xs">${x.spec?`(${escapeHtml(x.spec)})`:''}</span></td><td class="px-3 py-2 text-xs text-slate-500 max-w-[180px] truncate">${escapeHtml(x.field||x.path)}</td><td class="px-3 py-2 text-right text-slate-500">${escapeHtml(safeStr(x.oldVal))}</td><td class="px-3 py-2 text-right font-black text-slate-800">${escapeHtml(safeStr(x.newVal))}</td><td class="px-3 py-2 text-right font-black ${parseNum(x.diff)>0?'text-rose-600':parseNum(x.diff)<0?'text-blue-600':'text-slate-400'}">${escapeHtml(fmtNum(x.diff))}</td><td class="px-3 py-2 text-right text-xs font-black ${parseNum(x.diffRate)>0?'text-rose-600':parseNum(x.diffRate)<0?'text-blue-600':'text-slate-400'}">${escapeHtml(fmtPct(x.diffRate))}</td></tr>`).join('');
+    $('emptyBox').classList.toggle('hidden', rows.length>0); document.querySelectorAll('.btnSelect').forEach(btn=>btn.onclick=()=>{selectedCode=btn.dataset.code||''; selectedName=btn.dataset.name||''; render(rows); renderAnalysis();});
   }
-  function refresh(){
-    rawLogs=readHistory();
-    normalized=rawLogs.map(norm);
-    fillFilters();
-    $('statTotal').textContent=normalized.length.toLocaleString('ko-KR');
-    $('statPrice').textContent=normalized.filter(x=>/(가격|단가|입고가|출고가|행사가|price)/i.test([x.action,x.path].join(' '))).length.toLocaleString('ko-KR');
-    $('statToday').textContent=normalized.filter(x=>isToday(x.timestamp)).length.toLocaleString('ko-KR');
-    $('statSource').textContent=([...new Set(normalized.map(x=>x.source).filter(Boolean))].slice(0,3).join(', ') || '-');
-    apply();
+  function latestByField(code, field){return normalized.filter(x=>x.code===code&&(!field||x.field===field||x.path===field)).sort((a,b)=>(parseDate(b.timestamp)?.getTime()||0)-(parseDate(a.timestamp)?.getTime()||0));}
+  function getMasterValue(code, field){const m=readMasterMap()[code]||{}; return m[field]??'';}
+  function periodStats(rows, days){const now=new Date(); const start=new Date(now.getTime()-days*86400000); const data=rows.filter(x=>{const d=parseDate(x.timestamp); return d&&d>=start&&String(x.newVal??'').match(/[0-9]/);}).map(x=>({t:parseDate(x.timestamp).getTime(),v:parseNum(x.newVal)})).sort((a,b)=>a.t-b.t); if(!data.length)return null; const vals=data.map(d=>d.v); const sum=vals.reduce((a,b)=>a+b,0); const first=data[0].v; const last=data[data.length-1].v; return{count:data.length,min:Math.min(...vals),max:Math.max(...vals),avg:Math.round(sum/vals.length),first,last,diff:last-first,rate:first?Math.round(((last-first)/first)*1000)/10:null};}
+  function getPrevDayValue(rows){const today=new Date(); today.setHours(0,0,0,0); const older=rows.filter(x=>{const d=parseDate(x.timestamp); return d&&d<today;}).sort((a,b)=>parseDate(b.timestamp).getTime()-parseDate(a.timestamp).getTime()); return older[0]?.newVal??'';}
+  function card(title,value,sub='',tone='slate'){const color={slate:'text-slate-800',rose:'text-rose-600',blue:'text-blue-600',emerald:'text-emerald-600',indigo:'text-indigo-700'}[tone]||'text-slate-800'; return `<div class="metric-card"><div class="text-xs font-black text-slate-400">${escapeHtml(title)}</div><div class="text-xl font-black ${color} mt-1 truncate">${escapeHtml(value)}</div><div class="text-[11px] font-bold text-slate-400 mt-1 truncate">${escapeHtml(sub)}</div></div>`;}
+  function trendLabel(stats){if(!stats)return'-'; if(stats.diff>0)return`상승 ${fmtNum(stats.diff)} (${fmtPct(stats.rate)})`; if(stats.diff<0)return`하락 ${fmtNum(stats.diff)} (${fmtPct(stats.rate)})`; return'동일';}
+  function renderAnalysis(){
+    const code=selectedCode||(filteredRows.find(x=>x.code)?.code||''); const name=selectedName||(filteredRows.find(x=>x.code===code)?.name||''); const field=$('analysisField').value||'입고가';
+    if(!code){$('statSelected').textContent='-';$('statTrend7').textContent='-';$('selectedBox').innerHTML='선택된 상품이 없습니다.';$('compareCards').innerHTML='';$('trendSummary').textContent='-';$('recentList').innerHTML='';return;}
+    const rows=latestByField(code,field); const allRows=latestByField(code,''); const latest=rows[0]||null; const currentMaster=getMasterValue(code,field); const latestVal=latest?.newVal??''; const prevDay=getPrevDayValue(rows); const stats7=periodStats(rows,7); const stats30=periodStats(rows,30); const currentNum=parseNum(currentMaster!==''?currentMaster:latestVal); const prevNum=parseNum(prevDay); const latestNum=parseNum(latestVal);
+    $('statSelected').textContent=`${code} ${name||''}`; $('statTrend7').textContent=trendLabel(stats7); $('panelSubtitle').textContent=`${field} 기준 분석`; $('selectedBox').innerHTML=`<div class="mono text-xs text-slate-400 mb-1">${escapeHtml(code)}</div><div class="text-base font-black text-slate-900 truncate">${escapeHtml(name||'-')}</div><div class="text-xs text-slate-500 mt-1">분석필드: <b>${escapeHtml(field)}</b> · 이력 ${rows.length.toLocaleString('ko-KR')}건</div>`;
+    const diffToPrev=prevDay!==''?currentNum-prevNum:''; const diffToLatest=latestVal!==''?currentNum-latestNum:'';
+    $('compareCards').innerHTML=[card('현재 마스터',currentMaster!==''?fmtNum(currentMaster):'-',field,'indigo'),card('최근 변경값',latestVal!==''?fmtNum(latestVal):'-',latest?formatTime(latest.timestamp):'-','slate'),card('전일 기준',prevDay!==''?fmtNum(prevDay):'-',diffToPrev!==''?`현재 대비 ${diffToPrev>0?'+':''}${fmtNum(diffToPrev)}`:'-',diffToPrev>0?'rose':diffToPrev<0?'blue':'slate'),card('7일 평균',stats7?fmtNum(stats7.avg):'-',stats7?`최저 ${fmtNum(stats7.min)} / 최고 ${fmtNum(stats7.max)}`:'-','emerald'),card('30일 평균',stats30?fmtNum(stats30.avg):'-',stats30?`최저 ${fmtNum(stats30.min)} / 최고 ${fmtNum(stats30.max)}`:'-','slate'),card('현재-최근',diffToLatest!==''?`${diffToLatest>0?'+':''}${fmtNum(diffToLatest)}`:'-','현재 마스터와 최근 변경값 차이',diffToLatest>0?'rose':diffToLatest<0?'blue':'slate')].join('');
+    const trendLines=[]; if(stats7)trendLines.push(`최근 7일: ${trendLabel(stats7)} · 평균 ${fmtNum(stats7.avg)} · ${stats7.count}건`); if(stats30)trendLines.push(`최근 30일: ${trendLabel(stats30)} · 평균 ${fmtNum(stats30.avg)} · ${stats30.count}건`); if(prevDay!=='')trendLines.push(`전일 기준 ${fmtNum(prevDay)} 대비 현재 마스터 ${fmtNum(currentMaster)}${diffToPrev!==''?` (${diffToPrev>0?'+':''}${fmtNum(diffToPrev)})`:''}`); if(!trendLines.length)trendLines.push('분석 가능한 숫자형 히스토리가 부족합니다.'); $('trendSummary').innerHTML=trendLines.map(x=>`<div>${escapeHtml(x)}</div>`).join('');
+    $('recentList').innerHTML=allRows.slice(0,8).map(x=>`<div class="rounded-xl border border-slate-100 p-3 hover:bg-slate-50"><div class="flex items-center justify-between gap-2"><span class="chip bg-slate-100 text-slate-600">${escapeHtml(x.field||x.path||'-')}</span><span class="text-[11px] font-bold text-slate-400">${escapeHtml(formatTime(x.timestamp))}</span></div><div class="mt-2 text-sm font-black text-slate-800 truncate">${escapeHtml(safeStr(x.oldVal))} → ${escapeHtml(safeStr(x.newVal))}</div><div class="text-xs font-bold ${parseNum(x.diff)>0?'text-rose-600':parseNum(x.diff)<0?'text-blue-600':'text-slate-400'}">차이 ${escapeHtml(fmtNum(x.diff))} ${escapeHtml(fmtPct(x.diffRate))}</div></div>`).join('')||'<div class="text-sm font-bold text-slate-400">최근 변경이 없습니다.</div>';
   }
+  function refresh(){rawLogs=readHistory(); normalized=rawLogs.map(norm); fillFilters(); $('statTotal').textContent=normalized.length.toLocaleString('ko-KR'); $('statPrice').textContent=normalized.filter(x=>priceFieldRe.test([x.action,x.path,x.field].join(' '))).length.toLocaleString('ko-KR'); $('statToday').textContent=normalized.filter(x=>isToday(x.timestamp)).length.toLocaleString('ko-KR'); $('statSource').textContent=([...new Set(normalized.map(x=>x.sourceRole||x.source).filter(Boolean))].slice(0,3).join(', ')||'-'); $('statusLine').textContent=`로컬 히스토리 ${normalized.length.toLocaleString('ko-KR')}건 로드됨`; apply();}
+  function mergeCloudLogs(logs=[]){const current=readHistory(); const map=new Map(); [...logs,...current].filter(Boolean).forEach((log,idx)=>{const key=log.id||`${log.timestampISO||log.timestamp||''}_${log.code||''}_${log.field||log.path||idx}`; if(!map.has(key))map.set(key,log);}); const merged=[...map.values()].sort((a,b)=>(parseDate(b.timestampISO||b.timestamp)?.getTime()||0)-(parseDate(a.timestampISO||a.timestamp)?.getTime()||0)); localStorage.setItem(HISTORY_KEY,JSON.stringify(merged.slice(0,20000))); return merged;}
+  async function loadCloudHistory(){const url=getCloudUrl(); if(!url){$('statusLine').textContent='클라우드 URL이 없습니다. ControlTower에서 주소를 먼저 설정하세요.';return;} const field=$('analysisField').value||''; const params=new URLSearchParams({action:'history_query',limit:'5000',days:'365'}); if(selectedCode)params.set('code',selectedCode); if(field)params.set('field',field); const requestUrl=url+(url.includes('?')?'&':'?')+params.toString(); $('statusLine').textContent='클라우드 히스토리 조회 중...'; try{const res=await fetch(requestUrl,{method:'GET'}); if(!res.ok)throw new Error('Network Error'); const json=await res.json(); if(!json||json.status!=='success')throw new Error(json?.message||'history_query 실패'); const logs=json.data?.history||json.data?.logs||json.history||[]; mergeCloudLogs(logs); $('statusLine').textContent=`클라우드 히스토리 ${logs.length.toLocaleString('ko-KR')}건 병합 완료`; refresh();}catch(e){console.error(e); $('statusLine').textContent='클라우드 조회 실패: '+e.message;}}
   function download(name,content,type){const blob=new Blob([content],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),500);}
-  function toCsv(rows){
-    const cols=['timestamp','source','action','code','name','spec','path','oldVal','newVal','diff'];
-    return [cols.join(','),...rows.map(r=>cols.map(c=>'"'+safeStr(r[c]).replace(/"/g,'""')+'"').join(','))].join('\n');
-  }
-  function navigateBack(){
-    try{const ref=document.referrer||''; if(ref&&/MerchOps(?:\.html)?/i.test(ref)&&history.length>1){history.back();return;}}catch(e){}
-    try{location.href=(location.origin&&location.origin.includes('oneapp.orderz.co.kr'))?location.origin+'/MerchOps.html':'MerchOps.html';}catch(e){location.href='MerchOps.html';}
-  }
-  $('btnReload').onclick=refresh;
-  $('btnJson').onclick=()=>download('MerchOps_History_'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(rawLogs,null,2),'application/json');
-  $('btnCsv').onclick=()=>download('MerchOps_History_'+new Date().toISOString().slice(0,10)+'.csv','\ufeff'+toCsv(normalized),'text/csv;charset=utf-8');
-  $('btnBack').onclick=navigateBack;
-  ['searchInput','sourceFilter','actionFilter','sortMode'].forEach(id=>$(id).addEventListener('input',apply));
-  ['sourceFilter','actionFilter','sortMode'].forEach(id=>$(id).addEventListener('change',apply));
-  refresh();
+  function toCsv(rows){const cols=['timestamp','sourceRole','source','action','code','name','spec','field','path','oldVal','newVal','diff','diffRate']; return [cols.join(','),...rows.map(r=>cols.map(c=>'"'+safeStr(r[c]).replace(/"/g,'""')+'"').join(','))].join('\n');}
+  function navigateBack(){try{const ref=document.referrer||''; if(ref&&/MerchOps(?:\.html)?/i.test(ref)&&history.length>1){history.back();return;}}catch(e){} try{location.href=(location.origin&&location.origin.includes('oneapp.orderz.co.kr'))?location.origin+'/MerchOps.html':'MerchOps.html';}catch(e){location.href='MerchOps.html';}}
+  $('btnReload').onclick=refresh; $('btnCloud').onclick=loadCloudHistory; $('btnJson').onclick=()=>download('MerchOps_History_'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(rawLogs,null,2),'application/json'); $('btnCsv').onclick=()=>download('MerchOps_History_'+new Date().toISOString().slice(0,10)+'.csv','\ufeff'+toCsv(filteredRows.length?filteredRows:normalized),'text/csv;charset=utf-8'); $('btnBack').onclick=navigateBack; $('btnClearSelection').onclick=()=>{selectedCode=''; selectedName=''; apply();};
+  ['searchInput','sourceFilter','actionFilter','fieldFilter','sortMode','analysisField'].forEach(id=>$(id).addEventListener('input',apply)); ['sourceFilter','actionFilter','fieldFilter','sortMode','analysisField'].forEach(id=>$(id).addEventListener('change',apply)); refresh();
 })();
 </script>
 </body>
