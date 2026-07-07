@@ -1,6 +1,6 @@
 /**
  * ONEAPP MerchOps - coreEngine.js
- * v1.0.7 / Info WorkGroup Mapping Fix
+ * v1.0.8 / Pricing Policy Sync
  *
  * 목적:
  * - HTML 화면 파일에서 중복되는 저장소, 가격계산, 히스토리, F9 전달, 클라우드 로직을 중앙화한다.
@@ -18,13 +18,19 @@
  * - 테마1~테마5를 내부 행사테마 값으로 정규화한다.
  * - 오더즈판매가/오더즈구매가는 입점사 전용 필드이므로 마스터 가격 필드 연결에서 제외한다.
  * - EXPORT.buildWorkingPayload의 purchase/sales 참조 누락을 수정한다.
+ *
+ * v1.0.8_PricingPolicySync:
+ * - computeFinalData를 최신 MerchOps 정책에 맞게 정리한다. 엑셀 source에 없는 입고가는 마스터값으로 자동 대체하지 않는다.
+ * - 구매/재고 작업의 시중가는 마스터 시중가를 참조하고, 구매/재고 원가로 시중가를 자동 산출하거나 갱신하지 않는다.
+ * - 룰적용(forceRecalc)은 명시 액션으로만 출고가를 계산한다. 견적 작업만 출고가/시중가 동시 계산을 허용하고, 구매/재고는 출고가만 계산한다.
+ * - 작업 source 역할(estimate/purchase/inventory/info)을 판정하는 PRICING helper를 추가한다.
  */
 
 (function initOneAppCore(global) {
   'use strict';
 
   const ONEAPP = global.ONEAPP = global.ONEAPP || {};
-  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.0.7 InfoMappingFix';
+  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.0.8 PricingPolicySync';
 
   const DEFAULT_DB_NAME = 'MerchOpsDB';
   const DEFAULT_DB_VERSION = 2;
@@ -126,6 +132,12 @@
   };
 
   const INFO_EXCLUDED_MASTER_FIELDS = ['오더즈판매가', '오더즈구매가'];
+
+
+  const hasOwnField = (obj = {}, field = '') => Object.prototype.hasOwnProperty.call(obj || {}, field);
+  const isNonEmptySource = (obj = {}) => !!(obj && typeof obj === 'object' && Object.keys(obj).length > 0);
+  const isBlankValue = (v) => v === undefined || v === null || String(v).trim() === '';
+  const getExplicitValue = (obj = {}, field = '', fallback = '') => hasOwnField(obj, field) ? (obj[field] ?? '') : fallback;
 
   const safeJSONParseRaw = (raw, defaultVal) => {
     try {
@@ -379,68 +391,112 @@
     return calcOutPrice;
   };
 
+  PRICING.getWorkingSourceRole = (sources = {}) => {
+    const explicit = String(sources?._activeRole || sources?.activeRole || sources?.sourceRole || '').trim();
+    const known = ['estimate', 'purchase', 'inventory', 'info', 'catalog', 'sales'];
+    if (known.includes(explicit)) return explicit;
+    // 현재 작업파일이 하나인 구조를 우선한다. 복수 source가 있으면 구매/재고 병합을 자동 추정하지 않고, 명확한 작업군을 우선 판정한다.
+    const priority = ['info', 'purchase', 'inventory', 'estimate', 'catalog', 'sales'];
+    return priority.find(role => isNonEmptySource(sources?.[role])) || '';
+  };
+
+  PRICING.shouldUseMasterMarketPriceForRole = (role = '') => ['purchase', 'inventory'].includes(String(role || '').trim());
+  PRICING.shouldAllowMarketPriceRecalcForRole = (role = '') => String(role || '').trim() === 'estimate';
+
   PRICING.computeFinalData = (mItem = {}, sources = {}, marginRules = [], forceRecalc = false) => {
-    const inv = sources.inventory || {};
-    const est = sources.estimate || {};
+    const activeRole = PRICING.getWorkingSourceRole(sources || {});
+    const hasUploadSource = !!activeRole && isNonEmptySource((sources || {})[activeRole]);
+    const source = hasUploadSource ? { ...((sources || {})[activeRole] || {}) } : { ...(mItem || {}) };
+    const working = { ...source };
 
-    const invStock = inv['재고수량'] !== undefined ? parseNum(inv['재고수량']) : (inv['안전재고'] !== undefined ? parseNum(inv['안전재고']) : 999);
-    const hasInv = Object.keys(inv).length > 0;
-    const hasEst = Object.keys(est).length > 0;
+    // v1.0.8 정책:
+    // - 업로드 source가 있으면 해당 파일에 있는 값만 작업값으로 사용한다.
+    // - 입고가가 파일에 없으면 마스터 입고가로 자동 대체하지 않는다.
+    // - 계산값은 메타 정보에만 보관하고, forceRecalc일 때만 출고가를 실제 작업값으로 반영한다.
+    const sourceHasInPrice = hasOwnField(source, '입고가');
+    const sourceHasOutPrice = hasOwnField(source, '출고가');
+    const sourceHasMarketPrice = hasOwnField(source, '시중가');
+    const masterMarketPrice = getExplicitValue(mItem, '시중가', '');
 
-    const invPromo = parseNum(inv['행사가']);
-    const estPromo = parseNum(est['행사가']);
+    const baseInRaw = hasUploadSource
+      ? (sourceHasInPrice ? source['입고가'] : '')
+      : getExplicitValue(mItem, '입고가', '');
+    const baseInPrice = parseNum(baseInRaw);
+    const providedOutPrice = sourceHasOutPrice ? parseNum(source['출고가']) : 0;
+    const calculatedOutPrice = baseInPrice > 0
+      ? PRICING.calculatePricesEngine(baseInPrice, 0, mItem, working, marginRules, true)
+      : 0;
 
-    const invInPrice = inv['입고가'] !== undefined ? parseNum(inv['입고가']) : parseNum(mItem['입고가']);
-    const estInPrice = est['입고가'] !== undefined ? parseNum(est['입고가']) : parseNum(mItem['입고가']);
-    const masterInPrice = parseNum(mItem['입고가']);
-
-    const invProvidedOut = parseNum(inv['출고가']);
-    const estProvidedOut = parseNum(est['출고가']);
-    const masterProvidedOut = parseNum(mItem['출고가']);
-    const masterProvidedMarket = parseNum(mItem['시중가']);
-
-    const invTargetOut = PRICING.calculatePricesEngine(invInPrice, invProvidedOut, mItem, inv, marginRules, forceRecalc);
-    const estTargetOut = PRICING.calculatePricesEngine(estInPrice, estProvidedOut, mItem, est, marginRules, forceRecalc);
-    const masterTargetOut = PRICING.calculatePricesEngine(masterInPrice, masterProvidedOut, mItem, {}, marginRules, forceRecalc);
-
-    const finalMarketPrice = forceRecalc ? masterTargetOut : (masterProvidedMarket > 0 ? masterProvidedMarket : masterTargetOut);
-
-    let targetSource = {};
-    let theme = 0;
-    let isPromo = false;
-    let normalPrice = 0;
-
-    if (hasInv && invStock > 0 && invPromo > 0 && !forceRecalc) {
-      targetSource = { ...inv, 입고가: invInPrice, 출고가: invTargetOut, 행사가: invPromo };
-      theme = 2;
-      isPromo = true;
-      normalPrice = invTargetOut;
-    } else if (hasEst && estPromo > 0 && !forceRecalc) {
-      targetSource = { ...est, 입고가: estInPrice, 출고가: estTargetOut, 행사가: estPromo };
-      theme = 1;
-      isPromo = true;
-      normalPrice = estTargetOut;
-    } else if (hasInv && invStock > 0) {
-      targetSource = { ...inv, 입고가: invInPrice, 출고가: invTargetOut };
-      theme = 0;
-      normalPrice = invTargetOut;
-    } else if (hasEst) {
-      targetSource = { ...est, 입고가: estInPrice, 출고가: estTargetOut };
-      theme = 0;
-      normalPrice = estTargetOut;
-    } else {
-      targetSource = { 입고가: masterInPrice, 출고가: masterTargetOut };
-      theme = 0;
-      normalPrice = masterTargetOut;
+    if (hasUploadSource && !sourceHasInPrice) {
+      delete working['입고가'];
+      working._missingInPrice = true;
     }
 
-    if (targetSource['입고가'] === 0) targetSource['출고가'] = 0;
-    targetSource['시중가'] = finalMarketPrice;
-    targetSource._theme = theme;
-    targetSource._isPromo = isPromo;
-    targetSource._normalPrice = normalPrice;
+    if (forceRecalc && baseInPrice > 0 && activeRole !== 'info') {
+      working['출고가'] = calculatedOutPrice;
+      working._ruleAppliedAt = getNowISO();
+    } else if (hasUploadSource && !sourceHasOutPrice) {
+      // 자동 불러오기 단계에서는 출고가를 임의 계산값으로 채우지 않는다.
+      delete working['출고가'];
+    }
 
-    return targetSource;
+    if (PRICING.shouldUseMasterMarketPriceForRole(activeRole)) {
+      working['시중가'] = masterMarketPrice;
+      working._marketPricePolicy = 'master_reference_for_purchase_inventory';
+    } else if (PRICING.shouldAllowMarketPriceRecalcForRole(activeRole)) {
+      if (forceRecalc && calculatedOutPrice > 0) {
+        working['시중가'] = calculatedOutPrice;
+        working._marketPricePolicy = 'estimate_rule_recalc_allowed';
+      } else if (sourceHasMarketPrice) {
+        working['시중가'] = source['시중가'];
+        working._marketPricePolicy = 'estimate_source_market_price';
+      } else if (hasUploadSource) {
+        // 견적 파일에 시중가가 없으면 마스터 시중가로 자동 대체하지 않는다.
+        delete working['시중가'];
+        working._marketPricePolicy = 'estimate_market_price_missing';
+      } else {
+        working['시중가'] = masterMarketPrice;
+        working._marketPricePolicy = 'master_reference';
+      }
+    } else if (activeRole === 'info') {
+      // 정보파일은 쇼핑몰 원본값 보존이 원칙이며, 가격 룰 계산 대상이 아니다.
+      if (sourceHasMarketPrice) working['시중가'] = source['시중가'];
+      working._marketPricePolicy = 'info_original_preserved';
+    } else if (!hasUploadSource) {
+      working['시중가'] = masterMarketPrice;
+      working._marketPricePolicy = 'master_reference';
+    } else if (!sourceHasMarketPrice) {
+      delete working['시중가'];
+      working._marketPricePolicy = 'source_market_price_missing';
+    }
+
+    const themeValue = normalizePromotionThemeValue(working, hasUploadSource ? {} : (mItem || {}));
+    if (themeValue) {
+      working['행사테마'] = themeValue;
+      [1, 2, 3, 4, 5].forEach(n => { working[`테마${n}`] = themeValue.split(',').includes(String(n)) ? '1' : ''; });
+    }
+
+    const actualOutPrice = hasOwnField(working, '출고가') ? parseNum(working['출고가']) : 0;
+    working._activeSourceRole = activeRole || 'master';
+    working._sourcePolicy = hasUploadSource ? 'source_value_only_no_master_fallback' : 'master_reference';
+    working._isRuleApplied = !!forceRecalc;
+    working._calculatedOutPrice = calculatedOutPrice || 0;
+    working._sourceOutPrice = providedOutPrice || 0;
+    working._normalPrice = actualOutPrice || calculatedOutPrice || 0;
+    working._isPromo = parseNum(working['행사가']) > 0;
+    working._pricingPolicyVersion = 'v1.0.8_PricingPolicySync';
+
+    if (sourceHasOutPrice && calculatedOutPrice > 0 && providedOutPrice > 0 && providedOutPrice !== calculatedOutPrice) {
+      working._outPriceRuleDiff = true;
+      working._outPriceRuleDiffAmount = calculatedOutPrice - providedOutPrice;
+      working._outPriceRuleDiffRate = providedOutPrice > 0 ? Math.round(((calculatedOutPrice - providedOutPrice) / providedOutPrice) * 1000) / 10 : 0;
+    } else {
+      working._outPriceRuleDiff = false;
+      working._outPriceRuleDiffAmount = 0;
+      working._outPriceRuleDiffRate = 0;
+    }
+
+    return working;
   };
 
   PRICING.calculateReviewOutPrice = (baseInPrice, context = {}, marginRules = []) => {
@@ -1503,6 +1559,9 @@
   global.normalizeMerchWarehouseForRule = global.normalizeMerchWarehouseForRule || normalizeMerchWarehouseForRule;
   global.getMerchUnitRuleCandidates = global.getMerchUnitRuleCandidates || getMerchUnitRuleCandidates;
   global.calculatePricesEngine = global.calculatePricesEngine || PRICING.calculatePricesEngine;
+  global.getWorkingSourceRole = global.getWorkingSourceRole || PRICING.getWorkingSourceRole;
+  global.shouldUseMasterMarketPriceForRole = global.shouldUseMasterMarketPriceForRole || PRICING.shouldUseMasterMarketPriceForRole;
+  global.shouldAllowMarketPriceRecalcForRole = global.shouldAllowMarketPriceRecalcForRole || PRICING.shouldAllowMarketPriceRecalcForRole;
   global.computeFinalData = global.computeFinalData || PRICING.computeFinalData;
   global.calculateSubPriceInfo = global.calculateSubPriceInfo || PRICING.calculateSubPriceInfo;
   global.calculateSubStockInfo = global.calculateSubStockInfo || PRICING.calculateSubStockInfo;
