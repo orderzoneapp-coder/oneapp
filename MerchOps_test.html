@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.116_InfoExcelWork]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.117_ThemeFilterInfoFix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -27,6 +27,7 @@
         window.parseNum = (v) => (!v ? 0 : Number(String(v).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0);
         window.isMerchMasterAddedRow = window.isMerchMasterAddedRow || ((row = {}) => !!(row && (row._isMasterConditionAdded || row._isMasterAdded || row._fileMissing || ((row.finalData || {})._masterConditionAdded))));
 
+        // v2.1.117: 테마 상세필터가 테이블 표시값과 동일한 작업값/finalData/source/info 값을 보도록 보정한다. 행사테마=3 또는 테마3=1이면 테마3 필터에 반드시 포함된다.
         // v2.1.116: 정보 엑셀불러오기 작업군을 추가한다. 쇼핑몰/ERP 상품정보 엑셀은 원본 컬럼을 보존해 수정·다운로드하며, F8에서는 마스터 반영 없이 상품정보 업로드 엑셀을 생성한다.
         // v2.1.115: F7 가저장을 추가한다. 가저장은 마스터에 반영하지 않고 보관함 레이어에 저장하며, 현재 파일과 교차되는 가저장상품 필터를 조건부 노출한다. F8은 최신 마스터/보관값을 즉시 병합해 출력한다.
         // v2.1.108: 판매불러오기는 DataOps 성과분석 영역으로 이관해 상단 판매 버튼을 제거하고, 카테고리 좌측/카탈로그 중앙/견적·구매·재고·초기화·양식 우측 정렬로 재배치한다.
@@ -193,13 +194,13 @@
             const currentTheme = window.normalizePromotionThemeValue(finalData || {});
             if (currentTheme) return currentTheme;
 
+            // source role이 추가되어도 행사테마 필터/표시가 빠지지 않도록 동적 목록을 사용한다.
+            // 특히 v2.1.116에서 추가된 info(쇼핑몰/ERP 상품정보) source도 행사테마 판정 대상이다.
+            const sourceRoles = Array.isArray(window.MERCH_CURRENT_SOURCE_ROLES) && window.MERCH_CURRENT_SOURCE_ROLES.length > 0
+                ? window.MERCH_CURRENT_SOURCE_ROLES
+                : ['catalog', 'estimate', 'purchase', 'sales', 'inventory', 'info', 'parser'];
             const uploadTheme = window.normalizePromotionThemeValue(
-                sources?.catalog || {},
-                sources?.estimate || {},
-                sources?.purchase || {},
-                sources?.sales || {},
-                sources?.inventory || {},
-                sources?.parser || {}
+                ...sourceRoles.map(role => sources?.[role] || {})
             );
             if (uploadTheme) return uploadTheme;
 
@@ -5371,16 +5372,21 @@ const getPromotionThemeCodesForFilter = (row = {}, mItem = {}) => {
         return resetCodes;
     }
     const sources = row.sources || {};
-    const normalized = window.resolvePromotionThemeByPriority
-        ? window.resolvePromotionThemeByPriority(row.finalData || {}, sources, mItem || {})
-        : window.normalizePromotionThemeValue(
-            row.finalData || {},
-            sources.estimate || {},
-            sources.purchase || {},
-            sources.sales || {},
-            sources.inventory || {},
-            mItem || {}
-        );
+    const sourceRoles = Array.isArray(window.MERCH_CURRENT_SOURCE_ROLES) && window.MERCH_CURRENT_SOURCE_ROLES.length > 0
+        ? window.MERCH_CURRENT_SOURCE_ROLES
+        : ['catalog', 'estimate', 'purchase', 'sales', 'inventory', 'info', 'parser'];
+    const sourceItems = sourceRoles.map(role => sources?.[role] || {});
+    const hasUploadSource = window.hasAnyUploadSource
+        ? window.hasAnyUploadSource(sources || {})
+        : sourceItems.some(src => src && Object.keys(src).length > 0);
+
+    // 테마 필터는 테이블에 보이는 작업값과 같은 기준을 본다.
+    // finalData → 현재/전체 source(info 포함) → source가 없을 때만 마스터 순서다.
+    const normalized = window.normalizePromotionThemeValue
+        ? window.normalizePromotionThemeValue(row.finalData || {}, ...sourceItems, hasUploadSource ? {} : (mItem || {}))
+        : (window.resolvePromotionThemeByPriority
+            ? window.resolvePromotionThemeByPriority(row.finalData || {}, sources, hasUploadSource ? {} : (mItem || {}))
+            : '');
     return normalized ? normalized.split(',').filter(Boolean) : [];
 };
 const matchPromotionThemeFilter = (row = {}, mItem = {}, filter = '') => {
@@ -6364,7 +6370,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.116_InfoExcelWork]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.117_ThemeFilterInfoFix]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -6725,7 +6731,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.116_InfoExcelWork")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.117_ThemeFilterInfoFix")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
