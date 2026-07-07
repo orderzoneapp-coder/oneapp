@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.118_PurchaseInventoryFlowFix]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.119_InventoryPurchasePriceFix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -29,6 +29,7 @@
 
         // v2.1.117: 테마 상세필터가 테이블 표시값과 동일한 작업값/finalData/source/info 값을 보도록 보정한다. 행사테마=3 또는 테마3=1이면 테마3 필터에 반드시 포함된다.
         // v2.1.116: 정보 엑셀불러오기 작업군을 추가한다. 쇼핑몰/ERP 상품정보 엑셀은 원본 컬럼을 보존해 수정·다운로드하며, F8에서는 마스터 반영 없이 상품정보 업로드 엑셀을 생성한다.
+        // v2.1.119: 재고파일의 구매가/구매단가/매입가/단가/원가를 재고 Lot 원가로 인식해 작업 입고가에 적용한다. 재고 리포트/상세 원가 후보에도 구매가를 포함한다.
         // v2.1.118: 재고 후 구매 작업 플로우를 분리한다. 구매파일이 현재 작업이면 구매 source 행만 기본 표시하고, 기존 재고 Lot는 참고 레이어로 리포트/상세에만 사용한다. 창고 표시는 1창고/1을 01로 정규화하고, 구매 리포트의 (7)13,000 축약표현을 구매수량/단가/구매처/창고 형식으로 변경한다.
         // v2.1.115: F7 가저장을 추가한다. 가저장은 마스터에 반영하지 않고 보관함 레이어에 저장하며, 현재 파일과 교차되는 가저장상품 필터를 조건부 노출한다. F8은 최신 마스터/보관값을 즉시 병합해 출력한다.
         // v2.1.108: 판매불러오기는 DataOps 성과분석 영역으로 이관해 상단 판매 버튼을 제거하고, 카테고리 좌측/카탈로그 중앙/견적·구매·재고·초기화·양식 우측 정렬로 재배치한다.
@@ -427,7 +428,7 @@
             if (!refs.length) return null;
             const stockQty = refs.reduce((sum, inv) => sum + window.parseNum(inv['재고수량'] ?? inv['재고'] ?? inv['수량']), 0);
             const priceRows = refs.map(inv => ({
-                price: window.parseNum(inv['최종(창고)'] ?? inv['최신단가'] ?? inv['_latestWarehousePrice'] ?? inv['재고단가'] ?? inv['입고가']),
+                price: window.parseNum(inv['구매가'] ?? inv['구매단가'] ?? inv['매입가'] ?? inv['매입단가'] ?? inv['단가'] ?? inv['원가'] ?? inv['최종(창고)'] ?? inv['최신단가'] ?? inv['_latestWarehousePrice'] ?? inv['재고단가'] ?? inv['입고가']),
                 dateKey: inv['_inventoryFifoKey'] ?? (window.getInventoryPurchaseDateKey ? window.getInventoryPurchaseDateKey(inv['상품 구매일자'] || inv['기록']) : 99999999),
                 vendor: inv['거래'] || inv['구매처'] || '',
                 warehouse: inv['_calcWarehouse'] || inv['창고'] || ''
@@ -953,7 +954,7 @@
             const name = window.getFirstNonBlankValue(finalData, ['품목명']) || window.getFirstNonBlankValue(source, ['품목명', '상품명', '품명']) || '';
             const spec = window.getFirstNonBlankValue(finalData, ['규격']) || window.getFirstNonBlankValue(source, ['규격', '규격명', '단량', '사이즈']) || '';
             const unit = window.getFirstNonBlankValue(finalData, ['단위']) || window.getMerchUnitByHeaderOnly(source) || '';
-            const inPrice = window.getFirstNonBlankValue(finalData, ['입고가']) || window.getFirstNonBlankValue(source, ['입고가', '매입가', '구매단가', '단가', '최신단가', '재고단가', '최종(창고)']);
+            const inPrice = window.getFirstNonBlankValue(finalData, ['입고가']) || window.getFirstNonBlankValue(source, ['입고가', '구매가', '구매단가', '매입가', '매입단가', '단가', '원가', '최신단가', '재고단가', '최종(창고)']);
             const vendor = window.getFirstNonBlankValue(finalData, ['구매처']) || window.getFirstNonBlankValue(source, ['구매처', '거래처', '거래처명', '거래']);
             const qty = window.getFirstNonBlankValue(finalData, ['수량']) || window.getFirstNonBlankValue(source, ['수량', '재고수량', '재고', '현재고', '구매수량', '입고수량']);
             // 기준일자는 사용자의 운영 정의상 구매일자다. 자료기준일과 분리하지 않는다.
@@ -1584,7 +1585,7 @@ const getInitialMappings = () => {
         '견적서': '견적서, 카테고리, 템플릿, 견적분류',
         '행사가': '행사가, 행사, 특가',
         '행사테마': '행사테마, 테마, 프로모션테마, 테마번호',
-        '입고가': '입고가, 입고, 매입가, 최종(창고), 최종창고, 최신단가, 재고단가',
+        '입고가': '입고가, 입고, 구매가, 구매단가, 매입가, 매입단가, 단가, 원가, 최종(창고), 최종창고, 최신단가, 재고단가',
         '출고가': '출고가, 출고, 판매가',
         '입고B': 'B단가, 입고B',
         '도매A': '도매A',
@@ -1601,7 +1602,7 @@ const getInitialMappings = () => {
         '규격': '규격, 규격명, 사이즈, 단량',
         '구매처': '구매처, 매입처, 거래처명, 거래처, 거래',
         '단위': '단위, 단위유형, 판매단위, 매입단위, 포장단위, UNIT, unit',
-        '입고가': '입고가, 매입단가, 구매단가, 매입가, 원가, 단가, 최종(창고), 최종창고, 최신단가, 재고단가',
+        '입고가': '입고가, 구매가, 구매단가, 매입단가, 매입가, 원가, 단가, 최종(창고), 최종창고, 최신단가, 재고단가',
         '입고수량': '입고수량, 구매수량, 수량, 입고',
         '수량': '수량, 입고수량, 구매수량, 입고',
         '상품 구매일자': '상품 구매일자, 구매일자, 입고일자, 일자, 기준일자',
@@ -1632,8 +1633,8 @@ const getInitialMappings = () => {
         '상품 구매일자': '상품 구매일자, 구매일자, 기록, 입고일자, 일자',
         '거래': '거래, 구매처, 매입처, 매입처(Lot), Lot, 거래처명',
         '구매처': '구매처, 거래, 매입처, 매입처(Lot), Lot, 거래처명',
-        '최종(창고)': '최종(창고), 최종창고, 최신단가, 재고단가, 매입단가(원가), 매입단가, 원가',
-        '입고가': '입고가, 최종(창고), 최종창고, 최신단가, 재고단가, 매입단가(원가), 매입단가, 원가',
+        '최종(창고)': '최종(창고), 최종창고, 최신단가, 재고단가, 구매가, 구매단가, 매입가, 매입단가(원가), 매입단가, 단가, 원가',
+        '입고가': '입고가, 구매가, 구매단가, 매입가, 매입단가, 단가, 원가, 최종(창고), 최종창고, 최신단가, 재고단가, 매입단가(원가)',
         '구분(기본)': '구분(기본), 구분기본, 기본, 기본여부, 관리구분',
         '기본': '기본, 기본여부, 구분(기본), 구분기본, 관리구분',
         '적재위치': '적재위치, 위치',
@@ -2748,7 +2749,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                         const source = mItem.sources.inventory;
                         const actualPurchaseDateKey = headerCache['상품 구매일자'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '기록');
                         const actualStockKey = headerCache['재고수량'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '재고');
-                        const actualInventoryPriceKey = headerCache['최종(창고)'] || headerCache['입고가'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '최종(창고)' || String(h).replace(/\s/g, '') === '최종창고');
+                        const actualInventoryPriceKey = headerCache['최종(창고)'] || headerCache['입고가'] || actualHeaders.find(h => ['최종(창고)', '최종창고', '최신단가', '재고단가', '구매가', '구매단가', '매입가', '매입단가', '단가', '원가'].includes(String(h).replace(/\s/g, '')));
                         const actualTradeKey = headerCache['거래'] || headerCache['구매처'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '거래' || String(h).replace(/\s/g, '') === '구매처' || String(h).replace(/\s/g, '') === '매입처' || String(h).replace(/\s/g, '') === '매입처(Lot)');
                         const actualBasicKey = headerCache['구분(기본)'] || headerCache['기본'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '구분(기본)' || String(h).replace(/\s/g, '') === '구분기본' || String(h).replace(/\s/g, '') === '기본' || String(h).replace(/\s/g, '') === '기본여부' || String(h).replace(/\s/g, '') === '관리구분');
                         const actualLocationKey = headerCache['적재위치'] || actualHeaders.find(h => String(h).replace(/\s/g, '') === '적재위치' || String(h).replace(/\s/g, '') === '위치');
@@ -2792,12 +2793,15 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                             source['적재위치'] = row[actualLocationKey] || '';
                         if (actualInventoryPriceKey) {
                             const latestWarehousePrice = window.keepExcelCellValue(row[actualInventoryPriceKey], true);
+                            const normalizedInventoryPriceHeader = String(actualInventoryPriceKey || '').replace(/\s/g, '');
+                            source['구매가'] = latestWarehousePrice;
                             source['최종(창고)'] = latestWarehousePrice;
                             source['최신단가'] = latestWarehousePrice;
                             source['_latestWarehousePrice'] = latestWarehousePrice;
                             source['_latestWarehousePriceHeader'] = actualInventoryPriceKey;
-                            // ERP 재고현황에서 최종(창고)는 최신단가이며, 현재 작업 입고가의 기준으로 사용한다.
-                            if (source['입고가'] === undefined || source['입고가'] === '')
+                            source['_inventoryCostHeader'] = actualInventoryPriceKey;
+                            // 재고현황의 구매가/구매단가/최종(창고)는 해당 Lot의 원가이므로 작업 입고가로 사용한다.
+                            if (latestWarehousePrice !== '' && latestWarehousePrice !== undefined && latestWarehousePrice !== null)
                                 source['입고가'] = latestWarehousePrice;
                         }
                         if (actualMemoKey) {
@@ -5297,11 +5301,11 @@ const getScreenApplyCostValue = (row = {}, mItem = {}, field = '입고가') => {
 const normalizeScreenCostHeaderKey = (key = '') => String(key || '').replace(/[\s()（）\[\]{}_.-]/g, '').toLowerCase();
 const getScreenCostAliases = (field = '입고가') => {
     const clean = normalizeScreenCostHeaderKey(field);
-    const isInventoryCost = ['입고가', '최종창고', '최종단가', '재고단가', '최신단가', '원가', '단가', '매입가', '매입단가', '구매단가'].some(k => normalizeScreenCostHeaderKey(k) === clean);
+    const isInventoryCost = ['입고가', '최종창고', '최종단가', '재고단가', '최신단가', '구매가', '구매단가', '원가', '단가', '매입가', '매입단가'].some(k => normalizeScreenCostHeaderKey(k) === clean);
     if (isInventoryCost) {
         return [
             '최종(창고)', '최종창고', '최신단가', '_latestWarehousePrice', '재고단가', '최종단가',
-            '입고가', '매입단가', '매입가', '구매단가', '원가', '단가', '최종입고'
+            '입고가', '구매가', '구매단가', '매입단가', '매입가', '원가', '단가', '최종입고'
         ];
     }
     return [field];
@@ -5739,7 +5743,7 @@ window.formatMerchPurchaseReportDate = (dateKey, prevMonth, hasMonthChange) => {
 window.getMerchPurchaseTrend = (row = {}, mItem = {}) => {
     const purchaseSource = (row.sources && row.sources.purchase) || {};
     const rawRows = Array.isArray(purchaseSource._purchaseRows) ? purchaseSource._purchaseRows : [];
-    const fallbackPrice = window.parseNum(purchaseSource['입고가'] || purchaseSource['매입가'] || purchaseSource['구매단가'] || purchaseSource['단가']);
+    const fallbackPrice = window.parseNum(purchaseSource['입고가'] || purchaseSource['구매가'] || purchaseSource['매입가'] || purchaseSource['구매단가'] || purchaseSource['단가']);
     const fallbackDateRaw = purchaseSource['상품 구매일자'] || purchaseSource['구매일자'] || purchaseSource['기준일자'] || purchaseSource['일자'] || '';
     const systemToday = new Date();
     const systemTodayKey = `${systemToday.getFullYear()}-${String(systemToday.getMonth() + 1).padStart(2, '0')}-${String(systemToday.getDate()).padStart(2, '0')}`;
@@ -6420,7 +6424,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.118_PurchaseInventoryFlowFix]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.119_InventoryPurchasePriceFix]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -6790,7 +6794,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.118_PurchaseInventoryFlowFix")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.119_InventoryPurchasePriceFix")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
