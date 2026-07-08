@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.124_EstimateHistoryCompare]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.125_ThemeButtonFilterFix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -5546,17 +5546,20 @@ const getPromotionThemeCodesForFilter = (row = {}, mItem = {}) => {
         ? window.MERCH_CURRENT_SOURCE_ROLES
         : ['catalog', 'estimate', 'purchase', 'sales', 'inventory', 'info', 'parser'];
     const sourceItems = sourceRoles.map(role => sources?.[role] || {});
-    const hasUploadSource = window.hasAnyUploadSource
-        ? window.hasAnyUploadSource(sources || {})
-        : sourceItems.some(src => src && Object.keys(src).length > 0);
 
-    // 테마 필터는 테이블에 보이는 작업값과 같은 기준을 본다.
-    // finalData → 현재/전체 source(info 포함) → source가 없을 때만 마스터 순서다.
-    const normalized = window.normalizePromotionThemeValue
-        ? window.normalizePromotionThemeValue(row.finalData || {}, ...sourceItems, hasUploadSource ? {} : (mItem || {}))
+    // 테마 필터는 테이블에 보이는 값과 같은 기준을 본다.
+    // 1순위: 작업값(finalData) / 현재 source(info 포함)
+    // 2순위: 작업값에 테마가 없을 때 마스터 행사테마 fallback
+    // 이유: 재고/구매 파일에는 행사테마가 없지만 테이블은 마스터 행사테마를 표시하므로,
+    //       상단 테마 버튼도 사용자가 보고 있는 행사테마 값으로 검색되어야 한다.
+    const workTheme = window.normalizePromotionThemeValue
+        ? window.normalizePromotionThemeValue(row.finalData || {}, ...sourceItems)
         : (window.resolvePromotionThemeByPriority
-            ? window.resolvePromotionThemeByPriority(row.finalData || {}, sources, hasUploadSource ? {} : (mItem || {}))
+            ? window.resolvePromotionThemeByPriority(row.finalData || {}, sources, {})
             : '');
+    const normalized = workTheme || (window.normalizePromotionThemeValue
+        ? window.normalizePromotionThemeValue(mItem || {})
+        : '');
     return normalized ? normalized.split(',').filter(Boolean) : [];
 };
 const matchPromotionThemeFilter = (row = {}, mItem = {}, filter = '') => {
@@ -6733,7 +6736,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.124_EstimateHistoryCompare]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.125_ThemeButtonFilterFix]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -7103,7 +7106,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.124_EstimateHistoryCompare")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.125_ThemeButtonFilterFix")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
