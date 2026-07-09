@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.128_WorkArchiveF8CurrentOnly]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.129_MasterThemeInventoryFilter]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -29,6 +29,7 @@
 
         // v2.1.120: 시중가 적용 정책을 source별로 분리한다. 견적 작업은 견적서 시중가/계산값을 적용하고, 구매·재고 작업은 마스터 시중가를 표시·출력 기준으로 사용하되 구매/재고 원가로 시중가를 갱신하지 않는다.
         // v2.1.127: 행사가 적용 버튼이 계산값을 finalData와 모든 활성 source에 안정적으로 기록하도록 수정한다. React 비동기 setState 안에서 count/log를 계산하던 구조를 제거해 행사가 칸에 즉시 반영되도록 한다.
+        // v2.1.129: DataOps/재고파일은 테마정보를 관리하지 않는 기준으로 정정한다. 재고 source에 행사테마가 없으면 상품코드로 매칭된 마스터 행사테마/테마1~5를 표시·필터·F8/F9 출력 기준으로 사용한다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결하며 오더즈판매가/오더즈구매가는 작업·출력에서 제외한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
@@ -153,6 +154,22 @@
             { code: '4', label: '실사진', type: '뱃지' },
             { code: '5', label: '행사', type: '뱃지' }
         ];
+        // DataOps/재고 source는 테마정보를 소유하지 않는다.
+        // 재고파일을 불러온 상태에서 테마1~5는 source가 아니라 마스터의 행사테마를 기준으로 판정한다.
+        window.MERCH_MASTER_THEME_REFERENCE_ROLES = window.MERCH_MASTER_THEME_REFERENCE_ROLES || ['inventory'];
+        window.shouldUseMasterThemeFallbackForSources = window.shouldUseMasterThemeFallbackForSources || ((sources = {}) => {
+            const refRoles = Array.isArray(window.MERCH_MASTER_THEME_REFERENCE_ROLES) ? window.MERCH_MASTER_THEME_REFERENCE_ROLES : ['inventory'];
+            const activeRole = window.getCurrentMerchSourceRole
+                ? window.getCurrentMerchSourceRole(sources || {})
+                : String(sources?._activeRole || sources?._lastUploadRole || '').trim();
+            if (activeRole && refRoles.includes(activeRole)) return true;
+            return refRoles.some(role => {
+                const src = sources?.[role];
+                if (!src || typeof src !== 'object') return false;
+                return Object.keys(src).some(key => !String(key || '').startsWith('_'));
+            });
+        });
+
         window.normalizePromotionThemeValue = window.normalizePromotionThemeValue || ((...items) => {
             const normalizeOne = (item = {}) => {
                 const out = [];
@@ -211,9 +228,15 @@
             );
             if (uploadTheme) return uploadTheme;
 
-            // 마스터는 이전가격/기준값이다. 오늘 source가 존재하면 마스터 테마를 오늘 작업테마로 주입하지 않는다.
-            if (window.hasAnyUploadSource && window.hasAnyUploadSource(sources || {})) return '';
-            return window.normalizePromotionThemeValue(master || {});
+            const masterTheme = window.normalizePromotionThemeValue(master || {});
+            const hasUploadSource = window.hasAnyUploadSource && window.hasAnyUploadSource(sources || {});
+            // 마스터는 이전가격/기준값이다. 단, DataOps/재고 source는 테마정보를 관리하지 않으므로
+            // 재고파일 작업에서는 상품코드로 매칭된 마스터 행사테마를 현재 테마 기준으로 사용한다.
+            if (hasUploadSource) {
+                if (masterTheme && window.shouldUseMasterThemeFallbackForSources && window.shouldUseMasterThemeFallbackForSources(sources || {})) return masterTheme;
+                return '';
+            }
+            return masterTheme;
         });
 
         window.applyPromotionThemeFields = window.applyPromotionThemeFields || ((item = {}, themeValue = '') => {
@@ -888,10 +911,10 @@
             working._isPromo = window.parseNum(working['행사가']) > 0;
 
             // 행사테마는 행사가 여부로 자동 배정하지 않는다.
-            // 명시 행사테마/테마1~5/_theme 값이 있을 때만 정규화하고,
-            // 없으면 마스터 저장값을 후속 표시/출력 단계에서 우선순위로 참조한다.
+            // 명시 행사테마/테마1~5/_theme 값이 있으면 source 값을 우선한다.
+            // 단, DataOps/재고 source는 테마정보를 관리하지 않으므로 source에 테마가 없을 때 마스터 행사테마를 기준으로 참조한다.
             const resolvedWorkingTheme = window.resolvePromotionThemeByPriority
-                ? window.resolvePromotionThemeByPriority(working, sources, hasUploadSource ? {} : (mItem || {}))
+                ? window.resolvePromotionThemeByPriority(working, sources, mItem || {})
                 : window.normalizePromotionThemeValue(working, hasUploadSource ? {} : (mItem || {}));
             if (resolvedWorkingTheme) {
                 working['행사테마'] = resolvedWorkingTheme;
@@ -5583,7 +5606,7 @@ const getPromoThemeLabel = (item = {}) => {
 // ============================================================
 // [M-FILTER-THEME-01] 상세필터 행사테마 분리
 // 역할: 상세필터에서 테마1~테마5 버튼으로 행사테마 값을 나눠 본다.
-// 기준: 오늘 작업 명시값 → 오늘 source 명시값 순서로 본다. 오늘 source가 있으면 마스터 테마는 비교기준일 뿐 현재 작업테마로 주입하지 않는다.
+// 기준: 오늘 작업 명시값 → 오늘 source 명시값 → DataOps/재고 source일 때 마스터 행사테마 순서로 본다.
 // ============================================================
 const getPromotionThemeCodesForFilter = (row = {}, mItem = {}) => {
     if ((row.finalData || {})._promoResetRequested === true) {
@@ -5599,8 +5622,8 @@ const getPromotionThemeCodesForFilter = (row = {}, mItem = {}) => {
     // 테마 필터는 테이블에 보이는 값과 같은 기준을 본다.
     // 1순위: 작업값(finalData) / 현재 source(info 포함)
     // 2순위: 작업값에 테마가 없을 때 마스터 행사테마 fallback
-    // 이유: 재고/구매 파일에는 행사테마가 없지만 테이블은 마스터 행사테마를 표시하므로,
-    //       상단 테마 버튼도 사용자가 보고 있는 행사테마 값으로 검색되어야 한다.
+    // 이유: DataOps/재고 파일에는 행사테마가 없지만 테이블은 마스터 행사테마를 기준으로 보므로,
+    //       상단 테마 버튼도 사용자가 보고 있는 마스터 행사테마 값으로 검색되어야 한다.
     const workTheme = window.normalizePromotionThemeValue
         ? window.normalizePromotionThemeValue(row.finalData || {}, ...sourceItems)
         : (window.resolvePromotionThemeByPriority
@@ -6785,7 +6808,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.128_WorkArchiveF8CurrentOnly]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.129_MasterThemeInventoryFilter]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -7176,7 +7199,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.128_WorkArchiveF8CurrentOnly")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.129_MasterThemeInventoryFilter")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
