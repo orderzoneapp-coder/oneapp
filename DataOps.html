@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.76)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.78)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.76.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.78.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -909,7 +909,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.76',
+    version: 'V1.a22.78',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -2256,7 +2256,7 @@ const FILTER_SORT_MODULE = Object.freeze({
 
 // V1.a22.74: 코드통합형에서 해제한 동일 품목 Lot 그룹도 통합형과 같은 외곽 박스라인을 유지한다. 행(tr) 테두리에 의존하지 않고 각 셀에 상·하단 라인을 적용해 연결된 박스로 표시한다.
 // V1.a22.75: 분석 직후에는 Lot 상세 행만 표시하고 검수모드는 비활성으로 둔다. 실제 Lot 조건이 다른 품목은 파란 포인트 바로 예고하며, Lot 상세형 버튼을 누른 뒤에만 박스라인과 Tab/Shift+Tab 검수 이동을 활성화한다.
-// V1.a22.76: BOX→EA/소분 분해·Ctrl 대체 작업에서 환산원가는 원가매칭 레이어와 매출원가에만 기록한다. 출처 상품의 기존 단가는 절대 덮어쓰지 않아 BOX 원가가 낱개 원가로 변경되는 오류를 차단한다.
+// V1.a22.78: 스페이스 치환은 마스터 원물-소분 관계로 역할을 고정하고, BOX 단가는 보존하며 소분행에만 환산원가를 적용한다. Ctrl 대체도 환산원가를 원가매칭 레이어에 기록해 원본 단가 덮어쓰기를 차단한다.
 // V1.a22.69: 코드통합형 해제/다시 통합 상태 관리.
 // 원본 Lot은 수정하지 않고 화면 보기/엑셀 1번 시트 출력에만 반영한다.
 const DATAOPS_CODE_MERGE_OVERRIDE_MODULE = Object.freeze({
@@ -2289,11 +2289,12 @@ const DATAOPS_CODE_MERGE_OVERRIDE_MODULE = Object.freeze({
         return typeof state === 'object' ? state : {};
     },
     isDisabled: (code = '') => !!DATAOPS_CODE_MERGE_OVERRIDE_MODULE.getState(code).disabled,
+    isDetailMerged: (code = '') => !!DATAOPS_CODE_MERGE_OVERRIDE_MODULE.getState(code).detailMerged,
     getRepresentativeKey: (code = '') => safeStr(DATAOPS_CODE_MERGE_OVERRIDE_MODULE.getState(code).representativeKey || ''),
     split: (code = '') => {
         const key = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.normalizeCode(code);
         const map = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.getStateMap();
-        map[key] = { ...(map[key] || {}), disabled: true, updatedAt: new Date().toISOString() };
+        map[key] = { ...(map[key] || {}), disabled: true, detailMerged: false, updatedAt: new Date().toISOString() };
         DATAOPS_CODE_MERGE_OVERRIDE_MODULE.saveStateMap(map);
         return true;
     },
@@ -2303,9 +2304,29 @@ const DATAOPS_CODE_MERGE_OVERRIDE_MODULE = Object.freeze({
         map[key] = {
             ...(map[key] || {}),
             disabled: false,
+            detailMerged: false,
             representativeKey: safeStr(representativeKey || ''),
             updatedAt: new Date().toISOString()
         };
+        DATAOPS_CODE_MERGE_OVERRIDE_MODULE.saveStateMap(map);
+        return false;
+    },
+    mergeDetail: (code = '', representativeKey = '') => {
+        const key = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.normalizeCode(code);
+        const map = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.getStateMap();
+        map[key] = {
+            ...(map[key] || {}),
+            detailMerged: true,
+            representativeKey: safeStr(representativeKey || ''),
+            updatedAt: new Date().toISOString()
+        };
+        DATAOPS_CODE_MERGE_OVERRIDE_MODULE.saveStateMap(map);
+        return true;
+    },
+    splitDetail: (code = '') => {
+        const key = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.normalizeCode(code);
+        const map = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.getStateMap();
+        map[key] = { ...(map[key] || {}), detailMerged: false, updatedAt: new Date().toISOString() };
         DATAOPS_CODE_MERGE_OVERRIDE_MODULE.saveStateMap(map);
         return false;
     },
@@ -2323,7 +2344,7 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
     getCostBasisMode: () => readSavedDataOpsGrouping().priceMode,
     getCostBasisLabel: (mode = '') => getDataOpsPriceModeLabel(mode || DATAOPS_VIEW_LAYER_MODULE.getCostBasisMode()),
     normalizeCode: (row = {}) => safeStr(row.코드 || row.code || 'NO_CODE').replace(/\.0$/, '').trim() || 'NO_CODE',
-    isViewRowKey: (batchKey = '') => safeStr(batchKey, '').startsWith('VIEW_CODE|'),
+    isViewRowKey: (batchKey = '') => { const key = safeStr(batchKey, ''); return key.startsWith('VIEW_CODE|') || key.startsWith('VIEW_DETAIL|'); },
     getSavedViewMode: () => {
         try { return localStorage.getItem(DATAOPS_VIEW_LAYER_MODULE.STORAGE_KEY) === 'CODE_SUMMARY' ? 'CODE_SUMMARY' : 'LOT_DETAIL'; }
         catch (e) { return 'LOT_DETAIL'; }
@@ -2390,6 +2411,26 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
         return merged;
     },
     sumField: (rows = [], field = '') => (rows || []).reduce((sum, row) => sum + safeNum(row[field]), 0),
+    getRowStockQty: (row = {}) => {
+        const calc = STOCK_ENGINE_MODULE.calculateStock(row || {});
+        return safeNum(calc.finalQty);
+    },
+    isPositiveStockRow: (row = {}) => DATAOPS_VIEW_LAYER_MODULE.getRowStockQty(row) > 0,
+    // V1.a22.78: Lot 검수상품은 재고가 남은 논리 Lot만 센다.
+    // 재고 0/마이너스 Lot은 Lot 상품 판정·보더라인·Tab 이동에서 제외한다.
+    getPositiveLogicalLotRows: (rows = []) => DATAOPS_VIEW_LAYER_MODULE.buildLogicalLotRows((rows || []).filter(row => DATAOPS_VIEW_LAYER_MODULE.isPositiveStockRow(row)))
+        .filter(row => DATAOPS_VIEW_LAYER_MODULE.getRowStockQty(row) > 0),
+    getLotReviewCandidateCodes: (rows = []) => {
+        const groups = {};
+        (rows || []).forEach(row => {
+            const code = DATAOPS_VIEW_LAYER_MODULE.normalizeCode(row);
+            if (!groups[code]) groups[code] = [];
+            groups[code].push(row);
+        });
+        return Object.entries(groups)
+            .filter(([, list]) => DATAOPS_VIEW_LAYER_MODULE.getPositiveLogicalLotRows(list).length > 1)
+            .map(([code]) => code);
+    },
     // V1.a22.74: 검수 목적상 구매일자+구매처+구매단가가 같은 원장행은 하나의 동일 Lot으로 본다.
     // 원장행 개수만으로 통합 후보를 만들지 않으며, 실제 Lot 조건이 다를 때만 박스/해제/상세를 노출한다.
     getLogicalLotIdentity: (row = {}, index = 0) => {
@@ -2578,33 +2619,80 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
             })
             .sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b));
     },
-    // V1.a22.75: 상세 행 구조와 Lot 검수모드를 분리한다.
-    // 구매일자+구매처+구매단가가 실제로 다른 논리 Lot이 2개 이상인 품목만 검수 후보로 표시한다.
+    // V1.a22.78: Lot 상세 검수는 재고가 남은 논리 Lot만 대상으로 한다.
+    // 같은 품목코드에 재고 > 0인 논리 Lot이 2개 이상일 때만 Lot 상품으로 분류하고,
+    // 보더라인/Tab 이동/개별 통합 버튼을 노출한다. 재고 0/마이너스 행은 일반 상세행으로 유지한다.
     buildLotDetailRows: (rows = []) => {
         const groups = {};
+        const codeOrder = [];
         (rows || []).forEach(row => {
             const code = DATAOPS_VIEW_LAYER_MODULE.normalizeCode(row);
-            if (!groups[code]) groups[code] = [];
+            if (!groups[code]) {
+                groups[code] = [];
+                codeOrder.push(code);
+            }
             groups[code].push(row);
         });
-        const metaByCode = {};
-        Object.entries(groups).forEach(([code, list]) => {
-            const logicalLotCount = DATAOPS_VIEW_LAYER_MODULE.buildLogicalLotRows(list).length;
-            metaByCode[code] = { logicalLotCount, isCandidate: logicalLotCount > 1 };
+        const result = [];
+        codeOrder.forEach(code => {
+            const list = groups[code] || [];
+            const positiveRows = list.filter(row => DATAOPS_VIEW_LAYER_MODULE.isPositiveStockRow(row));
+            const positiveLogicalLots = DATAOPS_VIEW_LAYER_MODULE.getPositiveLogicalLotRows(list);
+            const isCandidate = positiveLogicalLots.length > 1;
+            const detailMerged = isCandidate && DATAOPS_CODE_MERGE_OVERRIDE_MODULE.isDetailMerged(code);
+            if (detailMerged) {
+                const firstPositiveKey = safeStr((positiveRows[0] || {}).batchKey || '');
+                let inserted = false;
+                list.forEach(row => {
+                    const isPositive = DATAOPS_VIEW_LAYER_MODULE.isPositiveStockRow(row);
+                    if (isPositive) {
+                        if (inserted) return;
+                        inserted = true;
+                        const summary = DATAOPS_VIEW_LAYER_MODULE.buildCodeSummaryRow(code, positiveRows);
+                        result.push({
+                            ...summary,
+                            batchKey: `VIEW_DETAIL|${safeStr(code || 'NO_CODE')}`,
+                            _viewMode: 'LOT_DETAIL_MERGED',
+                            _isViewRow: true,
+                            _detailMerged: true,
+                            _mergeOverrideCode: code,
+                            _viewLotCount: positiveLogicalLots.length,
+                            _rawSourceRowCount: positiveRows.length,
+                            _sourceLedgerRows: positiveLogicalLots,
+                            _representativeSourceKey: DATAOPS_CODE_MERGE_OVERRIDE_MODULE.getRepresentativeKey(code) || firstPositiveKey,
+                            _lotReviewCandidate: false,
+                            _lotReviewGroupKey: '',
+                            _lotReviewGroupLotCount: positiveLogicalLots.length
+                        });
+                        return;
+                    }
+                    result.push({
+                        ...row,
+                        _isViewRow: false,
+                        _viewMode: 'LOT_DETAIL',
+                        _viewSourceKeys: [row.batchKey],
+                        _lotReviewCandidate: false,
+                        _lotReviewGroupKey: '',
+                        _lotReviewGroupLotCount: positiveLogicalLots.length
+                    });
+                });
+                return;
+            }
+            list.forEach(row => {
+                const isPositive = DATAOPS_VIEW_LAYER_MODULE.isPositiveStockRow(row);
+                result.push({
+                    ...row,
+                    _isViewRow: false,
+                    _viewMode: 'LOT_DETAIL',
+                    _viewSourceKeys: [row.batchKey],
+                    _lotReviewCandidate: !!isCandidate && isPositive,
+                    _lotReviewGroupKey: isCandidate && isPositive ? code : '',
+                    _lotReviewGroupLotCount: positiveLogicalLots.length,
+                    _lotReviewStockQty: DATAOPS_VIEW_LAYER_MODULE.getRowStockQty(row)
+                });
+            });
         });
-        return (rows || []).map(row => {
-            const code = DATAOPS_VIEW_LAYER_MODULE.normalizeCode(row);
-            const meta = metaByCode[code] || { logicalLotCount: 1, isCandidate: false };
-            return {
-                ...row,
-                _isViewRow: false,
-                _viewMode: 'LOT_DETAIL',
-                _viewSourceKeys: [row.batchKey],
-                _lotReviewCandidate: !!meta.isCandidate,
-                _lotReviewGroupKey: meta.isCandidate ? code : '',
-                _lotReviewGroupLotCount: meta.logicalLotCount
-            };
-        });
+        return result;
     },
     buildViewRows: (rows = [], options = {}) => {
         const mode = options.viewMode === 'LOT_DETAIL' ? 'LOT_DETAIL' : 'CODE_SUMMARY';
@@ -4035,6 +4123,42 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 try { return STOCK_ENGINE_MODULE.getActualQty(item); }
                 catch (e) { return safeNum(item.실사 !== '' && item.실사 !== null && item.실사 !== undefined ? item.실사 : item.전산잔량); }
             };
+            const normalizeManualCode = (val) => safeStr(val, '').replace(/\.0$/, '').trim();
+            // V1.a22.78: BOX 원물과 EA/소분을 스페이스로 연결할 때는 재고 부호가 아니라
+            // MerchOps 마스터의 원물-소분 관계를 최우선으로 사용한다.
+            // 물리적 분해는 원물 로스(-), 소분 증가(+) 형태이므로 기존 점수식만 사용하면
+            // 소분을 원가출처로, BOX를 대상상품으로 뒤집어 BOX 단가를 소분가로 덮어쓸 수 있다.
+            const resolveManualRawSubPair = (a = {}, b = {}) => {
+                const aInfo = a._masterLink || DATAOPS_MASTER_LINK_MODULE.buildMasterLedgerInfo(a);
+                const bInfo = b._masterLink || DATAOPS_MASTER_LINK_MODULE.buildMasterLedgerInfo(b);
+                const aCode = normalizeManualCode(a.코드);
+                const bCode = normalizeManualCode(b.코드);
+                const aRawCode = normalizeManualCode(aInfo && aInfo.rawCode);
+                const bRawCode = normalizeManualCode(bInfo && bInfo.rawCode);
+                const aSubCode = normalizeManualCode(aInfo && aInfo.subCode);
+                const bSubCode = normalizeManualCode(bInfo && bInfo.subCode);
+                const aIsSub = !!(aInfo && (aInfo.productType === '소분' || aInfo.productType === '원물/소분'));
+                const bIsSub = !!(bInfo && (bInfo.productType === '소분' || bInfo.productType === '원물/소분'));
+                const aIsRaw = !!(aInfo && (aInfo.productType === '원물' || aInfo.productType === '원물/소분'));
+                const bIsRaw = !!(bInfo && (bInfo.productType === '원물' || bInfo.productType === '원물/소분'));
+                const makePair = (rawItem, subItem, rawInfo, subInfo, reason) => ({
+                    rawItem,
+                    subItem,
+                    rawInfo: rawInfo || {},
+                    subInfo: subInfo || {},
+                    rate: parseNumber((subInfo && subInfo.conversionRate) || (rawInfo && rawInfo.conversionRate)),
+                    reason
+                });
+                if (aIsSub && aRawCode && aRawCode === bCode) return makePair(b, a, bInfo, aInfo, 'SUB_RAW_CODE');
+                if (bIsSub && bRawCode && bRawCode === aCode) return makePair(a, b, aInfo, bInfo, 'SUB_RAW_CODE');
+                if (aIsRaw && aSubCode && aSubCode === bCode) return makePair(a, b, aInfo, bInfo, 'RAW_SUB_CODE');
+                if (bIsRaw && bSubCode && bSubCode === aCode) return makePair(b, a, bInfo, aInfo, 'RAW_SUB_CODE');
+                const aUnit = normalizeDataOpsMasterUnit(aInfo && aInfo.masterUnit);
+                const bUnit = normalizeDataOpsMasterUnit(bInfo && bInfo.masterUnit);
+                if (aUnit === 'BOX' && (bUnit === '소분' || bIsSub)) return makePair(a, b, aInfo, bInfo, 'UNIT_FALLBACK');
+                if (bUnit === 'BOX' && (aUnit === '소분' || aIsSub)) return makePair(b, a, bInfo, aInfo, 'UNIT_FALLBACK');
+                return null;
+            };
             const scoreManualSource = (item = {}) => {
                 const finalQty = getManualFinalQty(item);
                 const systemQty = safeNum(item.전산잔량);
@@ -4053,32 +4177,40 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 if ((item.이슈 || []).some(msg => safeStr(msg).includes('수량부족') || safeStr(msg).includes('잔량') || safeStr(msg).includes('소분오차'))) score += 3;
                 return score;
             };
-            const item1SourceScore = scoreManualSource(item1Orig);
-            const item2SourceScore = scoreManualSource(item2Orig);
-            const item1TargetScore = scoreManualTarget(item1Orig);
-            const item2TargetScore = scoreManualTarget(item2Orig);
-            if (item1SourceScore > item2SourceScore && item2TargetScore >= item1TargetScore) {
-                sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-                targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-            }
-            else if (item2SourceScore > item1SourceScore && item1TargetScore >= item2TargetScore) {
-                sourceItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-                targetItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-            }
-            else if (safeNum(item1Orig.로스) >= 0 && safeNum(item2Orig.로스) < 0) {
-                sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
-                targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-            }
-            else if (safeNum(item2Orig.로스) >= 0 && safeNum(item1Orig.로스) < 0) {
-                sourceItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
-                targetItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
+            const rawSubPair = resolveManualRawSubPair(item1Orig, item2Orig);
+            if (rawSubPair) {
+                // 선택 순서와 오차 부호에 관계없이 BOX/원물은 원가출처, EA/소분은 원가적용 대상이다.
+                sourceItem = { ...rawSubPair.rawItem, 이슈: [...(rawSubPair.rawItem.이슈 || [])] };
+                targetItem = { ...rawSubPair.subItem, 이슈: [...(rawSubPair.subItem.이슈 || [])] };
             }
             else {
-                setAlertMsg(`수기치환 실패!
+                const item1SourceScore = scoreManualSource(item1Orig);
+                const item2SourceScore = scoreManualSource(item2Orig);
+                const item1TargetScore = scoreManualTarget(item1Orig);
+                const item2TargetScore = scoreManualTarget(item2Orig);
+                if (item1SourceScore > item2SourceScore && item2TargetScore >= item1TargetScore) {
+                    sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
+                    targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
+                }
+                else if (item2SourceScore > item1SourceScore && item1TargetScore >= item2TargetScore) {
+                    sourceItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
+                    targetItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
+                }
+                else if (safeNum(item1Orig.로스) >= 0 && safeNum(item2Orig.로스) < 0) {
+                    sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
+                    targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
+                }
+                else if (safeNum(item2Orig.로스) >= 0 && safeNum(item1Orig.로스) < 0) {
+                    sourceItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
+                    targetItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
+                }
+                else {
+                    setAlertMsg(`수기치환 실패!
 
 출처/대상 판정이 애매합니다.
 재고/Lot/단가가 있는 행과 부족·마이너스·출고 대상 행을 하나씩 선택해야 합니다.`);
-                return prev;
+                    return prev;
+                }
             }
             const sourceAvailableQty = Math.max(0, getManualFinalQty(sourceItem), safeNum(sourceItem.전산잔량));
             const targetNeedQty = Math.max(0, Math.abs(Math.min(0, safeNum(targetItem.로스))), Math.abs(Math.min(0, safeNum(targetItem.전산잔량))));
@@ -4113,22 +4245,33 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 return 0;
             };
             const sourceDeficitQty = Math.abs(Math.min(0, safeNum(sourceItem.로스)));
+            const sourceObservedQty = Math.abs(safeNum(sourceItem.로스));
+            const targetObservedQty = Math.abs(safeNum(targetItem.로스));
+            const relationRate = rawSubPair ? safeNum(rawSubPair.rate) : 0;
             const inferredSourceQty = inferSourceQtyByWeight(sourceItem, targetItem, targetNeedQty);
-            const sourceLossQty = safeNum(
+            let sourceLossQty = safeNum(
+                (rawSubPair && sourceObservedQty > 0 ? sourceObservedQty : 0) ||
                 sourceDeficitQty ||
                 (inferredSourceQty > 0 ? Math.min(sourceAvailableQty > 0 ? sourceAvailableQty : inferredSourceQty, inferredSourceQty) : 0) ||
                 (targetNeedQty > 0 ? Math.min(sourceAvailableQty > 0 ? sourceAvailableQty : targetNeedQty, targetNeedQty) : 0) ||
-                Math.abs(safeNum(sourceItem.로스)) ||
+                sourceObservedQty ||
                 0
             );
             const inferredTargetQty = inferTargetQtyByWeight(sourceItem, targetItem, sourceLossQty);
-            const targetLossQty = safeNum(
+            let targetLossQty = safeNum(
+                (rawSubPair && targetObservedQty > 0 ? targetObservedQty : 0) ||
                 targetNeedQty ||
                 inferredTargetQty ||
-                Math.abs(safeNum(targetItem.로스)) ||
+                targetObservedQty ||
                 sourceLossQty ||
                 0
             );
+            if (rawSubPair && relationRate > 0) {
+                if (sourceLossQty > 0 && targetObservedQty <= 0 && targetNeedQty <= 0)
+                    targetLossQty = sourceLossQty * relationRate;
+                else if (targetLossQty > 0 && sourceObservedQty <= 0 && sourceDeficitQty <= 0)
+                    sourceLossQty = targetLossQty / relationRate;
+            }
             if (sourceLossQty <= 0 || targetLossQty <= 0) {
                 setAlertMsg(`수기치환 실패!
 
@@ -4136,27 +4279,15 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
 출처 행의 재고와 대상 행의 부족/마이너스 수량을 확인하세요.`);
                 return prev;
             }
-            const normalizeManualCode = (val) => safeStr(val, '').replace(/\.0$/, '').trim();
             const isSubLinkInfo = (info) => info && (info.productType === '소분' || info.productType === '원물/소분');
             const buildManualSubPricePatch = (a, b, aQty, bQty) => {
-                const aInfo = a._masterLink || DATAOPS_MASTER_LINK_MODULE.buildMasterLedgerInfo(a);
-                const bInfo = b._masterLink || DATAOPS_MASTER_LINK_MODULE.buildMasterLedgerInfo(b);
-                const aCode = normalizeManualCode(a.코드);
-                const bCode = normalizeManualCode(b.코드);
-                let rawItem = null;
-                let subItem = null;
-                let rate = 0;
-                if (isSubLinkInfo(aInfo) && normalizeManualCode(aInfo.rawCode) && normalizeManualCode(aInfo.rawCode) === bCode) {
-                    subItem = a;
-                    rawItem = b;
-                    rate = parseNumber(aInfo.conversionRate);
-                }
-                else if (isSubLinkInfo(bInfo) && normalizeManualCode(bInfo.rawCode) && normalizeManualCode(bInfo.rawCode) === aCode) {
-                    subItem = b;
-                    rawItem = a;
-                    rate = parseNumber(bInfo.conversionRate);
-                }
-                // 마스터 관계가 없더라도, 스페이스바로 원물 1 ↔ 소분 n을 직접 연결했고 소분 단가가 0이면 수량비로 보조 산출한다.
+                const explicitPair = resolveManualRawSubPair(a, b);
+                let rawItem = explicitPair ? explicitPair.rawItem : null;
+                let subItem = explicitPair ? explicitPair.subItem : null;
+                let rate = explicitPair ? safeNum(explicitPair.rate) : 0;
+                let isExplicitRelation = !!(rawItem && subItem && rate > 0);
+                // 마스터 관계가 없을 때만 단가 0인 대상에 수량비 보조산출을 허용한다.
+                // 이미 단가가 있는 두 일반상품을 임의로 원물/소분으로 간주하지 않는다.
                 if ((!rawItem || !subItem || rate <= 0) && safeNum(a.단가) > 0 && safeNum(b.단가) <= 0 && aQty > 0 && bQty > 0 && bQty >= aQty) {
                     rawItem = a;
                     subItem = b;
@@ -4169,12 +4300,18 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 }
                 const rawPrice = rawItem ? safeNum(rawItem.단가) : 0;
                 const currentSubPrice = subItem ? safeNum(subItem.단가) : 0;
-                if (!rawItem || !subItem || rawPrice <= 0 || rate <= 0 || currentSubPrice > 0)
+                if (!rawItem || !subItem || rawPrice <= 0 || rate <= 0)
                     return null;
-                const subPrice = Math.round((rawPrice / rate) * 100) / 100;
+                if (!isExplicitRelation && currentSubPrice > 0)
+                    return null;
+                const subPrice = DATAOPS_OPERATION_MODULE.calcConvertedUnitCost({
+                    sourceUnitCost: rawPrice,
+                    sourceQty: 1,
+                    targetQty: rate
+                });
                 if (subPrice <= 0)
                     return null;
-                return { batchKey: subItem.batchKey, subPrice, rawName: rawItem.품명, rate };
+                return { batchKey: subItem.batchKey, rawBatchKey: rawItem.batchKey, subPrice, rawName: rawItem.품명, rate, isExplicitRelation };
             };
             const applyManualSubPricePatch = (item, patch) => {
                 if (!patch || item.batchKey !== patch.batchKey)
@@ -4233,13 +4370,23 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 revenue: 0
             });
             const manualUnitCost = manualMatch.actualUnitCost;
-            const manualTargetUnitCost = manualMatch.salesUnitCost || manualUnitCost;
+            const manualTargetUnitCost = safeNum(subPricePatch && subPricePatch.subPrice) || manualMatch.salesUnitCost || manualUnitCost;
+            let manualAppliedCostAmount = manualMatch.costAmount || (manualTargetUnitCost * targetLossQty);
             if (manualTargetUnitCost > 0) {
-                const manualCostLayer = manualMatch.costLayer;
+                const manualCostLayer = manualMatch.costLayer ? {
+                    ...manualMatch.costLayer,
+                    unitCost: manualTargetUnitCost,
+                    costAmount: manualTargetUnitCost * targetLossQty
+                } : null;
+                manualAppliedCostAmount = manualTargetUnitCost * targetLossQty;
                 const targetWithLayer = DATAOPS_OPERATION_MODULE.appendCostLayer(targetAfter, manualCostLayer);
                 targetAfter = {
                     ...targetWithLayer,
-                    단가: manualTargetUnitCost,
+                    // V1.a22.78: 원가매칭 결과는 별도 필드/원가레이어에 기록한다.
+                    // item.단가는 원본 상품 단가이며, 명시적인 원물→소분 관계의 소분행만
+                    // applyManualSubPricePatch에서 새 소분단가로 갱신할 수 있다.
+                    _matchedUnitCost: manualTargetUnitCost,
+                    _matchedCostAmount: manualAppliedCostAmount,
                     _convertedUnitCostApplied: safeNum(sourceLossQty) !== safeNum(targetLossQty),
                     _convertedUnitCostFormula: manualMatch.formula,
                     이슈: DATAOPS_ISSUE_HELPER.unique(DATAOPS_ISSUE_HELPER.stripPriceIssues(targetWithLayer.이슈 || [])),
@@ -4252,6 +4399,19 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 if (!safeStr(targetAfter.메모, '').includes(costMemo))
                     targetAfter.메모 = `${safeStr(targetAfter.메모, '')}${safeStr(targetAfter.메모, '') ? ' ' : ''}${costMemo}`;
             }
+            // 최종 방어막: 두 행의 기존 단가는 보존하고, 소분단가 패치 대상만 새 소분가를 가진다.
+            // 따라서 BOX가 target으로 잘못 판정되더라도 BOX 단가가 EA/소분 단가로 바뀌지 않는다.
+            const originalPriceByKey = {
+                [item1Orig.batchKey]: safeNum(item1Orig.단가),
+                [item2Orig.batchKey]: safeNum(item2Orig.단가)
+            };
+            const restoreProtectedPrice = (item = {}) => {
+                if (subPricePatch && item.batchKey === subPricePatch.batchKey)
+                    return { ...item, 단가: safeNum(subPricePatch.subPrice) };
+                return { ...item, 단가: safeNum(originalPriceByKey[item.batchKey]) };
+            };
+            sourceAfter = restoreProtectedPrice(sourceAfter);
+            targetAfter = restoreProtectedPrice(targetAfter);
             setSubstHistory(h => [...h, {
                     id: Date.now(),
                     type: 'MANUAL_LOSS_LINK',
@@ -4261,7 +4421,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     targetName: targetAfter.품명,
                     sQty: sourceLossQty,
                     tQty: targetLossQty,
-                    transferredCost: manualMatch.costAmount || (sourceLossQty * safeNum(sourceItem.단가)),
+                    transferredCost: manualAppliedCostAmount || (sourceLossQty * safeNum(sourceItem.단가)),
                     sourceItemPrev: sourceItem.batchKey === item1Orig.batchKey ? item1Orig : item2Orig,
                     targetItemPrev: targetItem.batchKey === item2Orig.batchKey ? item2Orig : item1Orig,
                     createdAt: new Date().toISOString()
@@ -4471,7 +4631,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         np.대체입고 = safeNum(np.대체입고) + sourceDeductQty;
                         np.매출원가 = replacementCostAmount;
                         if (replacementUnitCost > 0) {
-                            // V1.a22.76: 분해/대체는 원가 정의 작업이다.
+                            // V1.a22.78: 분해/대체는 원가 정의 작업이다.
                             // 출처 상품의 표시 단가(예: BOX 13,000원)는 그대로 보존하고,
                             // 환산된 낱개 원가는 원가매칭 레이어와 별도 참조값에만 기록한다.
                             np._matchedUnitCost = replacementUnitCost;
@@ -6370,8 +6530,11 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
     const totalOut = item.출고 + addedOut;
     const isToday = item.일자 && targetDateStr && item.일자 === targetDateStr;
     const isCodeSummaryViewRow = !!item._isViewRow && item._viewMode === 'CODE_SUMMARY';
+    const isDetailMergedViewRow = !!item._isViewRow && item._viewMode === 'LOT_DETAIL_MERGED';
+    const isMergedViewRow = isCodeSummaryViewRow || isDetailMergedViewRow;
     const isMergeCandidateRow = isCodeSummaryViewRow && safeNum(item._viewLotCount) > 1;
     const isMergeDisabledRow = !!item._mergeDisabled && safeNum(item._mergeGroupLotCount || 0) > 1;
+    const isLotDetailMergeButtonRow = !!isLotReviewMode && !!isLotReviewCandidate && !!isLotReviewGroupStart;
     const isMergeBoxRow = isMergeCandidateRow || isMergeDisabledRow;
     const mergeSourceRows = isMergeCandidateRow && Array.isArray(item._sourceLedgerRows) ? item._sourceLedgerRows : [];
     const buildMergeLotInfo = (r = {}) => {
@@ -6389,7 +6552,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
         : [];
     const splitRepresentativeInfo = null;
     const rejectCodeSummaryEdit = () => {
-        if (!isCodeSummaryViewRow) return false;
+        if (!isMergedViewRow) return false;
         if (onViewLayerEditBlocked) onViewLayerEditBlocked(item);
         return true;
     };
@@ -6430,10 +6593,10 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
             clearTimeout(priceTimeout.current);
         // V1.a22.69: 코드 통합형의 수량/잔량은 편집 차단하되, 입고가(단가)는 대표 Lot에 직접 반영한다.
         // 통합행은 VIEW_CODE synthetic row라서 그대로 저장하면 원본 productData에 반영되지 않는다.
-        const editBatchKey = isCodeSummaryViewRow
+        const editBatchKey = isMergedViewRow
             ? safeStr(item._representativeSourceKey || (Array.isArray(item._viewSourceKeys) ? item._viewSourceKeys[0] : '') || item.batchKey)
             : item.batchKey;
-        if (isCodeSummaryViewRow && (!editBatchKey || DATAOPS_VIEW_LAYER_MODULE.isViewRowKey(editBatchKey))) {
+        if (isMergedViewRow && (!editBatchKey || DATAOPS_VIEW_LAYER_MODULE.isViewRowKey(editBatchKey))) {
             if (onViewLayerEditBlocked) onViewLayerEditBlocked(item);
             setLocalPrice(item.단가 === 0 ? '' : Math.round(item.단가));
             return;
@@ -6567,8 +6730,8 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                         sourceViewLotCount: safeNum(d.sourceViewLotCount || 0),
                         sourceViewSourceKeys: Array.isArray(d.sourceViewSourceKeys) ? d.sourceViewSourceKeys : [],
                         sourceIsViewRow: !!d.sourceIsViewRow || DATAOPS_VIEW_LAYER_MODULE.isViewRowKey(d.sourceKey),
-                        targetIsViewRow: isCodeSummaryViewRow,
-                        targetViewLotCount: isCodeSummaryViewRow ? safeNum(item._viewLotCount || 0) : 1,
+                        targetIsViewRow: isMergedViewRow,
+                        targetViewLotCount: isMergedViewRow ? safeNum(item._viewLotCount || 0) : 1,
                         targetSourceKeys: Array.isArray(item._viewSourceKeys) ? item._viewSourceKeys : [],
                         targetViewKey: item.batchKey
                     });
@@ -6583,7 +6746,19 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                         isLinked && React.createElement("i", { className: "fas fa-link text-blue-500 mr-1 mt-0.5 animate-pulse" }),
                         isActiveMulti && React.createElement("i", { className: "fas fa-tags text-blue-500 mr-1 mt-0.5" }),
                         React.createElement("span", { title: item.품명, className: "truncate leading-tight text-slate-900" }, item.품명),
-                        (isMergeCandidateRow || isMergeDisabledRow) && onToggleCodeMerge && React.createElement("button", { type: "button", onClick: (e) => { e.preventDefault(); e.stopPropagation(); onToggleCodeMerge(item.코드 || item._mergeOverrideCode, isMergeDisabledRow ? item.batchKey : '', isMergeDisabledRow ? 'merge' : 'split'); }, className: `ml-2 shrink-0 px-2 py-[3px] rounded border text-[11px] font-black ${isMergeDisabledRow ? 'bg-slate-100 text-slate-800 border-slate-300 hover:bg-slate-200' : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'}`, title: isMergeDisabledRow ? '이 Lot 기준으로 통합합니다.' : '이 상품은 Lot별로 나눠서 표시합니다.' }, isMergeDisabledRow ? '통합' : '해제')),
+                        (isMergeCandidateRow || isMergeDisabledRow || isLotDetailMergeButtonRow || isDetailMergedViewRow) && onToggleCodeMerge && (() => {
+                            const isMergeAction = isMergeDisabledRow || isLotDetailMergeButtonRow;
+                            const action = isDetailMergedViewRow ? 'detail-split' : (isLotDetailMergeButtonRow ? 'detail-merge' : (isMergeDisabledRow ? 'merge' : 'split'));
+                            const representativeKey = isMergeAction ? safeStr(item.batchKey || '') : '';
+                            const label = isMergeAction ? '통합' : '해제';
+                            const title = isLotDetailMergeButtonRow
+                                ? '재고가 남은 Lot을 이 상품 1행으로 바로 통합합니다.'
+                                : (isDetailMergedViewRow ? '통합한 Lot 상품을 다시 상세행으로 풉니다.' : (isMergeDisabledRow ? '이 Lot 기준으로 다시 통합합니다.' : '이 상품을 Lot별 상세행으로 풉니다.'));
+                            const buttonClass = isMergeAction
+                                ? 'bg-cyan-600 text-white border-cyan-700 hover:bg-cyan-700'
+                                : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100';
+                            return React.createElement("button", { type: "button", onClick: (e) => { e.preventDefault(); e.stopPropagation(); onToggleCodeMerge(item._mergeOverrideCode || item.코드, representativeKey, action); }, className: `ml-2 shrink-0 px-2 py-[3px] rounded border text-[11px] font-black ${buttonClass}`, title }, label);
+                        })()),
                     React.createElement("div", { className: "text-[10px] text-slate-500 truncate font-medium tracking-tight flex items-center" },
                         item.코드 !== '-' && item.코드 !== 'NO_CODE' ? React.createElement("span", { className: "mr-1" }, item.코드) : '',
                         React.createElement("span", { title: item._dateDisplayMemo || (item.일자 ? item.일자 : '미상(과거처리)'), className: isToday ? "text-blue-700 bg-blue-100 px-1 rounded border border-blue-200 font-bold" : (item._dateDisplayMemo && item._dateDisplayMemo.includes('과거처리') ? "text-slate-500 bg-slate-100 px-1 rounded border border-slate-200 font-bold" : "") }, item.일자 || '미상'),
@@ -6628,7 +6803,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                         else if (data.isLifo) {
                             chipClass = "bg-sky-50 border-sky-200 text-sky-600 hover:bg-sky-100 hover:border-sky-300";
                         }
-                        return (React.createElement("div", { key: vendor, draggable: true, onDragStart: (e) => { e.stopPropagation(); const payload = { sourceKey: item.batchKey, vendor, qty: data.qty, code: item.코드 }; if (isCodeSummaryViewRow) { payload.sourceIsViewRow = true; payload.sourceViewKey = item.batchKey; payload.sourceViewLotCount = safeNum(item._viewLotCount || 0); payload.sourceViewSourceKeys = Array.isArray(item._viewSourceKeys) ? item._viewSourceKeys : []; payload.sourceAllocations = Array.isArray(data._sourceAllocations) ? data._sourceAllocations : []; } e.dataTransfer.setData('text/plain', JSON.stringify(payload)); e.currentTarget.classList.add('opacity-40', 'scale-95'); }, onDragEnd: (e) => { e.currentTarget.classList.remove('opacity-40', 'scale-95'); }, onDoubleClick: (e) => { e.stopPropagation(); if (rejectCodeSummaryEdit()) return; if (onVendorChipEdit) onVendorChipEdit(item.batchKey, displayVendor, data.qty); }, className: `group flex items-center px-2 py-0.5 rounded text-[10px] font-semibold cursor-grab active:cursor-grabbing border shadow-sm transition-all hover:-translate-y-0.5 ${chipClass}`, title: isCodeSummaryViewRow ? `${formatQty(data.qty)}개 출고 - 통합1은 즉시 이동 / 통합2 이상은 Lot 상세형에서 수동 이동` : `${formatQty(data.qty)}개 출고 ${data.matchMode === 'LOT_MATCH_FAILED' ? '(Lot매칭실패)' : (data.matchMode && String(data.matchMode).includes('FIXED_LOT') ? '(구매처Lot고정)' : (data.isLifo ? '(당일우선)' : '(순차차감)'))} - 더블클릭: 수량수정 / x: 칩삭제` },
+                        return (React.createElement("div", { key: vendor, draggable: true, onDragStart: (e) => { e.stopPropagation(); const payload = { sourceKey: item.batchKey, vendor, qty: data.qty, code: item.코드 }; if (isMergedViewRow) { payload.sourceIsViewRow = true; payload.sourceViewKey = item.batchKey; payload.sourceViewLotCount = safeNum(item._viewLotCount || 0); payload.sourceViewSourceKeys = Array.isArray(item._viewSourceKeys) ? item._viewSourceKeys : []; payload.sourceAllocations = Array.isArray(data._sourceAllocations) ? data._sourceAllocations : []; } e.dataTransfer.setData('text/plain', JSON.stringify(payload)); e.currentTarget.classList.add('opacity-40', 'scale-95'); }, onDragEnd: (e) => { e.currentTarget.classList.remove('opacity-40', 'scale-95'); }, onDoubleClick: (e) => { e.stopPropagation(); if (rejectCodeSummaryEdit()) return; if (onVendorChipEdit) onVendorChipEdit(item.batchKey, displayVendor, data.qty); }, className: `group flex items-center px-2 py-0.5 rounded text-[10px] font-semibold cursor-grab active:cursor-grabbing border shadow-sm transition-all hover:-translate-y-0.5 ${chipClass}`, title: isCodeSummaryViewRow ? `${formatQty(data.qty)}개 출고 - 통합1은 즉시 이동 / 통합2 이상은 Lot 상세형에서 수동 이동` : `${formatQty(data.qty)}개 출고 ${data.matchMode === 'LOT_MATCH_FAILED' ? '(Lot매칭실패)' : (data.matchMode && String(data.matchMode).includes('FIXED_LOT') ? '(구매처Lot고정)' : (data.isLifo ? '(당일우선)' : '(순차차감)'))} - 더블클릭: 수량수정 / x: 칩삭제` },
                             React.createElement("span", { className: "truncate max-w-[120px] flex items-center" },
                                 safeStr(displayVendor, '미지정'),
                                 "(",
@@ -6793,7 +6968,15 @@ function App() {
     const mergeCandidateIndexRef = useRef(-1);
     const lotReviewIndexRef = useRef(-1);
     const handleToggleCodeMerge = useCallback((code, representativeKey = '', action = '') => {
-        if (action === 'merge') {
+        if (action === 'detail-merge') {
+            DATAOPS_CODE_MERGE_OVERRIDE_MODULE.mergeDetail(code, representativeKey);
+            setActiveLotReviewGroupKey('');
+            lotReviewIndexRef.current = -1;
+        }
+        else if (action === 'detail-split') {
+            DATAOPS_CODE_MERGE_OVERRIDE_MODULE.splitDetail(code);
+        }
+        else if (action === 'merge') {
             DATAOPS_CODE_MERGE_OVERRIDE_MODULE.mergeWithRepresentative(code, representativeKey);
         }
         else if (action === 'split') {
@@ -7315,6 +7498,10 @@ function App() {
     // 다중 원가 코드 자체는 참고 정보일 뿐이며, 이슈카드는 실제 미처리 Lot 문제만 다룬다.
     const multiPriceCodes = useMemo(() => { const codes = new Set(); productData.forEach(p => { if (priceOptionsMap[p.코드] && priceOptionsMap[p.코드].length >= 2 && p.출고 > 0)
         codes.add(p.코드); }); return Array.from(codes); }, [productData, priceOptionsMap]);
+    // V1.a22.78: Lot 상품은 재고 > 0인 논리 Lot이 같은 품목코드에 2개 이상 남은 경우만 인정한다.
+    const lotReviewCandidateCodes = useMemo(() => DATAOPS_VIEW_LAYER_MODULE.getLotReviewCandidateCodes(productData), [productData]);
+    const lotReviewCandidateCodeSet = useMemo(() => new Set(lotReviewCandidateCodes), [lotReviewCandidateCodes]);
+    const pendingLotReviewCandidateCodes = useMemo(() => lotReviewCandidateCodes.filter(code => !DATAOPS_CODE_MERGE_OVERRIDE_MODULE.isDetailMerged(code)), [lotReviewCandidateCodes, mergeOverrideVersion]);
     const isSalesConfirmedLotResolvedRow = useCallback((p = {}) => {
         const hasOwnConfirmed = !!(p._salesConfirmedPurchase || p._fromSalesConfirmedPurchase || p._hasSalesConfirmedPurchase || safeStr(p._salesConfirmedPurchaseVendor || p._confirmedPurchaseVendor, ''));
         if (hasOwnConfirmed) return true;
@@ -7494,46 +7681,44 @@ function App() {
         return counts;
     }, [substitutionCandidateRows]);
     const closingStats = useMemo(() => {
-        let missingPriceCount = 0, totalMissingPriceCount = 0, lossCount = 0, totalLossCount = 0, matchCount = 0, totalMatchCount = 0, stockLotCount = 0, totalStockLotCount = 0, totalRevenue = 0, totalInventoryAsset = 0, totalLossValue = 0, splitLossCandidateCount = 0, splitLossQty = 0, splitLossValue = 0;
-        let multiPriceSet = new Set(multiPriceCodes);
-        productData.forEach(p => {
+        let missingPriceCount = 0, totalMissingPriceCount = 0, lossCount = 0, totalLossCount = 0, totalRevenue = 0, totalInventoryAsset = 0, totalLossValue = 0, splitLossCandidateCount = 0, splitLossQty = 0, splitLossValue = 0;
+        const unresolvedStockLotKeys = new Set();
+        const totalStockLotKeys = new Set();
+        productData.forEach((p, rowIndex) => {
             const lotCostResolved = DATAOPS_OPERATION_MODULE.hasLotCostResolved(p);
             const hasPriceTotal = !lotCostResolved && ((Number(p.단가) || 0) <= 0 || (p.이슈 && p.이슈.some(i => i.includes('단가변경') || i.includes('단가없음'))));
             const hasPriceUnresolved = !lotCostResolved && (((!p.수기확인완료 && (safeNum(p.단가) <= 0))) || (p.이슈 && p.이슈.some(i => i.includes('🚨단가변경') || i.includes('🚨단가없음'))));
-            if (hasPriceTotal)
-                totalMissingPriceCount++;
-            if (hasPriceUnresolved)
-                missingPriceCount++;
+            if (hasPriceTotal) totalMissingPriceCount++;
+            if (hasPriceUnresolved) missingPriceCount++;
             const hasQtyTotal = hasQtyIssueTotal(p);
             const hasQtyUnresolved = hasUnresolvedQtyIssue(p);
-            if (hasQtyTotal)
+            const rowKey = `QTY|${safeStr(p.batchKey || rowIndex)}`;
+            if (hasQtyTotal) {
                 totalLossCount++;
-            if (hasQtyUnresolved)
+                totalStockLotKeys.add(rowKey);
+            }
+            if (hasQtyUnresolved) {
                 lossCount++;
-            // V1.a22.12: Lot 카드 카운트는 실제 미처리 Lot 이슈만 센다.
-            // 판매현황 구매처로 확정 매칭된 다중 원가 코드는 카드 이슈에서 제외한다.
-            const hasMatchTotal = hasLotIssueTotal(p);
-            const hasMatchUnresolved = hasUnresolvedLotIssue(p);
-            if (hasMatchTotal)
-                totalMatchCount++;
-            if (hasMatchUnresolved)
-                matchCount++;
-            if (hasQtyTotal || hasMatchTotal)
-                totalStockLotCount++;
-            if (hasQtyUnresolved || hasMatchUnresolved)
-                stockLotCount++;
+                unresolvedStockLotKeys.add(rowKey);
+            }
             totalRevenue += (Number(p.매출액) || 0);
             const actualQty = p.실사 === '' || p.실사 === null ? 0 : Number(p.실사);
             const price = Number(p.단가) || 0;
             totalInventoryAsset += (actualQty * price);
-            if (p.로스 !== 0)
-                totalLossValue += Math.abs(Number(p.로스) * price);
+            if (p.로스 !== 0) totalLossValue += Math.abs(Number(p.로스) * price);
             if (p._splitLossCandidate || (p.이슈 && p.이슈.some(i => (safeStr(i).includes('소분로스후보') || safeStr(i).includes('소분오차'))))) {
                 splitLossCandidateCount++;
                 splitLossQty += safeNum(p._splitLossQty) || Math.abs(Math.min(0, safeNum(p.로스)));
                 splitLossValue += safeNum(p._splitLossValue) || ((safeNum(p._splitLossQty) || Math.abs(Math.min(0, safeNum(p.로스)))) * (safeNum(p._splitLossUnitCost) || price));
             }
         });
+        lotReviewCandidateCodes.forEach(code => {
+            const lotKey = `LOT|${code}`;
+            totalStockLotKeys.add(lotKey);
+            if (!DATAOPS_CODE_MERGE_OVERRIDE_MODULE.isDetailMerged(code)) unresolvedStockLotKeys.add(lotKey);
+        });
+        const matchCount = lotReviewCandidateCodes.filter(code => !DATAOPS_CODE_MERGE_OVERRIDE_MODULE.isDetailMerged(code)).length;
+        const totalMatchCount = lotReviewCandidateCodes.length;
         const integratedCostReviewCount = readSavedDataOpsGrouping().manageMode === 'CODE_SUMMARY'
             ? DATAOPS_VIEW_LAYER_MODULE.buildCodeSummaryRows(productData).filter(row => row._costReviewNeeded).length
             : 0;
@@ -7546,8 +7731,8 @@ function App() {
             totalLossCount,
             multiPriceCount: matchCount,
             totalMultiPriceCount: totalMatchCount,
-            stockLotCount,
-            totalStockLotCount,
+            stockLotCount: unresolvedStockLotKeys.size,
+            totalStockLotCount: totalStockLotKeys.size,
             substitutionCandidateCount: substitutionCandidateRows.length,
             substitutionRunnableCount: substitutionCandidateRows.length,
             substitutionProblemCount: 0,
@@ -7559,7 +7744,7 @@ function App() {
             totalLossValue,
             total: productData.length
         };
-    }, [productData, hasQtyIssueTotal, hasUnresolvedQtyIssue, hasLotIssueTotal, hasUnresolvedLotIssue, substitutionCandidateRows, substitutionCandidateStatusCounts]);
+    }, [productData, hasQtyIssueTotal, hasUnresolvedQtyIssue, substitutionCandidateRows, substitutionCandidateStatusCounts, lotReviewCandidateCodes, mergeOverrideVersion]);
     const hiddenMovedSourceCount = useMemo(() => productData.filter(item => item && item._hiddenBySalesMove).length, [productData]);
     const showCards = useMemo(() => {
         // V1.a22.12: 카드뷰는 문제 건수가 0이어도 분석 완료 후 항상 표시한다.
@@ -9483,6 +9668,24 @@ ${balanceText}
         setFilters(prev => ({ ...prev, search: '', issuesOnly: false, excludeZeroActual: false, reviewType: null, category: [], stockListType: 'ALL', favoriteVendorOnly: false, showHiddenMoveRows: false, unit: { ...CONFIG_MODULE.defaultUnitFilter } }));
         if (fromCardClick)
             issueJumpHistoryRef.current = [];
+        // V1.a22.78: 재고/Lot 카드와 Lot 세부버튼은 Lot 상세형 검수모드를 즉시 실행한다.
+        // 재고 > 0인 논리 Lot이 2개 이상인 품목만 보더라인/Tab 이동 대상으로 사용한다.
+        const shouldOpenLotReview = type === 'multiPrice' || (type === 'stockLot' && pendingLotReviewCandidateCodes.length > 0);
+        if (shouldOpenLotReview) {
+            if (pendingLotReviewCandidateCodes.length === 0) {
+                setActiveIssueMode(null);
+                setAlertMsg('재고가 남은 Lot 상품이 없습니다.\n\n같은 품목코드에 재고 > 0인 Lot이 2개 이상일 때만 Lot 상품으로 표시합니다.');
+                return;
+            }
+            setViewMode('LOT_DETAIL');
+            setGrouping(prev => normalizeDataOpsGrouping({ ...prev, manageMode: 'LOT_DETAIL' }));
+            setLotReviewMode(true);
+            setActiveMultiCode(null);
+            setActiveLotReviewGroupKey('');
+            lotReviewIndexRef.current = -1;
+            jumpToLotReviewGroup(fromCardClick ? 'first' : (direction === 'prev' ? 'prev' : 'next'));
+            return;
+        }
         const activeEl = document.activeElement;
         let currentDataIndex = -1;
         if (activeEl) {
@@ -9621,7 +9824,7 @@ ${balanceText}
         }
         const targetItem = targetItems.find(p => p.index > currIdx) || targetItems[0];
         focusIssueTargetByItem(targetItem);
-    }, [productData, multiPriceCodes, ackMultiCodes, viewMode, setProductData, setAckMultiCodes, hasUnresolvedQtyIssue, hasUnresolvedLotIssue, scrollIssueRowIntoWorkCenter]);
+    }, [productData, multiPriceCodes, ackMultiCodes, viewMode, setProductData, setAckMultiCodes, hasUnresolvedQtyIssue, hasUnresolvedLotIssue, scrollIssueRowIntoWorkCenter, pendingLotReviewCandidateCodes, jumpToLotReviewGroup]);
     const handleAcknowledgeAll = useCallback((type) => {
         setProductData(prev => {
             return prev.map(p => {
@@ -9839,6 +10042,16 @@ ${balanceText}
         else if (filters.stockListType === 'OTHER_STOCK')
             sourceRows = sourceRows.filter(p => STOCK_ENGINE_MODULE.getActualQty(p) > 0 && !EXPORT_MODULE.isPurchaseBalanceStockItem(p));
         let data = filters.reviewType === 'substitution' ? sourceRows : DATAOPS_VIEW_LAYER_MODULE.buildViewRows(sourceRows, { viewMode });
+        // V1.a22.78: Lot 검수모드에서는 Lot 상품으로 판정된 품목의 재고 0/마이너스 Lot 행을 화면에서도 제외한다.
+        // 다른 일반 상품은 유지하며, 같은 코드의 재고 > 0 Lot만 하나의 보더라인 그룹으로 연결한다.
+        if (viewMode === 'LOT_DETAIL' && lotReviewMode) {
+            data = data.filter(p => {
+                const code = DATAOPS_VIEW_LAYER_MODULE.normalizeCode(p);
+                if (!lotReviewCandidateCodeSet.has(code)) return true;
+                if (p._detailMerged) return true;
+                return DATAOPS_VIEW_LAYER_MODULE.getRowStockQty(p) > 0;
+            });
+        }
         if (filters.reviewType === 'stockLot')
             data = data.filter(p => hasQtyIssueTotal(p) || hasLotIssueTotal(p));
         else if (filters.reviewType === 'loss')
@@ -9848,7 +10061,7 @@ ${balanceText}
         else if (filters.reviewType === 'missingPrice')
             data = data.filter(p => p._costReviewNeeded || (!DATAOPS_OPERATION_MODULE.hasLotCostResolved(p) && (safeNum(p.단가) <= 0 || (p.이슈 && p.이슈.some(i => i.includes('단가변경') || i.includes('단가없음'))))));
         else if (filters.reviewType === 'multiPrice')
-            data = data.filter(p => hasLotIssueTotal(p));
+            data = data.filter(p => lotReviewCandidateCodeSet.has(DATAOPS_VIEW_LAYER_MODULE.normalizeCode(p)) && DATAOPS_VIEW_LAYER_MODULE.getRowStockQty(p) > 0);
         else if (filters.reviewType === 'substitution') {
             data = data
                 // V1.a22.12: 원물 Lot + 소분상품 묶음뷰는 실제 자동치환에 쓰일 Lot/소분 행만 노출한다.
@@ -9892,7 +10105,7 @@ ${balanceText}
             });
         }
         return FILTER_SORT_MODULE.sortRows(data, filters.sortMode, filters.sortDesc);
-    }, [productData, viewMode, mergeOverrideVersion, filters, multiPriceCodes, mappings, hasQtyIssueTotal, hasLotIssueTotal, substitutionCandidateCodeSet, substitutionPreviewView]);
+    }, [productData, viewMode, lotReviewMode, mergeOverrideVersion, filters, multiPriceCodes, mappings, hasQtyIssueTotal, hasLotIssueTotal, substitutionCandidateCodeSet, substitutionPreviewView, lotReviewCandidateCodeSet]);
     const splitLotMemoMap = useMemo(() => {
         const counts = {};
         filteredProductData.forEach(row => {
@@ -9918,7 +10131,7 @@ ${balanceText}
                     React.createElement("h1", { className: "text-xl md:text-xl font-black leading-none text-slate-800 tracking-tight flex items-center cursor-pointer hover:opacity-80 transition", onClick: () => { var _a; return (_a = document.getElementById('main-scroll-container')) === null || _a === void 0 ? void 0 : _a.scrollTo({ top: 0, behavior: 'smooth' }); }, title: "\uD074\uB9AD\uC2DC \uCD5C\uC0C1\uB2E8 \uC774\uB3D9" },
                         React.createElement("span", { className: "text-blue-600 mr-2" }, "ONEAPP"),
                         " DataOps",
-                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, "V1.a22.69"))),
+                        React.createElement("span", { className: "text-slate-500 text-[10px] px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200 font-bold shadow-sm whitespace-nowrap hidden sm:inline-block ml-3" }, CONFIG_MODULE.version))),
                 React.createElement("div", { className: "flex items-center gap-2 shrink-0" },
                     productData.length > 0 && (React.createElement(React.Fragment, null,
                         React.createElement("button", { onClick: () => setGuideModalOpen(true), className: "px-3 py-1.5 rounded text-[12px] font-bold transition flex items-center border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 shadow-sm mr-1" }, "\uC774\uC288 \uAC00\uC774\uB4DC"),
@@ -9993,7 +10206,7 @@ ${balanceText}
                     React.createElement("div", { className: "mb-4" },
                         React.createElement("h4", { className: "text-sm font-bold text-slate-800" },
                             React.createElement("i", { className: "fas fa-star text-amber-500 mr-2" }),
-                            "V1.a22.69 구매잔량 Lot분리/구매처별 분리"),
+                            CONFIG_MODULE.version + " 구매잔량 Lot분리/구매처별 분리"),
                         React.createElement("p", { className: "text-xs text-slate-500 mt-1.5 ml-6" }, "\u2605 \uD544\uD130\uC640 BOX/EA/\uC18C\uBD84 \uD544\uD130\uAC00 \uC544\uB798 \uC124\uC815\uAC12\uC744 \uAE30\uC900\uC73C\uB85C \uB3D9\uC791\uD569\uB2C8\uB2E4. \uB2E8\uC704 \uCEEC\uB7FC\uC744 \uC6B0\uC120 \uD310\uC815\uD558\uACE0, \uB2E8\uC704\uAC00 \uC5C6\uC744 \uB54C\uB9CC \uD488\uBA85/\uADDC\uACA9\uC744 \uBCF4\uC870 \uB2E8\uC11C\uB85C \uC0AC\uC6A9\uD569\uB2C8\uB2E4.")),
                     React.createElement("div", { className: "grid grid-cols-1 lg:grid-cols-2 gap-4 bg-amber-50/60 p-4 rounded-lg border border-amber-200" },
                         React.createElement("div", { className: "flex flex-col" },
@@ -10317,7 +10530,13 @@ ${balanceText}
                                                 : (viewMode === 'LOT_DETAIL' && lotReviewMode);
                                             const handleModeClick = () => {
                                                 if (mode === 'CODE_SUMMARY') {
+                                                    // V1.a22.78: 통합형 보기는 이전 개별 통합/해제 작업을 무시하고 전체 품목을 새로 통합한다.
+                                                    // 이후 각 통합행의 [해제] 버튼으로 필요한 품목만 하나씩 Lot 상세로 풀 수 있다.
+                                                    DATAOPS_CODE_MERGE_OVERRIDE_MODULE.clear();
+                                                    setMergeOverrideVersion(v => v + 1);
                                                     setLotReviewMode(false);
+                                                    setActiveIssueMode(null);
+                                                    setActiveMultiCode(null);
                                                     setActiveLotReviewGroupKey('');
                                                     lotReviewIndexRef.current = -1;
                                                     setViewMode('CODE_SUMMARY');
