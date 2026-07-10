@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.69)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.72)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.69.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.72.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -909,7 +909,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.69',
+    version: 'V1.a22.72',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -2254,6 +2254,7 @@ const FILTER_SORT_MODULE = Object.freeze({
    - 기본 보기: 코드 통합형. 거래처칩 이동은 단일 원장행만 즉시 적용하고 통합2 이상은 Lot 상세형으로 풀어 수동 처리한다.
    ======================================================================= */
 
+// V1.a22.72: 코드통합형에서 해제한 동일 품목 Lot 그룹도 통합형과 같은 외곽 박스라인을 유지한다. 행(tr) 테두리에 의존하지 않고 각 셀에 상·하단 라인을 적용해 연결된 박스로 표시한다.
 // V1.a22.69: 코드통합형 해제/다시 통합 상태 관리.
 // 원본 Lot은 수정하지 않고 화면 보기/엑셀 1번 시트 출력에만 반영한다.
 const DATAOPS_CODE_MERGE_OVERRIDE_MODULE = Object.freeze({
@@ -3225,7 +3226,8 @@ const EXPORT_MODULE = Object.freeze({
             _idx: idx,
             _categoryBreak: idx > 0 && safeStr(row.category2Code || row.categoryCode) !== safeStr(arr[idx - 1].category2Code || arr[idx - 1].categoryCode)
         }));
-        const rowsPerPage = 40; // V1.a22.12: A4 1페이지 약 40행 기준으로 글자를 키우고 가독성을 우선한다.
+        // V1.a22.72: F10 인쇄는 고정 40행 강제 분할을 폐기한다.
+        // 이슈메모 줄바꿈으로 실제 행 높이가 달라질 수 있으므로 브라우저가 A4 높이에 맞춰 연속 자동 페이지 분할한다.
         const issueCount = rows.filter(r => r.issueMemo).length;
         const diffCount = rows.filter(r => safeNum(r.diffQty) !== 0).length;
         const negativeCount = rows.filter(r => safeNum(r.finalQty) < 0).length;
@@ -3246,30 +3248,27 @@ const EXPORT_MODULE = Object.freeze({
             }).join('');
             return `<table><colgroup><col class="name-col"><col class="final-col"><col class="qty-col"><col class="qty-col"><col class="qty-col"><col class="price-col"><col class="memo-col"></colgroup><thead><tr><th>품명&규격</th><th>잔량</th><th>재고</th><th>입고</th><th>출고</th><th>입고가</th><th>이슈메모</th></tr></thead><tbody>${htmlRows}</tbody></table>`;
         };
-        const pageTables = [];
-        for (let i = 0; i < rows.length; i += rowsPerPage) {
-            pageTables.push(renderTable(rows.slice(i, i + rowsPerPage)));
-        }
-        const htmlTables = pageTables.map((table, idx) => `${idx > 0 ? '<div class="page-break"></div>' : ''}${table}`).join('');
+        // V1.a22.72: 전체 행을 하나의 연속 테이블로 출력한다.
+        // 고정 행수 기준 page-break가 실제 용지 분할과 겹쳐 빈 공간/3행짜리 페이지가 생기던 문제를 제거한다.
+        const htmlTables = renderTable(rows);
         const w = window.open('', '_blank');
         if (!w)
             return false;
         w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>${EXPORT_MODULE.escapeHtml(title)}</title>
                     <style>
                         @page{size:A4 portrait;margin:7mm 6mm}
-                        body{font-family:Arial,'Malgun Gothic',sans-serif;color:#111827;margin:0;font-size:11.8px}
+                        body{font-family:Arial,'Malgun Gothic',sans-serif;color:#111827;margin:0;font-size:10.9px}
                         h1{font-size:18px;margin:0 0 4px;font-weight:900}.meta{font-size:10.8px;color:#475569;margin-bottom:5px;display:flex;gap:10px;flex-wrap:wrap;font-weight:700}
                         .summary{display:flex;gap:5px;margin:0 0 7px;font-size:10.8px}.chip{border:1px solid #94a3b8;border-radius:999px;padding:3px 7px;background:#f8fafc;font-weight:800;line-height:1.1}.chip.warn{background:#fff7ed;border-color:#fdba74}.chip.danger{background:#fef2f2;border-color:#fca5a5}
-                        table{width:100%;border-collapse:collapse;font-size:11.4px;line-height:1.22;table-layout:fixed;break-inside:auto;page-break-inside:auto}
+                        table{width:100%;border-collapse:collapse;font-size:10.6px;line-height:1.14;table-layout:fixed;break-inside:auto;page-break-inside:auto}
                         col.name-col{width:24%} col.final-col{width:7.5%} col.qty-col{width:6.2%} col.price-col{width:8.5%} col.memo-col{width:41.4%}
                         thead{display:table-header-group} tfoot{display:table-footer-group}
-                        th{background:#dbe3ee;border:1px solid #94a3b8;padding:4px 3px;text-align:center;white-space:nowrap;font-size:11.2px;font-weight:900}
-                        td{border:1px solid #cbd5e1;padding:3.5px 3px;text-align:right;vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:18px}
-                        .final{text-align:center;font-size:12.2px}.name{text-align:left;font-weight:900;white-space:normal;line-height:1.16}.memo{text-align:left;font-size:10.8px;white-space:normal;line-height:1.18;overflow:visible;text-overflow:clip}.strong{font-weight:900}.diff td{font-weight:800}.negative td{font-weight:900}.negative .final{background:#fee2e2}.diff .memo{background:#fff7ed}
+                        th{background:#dbe3ee;border:1px solid #94a3b8;padding:2.5px 2px;text-align:center;white-space:nowrap;font-size:10.4px;font-weight:900}
+                        td{border:1px solid #cbd5e1;padding:2px 2px;text-align:right;vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+                        .final{text-align:center;font-size:11px}.name{text-align:left;font-weight:900;white-space:normal;line-height:1.1}.memo{text-align:left;font-size:9.8px;white-space:normal;line-height:1.1;overflow:visible;text-overflow:clip}.strong{font-weight:900}.diff td{font-weight:800}.negative td{font-weight:900}.negative .final{background:#fee2e2}.diff .memo{background:#fff7ed}
                         tr.category-break td{border-top:4px solid #0f172a !important}
-                        .page-break{break-before:page;page-break-before:always;height:0;margin:0;padding:0}
-                        @media print{button{display:none} body{-webkit-print-color-adjust:exact;print-color-adjust:exact} tr{break-inside:avoid;page-break-inside:avoid}}
-                    </style></head><body><h1>${EXPORT_MODULE.escapeHtml(title)}</h1><div class="meta"><span>마감일자: ${EXPORT_MODULE.escapeHtml(targetDateStr || '-')}</span><span>출력시각: ${EXPORT_MODULE.escapeHtml(new Date().toLocaleString())}</span><span>1페이지 약 40행</span></div>
+                        @media print{button{display:none} body{-webkit-print-color-adjust:exact;print-color-adjust:exact} thead{display:table-header-group} tr{break-inside:avoid;page-break-inside:avoid} table{break-after:auto;page-break-after:auto}}
+                    </style></head><body><h1>${EXPORT_MODULE.escapeHtml(title)}</h1><div class="meta"><span>마감일자: ${EXPORT_MODULE.escapeHtml(targetDateStr || '-')}</span><span>출력시각: ${EXPORT_MODULE.escapeHtml(new Date().toLocaleString())}</span><span>A4 자동 연속분할</span></div>
                     <div class="summary"><span class="chip">전체 ${rows.length}행</span><span class="chip warn">오차 ${diffCount}행</span><span class="chip danger">마이너스 ${negativeCount}행</span><span class="chip">이슈 ${issueCount}행</span></div>
                     ${htmlTables}
                     <script>window.onload=()=>{setTimeout(()=>window.print(),200)}<\/script></body></html>`);
@@ -5654,10 +5653,85 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                     return stockQty;
                 return safeStr(a.품명).localeCompare(safeStr(b.품명), 'ko', { numeric: false, sensitivity: 'base' });
             });
+            // V1.a22.72: 02창고(2전송)는 일마감 후 품목별 잔량이 반드시 0이어야 한다.
+            // 구매현황 02 입고수량 - 판매현황 02 출고수량을 품목코드별로 비교하고,
+            // 잔량 또는 마이너스가 있으면 마감 완료 즉시 팝업으로 건수와 구매/판매 집계를 안내한다.
+            const buildTransferWarehouseClosingCheck = () => {
+                const normalizeCode = (value) => safeStr(value, '').replace(/\.0$/, '').trim();
+                const getWarehouseCode02 = (item = {}) => {
+                    const raw = item._raw || {};
+                    const direct = getRawCell(raw, ['창고코드', '창고', '창고명', '입고창고', '출고창고']);
+                    const compact = safeStr(direct, '').replace(/\s/g, '').replace(/\.0$/, '');
+                    if (compact === '02' || compact === '2' || compact === '2전송' || compact === 'W02') return true;
+                    if (compact === '01' || compact === '1' || compact === '1창고' || compact === 'W01') return false;
+                    return isTransferWarehouseRow(item, item._sourceFileName || '');
+                };
+                const getItemCode = (item = {}) => normalizeCode(getRawCell(item._raw || {}, ['품목코드', '상품코드', '코드', '품번', '바코드']) ?? item.코드);
+                const getItemName = (item = {}) => safeStr(getRawCell(item._raw || {}, ['품목명(규격)', '상품명(규격)', '품명', '품목명', '상품명']) ?? item.품명, '이름없음');
+                const getRoleQty = (item = {}, role = 'in') => {
+                    const raw = item._raw || {};
+                    const value = role === 'in'
+                        ? getRawCell(raw, ['수량', '입고수량', '구매수량', '매입수량'])
+                        : getRawCell(raw, ['수량', '출고수량', '판매수량', '출고량', '판매량']);
+                    return parseNumber(value !== null && value !== undefined ? value : item.수량);
+                };
+                const purchaseRows = (parsedIn || []).filter(item => {
+                    const code = getItemCode(item);
+                    return code && getWarehouseCode02(item) && !isSummaryOrInvalidProductRow({ code, name: getItemName(item), raw: item._raw || {} });
+                });
+                const salesRows = (parsedOut || []).filter(item => {
+                    const code = getItemCode(item);
+                    return code && getWarehouseCode02(item) && !isSummaryOrInvalidProductRow({ code, name: getItemName(item), raw: item._raw || {} });
+                });
+                if (!purchaseRows.length && !salesRows.length) return null;
+                const itemMap = {};
+                const addRows = (rows, role) => rows.forEach(item => {
+                    const code = getItemCode(item);
+                    if (!itemMap[code]) itemMap[code] = { code, name: getItemName(item), purchaseQty: 0, salesQty: 0 };
+                    if (!itemMap[code].name || itemMap[code].name === '이름없음') itemMap[code].name = getItemName(item);
+                    if (role === 'in') itemMap[code].purchaseQty += getRoleQty(item, 'in');
+                    else itemMap[code].salesQty += getRoleQty(item, 'out');
+                });
+                addRows(purchaseRows, 'in');
+                addRows(salesRows, 'out');
+                const errors = Object.values(itemMap).map(row => ({ ...row, balance: safeNum(row.purchaseQty) - safeNum(row.salesQty) }))
+                    .filter(row => Math.abs(row.balance) > 0.0000001)
+                    .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance) || a.code.localeCompare(b.code, 'ko'));
+                return {
+                    purchaseRowCount: purchaseRows.length,
+                    salesRowCount: salesRows.length,
+                    purchaseQty: purchaseRows.reduce((sum, item) => sum + getRoleQty(item, 'in'), 0),
+                    salesQty: salesRows.reduce((sum, item) => sum + getRoleQty(item, 'out'), 0),
+                    positiveCount: errors.filter(row => row.balance > 0).length,
+                    negativeCount: errors.filter(row => row.balance < 0).length,
+                    errors
+                };
+            };
+            const transferWarehouseClosingCheck = buildTransferWarehouseClosingCheck();
             setProductData(DATAOPS_MASTER_LINK_MODULE.applyMasterLinksToRows(finalProductData));
             setAckMultiCodes(autoAckCodes);
             setAppStep('closing');
-            if (hasClosingEnd) {
+            if (transferWarehouseClosingCheck && transferWarehouseClosingCheck.errors.length > 0) {
+                const check = transferWarehouseClosingCheck;
+                const detailLines = check.errors.slice(0, 10).map(row =>
+                    `${row.code} ${row.name} : 구매 ${formatQty(row.purchaseQty)} / 판매 ${formatQty(row.salesQty)} / ${row.balance > 0 ? '잔량' : '마이너스'} ${formatQty(Math.abs(row.balance))}`
+                );
+                const hiddenCount = Math.max(0, check.errors.length - detailLines.length);
+                const message = [
+                    `🚨 02창고 마감 재고오차 ${check.errors.length}개`,
+                    '',
+                    `02창고 구매내역: ${check.purchaseRowCount}건 / 수량 ${formatQty(check.purchaseQty)}`,
+                    `02창고 판매내역: ${check.salesRowCount}건 / 수량 ${formatQty(check.salesQty)}`,
+                    `잔량 ${check.positiveCount}개 / 마이너스 ${check.negativeCount}개`,
+                    '',
+                    ...detailLines,
+                    ...(hiddenCount > 0 ? [`외 ${hiddenCount}개`] : []),
+                    '',
+                    '02창고는 마감 재고가 0이어야 합니다. 구매·판매 내역을 확인한 뒤 마감하세요.'
+                ].join('\n');
+                setTimeout(() => { setAlertMsg(message); }, 200);
+            }
+            else if (hasClosingEnd) {
                 setTimeout(() => { setAlertMsg("🔄 [스마트 복원 완료]\n\n업로드된 4번 수불마감 파일의 내용이 절대 기준이 되어 완벽하게 복원되었습니다.\n\n이전에 수기로 조정한 내역은 100% 유지되며, 1~3번 원시 데이터는 4번 파일에 없는 '새로운 품목'을 찾을 때만 사용되었습니다."); }, 800);
             }
             else if (parsedEnd.length > 0) {
@@ -6341,6 +6415,11 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
     const mergeBoxRowClass = isMergeBoxRow
         ? `bg-amber-50/10 ${isMergeGroupStart ? 'border-t-2 border-t-amber-500' : ''} ${isMergeGroupEnd ? 'border-b-2 border-b-amber-500' : ''}`
         : '';
+    // V1.a22.72: table row(tr) border는 브라우저/테이블 border-collapse 상태에 따라 끊겨 보일 수 있다.
+    // 통합형 1행과 해제된 다중 Lot 그룹 모두 각 셀에 상·하단선을 직접 적용해 하나의 연결된 박스로 유지한다.
+    const mergeHorizontalCellBoxClass = isMergeBoxRow
+        ? `${isMergeGroupStart ? 'border-t-2 border-t-amber-500' : ''} ${isMergeGroupEnd ? 'border-b-2 border-b-amber-500' : ''}`
+        : '';
     const mergeFirstCellBoxClass = isMergeBoxRow ? 'border-l-2 border-l-amber-500' : '';
     const mergeLastCellBoxClass = isMergeBoxRow ? 'border-r-2 border-r-amber-500' : '';
     // V1.a22.29: 상품명 하단 구매정보에는 구매처 계열만 표시한다. 3.매출 거래처명(판매처)은 오른쪽 거래처칩 전용이다.
@@ -6369,7 +6448,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
             }
             catch (err) { }
         }, className: `transition duration-200 ${isActiveMulti ? 'bg-blue-50/60 outline outline-2 outline-blue-500 z-20 relative shadow-md' : (isLinked ? 'bg-slate-50 ring-1 ring-blue-400 shadow-md relative z-10 scale-[1.01]' : 'border-b border-slate-100 hover:bg-slate-50')} ${isDragOver ? 'bg-blue-50 outline outline-2 outline-blue-400 scale-[1.01] z-20 shadow-md' : ''} ${!isActiveMulti && item.isDummy && item.단가 === 0 ? 'bg-rose-50/30' : ''} ${mergeBoxRowClass}` },
-        React.createElement("td", { className: `py-2 px-3 sticky left-0 z-10 shadow-[1px_0_0_rgba(0,0,0,0.03)] border-r border-slate-200 ${isMultiGroupItem && !isLinked ? 'border-l-4 border-l-blue-400' : ''} ${isLinked ? 'bg-blue-50/50 border-l-4 border-l-blue-600' : ''} ${isActiveMulti ? 'bg-blue-50/60' : (item.isDummy && item.단가 === 0 ? 'bg-rose-50' : 'bg-white group-hover:bg-slate-50')} ${topBorderClass} ${mergeFirstCellBoxClass}` },
+        React.createElement("td", { className: `py-2 px-3 sticky left-0 z-10 shadow-[1px_0_0_rgba(0,0,0,0.03)] border-r border-slate-200 ${isMultiGroupItem && !isLinked ? 'border-l-4 border-l-blue-400' : ''} ${isLinked ? 'bg-blue-50/50 border-l-4 border-l-blue-600' : ''} ${isActiveMulti ? 'bg-blue-50/60' : (item.isDummy && item.단가 === 0 ? 'bg-rose-50' : 'bg-white group-hover:bg-slate-50')} ${topBorderClass} ${mergeHorizontalCellBoxClass} ${mergeFirstCellBoxClass}` },
             React.createElement("div", { className: "flex items-center justify-between w-full" },
                 React.createElement("div", { className: "flex flex-col justify-center flex-1 pr-3 overflow-hidden max-w-[280px]" },
                     React.createElement("div", { className: "font-semibold text-slate-800 text-[13px] flex items-start gap-1 mb-0.5" },
@@ -6391,22 +6470,22 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                 React.createElement("div", { className: "flex items-center justify-end shrink-0 pl-3 border-l border-slate-200" },
                     React.createElement("span", { className: "text-slate-400 font-semibold text-[10px] mr-1" }, "\u20A9"),
                     React.createElement("input", { id: `price-input-${idx}`, "data-field": "price-input", type: "number", className: `${cellInputBase} w-[70px] font-bold ${item.단가 === 0 ? 'border-rose-300 bg-rose-50 text-rose-600' : 'text-slate-800'}`, value: localPrice, onChange: handlePriceChange, onClick: (e) => e.stopPropagation(), onFocus: e => e.target.select(), onKeyDown: (e) => handleKd(e, 'price-input'), placeholder: "0" })))),
-        React.createElement("td", { className: `py-2 px-2 text-right ${isActiveMulti ? 'bg-slate-50/50' : ''} border-r border-slate-100 ${topBorderClass}` },
+        React.createElement("td", { className: `py-2 px-2 text-right ${isActiveMulti ? 'bg-slate-50/50' : ''} border-r border-slate-100 ${topBorderClass} ${mergeHorizontalCellBoxClass}` },
             React.createElement("input", { id: `base-prev-${idx}`, "data-field": "base-prev", type: "number", step: "any", className: `${cellInputBase} font-semibold ${item.기초 < 0 ? 'text-rose-600 border-rose-200' : 'text-slate-700'}`, value: localPrev, onChange: handlePrevChange, onFocus: e => e.target.select(), onKeyDown: (e) => handleKd(e, 'base-prev'), onWheel: e => e.target.blur(), placeholder: "0" })),
-        React.createElement("td", { className: `py-2 px-2 text-right border-r border-slate-100 ${topBorderClass}` },
+        React.createElement("td", { className: `py-2 px-2 text-right border-r border-slate-100 ${topBorderClass} ${mergeHorizontalCellBoxClass}` },
             React.createElement("input", { id: `base-in-${idx}`, "data-field": "base-in", type: "number", step: "any", className: `${cellInputBase} font-bold ${totalIn > 0 ? 'text-emerald-600' : 'text-slate-400'}`, value: localIn, onChange: handleInChange, onFocus: e => e.target.select(), onKeyDown: (e) => handleKd(e, 'base-in'), onWheel: e => e.target.blur(), placeholder: "0" })),
-        React.createElement("td", { className: `py-2 px-2 text-right border-r border-slate-100 ${topBorderClass}` },
+        React.createElement("td", { className: `py-2 px-2 text-right border-r border-slate-100 ${topBorderClass} ${mergeHorizontalCellBoxClass}` },
             React.createElement("input", { id: `base-out-${idx}`, "data-field": "base-out", type: "number", step: "any", className: `${cellInputBase} font-bold ${totalOut > 0 ? 'text-rose-600' : 'text-slate-400'}`, value: localOut, onChange: handleOutChange, onFocus: e => e.target.select(), onKeyDown: (e) => handleKd(e, 'base-out'), onWheel: e => e.target.blur(), placeholder: "0" })),
-        React.createElement("td", { className: `py-2 px-2 text-right border-r border-slate-100 ${isLinked ? 'bg-blue-50' : ''} relative ${topBorderClass}` },
+        React.createElement("td", { className: `py-2 px-2 text-right border-r border-slate-100 ${isLinked ? 'bg-blue-50' : ''} relative ${topBorderClass} ${mergeHorizontalCellBoxClass}` },
             isLinked && React.createElement("div", { className: "absolute -top-6 right-0 bg-slate-800 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-md whitespace-nowrap animate-bounce" }, "\uC870\uC815 \uB300\uC0C1"),
             React.createElement("input", { id: `actual-input-${idx}`, "data-field": "actual-input", type: "number", step: "any", value: localActual, onChange: handleActualChange, onClick: () => onFocusInput(item.batchKey, idx), onFocus: (e) => { e.target.select(); onFocusInput(item.batchKey, idx); }, onKeyDown: (e) => handleKd(e, 'actual-input'), onWheel: e => e.target.blur(), placeholder: item.전산잔량, className: `w-full text-right bg-white border ${isLinked ? 'border-blue-500 ring-1 ring-blue-500 text-blue-900' : 'border-slate-300 text-slate-800 hover:border-slate-400'} ${isNegativeActual ? 'bg-rose-50 border-rose-400 text-rose-700 font-bold' : 'font-semibold'} rounded text-[13px] px-1.5 py-1 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-sm transition-all cursor-pointer` })),
-        React.createElement("td", { className: `py-2 px-2 text-right border-r border-slate-100 ${topBorderClass}` },
+        React.createElement("td", { className: `py-2 px-2 text-right border-r border-slate-100 ${topBorderClass} ${mergeHorizontalCellBoxClass}` },
             item.로스 !== 0 && React.createElement("div", { className: "flex flex-col items-end justify-center mb-0.5" },
                 React.createElement("span", { className: `text-[12px] font-bold ${item.로스 < 0 ? 'text-rose-600' : 'text-blue-600'}` },
                     item.로스 > 0 ? '+' : '',
                     formatQty(item.로스))),
             item.로스 === 0 && React.createElement("span", { className: "text-slate-300 font-bold" }, "-")),
-        React.createElement("td", { className: `py-2 px-3 text-left w-full min-w-[200px] ${topBorderClass} ${mergeLastCellBoxClass}` },
+        React.createElement("td", { className: `py-2 px-3 text-left w-full min-w-[200px] ${topBorderClass} ${mergeHorizontalCellBoxClass} ${mergeLastCellBoxClass}` },
             React.createElement("div", { className: "flex justify-between items-start w-full" },
                 React.createElement("div", { className: "flex flex-col gap-1.5 w-full flex-1 pr-2" },
                     React.createElement("div", { className: "flex items-center gap-1 flex-wrap text-left" }, hasIssue && regularIssues.map((msg, i) => (React.createElement(IssueChip, { key: i, msg: msg })))),
