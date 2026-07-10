@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.79)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.80)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.79.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.80.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -909,7 +909,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.79',
+    version: 'V1.a22.80',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -2258,6 +2258,7 @@ const FILTER_SORT_MODULE = Object.freeze({
 // V1.a22.75: 분석 직후에는 Lot 상세 행만 표시하고 검수모드는 비활성으로 둔다. 실제 Lot 조건이 다른 품목은 파란 포인트 바로 예고하며, Lot 상세형 버튼을 누른 뒤에만 박스라인과 Tab/Shift+Tab 검수 이동을 활성화한다.
 // V1.a22.79: 스페이스 치환은 마스터 원물-소분 관계로 역할을 고정하고, BOX 단가는 보존하며 소분행에만 환산원가를 적용한다. Ctrl 대체도 환산원가를 원가매칭 레이어에 기록해 원본 단가 덮어쓰기를 차단한다.
 // V1.a22.79: 별도 Lot 검수모드와 일반 Tab 가로채기를 제거한다. 재고/Lot 카드에서는 기존 수량·Lot 이슈, 마이너스 재고, 재고가 남은 다중 Lot 상품을 한 목록으로 합쳐 품목코드 오름차순으로 검출·이동한다.
+// V1.a22.80: 재고/Lot 필터를 품목코드 그룹 유지 방식으로 보완한다. 한 Lot을 0으로 수정해 다중 Lot 조건이 해제되어도 같은 코드의 나머지 행은 편집 중 사라지지 않으며, 순수 Lot 후보의 0재고 행 제외 정책은 유지한다.
 // V1.a22.69: 코드통합형 해제/다시 통합 상태 관리.
 // 원본 Lot은 수정하지 않고 화면 보기/엑셀 1번 시트 출력에만 반영한다.
 const DATAOPS_CODE_MERGE_OVERRIDE_MODULE = Object.freeze({
@@ -7528,6 +7529,27 @@ function App() {
         return safeNum(p.로스) !== 0 || safeNum(p.전산잔량) < 0 || (p.실사 !== null && safeNum(p.실사) < 0) ||
             issues.some(i => String(i).includes('수량변동') || String(i).includes('잔량') || String(i).includes('계산') || String(i).includes('신규발생') || String(i).includes('코드없음') || String(i).includes('수량부족'));
     }, []);
+    // V1.a22.80: 재고/Lot 보기에서 한 Lot의 잔량을 0으로 수정해도 같은 품목의 다른 Lot 행이 즉시 사라지지 않도록
+    // 수량·Lot 이슈는 행 단위가 아니라 품목코드 그룹 단위로 화면을 유지한다.
+    // 단, 순수 다중 Lot 후보는 기존 정책대로 재고 > 0인 Lot만 노출한다.
+    const stockLotIssueGroupCodeSet = useMemo(() => {
+        const codes = new Set();
+        (productData || []).forEach(row => {
+            const code = DATAOPS_VIEW_LAYER_MODULE.normalizeCode(row);
+            if (!code || code === 'NO_CODE') return;
+            if (hasQtyIssueTotal(row) || hasLotIssueTotal(row)) codes.add(code);
+        });
+        return codes;
+    }, [productData, hasQtyIssueTotal, hasLotIssueTotal]);
+    const stockLotStandaloneIssueKeySet = useMemo(() => {
+        const keys = new Set();
+        (productData || []).forEach(row => {
+            const code = DATAOPS_VIEW_LAYER_MODULE.normalizeCode(row);
+            if (code !== 'NO_CODE') return;
+            if (hasQtyIssueTotal(row) || hasLotIssueTotal(row)) keys.add(safeStr(row.batchKey || ''));
+        });
+        return keys;
+    }, [productData, hasQtyIssueTotal, hasLotIssueTotal]);
     // V1.a22.79: 재고/Lot 검수대상을 한 목록으로 통합한다.
     // ① 기존 수량/재고 이슈 ② 기존 Lot 매칭 이슈 ③ 실제 마이너스 재고
     // ④ 재고 > 0인 논리 Lot이 같은 품목코드에 2개 이상 남은 Lot 상품을 포함한다.
@@ -10054,10 +10076,16 @@ ${balanceText}
         if (filters.reviewType === 'stockLot')
             data = data.filter(p => {
                 const code = DATAOPS_VIEW_LAYER_MODULE.normalizeCode(p);
+                const rowKey = safeStr(p.batchKey || '');
+                const hasDirectIssue = hasQtyIssueTotal(p) || hasLotIssueTotal(p);
+                const hasGroupedIssue = code !== 'NO_CODE' && stockLotIssueGroupCodeSet.has(code);
+                const hasStandaloneIssue = code === 'NO_CODE' && stockLotStandaloneIssueKeySet.has(rowKey);
                 const isUnmergedLotProduct = lotReviewCandidateCodeSet.has(code)
                     && !DATAOPS_CODE_MERGE_OVERRIDE_MODULE.isDetailMerged(code)
                     && DATAOPS_VIEW_LAYER_MODULE.getRowStockQty(p) > 0;
-                return hasQtyIssueTotal(p) || hasLotIssueTotal(p) || isUnmergedLotProduct;
+                // 다중 Lot 후보만 있는 경우에는 재고가 남은 Lot만 보여준다.
+                // 어느 한 행이라도 수량/Lot 이슈가 생기면 같은 품목코드의 모든 Lot을 유지해 연속 수정이 가능하다.
+                return hasDirectIssue || hasGroupedIssue || hasStandaloneIssue || isUnmergedLotProduct;
             });
         else if (filters.reviewType === 'loss')
             data = data.filter(p => p.로스 !== 0 || p.전산잔량 < 0 || (p.실사 !== null && p.실사 < 0) || (p.이슈 && p.이슈.some(i => i.includes('수량변동') || i.includes('잔량') || i.includes('계산') || i.includes('신규추가') || i.includes('삭제됨'))));
@@ -10123,7 +10151,7 @@ ${balanceText}
             });
         }
         return FILTER_SORT_MODULE.sortRows(data, filters.sortMode, filters.sortDesc);
-    }, [productData, viewMode, mergeOverrideVersion, filters, multiPriceCodes, mappings, hasQtyIssueTotal, hasLotIssueTotal, substitutionCandidateCodeSet, substitutionPreviewView, lotReviewCandidateCodeSet]);
+    }, [productData, viewMode, mergeOverrideVersion, filters, multiPriceCodes, mappings, hasQtyIssueTotal, hasLotIssueTotal, substitutionCandidateCodeSet, substitutionPreviewView, lotReviewCandidateCodeSet, stockLotIssueGroupCodeSet, stockLotStandaloneIssueKeySet]);
     const splitLotMemoMap = useMemo(() => {
         const counts = {};
         filteredProductData.forEach(row => {
