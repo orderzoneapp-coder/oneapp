@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.81)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.82)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.81.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.82.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -909,7 +909,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.81',
+    version: 'V1.a22.82',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -2259,7 +2259,8 @@ const FILTER_SORT_MODULE = Object.freeze({
 // V1.a22.79: 스페이스 치환은 마스터 원물-소분 관계로 역할을 고정하고, BOX 단가는 보존하며 소분행에만 환산원가를 적용한다. Ctrl 대체도 환산원가를 원가매칭 레이어에 기록해 원본 단가 덮어쓰기를 차단한다.
 // V1.a22.79: 별도 Lot 검수모드와 일반 Tab 가로채기를 제거한다. 재고/Lot 카드에서는 기존 수량·Lot 이슈, 마이너스 재고, 재고가 남은 다중 Lot 상품을 한 목록으로 합쳐 품목코드 오름차순으로 검출·이동한다.
 // V1.a22.80: 재고/Lot 필터를 품목코드 그룹 유지 방식으로 보완한다. 한 Lot을 0으로 수정해 다중 Lot 조건이 해제되어도 같은 코드의 나머지 행은 편집 중 사라지지 않으며, 순수 Lot 후보의 0재고 행 제외 정책은 유지한다.
-// V1.a22.81: 재고/Lot 이슈카드는 필터가 아니라 탐색 기능으로 동작한다. 카드/Tab 이동 중에도 전체 상품행을 유지하고, 검출대상만 품목코드순으로 스크롤 이동한다.
+// V1.a22.82: 재고/Lot 이슈카드는 필터가 아니라 탐색 기능으로 동작한다. 카드/Tab 이동 중에도 전체 상품행을 유지하고, 검출대상만 품목코드순으로 스크롤 이동한다.
+// V1.a22.82: Lot 상세형의 통합 후보 각 행에 [이 기준 통합] 버튼을 노출한다. 클릭한 행의 구매일자·구매처·단가를 대표값으로 사용하고 수량은 해당 품목의 양수 재고 Lot 전체를 합산한다.
 // V1.a22.69: 코드통합형 해제/다시 통합 상태 관리.
 // 원본 Lot은 수정하지 않고 화면 보기/엑셀 1번 시트 출력에만 반영한다.
 const DATAOPS_CODE_MERGE_OVERRIDE_MODULE = Object.freeze({
@@ -6537,7 +6538,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
     const isMergedViewRow = isCodeSummaryViewRow || isDetailMergedViewRow;
     const isMergeCandidateRow = isCodeSummaryViewRow && safeNum(item._viewLotCount) > 1;
     const isMergeDisabledRow = !!item._mergeDisabled && safeNum(item._mergeGroupLotCount || 0) > 1;
-    const isLotDetailMergeButtonRow = !!isLotReviewMode && !!isLotReviewCandidate && !!isLotReviewGroupStart;
+    const isLotDetailMergeButtonRow = !!isLotReviewMode && !!isLotReviewCandidate;
     const isMergeBoxRow = isMergeCandidateRow || isMergeDisabledRow;
     const mergeSourceRows = isMergeCandidateRow && Array.isArray(item._sourceLedgerRows) ? item._sourceLedgerRows : [];
     const buildMergeLotInfo = (r = {}) => {
@@ -6753,9 +6754,9 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                             const isMergeAction = isMergeDisabledRow || isLotDetailMergeButtonRow;
                             const action = isDetailMergedViewRow ? 'detail-split' : (isLotDetailMergeButtonRow ? 'detail-merge' : (isMergeDisabledRow ? 'merge' : 'split'));
                             const representativeKey = isMergeAction ? safeStr(item.batchKey || '') : '';
-                            const label = isMergeAction ? '통합' : '해제';
+                            const label = isLotDetailMergeButtonRow ? '이 기준 통합' : (isMergeAction ? '통합' : '해제');
                             const title = isLotDetailMergeButtonRow
-                                ? '재고가 남은 Lot을 이 상품 1행으로 바로 통합합니다.'
+                                ? '이 행의 구매일자·구매처·단가를 대표 기준으로 선택하여, 재고가 남은 Lot을 1행으로 통합합니다.'
                                 : (isDetailMergedViewRow ? '통합한 Lot 상품을 다시 상세행으로 풉니다.' : (isMergeDisabledRow ? '이 Lot 기준으로 다시 통합합니다.' : '이 상품을 Lot별 상세행으로 풉니다.'));
                             const buttonClass = isMergeAction
                                 ? 'bg-cyan-600 text-white border-cyan-700 hover:bg-cyan-700'
@@ -9708,7 +9709,7 @@ ${balanceText}
         setFilters(prev => ({
             ...prev,
             search: '', issuesOnly: false, excludeZeroActual: false,
-            // V1.a22.81: 재고/Lot 카드는 행을 추려내는 필터가 아니라 전체 원장 위의 탐색 모드다.
+            // V1.a22.82: 재고/Lot 카드는 행을 추려내는 필터가 아니라 전체 원장 위의 탐색 모드다.
             // 검출되지 않은 상품도 관리자가 스크롤로 함께 판단할 수 있도록 reviewType은 항상 해제한다.
             reviewType: null,
             category: [], stockListType: 'ALL', favoriteVendorOnly: false, showHiddenMoveRows: false,
@@ -10074,7 +10075,7 @@ ${balanceText}
         else if (filters.stockListType === 'OTHER_STOCK')
             sourceRows = sourceRows.filter(p => STOCK_ENGINE_MODULE.getActualQty(p) > 0 && !EXPORT_MODULE.isPurchaseBalanceStockItem(p));
         let data = filters.reviewType === 'substitution' ? sourceRows : DATAOPS_VIEW_LAYER_MODULE.buildViewRows(sourceRows, { viewMode });
-        // V1.a22.81: 재고/Lot 이슈카드는 탐색 전용이다.
+        // V1.a22.82: 재고/Lot 이슈카드는 탐색 전용이다.
         // 카드 선택 또는 Tab 이동 시 전체 상품을 그대로 유지하며, 검출대상 목록은 handleIssueJump에서만 사용한다.
         // 과거 상태값으로 reviewType=stockLot이 들어와도 행 필터링은 하지 않는다.
         if (filters.reviewType === 'stockLot') {
