@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.75)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.76)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.75.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.76.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -909,7 +909,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.75',
+    version: 'V1.a22.76',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -2256,6 +2256,7 @@ const FILTER_SORT_MODULE = Object.freeze({
 
 // V1.a22.74: 코드통합형에서 해제한 동일 품목 Lot 그룹도 통합형과 같은 외곽 박스라인을 유지한다. 행(tr) 테두리에 의존하지 않고 각 셀에 상·하단 라인을 적용해 연결된 박스로 표시한다.
 // V1.a22.75: 분석 직후에는 Lot 상세 행만 표시하고 검수모드는 비활성으로 둔다. 실제 Lot 조건이 다른 품목은 파란 포인트 바로 예고하며, Lot 상세형 버튼을 누른 뒤에만 박스라인과 Tab/Shift+Tab 검수 이동을 활성화한다.
+// V1.a22.76: BOX→EA/소분 분해·Ctrl 대체 작업에서 환산원가는 원가매칭 레이어와 매출원가에만 기록한다. 출처 상품의 기존 단가는 절대 덮어쓰지 않아 BOX 원가가 낱개 원가로 변경되는 오류를 차단한다.
 // V1.a22.69: 코드통합형 해제/다시 통합 상태 관리.
 // 원본 Lot은 수정하지 않고 화면 보기/엑셀 1번 시트 출력에만 반영한다.
 const DATAOPS_CODE_MERGE_OVERRIDE_MODULE = Object.freeze({
@@ -4470,8 +4471,12 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         np.대체입고 = safeNum(np.대체입고) + sourceDeductQty;
                         np.매출원가 = replacementCostAmount;
                         if (replacementUnitCost > 0) {
-                            np.단가 = replacementUnitCost;
-                            np._convertedUnitCostApplied = true;
+                            // V1.a22.76: 분해/대체는 원가 정의 작업이다.
+                            // 출처 상품의 표시 단가(예: BOX 13,000원)는 그대로 보존하고,
+                            // 환산된 낱개 원가는 원가매칭 레이어와 별도 참조값에만 기록한다.
+                            np._matchedUnitCost = replacementUnitCost;
+                            np._matchedCostAmount = replacementCostAmount;
+                            np._convertedUnitCostApplied = safeNum(np.단가) !== safeNum(replacementUnitCost);
                             np._convertedUnitCostFormula = replacementMatch.formula;
                         }
                         const withLayer = DATAOPS_OPERATION_MODULE.appendCostLayer(np, replacementCostLayer);
