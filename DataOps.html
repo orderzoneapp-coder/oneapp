@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.84)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.86)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.84.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.86.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -909,7 +909,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.84',
+    version: 'V1.a22.86',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -2265,6 +2265,10 @@ const FILTER_SORT_MODULE = Object.freeze({
 // V1.a22.84: 재고/Lot 이동은 카드 선택 시 생성한 고정 품목코드순 큐와 방문경로 커서로 관리한다. Tab/Shift+Tab이 같은 기준을 사용하며 현재 행 제외 후 첫 항목으로 튀는 오류를 제거한다.
 // V1.a22.84: 스페이스바 치환 중 선택한 두 행을 현재 검토 세션의 완료키로 기록한다. 치환 후에도 검토 커서와 방문경로를 유지하고 다음 미확인 항목부터 순서대로 이동한다.
 // V1.a22.84: 이슈 이동 시 중첩되던 지연 포커스/스크롤 타이머를 취소하고, 카드 최초 선택 때만 필터·Lot 상세형 전환을 실행해 역탭 흔들림과 순서 초기화를 방지한다.
+// V1.a22.85: 재고/Lot 순차 검토 중 관리자가 스크롤로 다른 상품을 수정해도 검토 큐·현재 커서를 유지한다. 다른 행의 입력값을 즉시 확정한 뒤 Tab을 누르면 원래 검토 위치의 다음 항목으로 복귀하며, 수동 수정으로 해결된 향후 큐 항목은 기존 순서를 유지한 채 건너뛴다.
+// V1.a22.86: 코드통합형 대표 Lot은 현재 재고가 양수인 Lot만 후보로 삼고 그중 구매일자가 가장 최근인 Lot을 우선한다. 재고 0/마이너스 Lot은 대표값에서 제외하며, 양수 Lot이 없으면 대표 SourceKey를 지정하지 않는다.
+// V1.a22.86: 코드통합형에서도 원본 원장행이 정확히 1개인 통합1 상품은 단가·기초·입고·출고·실사·메모·거래처칩·스페이스 치환을 원본 batchKey에 직접 반영한다. 통합2 이상 또는 원본 다중행은 배분 기준이 모호하므로 수량 편집을 계속 차단한다.
+// V1.a22.86: 보기 전환 시 기존 이슈 Tab 세션/ref/지연 포커스를 즉시 종료하고, 전역 Tab 가로채기는 작업 테이블 행 내부에서만 실행한다. 통합형 직접수정의 실제 sourceKey를 포커스 추적에 사용해 일반 Tab과 이슈 Tab의 충돌을 차단한다.
 // V1.a22.69: 코드통합형 해제/다시 통합 상태 관리.
 // 원본 Lot은 수정하지 않고 화면 보기/엑셀 1번 시트 출력에만 반영한다.
 const DATAOPS_CODE_MERGE_OVERRIDE_MODULE = Object.freeze({
@@ -2520,8 +2524,20 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
         const sourceRows = rows || [];
         const logicalLotRows = DATAOPS_VIEW_LAYER_MODULE.buildLogicalLotRows(sourceRows);
         const representativeKey = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.getRepresentativeKey(code);
-        const selectedRepresentativeRow = representativeKey ? sourceRows.find(r => safeStr(r.batchKey) === safeStr(representativeKey)) : null;
-        const latest = selectedRepresentativeRow || DATAOPS_VIEW_LAYER_MODULE.pickLatestRow(sourceRows);
+        // V1.a22.86: 대표 Lot은 현재 재고가 남은 행만 허용한다.
+        // 사용자가 과거에 지정한 대표행이 재고 0/마이너스가 되면 자동 해제하고,
+        // 양수 재고 후보 중 구매일자가 가장 최근인 행을 새 대표로 선택한다.
+        const positiveRepresentativeRows = sourceRows.filter(row => DATAOPS_VIEW_LAYER_MODULE.isPositiveStockRow(row));
+        const requestedRepresentativeRow = representativeKey ? sourceRows.find(r => safeStr(r.batchKey) === safeStr(representativeKey)) : null;
+        const selectedRepresentativeRow = requestedRepresentativeRow && DATAOPS_VIEW_LAYER_MODULE.isPositiveStockRow(requestedRepresentativeRow)
+            ? requestedRepresentativeRow
+            : null;
+        const latestPositiveRow = positiveRepresentativeRows.length
+            ? DATAOPS_VIEW_LAYER_MODULE.pickLatestRow(positiveRepresentativeRows)
+            : null;
+        const representativeRow = selectedRepresentativeRow || latestPositiveRow || null;
+        // 품명/규격 같은 표시 기반은 모든 재고가 0이어도 유지하되, 대표 SourceKey는 지정하지 않는다.
+        const latest = representativeRow || DATAOPS_VIEW_LAYER_MODULE.pickLatestRow(sourceRows);
         const sourceKeys = sourceRows.map(r => r.batchKey).filter(Boolean);
         const base = DATAOPS_VIEW_LAYER_MODULE.sumField(sourceRows, '기초');
         const inQty = DATAOPS_VIEW_LAYER_MODULE.sumField(sourceRows, '입고');
@@ -2551,13 +2567,13 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
         const weightedQty = priceRows.reduce((s, r) => s + qtyForPrice(r), 0);
         const weightedCost = priceRows.reduce((s, r) => s + (qtyForPrice(r) * safeNum(r.단가)), 0);
         const highestPrice = priceRows.reduce((max, r) => Math.max(max, safeNum(r.단가)), 0);
-        const representativePrice = selectedRepresentativeRow
-            ? safeNum(selectedRepresentativeRow.단가)
+        const representativePrice = representativeRow && costBasisMode !== 'average' && costBasisMode !== 'highest'
+            ? safeNum(representativeRow.단가)
             : (costBasisMode === 'average'
-                ? (weightedQty > 0 ? weightedCost / weightedQty : safeNum(latestPriceRow.단가))
+                ? (weightedQty > 0 ? weightedCost / weightedQty : safeNum((representativeRow || latestPriceRow).단가))
                 : (costBasisMode === 'highest'
-                    ? (highestPrice || safeNum(latestPriceRow.단가))
-                    : safeNum(latestPriceRow.단가)));
+                    ? (highestPrice || safeNum((representativeRow || latestPriceRow).단가))
+                    : safeNum((representativeRow || latestPriceRow).단가)));
         const distinctPrices = new Set(priceRows.map(r => String(safeNum(r.단가))).filter(v => v && v !== '0'));
         const distinctDates = new Set(sourceRows.map(r => safeStr(r.일자 || '')).filter(Boolean));
         const costReviewNeeded = logicalLotRows.length > 1 && (distinctPrices.size > 1 || distinctDates.size > 1 || vendorSet.length > 1);
@@ -2568,8 +2584,10 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
             if (!confirmedSalesRows.length) return true;
             return !(s.includes('Lot매치확인') || s.includes('Lot확인필요') || s.includes('Lot불일치') || s.includes('Lot원가확인') || s.includes('매입처없음'));
         });
-        const representativeVendor = safeStr(latest._displayPurchaseVendor || latest._purchaseLotVendor || latest._confirmedPurchaseVendor || (latest._uploadRole === 'out' ? '' : latest.거래처) || '');
-        const representativeDateNum = selectedRepresentativeRow ? FILTER_SORT_MODULE.getPurchaseDateSortValue(latest) : latestDateNum;
+        const representativeVendor = representativeRow
+            ? safeStr(representativeRow._displayPurchaseVendor || representativeRow._purchaseLotVendor || representativeRow._confirmedPurchaseVendor || (representativeRow._uploadRole === 'out' ? '' : representativeRow.거래처) || '')
+            : '';
+        const representativeDateNum = representativeRow ? FILTER_SORT_MODULE.getPurchaseDateSortValue(representativeRow) : 99999999;
         return {
             ...latest,
             batchKey: `VIEW_CODE|${safeStr(code || 'NO_CODE')}`,
@@ -2580,10 +2598,13 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
             _rawSourceRowCount: sourceRows.length,
             _viewSummaryText: '',
             _sourceLedgerRows: logicalLotRows,
-            _representativeSourceKey: safeStr(latest.batchKey || ''),
+            _representativeSourceKey: representativeRow ? safeStr(representativeRow.batchKey || '') : '',
+            _hasPositiveRepresentative: !!representativeRow,
+            // 원본이 정확히 1행인 통합1만 통합형 화면에서 직접 수정할 수 있다.
+            _directEditSourceKey: sourceKeys.length === 1 ? safeStr(sourceKeys[0]) : '',
             코드: code,
             품명: safeStr(latest.품명 || latest.name || '이름없음'),
-            거래처: selectedRepresentativeRow ? (representativeVendor || safeStr(latest.거래처 || '미지정')) : (vendorSet.length <= 1 ? (vendorSet[0] || safeStr(latest.거래처 || '미지정')) : `${vendorSet.length}개 구매처`),
+            거래처: representativeRow ? (representativeVendor || safeStr(representativeRow.거래처 || '미지정')) : (vendorSet.length <= 1 ? (vendorSet[0] || safeStr(latest.거래처 || '미지정')) : `${vendorSet.length}개 구매처`),
             일자: representativeDateNum === 99999999 ? safeStr(latest.일자 || '') : formatStrForPeriod(representativeDateNum),
             _purchaseDateNum: representativeDateNum === 99999999 ? safeNum(latest._purchaseDateNum) : representativeDateNum,
             단가: representativePrice,
@@ -6540,6 +6561,13 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
     const isCodeSummaryViewRow = !!item._isViewRow && item._viewMode === 'CODE_SUMMARY';
     const isDetailMergedViewRow = !!item._isViewRow && item._viewMode === 'LOT_DETAIL_MERGED';
     const isMergedViewRow = isCodeSummaryViewRow || isDetailMergedViewRow;
+    const directEditSourceKey = isCodeSummaryViewRow
+        ? safeStr(item._directEditSourceKey || ((Array.isArray(item._viewSourceKeys) && item._viewSourceKeys.length === 1) ? item._viewSourceKeys[0] : ''))
+        : '';
+    // V1.a22.86: 화면은 VIEW_CODE synthetic row여도 원본 원장행이 정확히 1개면 직접 편집 가능하다.
+    const isDirectEditableCodeSummaryRow = !!directEditSourceKey && isCodeSummaryViewRow && safeNum(item._rawSourceRowCount || 0) === 1;
+    const operationBatchKey = isDirectEditableCodeSummaryRow ? directEditSourceKey : item.batchKey;
+    const isProtectedMergedViewRow = isDetailMergedViewRow || (isCodeSummaryViewRow && !isDirectEditableCodeSummaryRow);
     const isMergeCandidateRow = isCodeSummaryViewRow && safeNum(item._viewLotCount) > 1;
     const isMergeDisabledRow = !!item._mergeDisabled && safeNum(item._mergeGroupLotCount || 0) > 1;
     const isLotDetailMergeButtonRow = !!isLotReviewMode && !!isLotReviewCandidate;
@@ -6560,7 +6588,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
         : [];
     const splitRepresentativeInfo = null;
     const rejectCodeSummaryEdit = () => {
-        if (!isMergedViewRow) return false;
+        if (!isProtectedMergedViewRow) return false;
         if (onViewLayerEditBlocked) onViewLayerEditBlocked(item);
         return true;
     };
@@ -6601,10 +6629,12 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
             clearTimeout(priceTimeout.current);
         // V1.a22.69: 코드 통합형의 수량/잔량은 편집 차단하되, 입고가(단가)는 대표 Lot에 직접 반영한다.
         // 통합행은 VIEW_CODE synthetic row라서 그대로 저장하면 원본 productData에 반영되지 않는다.
-        const editBatchKey = isMergedViewRow
-            ? safeStr(item._representativeSourceKey || (Array.isArray(item._viewSourceKeys) ? item._viewSourceKeys[0] : '') || item.batchKey)
-            : item.batchKey;
-        if (isMergedViewRow && (!editBatchKey || DATAOPS_VIEW_LAYER_MODULE.isViewRowKey(editBatchKey))) {
+        const editBatchKey = isDirectEditableCodeSummaryRow
+            ? operationBatchKey
+            : (isMergedViewRow
+                ? safeStr(item._representativeSourceKey || '')
+                : item.batchKey);
+        if ((isMergedViewRow && !isDirectEditableCodeSummaryRow) && (!editBatchKey || DATAOPS_VIEW_LAYER_MODULE.isViewRowKey(editBatchKey))) {
             if (onViewLayerEditBlocked) onViewLayerEditBlocked(item);
             setLocalPrice(item.단가 === 0 ? '' : Math.round(item.단가));
             return;
@@ -6617,7 +6647,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
         setLocalPrev(val);
         if (prevTimeout.current)
             clearTimeout(prevTimeout.current);
-        prevTimeout.current = setTimeout(() => onBaseDataChange(item.batchKey, '기초', val), 250);
+        prevTimeout.current = setTimeout(() => onBaseDataChange(operationBatchKey, '기초', val), 250);
     };
     const handleInChange = (e) => {
         if (rejectCodeSummaryEdit()) { e.preventDefault(); setLocalIn(totalIn === 0 ? '' : totalIn); return; }
@@ -6626,7 +6656,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
         if (inTimeout.current)
             clearTimeout(inTimeout.current);
         const numVal = (val === '' ? 0 : Number(val)) - item.대체입고;
-        inTimeout.current = setTimeout(() => onBaseDataChange(item.batchKey, '입고', numVal), 250);
+        inTimeout.current = setTimeout(() => onBaseDataChange(operationBatchKey, '입고', numVal), 250);
     };
     const handleOutChange = (e) => {
         if (rejectCodeSummaryEdit()) { e.preventDefault(); setLocalOut(totalOut === 0 ? '' : totalOut); return; }
@@ -6635,7 +6665,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
         if (outTimeout.current)
             clearTimeout(outTimeout.current);
         const numVal = (val === '' ? 0 : Number(val)) - item.대체출고;
-        outTimeout.current = setTimeout(() => onBaseDataChange(item.batchKey, '출고', numVal), 250);
+        outTimeout.current = setTimeout(() => onBaseDataChange(operationBatchKey, '출고', numVal), 250);
     };
     const handleActualChange = (e) => {
         if (rejectCodeSummaryEdit()) { e.preventDefault(); setLocalActual(item.실사 === null || item.실사 === undefined ? '' : item.실사); return; }
@@ -6643,7 +6673,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
         setLocalActual(val);
         if (actualTimeout.current)
             clearTimeout(actualTimeout.current);
-        actualTimeout.current = setTimeout(() => onStockChange(item.batchKey, val), 250);
+        actualTimeout.current = setTimeout(() => onStockChange(operationBatchKey, val), 250);
     };
     const actualQty = localActual === '' ? '' : Number(localActual);
     const isNegativeActual = typeof actualQty === 'number' && actualQty < 0;
@@ -6690,7 +6720,8 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
         else if (e.key === ' ' || e.code === 'Space') {
             if (type === 'actual-input') {
                 e.preventDefault();
-                onSpacebar(item.batchKey, idx);
+                if (rejectCodeSummaryEdit()) return;
+                onSpacebar(operationBatchKey, idx);
             }
         }
     };
@@ -6731,17 +6762,17 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                 // 🌟 2중 방어막: 드래그된 수량이 정상적인 숫자일 때만 이동을 허용하여 NaN 감염 방지
                 const moveQty = Number(d.qty);
                 const isCtrlPressed = e.ctrlKey || e.metaKey;
-                if (d.sourceKey !== item.batchKey && !isNaN(moveQty) && moveQty > 0) {
-                    onSalesMove(d.sourceKey, item.batchKey, d.vendor, moveQty, d.code, item.코드, isCtrlPressed, {
+                if (d.sourceKey !== operationBatchKey && !isNaN(moveQty) && moveQty > 0) {
+                    onSalesMove(d.sourceKey, operationBatchKey, d.vendor, moveQty, d.code, item.코드, isCtrlPressed, {
                         sourceAllocations: Array.isArray(d.sourceAllocations) ? d.sourceAllocations : [],
                         sourceViewKey: d.sourceViewKey || d.sourceKey,
                         sourceViewLotCount: safeNum(d.sourceViewLotCount || 0),
                         sourceViewSourceKeys: Array.isArray(d.sourceViewSourceKeys) ? d.sourceViewSourceKeys : [],
                         sourceIsViewRow: !!d.sourceIsViewRow || DATAOPS_VIEW_LAYER_MODULE.isViewRowKey(d.sourceKey),
-                        targetIsViewRow: isMergedViewRow,
-                        targetViewLotCount: isMergedViewRow ? safeNum(item._viewLotCount || 0) : 1,
-                        targetSourceKeys: Array.isArray(item._viewSourceKeys) ? item._viewSourceKeys : [],
-                        targetViewKey: item.batchKey
+                        targetIsViewRow: isProtectedMergedViewRow,
+                        targetViewLotCount: isProtectedMergedViewRow ? safeNum(item._viewLotCount || 0) : 1,
+                        targetSourceKeys: isProtectedMergedViewRow && Array.isArray(item._viewSourceKeys) ? item._viewSourceKeys : [operationBatchKey],
+                        targetViewKey: isProtectedMergedViewRow ? item.batchKey : operationBatchKey
                     });
                 }
             }
@@ -6780,16 +6811,16 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                     false && isMergeDisabledRow && splitRepresentativeInfo && React.createElement("div", { className: "hidden", title: splitRepresentativeInfo.title }, splitRepresentativeInfo.text)),
                 React.createElement("div", { className: "flex items-center justify-end shrink-0 pl-3 border-l border-slate-200" },
                     React.createElement("span", { className: "text-slate-400 font-semibold text-[10px] mr-1" }, "\u20A9"),
-                    React.createElement("input", { id: `price-input-${idx}`, "data-field": "price-input", type: "number", className: `${cellInputBase} w-[70px] font-bold ${item.단가 === 0 ? 'border-rose-300 bg-rose-50 text-rose-600' : 'text-slate-800'}`, value: localPrice, onChange: handlePriceChange, onClick: (e) => e.stopPropagation(), onFocus: e => e.target.select(), onKeyDown: (e) => handleKd(e, 'price-input'), placeholder: "0" })))),
+                    React.createElement("input", { id: `price-input-${idx}`, "data-field": "price-input", type: "number", className: `${cellInputBase} w-[70px] font-bold ${item.단가 === 0 ? 'border-rose-300 bg-rose-50 text-rose-600' : 'text-slate-800'}`, value: localPrice, onChange: handlePriceChange, onClick: (e) => e.stopPropagation(), onFocus: e => { e.target.select(); onFocusInput(operationBatchKey, idx); }, onKeyDown: (e) => handleKd(e, 'price-input'), placeholder: "0" })))),
         React.createElement("td", { className: `py-2 px-2 text-right ${isActiveMulti ? 'bg-slate-50/50' : ''} border-r border-slate-100 ${topBorderClass} ${mergeHorizontalCellBoxClass} ${lotReviewHorizontalCellBoxClass}` },
-            React.createElement("input", { id: `base-prev-${idx}`, "data-field": "base-prev", type: "number", step: "any", className: `${cellInputBase} font-semibold ${item.기초 < 0 ? 'text-rose-600 border-rose-200' : 'text-slate-700'}`, value: localPrev, onChange: handlePrevChange, onFocus: e => e.target.select(), onKeyDown: (e) => handleKd(e, 'base-prev'), onWheel: e => e.target.blur(), placeholder: "0" })),
+            React.createElement("input", { id: `base-prev-${idx}`, "data-field": "base-prev", type: "number", step: "any", className: `${cellInputBase} font-semibold ${item.기초 < 0 ? 'text-rose-600 border-rose-200' : 'text-slate-700'}`, value: localPrev, onChange: handlePrevChange, onFocus: e => { e.target.select(); onFocusInput(operationBatchKey, idx); }, onKeyDown: (e) => handleKd(e, 'base-prev'), onWheel: e => e.target.blur(), placeholder: "0" })),
         React.createElement("td", { className: `py-2 px-2 text-right border-r border-slate-100 ${topBorderClass} ${mergeHorizontalCellBoxClass} ${lotReviewHorizontalCellBoxClass}` },
-            React.createElement("input", { id: `base-in-${idx}`, "data-field": "base-in", type: "number", step: "any", className: `${cellInputBase} font-bold ${totalIn > 0 ? 'text-emerald-600' : 'text-slate-400'}`, value: localIn, onChange: handleInChange, onFocus: e => e.target.select(), onKeyDown: (e) => handleKd(e, 'base-in'), onWheel: e => e.target.blur(), placeholder: "0" })),
+            React.createElement("input", { id: `base-in-${idx}`, "data-field": "base-in", type: "number", step: "any", className: `${cellInputBase} font-bold ${totalIn > 0 ? 'text-emerald-600' : 'text-slate-400'}`, value: localIn, onChange: handleInChange, onFocus: e => { e.target.select(); onFocusInput(operationBatchKey, idx); }, onKeyDown: (e) => handleKd(e, 'base-in'), onWheel: e => e.target.blur(), placeholder: "0" })),
         React.createElement("td", { className: `py-2 px-2 text-right border-r border-slate-100 ${topBorderClass} ${mergeHorizontalCellBoxClass} ${lotReviewHorizontalCellBoxClass}` },
-            React.createElement("input", { id: `base-out-${idx}`, "data-field": "base-out", type: "number", step: "any", className: `${cellInputBase} font-bold ${totalOut > 0 ? 'text-rose-600' : 'text-slate-400'}`, value: localOut, onChange: handleOutChange, onFocus: e => e.target.select(), onKeyDown: (e) => handleKd(e, 'base-out'), onWheel: e => e.target.blur(), placeholder: "0" })),
+            React.createElement("input", { id: `base-out-${idx}`, "data-field": "base-out", type: "number", step: "any", className: `${cellInputBase} font-bold ${totalOut > 0 ? 'text-rose-600' : 'text-slate-400'}`, value: localOut, onChange: handleOutChange, onFocus: e => { e.target.select(); onFocusInput(operationBatchKey, idx); }, onKeyDown: (e) => handleKd(e, 'base-out'), onWheel: e => e.target.blur(), placeholder: "0" })),
         React.createElement("td", { className: `py-2 px-2 text-right border-r border-slate-100 ${isLinked ? 'bg-blue-50' : ''} relative ${topBorderClass} ${mergeHorizontalCellBoxClass} ${lotReviewHorizontalCellBoxClass}` },
             isLinked && React.createElement("div", { className: "absolute -top-6 right-0 bg-slate-800 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-md whitespace-nowrap animate-bounce" }, "\uC870\uC815 \uB300\uC0C1"),
-            React.createElement("input", { id: `actual-input-${idx}`, "data-field": "actual-input", type: "number", step: "any", value: localActual, onChange: handleActualChange, onClick: () => onFocusInput(item.batchKey, idx), onFocus: (e) => { e.target.select(); onFocusInput(item.batchKey, idx); }, onKeyDown: (e) => handleKd(e, 'actual-input'), onWheel: e => e.target.blur(), placeholder: item.전산잔량, className: `w-full text-right bg-white border ${isLinked ? 'border-blue-500 ring-1 ring-blue-500 text-blue-900' : 'border-slate-300 text-slate-800 hover:border-slate-400'} ${isNegativeActual ? 'bg-rose-50 border-rose-400 text-rose-700 font-bold' : 'font-semibold'} rounded text-[13px] px-1.5 py-1 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-sm transition-all cursor-pointer` })),
+            React.createElement("input", { id: `actual-input-${idx}`, "data-field": "actual-input", type: "number", step: "any", value: localActual, onChange: handleActualChange, onClick: () => onFocusInput(operationBatchKey, idx), onFocus: (e) => { e.target.select(); onFocusInput(operationBatchKey, idx); }, onKeyDown: (e) => handleKd(e, 'actual-input'), onWheel: e => e.target.blur(), placeholder: item.전산잔량, className: `w-full text-right bg-white border ${isLinked ? 'border-blue-500 ring-1 ring-blue-500 text-blue-900' : 'border-slate-300 text-slate-800 hover:border-slate-400'} ${isNegativeActual ? 'bg-rose-50 border-rose-400 text-rose-700 font-bold' : 'font-semibold'} rounded text-[13px] px-1.5 py-1 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-sm transition-all cursor-pointer` })),
         React.createElement("td", { className: `py-2 px-2 text-right border-r border-slate-100 ${topBorderClass} ${mergeHorizontalCellBoxClass} ${lotReviewHorizontalCellBoxClass}` },
             item.로스 !== 0 && React.createElement("div", { className: "flex flex-col items-end justify-center mb-0.5" },
                 React.createElement("span", { className: `text-[12px] font-bold ${item.로스 < 0 ? 'text-rose-600' : 'text-blue-600'}` },
@@ -6811,18 +6842,18 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                         else if (data.isLifo) {
                             chipClass = "bg-sky-50 border-sky-200 text-sky-600 hover:bg-sky-100 hover:border-sky-300";
                         }
-                        return (React.createElement("div", { key: vendor, draggable: true, onDragStart: (e) => { e.stopPropagation(); const payload = { sourceKey: item.batchKey, vendor, qty: data.qty, code: item.코드 }; if (isMergedViewRow) { payload.sourceIsViewRow = true; payload.sourceViewKey = item.batchKey; payload.sourceViewLotCount = safeNum(item._viewLotCount || 0); payload.sourceViewSourceKeys = Array.isArray(item._viewSourceKeys) ? item._viewSourceKeys : []; payload.sourceAllocations = Array.isArray(data._sourceAllocations) ? data._sourceAllocations : []; } e.dataTransfer.setData('text/plain', JSON.stringify(payload)); e.currentTarget.classList.add('opacity-40', 'scale-95'); }, onDragEnd: (e) => { e.currentTarget.classList.remove('opacity-40', 'scale-95'); }, onDoubleClick: (e) => { e.stopPropagation(); if (rejectCodeSummaryEdit()) return; if (onVendorChipEdit) onVendorChipEdit(item.batchKey, displayVendor, data.qty); }, className: `group flex items-center px-2 py-0.5 rounded text-[10px] font-semibold cursor-grab active:cursor-grabbing border shadow-sm transition-all hover:-translate-y-0.5 ${chipClass}`, title: isCodeSummaryViewRow ? `${formatQty(data.qty)}개 출고 - 통합1은 즉시 이동 / 통합2 이상은 Lot 상세형에서 수동 이동` : `${formatQty(data.qty)}개 출고 ${data.matchMode === 'LOT_MATCH_FAILED' ? '(Lot매칭실패)' : (data.matchMode && String(data.matchMode).includes('FIXED_LOT') ? '(구매처Lot고정)' : (data.isLifo ? '(당일우선)' : '(순차차감)'))} - 더블클릭: 수량수정 / x: 칩삭제` },
+                        return (React.createElement("div", { key: vendor, draggable: true, onDragStart: (e) => { e.stopPropagation(); const payload = { sourceKey: operationBatchKey, vendor, qty: data.qty, code: item.코드 }; if (isProtectedMergedViewRow) { payload.sourceIsViewRow = true; payload.sourceViewKey = item.batchKey; payload.sourceViewLotCount = safeNum(item._viewLotCount || 0); payload.sourceViewSourceKeys = Array.isArray(item._viewSourceKeys) ? item._viewSourceKeys : []; payload.sourceAllocations = Array.isArray(data._sourceAllocations) ? data._sourceAllocations : []; } e.dataTransfer.setData('text/plain', JSON.stringify(payload)); e.currentTarget.classList.add('opacity-40', 'scale-95'); }, onDragEnd: (e) => { e.currentTarget.classList.remove('opacity-40', 'scale-95'); }, onDoubleClick: (e) => { e.stopPropagation(); if (rejectCodeSummaryEdit()) return; if (onVendorChipEdit) onVendorChipEdit(operationBatchKey, displayVendor, data.qty); }, className: `group flex items-center px-2 py-0.5 rounded text-[10px] font-semibold cursor-grab active:cursor-grabbing border shadow-sm transition-all hover:-translate-y-0.5 ${chipClass}`, title: isCodeSummaryViewRow ? `${formatQty(data.qty)}개 출고 - 통합1은 즉시 이동 / 통합2 이상은 Lot 상세형에서 수동 이동` : `${formatQty(data.qty)}개 출고 ${data.matchMode === 'LOT_MATCH_FAILED' ? '(Lot매칭실패)' : (data.matchMode && String(data.matchMode).includes('FIXED_LOT') ? '(구매처Lot고정)' : (data.isLifo ? '(당일우선)' : '(순차차감)'))} - 더블클릭: 수량수정 / x: 칩삭제` },
                             React.createElement("span", { className: "truncate max-w-[120px] flex items-center" },
                                 safeStr(displayVendor, '미지정'),
                                 "(",
                                 formatQty(data.qty),
                                 ")"),
-                            React.createElement("button", { type: "button", onMouseDown: e => { e.stopPropagation(); e.preventDefault(); }, onClick: e => { e.stopPropagation(); if (rejectCodeSummaryEdit()) return; if (onVendorChipDelete) onVendorChipDelete(item.batchKey, displayVendor, data.qty); }, className: "ml-1 hidden group-hover:inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-rose-50 text-rose-500 border border-rose-200 hover:bg-rose-100", title: "이 상품의 해당 거래처칩 삭제" }, "×")));
+                            React.createElement("button", { type: "button", onMouseDown: e => { e.stopPropagation(); e.preventDefault(); }, onClick: e => { e.stopPropagation(); if (rejectCodeSummaryEdit()) return; if (onVendorChipDelete) onVendorChipDelete(operationBatchKey, displayVendor, data.qty); }, className: "ml-1 hidden group-hover:inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-rose-50 text-rose-500 border border-rose-200 hover:bg-rose-100", title: "이 상품의 해당 거래처칩 삭제" }, "×")));
                     })))),
                 React.createElement("div", { className: "flex flex-col items-end gap-1 text-right shrink-0 ml-2" },
-                    item._costExtractAdjustGroupKey && Array.isArray(item._purchaseCandidateLots) && React.createElement("button", { onClick: () => onPurchaseLotAdjust && onPurchaseLotAdjust(item.batchKey), className: "text-emerald-600 hover:text-emerald-800 mb-0.5", title: "구매잔량 Lot 조정: 최근 Lot 0 처리 / 이전 Lot 수량 입력" },
+                    item._costExtractAdjustGroupKey && Array.isArray(item._purchaseCandidateLots) && React.createElement("button", { onClick: () => onPurchaseLotAdjust && onPurchaseLotAdjust(operationBatchKey), className: "text-emerald-600 hover:text-emerald-800 mb-0.5", title: "구매잔량 Lot 조정: 최근 Lot 0 처리 / 이전 Lot 수량 입력" },
                         React.createElement("i", { className: "fas fa-layer-group text-xs" })),
-                    React.createElement("button", { onClick: () => onOpenMemo(item.batchKey, visibleMemoText || ''), className: `transition-colors ${hasVisibleMemo ? 'text-blue-500 hover:text-blue-700 mb-0.5' : 'text-slate-300 hover:text-slate-400'}`, title: "\uBA54\uBAA8 \uCD94\uAC00/\uC218\uC815" },
+                    React.createElement("button", { onClick: () => onOpenMemo(operationBatchKey, visibleMemoText || ''), className: `transition-colors ${hasVisibleMemo ? 'text-blue-500 hover:text-blue-700 mb-0.5' : 'text-slate-300 hover:text-slate-400'}`, title: "\uBA54\uBAA8 \uCD94\uAC00/\uC218\uC815" },
                         React.createElement("i", { className: "fas fa-edit text-xs" })),
                     hasVisibleMemo && React.createElement("span", { className: "px-1.5 py-0.5 bg-yellow-50 text-yellow-800 border border-yellow-200 rounded font-bold text-[10px] whitespace-nowrap mb-0.5", title: visibleMemoText }, "메모"),
                     manualMemos.length > 0 && [...new Set(manualMemos)].map((msg, i) => (React.createElement("span", { key: `man-${i}`, className: "px-2 py-0.5 bg-slate-50 text-slate-600 border border-slate-200 rounded font-medium text-[10px] whitespace-nowrap shadow-sm mt-0.5", title: "\uC0AC\uC6A9\uC790 \uC218\uAE30 \uBCC0\uACBD \uD56D\uBAA9" },
@@ -6908,7 +6939,7 @@ function App() {
     const currentIssueIdxRef = useRef(-1);
     // V1.a22.84: 이슈 이동은 화면 포커스/현재 배열 index와 분리된 고정 큐로 관리한다.
     // Space 치환이나 수량 수정으로 productData가 갱신되어도 batchKey 순서와 방문경로는 유지된다.
-    const issueReviewSessionRef = useRef({ type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1 });
+    const issueReviewSessionRef = useRef({ type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1, detourActive: false, detourKey: '' });
     const issueFocusTimersRef = useRef([]);
     const focusedInputRef = useRef({ key: null, idx: -1 });
     const activeIssueModeRef = useRef(null);
@@ -7074,7 +7105,7 @@ function App() {
         if (scrollContainer)
             scrollContainer.scrollTo({ top: 0 });
         currentIssueIdxRef.current = -1;
-        issueReviewSessionRef.current = { type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1 };
+        issueReviewSessionRef.current = { type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1, detourActive: false, detourKey: '' };
         issueFocusTimersRef.current.forEach(id => clearTimeout(id));
         issueFocusTimersRef.current = [];
         focusedInputRef.current = { key: null, idx: -1 };
@@ -7810,7 +7841,26 @@ function App() {
         // 카드 자체가 '이상 없음' 상태를 보여주는 작업 체크리스트이기 때문이다.
         return appStep === 'closing' && productData.length > 0;
     }, [appStep, productData.length]);
-    const handleFocusInput = useCallback((key, idx) => { focusedInputRef.current = { key, idx }; }, []);
+    // V1.a22.85: 검토 중 다른 상품을 수동 수정해도 검토 큐의 currentKey/cursor는 바꾸지 않는다.
+    // 포커스가 현재 검토행을 벗어났다는 사실만 detour 상태로 기록하고, 다음 Tab에서 원래 큐 위치를 이어간다.
+    const handleFocusInput = useCallback((key, idx) => {
+        const focusKey = safeStr(key);
+        focusedInputRef.current = { key: focusKey, idx };
+        const session = issueReviewSessionRef.current;
+        const activeType = activeIssueModeRef.current;
+        if (!activeType || !session || session.type !== activeType)
+            return;
+        const reviewKey = safeStr(session.currentKey || (Array.isArray(session.keys) ? session.keys[session.cursor] : ''));
+        if (focusKey && reviewKey && focusKey !== reviewKey) {
+            session.detourActive = true;
+            session.detourKey = focusKey;
+            return;
+        }
+        if (focusKey && focusKey === reviewKey) {
+            session.detourActive = false;
+            session.detourKey = '';
+        }
+    }, []);
     const handleRunAnalysis = useCallback(async (targetFiles = files) => {
         const hasFiles = !!(targetFiles.prev || targetFiles.in || targetFiles.out || targetFiles.end);
         if (!hasFiles || isProcessing)
@@ -7826,7 +7876,7 @@ function App() {
         setActiveIssueMode(null);
         setActiveMultiCode(null);
         currentIssueIdxRef.current = -1;
-        issueReviewSessionRef.current = { type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1 };
+        issueReviewSessionRef.current = { type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1, detourActive: false, detourKey: '' };
         issueFocusTimersRef.current.forEach(id => clearTimeout(id));
         issueFocusTimersRef.current = [];
         focusedInputRef.current = { key: null, idx: -1 };
@@ -8646,7 +8696,7 @@ ${issueLine}`);
         setActiveIssueMode(null);
         setActiveMultiCode(null);
         currentIssueIdxRef.current = -1;
-        issueReviewSessionRef.current = { type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1 };
+        issueReviewSessionRef.current = { type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1, detourActive: false, detourKey: '' };
         issueFocusTimersRef.current.forEach(id => clearTimeout(id));
         issueFocusTimersRef.current = [];
         focusedInputRef.current = { key: null, idx: -1 };
@@ -9721,7 +9771,7 @@ ${balanceText}
     // - Shift+Tab/<: 실제 방문경로의 직전 항목으로 복귀하며 확인상태는 변경하지 않는다.
     // - Space 치환/수량수정으로 productData가 갱신되어도 batchKey 기반 큐는 유지한다.
     const handleIssueJump = useCallback((type, direction = 'next', fromCardClick = false) => {
-        const makeEmptySession = () => ({ type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1 });
+        const makeEmptySession = () => ({ type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1, detourActive: false, detourKey: '' });
         const cancelFocusTimers = () => {
             (issueFocusTimersRef.current || []).forEach(id => clearTimeout(id));
             issueFocusTimersRef.current = [];
@@ -9766,6 +9816,8 @@ ${balanceText}
             const session = issueReviewSessionRef.current;
             session.cursor = queueIndex;
             session.currentKey = safeStr(batchKey);
+            session.detourActive = false;
+            session.detourKey = '';
             currentIssueIdxRef.current = foundIndex;
             if (type === 'multiPrice')
                 setActiveMultiCode(targetItem.코드);
@@ -9800,10 +9852,16 @@ ${balanceText}
             return true;
         };
         const findExistingQueueIndex = (session, startIndex, step, skipCompleted = false) => {
+            // V1.a22.85: 카드 선택 때 만든 키 순서는 고정하되, 관리자가 우회 수정으로 이미 해결한 항목은 건너뛴다.
+            // 큐 자체를 재생성하지 않으므로 품목코드순 이동 위치는 유지된다.
+            const liveTargetKeySet = skipCompleted
+                ? new Set(buildTargetItems().map(item => safeStr(item.batchKey)).filter(Boolean))
+                : null;
             for (let i = startIndex; i >= 0 && i < session.keys.length; i += step) {
                 const key = safeStr(session.keys[i]);
                 if (!key) continue;
                 if (skipCompleted && session.completedKeys.has(key)) continue;
+                if (skipCompleted && liveTargetKeySet && !liveTargetKeySet.has(key)) continue;
                 if (productData.some(row => safeStr(row.batchKey) === key)) return i;
             }
             return -1;
@@ -9836,7 +9894,7 @@ ${balanceText}
                 return;
             }
             const keys = targetItems.map(item => safeStr(item.batchKey)).filter(Boolean);
-            const session = { type, keys, cursor: 0, currentKey: keys[0], completedKeys: new Set(), path: [0], pathCursor: 0 };
+            const session = { type, keys, cursor: 0, currentKey: keys[0], completedKeys: new Set(), path: [0], pathCursor: 0, detourActive: false, detourKey: '' };
             issueReviewSessionRef.current = session;
             focusIssueTargetByKey(keys[0], 0);
         };
@@ -9874,6 +9932,8 @@ ${balanceText}
             return;
         }
 
+        // V1.a22.85: 수동 스크롤/수정으로 포커스가 다른 행에 있어도 검토 기준점은 session.currentKey다.
+        // 따라서 Tab은 우회한 행을 기준으로 순서를 바꾸지 않고, 원래 검토행을 확인 처리한 뒤 다음 큐 항목으로 복귀한다.
         const currentKey = safeStr(session.currentKey || session.keys[session.cursor]);
         const currentIndex = productData.findIndex(p => safeStr(p.batchKey) === currentKey);
         if (currentKey)
@@ -9990,7 +10050,7 @@ ${balanceText}
         setFilters(f => ({ ...f, reviewType: null }));
         setActiveIssueMode(null);
         activeIssueModeRef.current = null;
-        issueReviewSessionRef.current = { type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1 };
+        issueReviewSessionRef.current = { type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1, detourActive: false, detourKey: '' };
         issueFocusTimersRef.current.forEach(id => clearTimeout(id));
         issueFocusTimersRef.current = [];
     }, [setProductData, multiPriceCodes, lotReviewCandidateCodes, setAckMultiCodes, hasUnresolvedQtyIssue, hasUnresolvedLotIssue]);
@@ -10059,10 +10119,37 @@ ${balanceText}
         if (!ok)
             setAlertMsg("팝업 차단으로 프린터 출력창을 열 수 없습니다. 브라우저 팝업 허용 후 다시 시도하세요.");
     }, [productData, targetDateStr]);
+    // V1.a22.85: 검토 중 다른 행을 수정한 직후 Tab을 눌러도 250ms 입력 디바운스보다 먼저 이동할 수 있다.
+    // 현재 포커스된 셀 값을 엔진에 즉시 반영한 뒤 검토 큐 이동을 계속한다.
+    const flushFocusedTableEdit = useCallback(() => {
+        const activeEl = document.activeElement;
+        const focusInfo = focusedInputRef.current || {};
+        const batchKey = safeStr(focusInfo.key);
+        if (!activeEl || !batchKey || safeStr(activeEl.tagName).toLowerCase() !== 'input')
+            return false;
+        const dataField = safeStr(activeEl.getAttribute && activeEl.getAttribute('data-field'));
+        const value = activeEl.value;
+        if (dataField === 'actual-input') {
+            handleManualStockChange(batchKey, value);
+            return true;
+        }
+        const baseFieldMap = { 'price-input': '단가', 'base-prev': '기초', 'base-in': '입고', 'base-out': '출고' };
+        const baseField = baseFieldMap[dataField];
+        if (!baseField)
+            return false;
+        const sourceItem = productData.find(item => safeStr(item.batchKey) === batchKey);
+        let normalizedValue = value;
+        if (baseField === '입고')
+            normalizedValue = (value === '' ? 0 : Number(value)) - safeNum((sourceItem || {}).대체입고);
+        else if (baseField === '출고')
+            normalizedValue = (value === '' ? 0 : Number(value)) - safeNum((sourceItem || {}).대체출고);
+        handleBaseDataChange(batchKey, baseField, normalizedValue);
+        return true;
+    }, [handleManualStockChange, handleBaseDataChange, productData]);
     // 🌟 성능 최적화: 전역 이벤트 리스너의 잦은 재생성을 막기 위한 콜백 참조 저장
-    const latestHandlers = useRef({ handleIssueJump, handleRunAnalysis, handleRunTransferCheck, handleCombinedExport, handlePrintOutput });
+    const latestHandlers = useRef({ handleIssueJump, handleRunAnalysis, handleRunTransferCheck, handleCombinedExport, handlePrintOutput, flushFocusedTableEdit });
     useEffect(() => {
-        latestHandlers.current = { handleIssueJump, handleRunAnalysis, handleRunTransferCheck, handleCombinedExport, handlePrintOutput };
+        latestHandlers.current = { handleIssueJump, handleRunAnalysis, handleRunTransferCheck, handleCombinedExport, handlePrintOutput, flushFocusedTableEdit };
     });
     useEffect(() => {
         const handleGlobalEnter = (e) => {
@@ -10129,13 +10216,23 @@ ${balanceText}
                 if (activeIssueModeRef.current) {
                     setActiveIssueMode(null);
                     activeIssueModeRef.current = null;
-                    issueReviewSessionRef.current = { type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1 };
+                    issueReviewSessionRef.current = { type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1, detourActive: false, detourKey: '' };
                     issueFocusTimersRef.current.forEach(id => clearTimeout(id));
                     issueFocusTimersRef.current = [];
                 }
             }
             if (e.key === 'Tab' && activeIssueModeRef.current) {
+                const eventTarget = e.target;
+                const isInsideWorkRow = !!(eventTarget && eventTarget.closest && eventTarget.closest('tr[data-batch]'));
+                // 필터·보기 버튼·모달·브라우저 기본 포커스 이동까지 이슈 Tab이 가로채지 않는다.
+                if (!isInsideWorkRow)
+                    return;
                 e.preventDefault();
+                const session = issueReviewSessionRef.current;
+                // Shift+Tab은 조회 복귀이므로 수동 입력 완료를 강제하지 않는다.
+                // 정방향 Tab은 다른 상품 수정 중이었다면 현재 셀을 먼저 저장하고 원래 검토 커서에서 이어간다.
+                if (!e.shiftKey && session && session.detourActive)
+                    latestHandlers.current.flushFocusedTableEdit();
                 latestHandlers.current.handleIssueJump(activeIssueModeRef.current, e.shiftKey ? 'prev' : 'next');
             }
         };
@@ -10145,7 +10242,7 @@ ${balanceText}
     }, [linkSourceKey, appStep, isProcessing, files, guideModalOpen]);
     const viewProductData = useMemo(() => DATAOPS_VIEW_LAYER_MODULE.buildViewRows(productData, { viewMode }), [productData, viewMode, mergeOverrideVersion]);
     const handleViewLayerEditBlocked = useCallback(() => {
-        setAlertMsg('코드 통합형은 표시 전용입니다. 수량/단가/거래처칩 수정은 [보기: Lot 상세형]에서 진행하세요.');
+        setAlertMsg('코드 통합형의 원본 1행 상품은 현재 화면에서 바로 수정할 수 있습니다. 통합2 이상 또는 원본 다중행은 어느 Lot에 반영할지 모호하므로 [Lot 상세형]에서 수정하세요.');
     }, [setAlertMsg]);
     const filteredProductData = useMemo(() => {
         let sourceRows = productData;
@@ -10656,6 +10753,10 @@ ${balanceText}
                                                     DATAOPS_CODE_MERGE_OVERRIDE_MODULE.clear();
                                                     setMergeOverrideVersion(v => v + 1);
                                                     setActiveIssueMode(null);
+                                                    activeIssueModeRef.current = null;
+                                                    issueReviewSessionRef.current = { type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1, detourActive: false, detourKey: '' };
+                                                    issueFocusTimersRef.current.forEach(id => clearTimeout(id));
+                                                    issueFocusTimersRef.current = [];
                                                     setActiveMultiCode(null);
                                                     setViewMode('CODE_SUMMARY');
                                                     setGrouping(prev => normalizeDataOpsGrouping({ ...prev, manageMode: 'CODE_SUMMARY' }));
@@ -10665,6 +10766,10 @@ ${balanceText}
                                                 setViewMode('LOT_DETAIL');
                                                 setGrouping(prev => normalizeDataOpsGrouping({ ...prev, manageMode: 'LOT_DETAIL' }));
                                                 setActiveIssueMode(null);
+                                                activeIssueModeRef.current = null;
+                                                issueReviewSessionRef.current = { type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1, detourActive: false, detourKey: '' };
+                                                issueFocusTimersRef.current.forEach(id => clearTimeout(id));
+                                                issueFocusTimersRef.current = [];
                                                 setFilters(f => ({ ...f, reviewType: null, sortMode: 'DEFAULT', sortDesc: false }));
                                             };
                                             return React.createElement("button", { key: mode, onClick: handleModeClick, title: mode === 'LOT_DETAIL' ? 'Lot별 상세행으로 봅니다. 재고가 남은 Lot이 2개 이상인 상품은 테두리와 통합 버튼을 항상 표시합니다.' : '같은 품목코드를 한 행으로 봅니다.', className: `px-2.5 py-1 rounded border transition font-black ${isActive ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm' : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50'}` }, label);
@@ -10768,7 +10873,7 @@ ${balanceText}
                                                     "\u2500\u2500\u2500\u2500 ",
                                                     currGroupLabel || '미지정',
                                                     " \u2500\u2500\u2500\u2500")))),
-                                            React.createElement(ProductRow, { key: item.batchKey, item: item, idx: idx, isLinked: linkSourceKey === item.batchKey, isActiveMulti: activeMultiCode === item.코드, isMultiGroupItem: multiPriceCodes.includes(item.코드), splitLotMemo: splitLotMemoMap[item.batchKey] || '', targetDateStr: targetDateStr, onStockChange: handleManualStockChange, onSpacebar: handleSpacebarLink, onFocusInput: handleFocusInput, onBaseDataChange: handleBaseDataChange, onOpenMemo: (key, text) => { if (DATAOPS_VIEW_LAYER_MODULE.isViewRowKey(key)) { handleViewLayerEditBlocked(); return; } setMemoModal({ isOpen: true, batchKey: key, text }); }, onSalesMove: handleChipDropRequest, onVendorChipDelete: handleVendorChipDelete, onVendorChipEdit: handleVendorChipEdit, onViewLayerEditBlocked: handleViewLayerEditBlocked, internalLotMapping: mappings.internalLot, isGroupStart: isGroupStart, isNewCategory: isNewCategory, isMergeGroupStart: isMergeGroupStart, isMergeGroupEnd: isMergeGroupEnd, isLotReviewMode: viewMode === 'LOT_DETAIL', isLotReviewCandidate: isLotReviewCandidate, isLotReviewGroupStart: isLotReviewGroupStart, isLotReviewGroupEnd: isLotReviewGroupEnd, isActiveLotReviewGroup: isActiveLotReviewGroup, normalizeDisplayIssues: normalizeDisplayIssues, onPurchaseLotAdjust: handlePurchaseLotManualAdjust, onToggleCodeMerge: handleToggleCodeMerge })));
+                                            React.createElement(ProductRow, { key: item.batchKey, item: item, idx: idx, isLinked: linkSourceKey === item.batchKey || (Array.isArray(item._viewSourceKeys) && item._viewSourceKeys.includes(linkSourceKey)), isActiveMulti: activeMultiCode === item.코드, isMultiGroupItem: multiPriceCodes.includes(item.코드), splitLotMemo: splitLotMemoMap[item.batchKey] || '', targetDateStr: targetDateStr, onStockChange: handleManualStockChange, onSpacebar: handleSpacebarLink, onFocusInput: handleFocusInput, onBaseDataChange: handleBaseDataChange, onOpenMemo: (key, text) => { if (DATAOPS_VIEW_LAYER_MODULE.isViewRowKey(key)) { handleViewLayerEditBlocked(); return; } setMemoModal({ isOpen: true, batchKey: key, text }); }, onSalesMove: handleChipDropRequest, onVendorChipDelete: handleVendorChipDelete, onVendorChipEdit: handleVendorChipEdit, onViewLayerEditBlocked: handleViewLayerEditBlocked, internalLotMapping: mappings.internalLot, isGroupStart: isGroupStart, isNewCategory: isNewCategory, isMergeGroupStart: isMergeGroupStart, isMergeGroupEnd: isMergeGroupEnd, isLotReviewMode: viewMode === 'LOT_DETAIL', isLotReviewCandidate: isLotReviewCandidate, isLotReviewGroupStart: isLotReviewGroupStart, isLotReviewGroupEnd: isLotReviewGroupEnd, isActiveLotReviewGroup: isActiveLotReviewGroup, normalizeDisplayIssues: normalizeDisplayIssues, onPurchaseLotAdjust: handlePurchaseLotManualAdjust, onToggleCodeMerge: handleToggleCodeMerge })));
                                     })))))))))),
         splitModal.isOpen && (React.createElement("div", { className: "fixed inset-0 z-[400] bg-slate-900 bg-opacity-60 flex items-center justify-center p-4" },
             React.createElement("div", { className: "bg-white rounded-xl shadow-2xl p-6 w-full max-w-xs modal-bounce" },
