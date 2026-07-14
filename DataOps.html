@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.86)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.87)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.86.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.87.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -909,7 +909,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.86',
+    version: 'V1.a22.87',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -2266,9 +2266,10 @@ const FILTER_SORT_MODULE = Object.freeze({
 // V1.a22.84: 스페이스바 치환 중 선택한 두 행을 현재 검토 세션의 완료키로 기록한다. 치환 후에도 검토 커서와 방문경로를 유지하고 다음 미확인 항목부터 순서대로 이동한다.
 // V1.a22.84: 이슈 이동 시 중첩되던 지연 포커스/스크롤 타이머를 취소하고, 카드 최초 선택 때만 필터·Lot 상세형 전환을 실행해 역탭 흔들림과 순서 초기화를 방지한다.
 // V1.a22.85: 재고/Lot 순차 검토 중 관리자가 스크롤로 다른 상품을 수정해도 검토 큐·현재 커서를 유지한다. 다른 행의 입력값을 즉시 확정한 뒤 Tab을 누르면 원래 검토 위치의 다음 항목으로 복귀하며, 수동 수정으로 해결된 향후 큐 항목은 기존 순서를 유지한 채 건너뛴다.
-// V1.a22.86: 코드통합형 대표 Lot은 현재 재고가 양수인 Lot만 후보로 삼고 그중 구매일자가 가장 최근인 Lot을 우선한다. 재고 0/마이너스 Lot은 대표값에서 제외하며, 양수 Lot이 없으면 대표 SourceKey를 지정하지 않는다.
-// V1.a22.86: 코드통합형에서도 원본 원장행이 정확히 1개인 통합1 상품은 단가·기초·입고·출고·실사·메모·거래처칩·스페이스 치환을 원본 batchKey에 직접 반영한다. 통합2 이상 또는 원본 다중행은 배분 기준이 모호하므로 수량 편집을 계속 차단한다.
-// V1.a22.86: 보기 전환 시 기존 이슈 Tab 세션/ref/지연 포커스를 즉시 종료하고, 전역 Tab 가로채기는 작업 테이블 행 내부에서만 실행한다. 통합형 직접수정의 실제 sourceKey를 포커스 추적에 사용해 일반 Tab과 이슈 Tab의 충돌을 차단한다.
+// V1.a22.87: 코드통합형 대표 Lot은 현재 재고가 양수인 Lot만 후보로 삼고 그중 구매일자가 가장 최근인 Lot을 우선한다. 재고 0/마이너스 Lot은 대표값에서 제외하며, 양수 Lot이 없으면 대표 SourceKey를 지정하지 않는다.
+// V1.a22.87: 코드통합형에서도 원본 원장행이 정확히 1개인 통합1 상품은 단가·기초·입고·출고·실사·메모·거래처칩·스페이스 치환을 원본 batchKey에 직접 반영한다. 통합2 이상 또는 원본 다중행은 배분 기준이 모호하므로 수량 편집을 계속 차단한다.
+// V1.a22.87: 보기 전환 시 기존 이슈 Tab 세션/ref/지연 포커스를 즉시 종료하고, 전역 Tab 가로채기는 작업 테이블 행 내부에서만 실행한다. 통합형 직접수정의 실제 sourceKey를 포커스 추적에 사용해 일반 Tab과 이슈 Tab의 충돌을 차단한다.
+// V1.a22.87: 스페이스바/CTRL 대체판매는 실제 출고 상품의 원가를 판매전표 상품의 단가(입고가)에 반영한다. 원가출처 Lot·BOX 단가는 보존하고 대상 판매상품에만 환산원가를 생성한다.
 // V1.a22.69: 코드통합형 해제/다시 통합 상태 관리.
 // 원본 Lot은 수정하지 않고 화면 보기/엑셀 1번 시트 출력에만 반영한다.
 const DATAOPS_CODE_MERGE_OVERRIDE_MODULE = Object.freeze({
@@ -2524,7 +2525,7 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
         const sourceRows = rows || [];
         const logicalLotRows = DATAOPS_VIEW_LAYER_MODULE.buildLogicalLotRows(sourceRows);
         const representativeKey = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.getRepresentativeKey(code);
-        // V1.a22.86: 대표 Lot은 현재 재고가 남은 행만 허용한다.
+        // V1.a22.87: 대표 Lot은 현재 재고가 남은 행만 허용한다.
         // 사용자가 과거에 지정한 대표행이 재고 0/마이너스가 되면 자동 해제하고,
         // 양수 재고 후보 중 구매일자가 가장 최근인 행을 새 대표로 선택한다.
         const positiveRepresentativeRows = sourceRows.filter(row => DATAOPS_VIEW_LAYER_MODULE.isPositiveStockRow(row));
@@ -4411,12 +4412,14 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 const targetWithLayer = DATAOPS_OPERATION_MODULE.appendCostLayer(targetAfter, manualCostLayer);
                 targetAfter = {
                     ...targetWithLayer,
-                    // V1.a22.79: 원가매칭 결과는 별도 필드/원가레이어에 기록한다.
-                    // item.단가는 원본 상품 단가이며, 명시적인 원물→소분 관계의 소분행만
-                    // applyManualSubPricePatch에서 새 소분단가로 갱신할 수 있다.
+                    // V1.a22.87: 스페이스바 치환은 판매전표 상품의 원가를 정의하는 작업이다.
+                    // 실제 출고/원가출처 Lot의 단가는 보존하고, 계산된 환산원가는 대상 판매상품의
+                    // 표시 단가(입고가)와 원가레이어에 함께 기록한다.
+                    단가: manualTargetUnitCost,
                     _matchedUnitCost: manualTargetUnitCost,
                     _matchedCostAmount: manualAppliedCostAmount,
-                    _convertedUnitCostApplied: safeNum(sourceLossQty) !== safeNum(targetLossQty),
+                    _manualReplacementPriceApplied: true,
+                    _convertedUnitCostApplied: safeNum(targetItem.단가) !== safeNum(manualTargetUnitCost) || safeNum(sourceLossQty) !== safeNum(targetLossQty),
                     _convertedUnitCostFormula: manualMatch.formula,
                     이슈: DATAOPS_ISSUE_HELPER.unique(DATAOPS_ISSUE_HELPER.stripPriceIssues(targetWithLayer.이슈 || [])),
                     _operationType: DATAOPS_OPERATION_MODULE.TYPES.MANUAL_ASSIST,
@@ -4428,19 +4431,23 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 if (!safeStr(targetAfter.메모, '').includes(costMemo))
                     targetAfter.메모 = `${safeStr(targetAfter.메모, '')}${safeStr(targetAfter.메모, '') ? ' ' : ''}${costMemo}`;
             }
-            // 최종 방어막: 두 행의 기존 단가는 보존하고, 소분단가 패치 대상만 새 소분가를 가진다.
-            // 따라서 BOX가 target으로 잘못 판정되더라도 BOX 단가가 EA/소분 단가로 바뀌지 않는다.
+            // 최종 방어막:
+            // 1) 원가출처 Lot/BOX의 기존 단가는 반드시 보존한다.
+            // 2) 명시적인 원물→소분 관계는 소분행에만 소분단가를 반영한다.
+            // 3) 일반 대체판매는 대상 판매상품에만 계산된 입고가를 반영한다.
             const originalPriceByKey = {
                 [item1Orig.batchKey]: safeNum(item1Orig.단가),
                 [item2Orig.batchKey]: safeNum(item2Orig.단가)
             };
-            const restoreProtectedPrice = (item = {}) => {
+            const restoreProtectedPrice = (item = {}, role = '') => {
                 if (subPricePatch && item.batchKey === subPricePatch.batchKey)
                     return { ...item, 단가: safeNum(subPricePatch.subPrice) };
+                if (role === 'target' && item._manualReplacementPriceApplied && safeNum(item._matchedUnitCost) > 0)
+                    return { ...item, 단가: safeNum(item._matchedUnitCost) };
                 return { ...item, 단가: safeNum(originalPriceByKey[item.batchKey]) };
             };
-            sourceAfter = restoreProtectedPrice(sourceAfter);
-            targetAfter = restoreProtectedPrice(targetAfter);
+            sourceAfter = restoreProtectedPrice(sourceAfter, 'source');
+            targetAfter = restoreProtectedPrice(targetAfter, 'target');
             setSubstHistory(h => [...h, {
                     id: Date.now(),
                     type: 'MANUAL_LOSS_LINK',
@@ -4660,12 +4667,14 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         np.대체입고 = safeNum(np.대체입고) + sourceDeductQty;
                         np.매출원가 = replacementCostAmount;
                         if (replacementUnitCost > 0) {
-                            // V1.a22.79: 분해/대체는 원가 정의 작업이다.
-                            // 출처 상품의 표시 단가(예: BOX 13,000원)는 그대로 보존하고,
-                            // 환산된 낱개 원가는 원가매칭 레이어와 별도 참조값에만 기록한다.
+                            // V1.a22.87: source는 판매전표 상품이다. 실제출고 상품(target)의 원가를
+                            // 판매전표 상품의 단가(입고가)에 반영하고, 실제출고 Lot 단가는 보존한다.
+                            const previousUnitCost = safeNum(np.단가);
+                            np.단가 = replacementUnitCost;
                             np._matchedUnitCost = replacementUnitCost;
                             np._matchedCostAmount = replacementCostAmount;
-                            np._convertedUnitCostApplied = safeNum(np.단가) !== safeNum(replacementUnitCost);
+                            np._manualReplacementPriceApplied = true;
+                            np._convertedUnitCostApplied = previousUnitCost !== safeNum(replacementUnitCost) || safeNum(sourceDeductQty) !== safeNum(targetAddQty);
                             np._convertedUnitCostFormula = replacementMatch.formula;
                         }
                         const withLayer = DATAOPS_OPERATION_MODULE.appendCostLayer(np, replacementCostLayer);
@@ -6564,7 +6573,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
     const directEditSourceKey = isCodeSummaryViewRow
         ? safeStr(item._directEditSourceKey || ((Array.isArray(item._viewSourceKeys) && item._viewSourceKeys.length === 1) ? item._viewSourceKeys[0] : ''))
         : '';
-    // V1.a22.86: 화면은 VIEW_CODE synthetic row여도 원본 원장행이 정확히 1개면 직접 편집 가능하다.
+    // V1.a22.87: 화면은 VIEW_CODE synthetic row여도 원본 원장행이 정확히 1개면 직접 편집 가능하다.
     const isDirectEditableCodeSummaryRow = !!directEditSourceKey && isCodeSummaryViewRow && safeNum(item._rawSourceRowCount || 0) === 1;
     const operationBatchKey = isDirectEditableCodeSummaryRow ? directEditSourceKey : item.batchKey;
     const isProtectedMergedViewRow = isDetailMergedViewRow || (isCodeSummaryViewRow && !isDirectEditableCodeSummaryRow);
