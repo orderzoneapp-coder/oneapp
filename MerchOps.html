@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.133_FilterActionLayoutColor]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.135_WorkPromoExport]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -34,6 +34,8 @@
         // v2.1.131: F7 가저장과 작업완료 기능을 삭제한다. 보관함은 제외·정지 등 작업 제외상품 관리에만 사용한다.
         // v2.1.132: F8 ERP업데이트 P열 기본여부는 판매여부가 아니라 ERP 입고가 기준으로 산출한다. 입고가>0이면 1, 0·공란이면 공백이며 소분행도 동일하게 적용한다.
         // v2.1.133: 하단 작업줄을 좌측 필터·조회, 우측 실행 액션 구조로 재배치한다. 재고 불러오기 버튼은 무채색으로 변경하고 화면/행사/필터 초기화 버튼은 연한 배경색으로 구분한다.
+        // v2.1.134: 열폭 저장 시 현재 선택 양식의 열폭과 사용자가 조정한 컬럼명의 공통 열폭을 동시에 저장한다. 같은 컬럼은 다른 불러오기/양식에서도 공통 열폭을 우선 적용한다.
+        // v2.1.135: 행사가 필터/F9 추출은 마스터 행사값만 보지 않고 현재 작업테이블의 finalData·활성 source 행사가를 우선 판정한다. 재고 검토 중 수기 입력한 행사가 상품도 즉시 행사상품으로 모아 출력한다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결하며 오더즈판매가/오더즈구매가는 작업·출력에서 제외한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
@@ -1972,7 +1974,34 @@ window.normalizeMerchColumnWidths = (widths = {}) => {
     });
     return result;
 };
-window.getMerchColumnWidthValue = (widths = {}, key = '', label = '', fallback = 86) => {
+window.MERCH_SHARED_COLUMN_WIDTHS_KEY = 'merchSharedColumnWidths_v1';
+window.getMerchSharedColumnWidths = () => {
+    try {
+        const raw = localStorage.getItem(window.MERCH_SHARED_COLUMN_WIDTHS_KEY);
+        return window.normalizeMerchColumnWidths(raw ? JSON.parse(raw) : {});
+    }
+    catch (e) {
+        return {};
+    }
+};
+window.saveMerchSharedColumnWidths = (widths = {}) => {
+    const safe = window.normalizeMerchColumnWidths(widths || {});
+    try {
+        localStorage.setItem(window.MERCH_SHARED_COLUMN_WIDTHS_KEY, JSON.stringify(safe));
+    }
+    catch (e) { }
+    return safe;
+};
+window.removeMerchSharedColumnWidths = (labels = []) => {
+    const next = { ...window.getMerchSharedColumnWidths() };
+    (Array.isArray(labels) ? labels : []).forEach(label => { delete next[String(label || '')]; });
+    return window.saveMerchSharedColumnWidths(next);
+};
+window.getMerchColumnWidthValue = (widths = {}, key = '', label = '', fallback = 86, sharedWidths = {}) => {
+    const shared = window.normalizeMerchColumnWidths(sharedWidths || {});
+    // 컬럼명 공통값을 양식별 저장값보다 우선 적용하여 다른 불러오기/양식에도 즉시 연동한다.
+    const bySharedLabel = shared[String(label || '')];
+    if (bySharedLabel) return bySharedLabel;
     const safe = window.normalizeMerchColumnWidths(widths || {});
     const byKey = safe[String(key || '')];
     if (byKey) return byKey;
@@ -1980,8 +2009,8 @@ window.getMerchColumnWidthValue = (widths = {}, key = '', label = '', fallback =
     if (byLabel) return byLabel;
     return getDefaultMerchColumnWidth(label, fallback);
 };
-window.getMerchColumnWidthStyle = (widths = {}, key = '', label = '', fallback = 86) => {
-    const w = window.getMerchColumnWidthValue(widths || {}, key, label, fallback);
+window.getMerchColumnWidthStyle = (widths = {}, key = '', label = '', fallback = 86, sharedWidths = {}) => {
+    const w = window.getMerchColumnWidthValue(widths || {}, key, label, fallback, sharedWidths || {});
     return { width: `${w}px`, minWidth: `${w}px`, maxWidth: `${w}px` };
 };
 const MERCH_RESIZE_HANDLE_CLASS = "absolute right-0 top-0 h-full w-2 cursor-col-resize z-[90] hover:bg-indigo-300/50 active:bg-indigo-400/70";
@@ -5628,8 +5657,9 @@ const getStockCost = (row = {}) => {
 };
 // ============================================================
 // [M-PROMO-01] 행사 판정 기준
-// 확정 정책: 행사중은 현재 진행형 상태이므로 마스터 행사가가 0보다 큰 상품만 해당한다.
-// 작업파일/업로드/파서의 행사가 값은 미래 적용 후보값이며, 최종 저장 전까지 행사중으로 보지 않는다.
+// 정책: 행사상품 필터와 F9 출력대상은 현재 작업테이블 값을 우선한다.
+// finalData 또는 현재 활성 source에 행사가가 명시되어 있으면 그 값을 사용하고,
+// 작업값이 없을 때만 마스터 행사가를 fallback한다. 명시적 0/행사초기화는 비행사로 판정한다.
 // ============================================================
 const getMasterPromoPrice = (mItem = {}) => window.parseNum(mItem === null || mItem === void 0 ? void 0 : mItem['행사가']);
 const getPromoThemeCodes = (item = {}) => {
@@ -5715,14 +5745,34 @@ const matchCompositeDetailFilters = (row = {}, mItem = {}, filters = [], basicSe
         return false;
     return true;
 };
-const getWorkingPromoPrice = (row = {}) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
-    return window.parseNum((_h = (_e = (_b = (_a = row.finalData) === null || _a === void 0 ? void 0 : _a['행사가']) !== null && _b !== void 0 ? _b : (_d = (_c = row.sources) === null || _c === void 0 ? void 0 : _c.estimate) === null || _d === void 0 ? void 0 : _d['행사가']) !== null && _e !== void 0 ? _e : (_g = (_f = row.sources) === null || _f === void 0 ? void 0 : _f.inventory) === null || _g === void 0 ? void 0 : _g['행사가']) !== null && _h !== void 0 ? _h : 0);
+const resolveWorkingPromoPrice = (row = {}) => {
+    const finalData = row.finalData || {};
+    if (finalData._promoResetRequested === true)
+        return { hasValue: true, price: 0, source: '행사초기화' };
+    const hasExplicitPromo = (obj = {}) => Object.prototype.hasOwnProperty.call(obj, '행사가')
+        && obj['행사가'] !== undefined
+        && obj['행사가'] !== null
+        && String(obj['행사가']).trim() !== '';
+    if (hasExplicitPromo(finalData))
+        return { hasValue: true, price: window.parseNum(finalData['행사가']), source: '작업테이블' };
+    const sources = row.sources || {};
+    const sourceRoles = window.getWorkingSourcePriority
+        ? window.getWorkingSourcePriority(sources)
+        : (Array.isArray(window.MERCH_CURRENT_SOURCE_ROLES) && window.MERCH_CURRENT_SOURCE_ROLES.length > 0
+            ? window.MERCH_CURRENT_SOURCE_ROLES
+            : ['inventory', 'estimate', 'purchase', 'sales', 'info', 'catalog', 'parser']);
+    for (const role of sourceRoles) {
+        const sourceItem = sources[role] || {};
+        if (hasExplicitPromo(sourceItem))
+            return { hasValue: true, price: window.parseNum(sourceItem['행사가']), source: role };
+    }
+    return { hasValue: false, price: 0, source: '' };
 };
+const getWorkingPromoPrice = (row = {}) => resolveWorkingPromoPrice(row).price;
 const getEffectivePromoPriceForMargin = (row = {}, mItem = {}) => {
-    const workingPromo = getWorkingPromoPrice(row);
-    if (workingPromo > 0)
-        return workingPromo;
+    const workingPromo = resolveWorkingPromoPrice(row);
+    if (workingPromo.hasValue)
+        return workingPromo.price;
     return getMasterPromoPrice(mItem);
 };
 const getMarginInfo = (row = {}, mItem = {}) => {
@@ -5734,7 +5784,7 @@ const getMarginInfo = (row = {}, mItem = {}) => {
     const rate = price > 0 ? ((price - inPrice) / price) * 100 : null;
     return { price, inPrice, rate, isPromo: promoPrice > 0 };
 };
-const isPromoActive = (row = {}, mItem = {}) => getMasterPromoPrice(mItem) > 0;
+const isPromoActive = (row = {}, mItem = {}) => getEffectivePromoPriceForMargin(row, mItem) > 0;
 const isSellingItem = (row = {}, mItem = {}) => {
     var _a, _b;
     const salesState = window.getMasterSalesState(mItem);
@@ -6734,14 +6784,18 @@ const ExcelDataGrid = ({ state, actions }) => {
     const activeView = useMemo(() => window.findMerchTableView ? window.findMerchTableView(config.tableViewPresets || {}, activeTableTarget, config.activeTableViewId || '') : null, [config.tableViewPresets, activeTableTarget, config.activeTableViewId]);
     const activeViewColumnWidths = activeView && activeView.columnWidths ? activeView.columnWidths : {};
     const [columnWidthDraft, setColumnWidthDraft] = useState(() => window.normalizeMerchColumnWidths(activeViewColumnWidths));
+    const [sharedColumnWidths, setSharedColumnWidths] = useState(() => window.getMerchSharedColumnWidths ? window.getMerchSharedColumnWidths() : {});
     const [columnWidthDirty, setColumnWidthDirty] = useState(false);
+    const [columnWidthDirtyMap, setColumnWidthDirtyMap] = useState({});
     useEffect(() => {
         setColumnWidthDraft(window.normalizeMerchColumnWidths(activeViewColumnWidths));
+        setSharedColumnWidths(window.getMerchSharedColumnWidths ? window.getMerchSharedColumnWidths() : {});
         setColumnWidthDirty(false);
+        setColumnWidthDirtyMap({});
     }, [activeTableTarget, config.activeTableViewId, config.tableViewPresets]);
     const currentColumnWidths = window.normalizeMerchColumnWidths(columnWidthDraft || activeViewColumnWidths || {});
-    const widthStyle = (key, label, fallback) => window.getMerchColumnWidthStyle(currentColumnWidths, key, label, fallback);
-    const getColumnWidthValue = (key, label, fallback) => window.getMerchColumnWidthValue(currentColumnWidths, key, label, fallback);
+    const widthStyle = (key, label, fallback) => window.getMerchColumnWidthStyle(currentColumnWidths, key, label, fallback, sharedColumnWidths);
+    const getColumnWidthValue = (key, label, fallback) => window.getMerchColumnWidthValue(currentColumnWidths, key, label, fallback, sharedColumnWidths);
     const resizeHandle = (key, label, fallback = 86) => React.createElement("span", {
         className: MERCH_RESIZE_HANDLE_CLASS,
         title: "드래그해서 열폭 조정",
@@ -6754,6 +6808,7 @@ const ExcelDataGrid = ({ state, actions }) => {
             const onMove = (moveEvent) => {
                 const nextWidth = Math.max(minWidth, Math.min(720, Math.round(startWidth + moveEvent.clientX - startX)));
                 setColumnWidthDraft(prev => ({ ...(prev || {}), [key]: nextWidth }));
+                setColumnWidthDirtyMap(prev => ({ ...(prev || {}), [key]: String(label || key) }));
                 setColumnWidthDirty(true);
             };
             const onUp = () => {
@@ -6781,6 +6836,15 @@ const ExcelDataGrid = ({ state, actions }) => {
                 }
             };
         });
+        // 현재 화면에서 실제 드래그한 컬럼만 컬럼명 공통 열폭으로 함께 저장한다.
+        const nextShared = { ...(window.getMerchSharedColumnWidths ? window.getMerchSharedColumnWidths() : sharedColumnWidths || {}) };
+        Object.entries(columnWidthDirtyMap || {}).forEach(([key, label]) => {
+            const value = widths[key];
+            if (value) nextShared[String(label || key)] = value;
+        });
+        const savedShared = window.saveMerchSharedColumnWidths ? window.saveMerchSharedColumnWidths(nextShared) : nextShared;
+        setSharedColumnWidths(savedShared);
+        setColumnWidthDirtyMap({});
         setColumnWidthDirty(false);
     };
     const resetColumnWidths = () => {
@@ -6805,13 +6869,23 @@ const ExcelDataGrid = ({ state, actions }) => {
                 }
             };
         });
+        const visibleSharedLabels = [
+            '마스터 정보',
+            ...currentMasterCols,
+            registrationMode ? '상태' : '이슈',
+            ...currentWorkCols,
+            ...(registrationMode ? [] : ['리포트'])
+        ];
+        const nextShared = window.removeMerchSharedColumnWidths ? window.removeMerchSharedColumnWidths(visibleSharedLabels) : {};
+        setSharedColumnWidths(nextShared);
         setColumnWidthDraft({});
+        setColumnWidthDirtyMap({});
         setColumnWidthDirty(false);
     };
     return (React.createElement("div", { className: "bg-white border border-slate-200 rounded-xl shadow-sm h-full flex flex-col relative overflow-hidden" },
         React.createElement("div", { className: "flex justify-end items-center gap-1 bg-white border-b border-slate-100 px-3 py-1.5 shrink-0" },
-            React.createElement("button", { className: `px-2 py-1 rounded text-[11px] font-black border ${columnWidthDirty ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`, onClick: saveColumnWidths, title: "현재 열넓이를 선택 양식에 저장" }, "열폭 저장"),
-            React.createElement("button", { className: "px-2 py-1 rounded text-[11px] font-black border bg-white text-slate-500 border-slate-200 hover:bg-slate-50", onClick: resetColumnWidths, title: "선택 양식의 열폭 저장값 초기화" }, "초기화")),
+            React.createElement("button", { className: `px-2 py-1 rounded text-[11px] font-black border ${columnWidthDirty ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`, onClick: saveColumnWidths, title: "현재 양식 열폭과 조정한 컬럼의 공통 열폭을 함께 저장" }, "열폭 저장"),
+            React.createElement("button", { className: "px-2 py-1 rounded text-[11px] font-black border bg-white text-slate-500 border-slate-200 hover:bg-slate-50", onClick: resetColumnWidths, title: "현재 양식과 화면에 보이는 컬럼의 공통 열폭을 초기화" }, "초기화")),
         React.createElement("div", { className: "flex-1 overflow-auto custom-scrollbar relative", onScroll: handleScroll },
             React.createElement("table", { className: "text-left border-collapse table-fixed text-[13px] whitespace-nowrap relative z-0 w-max bg-white" },
                 React.createElement("thead", { className: "text-[12px] font-extrabold sticky top-0 z-[60] shadow-sm border-b border-slate-200" },
@@ -6854,7 +6928,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.133_FilterActionLayoutColor]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.135_WorkPromoExport]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -7224,7 +7298,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.133_FilterActionLayoutColor")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.135_WorkPromoExport")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
