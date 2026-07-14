@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.83)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.84)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.83.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.84.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -909,7 +909,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.83',
+    version: 'V1.a22.84',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -2259,10 +2259,12 @@ const FILTER_SORT_MODULE = Object.freeze({
 // V1.a22.79: 스페이스 치환은 마스터 원물-소분 관계로 역할을 고정하고, BOX 단가는 보존하며 소분행에만 환산원가를 적용한다. Ctrl 대체도 환산원가를 원가매칭 레이어에 기록해 원본 단가 덮어쓰기를 차단한다.
 // V1.a22.79: 별도 Lot 검수모드와 일반 Tab 가로채기를 제거한다. 재고/Lot 카드에서는 기존 수량·Lot 이슈, 마이너스 재고, 재고가 남은 다중 Lot 상품을 한 목록으로 합쳐 품목코드 오름차순으로 검출·이동한다.
 // V1.a22.80: 재고/Lot 필터를 품목코드 그룹 유지 방식으로 보완한다. 한 Lot을 0으로 수정해 다중 Lot 조건이 해제되어도 같은 코드의 나머지 행은 편집 중 사라지지 않으며, 순수 Lot 후보의 0재고 행 제외 정책은 유지한다.
-// V1.a22.82: 재고/Lot 이슈카드는 필터가 아니라 탐색 기능으로 동작한다. 카드/Tab 이동 중에도 전체 상품행을 유지하고, 검출대상만 품목코드순으로 스크롤 이동한다.
-// V1.a22.82: Lot 상세형의 통합 후보 각 행에 [이 기준 통합] 버튼을 노출한다. 클릭한 행의 구매일자·구매처·단가를 대표값으로 사용하고 수량은 해당 품목의 양수 재고 Lot 전체를 합산한다.
-// V1.a22.83: Lot 상세형 통합 버튼은 논리 Lot 조건이 달라야만 보이는 기능이 아니라, 같은 품목코드에 재고가 남은 Lot 행이 2개 이상이면 모든 양수 재고 Lot 행에 노출한다.
-// V1.a22.83: 3우리 같은 내부 이동 거래처는 실제 구매처 후보가 있으면 원 구매처로 대체해 표시/통합 기준에 사용한다.
+// V1.a22.84: 재고/Lot 이슈카드는 필터가 아니라 탐색 기능으로 동작한다. 카드/Tab 이동 중에도 전체 상품행을 유지하고, 검출대상만 품목코드순으로 스크롤 이동한다.
+// V1.a22.84: Lot 상세형의 통합 후보 각 행에 [이 기준 통합] 버튼을 노출한다. 클릭한 행의 구매일자·구매처·단가를 대표값으로 사용하고 수량은 해당 품목의 양수 재고 Lot 전체를 합산한다.
+// V1.a22.84: 재고/Lot Tab 이동 시 현재 Lot 상세형 상품코드를 확인 완료로 기록한다. 확인된 다중 Lot 상품은 미확인 목록과 카드 건수에서 제외하여 마지막 항목이 무한 반복되지 않도록 한다.
+// V1.a22.84: 재고/Lot 이동은 카드 선택 시 생성한 고정 품목코드순 큐와 방문경로 커서로 관리한다. Tab/Shift+Tab이 같은 기준을 사용하며 현재 행 제외 후 첫 항목으로 튀는 오류를 제거한다.
+// V1.a22.84: 스페이스바 치환 중 선택한 두 행을 현재 검토 세션의 완료키로 기록한다. 치환 후에도 검토 커서와 방문경로를 유지하고 다음 미확인 항목부터 순서대로 이동한다.
+// V1.a22.84: 이슈 이동 시 중첩되던 지연 포커스/스크롤 타이머를 취소하고, 카드 최초 선택 때만 필터·Lot 상세형 전환을 실행해 역탭 흔들림과 순서 초기화를 방지한다.
 // V1.a22.69: 코드통합형 해제/다시 통합 상태 관리.
 // 원본 Lot은 수정하지 않고 화면 보기/엑셀 1번 시트 출력에만 반영한다.
 const DATAOPS_CODE_MERGE_OVERRIDE_MODULE = Object.freeze({
@@ -2422,31 +2424,7 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
         return safeNum(calc.finalQty);
     },
     isPositiveStockRow: (row = {}) => DATAOPS_VIEW_LAYER_MODULE.getRowStockQty(row) > 0,
-    // V1.a22.83: 3우리/우리농산은 실제 원 구매처가 아니라 내부 이동 또는 내부 분배 경로다.
-    // 원본 row 안에 원구매처/구매처/매입처 후보가 있으면 그 값을 우선해 표시·통합 기준에 사용한다.
-    isInternalTransferVendor: (vendor = '') => {
-        const compact = safeStr(vendor, '').replace(/\s/g, '');
-        return compact === '3우리' || compact === '우리' || compact === '우리농산' || compact === '가구매' || compact === '가판매';
-    },
-    getDisplayPurchaseVendor: (row = {}) => {
-        const raw = row._raw || row.raw || {};
-        const rawPreferred = getRawCell(raw, ['원구매처', '원 구매처', '구매처', '매입처', '매입처(Lot)', '매입처(거래처)', '입고거래처', '거래처명']);
-        const candidates = [
-            rawPreferred,
-            row._purchaseLotVendor,
-            row._confirmedPurchaseVendor,
-            row.매입처매칭,
-            row.구매처,
-            row.매입처,
-            row._purchaseVendor,
-            row._stockTrade,
-            row._displayPurchaseVendor,
-            (row._uploadRole === 'out' || row._fromSalesConfirmedPurchase) ? '' : row.거래처
-        ].map(v => safeStr(v, '')).filter(Boolean);
-        const nonInternal = candidates.find(v => !DATAOPS_VIEW_LAYER_MODULE.isInternalTransferVendor(v));
-        return nonInternal || candidates[0] || '';
-    },
-    // V1.a22.83: Lot 상세 통합 버튼은 재고가 남은 원장 Lot 행 개수를 기준으로 한다.
+    // V1.a22.79: Lot 검수상품은 재고가 남은 논리 Lot만 센다.
     // 재고 0/마이너스 Lot은 Lot 상품 판정·보더라인·Tab 이동에서 제외한다.
     getPositiveLogicalLotRows: (rows = []) => DATAOPS_VIEW_LAYER_MODULE.buildLogicalLotRows((rows || []).filter(row => DATAOPS_VIEW_LAYER_MODULE.isPositiveStockRow(row)))
         .filter(row => DATAOPS_VIEW_LAYER_MODULE.getRowStockQty(row) > 0),
@@ -2458,7 +2436,7 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
             groups[code].push(row);
         });
         return Object.entries(groups)
-            .filter(([, list]) => (list || []).filter(row => DATAOPS_VIEW_LAYER_MODULE.isPositiveStockRow(row)).length > 1)
+            .filter(([, list]) => DATAOPS_VIEW_LAYER_MODULE.getPositiveLogicalLotRows(list).length > 1)
             .map(([code]) => code);
     },
     // V1.a22.74: 검수 목적상 구매일자+구매처+구매단가가 같은 원장행은 하나의 동일 Lot으로 본다.
@@ -2466,7 +2444,7 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
     getLogicalLotIdentity: (row = {}, index = 0) => {
         const dateNum = FILTER_SORT_MODULE.getPurchaseDateSortValue(row);
         const hasDate = !!dateNum && dateNum !== 99999999;
-        const vendorRaw = DATAOPS_VIEW_LAYER_MODULE.getDisplayPurchaseVendor(row);
+        const vendorRaw = safeStr(row._displayPurchaseVendor || row._purchaseLotVendor || row._confirmedPurchaseVendor || (row._uploadRole === 'out' ? '' : row.거래처) || row._purchaseVendor || row._stockTrade || '');
         const vendorToken = vendorRaw.replace(/\s/g, '').toLowerCase();
         const price = safeNum(row.단가 || row.구매가 || row._purchasePrice || 0);
         const hasVendor = !!vendorToken && vendorToken !== '미지정' && vendorToken !== '-';
@@ -2563,7 +2541,7 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
         const nonZeroPriceRows = sourceRows.filter(r => safeNum(r.단가) > 0);
         const latestPriceRow = DATAOPS_VIEW_LAYER_MODULE.pickLatestRow(nonZeroPriceRows.length ? nonZeroPriceRows : sourceRows);
         // V1.a22.29: 코드 통합형 상품명 하단의 구매정보는 구매처 계열만 사용한다. 판매처/거래처명은 거래처칩 영역 전용이다.
-        const vendorSet = [...new Set(sourceRows.map(r => DATAOPS_VIEW_LAYER_MODULE.getDisplayPurchaseVendor(r)).filter(Boolean))];
+        const vendorSet = [...new Set(sourceRows.map(r => safeStr(r._displayPurchaseVendor || r._purchaseLotVendor || r._confirmedPurchaseVendor || (r._uploadRole === 'out' ? '' : r.거래처) || '')).filter(Boolean))];
         const costBasisMode = DATAOPS_VIEW_LAYER_MODULE.getCostBasisMode();
         const qtyForPrice = (row = {}) => {
             const actual = STOCK_ENGINE_MODULE.getActualQty ? STOCK_ENGINE_MODULE.getActualQty(row) : safeNum(row.실사);
@@ -2590,7 +2568,7 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
             if (!confirmedSalesRows.length) return true;
             return !(s.includes('Lot매치확인') || s.includes('Lot확인필요') || s.includes('Lot불일치') || s.includes('Lot원가확인') || s.includes('매입처없음'));
         });
-        const representativeVendor = DATAOPS_VIEW_LAYER_MODULE.getDisplayPurchaseVendor(latest);
+        const representativeVendor = safeStr(latest._displayPurchaseVendor || latest._purchaseLotVendor || latest._confirmedPurchaseVendor || (latest._uploadRole === 'out' ? '' : latest.거래처) || '');
         const representativeDateNum = selectedRepresentativeRow ? FILTER_SORT_MODULE.getPurchaseDateSortValue(latest) : latestDateNum;
         return {
             ...latest,
@@ -2649,8 +2627,8 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
             })
             .sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b));
     },
-    // V1.a22.83: Lot 상세 검수/통합 버튼은 재고가 남은 원장 Lot 행을 대상으로 한다.
-    // 같은 품목코드에 재고 > 0인 원장 Lot 행이 2개 이상이면 Lot 상품으로 분류하고,
+    // V1.a22.79: Lot 상세 검수는 재고가 남은 논리 Lot만 대상으로 한다.
+    // 같은 품목코드에 재고 > 0인 논리 Lot이 2개 이상일 때만 Lot 상품으로 분류하고,
     // 보더라인/Tab 이동/개별 통합 버튼을 노출한다. 재고 0/마이너스 행은 일반 상세행으로 유지한다.
     buildLotDetailRows: (rows = []) => {
         const groups = {};
@@ -2668,7 +2646,7 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
             const list = groups[code] || [];
             const positiveRows = list.filter(row => DATAOPS_VIEW_LAYER_MODULE.isPositiveStockRow(row));
             const positiveLogicalLots = DATAOPS_VIEW_LAYER_MODULE.getPositiveLogicalLotRows(list);
-            const isCandidate = positiveRows.length > 1;
+            const isCandidate = positiveLogicalLots.length > 1;
             const detailMerged = isCandidate && DATAOPS_CODE_MERGE_OVERRIDE_MODULE.isDetailMerged(code);
             if (detailMerged) {
                 const firstPositiveKey = safeStr((positiveRows[0] || {}).batchKey || '');
@@ -2686,13 +2664,13 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
                             _isViewRow: true,
                             _detailMerged: true,
                             _mergeOverrideCode: code,
-                            _viewLotCount: positiveRows.length,
+                            _viewLotCount: positiveLogicalLots.length,
                             _rawSourceRowCount: positiveRows.length,
-                            _sourceLedgerRows: DATAOPS_VIEW_LAYER_MODULE.buildLogicalLotRows(positiveRows),
+                            _sourceLedgerRows: positiveLogicalLots,
                             _representativeSourceKey: DATAOPS_CODE_MERGE_OVERRIDE_MODULE.getRepresentativeKey(code) || firstPositiveKey,
                             _lotReviewCandidate: false,
                             _lotReviewGroupKey: '',
-                            _lotReviewGroupLotCount: positiveRows.length
+                            _lotReviewGroupLotCount: positiveLogicalLots.length
                         });
                         return;
                     }
@@ -2703,7 +2681,7 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
                         _viewSourceKeys: [row.batchKey],
                         _lotReviewCandidate: false,
                         _lotReviewGroupKey: '',
-                        _lotReviewGroupLotCount: positiveRows.length
+                        _lotReviewGroupLotCount: positiveLogicalLots.length
                     });
                 });
                 return;
@@ -6569,7 +6547,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
     const mergeSourceRows = isMergeCandidateRow && Array.isArray(item._sourceLedgerRows) ? item._sourceLedgerRows : [];
     const buildMergeLotInfo = (r = {}) => {
         const d = safeStr(r.일자 || r._stockRecordDate || r._purchaseDate || '');
-        const v = DATAOPS_VIEW_LAYER_MODULE.getDisplayPurchaseVendor(r) || safeStr(r.거래처 || '');
+        const v = safeStr(r._displayPurchaseVendor || r._purchaseLotVendor || r._confirmedPurchaseVendor || r.거래처 || r._purchaseVendor || r._stockTrade || '');
         const p = safeNum(r.단가 || r.구매가 || r._purchasePrice || 0);
         return {
             text: [d, v, p ? `₩${formatMoney(p)}` : ''].filter(Boolean).join(' · '),
@@ -6744,7 +6722,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
     const lotReviewLastCellBoxClass = lotReviewBoxRow ? 'border-r-2 border-r-amber-500' : '';
     const lotReviewPointClass = !!isLotReviewCandidate && !isLotReviewMode ? 'border-l-4 border-l-cyan-400' : '';
     // V1.a22.29: 상품명 하단 구매정보에는 구매처 계열만 표시한다. 3.매출 거래처명(판매처)은 오른쪽 거래처칩 전용이다.
-    const displayPurchaseVendor = safeStr(DATAOPS_VIEW_LAYER_MODULE.getDisplayPurchaseVendor(item), '미지정');
+    const displayPurchaseVendor = safeStr(item._displayPurchaseVendor || item._purchaseLotVendor || item._confirmedPurchaseVendor || (item._uploadRole === 'out' || item._fromSalesConfirmedPurchase ? '' : item.거래처) || '미지정', '미지정');
     return (React.createElement("tr", { "data-code": item.코드, "data-batch": item.batchKey, "data-merge-candidate": isMergeBoxRow ? "1" : undefined, "data-merge-group": isMergeBoxRow ? mergeGroupKey : undefined, "data-merge-group-start": isMergeBoxRow && isMergeGroupStart ? "1" : undefined, "data-merge-group-end": isMergeBoxRow && isMergeGroupEnd ? "1" : undefined, "data-lot-review-candidate": isLotReviewCandidate ? "1" : undefined, "data-lot-review-group": isLotReviewCandidate ? safeStr(item._lotReviewGroupKey || item.코드 || '') : undefined, "data-lot-review-group-start": isLotReviewMode && isLotReviewCandidate && isLotReviewGroupStart ? "1" : undefined, "data-lot-review-group-end": isLotReviewMode && isLotReviewCandidate && isLotReviewGroupEnd ? "1" : undefined, tabIndex: (isMergeBoxRow && isMergeGroupStart) ? 0 : undefined, onDragOver: (e) => { e.preventDefault(); setIsDragOver(true); }, onDragLeave: (e) => { e.preventDefault(); setIsDragOver(false); }, onDrop: (e) => {
             e.preventDefault();
             setIsDragOver(false);
@@ -6928,8 +6906,10 @@ function App() {
     const cardContainerRef = useRef(null);
     const filterBarRef = useRef(null);
     const currentIssueIdxRef = useRef(-1);
-    const issueJumpHistoryRef = useRef([]); // V1.a22.12: 이슈카드 Tab 이동 경로 저장. < 버튼은 검색이 아니라 이 경로를 역순 복귀한다.
-    const issueJumpGuardRef = useRef({ lastType: '', lastBatchKey: '', repeat: 0 }); // V1.a22.83: 같은 위치 반복 점프 무한루프 방지
+    // V1.a22.84: 이슈 이동은 화면 포커스/현재 배열 index와 분리된 고정 큐로 관리한다.
+    // Space 치환이나 수량 수정으로 productData가 갱신되어도 batchKey 순서와 방문경로는 유지된다.
+    const issueReviewSessionRef = useRef({ type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1 });
+    const issueFocusTimersRef = useRef([]);
     const focusedInputRef = useRef({ key: null, idx: -1 });
     const activeIssueModeRef = useRef(null);
     const filteredProductDataRef = useRef([]); // V1.a22.12: 프린터 출력은 현재 화면 필터 결과를 그대로 사용한다.
@@ -7094,6 +7074,9 @@ function App() {
         if (scrollContainer)
             scrollContainer.scrollTo({ top: 0 });
         currentIssueIdxRef.current = -1;
+        issueReviewSessionRef.current = { type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1 };
+        issueFocusTimersRef.current.forEach(id => clearTimeout(id));
+        issueFocusTimersRef.current = [];
         focusedInputRef.current = { key: null, idx: -1 };
         setFilters(getDefaultFilters());
         setError('');
@@ -7114,6 +7097,7 @@ function App() {
         return "waiting for data_blocks... (파일을 업로드하세요)";
     }, [files, isProcessing, isCostExtractionMode, analysisMeta]);
     useEffect(() => { activeIssueModeRef.current = activeIssueMode; }, [activeIssueMode]);
+    useEffect(() => () => { issueFocusTimersRef.current.forEach(id => clearTimeout(id)); issueFocusTimersRef.current = []; }, []);
     // V1.a22.12: System.IO 패널은 스크롤 위치를 최상단으로 이동하지 않고 현재 위치에서 고정 펼침/접힘만 전환한다.
     useEffect(() => { systemUiCollapsedRef.current = systemUiCollapsed; }, [systemUiCollapsed]);
     // V1.a22.12: 우측 플로팅 펼치기 버튼은 수동 펼침으로 간주한다.
@@ -7496,10 +7480,10 @@ function App() {
     // 다중 원가 코드 자체는 참고 정보일 뿐이며, 이슈카드는 실제 미처리 Lot 문제만 다룬다.
     const multiPriceCodes = useMemo(() => { const codes = new Set(); productData.forEach(p => { if (priceOptionsMap[p.코드] && priceOptionsMap[p.코드].length >= 2 && p.출고 > 0)
         codes.add(p.코드); }); return Array.from(codes); }, [productData, priceOptionsMap]);
-    // V1.a22.83: Lot 상품은 같은 품목코드에 재고가 남은 원장 Lot 행이 2개 이상이면 인정한다. 같은 단가라도 상세형에서 통합 버튼을 선택할 수 있다.
+    // V1.a22.79: Lot 상품은 재고 > 0인 논리 Lot이 같은 품목코드에 2개 이상 남은 경우만 인정한다.
     const lotReviewCandidateCodes = useMemo(() => DATAOPS_VIEW_LAYER_MODULE.getLotReviewCandidateCodes(productData), [productData]);
     const lotReviewCandidateCodeSet = useMemo(() => new Set(lotReviewCandidateCodes), [lotReviewCandidateCodes]);
-    const pendingLotReviewCandidateCodes = useMemo(() => lotReviewCandidateCodes.filter(code => !DATAOPS_CODE_MERGE_OVERRIDE_MODULE.isDetailMerged(code)), [lotReviewCandidateCodes, mergeOverrideVersion]);
+    const pendingLotReviewCandidateCodes = useMemo(() => lotReviewCandidateCodes.filter(code => !DATAOPS_CODE_MERGE_OVERRIDE_MODULE.isDetailMerged(code) && !ackMultiCodes.has(code)), [lotReviewCandidateCodes, mergeOverrideVersion, ackMultiCodes]);
     const isSalesConfirmedLotResolvedRow = useCallback((p = {}) => {
         const hasOwnConfirmed = !!(p._salesConfirmedPurchase || p._fromSalesConfirmedPurchase || p._hasSalesConfirmedPurchase || safeStr(p._salesConfirmedPurchaseVendor || p._confirmedPurchaseVendor, ''));
         if (hasOwnConfirmed) return true;
@@ -7583,11 +7567,14 @@ function App() {
     // ① 기존 수량/재고 이슈 ② 기존 Lot 매칭 이슈 ③ 실제 마이너스 재고
     // ④ 재고 > 0인 논리 Lot이 같은 품목코드에 2개 이상 남은 Lot 상품을 포함한다.
     // 동일 행이 여러 조건에 걸려도 한 번만 노출하고, 항상 품목코드 오름차순으로 정렬한다.
-    const getStockLotReviewTargets = useCallback((unresolvedOnly = true) => {
+    const getStockLotReviewTargets = useCallback((unresolvedOnly = true, options = {}) => {
         const targetMap = new Map();
+        const extraAckedCodes = options && options.extraAckedCodes instanceof Set ? options.extraAckedCodes : new Set();
+        const excludedBatchKeys = options && options.excludedBatchKeys instanceof Set ? options.excludedBatchKeys : new Set();
         const addTarget = (row, index, reason) => {
             if (!row || index < 0) return;
             const key = safeStr(row.batchKey || `${DATAOPS_VIEW_LAYER_MODULE.normalizeCode(row)}|${index}`);
+            if (excludedBatchKeys.has(key)) return;
             const existing = targetMap.get(key);
             if (existing) {
                 if (reason && !existing._stockLotReasons.includes(reason)) existing._stockLotReasons.push(reason);
@@ -7603,6 +7590,7 @@ function App() {
         });
         (lotReviewCandidateCodes || []).forEach(code => {
             if (DATAOPS_CODE_MERGE_OVERRIDE_MODULE.isDetailMerged(code)) return;
+            if (unresolvedOnly && (ackMultiCodes.has(code) || extraAckedCodes.has(code))) return;
             const candidates = (productData || [])
                 .map((row, index) => ({ row, index }))
                 .filter(({ row }) => DATAOPS_VIEW_LAYER_MODULE.normalizeCode(row) === code && DATAOPS_VIEW_LAYER_MODULE.getRowStockQty(row) > 0)
@@ -7610,7 +7598,7 @@ function App() {
             if (candidates.length > 0) addTarget(candidates[0].row, candidates[0].index, 'LOT_PRODUCT');
         });
         return Array.from(targetMap.values()).sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b) || a.index - b.index);
-    }, [productData, hasUnresolvedQtyIssue, hasQtyIssueTotal, hasUnresolvedLotIssue, hasLotIssueTotal, lotReviewCandidateCodes, mergeOverrideVersion]);
+    }, [productData, hasUnresolvedQtyIssue, hasQtyIssueTotal, hasUnresolvedLotIssue, hasLotIssueTotal, lotReviewCandidateCodes, mergeOverrideVersion, ackMultiCodes]);
     const normalizeDisplayIssues = useCallback((issues = []) => {
         const list = Array.isArray(issues) ? [...issues] : [];
         const normalized = [];
@@ -7783,7 +7771,7 @@ function App() {
             const lotKey = `LOT_PRODUCT|${code}`;
             totalLotKeys.add(lotKey);
             totalStockLotKeys.add(lotKey);
-            if (!DATAOPS_CODE_MERGE_OVERRIDE_MODULE.isDetailMerged(code)) {
+            if (!DATAOPS_CODE_MERGE_OVERRIDE_MODULE.isDetailMerged(code) && !ackMultiCodes.has(code)) {
                 unresolvedLotKeys.add(lotKey);
                 unresolvedStockLotKeys.add(lotKey);
             }
@@ -7815,7 +7803,7 @@ function App() {
             totalLossValue,
             total: productData.length
         };
-    }, [productData, hasQtyIssueTotal, hasUnresolvedQtyIssue, hasLotIssueTotal, hasUnresolvedLotIssue, substitutionCandidateRows, substitutionCandidateStatusCounts, lotReviewCandidateCodes, mergeOverrideVersion]);
+    }, [productData, hasQtyIssueTotal, hasUnresolvedQtyIssue, hasLotIssueTotal, hasUnresolvedLotIssue, substitutionCandidateRows, substitutionCandidateStatusCounts, lotReviewCandidateCodes, mergeOverrideVersion, ackMultiCodes]);
     const hiddenMovedSourceCount = useMemo(() => productData.filter(item => item && item._hiddenBySalesMove).length, [productData]);
     const showCards = useMemo(() => {
         // V1.a22.12: 카드뷰는 문제 건수가 0이어도 분석 완료 후 항상 표시한다.
@@ -7838,6 +7826,9 @@ function App() {
         setActiveIssueMode(null);
         setActiveMultiCode(null);
         currentIssueIdxRef.current = -1;
+        issueReviewSessionRef.current = { type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1 };
+        issueFocusTimersRef.current.forEach(id => clearTimeout(id));
+        issueFocusTimersRef.current = [];
         focusedInputRef.current = { key: null, idx: -1 };
         await runAnalysis(targetFiles);
         setAnalysisMeta({ fileLabel, analyzedAt: formatAnalysisTime(new Date()), status: 'done' });
@@ -8655,6 +8646,9 @@ ${issueLine}`);
         setActiveIssueMode(null);
         setActiveMultiCode(null);
         currentIssueIdxRef.current = -1;
+        issueReviewSessionRef.current = { type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1 };
+        issueFocusTimersRef.current.forEach(id => clearTimeout(id));
+        issueFocusTimersRef.current = [];
         focusedInputRef.current = { key: null, idx: -1 };
         try {
             const parsedIn = await parseExcelData(targetFiles.in, mappings, 'in');
@@ -9599,16 +9593,15 @@ ${balanceText}
         else {
             row.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
-        setTimeout(() => {
-            try {
-                focusTarget.focus({ preventScroll: true });
-            }
-            catch (e) {
-                focusTarget.focus();
-            }
-            if (focusTarget.select)
-                focusTarget.select();
-        }, 180);
+        // V1.a22.84: 이전 이동의 지연 focus가 뒤늦게 실행되어 현재 행을 빼앗지 않도록 즉시 포커스한다.
+        try {
+            focusTarget.focus({ preventScroll: true });
+        }
+        catch (e) {
+            focusTarget.focus();
+        }
+        if (focusTarget.select)
+            focusTarget.select();
     }, []);
     const resolveViewLayerTargetKey = useCallback((targetKey, moveMeta = {}) => {
         if (!DATAOPS_VIEW_LAYER_MODULE.isViewRowKey(targetKey) && !moveMeta.targetIsViewRow) return targetKey;
@@ -9723,70 +9716,72 @@ ${balanceText}
             return next;
         }));
     }, [setProductData, setAlertMsg]);
-    // V1.a22.12: 이슈카드 역탭(<)은 현재 목록의 이전 항목 검색이 아니라 사용자가 실제로 지나온 경로로 복귀한다.
-    // - Tab/다음 이동: 현재 위치를 issueJumpHistoryRef에 저장한 뒤 다음 이슈로 이동한다.
-    // - < 이동: issueJumpHistoryRef.pop()으로 직전 방문 위치로 복귀한다. 복귀 이동은 확인완료/✅ 처리하지 않는다.
-    // - 카드 새 선택: 이전 이동 경로를 초기화하고 해당 이슈 모드의 첫 항목부터 새로 시작한다.
+    // V1.a22.84: 이슈카드 이동은 카드 선택 시 만든 고정 큐와 방문경로 커서로 관리한다.
+    // - Tab: 현재 항목을 확인 처리하고 큐의 다음 미완료 항목으로 이동한다.
+    // - Shift+Tab/<: 실제 방문경로의 직전 항목으로 복귀하며 확인상태는 변경하지 않는다.
+    // - Space 치환/수량수정으로 productData가 갱신되어도 batchKey 기반 큐는 유지한다.
     const handleIssueJump = useCallback((type, direction = 'next', fromCardClick = false) => {
-        setActiveIssueMode(type);
-        // V1.a22.29: 이슈카드/Tab 점프는 조회 동작이므로 현재 보기모드(코드 통합형/Lot 상세형)를 유지한다.
-// V1.a22.29: 2.매입의 구매정보는 거래처명 기준으로 고정하고, 3.매출 구매처는 확정매칭이면 Lot 이슈에서 제외한다.
-        // 통합2 이상 거래처칩 이동 같은 수정 작업에서만 별도 상세 전환을 유도한다.
-        setSearchInputVal('');
-        setFilters(prev => ({
-            ...prev,
-            search: '', issuesOnly: false, excludeZeroActual: false,
-            // V1.a22.82: 재고/Lot 카드는 행을 추려내는 필터가 아니라 전체 원장 위의 탐색 모드다.
-            // 검출되지 않은 상품도 관리자가 스크롤로 함께 판단할 수 있도록 reviewType은 항상 해제한다.
-            reviewType: null,
-            category: [], stockListType: 'ALL', favoriteVendorOnly: false, showHiddenMoveRows: false,
-            unit: { ...CONFIG_MODULE.defaultUnitFilter },
-            sortMode: type === 'stockLot' ? 'DEFAULT' : prev.sortMode,
-            sortDesc: type === 'stockLot' ? false : prev.sortDesc
-        }));
-        if (fromCardClick)
-            issueJumpHistoryRef.current = [];
-        // V1.a22.79: 재고/Lot 카드는 별도 검수모드를 만들지 않는다.
-        // Lot 상세형으로만 전환한 뒤 수량·Lot·마이너스·다중 Lot 상품을 한 목록에서 품목코드순으로 이동한다.
-        if (type === 'stockLot') {
-            setViewMode('LOT_DETAIL');
-            setGrouping(prev => normalizeDataOpsGrouping({ ...prev, manageMode: 'LOT_DETAIL' }));
-            setActiveMultiCode(null);
-        }
-        const activeEl = document.activeElement;
-        let currentDataIndex = -1;
-        if (activeEl) {
-            const row = activeEl.closest('tr[data-batch]');
-            if (row)
-                currentDataIndex = productData.findIndex(p => p.batchKey === row.getAttribute('data-batch'));
-        }
-        let currIdx = fromCardClick ? -1 : currentIssueIdxRef.current;
-        if (currentDataIndex !== -1 && !fromCardClick)
-            currIdx = currentDataIndex;
-        const focusIssueTargetByItem = (targetItem) => {
-            if (!targetItem)
-                return;
-            currentIssueIdxRef.current = targetItem.index;
+        const makeEmptySession = () => ({ type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1 });
+        const cancelFocusTimers = () => {
+            (issueFocusTimersRef.current || []).forEach(id => clearTimeout(id));
+            issueFocusTimersRef.current = [];
+        };
+        const scheduleFocusTask = (fn, delay = 0) => {
+            const id = setTimeout(() => {
+                issueFocusTimersRef.current = (issueFocusTimersRef.current || []).filter(timerId => timerId !== id);
+                fn();
+            }, delay);
+            issueFocusTimersRef.current.push(id);
+            return id;
+        };
+        const buildTargetItems = () => {
+            const integratedCostReviewCodeSet = type === 'missingPrice' && viewMode === 'CODE_SUMMARY'
+                ? new Set(DATAOPS_VIEW_LAYER_MODULE.buildCodeSummaryRows(productData).filter(row => row._costReviewNeeded).map(row => safeStr(row.코드 || 'NO_CODE')))
+                : new Set();
+            const condition = (p) => {
+                if (type === 'missingPrice')
+                    return integratedCostReviewCodeSet.has(safeStr(p.코드 || 'NO_CODE')) || (!DATAOPS_OPERATION_MODULE.hasLotCostResolved(p) && (((!p.수기확인완료 && safeNum(p.단가) <= 0)) || (p.이슈 && p.이슈.some(i => i.includes('🚨단가변경') || i.includes('🚨단가없음')))));
+                if (type === 'stockLot')
+                    return hasUnresolvedQtyIssue(p) || hasUnresolvedLotIssue(p);
+                if (type === 'loss')
+                    return hasUnresolvedQtyIssue(p);
+                if (type === 'splitLoss')
+                    return !!(p._splitLossCandidate || (p.이슈 && p.이슈.some(i => (safeStr(i).includes('소분로스후보') || safeStr(i).includes('소분오차')))));
+                if (type === 'multiPrice')
+                    return hasUnresolvedLotIssue(p);
+                return false;
+            };
+            if (type === 'stockLot')
+                return getStockLotReviewTargets(true);
+            return productData
+                .map((p, index) => ({ ...p, index }))
+                .filter(condition)
+                .sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b) || a.index - b.index);
+        };
+        const focusIssueTargetByKey = (batchKey, queueIndex) => {
+            const foundIndex = productData.findIndex(p => safeStr(p.batchKey) === safeStr(batchKey));
+            if (foundIndex < 0)
+                return false;
+            const targetItem = { ...productData[foundIndex], index: foundIndex };
+            const session = issueReviewSessionRef.current;
+            session.cursor = queueIndex;
+            session.currentKey = safeStr(batchKey);
+            currentIssueIdxRef.current = foundIndex;
             if (type === 'multiPrice')
                 setActiveMultiCode(targetItem.코드);
             else
                 setActiveMultiCode(null);
-            // V1.a22.29: 코드 통합형에서는 원장 batchKey가 화면에 없으므로 해당 품목코드의 통합행으로 점프한다.
-            // Lot 상세형에서는 기존처럼 실제 원장 batchKey로 점프한다.
             const effectiveViewMode = type === 'stockLot' ? 'LOT_DETAIL' : viewMode;
             const focusBatchKey = effectiveViewMode === 'CODE_SUMMARY'
                 ? `VIEW_CODE|${safeStr(targetItem.코드 || 'NO_CODE').replace(/\.0$/, '').trim() || 'NO_CODE'}`
                 : targetItem.batchKey;
+            cancelFocusTimers();
             const focusIssueTarget = (attempt = 0) => {
                 const safeBatch = window.CSS && CSS.escape ? CSS.escape(focusBatchKey) : String(focusBatchKey).replace(/"/g, '\\"');
                 const row = document.querySelector(`tr[data-batch="${safeBatch}"]`);
                 if (!row) {
-                    if (attempt < 12) {
-                        setTimeout(() => focusIssueTarget(attempt + 1), 80);
-                    }
-                    else {
-                        setAlertMsg('이동할 행을 찾지 못했습니다. 현재 보기/필터 상태를 유지하고 반복 이동을 중단했습니다.');
-                    }
+                    if (attempt < 10)
+                        scheduleFocusTask(() => focusIssueTarget(attempt + 1), 70);
                     return;
                 }
                 const targetField = type === 'missingPrice' ? 'price-input' : 'actual-input';
@@ -9794,148 +9789,161 @@ ${balanceText}
                 scrollIssueRowIntoWorkCenter(row, input, type);
                 const colorClass = type === 'missingPrice' ? 'bg-rose-50' : (type === 'stockLot' ? 'bg-cyan-50' : (type === 'multiPrice' ? 'bg-blue-50' : (type === 'splitLoss' ? 'bg-amber-50' : 'bg-orange-50')));
                 row.classList.add(colorClass);
-                setTimeout(() => row.classList.remove(colorClass), 1500);
-                if (!input) {
-                    if (attempt < 12) {
-                        setTimeout(() => focusIssueTarget(attempt + 1), 80);
-                    }
-                    else {
-                        setAlertMsg('이동할 입력칸을 찾지 못했습니다. 같은 위치 반복 이동을 중단했습니다.');
-                    }
-                    return;
-                }
-                setTimeout(() => {
+                scheduleFocusTask(() => row.classList.remove(colorClass), 1200);
+                if (input) {
                     input.classList.add('ring-2', 'ring-rose-500', 'border-rose-500', 'bg-rose-50');
-                    setTimeout(() => input.classList.remove('ring-2', 'ring-rose-500', 'border-rose-500', 'bg-rose-50'), 1600);
-                }, 220);
+                    scheduleFocusTask(() => input.classList.remove('ring-2', 'ring-rose-500', 'border-rose-500', 'bg-rose-50'), 1300);
+                }
             };
-            setTimeout(() => focusIssueTarget(0), 180);
+            // 카드 최초 선택에서 Lot 상세형 렌더가 끝날 시간만 확보하고, 이후 이동은 즉시 실행한다.
+            scheduleFocusTask(() => focusIssueTarget(0), fromCardClick && type === 'stockLot' ? 120 : 0);
+            return true;
         };
-        // 역탭/< : 사용자가 지나온 경로로만 복귀한다. 현재 항목을 완료 처리하지 않는다.
+        const findExistingQueueIndex = (session, startIndex, step, skipCompleted = false) => {
+            for (let i = startIndex; i >= 0 && i < session.keys.length; i += step) {
+                const key = safeStr(session.keys[i]);
+                if (!key) continue;
+                if (skipCompleted && session.completedKeys.has(key)) continue;
+                if (productData.some(row => safeStr(row.batchKey) === key)) return i;
+            }
+            return -1;
+        };
+        const startNewSession = () => {
+            setActiveIssueMode(type);
+            activeIssueModeRef.current = type;
+            setSearchInputVal('');
+            setFilters(prev => ({
+                ...prev,
+                search: '', issuesOnly: false, excludeZeroActual: false,
+                reviewType: null,
+                category: [], stockListType: 'ALL', favoriteVendorOnly: false, showHiddenMoveRows: false,
+                unit: { ...CONFIG_MODULE.defaultUnitFilter },
+                sortMode: type === 'stockLot' ? 'DEFAULT' : prev.sortMode,
+                sortDesc: type === 'stockLot' ? false : prev.sortDesc
+            }));
+            if (type === 'stockLot') {
+                setViewMode('LOT_DETAIL');
+                setGrouping(prev => normalizeDataOpsGrouping({ ...prev, manageMode: 'LOT_DETAIL' }));
+                setActiveMultiCode(null);
+            }
+            const targetItems = buildTargetItems();
+            if (targetItems.length === 0) {
+                issueReviewSessionRef.current = makeEmptySession();
+                setAlertMsg('해결해야 할 이슈 항목이 없습니다. (확인 완료)');
+                setActiveIssueMode(null);
+                activeIssueModeRef.current = null;
+                setActiveMultiCode(null);
+                return;
+            }
+            const keys = targetItems.map(item => safeStr(item.batchKey)).filter(Boolean);
+            const session = { type, keys, cursor: 0, currentKey: keys[0], completedKeys: new Set(), path: [0], pathCursor: 0 };
+            issueReviewSessionRef.current = session;
+            focusIssueTargetByKey(keys[0], 0);
+        };
+
+        const session = issueReviewSessionRef.current || makeEmptySession();
+        const needsNewSession = fromCardClick || session.type !== type || !Array.isArray(session.keys) || session.keys.length === 0;
+        if (needsNewSession) {
+            cancelFocusTimers();
+            startNewSession();
+            return;
+        }
+        setActiveIssueMode(type);
+        activeIssueModeRef.current = type;
+
         if (direction === 'prev') {
-            let historyTarget = null;
-            while (issueJumpHistoryRef.current.length > 0 && !historyTarget) {
-                const last = issueJumpHistoryRef.current.pop();
-                if (!last || last.type !== type)
-                    continue;
-                const foundIndex = productData.findIndex(p => p.batchKey === last.batchKey);
-                if (foundIndex >= 0)
-                    historyTarget = { ...productData[foundIndex], index: foundIndex };
-            }
-            if (historyTarget) {
-                focusIssueTargetByItem(historyTarget);
-            }
-            else {
+            if (session.pathCursor <= 0) {
                 setAlertMsg('이전 이동 경로가 없습니다.');
+                return;
             }
+            let nextPathCursor = session.pathCursor - 1;
+            let queueIndex = -1;
+            while (nextPathCursor >= 0 && queueIndex < 0) {
+                const candidateIndex = session.path[nextPathCursor];
+                if (candidateIndex >= 0 && candidateIndex < session.keys.length && productData.some(row => safeStr(row.batchKey) === safeStr(session.keys[candidateIndex])))
+                    queueIndex = candidateIndex;
+                else
+                    nextPathCursor -= 1;
+            }
+            if (queueIndex < 0) {
+                setAlertMsg('이전 이동 경로가 없습니다.');
+                return;
+            }
+            session.pathCursor = nextPathCursor;
+            focusIssueTargetByKey(session.keys[queueIndex], queueIndex);
             return;
         }
-        if (currIdx !== -1 && !fromCardClick) {
-            const currentItemForHistory = productData[currIdx];
-            if (currentItemForHistory) {
-                issueJumpHistoryRef.current.push({ type, batchKey: currentItemForHistory.batchKey, index: currIdx });
-                if (issueJumpHistoryRef.current.length > 100)
-                    issueJumpHistoryRef.current.shift();
-            }
-            setProductData(prev => {
-                const newData = [...prev];
-                const itemToAck = newData[currIdx];
-                if (itemToAck) {
-                    let needsUpdate = false;
-                    const item = { ...itemToAck };
-                    if (!item.수기확인완료) {
-                        item.수기확인완료 = true;
-                        needsUpdate = true;
-                    }
-                    if (item.이슈 && item.이슈.some(i => i.includes('🚨'))) {
-                        item.이슈 = item.이슈.map(msg => msg.replace(/🚨/g, '✅'));
-                        needsUpdate = true;
-                    }
-                    if (needsUpdate)
-                        newData[currIdx] = item;
+
+        const currentKey = safeStr(session.currentKey || session.keys[session.cursor]);
+        const currentIndex = productData.findIndex(p => safeStr(p.batchKey) === currentKey);
+        if (currentKey)
+            session.completedKeys.add(currentKey);
+        if (currentIndex >= 0) {
+            const currentItem = productData[currentIndex];
+            const currentCode = DATAOPS_VIEW_LAYER_MODULE.normalizeCode(currentItem);
+            setProductData(prev => prev.map(item => {
+                if (safeStr(item.batchKey) !== currentKey) return item;
+                let needsUpdate = false;
+                const next = { ...item };
+                if (!next.수기확인완료) {
+                    next.수기확인완료 = true;
+                    needsUpdate = true;
                 }
-                return newData;
-            });
-            if (type === 'multiPrice') {
-                const currentItem = productData[currIdx];
-                if (currentItem && multiPriceCodes.includes(currentItem.코드))
-                    setAckMultiCodes(prev => new Set(prev).add(currentItem.코드));
-            }
-        }
-        let effectivelyAckedCodes = new Set(ackMultiCodes);
-        const integratedCostReviewCodeSet = type === 'missingPrice' && viewMode === 'CODE_SUMMARY'
-            ? new Set(DATAOPS_VIEW_LAYER_MODULE.buildCodeSummaryRows(productData).filter(row => row._costReviewNeeded).map(row => safeStr(row.코드 || 'NO_CODE')))
-            : new Set();
-        if (type === 'multiPrice' && currIdx !== -1 && !fromCardClick) {
-            const currentItem = productData[currIdx];
-            if (currentItem && multiPriceCodes.includes(currentItem.코드))
-                effectivelyAckedCodes.add(currentItem.코드);
-        }
-        const condition = (p, isCurrentIdx = false) => {
-            if (isCurrentIdx)
-                return false;
-            // V1.a22.12: 단가 검증 카운트와 점프 조건을 통일한다.
-            // 실제 단가 0원 행은 더미/확인완료 여부와 관계없이 검토 대상이다.
-            if (type === 'missingPrice')
-                return integratedCostReviewCodeSet.has(safeStr(p.코드 || 'NO_CODE')) || (!DATAOPS_OPERATION_MODULE.hasLotCostResolved(p) && (((!p.수기확인완료 && safeNum(p.단가) <= 0)) || (p.이슈 && p.이슈.some(i => i.includes('🚨단가변경') || i.includes('🚨단가없음')))));
-            if (type === 'stockLot')
-                return hasUnresolvedQtyIssue(p) || hasUnresolvedLotIssue(p);
-            if (type === 'loss')
-                return hasUnresolvedQtyIssue(p);
-            if (type === 'splitLoss')
-                return !!(p._splitLossCandidate || (p.이슈 && p.이슈.some(i => (safeStr(i).includes('소분로스후보') || safeStr(i).includes('소분오차')))));
-            if (type === 'multiPrice')
-                return hasUnresolvedLotIssue(p);
-            return false;
-        };
-        const targetItems = type === 'stockLot'
-            ? getStockLotReviewTargets(true)
-            : productData.map((p, i) => ({ ...p, index: i })).filter((p, i) => condition(p, i === currIdx && !fromCardClick));
-        if (targetItems.length === 0) {
-            if (!fromCardClick)
-                setAlertMsg(`모든 항목의 확인이 완료되었습니다.`);
-            else
-                setAlertMsg(`해결해야 할 이슈 항목이 없습니다. (확인 완료)`);
-            setActiveIssueMode(null);
-            setActiveMultiCode(null);
-            return;
-        }
-        let targetItem = null;
-        if (type === 'stockLot') {
-            const currentBatchKey = currIdx >= 0 && productData[currIdx] ? safeStr(productData[currIdx].batchKey) : '';
-            const currentSortedIndex = currentBatchKey ? targetItems.findIndex(p => safeStr(p.batchKey) === currentBatchKey) : -1;
-            if (fromCardClick || !currentBatchKey) {
-                targetItem = targetItems[0];
-            }
-            else {
-                const nextInOrder = targetItems.slice(Math.max(0, currentSortedIndex + 1)).find(p => safeStr(p.batchKey) !== currentBatchKey)
-                    || targetItems.find(p => safeStr(p.batchKey) !== currentBatchKey);
-                if (!nextInOrder) {
-                    setAlertMsg('현재 항목 외 추가 이동 대상이 없습니다. 같은 위치 반복 이동을 중단했습니다.');
-                    setActiveIssueMode(null);
-                    setActiveMultiCode(null);
-                    return;
+                if (next.이슈 && next.이슈.some(i => safeStr(i).includes('🚨'))) {
+                    next.이슈 = next.이슈.map(msg => safeStr(msg).replace(/🚨/g, '✅'));
+                    needsUpdate = true;
                 }
-                targetItem = nextInOrder;
+                return needsUpdate ? next : item;
+            }));
+            if (type === 'stockLot' && currentCode && currentCode !== 'NO_CODE' && lotReviewCandidateCodeSet.has(currentCode) && !DATAOPS_CODE_MERGE_OVERRIDE_MODULE.isDetailMerged(currentCode)) {
+                setAckMultiCodes(prev => {
+                    const next = new Set(prev);
+                    next.add(currentCode);
+                    return next;
+                });
             }
-            const guardKey = `${type}|${safeStr(targetItem && targetItem.batchKey)}`;
-            if (!fromCardClick && issueJumpGuardRef.current.lastType === type && issueJumpGuardRef.current.lastBatchKey === safeStr(targetItem && targetItem.batchKey)) {
-                issueJumpGuardRef.current.repeat += 1;
+            if (type === 'multiPrice' && multiPriceCodes.includes(currentItem.코드)) {
+                setAckMultiCodes(prev => {
+                    const next = new Set(prev);
+                    next.add(currentItem.코드);
+                    return next;
+                });
             }
-            else {
-                issueJumpGuardRef.current = { lastType: type, lastBatchKey: safeStr(targetItem && targetItem.batchKey), repeat: 0 };
+        }
+
+        // 역탭 후 다시 Tab을 누르면 기존 방문경로를 그대로 전진한다.
+        if (session.pathCursor < session.path.length - 1) {
+            let nextPathCursor = session.pathCursor + 1;
+            let queueIndex = -1;
+            while (nextPathCursor < session.path.length && queueIndex < 0) {
+                const candidateIndex = session.path[nextPathCursor];
+                if (candidateIndex >= 0 && candidateIndex < session.keys.length && productData.some(row => safeStr(row.batchKey) === safeStr(session.keys[candidateIndex])))
+                    queueIndex = candidateIndex;
+                else
+                    nextPathCursor += 1;
             }
-            if (issueJumpGuardRef.current.repeat >= 2) {
-                setAlertMsg('같은 Lot 위치가 반복 감지되어 자동 이동을 중단했습니다. 현재 행을 확인한 뒤 다시 이동하세요.');
+            if (queueIndex >= 0) {
+                session.pathCursor = nextPathCursor;
+                focusIssueTargetByKey(session.keys[queueIndex], queueIndex);
                 return;
             }
         }
-        else {
-            targetItem = targetItems.find(p => p.index > currIdx) || targetItems[0];
-            issueJumpGuardRef.current = { lastType: type, lastBatchKey: safeStr(targetItem && targetItem.batchKey), repeat: 0 };
+
+        const nextQueueIndex = findExistingQueueIndex(session, session.cursor + 1, 1, true);
+        if (nextQueueIndex < 0) {
+            cancelFocusTimers();
+            setAlertMsg('모든 항목의 확인이 완료되었습니다.');
+            setActiveIssueMode(null);
+            activeIssueModeRef.current = null;
+            setActiveMultiCode(null);
+            issueReviewSessionRef.current = makeEmptySession();
+            return;
         }
-        focusIssueTargetByItem(targetItem);
-    }, [productData, multiPriceCodes, ackMultiCodes, viewMode, setProductData, setAckMultiCodes, hasUnresolvedQtyIssue, hasUnresolvedLotIssue, scrollIssueRowIntoWorkCenter, getStockLotReviewTargets]);
+        session.path = session.path.slice(0, session.pathCursor + 1);
+        session.path.push(nextQueueIndex);
+        session.pathCursor = session.path.length - 1;
+        focusIssueTargetByKey(session.keys[nextQueueIndex], nextQueueIndex);
+    }, [productData, multiPriceCodes, viewMode, setProductData, setAckMultiCodes, hasUnresolvedQtyIssue, hasUnresolvedLotIssue, scrollIssueRowIntoWorkCenter, getStockLotReviewTargets, lotReviewCandidateCodeSet]);
     const handleAcknowledgeAll = useCallback((type) => {
         setProductData(prev => {
             return prev.map(p => {
@@ -9973,14 +9981,19 @@ ${balanceText}
         if (type === 'multiPrice' || type === 'stockLot') {
             setAckMultiCodes(prev => {
                 const newSet = new Set(prev);
-                multiPriceCodes.forEach(c => newSet.add(c));
+                const codesToAck = type === 'stockLot' ? lotReviewCandidateCodes : multiPriceCodes;
+                codesToAck.forEach(c => newSet.add(c));
                 return newSet;
             });
         }
         setAlertMsg("선택한 항목의 모든 이슈가 확인(✅) 처리되었습니다.");
         setFilters(f => ({ ...f, reviewType: null }));
         setActiveIssueMode(null);
-    }, [setProductData, multiPriceCodes, setAckMultiCodes, hasUnresolvedQtyIssue, hasUnresolvedLotIssue]);
+        activeIssueModeRef.current = null;
+        issueReviewSessionRef.current = { type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1 };
+        issueFocusTimersRef.current.forEach(id => clearTimeout(id));
+        issueFocusTimersRef.current = [];
+    }, [setProductData, multiPriceCodes, lotReviewCandidateCodes, setAckMultiCodes, hasUnresolvedQtyIssue, hasUnresolvedLotIssue]);
     const handleSpacebarLink = useCallback((targetBatchKey, targetIdx) => {
         setLinkSourceKey(prevKey => {
             if (!prevKey) {
@@ -9996,6 +10009,13 @@ ${balanceText}
                     input.select();
                 } }, 50);
                 return null;
+            }
+            // V1.a22.84: 스페이스 치환은 재고/Lot 검토 큐를 재생성하지 않는다.
+            // 두 선택행은 현재 세션의 완료키로 표시해 치환 후 Tab이 다음 미확인 항목부터 이어진다.
+            const reviewSession = issueReviewSessionRef.current;
+            if (reviewSession && reviewSession.type === 'stockLot' && reviewSession.completedKeys instanceof Set) {
+                reviewSession.completedKeys.add(safeStr(prevKey));
+                reviewSession.completedKeys.add(safeStr(targetBatchKey));
             }
             setTimeout(() => executeImmediateSubstitution(prevKey, targetBatchKey, targetIdx), 0);
             return null;
@@ -10106,8 +10126,13 @@ ${balanceText}
                             input.select();
                         } }, 50);
                 }
-                if (activeIssueModeRef.current)
+                if (activeIssueModeRef.current) {
                     setActiveIssueMode(null);
+                    activeIssueModeRef.current = null;
+                    issueReviewSessionRef.current = { type: null, keys: [], cursor: -1, currentKey: '', completedKeys: new Set(), path: [], pathCursor: -1 };
+                    issueFocusTimersRef.current.forEach(id => clearTimeout(id));
+                    issueFocusTimersRef.current = [];
+                }
             }
             if (e.key === 'Tab' && activeIssueModeRef.current) {
                 e.preventDefault();
@@ -10133,7 +10158,7 @@ ${balanceText}
         else if (filters.stockListType === 'OTHER_STOCK')
             sourceRows = sourceRows.filter(p => STOCK_ENGINE_MODULE.getActualQty(p) > 0 && !EXPORT_MODULE.isPurchaseBalanceStockItem(p));
         let data = filters.reviewType === 'substitution' ? sourceRows : DATAOPS_VIEW_LAYER_MODULE.buildViewRows(sourceRows, { viewMode });
-        // V1.a22.82: 재고/Lot 이슈카드는 탐색 전용이다.
+        // V1.a22.84: 재고/Lot 이슈카드는 탐색 전용이다.
         // 카드 선택 또는 Tab 이동 시 전체 상품을 그대로 유지하며, 검출대상 목록은 handleIssueJump에서만 사용한다.
         // 과거 상태값으로 reviewType=stockLot이 들어와도 행 필터링은 하지 않는다.
         if (filters.reviewType === 'stockLot') {
