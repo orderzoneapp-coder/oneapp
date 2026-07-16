@@ -4,11 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.137_ExcludeSessionStopManager]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.138_CloudConfigSyncFix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="coreEngine.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     
     <script>
@@ -38,6 +39,7 @@
         // v2.1.135: 행사가 필터/F9 추출은 마스터 행사값만 보지 않고 현재 작업테이블의 finalData·활성 source 행사가를 우선 판정한다. 재고 검토 중 수기 입력한 행사가 상품도 즉시 행사상품으로 모아 출력한다.
         // v2.1.136: 필터 초기화와 검색창을 상단 작업줄의 맨 오른쪽으로 이동한다. 필터·액션 버튼 뒤에 독립 조회도구 묶음으로 배치한다.
         // v2.1.137: 제외는 현재 파일 작업 세션의 임시목록으로 분리하고 새 파일/초기화 시 자동 해제한다. 폴더형 보관함은 폐기하고 상품코드별 정지관리(정지예정/정지중/재개예정/확인필요, 개별·선택·전체 수정 및 F8 반영)로 교체한다.
+        // v2.1.138: 클라우드 백업을 coreEngine 공통 엔진으로 통합하고 모든 분할 응답을 검증한다. 환경설정은 AppConfig 분할 저장 및 config_only 복원을 사용한다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결하며 오더즈판매가/오더즈구매가는 작업·출력에서 제외한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
@@ -2641,111 +2643,130 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
     const handleCloudSync = useCallback(async (type) => {
         const targetCloudUrl = window.getOneAppCloudSyncUrl ? window.getOneAppCloudSyncUrl(config.cloudUrl) : (config.cloudUrl || '');
         if (!targetCloudUrl)
-            return ui.setAlertMsg("클라우드 URL이 설정되지 않았습니다. DataOps 매핑센터 또는 MerchOps 설정에서 URL을 세팅해주세요.");
+            return ui.setAlertMsg('클라우드 URL이 설정되지 않았습니다. DataOps 매핑센터 또는 MerchOps 설정에서 URL을 세팅해주세요.');
         if (window.setOneAppCloudSyncUrl) {
             const savedUrl = window.setOneAppCloudSyncUrl(targetCloudUrl);
-            if (config.setCloudUrl && savedUrl !== config.cloudUrl)
-                config.setCloudUrl(savedUrl);
+            if (config.setCloudUrl && savedUrl !== config.cloudUrl) config.setCloudUrl(savedUrl);
         }
+        const requestJson = async (url, options, label) => {
+            const response = await fetch(url, options);
+            const rawText = await response.text();
+            let result = null;
+            try { result = rawText ? JSON.parse(rawText) : null; }
+            catch (e) { throw new Error(`${label} 응답이 JSON 형식이 아닙니다.`); }
+            if (!response.ok) throw new Error(result?.message || `${label} 네트워크 오류 (${response.status})`);
+            if (!result || result.status !== 'success') throw new Error(result?.message || `${label} 실패`);
+            return result;
+        };
         ui.showToast(`☁️ 클라우드 ${type === 'upload' ? '전체 백업' : '불러오기'} 시작...`);
         ui.setIsProcessing(true);
         try {
+            const hooks = {
+                setMasterProducts: data.setMasterProducts,
+                setHistoryLogs: data.setHistoryLogs,
+                setMarginRules: rules => config.setMarginRules(window.sanitizeMerchMarginRules(rules)),
+                setMappings: config.setMappings,
+                setMasterLinks: config.setMasterLinks,
+                setVisibleUploadCols: config.setVisibleUploadCols,
+                setVisibleMasterCols: config.setVisibleMasterCols,
+                setUploadColumnMeta: config.setUploadColumnMeta,
+                setTableViewPresets: presets => config.setTableViewPresets(window.sanitizeMerchTableViewPresets(presets)),
+                setActiveTableTarget: config.setActiveTableTarget,
+                setActiveTableViewId: config.setActiveTableViewId
+            };
             if (type === 'upload') {
-                ui.setProcessMsg('서버 초기화 중...');
-                let initRes = await fetch(targetCloudUrl, { method: 'POST', body: JSON.stringify({ action: 'initSync' }) });
-                if ((await initRes.json()).status !== 'success')
-                    throw new Error("초기화 실패");
-                const masterItems = Object.values(data.masterProducts);
-                const chunkSize = 500;
-                for (let i = 0; i < masterItems.length; i += chunkSize) {
-                    const chunk = masterItems.slice(i, i + chunkSize);
-                    ui.setProcessMsg(`마스터 데이터 업로드 중... (${Math.min(i + chunkSize, masterItems.length)} / ${masterItems.length}건)`);
-                    await fetch(targetCloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_master', data: chunk }) });
-                }
-                const historyItems = data.historyLogs || [];
-                for (let i = 0; i < historyItems.length; i += chunkSize) {
-                    const chunk = historyItems.slice(i, i + chunkSize);
-                    ui.setProcessMsg(`히스토리 업로드 중... (${Math.min(i + chunkSize, historyItems.length)} / ${historyItems.length}건)`);
-                    await fetch(targetCloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_history', data: chunk }) });
-                }
-                ui.setProcessMsg('환경설정 및 AI 매핑 사전 업로드 중...');
-                const dict = JSON.parse(localStorage.getItem('parserDict_v870') || '{}');
-                const configPayload = {
-                    action: 'config',
-                    data: {
-                        dict: dict,
+                if (window.ONEAPP?.CLOUD?.pushCloudBackup) {
+                    await window.ONEAPP.CLOUD.pushCloudBackup({
+                        url: targetCloudUrl,
+                        masterProducts: data.masterProducts,
+                        historyLogs: data.historyLogs || [],
+                        config,
+                        chunkSize: 500,
+                        onProgress: progress => ui.setProcessMsg(progress.message || '클라우드 백업 중...')
+                    });
+                } else {
+                    ui.setProcessMsg('서버 초기화 중...');
+                    await requestJson(targetCloudUrl, { method: 'POST', body: JSON.stringify({ action: 'initSync' }) }, '서버 초기화');
+                    const masterItems = Object.values(data.masterProducts || {});
+                    const historyItems = data.historyLogs || [];
+                    const chunkSize = 500;
+                    for (let i = 0; i < masterItems.length; i += chunkSize) {
+                        const chunk = masterItems.slice(i, i + chunkSize);
+                        ui.setProcessMsg(`마스터 데이터 업로드 중... (${Math.min(i + chunkSize, masterItems.length)} / ${masterItems.length}건)`);
+                        await requestJson(targetCloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_master', data: chunk }) }, '마스터 업로드');
+                    }
+                    for (let i = 0; i < historyItems.length; i += chunkSize) {
+                        const chunk = historyItems.slice(i, i + chunkSize);
+                        ui.setProcessMsg(`히스토리 업로드 중... (${Math.min(i + chunkSize, historyItems.length)} / ${historyItems.length}건)`);
+                        await requestJson(targetCloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_history', data: chunk }) }, '히스토리 업로드');
+                    }
+                    const configData = {
+                        schemaVersion: 'MerchOps_v2.1.138_CloudConfigSyncFix',
+                        updatedAt: new Date().toISOString(),
+                        dict: JSON.parse(localStorage.getItem('parserDict_v870') || '{}'),
                         rules: config.marginRules,
                         appConfig: {
                             mappings: config.mappings,
                             masterLinks: config.masterLinks,
                             visibleUploadCols: config.visibleUploadCols,
                             visibleMasterCols: config.visibleMasterCols,
+                            uploadColumnMeta: config.uploadColumnMeta,
                             tableViewPresets: config.tableViewPresets,
                             activeTableTarget: config.activeTableTarget,
-                            activeTableViewId: config.activeTableViewId,
-                            cloudUrl: targetCloudUrl
+                            activeTableViewId: config.activeTableViewId
                         }
-                    }
-                };
-                await fetch(targetCloudUrl, { method: 'POST', body: JSON.stringify(configPayload) });
+                    };
+                    await requestJson(targetCloudUrl, { method: 'POST', body: JSON.stringify({ action: 'config', data: configData }) }, '환경설정 업로드');
+                }
                 ui.showToast('✅ 클라우드 대용량 분할 백업(Push) 성공!');
             }
             else {
                 ui.setProcessMsg('클라우드 데이터 수신 중...');
-                const res = await fetch(targetCloudUrl, { method: 'GET' });
-                if (!res.ok)
-                    throw new Error("Network Error");
-                const result = await res.json();
-                if (result.status === 'success' && result.data) {
-                    if (result.data.master && Object.keys(result.data.master).length > 0) {
-                        data.setMasterProducts(result.data.master);
+                let result;
+                if (window.ONEAPP?.CLOUD?.pullCloudBackup) {
+                    result = await window.ONEAPP.CLOUD.pullCloudBackup({
+                        url: targetCloudUrl,
+                        hooks,
+                        onProgress: progress => ui.setProcessMsg(progress.message || '클라우드 데이터 수신 중...')
+                    });
+                } else {
+                    const responseData = await requestJson(targetCloudUrl, { method: 'GET' }, '클라우드 데이터 복원');
+                    result = { status: 'success', data: responseData.data };
+                    const restored = responseData.data || {};
+                    if (restored.master && Object.keys(restored.master).length > 0) data.setMasterProducts(restored.master);
+                    if (restored.history && Array.isArray(restored.history)) {
+                        data.setHistoryLogs(restored.history);
+                        localStorage.setItem('merchHistory_v870', JSON.stringify(restored.history));
                     }
-                    if (result.data.dict && Object.keys(result.data.dict).length > 0) {
-                        localStorage.setItem('parserDict_v870', JSON.stringify(result.data.dict));
+                    if (restored.dict && Object.keys(restored.dict).length > 0) localStorage.setItem('parserDict_v870', JSON.stringify(restored.dict));
+                    if (restored.rules && restored.rules.length > 0) config.setMarginRules(window.sanitizeMerchMarginRules(restored.rules));
+                    if (restored.appConfig) {
+                        if (restored.appConfig.mappings) config.setMappings(restored.appConfig.mappings);
+                        if (restored.appConfig.masterLinks) config.setMasterLinks(restored.appConfig.masterLinks);
+                        if (restored.appConfig.visibleUploadCols) config.setVisibleUploadCols(restored.appConfig.visibleUploadCols);
+                        if (restored.appConfig.visibleMasterCols) config.setVisibleMasterCols(restored.appConfig.visibleMasterCols);
+                        if (restored.appConfig.uploadColumnMeta) config.setUploadColumnMeta(restored.appConfig.uploadColumnMeta);
+                        if (restored.appConfig.tableViewPresets) config.setTableViewPresets(window.sanitizeMerchTableViewPresets(restored.appConfig.tableViewPresets));
+                        if (restored.appConfig.activeTableTarget) config.setActiveTableTarget(restored.appConfig.activeTableTarget);
+                        if (restored.appConfig.activeTableViewId) config.setActiveTableViewId(restored.appConfig.activeTableViewId);
                     }
-                    if (result.data.rules && result.data.rules.length > 0) {
-                        config.setMarginRules(window.sanitizeMerchMarginRules(result.data.rules));
-                    }
-                    if (result.data.history && Array.isArray(result.data.history)) {
-                        data.setHistoryLogs(result.data.history);
-                        localStorage.setItem('merchHistory_v870', JSON.stringify(result.data.history));
-                    }
-                    if (result.data.appConfig) {
-                        if (result.data.appConfig.mappings)
-                            config.setMappings(result.data.appConfig.mappings);
-                        if (result.data.appConfig.masterLinks)
-                            config.setMasterLinks(result.data.appConfig.masterLinks);
-                        if (result.data.appConfig.visibleUploadCols)
-                            config.setVisibleUploadCols(result.data.appConfig.visibleUploadCols);
-                        if (result.data.appConfig.visibleMasterCols)
-                            config.setVisibleMasterCols(result.data.appConfig.visibleMasterCols);
-                        if (result.data.appConfig.tableViewPresets)
-                            config.setTableViewPresets(window.sanitizeMerchTableViewPresets(result.data.appConfig.tableViewPresets));
-                        if (result.data.appConfig.activeTableTarget)
-                            config.setActiveTableTarget(result.data.appConfig.activeTableTarget);
-                        if (result.data.appConfig.activeTableViewId)
-                            config.setActiveTableViewId(result.data.appConfig.activeTableViewId);
-                    }
-                    if (ui.setHasUnsavedChanges)
-                        ui.setHasUnsavedChanges(false);
-                    const masterCount = result.data.master ? Object.keys(result.data.master).length : 0;
-                    const historyCount = result.data.history ? result.data.history.length : 0;
-                    ui.showToast(`✅ 데이터 불러오기 완료! (상품: ${masterCount.toLocaleString()}건, 로그: ${historyCount.toLocaleString()}건)`);
                 }
-                else {
-                    throw new Error("Invalid Data Format");
-                }
+                if (ui.setHasUnsavedChanges) ui.setHasUnsavedChanges(false);
+                const restoredData = result?.data || {};
+                const masterCount = restoredData.master ? Object.keys(restoredData.master).length : 0;
+                const historyCount = restoredData.history ? restoredData.history.length : 0;
+                ui.showToast(`✅ 데이터 불러오기 완료! (상품: ${masterCount.toLocaleString()}건, 로그: ${historyCount.toLocaleString()}건)`);
             }
         }
         catch (error) {
             console.error(error);
-            ui.setAlertMsg("통신 오류 발생. URL이나 시트 권한을 확인하세요.\n" + error.message);
+            ui.setAlertMsg('통신 오류 발생. URL이나 시트 권한을 확인하세요.\n' + error.message);
         }
         finally {
             ui.setIsProcessing(false);
             ui.setProcessMsg('');
         }
-    }, [config.cloudUrl, data.masterProducts, data.setMasterProducts, config.marginRules, config.setMarginRules, config.mappings, config.masterLinks, config.visibleUploadCols, config.visibleMasterCols, data.historyLogs, data.setHistoryLogs, config.setCloudUrl, ui]);
+    }, [config, data.masterProducts, data.setMasterProducts, data.historyLogs, data.setHistoryLogs, ui]);
     const cleanUpGarbageTags = useCallback(() => {
         if (window.confirm("마스터 DB에 남아있는 불필요한 상품태그 찌꺼기를 삭제하여 용량을 최적화하시겠습니까?\n(오직 시스템에서 관리하는 속성만 안전하게 남습니다.)")) {
             let newMaster = { ...data.masterProducts };
@@ -7172,7 +7193,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.137_ExcludeSessionStopManager]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.138_CloudConfigSyncFix]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -7565,7 +7586,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.137_ExcludeSessionStopManager")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.138_CloudConfigSyncFix")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
