@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.87)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.89)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.87.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.89.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -909,7 +909,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.87',
+    version: 'V1.a22.89',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -2266,10 +2266,12 @@ const FILTER_SORT_MODULE = Object.freeze({
 // V1.a22.84: 스페이스바 치환 중 선택한 두 행을 현재 검토 세션의 완료키로 기록한다. 치환 후에도 검토 커서와 방문경로를 유지하고 다음 미확인 항목부터 순서대로 이동한다.
 // V1.a22.84: 이슈 이동 시 중첩되던 지연 포커스/스크롤 타이머를 취소하고, 카드 최초 선택 때만 필터·Lot 상세형 전환을 실행해 역탭 흔들림과 순서 초기화를 방지한다.
 // V1.a22.85: 재고/Lot 순차 검토 중 관리자가 스크롤로 다른 상품을 수정해도 검토 큐·현재 커서를 유지한다. 다른 행의 입력값을 즉시 확정한 뒤 Tab을 누르면 원래 검토 위치의 다음 항목으로 복귀하며, 수동 수정으로 해결된 향후 큐 항목은 기존 순서를 유지한 채 건너뛴다.
-// V1.a22.87: 코드통합형 대표 Lot은 현재 재고가 양수인 Lot만 후보로 삼고 그중 구매일자가 가장 최근인 Lot을 우선한다. 재고 0/마이너스 Lot은 대표값에서 제외하며, 양수 Lot이 없으면 대표 SourceKey를 지정하지 않는다.
-// V1.a22.87: 코드통합형에서도 원본 원장행이 정확히 1개인 통합1 상품은 단가·기초·입고·출고·실사·메모·거래처칩·스페이스 치환을 원본 batchKey에 직접 반영한다. 통합2 이상 또는 원본 다중행은 배분 기준이 모호하므로 수량 편집을 계속 차단한다.
-// V1.a22.87: 보기 전환 시 기존 이슈 Tab 세션/ref/지연 포커스를 즉시 종료하고, 전역 Tab 가로채기는 작업 테이블 행 내부에서만 실행한다. 통합형 직접수정의 실제 sourceKey를 포커스 추적에 사용해 일반 Tab과 이슈 Tab의 충돌을 차단한다.
-// V1.a22.87: 스페이스바/CTRL 대체판매는 실제 출고 상품의 원가를 판매전표 상품의 단가(입고가)에 반영한다. 원가출처 Lot·BOX 단가는 보존하고 대상 판매상품에만 환산원가를 생성한다.
+// V1.a22.88: 코드통합형 대표 Lot은 현재 재고가 양수인 Lot만 후보로 삼고 그중 구매일자가 가장 최근인 Lot을 우선한다. 재고 0/마이너스 Lot은 대표값에서 제외하며, 양수 Lot이 없으면 대표 SourceKey를 지정하지 않는다.
+// V1.a22.88: 코드통합형에서도 원본 원장행이 정확히 1개인 통합1 상품은 단가·기초·입고·출고·실사·메모·거래처칩·스페이스 치환을 원본 batchKey에 직접 반영한다. 통합2 이상 또는 원본 다중행은 배분 기준이 모호하므로 수량 편집을 계속 차단한다.
+// V1.a22.88: 보기 전환 시 기존 이슈 Tab 세션/ref/지연 포커스를 즉시 종료하고, 전역 Tab 가로채기는 작업 테이블 행 내부에서만 실행한다. 통합형 직접수정의 실제 sourceKey를 포커스 추적에 사용해 일반 Tab과 이슈 Tab의 충돌을 차단한다.
+// V1.a22.88: 스페이스바/CTRL 대체판매는 실제 출고 상품의 원가를 판매전표 상품의 단가(입고가)에 반영한다. 원가출처 Lot·BOX 단가는 보존하고 대상 판매상품에만 환산원가를 생성한다.
+// V1.a22.88: 스페이스바 대체판매 역할 판정은 마스터 원물/소분 관계보다 ‘단가가 있는 실제출고 상품 → 단가 0 판매전표 상품’을 우선한다. 원가 생성 실패 시 단가이슈를 확인완료로 바꾸지 않고 작업을 중단한다.
+// V1.a22.89: 코드통합형 통합후보 탐색은 Enter=다음, Shift+Enter=이전으로 분리한다. 일반 Tab/셀 이동과 재고·Lot 이슈 Tab 큐는 그대로 유지하며, 첫/마지막 후보에서 순환하지 않고 정지한다.
 // V1.a22.69: 코드통합형 해제/다시 통합 상태 관리.
 // 원본 Lot은 수정하지 않고 화면 보기/엑셀 1번 시트 출력에만 반영한다.
 const DATAOPS_CODE_MERGE_OVERRIDE_MODULE = Object.freeze({
@@ -2525,7 +2527,7 @@ const DATAOPS_VIEW_LAYER_MODULE = Object.freeze({
         const sourceRows = rows || [];
         const logicalLotRows = DATAOPS_VIEW_LAYER_MODULE.buildLogicalLotRows(sourceRows);
         const representativeKey = DATAOPS_CODE_MERGE_OVERRIDE_MODULE.getRepresentativeKey(code);
-        // V1.a22.87: 대표 Lot은 현재 재고가 남은 행만 허용한다.
+        // V1.a22.88: 대표 Lot은 현재 재고가 남은 행만 허용한다.
         // 사용자가 과거에 지정한 대표행이 재고 0/마이너스가 되면 자동 해제하고,
         // 양수 재고 후보 중 구매일자가 가장 최근인 행을 새 대표로 선택한다.
         const positiveRepresentativeRows = sourceRows.filter(row => DATAOPS_VIEW_LAYER_MODULE.isPositiveStockRow(row));
@@ -4208,8 +4210,50 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 return score;
             };
             const rawSubPair = resolveManualRawSubPair(item1Orig, item2Orig);
-            if (rawSubPair) {
-                // 선택 순서와 오차 부호에 관계없이 BOX/원물은 원가출처, EA/소분은 원가적용 대상이다.
+            // V1.a22.88: 대체판매에서는 마스터 원물/소분 관계가 판매전표와 실제출고 역할을 뒤집을 수 있다.
+            // 단가가 있는 행과 단가 0 판매행이 연결되면, 단가 보유 행을 원가출처로 먼저 고정한다.
+            const getManualOperationalCost = (item = {}) => {
+                const direct = safeNum(item.단가);
+                if (direct > 0) return direct;
+                const matched = safeNum(item._matchedUnitCost);
+                if (matched > 0) return matched;
+                const layers = [
+                    ...(Array.isArray(item._costLayers) ? item._costLayers : []),
+                    ...(Array.isArray(item._operationOutLayers) ? item._operationOutLayers : [])
+                ];
+                const layer = layers.find(v => safeNum(v && v.unitCost) > 0);
+                if (layer) return safeNum(layer.unitCost);
+                const original = safeNum(item._orig && item._orig.단가);
+                if (original > 0) return original;
+                const purchase = safeNum(item.구매가 || item._purchasePrice || item._stockPurchasePrice);
+                return purchase > 0 ? purchase : 0;
+            };
+            const hasManualPriceIssue = (item = {}) => (item.이슈 || []).some(msg => /단가없음|단가확인|매입내역 없음/.test(safeStr(msg)));
+            const isClearManualSalesTarget = (item = {}) => safeNum(item.단가) <= 0 && (
+                safeNum(item.출고) > 0 || safeNum(item.전산잔량) < 0 || hasManualPriceIssue(item)
+            );
+            const item1Cost = getManualOperationalCost(item1Orig);
+            const item2Cost = getManualOperationalCost(item2Orig);
+            const item1SalesTarget = isClearManualSalesTarget(item1Orig);
+            const item2SalesTarget = isClearManualSalesTarget(item2Orig);
+            if (item1SalesTarget && item2Cost > 0) {
+                sourceItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
+                targetItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
+            }
+            else if (item2SalesTarget && item1Cost > 0) {
+                sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
+                targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
+            }
+            else if (item1Cost > 0 && item2Cost <= 0) {
+                sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
+                targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
+            }
+            else if (item2Cost > 0 && item1Cost <= 0) {
+                sourceItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
+                targetItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
+            }
+            else if (rawSubPair) {
+                // 판매전표 역할이 명확하지 않을 때만 마스터 원물/소분 관계를 사용한다.
                 sourceItem = { ...rawSubPair.rawItem, 이슈: [...(rawSubPair.rawItem.이슈 || [])] };
                 targetItem = { ...rawSubPair.subItem, 이슈: [...(rawSubPair.subItem.이슈 || [])] };
             }
@@ -4309,39 +4353,31 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
 출처 행의 재고와 대상 행의 부족/마이너스 수량을 확인하세요.`);
                 return prev;
             }
-            const isSubLinkInfo = (info) => info && (info.productType === '소분' || info.productType === '원물/소분');
-            const buildManualSubPricePatch = (a, b, aQty, bQty) => {
-                const explicitPair = resolveManualRawSubPair(a, b);
-                let rawItem = explicitPair ? explicitPair.rawItem : null;
-                let subItem = explicitPair ? explicitPair.subItem : null;
-                let rate = explicitPair ? safeNum(explicitPair.rate) : 0;
-                let isExplicitRelation = !!(rawItem && subItem && rate > 0);
-                // 마스터 관계가 없을 때만 단가 0인 대상에 수량비 보조산출을 허용한다.
-                // 이미 단가가 있는 두 일반상품을 임의로 원물/소분으로 간주하지 않는다.
-                if ((!rawItem || !subItem || rate <= 0) && safeNum(a.단가) > 0 && safeNum(b.단가) <= 0 && aQty > 0 && bQty > 0 && bQty >= aQty) {
-                    rawItem = a;
-                    subItem = b;
-                    rate = bQty / aQty;
-                }
-                else if ((!rawItem || !subItem || rate <= 0) && safeNum(b.단가) > 0 && safeNum(a.단가) <= 0 && aQty > 0 && bQty > 0 && aQty >= bQty) {
-                    rawItem = b;
-                    subItem = a;
-                    rate = aQty / bQty;
-                }
-                const rawPrice = rawItem ? safeNum(rawItem.단가) : 0;
-                const currentSubPrice = subItem ? safeNum(subItem.단가) : 0;
-                if (!rawItem || !subItem || rawPrice <= 0 || rate <= 0)
+            const buildManualSubPricePatch = (actualSource, salesTarget, actualQty, salesQty) => {
+                // V1.a22.88: 패치 대상은 언제나 판매전표 상품이다.
+                // 마스터 원물/소분 방향으로 대상행을 다시 선택하면 대체판매 역할이 뒤집히므로 금지한다.
+                if (!actualSource || !salesTarget || safeNum(salesTarget.단가) > 0)
                     return null;
-                if (!isExplicitRelation && currentSubPrice > 0)
+                const sourceCost = getManualOperationalCost(actualSource) || safeNum(DATAOPS_OPERATION_MODULE.resolveSplitLossCostInfo(actualSource).unitCost);
+                const sourceQty = Math.abs(safeNum(actualQty));
+                const targetQty = Math.abs(safeNum(salesQty));
+                if (sourceCost <= 0 || sourceQty <= 0 || targetQty <= 0)
                     return null;
-                const subPrice = DATAOPS_OPERATION_MODULE.calcConvertedUnitCost({
-                    sourceUnitCost: rawPrice,
-                    sourceQty: 1,
-                    targetQty: rate
+                const targetPrice = DATAOPS_OPERATION_MODULE.calcConvertedUnitCost({
+                    sourceUnitCost: sourceCost,
+                    sourceQty,
+                    targetQty
                 });
-                if (subPrice <= 0)
+                if (targetPrice <= 0)
                     return null;
-                return { batchKey: subItem.batchKey, rawBatchKey: rawItem.batchKey, subPrice, rawName: rawItem.품명, rate, isExplicitRelation };
+                return {
+                    batchKey: salesTarget.batchKey,
+                    rawBatchKey: actualSource.batchKey,
+                    subPrice: targetPrice,
+                    rawName: actualSource.품명,
+                    rate: targetQty / sourceQty,
+                    isExplicitRelation: !!resolveManualRawSubPair(actualSource, salesTarget)
+                };
             };
             const applyManualSubPricePatch = (item, patch) => {
                 if (!patch || item.batchKey !== patch.batchKey)
@@ -4384,14 +4420,14 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 return next;
             };
             const subPricePatch = buildManualSubPricePatch(sourceItem, targetItem, sourceLossQty, targetLossQty);
-            let sourceAfter = makeManualIssue(sourceItem, targetItem, '-', sourceLossQty);
-            let targetAfter = makeManualIssue(targetItem, sourceItem, '+', targetLossQty);
-            sourceAfter = applyManualSubPricePatch(sourceAfter, subPricePatch);
-            targetAfter = applyManualSubPricePatch(targetAfter, subPricePatch);
+            // V1.a22.88: 화면 단가 외에 기존 원가레이어/마스터 입고가도 실제출고 원가 후보로 사용한다.
+            const sourceCostInfo = DATAOPS_OPERATION_MODULE.resolveSplitLossCostInfo(sourceItem);
+            const sourceUnitCost = getManualOperationalCost(sourceItem) || safeNum(sourceCostInfo.unitCost);
+            const costSourceItem = sourceUnitCost > 0 ? { ...sourceItem, 단가: sourceUnitCost } : sourceItem;
             // V1.a22.69: 수기치환도 Ctrl 드래그와 같은 원가매칭 공통 엔진을 사용한다.
             const manualMatch = DATAOPS_OPERATION_MODULE.buildReplacementCostMatch({
                 salesItem: targetItem,
-                actualItem: sourceItem,
+                actualItem: costSourceItem,
                 salesQty: targetLossQty,
                 actualQty: sourceLossQty,
                 method: 'spacebar',
@@ -4401,6 +4437,20 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
             });
             const manualUnitCost = manualMatch.actualUnitCost;
             const manualTargetUnitCost = safeNum(subPricePatch && subPricePatch.subPrice) || manualMatch.salesUnitCost || manualUnitCost;
+            // 단가 0 판매상품인데 원가를 만들지 못한 경우 수량이슈까지 확인완료로 바꾸면 안 된다.
+            if (safeNum(targetItem.단가) <= 0 && manualTargetUnitCost <= 0) {
+                setAlertMsg(`수기치환 원가 생성 실패!
+
+판매상품: ${safeStr(targetItem.품명, '대상상품')}
+실제출고 상품: ${safeStr(sourceItem.품명, '출처상품')}
+
+실제출고 상품의 입고가/Lot 원가를 확인하세요. 단가이슈는 미확인 상태로 유지됩니다.`);
+                return prev;
+            }
+            let sourceAfter = makeManualIssue(sourceItem, targetItem, '-', sourceLossQty);
+            let targetAfter = makeManualIssue(targetItem, sourceItem, '+', targetLossQty);
+            sourceAfter = applyManualSubPricePatch(sourceAfter, subPricePatch);
+            targetAfter = applyManualSubPricePatch(targetAfter, subPricePatch);
             let manualAppliedCostAmount = manualMatch.costAmount || (manualTargetUnitCost * targetLossQty);
             if (manualTargetUnitCost > 0) {
                 const manualCostLayer = manualMatch.costLayer ? {
@@ -4412,14 +4462,14 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 const targetWithLayer = DATAOPS_OPERATION_MODULE.appendCostLayer(targetAfter, manualCostLayer);
                 targetAfter = {
                     ...targetWithLayer,
-                    // V1.a22.87: 스페이스바 치환은 판매전표 상품의 원가를 정의하는 작업이다.
+                    // V1.a22.88: 스페이스바 치환은 판매전표 상품의 원가를 정의하는 작업이다.
                     // 실제 출고/원가출처 Lot의 단가는 보존하고, 계산된 환산원가는 대상 판매상품의
                     // 표시 단가(입고가)와 원가레이어에 함께 기록한다.
-                    단가: manualTargetUnitCost,
+                    단가: safeNum(targetItem.단가) > 0 ? safeNum(targetItem.단가) : manualTargetUnitCost,
                     _matchedUnitCost: manualTargetUnitCost,
                     _matchedCostAmount: manualAppliedCostAmount,
-                    _manualReplacementPriceApplied: true,
-                    _convertedUnitCostApplied: safeNum(targetItem.단가) !== safeNum(manualTargetUnitCost) || safeNum(sourceLossQty) !== safeNum(targetLossQty),
+                    _manualReplacementPriceApplied: safeNum(targetItem.단가) <= 0,
+                    _convertedUnitCostApplied: safeNum(targetItem.단가) <= 0 || safeNum(sourceLossQty) !== safeNum(targetLossQty),
                     _convertedUnitCostFormula: manualMatch.formula,
                     이슈: DATAOPS_ISSUE_HELPER.unique(DATAOPS_ISSUE_HELPER.stripPriceIssues(targetWithLayer.이슈 || [])),
                     _operationType: DATAOPS_OPERATION_MODULE.TYPES.MANUAL_ASSIST,
@@ -4440,7 +4490,9 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 [item2Orig.batchKey]: safeNum(item2Orig.단가)
             };
             const restoreProtectedPrice = (item = {}, role = '') => {
-                if (subPricePatch && item.batchKey === subPricePatch.batchKey)
+                if (role === 'source')
+                    return { ...item, 단가: safeNum(originalPriceByKey[item.batchKey]) };
+                if (role === 'target' && subPricePatch && item.batchKey === subPricePatch.batchKey)
                     return { ...item, 단가: safeNum(subPricePatch.subPrice) };
                 if (role === 'target' && item._manualReplacementPriceApplied && safeNum(item._matchedUnitCost) > 0)
                     return { ...item, 단가: safeNum(item._matchedUnitCost) };
@@ -4667,7 +4719,7 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                         np.대체입고 = safeNum(np.대체입고) + sourceDeductQty;
                         np.매출원가 = replacementCostAmount;
                         if (replacementUnitCost > 0) {
-                            // V1.a22.87: source는 판매전표 상품이다. 실제출고 상품(target)의 원가를
+                            // V1.a22.88: source는 판매전표 상품이다. 실제출고 상품(target)의 원가를
                             // 판매전표 상품의 단가(입고가)에 반영하고, 실제출고 Lot 단가는 보존한다.
                             const previousUnitCost = safeNum(np.단가);
                             np.단가 = replacementUnitCost;
@@ -6573,7 +6625,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
     const directEditSourceKey = isCodeSummaryViewRow
         ? safeStr(item._directEditSourceKey || ((Array.isArray(item._viewSourceKeys) && item._viewSourceKeys.length === 1) ? item._viewSourceKeys[0] : ''))
         : '';
-    // V1.a22.87: 화면은 VIEW_CODE synthetic row여도 원본 원장행이 정확히 1개면 직접 편집 가능하다.
+    // V1.a22.88: 화면은 VIEW_CODE synthetic row여도 원본 원장행이 정확히 1개면 직접 편집 가능하다.
     const isDirectEditableCodeSummaryRow = !!directEditSourceKey && isCodeSummaryViewRow && safeNum(item._rawSourceRowCount || 0) === 1;
     const operationBatchKey = isDirectEditableCodeSummaryRow ? directEditSourceKey : item.batchKey;
     const isProtectedMergedViewRow = isDetailMergedViewRow || (isCodeSummaryViewRow && !isDirectEditableCodeSummaryRow);
@@ -6706,6 +6758,9 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
     const handleKd = (e, type) => {
         const cols = ['price-input', 'base-prev', 'base-in', 'base-out', 'actual-input'];
         const colIdx = cols.indexOf(type);
+        // V1.a22.89: 코드통합형의 통합후보 행에서는 Enter/Shift+Enter를 후보 이동기로 넘긴다.
+        // 일반행 Enter 세로이동과 모든 Tab 동작은 기존 그대로 유지한다.
+        if (e.key === 'Enter' && isMergeBoxRow && (isCodeSummaryViewRow || isMergeDisabledRow)) return;
         if (e.key === 'ArrowRight') {
             if (colIdx < cols.length - 1) {
                 e.preventDefault();
@@ -7015,6 +7070,7 @@ function App() {
     // V1.a22.79: Lot 상세형은 별도 검수모드 없이 일반 보기로 동작한다.
     const [mergeOverrideVersion, setMergeOverrideVersion] = useState(0);
     const mergeCandidateIndexRef = useRef(-1);
+    const mergeCandidateCodeRef = useRef('');
     const handleToggleCodeMerge = useCallback((code, representativeKey = '', action = '') => {
         if (action === 'detail-merge') {
             DATAOPS_CODE_MERGE_OVERRIDE_MODULE.mergeDetail(code, representativeKey);
@@ -7033,18 +7089,67 @@ function App() {
         }
         setMergeOverrideVersion(v => v + 1);
     }, []);
-    const jumpToFirstMergeCandidate = useCallback(() => {
-        setTimeout(() => {
-            const candidates = Array.from(document.querySelectorAll('tr[data-merge-group-start="1"]'));
-            const target = candidates[0];
-            if (!target) return;
-            candidates.forEach(row => row.classList.remove('ring-2', 'ring-amber-400', 'relative', 'z-30'));
-            target.classList.add('ring-2', 'ring-amber-400', 'relative', 'z-30');
-            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            if (typeof target.focus === 'function') target.focus({ preventScroll: true });
-            mergeCandidateIndexRef.current = 0;
-        }, 120);
+    // V1.a22.89: 코드통합형 통합후보 이동은 이슈카드 Tab 큐와 완전히 분리한다.
+    // Enter/Shift+Enter 및 화면 버튼은 동일한 DOM 후보 목록과 커서를 사용한다.
+    const getVisibleMergeCandidateRows = useCallback(() => {
+        return Array.from(document.querySelectorAll('tr[data-merge-group-start="1"]'))
+            .filter(row => row && row.isConnected && row.getClientRects().length > 0);
     }, []);
+    const focusMergeCandidateAt = useCallback((requestedIndex, options = {}) => {
+        const candidates = getVisibleMergeCandidateRows();
+        if (candidates.length === 0) {
+            mergeCandidateIndexRef.current = -1;
+            mergeCandidateCodeRef.current = '';
+            if (!options.silent) setAlertMsg('코드통합형에서 이동할 통합후보가 없습니다.');
+            return false;
+        }
+        const safeIndex = Math.max(0, Math.min(candidates.length - 1, Number(requestedIndex) || 0));
+        const target = candidates[safeIndex];
+        candidates.forEach(row => row.classList.remove('ring-2', 'ring-amber-400', 'relative', 'z-30'));
+        target.classList.add('ring-2', 'ring-amber-400', 'relative', 'z-30');
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (typeof target.focus === 'function') {
+            try { target.focus({ preventScroll: true }); }
+            catch (e) { target.focus(); }
+        }
+        mergeCandidateIndexRef.current = safeIndex;
+        mergeCandidateCodeRef.current = safeStr(target.getAttribute('data-code') || '');
+        return true;
+    }, [getVisibleMergeCandidateRows, setAlertMsg]);
+    const jumpToFirstMergeCandidate = useCallback(() => {
+        setTimeout(() => focusMergeCandidateAt(0, { silent: true }), 120);
+    }, [focusMergeCandidateAt]);
+    const moveMergeCandidate = useCallback((direction = 'next') => {
+        if (viewMode !== 'CODE_SUMMARY') return false;
+        const candidates = getVisibleMergeCandidateRows();
+        if (candidates.length === 0) {
+            mergeCandidateIndexRef.current = -1;
+            mergeCandidateCodeRef.current = '';
+            setAlertMsg('코드통합형에서 이동할 통합후보가 없습니다.');
+            return true;
+        }
+        const activeEl = document.activeElement;
+        const activeRow = activeEl && activeEl.closest ? activeEl.closest('tr[data-merge-group-start="1"]') : null;
+        let currentIndex = activeRow ? candidates.indexOf(activeRow) : -1;
+        if (currentIndex < 0 && mergeCandidateCodeRef.current) {
+            currentIndex = candidates.findIndex(row => safeStr(row.getAttribute('data-code') || '') === mergeCandidateCodeRef.current);
+        }
+        if (currentIndex < 0) currentIndex = Math.max(0, Math.min(candidates.length - 1, mergeCandidateIndexRef.current));
+        const step = direction === 'prev' ? -1 : 1;
+        const nextIndex = currentIndex + step;
+        if (nextIndex < 0) {
+            setAlertMsg('첫 번째 통합후보입니다.');
+            focusMergeCandidateAt(0, { silent: true });
+            return true;
+        }
+        if (nextIndex >= candidates.length) {
+            setAlertMsg('모든 통합후보를 확인했습니다.');
+            focusMergeCandidateAt(candidates.length - 1, { silent: true });
+            return true;
+        }
+        focusMergeCandidateAt(nextIndex, { silent: true });
+        return true;
+    }, [viewMode, getVisibleMergeCandidateRows, focusMergeCandidateAt, setAlertMsg]);
     // 비즈니스 로직 엔진 연결
     const { productData, setProductData, analysisPeriod, setAnalysisPeriod, targetDateStr, setTargetDateStr, substHistory, setSubstHistory, ackMultiCodes, setAckMultiCodes, resetEngine, handleBaseDataChange, handleManualStockChange, executeImmediateSubstitution, handlePurchaseLotManualAdjust, executeMasterSubstitutionCandidates, handleSalesMove, executeAnalysis, runAnalysis, runCostExtraction } = useInventoryEngine({ mappings, grouping, setAlertMsg, setConfirmModal, setIsProcessing, setAppStep });
     const isCostExtractionMode = !files.prev && files.in && !files.out && files.end;
@@ -10156,9 +10261,9 @@ ${balanceText}
         return true;
     }, [handleManualStockChange, handleBaseDataChange, productData]);
     // 🌟 성능 최적화: 전역 이벤트 리스너의 잦은 재생성을 막기 위한 콜백 참조 저장
-    const latestHandlers = useRef({ handleIssueJump, handleRunAnalysis, handleRunTransferCheck, handleCombinedExport, handlePrintOutput, flushFocusedTableEdit });
+    const latestHandlers = useRef({ handleIssueJump, handleRunAnalysis, handleRunTransferCheck, handleCombinedExport, handlePrintOutput, flushFocusedTableEdit, moveMergeCandidate });
     useEffect(() => {
-        latestHandlers.current = { handleIssueJump, handleRunAnalysis, handleRunTransferCheck, handleCombinedExport, handlePrintOutput, flushFocusedTableEdit };
+        latestHandlers.current = { handleIssueJump, handleRunAnalysis, handleRunTransferCheck, handleCombinedExport, handlePrintOutput, flushFocusedTableEdit, moveMergeCandidate };
     });
     useEffect(() => {
         const handleGlobalEnter = (e) => {
@@ -10178,6 +10283,21 @@ ${balanceText}
                 if (document.querySelector('.modal-bounce'))
                     return;
                 const activeEl = document.activeElement;
+                const eventTarget = e.target;
+                const originTag = eventTarget && eventTarget.tagName ? eventTarget.tagName.toLowerCase() : '';
+                const activeMergeRow = eventTarget && eventTarget.closest ? eventTarget.closest('tr[data-merge-group-start="1"]') : null;
+                // V1.a22.89 우선순위: 모달 확인 > 코드통합형 후보 이동 > 일반 입력/분석 실행.
+                // 키를 누른 원래 행(e.target)이 통합후보일 때만 가로채므로, 일반행 Enter가 다음 행에 포커스를 준 뒤
+                // 우연히 통합후보 이동까지 연속 실행되는 충돌을 막는다. 버튼/선택상자의 기본 Enter도 유지한다.
+                if (activeMergeRow && originTag !== 'button' && originTag !== 'select' && originTag !== 'textarea') {
+                    if (!e.shiftKey) latestHandlers.current.flushFocusedTableEdit();
+                    const moved = latestHandlers.current.moveMergeCandidate(e.shiftKey ? 'prev' : 'next');
+                    if (moved) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        return;
+                    }
+                }
                 const tag = activeEl ? activeEl.tagName.toLowerCase() : '';
                 const type = activeEl ? activeEl.type : '';
                 const isTyping = tag === 'textarea' || (tag === 'input' && (type === 'text' || type === 'number' || type === 'search'));
@@ -10783,6 +10903,9 @@ ${balanceText}
                                             };
                                             return React.createElement("button", { key: mode, onClick: handleModeClick, title: mode === 'LOT_DETAIL' ? 'Lot별 상세행으로 봅니다. 재고가 남은 Lot이 2개 이상인 상품은 테두리와 통합 버튼을 항상 표시합니다.' : '같은 품목코드를 한 행으로 봅니다.', className: `px-2.5 py-1 rounded border transition font-black ${isActive ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm' : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50'}` }, label);
                                         })),
+                                    viewMode === 'CODE_SUMMARY' && React.createElement("div", { className: "flex items-center gap-1 whitespace-nowrap ml-0.5", title: "통합후보 이동: Enter 다음 / Shift+Enter 이전" },
+                                        React.createElement("button", { type: "button", onClick: () => moveMergeCandidate('prev'), className: "px-2 py-1 rounded border border-amber-300 bg-white text-amber-700 hover:bg-amber-50 font-black", title: "이전 통합후보 (Shift+Enter)" }, "◀"),
+                                        React.createElement("button", { type: "button", onClick: () => moveMergeCandidate('next'), className: "px-2 py-1 rounded border border-amber-500 bg-amber-50 text-amber-800 hover:bg-amber-100 font-black", title: "다음 통합후보 (Enter)" }, "Enter ▶")),
                                     React.createElement("div", { className: "w-px h-5 bg-slate-200 mx-0.5" }),
                                     React.createElement("select", { value: filters.sortMode, onChange: (e) => setFilters(f => ({ ...f, sortMode: e.target.value, sortDesc: false })), title: "정렬 기준을 선택합니다.", className: "px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 font-black shadow-sm focus:outline-none focus:ring-1 focus:ring-slate-400" },
                                         React.createElement("option", { value: "DEFAULT" }, "품목순"),
