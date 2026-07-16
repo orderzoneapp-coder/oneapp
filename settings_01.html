@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.21_ColumnWidthPreset]</title>
+    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.22_InfoWorkGroup]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -99,7 +99,8 @@ const TABLE_VIEW_TARGETS = [
     { id: 'purchase', label: '구매', tone: 'sky' },
     { id: 'sales', label: '판매', tone: 'purple' },
     { id: 'inventory', label: '재고', tone: 'amber' },
-    { id: 'catalog', label: '카탈로그', tone: 'indigo' }
+    { id: 'catalog', label: '카탈로그', tone: 'indigo' },
+    { id: 'info', label: '정보', tone: 'slate' }
 ];
 const UPLOAD_ROLES = TABLE_VIEW_TARGETS;
 const TABLE_VIEW_TARGET_IDS = TABLE_VIEW_TARGETS.map(t => t.id);
@@ -123,6 +124,18 @@ const normalizeTableColumns = (columns = []) => {
     return result;
 };
 const normalizeMasterColumns = (columns = []) => normalizeTableColumns(columns).filter(c => !requiredCoreFields.includes(c));
+const mergeConfigDefaults = (saved = {}, defaults = {}) => {
+    const base = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+    const result = { ...defaults, ...base };
+    Object.entries(defaults || {}).forEach(([key, defaultValue]) => {
+        if (!Object.prototype.hasOwnProperty.call(result, key) || result[key] === undefined || result[key] === null) {
+            result[key] = defaultValue;
+        }
+        if (Array.isArray(defaultValue) && !Array.isArray(result[key])) result[key] = defaultValue;
+        if (defaultValue && typeof defaultValue === 'object' && !Array.isArray(defaultValue) && (typeof result[key] !== 'object' || Array.isArray(result[key]))) result[key] = defaultValue;
+    });
+    return result;
+};
 
 // ============================================================
 // [S-VIEW-FILTER-01] 테이블 보기별 필터 실행순서 저장
@@ -227,14 +240,16 @@ const getDefaultVisibleMasterCols = () => ({
     estimate: ['입고가'],
     purchase: ['입고가'],
     sales: ['입고가'],
-    inventory: ['입고가']
+    inventory: ['입고가'],
+    info: ['출고가', '시중가', '행사가', '행사테마', '판매여부']
 });
 const getDefaultVisibleUploadCols = () => ({
     catalog: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A', '행사가'],
     estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명', '행사가'],
     purchase: ['창고', '구매처', '단위', '입고가', '입고수량'],
     sales: ['창고', '구매처', '단위', '출고가', '출고량'],
-    inventory: ['창고', '구매처', '단위', '재고수량', '입고가', '재고금액', '오차', '이슈요약']
+    inventory: ['창고', '구매처', '단위', '재고수량', '입고가', '재고금액', '오차', '이슈요약'],
+    info: ['분류1코드', '분류1명', '분류2코드', '분류2명', '분류3코드', '분류3명', '브랜드', '찜적용안함', '상품코드', '상품명', '규격', '싯가판매여부', '재입고 준비기간', '주문마감시간', '판매', '판매가격', '시중가격', '재고', '최소구매수', '최대구매수', '기본설명', '테마1', '테마2', '테마3', '테마4', '테마5', '과세', '상품태그', '유통사코드', '원상품코드', '복사상품코드', '단가연동']
 });
 const normalizeColumnWidths = (widths = {}) => {
     const result = {};
@@ -315,6 +330,17 @@ const getDefaultMappings = () => ({
         '구매처': '구매처, 매입처(Lot), 매입처, Lot, 거래처명', '단위': '단위유형, 단위, 판매단위', '창고': '창고, 창고코드',
         '재고수량': '잔량, 기말실사(이월수량), 수량, 재고수량', '입고가': '입고가, 매입단가(원가), 매입단가, 원가', '재고금액': '재고금액, 기말재고액(자산가치)',
         '기초수량': '재고, 기초수량', '입고수량': '입고, 입고수량', '출고량': '출고, 출고량', '오차': '오차, 로스/조정수량, 로스', '이슈요약': '이슈요약, 이슈/결과', '메모': '메모, 수기메모'
+    },
+    info: {
+        '품목코드': '상품코드, 품목코드, 코드', '품목명': '상품명, 품목명', '규격': '규격',
+        '분류1코드': '분류1코드', '분류1명': '분류1명', '분류2코드': '분류2코드', '분류2명': '분류2명', '분류3코드': '분류3코드', '분류3명': '분류3명',
+        '브랜드': '브랜드', '찜적용안함': '찜적용안함', '상품코드': '상품코드', '상품명': '상품명',
+        '싯가판매여부': '싯가판매여부', '재입고 준비기간': '재입고 준비기간', '주문마감시간': '주문마감시간',
+        '판매': '판매', '판매가격': '판매가격', '시중가격': '시중가격', '재고': '재고',
+        '최소구매수': '최소구매수', '최대구매수': '최대구매수', '기본설명': '기본설명',
+        '테마1': '테마1', '테마2': '테마2', '테마3': '테마3', '테마4': '테마4', '테마5': '테마5',
+        '과세': '과세', '상품태그': '상품태그', '유통사코드': '유통사코드', '원상품코드': '원상품코드', '복사상품코드': '복사상품코드', '단가연동': '단가연동',
+        '판매여부': '판매', '출고가': '판매가격', '시중가': '시중가격', '재고수량': '재고', '간단설명': '기본설명', '검색어등록': '상품태그', '행사테마': '테마1, 테마2, 테마3, 테마4, 테마5'
     }
 });
 const getDefaultMasterLinks = () => ({
@@ -322,15 +348,22 @@ const getDefaultMasterLinks = () => ({
     estimate: { '창고': '창고', '구매처': '구매처', '견적서': '견적서', '행사가': '행사가', '입고가': '입고가', '출고가': '출고가', '입고B': '입고B', '도매A': '도매A', '도매B': '도매B', '간단설명': '간단설명', '1종코드': '1종코드', '1종규격': '1종규격', '1종연산': '1종연산', '1당수량': '1당수량' },
     purchase: { '창고': '창고', '구매처': '구매처', '단위': '단위', '입고가': '입고가' },
     sales: { '창고': '창고', '구매처': '구매처', '단위': '단위', '출고가': '출고가' },
-    inventory: { '창고': '창고', '구매처': '구매처', '단위': '단위', '입고가': '입고가', '재고수량': '재고수량' }
+    inventory: { '창고': '창고', '구매처': '구매처', '단위': '단위', '입고가': '입고가', '재고수량': '재고수량' },
+    info: {
+        '상품코드': '품목코드', '상품명': '품목명', '규격': '규격', '브랜드': '브랜드',
+        '판매': '판매여부', '판매가격': '출고가', '시중가격': '시중가', '재고': '재고수량',
+        '기본설명': '간단설명', '상품태그': '검색어등록',
+        '테마1': '행사테마', '테마2': '행사테마', '테마3': '행사테마', '테마4': '행사테마', '테마5': '행사테마'
+    }
 });
+const getDefaultUploadColumnMeta = () => ({ catalog: {}, estimate: {}, purchase: {}, sales: {}, inventory: {}, info: {} });
 const useMerchConfig = () => {
     const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v870') || '');
-    const [visibleMasterCols, setVisibleMasterCols] = useState(() => safeJSONParse('merchVisMaster_v870', getDefaultVisibleMasterCols()));
-    const [visibleUploadCols, setVisibleUploadCols] = useState(() => safeJSONParse('merchVisUpload_v870', getDefaultVisibleUploadCols()));
-    const [mappings, setMappings] = useState(() => safeJSONParse('merchMappings_v870', getDefaultMappings()));
-    const [masterLinks, setMasterLinks] = useState(() => safeJSONParse('merchMasterLinks_v870', getDefaultMasterLinks()));
-    const [uploadColumnMeta, setUploadColumnMeta] = useState(() => safeJSONParse('merchUploadColumnMeta_v870', { catalog: {}, estimate: {}, purchase: {}, sales: {}, inventory: {} }));
+    const [visibleMasterCols, setVisibleMasterCols] = useState(() => mergeConfigDefaults(safeJSONParse('merchVisMaster_v870', {}), getDefaultVisibleMasterCols()));
+    const [visibleUploadCols, setVisibleUploadCols] = useState(() => mergeConfigDefaults(safeJSONParse('merchVisUpload_v870', {}), getDefaultVisibleUploadCols()));
+    const [mappings, setMappings] = useState(() => mergeConfigDefaults(safeJSONParse('merchMappings_v870', {}), getDefaultMappings()));
+    const [masterLinks, setMasterLinks] = useState(() => mergeConfigDefaults(safeJSONParse('merchMasterLinks_v870', {}), getDefaultMasterLinks()));
+    const [uploadColumnMeta, setUploadColumnMeta] = useState(() => mergeConfigDefaults(safeJSONParse('merchUploadColumnMeta_v870', {}), getDefaultUploadColumnMeta()));
     const [tableShortcuts, setTableShortcuts] = useState(() => safeJSONParse('merchTableShortcuts_v870', []));
     const [tableViewPresets, setTableViewPresets] = useState(() => sanitizeTableViewPresets(safeJSONParse('merchTableViewPresets_v1', getDefaultTableViewPresets())));
     const [marginRules, setMarginRules] = useState(() => {
@@ -566,7 +599,7 @@ const App = () => {
         }
     };
 
-    // ☁️ 환경설정 전용 클라우드 백업/복원 [v1.6.21_ColumnWidthPreset]
+    // ☁️ 환경설정 전용 클라우드 백업/복원 [v1.6.22_InfoWorkGroup]
     // 역할: 브라우저가 달라도 테이블 보기양식/필터 시나리오/매핑/룰을 동일하게 복구한다.
     // 핵심: Apps Script appConfig뿐 아니라 localStorage 원본 키도 함께 저장해 구조 변경에 안전하게 대응한다.
     // 제외: 마스터 상품정보와 히스토리 대용량 데이터는 기존 MasterDB/HistoryLogs 흐름을 사용한다.
@@ -633,7 +666,7 @@ const App = () => {
         return {
             action: 'config',
             data: {
-                schemaVersion: 'Settings_v1.6.21_ColumnWidthPreset',
+                schemaVersion: 'Settings_v1.6.22_InfoWorkGroup',
                 updatedAt: new Date().toISOString(),
                 dict,
                 rules: config.marginRules,
