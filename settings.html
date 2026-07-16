@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.22_InfoWorkGroup]</title>
+    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.23_CloudConfigSyncFix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -358,7 +358,10 @@ const getDefaultMasterLinks = () => ({
 });
 const getDefaultUploadColumnMeta = () => ({ catalog: {}, estimate: {}, purchase: {}, sales: {}, inventory: {}, info: {} });
 const useMerchConfig = () => {
-    const [cloudUrl, setCloudUrl] = useState(() => localStorage.getItem('merchCloudUrl_v870') || '');
+    const [cloudUrl, setCloudUrl] = useState(() => {
+        const sharedUrl = typeof window.getOneAppCloudSyncUrl === 'function' ? window.getOneAppCloudSyncUrl() : '';
+        return sharedUrl || localStorage.getItem('oneapp_cloud_sync_url_v1') || localStorage.getItem('merchCloudUrl_v870') || '';
+    });
     const [visibleMasterCols, setVisibleMasterCols] = useState(() => mergeConfigDefaults(safeJSONParse('merchVisMaster_v870', {}), getDefaultVisibleMasterCols()));
     const [visibleUploadCols, setVisibleUploadCols] = useState(() => mergeConfigDefaults(safeJSONParse('merchVisUpload_v870', {}), getDefaultVisibleUploadCols()));
     const [mappings, setMappings] = useState(() => mergeConfigDefaults(safeJSONParse('merchMappings_v870', {}), getDefaultMappings()));
@@ -390,7 +393,13 @@ const useMerchConfig = () => {
         return defaultRules;
     });
     useEffect(() => {
-        localStorage.setItem('merchCloudUrl_v870', cloudUrl);
+        if (cloudUrl) {
+            if (typeof window.setOneAppCloudSyncUrl === 'function') window.setOneAppCloudSyncUrl(cloudUrl);
+            else {
+                localStorage.setItem('oneapp_cloud_sync_url_v1', cloudUrl);
+                localStorage.setItem('merchCloudUrl_v870', cloudUrl);
+            }
+        }
         localStorage.setItem('merchVisMaster_v870', JSON.stringify(visibleMasterCols));
         localStorage.setItem('merchVisUpload_v870', JSON.stringify(visibleUploadCols));
         localStorage.setItem('merchMappings_v870', JSON.stringify(mappings));
@@ -599,7 +608,7 @@ const App = () => {
         }
     };
 
-    // ☁️ 환경설정 전용 클라우드 백업/복원 [v1.6.22_InfoWorkGroup]
+    // ☁️ 환경설정 전용 클라우드 백업/복원 [v1.6.23_CloudConfigSyncFix]
     // 역할: 브라우저가 달라도 테이블 보기양식/필터 시나리오/매핑/룰을 동일하게 복구한다.
     // 핵심: Apps Script appConfig뿐 아니라 localStorage 원본 키도 함께 저장해 구조 변경에 안전하게 대응한다.
     // 제외: 마스터 상품정보와 히스토리 대용량 데이터는 기존 MasterDB/HistoryLogs 흐름을 사용한다.
@@ -666,7 +675,7 @@ const App = () => {
         return {
             action: 'config',
             data: {
-                schemaVersion: 'Settings_v1.6.22_InfoWorkGroup',
+                schemaVersion: 'Settings_v1.6.23_CloudConfigSyncFix',
                 updatedAt: new Date().toISOString(),
                 dict,
                 rules: config.marginRules,
@@ -772,42 +781,69 @@ const App = () => {
         reader.readAsText(file, 'utf-8');
     };
 
+    const resolveSettingsCloudUrl = () => {
+        const sharedUrl = typeof window.getOneAppCloudSyncUrl === 'function'
+            ? window.getOneAppCloudSyncUrl(config.cloudUrl)
+            : config.cloudUrl;
+        const targetUrl = String(sharedUrl || config.cloudUrl || '').trim();
+        if (!targetUrl) throw new Error('클라우드 URL이 설정되지 않았습니다.');
+        if (typeof window.setOneAppCloudSyncUrl === 'function') window.setOneAppCloudSyncUrl(targetUrl);
+        else {
+            localStorage.setItem('oneapp_cloud_sync_url_v1', targetUrl);
+            localStorage.setItem('merchCloudUrl_v870', targetUrl);
+        }
+        if (targetUrl !== config.cloudUrl) config.setCloudUrl(targetUrl);
+        return targetUrl;
+    };
+    const appendSettingsCloudAction = (url, action) => {
+        const baseUrl = String(url || '').replace(/([?&])action=[^&#]*/g, '$1').replace(/[?&]$/, '');
+        const sep = baseUrl.includes('?') ? '&' : '?';
+        return `${baseUrl}${sep}action=${encodeURIComponent(action)}`;
+    };
+    const parseSettingsCloudResponse = async (response, label) => {
+        const rawText = await response.text();
+        let result = null;
+        try { result = rawText ? JSON.parse(rawText) : null; }
+        catch (e) { throw new Error(`${label} 응답이 JSON 형식이 아닙니다.`); }
+        if (!response.ok) throw new Error(result?.message || `${label} 네트워크 오류 (${response.status})`);
+        if (!result || result.status !== 'success') throw new Error(result?.message || `${label} 실패`);
+        return result;
+    };
     const handleCloudSync = async (type) => {
-        if (!config.cloudUrl)
-            return showToast("⚠️ 클라우드 URL이 설정되지 않았습니다.");
         setIsProcessing(true);
         try {
+            const targetUrl = resolveSettingsCloudUrl();
             if (type === 'upload') {
                 showToast('☁️ 환경설정 백업 중...');
-                setProcessMsg('환경설정값을 클라우드에 저장 중...');
+                setProcessMsg('환경설정값을 클라우드에 분할 저장 중...');
                 const configPayload = buildSettingsCloudPayload();
-                const res = await fetch(config.cloudUrl, { method: 'POST', body: JSON.stringify(configPayload) });
-                if (!res.ok)
-                    throw new Error("Network Error");
-                const result = await res.json().catch(() => ({}));
-                if (result.status && result.status !== 'success')
-                    throw new Error(result.message || '환경설정 백업 실패');
-                showToast('✅ 환경설정 백업 완료');
+                const payloadChars = JSON.stringify(configPayload.data || {}).length;
+                if (window.ONEAPP?.CLOUD?.pushConfigBackup) {
+                    await window.ONEAPP.CLOUD.pushConfigBackup({ url: targetUrl, data: configPayload.data });
+                } else {
+                    const res = await fetch(targetUrl, { method: 'POST', body: JSON.stringify(configPayload) });
+                    await parseSettingsCloudResponse(res, '환경설정 백업');
+                }
+                showToast(`✅ 환경설정 백업 완료 (${payloadChars.toLocaleString()}자)`);
             }
             else {
                 showToast('☁️ 환경설정을 불러옵니다...');
                 setProcessMsg('환경설정값만 복원 중...');
-                const res = await fetch(config.cloudUrl, { method: 'GET' });
-                if (!res.ok)
-                    throw new Error("Network Error");
-                const result = await res.json();
-                if (result.status === 'success' && result.data) {
-                    applySettingsCloudData(result.data);
-                    showToast('✅ 환경설정 복원 완료');
+                let result;
+                if (window.ONEAPP?.CLOUD?.pullConfigBackup) {
+                    result = await window.ONEAPP.CLOUD.pullConfigBackup({ url: targetUrl });
+                } else {
+                    const res = await fetch(appendSettingsCloudAction(targetUrl, 'config_only'), { method: 'GET' });
+                    result = await parseSettingsCloudResponse(res, '환경설정 복원');
                 }
-                else {
-                    throw new Error("Invalid Data");
-                }
+                if (!result?.data) throw new Error('환경설정 복원 데이터가 없습니다.');
+                applySettingsCloudData(result.data);
+                showToast('✅ 환경설정 복원 완료');
             }
         }
         catch (error) {
-            console.error("환경설정 클라우드 에러:", error);
-            showToast("❌ 환경설정 동기화 오류\n" + error.message);
+            console.error('환경설정 클라우드 에러:', error);
+            showToast('❌ 환경설정 동기화 오류\n' + error.message);
         }
         finally {
             setIsProcessing(false);
