@@ -1,6 +1,6 @@
 /**
  * ONEAPP MerchOps - coreEngine.js
- * v1.0.8 / Pricing Policy Sync
+ * v1.0.9 / Cloud Config Sync Fix
  *
  * 목적:
  * - HTML 화면 파일에서 중복되는 저장소, 가격계산, 히스토리, F9 전달, 클라우드 로직을 중앙화한다.
@@ -19,6 +19,11 @@
  * - 오더즈판매가/오더즈구매가는 입점사 전용 필드이므로 마스터 가격 필드 연결에서 제외한다.
  * - EXPORT.buildWorkingPayload의 purchase/sales 참조 누락을 수정한다.
  *
+ * v1.0.9_CloudConfigSyncFix:
+ * - 환경설정 전용 config_only 복원과 엄격한 JSON 응답 검증을 추가한다.
+ * - AppConfig 대용량 저장을 백스크립트 분할 저장 형식과 연동하고 settingsKeys를 복구한다.
+ * - 클라우드 URL 공통키와 구형키를 함께 유지해 MerchOps/환경설정/DataOps의 URL 불일치를 방지한다.
+ *
  * v1.0.8_PricingPolicySync:
  * - computeFinalData를 최신 MerchOps 정책에 맞게 정리한다. 엑셀 source에 없는 입고가는 마스터값으로 자동 대체하지 않는다.
  * - 구매/재고 작업의 시중가는 마스터 시중가를 참조하고, 구매/재고 원가로 시중가를 자동 산출하거나 갱신하지 않는다.
@@ -30,7 +35,7 @@
   'use strict';
 
   const ONEAPP = global.ONEAPP = global.ONEAPP || {};
-  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.0.8 PricingPolicySync';
+  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.0.9 CloudConfigSyncFix';
 
   const DEFAULT_DB_NAME = 'MerchOpsDB';
   const DEFAULT_DB_VERSION = 2;
@@ -847,6 +852,17 @@
     return `${safeUrl}${sep}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
   };
 
+  CLOUD.fetchJson = async (url, options = {}, label = '클라우드 요청') => {
+    const response = await fetch(url, options);
+    const rawText = await response.text();
+    let result = null;
+    try { result = rawText ? JSON.parse(rawText) : null; }
+    catch (e) { throw new Error(`${label} 응답이 JSON 형식이 아닙니다.`); }
+    if (!response.ok) throw new Error(result?.message || `${label} 네트워크 오류 (${response.status})`);
+    if (!result || result.status !== 'success') throw new Error(result?.message || `${label} 실패`);
+    return result;
+  };
+
   CLOUD.getDefaultCloudSyncUrl = () => ONEAPP_DEFAULT_CLOUD_SYNC_URL;
 
   CLOUD.getCloudSyncUrl = () => {
@@ -859,10 +875,11 @@
   };
 
   CLOUD.setCloudSyncUrl = (url) => {
-    const safeUrl = String(url || '').trim();
+    const safeUrl = String(url || '').trim().replace(/([?&])action=[^&#]*/g, '$1').replace(/[?&]$/, '');
     if (!safeUrl) throw new Error('클라우드 URL이 비어 있습니다.');
     try {
       global.localStorage.setItem(ONEAPP_CLOUD_URL_KEY, safeUrl);
+      global.localStorage.setItem('merchCloudUrl_v870', safeUrl);
     } catch (e) {
       throw new Error('클라우드 URL 저장에 실패했습니다.');
     }
@@ -878,23 +895,60 @@
   };
 
   CLOUD.buildMasterOnlyUrl = (url) => appendQueryParam(url || CLOUD.getCloudSyncUrl(), 'action', 'master_only');
+  CLOUD.buildConfigOnlyUrl = (url) => appendQueryParam(url || CLOUD.getCloudSyncUrl(), 'action', 'config_only');
 
   CLOUD.buildCloudConfigPayload = async (config = {}) => {
-    const pendingShopStatus = await STORAGE.getIDB('pending_shop_status').catch(() => []);
+    const pendingShopStatus = await STORAGE.getIDB('pending_shop_status').catch(() => safeJSONParse('pendingShopStatus', []));
     const dict = safeJSONParse('parserDict_v870', {});
+    const settingsKeys = {};
+    [
+      'parserDict_v870', 'merchMarginRules_v878', 'merchMappings_v870', 'merchMasterLinks_v870',
+      'merchVisUpload_v870', 'merchVisMaster_v870', 'merchUploadColumnMeta_v870',
+      'merchTableShortcuts_v870', 'merchTableViewPresets_v1', 'merchProductStatusRecords_v1',
+      'merchActiveTableTarget_v1', 'merchActiveTableViewId_v1', ONEAPP_CLOUD_URL_KEY, 'merchCloudUrl_v870'
+    ].forEach(key => {
+      try {
+        const value = global.localStorage.getItem(key);
+        if (value !== null && value !== undefined) settingsKeys[key] = value;
+      } catch (e) {}
+    });
 
     return {
+      schemaVersion: 'CoreConfig_v1.0.9_CloudConfigSyncFix',
+      updatedAt: getNowISO(),
       dict,
-      rules: config.marginRules || config.rules || [],
+      rules: config.marginRules || config.rules || safeJSONParse('merchMarginRules_v878', []),
       pendingShopStatus: pendingShopStatus || [],
       appConfig: {
         mappings: config.mappings || {},
         masterLinks: config.masterLinks || {},
         visibleUploadCols: config.visibleUploadCols || {},
         visibleMasterCols: config.visibleMasterCols || {},
-        uploadColumnMeta: config.uploadColumnMeta || {}
-      }
+        uploadColumnMeta: config.uploadColumnMeta || {},
+        tableShortcuts: config.tableShortcuts || safeJSONParse('merchTableShortcuts_v870', []),
+        tableViewPresets: config.tableViewPresets || safeJSONParse('merchTableViewPresets_v1', {}),
+        activeTableTarget: config.activeTableTarget || global.localStorage.getItem('merchActiveTableTarget_v1') || '',
+        activeTableViewId: config.activeTableViewId || global.localStorage.getItem('merchActiveTableViewId_v1') || ''
+      },
+      settingsKeys
     };
+  };
+
+  CLOUD.pushConfigBackup = async ({ url, data } = {}) => {
+    const targetUrl = String(url || CLOUD.getCloudSyncUrl() || '').trim();
+    if (!targetUrl) throw new Error('클라우드 URL이 없습니다.');
+    const configData = data || await CLOUD.buildCloudConfigPayload({});
+    const result = await CLOUD.fetchJson(targetUrl, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'config', data: configData })
+    }, '환경설정 백업');
+    return { ...result, data: configData };
+  };
+
+  CLOUD.pullConfigBackup = async ({ url } = {}) => {
+    const targetUrl = String(url || CLOUD.getCloudSyncUrl() || '').trim();
+    if (!targetUrl) throw new Error('클라우드 URL이 없습니다.');
+    return CLOUD.fetchJson(CLOUD.buildConfigOnlyUrl(targetUrl), { method: 'GET' }, '환경설정 복원');
   };
 
   CLOUD.normalizeMasterItemForDataOps = (item = {}, fallbackCode = '') => {
@@ -1018,13 +1072,8 @@
     }
 
     const requestUrl = CLOUD.buildMasterOnlyUrl(targetUrl);
-    const res = await fetch(requestUrl, { method: 'GET' });
-    if (!res.ok) throw new Error('MerchOps MasterDB 다운로드 실패');
-
-    const result = await res.json();
-    if (!result || result.status !== 'success' || !result.data) {
-      throw new Error(result?.message || 'MerchOps MasterDB 응답 형식 오류');
-    }
+    const result = await CLOUD.fetchJson(requestUrl, { method: 'GET' }, 'MerchOps MasterDB 다운로드');
+    if (!result.data) throw new Error('MerchOps MasterDB 응답 형식 오류');
 
     const rawMaster = result.data.master || {};
     const normalizedMaster = {};
@@ -1084,12 +1133,10 @@
     for (let i = 0; i < items.length; i += chunkSize) {
       const chunk = items.slice(i, i + chunkSize);
       if (typeof onProgress === 'function') onProgress({ action, sent: Math.min(i + chunkSize, items.length), total: items.length });
-      const res = await fetch(url, {
+      await CLOUD.fetchJson(url, {
         method: 'POST',
         body: JSON.stringify({ action, data: chunk })
-      });
-      const json = await res.json();
-      if (!json || json.status !== 'success') throw new Error(json?.message || `${action} 업로드 실패`);
+      }, `${action} 업로드`);
     }
 
     return { status: 'success', total: items.length };
@@ -1100,9 +1147,10 @@
     if (!targetUrl) throw new Error('클라우드 URL이 없습니다.');
 
     if (typeof onProgress === 'function') onProgress({ step: 'init', message: '서버 초기화 중...' });
-    const initRes = await fetch(targetUrl, { method: 'POST', body: JSON.stringify({ action: 'initSync' }) });
-    const initJson = await initRes.json();
-    if (!initJson || initJson.status !== 'success') throw new Error(initJson?.message || '초기화 실패');
+    await CLOUD.fetchJson(targetUrl, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'initSync' })
+    }, '클라우드 초기화');
 
     const masterItems = Array.isArray(masterProducts) ? masterProducts : Object.values(masterProducts || {});
     await CLOUD.chunkUpload({
@@ -1124,12 +1172,7 @@
 
     if (typeof onProgress === 'function') onProgress({ step: 'config', message: '환경설정 및 대기열 업로드 중...' });
     const configPayload = await CLOUD.buildCloudConfigPayload(config);
-    const configRes = await fetch(targetUrl, {
-      method: 'POST',
-      body: JSON.stringify({ action: 'config', data: configPayload })
-    });
-    const configJson = await configRes.json();
-    if (!configJson || configJson.status !== 'success') throw new Error(configJson?.message || '설정 업로드 실패');
+    await CLOUD.pushConfigBackup({ url: targetUrl, data: configPayload });
 
     return { status: 'success', masterCount: masterItems.length, historyCount: safeHistory.length };
   };
@@ -1158,6 +1201,11 @@
       await STORAGE.setIDB('pending_shop_status', data.pendingShopStatus);
     }
 
+    const settingsKeys = data.settingsKeys || {};
+    Object.entries(settingsKeys).forEach(([key, value]) => {
+      try { if (value !== undefined && value !== null) global.localStorage.setItem(key, String(value)); } catch (e) {}
+    });
+
     const appConfig = data.appConfig || {};
     if (data.rules && data.rules.length > 0) {
       global.localStorage.setItem('merchMarginRules_v878', JSON.stringify(data.rules));
@@ -1169,16 +1217,26 @@
       masterLinks: ['merchMasterLinks_v870', 'setMasterLinks'],
       visibleUploadCols: ['merchVisUpload_v870', 'setVisibleUploadCols'],
       visibleMasterCols: ['merchVisMaster_v870', 'setVisibleMasterCols'],
-      uploadColumnMeta: ['merchUploadColumnMeta_v870', 'setUploadColumnMeta']
+      uploadColumnMeta: ['merchUploadColumnMeta_v870', 'setUploadColumnMeta'],
+      tableShortcuts: ['merchTableShortcuts_v870', 'setTableShortcuts'],
+      tableViewPresets: ['merchTableViewPresets_v1', 'setTableViewPresets']
     };
 
     Object.keys(configKeyMap).forEach(key => {
-      if (appConfig[key]) {
+      if (appConfig[key] !== undefined && appConfig[key] !== null) {
         const [storageKey, hookName] = configKeyMap[key];
         global.localStorage.setItem(storageKey, JSON.stringify(appConfig[key]));
         if (typeof hooks[hookName] === 'function') hooks[hookName](appConfig[key]);
       }
     });
+    if (appConfig.activeTableTarget) {
+      global.localStorage.setItem('merchActiveTableTarget_v1', String(appConfig.activeTableTarget));
+      if (typeof hooks.setActiveTableTarget === 'function') hooks.setActiveTableTarget(appConfig.activeTableTarget);
+    }
+    if (appConfig.activeTableViewId) {
+      global.localStorage.setItem('merchActiveTableViewId_v1', String(appConfig.activeTableViewId));
+      if (typeof hooks.setActiveTableViewId === 'function') hooks.setActiveTableViewId(appConfig.activeTableViewId);
+    }
 
     global.localStorage.setItem('config_sync_trigger', Date.now().toString());
     return data;
@@ -1189,9 +1247,7 @@
     if (!targetUrl) throw new Error('클라우드 URL이 없습니다.');
     if (typeof onProgress === 'function') onProgress({ step: 'download', message: '클라우드 데이터 수신 중...' });
 
-    const res = await fetch(targetUrl, { method: 'GET' });
-    if (!res.ok) throw new Error('Network Error');
-    const result = await res.json();
+    const result = await CLOUD.fetchJson(targetUrl, { method: 'GET' }, '클라우드 데이터 복원');
     const data = await CLOUD.restoreCloudData(result, hooks);
     return { status: 'success', data };
   };
@@ -1571,6 +1627,10 @@
   global.ensureDefaultCloudSyncUrl = global.ensureDefaultCloudSyncUrl || CLOUD.ensureDefaultCloudSyncUrl;
   global.pullMerchMasterForDataOps = global.pullMerchMasterForDataOps || CLOUD.pullMerchMasterForDataOps;
   global.getCachedMerchMasterForDataOps = global.getCachedMerchMasterForDataOps || CLOUD.getCachedMerchMasterForDataOps;
+  global.pushCloudBackup = global.pushCloudBackup || CLOUD.pushCloudBackup;
+  global.pullCloudBackup = global.pullCloudBackup || CLOUD.pullCloudBackup;
+  global.pushConfigBackup = global.pushConfigBackup || CLOUD.pushConfigBackup;
+  global.pullConfigBackup = global.pullConfigBackup || CLOUD.pullConfigBackup;
   global.analyzeMasterExcelUpload = global.analyzeMasterExcelUpload || MASTER.analyzeMasterExcelUpload;
   global.applyMasterExcelUpload = global.applyMasterExcelUpload || MASTER.applyMasterExcelUpload;
   global.getMasterBackups = global.getMasterBackups || MASTER.getMasterBackups;
