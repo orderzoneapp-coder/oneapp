@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Smart Parser [v3.0.16 MappingExclude UXFix NoBabel]</title>
+    <title>ONEAPP MerchOps - Smart Parser [v3.0.17 StopInfoSync NoBabel]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -399,6 +399,104 @@ const loadParserExcludeDict = () => {
     return normalized;
 };
 const getParserExcludeList = (excludeDict, currentTag = '') => Object.entries(normalizeParserExcludeDict(excludeDict || {})).map(([key, item]) => ({ key, ...(item || {}) })).filter(item => !currentTag || !item.catalog || item.catalog === currentTag);
+const STOP_MANAGER_STORAGE_KEY = 'merchStoppedProducts_v2';
+const INFO_CHANGE_QUEUE_KEY = 'merchInfoChangeQueue_v1';
+const normalizeSharedProductCode = (value) => String(value == null ? '' : value).replace(/\s/g, '').trim();
+const loadSharedObject = (key, fallback = {}) => {
+    const value = safeParseJson(localStorage.getItem(key), fallback);
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : fallback;
+};
+const normalizeStoppedProductsMap = (source = {}) => {
+    const next = {};
+    const entries = Array.isArray(source) ? source.map((item, index) => [String(index), item]) : Object.entries(source || {});
+    entries.forEach(([rawKey, rawItem]) => {
+        const item = rawItem && typeof rawItem === 'object' ? rawItem : {};
+        const code = normalizeSharedProductCode(item.productCode || item.코드 || rawKey);
+        if (!code) return;
+        next[code] = { ...item, productCode: code };
+    });
+    return next;
+};
+const normalizeInfoChangeQueue = (source = {}) => {
+    const next = {};
+    Object.entries(source && typeof source === 'object' && !Array.isArray(source) ? source : {}).forEach(([rawKey, rawItem]) => {
+        const item = rawItem && typeof rawItem === 'object' ? rawItem : {};
+        const code = normalizeSharedProductCode(item.productCode || item.코드 || rawKey);
+        if (!code) return;
+        const fields = item.fields && typeof item.fields === 'object' ? { ...item.fields } : {};
+        if (Object.keys(fields).length === 0) return;
+        next[code] = { ...item, productCode: code, fields };
+    });
+    return next;
+};
+const saveSharedObject = (key, value, triggerKey = '') => {
+    try {
+        localStorage.setItem(key, JSON.stringify(value || {}));
+        if (triggerKey) localStorage.setItem(triggerKey, Date.now().toString());
+    } catch (error) {
+        cleanupSmartParserStorage();
+        localStorage.setItem(key, JSON.stringify(value || {}));
+        if (triggerKey) localStorage.setItem(triggerKey, Date.now().toString());
+    }
+};
+const upsertParserStoppedProduct = (source = {}, codeValue = '', options = {}) => {
+    const code = normalizeSharedProductCode(codeValue);
+    const next = normalizeStoppedProductsMap(source);
+    if (!code) return next;
+    const before = next[code] || {};
+    const now = options.now || getNowISO();
+    next[code] = {
+        ...before,
+        productCode: code,
+        stoppedAt: before.stoppedAt || now,
+        updatedAt: now,
+        reason: options.reason || before.reason || '공급중단',
+        memo: options.memo !== undefined ? String(options.memo || '') : (before.memo || ''),
+        source: 'SmartParser',
+        sourceCatalog: options.catalog || before.sourceCatalog || '',
+        sourceLabel: options.sourceLabel || before.sourceLabel || '공급사 텍스트',
+        status: 'pendingStop',
+        pendingAction: 'stop'
+    };
+    return next;
+};
+const upsertParserInfoChange = (source = {}, codeValue = '', fieldName = '', oldValue = '', newValue = '', options = {}) => {
+    const code = normalizeSharedProductCode(codeValue);
+    const field = String(fieldName || '').trim();
+    const next = normalizeInfoChangeQueue(source);
+    if (!code || !field) return next;
+    const before = next[code] || {};
+    const beforeFields = { ...(before.fields || {}) };
+    const originalOld = Object.prototype.hasOwnProperty.call(beforeFields, field) ? beforeFields[field].oldValue : oldValue;
+    if (String(originalOld ?? '') === String(newValue ?? '')) {
+        delete beforeFields[field];
+    } else {
+        beforeFields[field] = {
+            field,
+            oldValue: originalOld ?? '',
+            newValue: newValue ?? '',
+            changedAt: options.now || getNowISO()
+        };
+    }
+    if (Object.keys(beforeFields).length === 0) {
+        delete next[code];
+        return next;
+    }
+    const now = options.now || getNowISO();
+    next[code] = {
+        ...before,
+        productCode: code,
+        fields: beforeFields,
+        source: 'SmartParser',
+        sourceLabel: options.sourceLabel || '스마트 파서',
+        catalog: options.catalog || before.catalog || '',
+        createdAt: before.createdAt || now,
+        updatedAt: now,
+        erpStatus: before.erpStatus === 'completed' ? 'pending' : (before.erpStatus || 'pending'),
+        shopStatus: before.shopStatus === 'completed' ? 'pending' : (before.shopStatus || 'pending')
+    };
+    return next;
+};
 const cleanupSmartParserStorage = () => {
     try { localStorage.removeItem('parser_session'); } catch (e) { }
     try { localStorage.removeItem('smartParserTempData'); } catch (e) { }
@@ -458,16 +556,26 @@ const useParserApp = () => {
     } }).catch(console.error); }, []);
     useEffect(() => { const handleStorageChange = (e) => { if (e.key === 'merchMaster_sync_trigger' || e.key === 'merch_settings_update_trigger')
         window.location.reload(); }; window.addEventListener('storage', handleStorageChange); return () => window.removeEventListener('storage', handleStorageChange); }, []);
-    const saveMaster = async (data) => {
-        setMasterProducts(data);
+    const saveMaster = async (data, storeEntries = {}) => {
         try {
             const items = Object.values(data || {}).filter(item => item && item.코드);
-            await bulkPutIDB('master_products', items);
+            const db = await initIDB();
+            await new Promise((resolve, reject) => {
+                const tx = db.transaction(['master_products', 'store'], 'readwrite');
+                const masterStore = tx.objectStore('master_products');
+                const sharedStore = tx.objectStore('store');
+                items.forEach(item => masterStore.put(item));
+                Object.entries(storeEntries || {}).forEach(([key, value]) => sharedStore.put(value, key));
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error || new Error('IndexedDB 트랜잭션 실패'));
+                tx.onabort = () => reject(tx.error || new Error('IndexedDB 트랜잭션 중단'));
+            });
+            setMasterProducts(data);
             localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
         }
         catch (e) {
             console.error("IndexedDB 저장 실패", e);
-            throw new Error('마스터 IndexedDB 저장 실패: ' + (e?.message || e?.name || String(e)));
+            throw new Error('마스터/연동대기 IndexedDB 저장 실패: ' + (e?.message || e?.name || String(e)));
         }
     };
     const saveDict = (data) => {
@@ -620,7 +728,7 @@ const useParserActions = (appState) => {
                 quoteName: '',
                 timestamp: nowStr,
                 timestampISO: nowISO,
-                version: 'smart-parser-v3.0.16-mapping-exclude-ux-fix'
+                version: 'smart-parser-v3.0.17-stop-info-sync'
             };
             const makeHistoryLog = ({ code, row, oldItem, field, oldVal, newVal, memo, extra = {} }) => {
                 const oldNum = parseNum(oldVal);
@@ -655,7 +763,15 @@ const useParserActions = (appState) => {
                 };
             };
             let pendingList = await getIDB('pending_shop_status') || [];
+            if (!Array.isArray(pendingList)) pendingList = [];
+            let stoppedProducts = normalizeStoppedProductsMap((await getIDB(STOP_MANAGER_STORAGE_KEY)) || loadSharedObject(STOP_MANAGER_STORAGE_KEY, {}));
+            let infoChangeQueue = normalizeInfoChangeQueue((await getIDB(INFO_CHANGE_QUEUE_KEY)) || loadSharedObject(INFO_CHANGE_QUEUE_KEY, {}));
             let addedToPending = false;
+            let stoppedQueueChanged = false;
+            let infoQueueChanged = false;
+            let staleExternalBlockedCount = 0;
+            const stoppedCodes = new Set();
+            const infoChangedCodes = new Set();
             let masterMutationCount = 0;
             toApply.forEach(row => {
                 const code = row._matchCode;
@@ -680,10 +796,14 @@ const useParserActions = (appState) => {
                             extra: { actionType: 'parser_soldout_detected', statusType: 'stop' }
                         }));
                     }
-                    if (!pendingList.some(p => p.code === code)) {
-                        pendingList.push({ code: code, type: 'stop', name: newMaster[code].품목명 || row['품목명'] });
-                        addedToPending = true;
-                    }
+                    const pendingIndex = pendingList.findIndex(p => normalizeSharedProductCode(p?.code) === normalizeSharedProductCode(code));
+                    const pendingItem = { code: code, type: 'stop', name: newMaster[code].품목명 || row['품목명'], source: 'SmartParser', reason: '공급중단', catalog: catalogLabel, updatedAt: nowISO };
+                    if (pendingIndex >= 0) pendingList[pendingIndex] = { ...pendingList[pendingIndex], ...pendingItem };
+                    else pendingList.push(pendingItem);
+                    addedToPending = true;
+                    stoppedProducts = upsertParserStoppedProduct(stoppedProducts, code, { now: nowISO, reason: '공급중단', catalog: catalogLabel, sourceLabel: '공급사 품절/단종 텍스트' });
+                    stoppedQueueChanged = true;
+                    stoppedCodes.add(normalizeSharedProductCode(code));
                 }
                 const pInNum = parseNum(row.finalData?.['입고가'] || row['입고가']);
                 if (pInNum > 0) {
@@ -739,6 +859,22 @@ const useParserActions = (appState) => {
                     ['품목명', '규격', '단위'].forEach(fieldName => {
                         const parsedVal = row[fieldName] || '';
                         const oldVal = newMaster[code][fieldName] || '';
+                        const pendingField = infoChangeQueue?.[normalizeSharedProductCode(code)]?.fields?.[fieldName];
+                        const isStaleExternalValue = !!pendingField
+                            && String(parsedVal ?? '') === String(pendingField.oldValue ?? '')
+                            && String(oldVal ?? '') === String(pendingField.newValue ?? '');
+                        if (parsedVal && isStaleExternalValue) {
+                            staleExternalBlockedCount++;
+                            localLogs.push(makeHistoryLog({
+                                code, row, oldItem,
+                                field: fieldName,
+                                oldVal,
+                                newVal: parsedVal,
+                                memo: `외부 미반영 이전 ${fieldName} 값 재유입 차단`,
+                                extra: { actionType: 'parser_stale_external_value_blocked', blocked: true }
+                            }));
+                            return;
+                        }
                         if (parsedVal && oldVal !== parsedVal) {
                             localLogs.push(makeHistoryLog({
                                 code, row, oldItem,
@@ -746,8 +882,11 @@ const useParserActions = (appState) => {
                                 oldVal,
                                 newVal: parsedVal,
                                 memo: `파싱 텍스트 기준 ${fieldName} 갱신`,
-                                extra: { actionType: 'parser_text_field_update' }
+                                extra: { actionType: 'parser_text_field_update', outputPending: true }
                             }));
+                            infoChangeQueue = upsertParserInfoChange(infoChangeQueue, code, fieldName, oldVal, parsedVal, { now: nowISO, catalog: catalogLabel, sourceLabel: '스마트 파서 품명/규격/단위 변경' });
+                            infoQueueChanged = true;
+                            infoChangedCodes.add(normalizeSharedProductCode(code));
                             newMaster[code][fieldName] = parsedVal;
                             masterMutationCount++;
                         }
@@ -762,14 +901,23 @@ const useParserActions = (appState) => {
             if (localLogs.length > 0) {
                 saveMerchHistoryWithRetry(localLogs);
             }
-            if (addedToPending)
-                await setIDB('pending_shop_status', pendingList);
-            await saveMaster(newMaster);
+            const sharedEntries = {};
+            if (addedToPending) sharedEntries.pending_shop_status = pendingList;
+            if (stoppedQueueChanged) sharedEntries[STOP_MANAGER_STORAGE_KEY] = stoppedProducts;
+            if (infoQueueChanged) sharedEntries[INFO_CHANGE_QUEUE_KEY] = infoChangeQueue;
+            await saveMaster(newMaster, sharedEntries);
+            if (stoppedQueueChanged) saveSharedObject(STOP_MANAGER_STORAGE_KEY, stoppedProducts, 'merchStopManager_sync_trigger');
+            if (infoQueueChanged) saveSharedObject(INFO_CHANGE_QUEUE_KEY, infoChangeQueue, 'merchInfoChange_sync_trigger');
             saveDict(newDict);
             setProcessedCodes(newlyProcessed);
             const appliedIds = new Set(toApply.map(r => r._id));
             setParserBuffer(prev => prev.filter(r => !appliedIds.has(r._id)));
-            showToast(`✅ ${toApply.length}건 마스터 적용 및 상세 히스토리 기록 완료`);
+            const syncSummary = [
+                stoppedCodes.size > 0 ? `정지관리 ${stoppedCodes.size}건` : '',
+                infoChangedCodes.size > 0 ? `정보변경 ${infoChangedCodes.size}건` : '',
+                staleExternalBlockedCount > 0 ? `이전값 재유입 차단 ${staleExternalBlockedCount}건` : ''
+            ].filter(Boolean).join(' / ');
+            showToast(`✅ ${toApply.length}건 마스터 적용 완료${syncSummary ? ` · ${syncSummary}` : ''}`);
             return true;
         }
         catch (error) {
@@ -919,23 +1067,41 @@ const useParserActions = (appState) => {
         try {
             let newMaster = { ...masterProducts };
             let count = 0;
-            codesToProcess.forEach(code => { if (newMaster[code]) {
-                newMaster[code]['카탈로그'] = removeTag(newMaster[code]['카탈로그'], currentTag);
+            let pending = await getIDB('pending_shop_status') || [];
+            if (!Array.isArray(pending)) pending = [];
+            let stoppedProducts = normalizeStoppedProductsMap((await getIDB(STOP_MANAGER_STORAGE_KEY)) || loadSharedObject(STOP_MANAGER_STORAGE_KEY, {}));
+            let stoppedQueueChanged = false;
+            const now = getNowISO();
+            codesToProcess.forEach(rawCode => {
+                const code = normalizeSharedProductCode(rawCode);
+                if (!code || !newMaster[code]) return;
+                newMaster[code] = { ...newMaster[code], '카탈로그': removeTag(newMaster[code]['카탈로그'], currentTag) };
+                if (statusType === 'stop') {
+                    newMaster[code]['판매여부'] = 0;
+                    stoppedProducts = upsertParserStoppedProduct(stoppedProducts, code, { now, reason: '공급중단', catalog: currentTag, sourceLabel: '카탈로그 누락/단종 처리' });
+                    stoppedQueueChanged = true;
+                }
+                if (statusType !== 'none') {
+                    const idx = pending.findIndex(item => normalizeSharedProductCode(item?.code) === code);
+                    const pendingItem = { code, type: statusType, name: newMaster[code]?.품목명, source: 'SmartParser', reason: statusType === 'stop' ? '공급중단' : '일시품절', catalog: currentTag, updatedAt: now };
+                    if (idx >= 0) pending[idx] = { ...pending[idx], ...pendingItem };
+                    else pending.push(pendingItem);
+                }
                 count++;
-            } });
-            if (statusType !== 'none') {
-                let pending = await getIDB('pending_shop_status') || [];
-                codesToProcess.forEach(code => { pending.push({ code, type: statusType, name: newMaster[code]?.품목명 }); });
-                await setIDB('pending_shop_status', pending);
-            }
-            await saveMaster(newMaster);
+            });
+            const sharedEntries = {};
+            if (statusType !== 'none') sharedEntries.pending_shop_status = pending;
+            if (stoppedQueueChanged) sharedEntries[STOP_MANAGER_STORAGE_KEY] = stoppedProducts;
+            await saveMaster(newMaster, sharedEntries);
+            if (stoppedQueueChanged) saveSharedObject(STOP_MANAGER_STORAGE_KEY, stoppedProducts, 'merchStopManager_sync_trigger');
             setSelectedMissingCodes(new Set());
             setShowExcludeModal(false);
             setExcludeTarget(null);
-            showToast(`✅ ${count}개 상품 제외${statusType !== 'none' ? ' 및 쇼핑몰 연동 대기' : ''} 완료!`);
+            showToast(`✅ ${count}개 상품 제외${statusType === 'stop' ? ' · 정지관리 연동' : (statusType !== 'none' ? ' · 쇼핑몰 연동대기' : '')} 완료`);
         }
         catch (error) {
-            showToast("❌ 제외 처리 중 오류가 발생했습니다.");
+            console.error(error);
+            showToast("❌ 제외/정지 연동 처리 중 오류가 발생했습니다.");
         }
         finally {
             setIsProcessing(false);
@@ -1536,7 +1702,7 @@ const ParserApp = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "Smart Parser"),
-                                        React.createElement("span", { className: "ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold" }, "v3.0.16 MappingExclude UXFix")),
+                                        React.createElement("span", { className: "ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold" }, "v3.0.17 StopInfoSync")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "TEXT ANALYSIS & DELTA SYNC"))),
                             React.createElement("div", { className: "flex flex-1 max-w-md xl:max-w-xl mx-4" }, isProcessing ? React.createElement("div", { className: "w-full bg-amber-400 text-amber-900 px-4 py-1.5 rounded-md font-mono text-[12px] font-bold flex items-center shadow-inner truncate" },
                                 React.createElement("i", { className: "fas fa-spinner fa-spin mr-2" }),
