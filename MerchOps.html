@@ -4,12 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.138_CloudConfigSyncFix]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.138_ParserStopInfoSync]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="coreEngine.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     
     <script>
@@ -39,7 +38,7 @@
         // v2.1.135: 행사가 필터/F9 추출은 마스터 행사값만 보지 않고 현재 작업테이블의 finalData·활성 source 행사가를 우선 판정한다. 재고 검토 중 수기 입력한 행사가 상품도 즉시 행사상품으로 모아 출력한다.
         // v2.1.136: 필터 초기화와 검색창을 상단 작업줄의 맨 오른쪽으로 이동한다. 필터·액션 버튼 뒤에 독립 조회도구 묶음으로 배치한다.
         // v2.1.137: 제외는 현재 파일 작업 세션의 임시목록으로 분리하고 새 파일/초기화 시 자동 해제한다. 폴더형 보관함은 폐기하고 상품코드별 정지관리(정지예정/정지중/재개예정/확인필요, 개별·선택·전체 수정 및 F8 반영)로 교체한다.
-        // v2.1.138: 클라우드 백업을 coreEngine 공통 엔진으로 통합하고 모든 분할 응답을 검증한다. 환경설정은 AppConfig 분할 저장 및 config_only 복원을 사용한다.
+        // v2.1.138: Smart Parser 공급중단을 정지관리 변경대기로 연결하고 품목명·규격·단위 변경을 정보변경 대기목록으로 관리한다. F8/정보변경 관리에서 ERP·쇼핑몰 정보수정 엑셀을 생성하고 시스템별 업로드 완료 후 자동 정리한다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결하며 오더즈판매가/오더즈구매가는 작업·출력에서 제외한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
@@ -2605,9 +2604,45 @@ const useMerchUI = () => {
         return next;
     });
     useEffect(() => {
-        try { localStorage.setItem('merchStoppedProducts_v2', JSON.stringify(stoppedProducts || {})); }
+        try {
+            localStorage.setItem('merchStoppedProducts_v2', JSON.stringify(stoppedProducts || {}));
+        }
         catch (e) { }
+        if (window.setIDB) window.setIDB('merchStoppedProducts_v2', stoppedProducts || {}).catch(console.warn);
     }, [stoppedProducts]);
+    const normalizeInfoQueue = (source = {}) => {
+        const next = {};
+        Object.entries(source && typeof source === 'object' && !Array.isArray(source) ? source : {}).forEach(([rawKey, rawItem]) => {
+            const item = rawItem && typeof rawItem === 'object' ? rawItem : {};
+            const code = window.normalizeProductCodeText ? window.normalizeProductCodeText(item.productCode || item.코드 || rawKey) : String(item.productCode || item.코드 || rawKey || '').replace(/\s/g, '');
+            const fields = item.fields && typeof item.fields === 'object' ? { ...item.fields } : {};
+            if (!code || Object.keys(fields).length === 0) return;
+            next[code] = { ...item, productCode: code, fields };
+        });
+        return next;
+    };
+    const [showInfoChangeManager, setShowInfoChangeManager] = useState(false);
+    const [infoChangeQueue, setInfoChangeQueue] = useState(() => normalizeInfoQueue(safeJSONParse('merchInfoChangeQueue_v1', {})));
+    useEffect(() => {
+        try {
+            localStorage.setItem('merchInfoChangeQueue_v1', JSON.stringify(infoChangeQueue || {}));
+        }
+        catch (e) { }
+        if (window.setIDB) window.setIDB('merchInfoChangeQueue_v1', infoChangeQueue || {}).catch(console.warn);
+    }, [infoChangeQueue]);
+    useEffect(() => {
+        const handleSharedQueueStorage = (e) => {
+            if (e.key === 'merchStopManager_sync_trigger') {
+                const latest = safeJSONParse('merchStoppedProducts_v2', {});
+                if (latest && typeof latest === 'object') setStoppedProducts(latest);
+            }
+            if (e.key === 'merchInfoChange_sync_trigger') {
+                setInfoChangeQueue(normalizeInfoQueue(safeJSONParse('merchInfoChangeQueue_v1', {})));
+            }
+        };
+        window.addEventListener('storage', handleSharedQueueStorage);
+        return () => window.removeEventListener('storage', handleSharedQueueStorage);
+    }, []);
     const showToast = useCallback((msg) => {
         setToastMsg(msg);
         setTimeout(() => setToastMsg(''), 3000);
@@ -2635,7 +2670,9 @@ const useMerchUI = () => {
         showExcludedPanel, setShowExcludedPanel,
         sessionExcludedItems, setSessionExcludedItems,
         showStopManager, setShowStopManager,
-        stoppedProducts, setStoppedProducts
+        stoppedProducts, setStoppedProducts,
+        showInfoChangeManager, setShowInfoChangeManager,
+        infoChangeQueue, setInfoChangeQueue
     };
 };
 const useMerchActions = (config, data, ui, fullDisplayRows) => {
@@ -2643,130 +2680,111 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
     const handleCloudSync = useCallback(async (type) => {
         const targetCloudUrl = window.getOneAppCloudSyncUrl ? window.getOneAppCloudSyncUrl(config.cloudUrl) : (config.cloudUrl || '');
         if (!targetCloudUrl)
-            return ui.setAlertMsg('클라우드 URL이 설정되지 않았습니다. DataOps 매핑센터 또는 MerchOps 설정에서 URL을 세팅해주세요.');
+            return ui.setAlertMsg("클라우드 URL이 설정되지 않았습니다. DataOps 매핑센터 또는 MerchOps 설정에서 URL을 세팅해주세요.");
         if (window.setOneAppCloudSyncUrl) {
             const savedUrl = window.setOneAppCloudSyncUrl(targetCloudUrl);
-            if (config.setCloudUrl && savedUrl !== config.cloudUrl) config.setCloudUrl(savedUrl);
+            if (config.setCloudUrl && savedUrl !== config.cloudUrl)
+                config.setCloudUrl(savedUrl);
         }
-        const requestJson = async (url, options, label) => {
-            const response = await fetch(url, options);
-            const rawText = await response.text();
-            let result = null;
-            try { result = rawText ? JSON.parse(rawText) : null; }
-            catch (e) { throw new Error(`${label} 응답이 JSON 형식이 아닙니다.`); }
-            if (!response.ok) throw new Error(result?.message || `${label} 네트워크 오류 (${response.status})`);
-            if (!result || result.status !== 'success') throw new Error(result?.message || `${label} 실패`);
-            return result;
-        };
         ui.showToast(`☁️ 클라우드 ${type === 'upload' ? '전체 백업' : '불러오기'} 시작...`);
         ui.setIsProcessing(true);
         try {
-            const hooks = {
-                setMasterProducts: data.setMasterProducts,
-                setHistoryLogs: data.setHistoryLogs,
-                setMarginRules: rules => config.setMarginRules(window.sanitizeMerchMarginRules(rules)),
-                setMappings: config.setMappings,
-                setMasterLinks: config.setMasterLinks,
-                setVisibleUploadCols: config.setVisibleUploadCols,
-                setVisibleMasterCols: config.setVisibleMasterCols,
-                setUploadColumnMeta: config.setUploadColumnMeta,
-                setTableViewPresets: presets => config.setTableViewPresets(window.sanitizeMerchTableViewPresets(presets)),
-                setActiveTableTarget: config.setActiveTableTarget,
-                setActiveTableViewId: config.setActiveTableViewId
-            };
             if (type === 'upload') {
-                if (window.ONEAPP?.CLOUD?.pushCloudBackup) {
-                    await window.ONEAPP.CLOUD.pushCloudBackup({
-                        url: targetCloudUrl,
-                        masterProducts: data.masterProducts,
-                        historyLogs: data.historyLogs || [],
-                        config,
-                        chunkSize: 500,
-                        onProgress: progress => ui.setProcessMsg(progress.message || '클라우드 백업 중...')
-                    });
-                } else {
-                    ui.setProcessMsg('서버 초기화 중...');
-                    await requestJson(targetCloudUrl, { method: 'POST', body: JSON.stringify({ action: 'initSync' }) }, '서버 초기화');
-                    const masterItems = Object.values(data.masterProducts || {});
-                    const historyItems = data.historyLogs || [];
-                    const chunkSize = 500;
-                    for (let i = 0; i < masterItems.length; i += chunkSize) {
-                        const chunk = masterItems.slice(i, i + chunkSize);
-                        ui.setProcessMsg(`마스터 데이터 업로드 중... (${Math.min(i + chunkSize, masterItems.length)} / ${masterItems.length}건)`);
-                        await requestJson(targetCloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_master', data: chunk }) }, '마스터 업로드');
-                    }
-                    for (let i = 0; i < historyItems.length; i += chunkSize) {
-                        const chunk = historyItems.slice(i, i + chunkSize);
-                        ui.setProcessMsg(`히스토리 업로드 중... (${Math.min(i + chunkSize, historyItems.length)} / ${historyItems.length}건)`);
-                        await requestJson(targetCloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_history', data: chunk }) }, '히스토리 업로드');
-                    }
-                    const configData = {
-                        schemaVersion: 'MerchOps_v2.1.138_CloudConfigSyncFix',
-                        updatedAt: new Date().toISOString(),
-                        dict: JSON.parse(localStorage.getItem('parserDict_v870') || '{}'),
+                ui.setProcessMsg('서버 초기화 중...');
+                let initRes = await fetch(targetCloudUrl, { method: 'POST', body: JSON.stringify({ action: 'initSync' }) });
+                if ((await initRes.json()).status !== 'success')
+                    throw new Error("초기화 실패");
+                const masterItems = Object.values(data.masterProducts);
+                const chunkSize = 500;
+                for (let i = 0; i < masterItems.length; i += chunkSize) {
+                    const chunk = masterItems.slice(i, i + chunkSize);
+                    ui.setProcessMsg(`마스터 데이터 업로드 중... (${Math.min(i + chunkSize, masterItems.length)} / ${masterItems.length}건)`);
+                    await fetch(targetCloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_master', data: chunk }) });
+                }
+                const historyItems = data.historyLogs || [];
+                for (let i = 0; i < historyItems.length; i += chunkSize) {
+                    const chunk = historyItems.slice(i, i + chunkSize);
+                    ui.setProcessMsg(`히스토리 업로드 중... (${Math.min(i + chunkSize, historyItems.length)} / ${historyItems.length}건)`);
+                    await fetch(targetCloudUrl, { method: 'POST', body: JSON.stringify({ action: 'chunk_history', data: chunk }) });
+                }
+                ui.setProcessMsg('환경설정 및 AI 매핑 사전 업로드 중...');
+                const dict = JSON.parse(localStorage.getItem('parserDict_v870') || '{}');
+                const configPayload = {
+                    action: 'config',
+                    data: {
+                        dict: dict,
                         rules: config.marginRules,
                         appConfig: {
                             mappings: config.mappings,
                             masterLinks: config.masterLinks,
                             visibleUploadCols: config.visibleUploadCols,
                             visibleMasterCols: config.visibleMasterCols,
-                            uploadColumnMeta: config.uploadColumnMeta,
                             tableViewPresets: config.tableViewPresets,
                             activeTableTarget: config.activeTableTarget,
-                            activeTableViewId: config.activeTableViewId
+                            activeTableViewId: config.activeTableViewId,
+                            cloudUrl: targetCloudUrl
                         }
-                    };
-                    await requestJson(targetCloudUrl, { method: 'POST', body: JSON.stringify({ action: 'config', data: configData }) }, '환경설정 업로드');
-                }
+                    }
+                };
+                await fetch(targetCloudUrl, { method: 'POST', body: JSON.stringify(configPayload) });
                 ui.showToast('✅ 클라우드 대용량 분할 백업(Push) 성공!');
             }
             else {
                 ui.setProcessMsg('클라우드 데이터 수신 중...');
-                let result;
-                if (window.ONEAPP?.CLOUD?.pullCloudBackup) {
-                    result = await window.ONEAPP.CLOUD.pullCloudBackup({
-                        url: targetCloudUrl,
-                        hooks,
-                        onProgress: progress => ui.setProcessMsg(progress.message || '클라우드 데이터 수신 중...')
-                    });
-                } else {
-                    const responseData = await requestJson(targetCloudUrl, { method: 'GET' }, '클라우드 데이터 복원');
-                    result = { status: 'success', data: responseData.data };
-                    const restored = responseData.data || {};
-                    if (restored.master && Object.keys(restored.master).length > 0) data.setMasterProducts(restored.master);
-                    if (restored.history && Array.isArray(restored.history)) {
-                        data.setHistoryLogs(restored.history);
-                        localStorage.setItem('merchHistory_v870', JSON.stringify(restored.history));
+                const res = await fetch(targetCloudUrl, { method: 'GET' });
+                if (!res.ok)
+                    throw new Error("Network Error");
+                const result = await res.json();
+                if (result.status === 'success' && result.data) {
+                    if (result.data.master && Object.keys(result.data.master).length > 0) {
+                        data.setMasterProducts(result.data.master);
                     }
-                    if (restored.dict && Object.keys(restored.dict).length > 0) localStorage.setItem('parserDict_v870', JSON.stringify(restored.dict));
-                    if (restored.rules && restored.rules.length > 0) config.setMarginRules(window.sanitizeMerchMarginRules(restored.rules));
-                    if (restored.appConfig) {
-                        if (restored.appConfig.mappings) config.setMappings(restored.appConfig.mappings);
-                        if (restored.appConfig.masterLinks) config.setMasterLinks(restored.appConfig.masterLinks);
-                        if (restored.appConfig.visibleUploadCols) config.setVisibleUploadCols(restored.appConfig.visibleUploadCols);
-                        if (restored.appConfig.visibleMasterCols) config.setVisibleMasterCols(restored.appConfig.visibleMasterCols);
-                        if (restored.appConfig.uploadColumnMeta) config.setUploadColumnMeta(restored.appConfig.uploadColumnMeta);
-                        if (restored.appConfig.tableViewPresets) config.setTableViewPresets(window.sanitizeMerchTableViewPresets(restored.appConfig.tableViewPresets));
-                        if (restored.appConfig.activeTableTarget) config.setActiveTableTarget(restored.appConfig.activeTableTarget);
-                        if (restored.appConfig.activeTableViewId) config.setActiveTableViewId(restored.appConfig.activeTableViewId);
+                    if (result.data.dict && Object.keys(result.data.dict).length > 0) {
+                        localStorage.setItem('parserDict_v870', JSON.stringify(result.data.dict));
                     }
+                    if (result.data.rules && result.data.rules.length > 0) {
+                        config.setMarginRules(window.sanitizeMerchMarginRules(result.data.rules));
+                    }
+                    if (result.data.history && Array.isArray(result.data.history)) {
+                        data.setHistoryLogs(result.data.history);
+                        localStorage.setItem('merchHistory_v870', JSON.stringify(result.data.history));
+                    }
+                    if (result.data.appConfig) {
+                        if (result.data.appConfig.mappings)
+                            config.setMappings(result.data.appConfig.mappings);
+                        if (result.data.appConfig.masterLinks)
+                            config.setMasterLinks(result.data.appConfig.masterLinks);
+                        if (result.data.appConfig.visibleUploadCols)
+                            config.setVisibleUploadCols(result.data.appConfig.visibleUploadCols);
+                        if (result.data.appConfig.visibleMasterCols)
+                            config.setVisibleMasterCols(result.data.appConfig.visibleMasterCols);
+                        if (result.data.appConfig.tableViewPresets)
+                            config.setTableViewPresets(window.sanitizeMerchTableViewPresets(result.data.appConfig.tableViewPresets));
+                        if (result.data.appConfig.activeTableTarget)
+                            config.setActiveTableTarget(result.data.appConfig.activeTableTarget);
+                        if (result.data.appConfig.activeTableViewId)
+                            config.setActiveTableViewId(result.data.appConfig.activeTableViewId);
+                    }
+                    if (ui.setHasUnsavedChanges)
+                        ui.setHasUnsavedChanges(false);
+                    const masterCount = result.data.master ? Object.keys(result.data.master).length : 0;
+                    const historyCount = result.data.history ? result.data.history.length : 0;
+                    ui.showToast(`✅ 데이터 불러오기 완료! (상품: ${masterCount.toLocaleString()}건, 로그: ${historyCount.toLocaleString()}건)`);
                 }
-                if (ui.setHasUnsavedChanges) ui.setHasUnsavedChanges(false);
-                const restoredData = result?.data || {};
-                const masterCount = restoredData.master ? Object.keys(restoredData.master).length : 0;
-                const historyCount = restoredData.history ? restoredData.history.length : 0;
-                ui.showToast(`✅ 데이터 불러오기 완료! (상품: ${masterCount.toLocaleString()}건, 로그: ${historyCount.toLocaleString()}건)`);
+                else {
+                    throw new Error("Invalid Data Format");
+                }
             }
         }
         catch (error) {
             console.error(error);
-            ui.setAlertMsg('통신 오류 발생. URL이나 시트 권한을 확인하세요.\n' + error.message);
+            ui.setAlertMsg("통신 오류 발생. URL이나 시트 권한을 확인하세요.\n" + error.message);
         }
         finally {
             ui.setIsProcessing(false);
             ui.setProcessMsg('');
         }
-    }, [config, data.masterProducts, data.setMasterProducts, data.historyLogs, data.setHistoryLogs, ui]);
+    }, [config.cloudUrl, data.masterProducts, data.setMasterProducts, config.marginRules, config.setMarginRules, config.mappings, config.masterLinks, config.visibleUploadCols, config.visibleMasterCols, data.historyLogs, data.setHistoryLogs, config.setCloudUrl, ui]);
     const cleanUpGarbageTags = useCallback(() => {
         if (window.confirm("마스터 DB에 남아있는 불필요한 상품태그 찌꺼기를 삭제하여 용량을 최적화하시겠습니까?\n(오직 시스템에서 관리하는 속성만 안전하게 남습니다.)")) {
             let newMaster = { ...data.masterProducts };
@@ -3496,6 +3514,76 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         });
         ui.showToast(`▶️ ${cleanCodes.length}건 판매재개 예정 / F8 반영대기`);
     }, [data.setManagedItems, getWorkRowCode, ui]);
+
+    // ============================================================
+    // [M-INFO-CHANGE-01] Smart Parser 정보변경 대기 관리
+    // 품목명·규격·단위 변경은 ERP/쇼핑몰 업로드 완료 전까지 상품코드별 1건으로 유지한다.
+    // ============================================================
+    const getInfoChangeEntries = useCallback((codes = []) => {
+        const requested = new Set((codes || []).map(v => window.normalizeProductCodeText(v || '')).filter(Boolean));
+        return Object.values(ui.infoChangeQueue || {}).filter(item => {
+            const code = window.normalizeProductCodeText(item?.productCode || '');
+            return code && (requested.size === 0 || requested.has(code));
+        });
+    }, [ui.infoChangeQueue]);
+    const appendInfoChangeSheets = useCallback((wb, entries = []) => {
+        const rows = (entries || []).filter(Boolean);
+        if (!wb || rows.length === 0 || !window.XLSX) return 0;
+        const erp = [['품목코드', '품목명', '규격', '단위', '변경일시', '변경출처']];
+        const shop = [['상품코드', '상품명', '규격', '단위', '변경일시', '변경출처']];
+        const history = [['상품코드', '변경항목', '기존값', '변경값', 'ERP상태', '쇼핑몰상태', '카탈로그', '변경일시']];
+        rows.forEach(item => {
+            const code = window.normalizeProductCodeText(item.productCode || '');
+            const master = data.masterProducts[code] || {};
+            const fields = item.fields || {};
+            const currentName = fields.품목명?.newValue ?? master.품목명 ?? '';
+            const currentSpec = fields.규격?.newValue ?? master.규격 ?? '';
+            const currentUnit = fields.단위?.newValue ?? master.단위 ?? '';
+            if (item.erpStatus !== 'completed') erp.push([code, currentName, currentSpec, currentUnit, item.updatedAt || item.createdAt || '', item.sourceLabel || item.source || 'SmartParser']);
+            if (item.shopStatus !== 'completed') shop.push([code, currentName, currentSpec, currentUnit, item.updatedAt || item.createdAt || '', item.sourceLabel || item.source || 'SmartParser']);
+            Object.entries(fields).forEach(([field, change]) => history.push([code, field, change?.oldValue ?? '', change?.newValue ?? '', item.erpStatus || 'pending', item.shopStatus || 'pending', item.catalog || '', change?.changedAt || item.updatedAt || '']));
+        });
+        if (erp.length > 1) window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(erp), 'ERP상품정보변경');
+        if (shop.length > 1) window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(shop), '쇼핑몰상품정보변경');
+        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(history), '정보변경내역');
+        return rows.length;
+    }, [data.masterProducts]);
+    const handleExportInfoChanges = useCallback((codes = []) => {
+        if (!window.XLSX) return ui.showToast('⚠️ 엑셀 라이브러리 로드 대기 중입니다.');
+        const entries = getInfoChangeEntries(codes);
+        if (entries.length === 0) return ui.showToast('⚠️ 출력할 정보변경 건이 없습니다.');
+        const wb = window.XLSX.utils.book_new();
+        appendInfoChangeSheets(wb, entries);
+        window.XLSX.writeFile(wb, `ERP_쇼핑몰_상품정보변경_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        const now = new Date().toISOString();
+        const codeSet = new Set(entries.map(item => window.normalizeProductCodeText(item.productCode || '')));
+        ui.setInfoChangeQueue(prev => {
+            const next = { ...(prev || {}) };
+            codeSet.forEach(code => { if (next[code]) next[code] = { ...next[code], lastExportedAt: now, updatedAt: next[code].updatedAt || now }; });
+            return next;
+        });
+        ui.showToast(`✅ 정보변경 ${entries.length}건 ERP·쇼핑몰 엑셀 생성`);
+    }, [appendInfoChangeSheets, getInfoChangeEntries, ui]);
+    const handleCompleteInfoChanges = useCallback((codes = [], targetSystem = '') => {
+        const cleanCodes = Array.from(new Set((codes || []).map(v => window.normalizeProductCodeText(v || '')).filter(Boolean)));
+        if (cleanCodes.length === 0 || !['erp', 'shop'].includes(targetSystem)) return ui.showToast('⚠️ 완료 처리할 정보변경 건을 선택하세요.');
+        const label = targetSystem === 'erp' ? 'ERP' : '쇼핑몰';
+        if (!window.confirm(`${label} 업로드 완료 ${cleanCodes.length}건을 기록하시겠습니까?\nERP와 쇼핑몰이 모두 완료된 상품은 정보변경 목록에서 자동 제거됩니다.`)) return;
+        const now = new Date().toISOString();
+        ui.setInfoChangeQueue(prev => {
+            const next = { ...(prev || {}) };
+            cleanCodes.forEach(code => {
+                if (!next[code]) return;
+                const item = { ...next[code] };
+                if (targetSystem === 'erp') { item.erpStatus = 'completed'; item.erpCompletedAt = now; }
+                else { item.shopStatus = 'completed'; item.shopCompletedAt = now; }
+                if (item.erpStatus === 'completed' && item.shopStatus === 'completed') delete next[code];
+                else next[code] = item;
+            });
+            return next;
+        });
+        ui.showToast(`✅ ${label} 업로드 완료 ${cleanCodes.length}건 기록`);
+    }, [ui]);
     // ============================================================
     // [M-ACTION-03] 선택상품 창고 일괄 지정
     // 역할: 체크된 상품의 작업값(finalData.창고)에 입력 창고값을 즉시 반영한다.
@@ -3714,7 +3802,8 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
     const handleQuickExcelExport = useCallback(() => {
         if (!window.XLSX)
             return ui.showToast('⚠️ 엑셀 라이브러리 로드 대기 중입니다.');
-        if (!fullDisplayRows || fullDisplayRows.length === 0)
+        const pendingInfoEntriesForExport = Object.values(ui.infoChangeQueue || {});
+        if ((!fullDisplayRows || fullDisplayRows.length === 0) && pendingInfoEntriesForExport.length === 0)
             return ui.showToast('⚠️ 빠른 출력할 데이터가 없습니다.');
         const readyRows = Array.isArray(quickExcelReadyRef.current.rows) ? quickExcelReadyRef.current.rows : [];
         const readyCodes = Array.isArray(quickExcelReadyRef.current.codes) ? quickExcelReadyRef.current.codes : [];
@@ -3724,7 +3813,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             : (readyCodes.length > 0
                 ? fullDisplayRows.filter(row => readyCodeSet.has(window.getManagedRowKey(row)))
                 : (ui.selectedRows.size > 0 ? fullDisplayRows.filter(row => ui.selectedRows.has(window.getManagedRowKey(row))) : fullDisplayRows));
-        if (targetRows.length === 0)
+        if (targetRows.length === 0 && pendingInfoEntriesForExport.length === 0)
             return ui.showToast('⚠️ 선택된 빠른 출력 대상이 없습니다.');
         const isInfoQuickRow = (row = {}) => !!(row?.sources?.info) || (window.getCurrentMerchSourceRole && window.getCurrentMerchSourceRole(row.sources || {}, row._lastUploadRole || '') === 'info');
         const exportInfoRows = (rows = []) => {
@@ -3794,10 +3883,19 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             const ws = window.XLSX.utils.aoa_to_sheet(aoa);
             window.XLSX.utils.book_append_sheet(wb, ws, '상품정보업로드');
             const type = infoRows.some(row => String(row.sources?.info?._infoType || '') === 'shop') ? '쇼핑몰' : (infoRows.some(row => String(row.sources?.info?._infoType || '') === 'erp') ? 'ERP' : '상품');
+            const parserInfoCount = appendInfoChangeSheets(wb, pendingInfoEntriesForExport);
             window.XLSX.writeFile(wb, `${type}상품정보_업로드_${new Date().toISOString().slice(0, 10)}.xlsx`);
+            if (parserInfoCount > 0) {
+                const exportedAt = new Date().toISOString();
+                ui.setInfoChangeQueue(prev => {
+                    const next = { ...(prev || {}) };
+                    Object.keys(next).forEach(code => { next[code] = { ...next[code], lastExportedAt: exportedAt }; });
+                    return next;
+                });
+            }
             quickExcelReadyRef.current = { ready: false, at: 0, count: 0, codes: [], rows: [] };
             window.__MERCHOPS_QUICK_MASTER_OVERRIDE = null;
-            ui.showToast(`✅ ${type} 상품정보 업로드 엑셀 생성 완료: ${infoRows.length}건`);
+            ui.showToast(`✅ ${type} 상품정보 업로드 엑셀 생성 완료: ${infoRows.length}건${parserInfoCount > 0 ? ` / 파서 정보변경 ${parserInfoCount}건` : ''}`);
             return true;
         };
         if (targetRows.some(isInfoQuickRow)) {
@@ -4030,11 +4128,20 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         if (confirmData.length > 1) {
             window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(confirmData), '확인요청');
         }
+        const infoChangeOutputCount = appendInfoChangeSheets(wb, pendingInfoEntriesForExport);
         window.XLSX.writeFile(wb, `통합업로드용_QuickF8_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        if (infoChangeOutputCount > 0) {
+            const exportedAt = new Date().toISOString();
+            ui.setInfoChangeQueue(prev => {
+                const next = { ...(prev || {}) };
+                Object.keys(next).forEach(code => { next[code] = { ...next[code], lastExportedAt: exportedAt }; });
+                return next;
+            });
+        }
         quickExcelReadyRef.current = { ready: false, at: 0, count: 0, codes: [], rows: [] };
         window.__MERCHOPS_QUICK_MASTER_OVERRIDE = null;
-        ui.showToast(`✅ F8 빠른 엑셀 출력 완료: 원물 ${targetRows.length}건 + 소분 ${subOutputCount}건${confirmData.length > 1 ? ` / 확인요청 ${confirmData.length - 1}건` : ''}`);
-    }, [fullDisplayRows, ui.selectedRows, data.masterProducts, ui, collectWholesaleBelowCostWarnings]);
+        ui.showToast(`✅ F8 빠른 엑셀 출력 완료: 원물 ${targetRows.length}건 + 소분 ${subOutputCount}건${infoChangeOutputCount > 0 ? ` / 정보변경 ${infoChangeOutputCount}건` : ''}${confirmData.length > 1 ? ` / 확인요청 ${confirmData.length - 1}건` : ''}`);
+    }, [fullDisplayRows, ui.selectedRows, data.masterProducts, ui, collectWholesaleBelowCostWarnings, appendInfoChangeSheets]);
     const handleCommitEstimate = useCallback(async () => {
         const baseTargetRows = ui.selectedRows.size > 0 ? fullDisplayRows.filter(row => ui.selectedRows.has(window.getManagedRowKey(row))) : fullDisplayRows;
         // v2.1.137: 현재 화면 작업값에 정지관리의 변경대기(stop/resume)만 추가한다. 전체 정지목록은 매번 병합하지 않는다.
@@ -4064,9 +4171,10 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                 });
             }
         });
+        const pendingInfoEntries = Object.values(ui.infoChangeQueue || {});
         const targetRowByKey = new Map(currentOnlyTargetRows.map(row => [window.getManagedRowKey(row), row]));
         const targets = new Set(currentOnlyTargetRows.map(r => window.getManagedRowKey(r)));
-        if (targets.size === 0)
+        if (targets.size === 0 && pendingInfoEntries.length === 0)
             return ui.showToast('⚠️ 반영할 항목이 없습니다.');
         const infoOnlyTarget = Array.isArray(baseTargetRows) && baseTargetRows.length > 0 && baseTargetRows.every(row => !!(row?.sources?.info) || (window.getCurrentMerchSourceRole && window.getCurrentMerchSourceRole(row.sources || {}, row._lastUploadRole || '') === 'info'));
         if (infoOnlyTarget) {
@@ -4089,7 +4197,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             const confirmed = await window.showMerchopsLargeConfirm({
                 title: `⚠️ 확인요청 ${wholesaleWarningsForConfirm.length}건`,
                 lead: '도매가가 매칭 입고가보다 낮은 항목이 있습니다.',
-                body: `비교기준: 입고가↔도매A, 입고B↔도매B\n출력 엑셀에 [확인요청] 시트를 추가합니다.\n\nF8 마스터 적용 + 즉시 엑셀 출력\n${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증센터를 거치지 않고 엑셀을 바로 생성합니다.\n\n※ 이번 작업 제외상품은 반영하지 않으며, 정지관리에서는 변경대기 상품만 추가 반영합니다.`,
+                body: `비교기준: 입고가↔도매A, 입고B↔도매B\n출력 엑셀에 [확인요청] 시트를 추가합니다.\n\nF8 마스터 적용 + 즉시 엑셀 출력\n${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증센터를 거치지 않고 엑셀을 바로 생성합니다.\n\n※ 이번 작업 제외상품은 반영하지 않으며, 정지관리 변경대기와 정보변경 ${pendingInfoEntries.length}건을 함께 출력합니다.`,
                 items: wholesaleWarningsForConfirm,
                 confirmText: '계속 진행',
                 cancelText: '취소',
@@ -4100,7 +4208,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
 
 ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증센터를 거치지 않고 엑셀을 바로 생성합니다.
 
-※ 이번 작업 제외상품은 반영하지 않으며, 정지관리에서는 변경대기 상품만 추가 반영합니다.
+※ 이번 작업 제외상품은 반영하지 않으며, 정지관리 변경대기와 정보변경 ${pendingInfoEntries.length}건을 함께 출력합니다.
 현재 엑셀/화면 작업값만 적용합니다.
 
 계속 진행하시겠습니까?`)) {
@@ -5096,8 +5204,8 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
         ui.showToast('↩️ 신규등록용 양식에서 복귀했습니다.');
     }, [ui]);
     return useMemo(() => ({
-        handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleRestoreExcludedItems, handleUpdateStoppedProduct, handleBulkStoppedReason, handleBulkStoppedMemo, handleResumeStoppedProducts, handleApplySelectedWarehouse, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode
-    }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleRestoreExcludedItems, handleUpdateStoppedProduct, handleBulkStoppedReason, handleBulkStoppedMemo, handleResumeStoppedProducts, handleApplySelectedWarehouse, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode]);
+        handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleRestoreExcludedItems, handleUpdateStoppedProduct, handleBulkStoppedReason, handleBulkStoppedMemo, handleResumeStoppedProducts, handleExportInfoChanges, handleCompleteInfoChanges, appendInfoChangeSheets, handleApplySelectedWarehouse, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode
+    }), [handleCloudSync, cleanUpGarbageTags, handleFileUpload, handleLoadFilter, handleRemoveFilter, handleStopSales, handleExcludeSelectedFromUpdate, handleRestoreExcludedItems, handleUpdateStoppedProduct, handleBulkStoppedReason, handleBulkStoppedMemo, handleResumeStoppedProducts, handleExportInfoChanges, handleCompleteInfoChanges, appendInfoChangeSheets, handleApplySelectedWarehouse, handleSaveAsCategory, handleSaveAsCatalog, handleDeleteTag, handleCommitEstimate, toggleAllRows, handleReset, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, handleOpenExportCenter, handleRegisterUnregisteredItems, handleExitRegistrationMode]);
 };
 // --- UI Components ---
 const SystemConsole = ({ itemCount, isProcessing, processMsg, estimateCount, filteredCount, activeTags }) => {
@@ -5193,8 +5301,8 @@ const SearchBar = ({ value, onChange, placeholder }) => {
         showCodeMeta && React.createElement("span", { className: `absolute -top-2 -right-2 min-w-[22px] h-5 px-1 rounded-full text-[10px] font-black flex items-center justify-center border shadow-sm ${codeMeta.missing && codeMeta.missing.length ? 'bg-rose-600 text-white border-rose-600' : 'bg-emerald-600 text-white border-emerald-600'}`, title: missingTitle }, `${codeMeta.matched.length}/${codeMeta.requested.length}`)));
 };
 const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCategories }) => {
-    const { activeTags, selectedRows, globalSearch, priceFilter, detailFilters = [], categoryFilters = [], basicSearch, filterSteps = [], disabledFilterStepIds = [], pendingFilterAction = 'include', hideMasterAddedRows = false, fullDisplayRows, config, registrationMode, data, sessionExcludedItems = {}, showExcludedPanel = false, stoppedProducts = {}, showStopManager = false } = state;
-    const { handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, setPriceFilter, setDetailFilters, setCategoryFilters, setSelectedRows, setBasicSearch, setFilterSteps, setDisabledFilterStepIds, setPendingFilterAction, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode, setShowExcludedPanel, setShowStopManager } = actions;
+    const { activeTags, selectedRows, globalSearch, priceFilter, detailFilters = [], categoryFilters = [], basicSearch, filterSteps = [], disabledFilterStepIds = [], pendingFilterAction = 'include', hideMasterAddedRows = false, fullDisplayRows, config, registrationMode, data, sessionExcludedItems = {}, showExcludedPanel = false, stoppedProducts = {}, showStopManager = false, infoChangeQueue = {}, showInfoChangeManager = false } = state;
+    const { handleStopSales, handleExcludeSelectedFromUpdate, handleApplySelectedWarehouse, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, setPriceFilter, setDetailFilters, setCategoryFilters, setSelectedRows, setBasicSearch, setFilterSteps, setDisabledFilterStepIds, setPendingFilterAction, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode, setShowExcludedPanel, setShowStopManager, setShowInfoChangeManager } = actions;
     const [filterPanelOpen, setFilterPanelOpen] = useState(false);
     const [selectedWarehouseInput, setSelectedWarehouseInput] = useState('');
     // [M-FILTER-ROWS-01] 정렬필터 재배치
@@ -5570,7 +5678,11 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                     React.createElement("button", { onClick: () => setShowStopManager?.(!showStopManager), className: `h-8 px-2.5 rounded-lg text-[11px] font-bold shadow-sm flex items-center border whitespace-nowrap shrink-0 ${showStopManager ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-300 hover:bg-slate-100'}`, title: "지속 정지상품 보기·개별·선택·전체 수정" },
                         React.createElement("i", { className: "fas fa-user-lock mr-1.5 text-[12px]" }),
                         "정지관리",
-                        Object.keys(stoppedProducts || {}).length > 0 && React.createElement("span", { className: "ml-1.5 text-[10px] font-black px-1.5 py-0.5 rounded-full bg-white/80 text-slate-700 border border-slate-200" }, Object.keys(stoppedProducts || {}).length))),
+                        Object.keys(stoppedProducts || {}).length > 0 && React.createElement("span", { className: "ml-1.5 text-[10px] font-black px-1.5 py-0.5 rounded-full bg-white/80 text-slate-700 border border-slate-200" }, Object.keys(stoppedProducts || {}).length)),
+                    React.createElement("button", { onClick: () => setShowInfoChangeManager?.(!showInfoChangeManager), className: `h-8 px-2.5 rounded-lg text-[11px] font-bold shadow-sm flex items-center border whitespace-nowrap shrink-0 ${showInfoChangeManager ? 'bg-indigo-700 text-white border-indigo-700' : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'}`, title: "Smart Parser 품목명·규격·단위 변경의 ERP/쇼핑몰 업로드 관리" },
+                        React.createElement("i", { className: "fas fa-file-signature mr-1.5 text-[12px]" }),
+                        "정보변경",
+                        Object.keys(infoChangeQueue || {}).length > 0 && React.createElement("span", { className: "ml-1.5 text-[10px] font-black px-1.5 py-0.5 rounded-full bg-white/80 text-indigo-700 border border-indigo-200" }, Object.keys(infoChangeQueue || {}).length))),
                 React.createElement("div", { className: "ml-auto flex items-center justify-end gap-1.5 shrink-0 order-last", title: "필터 초기화·검색" },
                     React.createElement("button", { onClick: handleFilterResetOnly, className: "h-9 w-9 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-sm hover:bg-indigo-100 hover:border-indigo-300 flex items-center justify-center shrink-0", title: "필터 초기화", "aria-label": "필터 초기화" },
                         React.createElement("i", { className: "fas fa-filter-circle-xmark text-[13px]" })),
@@ -5689,6 +5801,49 @@ const StoppedProductsManager = ({ products = {}, masterProducts = {}, onClose, o
                         React.createElement("select", { value: item.reason || '', onChange: e => onUpdate?.(code, { reason: e.target.value }), className: "h-8 w-full px-1 rounded border border-slate-300 bg-white text-[10px] font-bold" }, reasons.map(r => React.createElement("option", { key: r || '__blank', value: r }, r || '미지정'))),
                         React.createElement("input", { value: item.memo || '', onChange: e => onUpdate?.(code, { memo: e.target.value }), placeholder: "메모", className: "h-8 w-full px-2 rounded border border-slate-300 text-[10px] font-bold" }),
                         React.createElement("button", { onClick: () => onResume?.([code]), className: "h-8 px-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 text-[10px] font-black hover:bg-blue-100" }, "재개"));
+                }))));
+};
+
+const InfoChangeManager = ({ queue = {}, masterProducts = {}, onClose, onExport, onComplete }) => {
+    const entries = Object.values(queue || {}).sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
+    const [selected, setSelected] = useState(new Set());
+    const codes = entries.map(item => item.productCode).filter(Boolean);
+    const allSelected = codes.length > 0 && selected.size === codes.length;
+    const toggle = (code) => setSelected(prev => { const next = new Set(prev); next.has(code) ? next.delete(code) : next.add(code); return next; });
+    const statusLabel = (value) => value === 'completed' ? '완료' : '대기';
+    return React.createElement("div", { className: "fixed inset-0 z-[126] pointer-events-none" },
+        React.createElement("div", { className: "absolute inset-0 bg-slate-900/15 pointer-events-auto", onClick: onClose }),
+        React.createElement("aside", { className: "absolute right-0 top-0 h-full w-[1000px] max-w-[99vw] bg-slate-50 border-l border-slate-200 shadow-2xl pointer-events-auto flex flex-col" },
+            React.createElement("div", { className: "h-12 px-4 bg-indigo-950 text-white flex items-center justify-between shrink-0" },
+                React.createElement("div", { className: "font-black text-[14px] flex items-center" }, React.createElement("i", { className: "fas fa-file-signature mr-2 text-indigo-300" }), `정보변경 관리 ${entries.length}건`),
+                React.createElement("button", { onClick: onClose, className: "w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center" }, React.createElement("i", { className: "fas fa-times" }))),
+            React.createElement("div", { className: "px-3 py-2 border-b border-slate-200 bg-white flex items-center gap-2 flex-wrap" },
+                React.createElement("button", { onClick: () => setSelected(allSelected ? new Set() : new Set(codes)), className: "h-8 px-3 rounded-lg border border-slate-300 bg-white text-[11px] font-black text-slate-700" }, allSelected ? "전체해제" : "전체선택"),
+                React.createElement("button", { onClick: () => onExport?.(Array.from(selected)), disabled: selected.size === 0, className: `h-8 px-3 rounded-lg border text-[11px] font-black ${selected.size > 0 ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-100 text-slate-300 border-slate-200'}` }, `선택 엑셀 ${selected.size}`),
+                React.createElement("button", { onClick: () => onExport?.(codes), disabled: codes.length === 0, className: "h-8 px-3 rounded-lg border text-[11px] font-black bg-slate-800 text-white border-slate-800" }, "전체 엑셀"),
+                React.createElement("button", { onClick: () => onComplete?.(Array.from(selected), 'erp'), disabled: selected.size === 0, className: `h-8 px-3 rounded-lg border text-[11px] font-black ${selected.size > 0 ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-slate-100 text-slate-300 border-slate-200'}` }, "ERP 완료"),
+                React.createElement("button", { onClick: () => onComplete?.(Array.from(selected), 'shop'), disabled: selected.size === 0, className: `h-8 px-3 rounded-lg border text-[11px] font-black ${selected.size > 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-300 border-slate-200'}` }, "쇼핑몰 완료")),
+            React.createElement("div", { className: "grid grid-cols-[34px_100px_190px_minmax(260px,1fr)_80px_80px_120px_130px] gap-1 px-3 py-2 bg-slate-100 border-b border-slate-200 text-[10px] font-black text-slate-500" },
+                React.createElement("span", null, "선택"), React.createElement("span", null, "상품코드"), React.createElement("span", null, "현재 상품"), React.createElement("span", null, "변경내용"), React.createElement("span", null, "ERP"), React.createElement("span", null, "쇼핑몰"), React.createElement("span", null, "출처"), React.createElement("span", null, "개별완료")),
+            React.createElement("div", { className: "flex-1 overflow-auto p-3 space-y-1.5" },
+                entries.length === 0 && React.createElement("div", { className: "mt-10 text-center text-[12px] font-bold text-slate-400" }, "ERP·쇼핑몰 반영 대기 중인 정보변경이 없습니다."),
+                entries.map(item => {
+                    const code = item.productCode;
+                    const master = masterProducts[code] || {};
+                    const changes = Object.entries(item.fields || {});
+                    return React.createElement("div", { key: code, className: "grid grid-cols-[34px_100px_190px_minmax(260px,1fr)_80px_80px_120px_130px] gap-1 items-center rounded-lg border border-slate-200 bg-white px-2 py-2 shadow-sm" },
+                        React.createElement("input", { type: "checkbox", checked: selected.has(code), onChange: () => toggle(code), className: "w-4 h-4 accent-indigo-600" }),
+                        React.createElement("span", { className: "text-[11px] font-black text-slate-700 truncate" }, code),
+                        React.createElement("div", { className: "min-w-0" },
+                            React.createElement("div", { className: "text-[11px] font-black text-slate-800 truncate" }, master.품목명 || item.fields?.품목명?.newValue || ''),
+                            React.createElement("div", { className: "text-[10px] font-bold text-slate-400 truncate" }, `${master.규격 || item.fields?.규격?.newValue || ''}${master.단위 ? ` · ${master.단위}` : ''}`)),
+                        React.createElement("div", { className: "space-y-1 min-w-0" }, changes.map(([field, change]) => React.createElement("div", { key: `${code}-${field}`, className: "text-[10px] font-bold truncate", title: `${field}: ${change?.oldValue ?? ''} → ${change?.newValue ?? ''}` }, React.createElement("span", { className: "text-slate-500" }, `${field} `), React.createElement("span", { className: "text-rose-500 line-through" }, String(change?.oldValue ?? '')), React.createElement("span", { className: "mx-1 text-slate-300" }, "→"), React.createElement("span", { className: "text-indigo-700" }, String(change?.newValue ?? ''))))),
+                        React.createElement("span", { className: `h-6 rounded-full border text-[10px] font-black flex items-center justify-center ${item.erpStatus === 'completed' ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-amber-50 text-amber-700 border-amber-200'}` }, statusLabel(item.erpStatus)),
+                        React.createElement("span", { className: `h-6 rounded-full border text-[10px] font-black flex items-center justify-center ${item.shopStatus === 'completed' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}` }, statusLabel(item.shopStatus)),
+                        React.createElement("div", { className: "text-[10px] font-bold text-slate-500 truncate" }, React.createElement("div", null, item.sourceLabel || item.source || 'SmartParser'), React.createElement("div", { className: "text-slate-400" }, String(item.updatedAt || item.createdAt || '').slice(0, 10))),
+                        React.createElement("div", { className: "flex gap-1" },
+                            React.createElement("button", { onClick: () => onComplete?.([code], 'erp'), className: "h-7 px-2 rounded border border-blue-200 bg-blue-50 text-blue-700 text-[10px] font-black" }, "ERP"),
+                            React.createElement("button", { onClick: () => onComplete?.([code], 'shop'), className: "h-7 px-2 rounded border border-emerald-200 bg-emerald-50 text-emerald-700 text-[10px] font-black" }, "쇼핑몰")));
                 }))));
 };
 
@@ -7193,7 +7348,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.138_CloudConfigSyncFix]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.138_ParserStopInfoSync]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -7470,11 +7625,11 @@ const App = () => {
     const customActions = useMerchActions(config, data, ui, fullDisplayRows);
     const appState = useMemo(() => ({
         config, data, activeTags: ui.activeTags, isEstimateUploaded, selectedRows: ui.selectedRows, globalSearch: ui.globalSearch, isProcessing: ui.isProcessing, processMsg: ui.processMsg, registrationMode: ui.registrationMode,
-        visibleMasterCols: config.visibleMasterCols, visibleUploadCols: config.visibleUploadCols, activeTableTarget: config.activeTableTarget, activeTableViewId: config.activeTableViewId, masterProducts: data.masterProducts, fullDisplayRows, priceFilter: ui.priceFilter, detailFilters: ui.detailFilters, categoryFilters: ui.categoryFilters, basicSearch: ui.basicSearch, filterSteps: ui.filterSteps, disabledFilterStepIds: ui.disabledFilterStepIds, pendingFilterAction: ui.pendingFilterAction, hideMasterAddedRows: ui.hideMasterAddedRows, showExcludedPanel: ui.showExcludedPanel, sessionExcludedItems: ui.sessionExcludedItems, showStopManager: ui.showStopManager, stoppedProducts: ui.stoppedProducts
-    }), [config, data, ui.activeTags, ui.registrationMode, isEstimateUploaded, ui.selectedRows, ui.globalSearch, ui.isProcessing, ui.processMsg, config.visibleMasterCols, config.visibleUploadCols, config.activeTableTarget, config.activeTableViewId, config.tableViewPresets, data.masterProducts, fullDisplayRows, ui.priceFilter, ui.detailFilters, ui.categoryFilters, ui.basicSearch, ui.filterSteps, ui.disabledFilterStepIds, ui.pendingFilterAction, ui.hideMasterAddedRows, ui.showExcludedPanel, ui.sessionExcludedItems, ui.showStopManager, ui.stoppedProducts]);
+        visibleMasterCols: config.visibleMasterCols, visibleUploadCols: config.visibleUploadCols, activeTableTarget: config.activeTableTarget, activeTableViewId: config.activeTableViewId, masterProducts: data.masterProducts, fullDisplayRows, priceFilter: ui.priceFilter, detailFilters: ui.detailFilters, categoryFilters: ui.categoryFilters, basicSearch: ui.basicSearch, filterSteps: ui.filterSteps, disabledFilterStepIds: ui.disabledFilterStepIds, pendingFilterAction: ui.pendingFilterAction, hideMasterAddedRows: ui.hideMasterAddedRows, showExcludedPanel: ui.showExcludedPanel, sessionExcludedItems: ui.sessionExcludedItems, showStopManager: ui.showStopManager, stoppedProducts: ui.stoppedProducts, showInfoChangeManager: ui.showInfoChangeManager, infoChangeQueue: ui.infoChangeQueue
+    }), [config, data, ui.activeTags, ui.registrationMode, isEstimateUploaded, ui.selectedRows, ui.globalSearch, ui.isProcessing, ui.processMsg, config.visibleMasterCols, config.visibleUploadCols, config.activeTableTarget, config.activeTableViewId, config.tableViewPresets, data.masterProducts, fullDisplayRows, ui.priceFilter, ui.detailFilters, ui.categoryFilters, ui.basicSearch, ui.filterSteps, ui.disabledFilterStepIds, ui.pendingFilterAction, ui.hideMasterAddedRows, ui.showExcludedPanel, ui.sessionExcludedItems, ui.showStopManager, ui.stoppedProducts, ui.showInfoChangeManager, ui.infoChangeQueue]);
     const appActions = useMemo(() => ({
-        setShowCategoryModal: ui.setShowCategoryModal, setShowCatalogModal: ui.setShowCatalogModal, setSelectedRows: ui.setSelectedRows, setGlobalSearch: ui.setGlobalSearch, showToast: ui.showToast, setPriceFilter: ui.setPriceFilter, setDetailFilters: ui.setDetailFilters, setCategoryFilters: ui.setCategoryFilters, setBasicSearch: ui.setBasicSearch, setFilterSteps: ui.setFilterSteps, setDisabledFilterStepIds: ui.setDisabledFilterStepIds, setPendingFilterAction: ui.setPendingFilterAction, setShowExcludedPanel: ui.setShowExcludedPanel, setShowStopManager: ui.setShowStopManager, ...customActions
-    }), [ui.setShowCategoryModal, ui.setShowCatalogModal, ui.setSelectedRows, ui.setGlobalSearch, ui.showToast, ui.setPriceFilter, ui.setDetailFilters, ui.setCategoryFilters, ui.setBasicSearch, ui.setFilterSteps, ui.setDisabledFilterStepIds, ui.setPendingFilterAction, ui.setShowExcludedPanel, ui.setShowStopManager, customActions]);
+        setShowCategoryModal: ui.setShowCategoryModal, setShowCatalogModal: ui.setShowCatalogModal, setSelectedRows: ui.setSelectedRows, setGlobalSearch: ui.setGlobalSearch, showToast: ui.showToast, setPriceFilter: ui.setPriceFilter, setDetailFilters: ui.setDetailFilters, setCategoryFilters: ui.setCategoryFilters, setBasicSearch: ui.setBasicSearch, setFilterSteps: ui.setFilterSteps, setDisabledFilterStepIds: ui.setDisabledFilterStepIds, setPendingFilterAction: ui.setPendingFilterAction, setShowExcludedPanel: ui.setShowExcludedPanel, setShowStopManager: ui.setShowStopManager, setShowInfoChangeManager: ui.setShowInfoChangeManager, ...customActions
+    }), [ui.setShowCategoryModal, ui.setShowCatalogModal, ui.setSelectedRows, ui.setGlobalSearch, ui.showToast, ui.setPriceFilter, ui.setDetailFilters, ui.setCategoryFilters, ui.setBasicSearch, ui.setFilterSteps, ui.setDisabledFilterStepIds, ui.setPendingFilterAction, ui.setShowExcludedPanel, ui.setShowStopManager, ui.setShowInfoChangeManager, customActions]);
     useEffect(() => {
         // ============================================================
         // [M-UX-01] 전역 키보드 조작
@@ -7537,11 +7692,12 @@ const App = () => {
                 if (isInput)
                     activeEl.blur();
                 const hasPendingStopAction = Object.values(appState.stoppedProducts || {}).some(item => ['stop', 'resume'].includes(String(item?.pendingAction || '')));
-                if (!appState.isProcessing && (appState.fullDisplayRows.length > 0 || hasPendingStopAction)) {
+                const hasPendingInfoChange = Object.keys(appState.infoChangeQueue || {}).length > 0;
+                if (!appState.isProcessing && (appState.fullDisplayRows.length > 0 || hasPendingStopAction || hasPendingInfoChange)) {
                     appActions.handleCommitEstimate();
                 }
                 else if (appState.fullDisplayRows.length === 0)
-                    appActions.showToast("⚠️ [F8] 반영할 화면 데이터 또는 정지관리 변경대기가 없습니다.");
+                    appActions.showToast("⚠️ [F8] 반영할 화면 데이터·정지관리·정보변경 대기가 없습니다.");
             }
             else if (e.key === 'F9') {
                 e.preventDefault();
@@ -7586,14 +7742,14 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.138_CloudConfigSyncFix")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.138_ParserStopInfoSync")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
                                 React.createElement("button", { onClick: () => window.location.href = 'SmartParser.html', className: `h-8 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border text-white bg-slate-800 border-slate-700 hover:bg-slate-700 hover:border-slate-500 font-black text-[11px] tracking-wider ${ui.isProcessing ? 'opacity-40 pointer-events-none' : ''}`, title: "스마트 파서로 외부 텍스트 연동" },
                                     React.createElement("i", { className: "fas fa-magic mr-1.5 text-[12px]" }),
                                     "스마트 파서"),
-                                React.createElement("button", { onClick: customActions.handleCommitEstimate, disabled: fullDisplayRows.length === 0 && !Object.values(ui.stoppedProducts || {}).some(item => ['stop', 'resume'].includes(String(item?.pendingAction || ''))), className: `h-8 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border font-black text-[11px] tracking-wider ${(fullDisplayRows.length > 0 || Object.values(ui.stoppedProducts || {}).some(item => ['stop', 'resume'].includes(String(item?.pendingAction || '')))) ? 'text-white bg-slate-800 border-slate-700 hover:bg-slate-700 hover:border-slate-500' : 'text-slate-500 bg-[#0f172a] border-slate-800 cursor-not-allowed'}`, title: "현재 작업과 정지관리 변경대기를 마스터에 저장 후 즉시 엑셀 출력 (F8)" },
+                                React.createElement("button", { onClick: customActions.handleCommitEstimate, disabled: fullDisplayRows.length === 0 && !Object.values(ui.stoppedProducts || {}).some(item => ['stop', 'resume'].includes(String(item?.pendingAction || ''))) && Object.keys(ui.infoChangeQueue || {}).length === 0, className: `h-8 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border font-black text-[11px] tracking-wider ${(fullDisplayRows.length > 0 || Object.values(ui.stoppedProducts || {}).some(item => ['stop', 'resume'].includes(String(item?.pendingAction || ''))) || Object.keys(ui.infoChangeQueue || {}).length > 0) ? 'text-white bg-slate-800 border-slate-700 hover:bg-slate-700 hover:border-slate-500' : 'text-slate-500 bg-[#0f172a] border-slate-800 cursor-not-allowed'}`, title: "현재 작업·정지관리·정보변경 대기를 저장하고 ERP/쇼핑몰 엑셀 출력 (F8)" },
                                     React.createElement("i", { className: "fas fa-save mr-1.5 text-[12px]" }),
                                     "F8"),
                                 React.createElement("button", { onClick: customActions.handleOpenExportCenter, disabled: fullDisplayRows.length === 0, className: `h-8 px-3 rounded flex items-center justify-center shadow-sm transition-all duration-300 border font-black text-[11px] tracking-wider ${fullDisplayRows.length > 0 ? 'text-white bg-emerald-600 border-emerald-500 hover:bg-emerald-700 hover:border-emerald-400' : 'text-slate-500 bg-[#0f172a] border-slate-800 cursor-not-allowed'}`, title: "통합 출력 센터 진입 (F9)" },
@@ -7613,6 +7769,7 @@ const App = () => {
             React.createElement("div", { ref: contentScrollRef, onScroll: handleWorkspaceScroll, className: `flex-1 overflow-auto p-5 pt-0 bg-slate-100 transition-all duration-200 ${systemUiCollapsed ? 'mt-0 pt-4' : 'mt-4'}` }, isMasterEmpty ? (React.createElement(WelcomeGuide, { onUpload: (e) => customActions.handleFileUpload(e, 'master'), onCloudSync: customActions.handleCloudSync })) : (React.createElement(ExcelDataGrid, { state: appState, actions: appActions })))),
         ui.showExcludedPanel && React.createElement(SessionExcludedPanel, { items: ui.sessionExcludedItems, onClose: () => ui.setShowExcludedPanel(false), onRestore: customActions.handleRestoreExcludedItems }),
         ui.showStopManager && React.createElement(StoppedProductsManager, { products: ui.stoppedProducts, masterProducts: data.masterProducts, onClose: () => ui.setShowStopManager(false), onUpdate: customActions.handleUpdateStoppedProduct, onBulkReason: customActions.handleBulkStoppedReason, onBulkMemo: customActions.handleBulkStoppedMemo, onResume: customActions.handleResumeStoppedProducts }),
+        ui.showInfoChangeManager && React.createElement(InfoChangeManager, { queue: ui.infoChangeQueue, masterProducts: data.masterProducts, onClose: () => ui.setShowInfoChangeManager(false), onExport: customActions.handleExportInfoChanges, onComplete: customActions.handleCompleteInfoChanges }),
         ui.showCatalogModal && React.createElement(CatalogSaveModal, { onClose: () => ui.setShowCatalogModal(false), onSave: customActions.handleSaveAsCatalog }),
         ui.showCategoryModal && React.createElement(CategorySaveModal, { onClose: () => ui.setShowCategoryModal(false), onSave: customActions.handleSaveAsCategory })));
 };
