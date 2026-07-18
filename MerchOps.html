@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.140_CompactFilterPills]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.141_CatalogWorkScopeEngine]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -41,6 +41,7 @@
         // v2.1.138: Smart Parser 공급중단을 정지관리 변경대기로 연결하고 품목명·규격·단위 변경을 정보변경 대기목록으로 관리한다. F8/정보변경 관리에서 ERP·쇼핑몰 정보수정 엑셀을 생성하고 시스템별 업로드 완료 후 자동 정리한다.
         // v2.1.139: 선택 카탈로그와 견적서를 상품코드로 비교해 유지·추가·누락·정지후보를 생성한다. 마스터/견적 입고가·출고가·원본출고가·룰출고가 차이를 표시하고, 견적 공란은 보존하며 누락상품은 관리자가 기존 정지기능으로만 처리한다.
         // v2.1.140: 상단 필터를 기본상품|기본제외, 행사상품|행사제외|행사제안 알약형 반전버튼으로 압축한다. 견적 비교 시 우측에 추가|누락|가격확인 그룹만 생성하고 유지 뱃지는 삭제한다. 행사가 작업은 행사가: 생성|초기화로 묶고 작업줄은 한 줄 고정·가로스크롤 구조로 정리한다.
+        // v2.1.141: 카탈로그를 별도 source/업무모드가 아닌 마스터 작업범위로 분리한다. 미선택은 전체 마스터, 선택은 해당 견적서/카테고리 태그 마스터만 범위가 되며 구매·재고·정보에도 공통 적용한다. 견적은 선택 범위를 기준으로 추가·누락을 비교하되 카탈로그 선택만으로 견적 양식으로 전환하거나 managedItems를 생성하지 않는다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결하며 오더즈판매가/오더즈구매가는 작업·출력에서 제외한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
@@ -2749,6 +2750,154 @@ const useMerchUI = () => {
         infoChangeQueue, setInfoChangeQueue
     };
 };
+
+// ============================================================
+// [M-WORK-SCOPE-01] 카탈로그 공통 작업범위 엔진
+// 정책:
+// 1) 카탈로그 미선택 = 전체 마스터가 허용 범위다.
+// 2) 카탈로그 선택 = 마스터의 견적서/카테고리 태그에 선택값이 있는 상품만 허용 범위다.
+// 3) 카탈로그는 sources.catalog나 별도 업무모드가 아니라 마스터 범위 필터다.
+// 4) 견적·구매·재고·정보는 동일 범위를 사용하되, 견적의 추가상품은 비교 예외로 유지한다.
+// ============================================================
+window.getMerchMasterWorkCatalogNames = (masterItem = {}) => {
+    const raw = masterItem?.['견적서'] ?? masterItem?.['카테고리'] ?? '';
+    return [...new Set(String(raw || '').split(',').map(v => v.trim()).filter(Boolean))];
+};
+window.getMerchSelectedWorkCatalogNames = (activeTags = []) => {
+    const names = (Array.isArray(activeTags) ? activeTags : [])
+        .filter(tag => String(tag?.type || '') === 'category')
+        .map(tag => String(tag?.name || '').trim())
+        .filter(Boolean);
+    // 카탈로그 작업범위는 단일선택이다. 과거 상태가 여러 개면 마지막 선택값만 사용한다.
+    return names.length > 0 ? [names[names.length - 1]] : [];
+};
+window.buildMerchWorkScope = (masterProducts = {}, activeTags = []) => {
+    const catalogNames = window.getMerchSelectedWorkCatalogNames(activeTags);
+    const catalogSet = new Set(catalogNames);
+    const codeSet = new Set();
+    const allCodes = new Set();
+    Object.values(masterProducts || {}).forEach(masterItem => {
+        const code = window.normalizeProductCodeText
+            ? window.normalizeProductCodeText(masterItem?.코드 || masterItem?.['품목코드'])
+            : String(masterItem?.코드 || masterItem?.['품목코드'] || '').replace(/\s/g, '');
+        if (!code) return;
+        allCodes.add(code);
+        if (catalogNames.length === 0) {
+            codeSet.add(code);
+            return;
+        }
+        const itemCatalogs = window.getMerchMasterWorkCatalogNames(masterItem);
+        if (itemCatalogs.some(name => catalogSet.has(name))) codeSet.add(code);
+    });
+    return {
+        mode: catalogNames.length > 0 ? 'catalog' : 'all',
+        catalogNames,
+        catalogName: catalogNames[0] || '',
+        codeSet,
+        allCodes,
+        masterCount: allCodes.size,
+        scopeCount: codeSet.size
+    };
+};
+
+window.rebuildMerchEstimateComparisonForScope = (managedItems = {}, masterProducts = {}, activeTags = [], marginRules = []) => {
+    const scope = window.buildMerchWorkScope(masterProducts, activeTags);
+    const safeRules = window.sanitizeMerchMarginRules ? window.sanitizeMerchMarginRules(marginRules) : (Array.isArray(marginRules) ? marginRules : []);
+    const next = {};
+    const estimateKeyByCode = new Map();
+    const anyKeyByCode = new Map();
+    const hasSourceData = (sources = {}, key = '') => !!(sources?.[key] && Object.keys(sources[key]).length > 0);
+
+    Object.entries(managedItems || {}).forEach(([key, rawItem]) => {
+        if (!rawItem) return;
+        const item = { ...rawItem, sources: { ...(rawItem.sources || {}) }, finalData: { ...(rawItem.finalData || {}) }, _tags: new Set(rawItem._tags || []) };
+        const code = window.normalizeProductCodeText
+            ? window.normalizeProductCodeText(item.코드 || item['품목코드'])
+            : String(item.코드 || item['품목코드'] || '').replace(/\s/g, '');
+        const hasEstimate = hasSourceData(item.sources, 'estimate');
+        const otherRole = ['purchase', 'sales', 'inventory', 'info', 'parser', 'catalog'].find(roleKey => hasSourceData(item.sources, roleKey)) || '';
+        const oldStatus = window.getMerchEstimateCompareStatus?.(item) || item._estimateCompareStatus || item.finalData?._estimateCompareStatus || '';
+        // 이전 카탈로그에서 비교용으로만 생성된 누락행은 먼저 제거하고 새 범위에서 다시 만든다.
+        if (oldStatus === 'missing' && !hasEstimate && !otherRole) return;
+        delete item._estimateCompareStatus;
+        delete item._estimateCompareCatalogs;
+        delete item._estimateCompareGeneratedAt;
+        delete item._workScopeCatalogs;
+        delete item.finalData._estimateCompareStatus;
+        delete item.finalData._estimateCompareCatalogs;
+        delete item.finalData._estimateCompareGeneratedAt;
+        delete item.finalData._estimateCatalogAddRequested;
+        next[key] = item;
+        if (code && !anyKeyByCode.has(code)) anyKeyByCode.set(code, key);
+        if (code && hasEstimate) estimateKeyByCode.set(code, key);
+    });
+
+    // 카탈로그 미선택은 전체 마스터 허용범위지만, 견적 누락비교는 생성하지 않는다.
+    if (scope.mode !== 'catalog' || estimateKeyByCode.size === 0) {
+        return { items: next, summary: null, scope };
+    }
+
+    const generatedAt = new Date().toISOString();
+    const comparisonCodes = new Set([...scope.codeSet, ...estimateKeyByCode.keys()]);
+    let maintain = 0;
+    let add = 0;
+    let missing = 0;
+
+    comparisonCodes.forEach(code => {
+        const inScope = scope.codeSet.has(code);
+        const inEstimate = estimateKeyByCode.has(code);
+        const status = inScope && inEstimate ? 'maintain' : (inEstimate ? 'add' : 'missing');
+        if (status === 'maintain') maintain++;
+        else if (status === 'add') add++;
+        else missing++;
+
+        let key = estimateKeyByCode.get(code) || anyKeyByCode.get(code) || code;
+        let item = next[key];
+        if (!item) {
+            const emptySources = { _activeRole: '' };
+            item = {
+                코드: code,
+                _managedKey: key,
+                _lastUploadRole: 'estimateCompareMissing',
+                sources: emptySources,
+                finalData: window.computeFinalData(masterProducts[code] || {}, emptySources, safeRules, false),
+                _tags: new Set()
+            };
+        } else {
+            item = { ...item, sources: { ...(item.sources || {}) }, finalData: { ...(item.finalData || {}) }, _tags: new Set(item._tags || []) };
+        }
+        if (status === 'missing') {
+            delete item.sources.estimate;
+            item.sources._activeRole = ['purchase', 'sales', 'inventory', 'info', 'parser', 'catalog'].find(roleKey => hasSourceData(item.sources, roleKey)) || '';
+            item.finalData = window.computeFinalData(masterProducts[code] || {}, item.sources, safeRules, false);
+            item._lastUploadRole = item._lastUploadRole || 'estimateCompareMissing';
+        } else {
+            item.sources._activeRole = 'estimate';
+        }
+        item.finalData = { ...(item.finalData || {}), _estimateCompareStatus: status, _estimateCompareCatalogs: [...scope.catalogNames], _estimateCompareGeneratedAt: generatedAt, _estimateCatalogAddRequested: status === 'add' };
+        item._estimateCompareStatus = status;
+        item._estimateCompareCatalogs = [...scope.catalogNames];
+        item._estimateCompareGeneratedAt = generatedAt;
+        item._workScopeCatalogs = [...scope.catalogNames];
+        next[key] = item;
+        anyKeyByCode.set(code, key);
+    });
+
+    return { items: next, summary: { catalogs: [...scope.catalogNames], maintain, add, missing, total: comparisonCodes.size }, scope };
+};
+
+window.isMerchRowInWorkScope = (row = {}, masterProducts = {}, activeTags = [], options = {}) => {
+    const scope = window.buildMerchWorkScope(masterProducts, activeTags);
+    if (scope.mode === 'all') return true;
+    const code = window.normalizeProductCodeText
+        ? window.normalizeProductCodeText(row?.코드 || row?.['품목코드'])
+        : String(row?.코드 || row?.['품목코드'] || '').replace(/\s/g, '');
+    if (scope.codeSet.has(code)) return true;
+    // 견적의 추가상품은 선택 카탈로그 밖에 있어야 검출되므로 비교화면에서는 예외로 표시한다.
+    if (options.allowEstimateAdd && window.getMerchEstimateCompareStatus?.(row) === 'add') return true;
+    return false;
+};
+
 const useMerchActions = (config, data, ui, fullDisplayRows) => {
     const quickExcelReadyRef = useRef({ ready: false, at: 0, count: 0, codes: [], rows: [] });
     const handleCloudSync = useCallback(async (type) => {
@@ -2907,16 +3056,12 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             let newMaster = { ...data.masterProducts };
             let newManaged = { ...data.managedItems, ...excludedToRestore };
             let totalCount = 0;
-            const activeCompareCatalogs = role === 'estimate'
-                ? [...new Set((ui.activeTags || []).filter(tag => String(tag?.type || '') === 'category').map(tag => String(tag?.name || '').trim()).filter(Boolean))]
-                : [];
-            // 견적서 비교는 사용자가 마지막으로 선택한 단일 카탈로그를 기준으로 한다.
-            // 과거에 선택했던 카탈로그가 activeTags에 남아 있어도 여러 카탈로그에 동시에 편입하지 않는다.
-            const selectedCompareCatalogs = activeCompareCatalogs.length > 0
-                ? [activeCompareCatalogs[activeCompareCatalogs.length - 1]]
-                : [];
+            const workScope = window.buildMerchWorkScope ? window.buildMerchWorkScope(newMaster, ui.activeTags || []) : { mode: 'all', catalogNames: [], codeSet: new Set(Object.keys(newMaster || {})), scopeCount: Object.keys(newMaster || {}).length, masterCount: Object.keys(newMaster || {}).length };
+            const selectedCompareCatalogs = role === 'estimate' && workScope.mode === 'catalog' ? [...workScope.catalogNames] : [];
             const uploadedEstimateCodes = new Set();
             let estimateCompareSummary = null;
+            let workScopeExcludedCount = 0;
+            let workScopeUnregisteredCount = 0;
 
             // 견적서는 현재 불러온 파일을 단일 비교기준으로 사용한다.
             // 이전 견적 source와 비교 메타만 제거하고 카탈로그·구매·재고 등 다른 작업 source는 보존한다.
@@ -2970,6 +3115,15 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                         return;
                     if (cleanName.includes('테스트상품') || cleanName.includes('샘플상품') || cleanCode.toLowerCase().includes('test'))
                         return;
+                    const existsInMaster = !!newMaster[cleanCode];
+                    const isInsideSelectedWorkScope = workScope.mode === 'all' || workScope.codeSet.has(cleanCode);
+                    // 구매·재고·정보·판매는 선택 카탈로그 범위와 교집합인 행만 작업대상으로 적재한다.
+                    // 견적은 범위 밖 행도 '추가' 판정에 필요하므로 비교 입력으로 유지한다.
+                    if (workScope.mode === 'catalog' && role !== 'estimate' && !isInsideSelectedWorkScope) {
+                        if (existsInMaster) workScopeExcludedCount++;
+                        else workScopeUnregisteredCount++;
+                        return;
+                    }
                     if (role === 'estimate') uploadedEstimateCodes.add(cleanCode);
                     // 1재고현황은 같은 품목코드라도 구매일자/구매처/단가가 다르면 별도 재고 Lot로 보존한다.
                     // row.코드는 원 품목코드로 유지하고, 화면/선택용 내부키만 _managedKey로 분리한다.
@@ -3193,33 +3347,24 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             }
             // 카탈로그가 먼저 선택된 견적 작업은 상품코드 기준 유지·추가·누락 비교행을 생성한다.
             if (role === 'estimate' && selectedCompareCatalogs.length > 0) {
-                const catalogSet = new Set(selectedCompareCatalogs);
-                const catalogCodeSet = new Set();
+                const catalogCodeSet = new Set(workScope.codeSet || []);
                 const codeCatalogMap = new Map();
-                Object.values(newMaster || {}).forEach(mItem => {
-                    const code = String(mItem?.코드 || mItem?.['품목코드'] || '').replace(/\s/g, '');
-                    if (!code) return;
-                    const tags = String(mItem?.['견적서'] || mItem?.['카테고리'] || '').split(',').map(v => v.trim()).filter(Boolean);
-                    const matchedCatalogs = tags.filter(tag => catalogSet.has(tag));
-                    if (matchedCatalogs.length > 0) {
-                        catalogCodeSet.add(code);
-                        codeCatalogMap.set(code, matchedCatalogs);
-                    }
-                });
+                catalogCodeSet.forEach(code => codeCatalogMap.set(code, [...selectedCompareCatalogs]));
 
                 const safeMarginRules = window.sanitizeMerchMarginRules ? window.sanitizeMerchMarginRules(config.marginRules) : (Array.isArray(config.marginRules) ? config.marginRules : []);
                 catalogCodeSet.forEach(code => {
                     if (newManaged[code]) return;
                     const mItem = newMaster[code] || {};
                     const compareCatalogs = codeCatalogMap.get(code) || selectedCompareCatalogs;
-                    const catalogSource = { ...(mItem || {}), _catalogListOnly: true, _estimateCompareMissingSource: true };
+                    const emptySources = { _activeRole: '' };
                     newManaged[code] = {
                         코드: code,
                         _managedKey: code,
                         _lastUploadRole: 'estimateCompareMissing',
-                        sources: { catalog: catalogSource, _activeRole: 'catalog' },
-                        finalData: window.computeFinalData(mItem, { catalog: catalogSource, _activeRole: 'catalog' }, safeMarginRules, false),
-                        _tags: new Set(compareCatalogs.map(name => `category:${name}`))
+                        sources: emptySources,
+                        finalData: window.computeFinalData(mItem, emptySources, safeMarginRules, false),
+                        _tags: new Set(),
+                        _workScopeCatalogs: compareCatalogs
                     };
                 });
 
@@ -3241,7 +3386,8 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                     const nextSources = { ...(current.sources || {}) };
                     if (status === 'missing') {
                         delete nextSources.estimate;
-                        nextSources._activeRole = nextSources.catalog ? 'catalog' : '';
+                        const fallbackRole = ['purchase', 'sales', 'inventory', 'info', 'parser', 'catalog'].find(sourceKey => nextSources[sourceKey] && Object.keys(nextSources[sourceKey]).length > 0) || '';
+                        nextSources._activeRole = fallbackRole;
                     } else {
                         nextSources._activeRole = 'estimate';
                     }
@@ -3272,7 +3418,11 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
 
             data.setMasterProducts(newMaster);
             data.setManagedItems(newManaged);
-            const unregisteredRows = Object.values(newManaged).filter(item => item && item.코드 && !newMaster[item.코드] && !['purchase', 'info'].includes(item._lastUploadRole));
+            const unregisteredRows = Object.values(newManaged).filter(item => {
+                if (!item || !item.코드 || newMaster[item.코드] || ['purchase', 'info'].includes(item._lastUploadRole)) return false;
+                if (item._lastUploadRole !== role && !(role === 'estimate' && window.getMerchEstimateCompareStatus?.(item) === 'add')) return false;
+                return workScope.mode === 'all' || role === 'estimate' || workScope.codeSet.has(String(item.코드 || '').replace(/\s/g, ''));
+            });
             if (unregisteredRows.length > 0) {
                 ui.setSelectedRows(new Set(unregisteredRows.map(item => window.getManagedRowKey(item))));
                 setTimeout(() => {
@@ -3316,10 +3466,14 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             if (totalCount > 0) {
                 const templateMsg = autoAppliedTemplate ? ` / 테이블: ${autoAppliedTemplate.name}` : '';
                 if (estimateCompareSummary) {
-                    ui.showToast(`✅ [${estimateCompareSummary.catalogs.join(', ')}] 견적 비교 완료 / 유지 ${estimateCompareSummary.maintain} · 추가 ${estimateCompareSummary.add} · 누락 ${estimateCompareSummary.missing}${templateMsg}`);
+                    ui.showToast(`✅ [${estimateCompareSummary.catalogs.join(', ')}] 견적 비교 완료 / 추가 ${estimateCompareSummary.add} · 누락 ${estimateCompareSummary.missing} · 동일 ${estimateCompareSummary.maintain}${templateMsg}`);
                 } else {
-                    ui.showToast(`✅ [${roleMeta.label}] 데이터 로드 완료 (${totalCount}건)${role === 'estimate' ? ' / 카탈로그 선택 시 유지·추가·누락 비교' : ''}${templateMsg}`);
+                    const scopeMsg = workScope.mode === 'catalog' ? ` / 작업범위 ${workScope.catalogName} ${workScope.scopeCount}건` : ' / 작업범위 전체 마스터';
+                    const excludedMsg = (workScopeExcludedCount + workScopeUnregisteredCount) > 0 ? ` / 범위외 제외 ${workScopeExcludedCount + workScopeUnregisteredCount}건` : '';
+                    ui.showToast(`✅ [${roleMeta.label}] 데이터 로드 완료 (${totalCount}건)${scopeMsg}${excludedMsg}${templateMsg}`);
                 }
+            } else if ((workScopeExcludedCount + workScopeUnregisteredCount) > 0) {
+                ui.showToast(`⚠️ [${roleMeta.label}] 선택 카탈로그 범위에 해당하는 행이 없습니다. 범위외 ${workScopeExcludedCount + workScopeUnregisteredCount}건 제외`);
             }
         }
         catch (error) {
@@ -3337,11 +3491,10 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         }
     }, [data.masterProducts, data.managedItems, config.mappings, config.masterLinks, config.uploadColumnMeta, config.marginRules, config.tableViewPresets, ui]);
     // ============================================================
-    // [M-FLOW-02] 파서리스트/카탈로그 필터 불러오기
-    // 역할: 기존 기능의 데이터 source는 그대로 두고, 화면 표시명만 변경한다.
-    // - 기존 카달로그(파서)  → 파서리스트: 내부 type/catalog, 마스터 '카탈로그' 필드 기준
-    // - 사용자 생성 카탈로그 → 카탈로그: 내부 type/category, 마스터 '견적서/카테고리' 필드 기준
-    // 주의: 목록 안의 폴더/항목 source를 섞거나 변경하지 않는다.
+    // [M-FLOW-02] 파서리스트 불러오기 / 카탈로그 작업범위 선택
+    // - 파서리스트(type/catalog)는 기존처럼 목록 source를 작업대에 불러온다.
+    // - 카탈로그(type/category)는 managedItems/source를 만들지 않고 마스터 작업범위만 바꾼다.
+    // - 카탈로그 선택만으로 견적 양식이나 업무모드를 변경하지 않는다.
     // ============================================================
     const handleLoadFilter = useCallback((type, name) => {
         if (!name)
@@ -3350,6 +3503,49 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         const filterName = isAllCatalogs ? '전체리스트' : name;
         const tagKey = `${type}:${filterName}`;
         const typeLabel = type === 'catalog' ? '파서리스트' : '카탈로그';
+        if (type === 'category') {
+            const isSameScope = (ui.activeTags || []).some(t => String(t?.type || '') === 'category' && String(t?.name || '') === filterName);
+            const nextCatalogName = isSameScope ? '' : filterName;
+            ui.setActiveTags(prev => {
+                const keep = (prev || []).filter(t => String(t?.type || '') !== 'category');
+                return nextCatalogName ? [...keep, { type: 'category', name: nextCatalogName }] : keep;
+            });
+            // 구버전에서 카탈로그를 sources.catalog 행으로 만들었던 잔재만 정리한다.
+            // 견적·구매·재고·정보 source와 파서리스트(catalog:*) 행은 보존한다.
+            data.setManagedItems(prev => {
+                const next = { ...prev };
+                Object.keys(next).forEach(key => {
+                    const item = next[key];
+                    if (!item) return;
+                    const oldTags = new Set(item._tags || []);
+                    const hadCategoryTag = Array.from(oldTags).some(tag => String(tag || '').startsWith('category:'));
+                    if (!hadCategoryTag) return;
+                    const cleanTags = new Set(Array.from(oldTags).filter(tag => !String(tag || '').startsWith('category:')));
+                    const sources = { ...(item.sources || {}) };
+                    const hasParserTag = Array.from(cleanTags).some(tag => String(tag || '').startsWith('catalog:'));
+                    const hasExternalSource = ['estimate', 'purchase', 'sales', 'inventory', 'info', 'parser'].some(sourceKey => sources[sourceKey] && Object.keys(sources[sourceKey]).length > 0);
+                    if (sources.catalog?._catalogListOnly && !hasParserTag) delete sources.catalog;
+                    if (String(sources._activeRole || '') === 'catalog' && !sources.catalog) {
+                        sources._activeRole = ['estimate', 'purchase', 'sales', 'inventory', 'info', 'parser'].find(sourceKey => sources[sourceKey] && Object.keys(sources[sourceKey]).length > 0) || '';
+                    }
+                    if (!hasExternalSource && !sources.catalog && cleanTags.size === 0) {
+                        delete next[key];
+                        return;
+                    }
+                    next[key] = { ...item, sources, _tags: cleanTags };
+                });
+                const scopeTags = nextCatalogName ? [{ type: 'category', name: nextCatalogName }] : [];
+                const rebuilt = window.rebuildMerchEstimateComparisonForScope
+                    ? window.rebuildMerchEstimateComparisonForScope(next, data.masterProducts, scopeTags, config.marginRules)
+                    : { items: next };
+                return rebuilt.items;
+            });
+            ui.setSelectedRows(new Set());
+            const nextScope = window.buildMerchWorkScope ? window.buildMerchWorkScope(data.masterProducts, nextCatalogName ? [{ type: 'category', name: nextCatalogName }] : []) : null;
+            if (nextCatalogName) ui.showToast(`✅ 카탈로그 [${nextCatalogName}] 작업범위 적용 (${nextScope?.scopeCount ?? 0}건) / 견적·구매·재고·정보 공통`);
+            else ui.showToast(`✅ 카탈로그 작업범위 해제 / 전체 마스터 ${nextScope?.masterCount ?? Object.keys(data.masterProducts || {}).length}건`);
+            return;
+        }
         const removeLoadedFilter = () => {
             ui.setActiveTags(prev => prev.filter(t => !(t.type === type && t.name === filterName)));
             data.setManagedItems(prev => {
@@ -3483,6 +3679,18 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
         }, 100);
     }, [data.masterProducts, data.managedItems, data.setManagedItems, config.marginRules, config.tableViewPresets, ui]);
     const handleRemoveFilter = useCallback((type, name) => {
+        if (type === 'category') {
+            ui.setActiveTags(prev => (prev || []).filter(t => String(t?.type || '') !== 'category'));
+            data.setManagedItems(prev => {
+                const rebuilt = window.rebuildMerchEstimateComparisonForScope
+                    ? window.rebuildMerchEstimateComparisonForScope(prev, data.masterProducts, [], config.marginRules)
+                    : { items: prev };
+                return rebuilt.items;
+            });
+            ui.setSelectedRows(new Set());
+            ui.showToast(`✅ 카탈로그 작업범위 해제 / 전체 마스터 기준`);
+            return;
+        }
         const tagKey = `${type}:${name}`;
         ui.setActiveTags(prev => prev.filter(t => !(t.type === type && t.name === name)));
         data.setManagedItems(prev => {
@@ -3506,7 +3714,7 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             return newManaged;
         });
         ui.setSelectedRows(new Set());
-    }, [data.setManagedItems, ui]);
+    }, [data.setManagedItems, data.masterProducts, config.marginRules, ui]);
 
     // ============================================================
     // [M-EXCLUDE-SESSION-01] 이번 작업 제외
@@ -5838,7 +6046,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                     React.createElement("i", { className: "fas fa-chevron-down absolute right-3 top-3 text-slate-400 text-[10px] pointer-events-none" })),
                 React.createElement("div", { className: "relative shrink-0" },
                     React.createElement("i", { className: "fas fa-folder absolute left-3 top-2.5 text-blue-500 pointer-events-none text-[13px]" }),
-                    React.createElement("select", { value: "", onChange: (e) => handleLoadFilter('category', e.target.value), className: `appearance-none font-bold text-[12px] py-2 pl-8 pr-8 rounded-lg outline-none w-[126px] cursor-pointer h-8 border ${isCategoryLoaded ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-slate-300 text-slate-700 shadow-sm focus:border-indigo-400'}` },
+                    React.createElement("select", { value: "", onChange: (e) => handleLoadFilter('category', e.target.value), title: "마스터 작업범위를 선택합니다. 미선택은 전체 마스터이며 견적·구매·재고·정보에 공통 적용됩니다.", className: `appearance-none font-bold text-[12px] py-2 pl-8 pr-8 rounded-lg outline-none w-[126px] cursor-pointer h-8 border ${isCategoryLoaded ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-slate-300 text-slate-700 shadow-sm focus:border-indigo-400'}` },
                         React.createElement("option", { value: "", disabled: true }, "카탈로그"),
                         availableCategories.map(cat => React.createElement("option", { key: cat.name, value: cat.name },
                             cat.name,
@@ -7622,7 +7830,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.140_CompactFilterPills]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.141_CatalogWorkScopeEngine]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -7715,8 +7923,18 @@ const App = () => {
         else {
             baseList = Object.values(data.masterProducts).map(m => data.managedItems[m.코드] || { 코드: m.코드, sources: {}, finalData: {} });
         }
+        const activeWorkRole = normalizeMerchTableTarget((config && config.activeTableTarget) || DEFAULT_TABLE_VIEW_TARGET);
+        if (!ui.registrationMode) {
+            const workScope = window.buildMerchWorkScope ? window.buildMerchWorkScope(data.masterProducts, ui.activeTags || []) : { mode: 'all', codeSet: new Set() };
+            if (workScope.mode === 'catalog') {
+                baseList = baseList.filter(item => {
+                    const code = window.normalizeProductCodeText ? window.normalizeProductCodeText(item?.코드 || item?.['품목코드']) : String(item?.코드 || item?.['품목코드'] || '').replace(/\s/g, '');
+                    if (workScope.codeSet.has(code)) return true;
+                    return activeWorkRole === 'estimate' && window.getMerchEstimateCompareStatus?.(item) === 'add';
+                });
+            }
+        }
         if (!ui.registrationMode && isEstimateUploaded) {
-            const activeWorkRole = normalizeMerchTableTarget((config && config.activeTableTarget) || DEFAULT_TABLE_VIEW_TARGET);
             if (['estimate', 'purchase', 'sales', 'inventory', 'info', 'catalog'].includes(activeWorkRole)) {
                 const matchesActiveRole = (item) => {
                     const directMatch = (window.hasMerchSourceRoleData ? window.hasMerchSourceRoleData(item, activeWorkRole) : !!(item?.sources?.[activeWorkRole])) || item?._lastUploadRole === activeWorkRole;
@@ -7900,7 +8118,7 @@ const App = () => {
             });
         }
         return baseList;
-    }, [isEstimateUploaded, data.managedItems, data.masterProducts, ui.globalSearch, ui.priceFilter, ui.detailFilters, ui.categoryFilters, ui.basicSearch, ui.filterSteps, ui.disabledFilterStepIds, ui.registrationMode, ui.hideMasterAddedRows, ui.stoppedProducts, config.uploadColumnMeta, config.activeTableTarget]);
+    }, [isEstimateUploaded, data.managedItems, data.masterProducts, ui.activeTags, ui.globalSearch, ui.priceFilter, ui.detailFilters, ui.categoryFilters, ui.basicSearch, ui.filterSteps, ui.disabledFilterStepIds, ui.registrationMode, ui.hideMasterAddedRows, ui.stoppedProducts, config.uploadColumnMeta, config.activeTableTarget]);
     useEffect(() => {
         const handler = (e) => {
             const count = (e && e.detail && e.detail.count) ? e.detail.count : 0;
@@ -8029,7 +8247,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.140_CompactFilterPills")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.141_CatalogWorkScopeEngine")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
