@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.139_EstimateCatalogCompare]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.140_CompactFilterPills]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -40,6 +40,7 @@
         // v2.1.137: 제외는 현재 파일 작업 세션의 임시목록으로 분리하고 새 파일/초기화 시 자동 해제한다. 폴더형 보관함은 폐기하고 상품코드별 정지관리(정지예정/정지중/재개예정/확인필요, 개별·선택·전체 수정 및 F8 반영)로 교체한다.
         // v2.1.138: Smart Parser 공급중단을 정지관리 변경대기로 연결하고 품목명·규격·단위 변경을 정보변경 대기목록으로 관리한다. F8/정보변경 관리에서 ERP·쇼핑몰 정보수정 엑셀을 생성하고 시스템별 업로드 완료 후 자동 정리한다.
         // v2.1.139: 선택 카탈로그와 견적서를 상품코드로 비교해 유지·추가·누락·정지후보를 생성한다. 마스터/견적 입고가·출고가·원본출고가·룰출고가 차이를 표시하고, 견적 공란은 보존하며 누락상품은 관리자가 기존 정지기능으로만 처리한다.
+        // v2.1.140: 상단 필터를 기본상품|기본제외, 행사상품|행사제외|행사제안 알약형 반전버튼으로 압축한다. 견적 비교 시 우측에 추가|누락|가격확인 그룹만 생성하고 유지 뱃지는 삭제한다. 행사가 작업은 행사가: 생성|초기화로 묶고 작업줄은 한 줄 고정·가로스크롤 구조로 정리한다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결하며 오더즈판매가/오더즈구매가는 작업·출력에서 제외한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
@@ -995,6 +996,12 @@
             const ruleApplied = !!(finalData?._ruleAppliedAt || finalData?._isRuleApplied);
             const ruledOutBlank = !ruleApplied || !window.hasOwnField(finalData, '출고가') || isBlank(finalData['출고가']);
             const ruledOut = ruledOutBlank ? null : window.parseNum(finalData['출고가']);
+            const priceCheck = status === 'maintain' && (
+                (!estimateInBlank && estimateIn !== masterIn) ||
+                estimateOutBlank ||
+                (!estimateOutBlank && estimateOut !== masterOut) ||
+                (ruleApplied && !ruledOutBlank && ruledOut !== masterOut)
+            );
             const saleState = window.getMasterSalesState ? window.getMasterSalesState(mItem || {}) : { code: String(mItem?.['판매여부'] ?? '') };
             return {
                 status,
@@ -1013,6 +1020,7 @@
                 ruledOut,
                 ruledOutBlank,
                 ruleApplied,
+                priceCheck,
                 basicRef: basicCell.has ? basicCell.raw : '',
                 stopCandidate: status === 'missing' && String(saleState?.code || '') === '1'
             };
@@ -1216,12 +1224,12 @@ window.normalizeMerchMasterColumns = (columns = []) => {
 // 역할: 환경설정에서 저장한 필터조건을 단순 일괄 적용하지 않고 순서가 있는 실행 단계로 적용한다.
 // 정책: filterSteps가 있으면 순서대로 include/exclude를 재실행하고, 구버전 filterPreset은 1단계 include로 호환한다.
 // ============================================================
-window.MERCH_PRICE_FILTER_VALUES = ['all', 'changed', 'promo', 'promoExclude', 'promoSuggest'];
+window.MERCH_PRICE_FILTER_VALUES = ['all', 'changed', 'promo', 'promoExclude', 'promoSuggest', 'compareMaintain', 'compareAdd', 'compareMissing', 'stopCandidate', 'inChanged', 'outChanged', 'outBlank', 'priceCheck'];
 window.MERCH_DETAIL_FILTER_VALUES = ['selling', 'stoppedSoldout', 'basic', 'margin', 'safeMinus', 'basicExclude', 'unitBox', 'unitEa', 'unitSub', 'theme1', 'theme2', 'theme3', 'theme4', 'theme5'];
 window.MERCH_CATEGORY_FILTER_VALUES = ['10', '20', '30', '40', '50'];
 window.MERCH_FILTER_ACTION_VALUES = ['include', 'exclude'];
-window.MERCH_PRICE_FILTER_LABELS = { changed: '변동', promo: '행사가', promoExclude: '행사제외', promoSuggest: '제안' };
-window.MERCH_DETAIL_FILTER_LABELS = { selling: '판매중', stoppedSoldout: '정지&품절', basic: '기본상품', basicExclude: '기본상품 제외', margin: '역마진', safeMinus: '안전(-)', unitBox: 'BOX', unitEa: 'EA', unitSub: '소분', theme1: '테마1', theme2: '테마2', theme3: '테마3', theme4: '테마4', theme5: '테마5' };
+window.MERCH_PRICE_FILTER_LABELS = { changed: '변동', promo: '행사상품', promoExclude: '행사제외', promoSuggest: '행사제안', compareAdd: '추가', compareMissing: '누락', priceCheck: '가격확인' };
+window.MERCH_DETAIL_FILTER_LABELS = { selling: '판매중', stoppedSoldout: '정지&품절', basic: '기본상품', basicExclude: '기본제외', margin: '역마진', safeMinus: '안전(-)', unitBox: 'BOX', unitEa: 'EA', unitSub: '소분', theme1: '테마1', theme2: '테마2', theme3: '테마3', theme4: '테마4', theme5: '테마5' };
 
 // ============================================================
 // [M-MGMT-CODE-01] 관리코드 상품작업 제외
@@ -1338,10 +1346,10 @@ window.toMerchCoachmarkTag = (label = '', action = 'include') => {
         return `${clean} 제외`;
     }
     if (clean === '변동') return '변동상품';
-    if (clean === '제안') return '제안상품';
-    if (clean === '행사가' || clean === '행사중') return '행사가';
+    if (clean === '제안' || clean === '행사제안') return '행사제안';
+    if (clean === '행사가' || clean === '행사중' || clean === '행사상품') return '행사상품';
     if (clean === '행사제외') return '행사제외';
-    if (clean === '기본상품 제외') return '기본상품 제외';
+    if (clean === '기본상품 제외' || clean === '기본제외') return '기본제외';
     if (['BOX', 'EA', '소분'].includes(clean)) return `${clean}만`;
     if (/^테마[1-5]$/.test(clean)) return `${clean}만`;
     if (/^(10|20|30|40|50)$/.test(clean)) return `${clean}만`;
@@ -5537,7 +5545,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
     // 전체 버튼은 제거하고, 모든 필터는 같은 버튼을 다시 누르면 해제되어 전체 상태로 복귀한다.
     // v2.1.113 레이아웃: 카테고리 / 테마 / 카탈로그 / 엑셀 그룹을 한 줄에 촘촘히 붙이고, 양식선택은 하단 작업줄에 항상 노출한다.
     // 카테고리·테마는 기본 단일선택, Ctrl/⌘ 클릭 시 다중선택이며, 하단 작업줄은 룰적용/행사가/제외·정지 액션과 필터 중심으로 둔다.
-    // 2단 상세필터: 판매중/정지&품절/기본상품/역마진/안전(-)/기본상품 제외/BOX/EA/소분.
+    // 2단 상세필터: 판매중/정지&품절/역마진/안전(-)/BOX/EA/소분. 기본상품/기본제외는 상단 알약형 필터로 고정한다.
     const [promoActionOpen, setPromoActionOpen] = useState(false);
     // [M-FILTER-PRESET-ONLY-01] MerchOps에서는 필터 자동화 편집 UI를 노출하지 않는다. 저장된 양식 필터만 적용한다.
     const [filterScenarioOpen, setFilterScenarioOpen] = useState(false);
@@ -5865,8 +5873,8 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                     React.createElement("select", { value: activeTableViewSelectValue, onChange: handleTableViewSelect, className: "h-7 w-full rounded-md border border-slate-200 bg-white px-2 text-[12px] font-black text-slate-700 outline-none focus:border-indigo-400 shrink-0", title: `${displayTableTargetLabel} 작업에 적용할 보기 양식을 선택합니다.` },
                         displayTableViewList.map(view => React.createElement("option", { key: view.fallback ? '__fallback' : (view.id || view.name), value: view.fallback ? '__fallback' : (view.id || '') }, `양식: ${view.name}`))))))),
         React.createElement("div", { className: "px-6 pt-3 pb-2 flex flex-col gap-2 w-full" },
-            React.createElement("div", { className: "rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm flex items-center justify-between gap-3 flex-wrap w-full overflow-visible" },
-                React.createElement("div", { className: "flex items-center justify-start gap-1.5 min-w-0 flex-1 flex-wrap", title: "필터·조회: 조건을 선택한 뒤 우측 액션을 실행합니다." },
+            React.createElement("div", { className: "rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm flex items-center gap-2 flex-nowrap w-full overflow-x-auto overflow-y-hidden" },
+                React.createElement("div", { className: "flex items-center justify-start gap-1.5 min-w-max flex-nowrap", title: "필터·조회: 조건을 선택한 뒤 우측 액션을 실행합니다." },
                     registrationMode && (React.createElement(React.Fragment, null,
                         React.createElement("span", { className: "h-8 px-2.5 rounded-lg text-[11px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center shadow-sm" },
                             React.createElement("i", { className: "fas fa-user-plus mr-1.5 text-[13px]" }),
@@ -5878,30 +5886,25 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                             React.createElement("i", { className: "fas fa-arrow-left mr-1.5 text-[13px]" }),
                             " 이전 양식"),
                         React.createElement("div", { className: "w-px h-5 bg-slate-300 mx-1" }))),
-                    React.createElement("button", { onClick: () => toggleDetailFilter('basic'), className: `h-9 px-2.5 rounded-lg text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${detailFilters.includes('basic') ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200'}`, title: "기본구분 1·2·3은 비교 판정이 아닌 참고정보이며, 이 버튼은 기존 기본상품 조회용입니다." }, "기본상품"),
-                    isEstimateCompareMode && [
-                        ['compareMaintain', '유지'],
-                        ['compareAdd', '추가'],
-                        ['compareMissing', '누락'],
-                        ['stopCandidate', '정지 후보'],
-                        ['inChanged', '입고가 변동'],
-                        ['outChanged', '출고가 변동'],
-                        ['outBlank', '출고가 공란']
-                    ].map(([value, label]) => (React.createElement("button", { key: `estimate-compare-${value}`, onClick: () => applyPriceFilter(value), className: `h-9 px-2.5 rounded-lg text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${priceFilter === value ? 'bg-blue-700 text-white border-blue-700' : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'}`, title: `${label}: 카탈로그와 현재 견적서 상품코드·원본단가 비교` }, label))),
-                    (!isEstimateCompareMode ? [['changed', '변동']] : []).concat([['promo', '행사가'], ['promoExclude', '행사제외'], ['promoSuggest', '제안']]).map(([value, label]) => (React.createElement("button", { key: value, onClick: () => applyPriceFilter(value), className: `h-9 px-2.5 rounded-lg text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${priceFilter === value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200'}`, title: `${label}: 한 번 누르면 선택, 다시 누르면 해제되어 전체로 복귀` }, label))),
+                    React.createElement("div", { className: "flex h-9 rounded-full border border-slate-300 overflow-hidden bg-white shadow-sm shrink-0", title: "기본상품 분류: 같은 항목을 다시 누르면 해제" },
+                        [['basic', '기본상품'], ['basicExclude', '기본제외']].map(([value, label], idx) => React.createElement("button", { key: `basic-pill-${value}`, onClick: () => toggleDetailFilter(value), className: `h-full px-2.5 text-[12px] font-black transition-all whitespace-nowrap ${idx > 0 ? 'border-l border-slate-200' : ''} ${detailFilters.includes(value) ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-indigo-50 hover:text-indigo-700'}`, title: `${label}: 선택 시 해당 분류만 표시 / 다시 누르면 해제` }, label))),
+                    React.createElement("button", { onClick: () => applyPriceFilter('changed'), className: `h-9 px-2.5 rounded-lg text-[12px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${priceFilter === 'changed' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200'}`, title: "변동: 한 번 누르면 선택, 다시 누르면 해제" }, "변동"),
+                    React.createElement("div", { className: "flex h-9 rounded-full border border-slate-300 overflow-hidden bg-white shadow-sm shrink-0", title: "행사 분류: 같은 항목을 다시 누르면 해제" },
+                        [['promo', '행사상품'], ['promoExclude', '행사제외'], ['promoSuggest', '행사제안']].map(([value, label], idx) => React.createElement("button", { key: `promo-pill-${value}`, onClick: () => applyPriceFilter(value), className: `h-full px-2.5 text-[12px] font-black transition-all whitespace-nowrap ${idx > 0 ? 'border-l border-slate-200' : ''} ${priceFilter === value ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-indigo-50 hover:text-indigo-700'}`, title: `${label}: 한 번 누르면 선택, 다시 누르면 해제` }, label))),
                     React.createElement("button", { onClick: () => setFilterPanelOpen(v => !v), className: `h-9 px-2.5 rounded-lg text-[12px] font-black border shadow-sm transition-all flex items-center whitespace-nowrap shrink-0 ${showDetailFilterPanel ? 'bg-indigo-100 text-indigo-800 border-indigo-300' : 'bg-white text-slate-600 border-slate-300 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200'}`, title: "상세 필터 열기/닫기" },
                         React.createElement("i", { className: `fas ${showDetailFilterPanel ? 'fa-chevron-up' : 'fa-chevron-down'} mr-1.5 text-[11px]` }),
-                        "상세")),
-                React.createElement("div", { className: "ml-auto flex items-center justify-end gap-1.5 flex-wrap shrink-0", title: "실행 액션: 선택행이 있으면 선택행, 없으면 현재 필터 결과에 적용합니다." },
+                        "상세"),
+                    React.createElement("div", { className: "w-2 min-w-2 shrink-0" }),
+                    isEstimateCompareMode && React.createElement("div", { className: "flex h-9 rounded-full border border-blue-200 overflow-hidden bg-blue-50 shadow-sm shrink-0", title: "견적 비교에서 발생한 확인대상" },
+                        [['compareAdd', '추가'], ['compareMissing', '누락'], ['priceCheck', '가격확인']].map(([value, label], idx) => React.createElement("button", { key: `estimate-compare-${value}`, onClick: () => applyPriceFilter(value), className: `h-full px-2.5 text-[12px] font-black transition-all whitespace-nowrap ${idx > 0 ? 'border-l border-blue-200' : ''} ${priceFilter === value ? 'bg-blue-700 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`, title: `${label}: 카탈로그와 현재 견적서의 상품코드·가격 비교` }, label)))),
+                React.createElement("div", { className: "flex items-center justify-end gap-1 flex-nowrap shrink-0", title: "실행 액션: 선택행이 있으면 선택행, 없으면 현재 필터 결과에 적용합니다." },
                     React.createElement("button", { onClick: handleForceApplyMarginRules, disabled: fullDisplayRows.length === 0, className: `h-8 px-2.5 rounded-lg text-[11px] font-black shadow-sm flex items-center border transition-all whitespace-nowrap shrink-0 ${fullDisplayRows.length > 0 ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터/검색 결과 전체에 룰을 적용합니다. 견적은 출고가/시중가, 구매·재고는 출고가만 계산하고 시중가는 마스터값을 유지합니다." },
                         React.createElement("i", { className: "fas fa-magic mr-1.5 text-[13px]" }),
                         "룰적용"),
-                    React.createElement("button", { onClick: () => setPromoActionOpen(v => !v), disabled: fullDisplayRows.length === 0, className: `h-8 px-2.5 rounded-lg text-[11px] font-black border shadow-sm transition-all flex items-center whitespace-nowrap shrink-0 ${promoActionOpen ? 'bg-rose-600 text-white border-rose-600' : (fullDisplayRows.length > 0 ? 'bg-white text-rose-700 border-rose-200 hover:bg-rose-50' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed')}`, title: "행사가 설정 UI를 열고 닫습니다. 행사가 적용은 행사가 필드에만 반영됩니다." },
-                        React.createElement("i", { className: `fas ${promoActionOpen ? 'fa-chevron-up' : 'fa-tag'} mr-1.5 text-[12px]` }),
-                        "행사가"),
-                    React.createElement("button", { onClick: handleResetPromoValues, disabled: fullDisplayRows.length === 0 && !(Array.isArray(detailFilters) && detailFilters.some(v => /^theme[1-5]$/.test(String(v)))), className: `h-8 px-2.5 rounded-lg text-[11px] font-black border shadow-sm transition-all flex items-center whitespace-nowrap shrink-0 ${(fullDisplayRows.length > 0 || (Array.isArray(detailFilters) && detailFilters.some(v => /^theme[1-5]$/.test(String(v))))) ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 hover:border-rose-300' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택 테마 또는 현재 작업범위의 행사값을 초기화합니다. 마스터 상태에서는 선택 테마가 대상입니다." },
-                        React.createElement("i", { className: "fas fa-eraser mr-1.5 text-[12px]" }),
-                        "행사초기화"),
+                    React.createElement("div", { className: "flex h-8 rounded-lg border border-rose-200 overflow-hidden bg-white shadow-sm shrink-0", title: "행사가 생성·초기화 작업" },
+                        React.createElement("span", { className: "px-2 flex items-center bg-rose-50 text-rose-700 text-[11px] font-black whitespace-nowrap" }, "행사가:"),
+                        React.createElement("button", { onClick: () => setPromoActionOpen(v => !v), disabled: fullDisplayRows.length === 0, className: `h-full px-2.5 text-[11px] font-black border-l border-rose-200 transition-all whitespace-nowrap ${promoActionOpen ? 'bg-rose-600 text-white' : (fullDisplayRows.length > 0 ? 'bg-white text-rose-700 hover:bg-rose-50' : 'bg-slate-100 text-slate-300 cursor-not-allowed')}`, title: "행사가 생성 설정을 열고 닫습니다." }, "생성"),
+                        React.createElement("button", { onClick: handleResetPromoValues, disabled: fullDisplayRows.length === 0 && !(Array.isArray(detailFilters) && detailFilters.some(v => /^theme[1-5]$/.test(String(v)))), className: `h-full px-2.5 text-[11px] font-black border-l border-rose-200 transition-all whitespace-nowrap ${(fullDisplayRows.length > 0 || (Array.isArray(detailFilters) && detailFilters.some(v => /^theme[1-5]$/.test(String(v))))) ? 'bg-white text-rose-700 hover:bg-rose-50' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`, title: "선택 테마 또는 현재 작업범위의 행사값을 초기화합니다. 마스터 상태에서는 선택 테마가 대상입니다." }, "초기화")),
                     React.createElement("button", { onClick: handleExcludeSelectedFromUpdate, disabled: fullDisplayRows.length === 0, className: `h-8 px-2.5 rounded-lg text-[11px] font-bold shadow-sm flex items-center border whitespace-nowrap shrink-0 ${fullDisplayRows.length > 0 ? 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "이번 파일/현재 작업에서만 제외. 새 파일 또는 초기화 시 자동 해제" },
                         React.createElement("i", { className: "fas fa-minus-circle mr-1.5 text-[12px]" }),
                         "제외"),
@@ -5921,7 +5924,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                         React.createElement("i", { className: "fas fa-file-signature mr-1.5 text-[12px]" }),
                         "정보변경",
                         Object.keys(infoChangeQueue || {}).length > 0 && React.createElement("span", { className: "ml-1.5 text-[10px] font-black px-1.5 py-0.5 rounded-full bg-white/80 text-indigo-700 border border-indigo-200" }, Object.keys(infoChangeQueue || {}).length))),
-                React.createElement("div", { className: "ml-auto flex items-center justify-end gap-1.5 shrink-0 order-last", title: "필터 초기화·검색" },
+                React.createElement("div", { className: "flex items-center justify-end gap-1 shrink-0 order-last", title: "필터 초기화·검색" },
                     React.createElement("button", { onClick: handleFilterResetOnly, className: "h-9 w-9 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-sm hover:bg-indigo-100 hover:border-indigo-300 flex items-center justify-center shrink-0", title: "필터 초기화", "aria-label": "필터 초기화" },
                         React.createElement("i", { className: "fas fa-filter-circle-xmark text-[13px]" })),
                     React.createElement(SearchBar, { value: globalSearch, onChange: setGlobalSearch }))),
@@ -5942,7 +5945,6 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                     ['stoppedSoldout', '정지&품절'],
                     ['margin', '역마진'],
                     ['safeMinus', '안전(-)'],
-                    ['basicExclude', '기본상품 제외'],
                     ['unitBox', 'BOX'],
                     ['unitEa', 'EA'],
                     ['unitSub', '소분']
@@ -7302,11 +7304,17 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
         issueTextColor = validation.canRegister ? 'text-emerald-700' : 'text-rose-700';
     }
     const estimateCompareMeta = window.getMerchEstimateCompareMeta ? window.getMerchEstimateCompareMeta(row, mItem) : { status: '' };
-    if (!state.registrationMode && estimateCompareMeta.status && !isStopPending) {
+    if (!state.registrationMode && ['add', 'missing'].includes(estimateCompareMeta.status) && !isStopPending) {
         issueText = estimateCompareMeta.statusLabel;
         issueSubText = estimateCompareMeta.stopCandidate ? '정지후보' : '';
-        issueCellBg = estimateCompareMeta.status === 'missing' ? 'bg-rose-50/40' : (estimateCompareMeta.status === 'add' ? 'bg-emerald-50/40' : 'bg-blue-50/30');
-        issueTextColor = estimateCompareMeta.status === 'missing' ? 'text-rose-700' : (estimateCompareMeta.status === 'add' ? 'text-emerald-700' : 'text-blue-700');
+        issueCellBg = estimateCompareMeta.status === 'missing' ? 'bg-rose-50/40' : 'bg-emerald-50/40';
+        issueTextColor = estimateCompareMeta.status === 'missing' ? 'text-rose-700' : 'text-emerald-700';
+    }
+    if (!state.registrationMode && estimateCompareMeta.status === 'maintain' && estimateCompareMeta.priceCheck && !isStopPending) {
+        issueText = '가격확인';
+        issueSubText = '';
+        issueCellBg = 'bg-sky-50/40';
+        issueTextColor = 'text-sky-700';
     }
     const compareSummary = getComparePriceSummary(row, config);
     if (!state.registrationMode && compareSummary.hasDiff && !(purchaseTrendInfo && purchaseTrendInfo.hasPurchaseData && hasPurchaseSourceForIssue)) {
@@ -7333,6 +7341,7 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
         '기타상품': 'bg-slate-100 text-slate-700 border-slate-300',
         '가격변동': 'bg-amber-50 text-amber-700 border-amber-200',
         '단가확인': 'bg-sky-50 text-sky-700 border-sky-200',
+        '가격확인': 'bg-sky-50 text-sky-700 border-sky-200',
         '행사': 'bg-violet-50 text-violet-700 border-violet-200',
         '행사제안': 'bg-emerald-50 text-emerald-700 border-emerald-200',
         '정지대기': 'bg-rose-50 text-rose-700 border-rose-200',
@@ -7347,7 +7356,6 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
         '신규/재입고': 'bg-emerald-50 text-emerald-700 border-emerald-200',
         '품절/단종': 'bg-slate-100 text-slate-600 border-slate-200',
         '마스터추가': 'bg-amber-100 text-amber-800 border-amber-300',
-        '유지': 'bg-blue-50 text-blue-700 border-blue-200',
         '추가': 'bg-emerald-50 text-emerald-700 border-emerald-200',
         '누락': 'bg-rose-50 text-rose-700 border-rose-200',
         '-': 'bg-slate-50 text-slate-500 border-slate-200'
@@ -7383,7 +7391,7 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
                         React.createElement("span", { className: `text-[10px] font-mono truncate block ${isMasterAddedRow ? 'text-amber-600' : 'text-indigo-400'}` }, row.코드),
                         isMasterAddedRow && React.createElement("span", { className: "px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 text-[9px] font-black shrink-0" }, "마스터추가"),
                         isFileMissingRow && React.createElement("span", { className: "px-1.5 py-0.5 rounded-full bg-white/70 text-amber-700 border border-amber-200 text-[9px] font-black shrink-0" }, "파일없음"),
-                        estimateCompareMeta.status && React.createElement("span", { className: `px-1.5 py-0.5 rounded-full text-[9px] font-black shrink-0 border ${estimateCompareMeta.status === 'missing' ? 'bg-rose-50 text-rose-700 border-rose-200' : (estimateCompareMeta.status === 'add' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-blue-700 border-blue-200')}` }, estimateCompareMeta.statusLabel)),
+                        ['add', 'missing'].includes(estimateCompareMeta.status) && React.createElement("span", { className: `px-1.5 py-0.5 rounded-full text-[9px] font-black shrink-0 border ${estimateCompareMeta.status === 'missing' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}` }, estimateCompareMeta.statusLabel)),
                     React.createElement("div", { className: "flex items-center w-full min-w-0 overflow-hidden" },
                         React.createElement("span", { className: `text-[13px] font-extrabold truncate block shrink ${isMasterAddedRow ? 'text-amber-950' : (!mItem.품목명 ? 'text-rose-500' : 'text-slate-800')}`, title: dName }, dName),
                         dSpec && React.createElement("span", { className: "text-[11px] text-slate-400 truncate block shrink-0 ml-1 max-w-[40%]", title: dSpec },
@@ -7614,7 +7622,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.139_EstimateCatalogCompare]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.140_CompactFilterPills]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -7832,6 +7840,7 @@ const App = () => {
                 if (ui.priceFilter === 'inChanged') return !!estimateCompare.status && estimateCompare.status !== 'missing' && !estimateCompare.estimateInBlank && estimateCompare.inDiff !== 0;
                 if (ui.priceFilter === 'outChanged') return !!estimateCompare.status && estimateCompare.status !== 'missing' && !estimateCompare.estimateOutBlank && estimateCompare.outDiff !== 0;
                 if (ui.priceFilter === 'outBlank') return !!estimateCompare.status && estimateCompare.status !== 'missing' && estimateCompare.estimateOutBlank;
+                if (ui.priceFilter === 'priceCheck') return estimateCompare.priceCheck === true;
                 if (ui.priceFilter === 'changed') {
                     // 기존 변동 버튼은 입고가 변동 확인용이다.
                     return oldIn > 0 && newIn > 0 && oldIn !== newIn;
@@ -8020,7 +8029,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.139_EstimateCatalogCompare")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.140_CompactFilterPills")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
