@@ -1,7 +1,7 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 1.0.0
+- Architecture document version: 1.1.0
 - Last reviewed: 2026-07-20
 - Machine-readable companion: app-manifest.json
 
@@ -150,6 +150,7 @@ As of this review, settings.html explicitly loads coreEngine.js. MerchOps, DataO
 | Navigation path or filename | Every HTML entry point and deployed routes |
 | Information-change workflow | SmartParser, MerchOps, export center, history viewer, cloud backup |
 | Planned app promotion to production | Manifest update, architecture review, navigation review, and PR validation |
+| Function-key behavior | Review only the owning application's workflow; do not assume the same function key has the same meaning in another application |
 
 ## 8. Application lifecycle
 
@@ -170,6 +171,17 @@ A planned application must record:
 5. Upstream and downstream applications
 6. Validation and rollback method
 7. Target lifecycle status
+
+### 8.1 Registered planned applications
+
+| Component | Status | Intended purpose | Development trigger |
+|---|---|---|---|
+| Master.html | Planned / on hold | Read-only category-based product master lookup | Resume after MerchOps and DataOps core workflows are stable |
+| Item_manager.html | Planned / on hold | Category-based product lookup and future management workspace | Resume after the lookup scope and write policy are approved |
+| trend_report.html | Planned | Provide insight from MerchOps and DataOps results | Resume after both applications produce stable master, history, inventory, and performance data |
+| image_generator.html | Planned utility | Produce offline-sales images and printed materials for price changes and promotional products | Resume after the MerchOps F9 review payload and downstream F10 print workflow are finalized |
+
+These files may remain in the repository, but they are not production dependencies and do not receive feature expansion during the current MerchOps and DataOps development cycle. Planned applications must not write production master data until they are promoted through architecture review.
 
 ## 9. Release, validation, and recovery
 
@@ -196,3 +208,27 @@ A planned application must record:
 - A PR that adds, renames, promotes, deprecates, or removes an application must update both files.
 - A PR that changes a shared data contract must list every reviewed consumer.
 - Unknown planned applications remain outside production dependencies until they are registered.
+## 11. Development roadmap
+
+Roadmap work is delivered as separate pull requests and verified after each merge.
+
+1. Baseline and automated checks
+   - Establish a verified recovery point.
+   - Add JSON, HTML, JavaScript, navigation, and application-load checks.
+2. Client-side safety
+   - Remove unsafe dynamic HTML insertion.
+   - Protect CSV output, validate cloud URLs, and limit imported file size and row count.
+3. Cloud service protection
+   - Add request validation and access control to code.gs.
+   - Separate read, write, and destructive actions and reject unknown actions.
+4. Atomic cloud backup
+   - Upload into a staging session, verify counts and integrity, and finalize only after every chunk succeeds.
+   - Preserve the previous backup on interruption or validation failure.
+5. Application-specific output stability
+   - 5A MerchOps: F8 applies reviewed work, stop-management, and information changes to the master and creates immediate Excel output. F9 sends the current result to Export Center for a separate review-and-output flow.
+   - 5B DataOps: F9 downloads the combined inventory, ledger, and analysis workbook. F10 prints the DataOps result. F8 is currently unassigned and remains reserved until a separate requirement is approved.
+   - Function keys are application-owned behavior. They share validation, backup, download-status, and audit utilities only; their business meaning must not be unified.
+6. Dependency and shared-engine hardening
+   - Pin or self-host critical browser dependencies, introduce content-security controls, and consolidate compatible shared logic through coreEngine.js.
+
+After the production MerchOps and DataOps workflows are stable, planned applications may be reviewed individually for promotion to pilot status.
