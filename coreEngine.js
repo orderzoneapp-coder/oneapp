@@ -1,6 +1,6 @@
 /**
  * ONEAPP MerchOps - coreEngine.js
- * v1.0.9 / Cloud Config Sync Fix
+ * v1.1.0 / Client Safety
  *
  * 목적:
  * - HTML 화면 파일에서 중복되는 저장소, 가격계산, 히스토리, F9 전달, 클라우드 로직을 중앙화한다.
@@ -24,6 +24,11 @@
  * - AppConfig 대용량 저장을 백스크립트 분할 저장 형식과 연동하고 settingsKeys를 복구한다.
  * - 클라우드 URL 공통키와 구형키를 함께 유지해 MerchOps/환경설정/DataOps의 URL 불일치를 방지한다.
  *
+ * v1.1.0_ClientSafety:
+ * - 마스터 엑셀 적용 전 차단 검증을 수행하고 오류 행/중복코드가 있으면 적용하지 않는다.
+ * - localStorage/IndexedDB 쓰기를 검증하며 마스터 적용 실패 시 변경 전 데이터로 자동 복구한다.
+ * - 저장공간 부족, 브라우저 차단, IndexedDB 중단 오류를 사용자가 조치할 수 있는 문구로 변환한다.
+ *
  * v1.0.8_PricingPolicySync:
  * - computeFinalData를 최신 MerchOps 정책에 맞게 정리한다. 엑셀 source에 없는 입고가는 마스터값으로 자동 대체하지 않는다.
  * - 구매/재고 작업의 시중가는 마스터 시중가를 참조하고, 구매/재고 원가로 시중가를 자동 산출하거나 갱신하지 않는다.
@@ -35,7 +40,7 @@
   'use strict';
 
   const ONEAPP = global.ONEAPP = global.ONEAPP || {};
-  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.0.9 CloudConfigSyncFix';
+  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.1.0 ClientSafety';
 
   const DEFAULT_DB_NAME = 'MerchOpsDB';
   const DEFAULT_DB_VERSION = 2;
@@ -166,6 +171,33 @@
     try { return new Date().toISOString(); } catch (e) { return ''; }
   };
 
+  const ERRORS = ONEAPP.ERRORS = ONEAPP.ERRORS || {};
+
+  ERRORS.toActionableMessage = (error, context = '작업') => {
+    const name = String(error?.name || '');
+    const detail = String(error?.message || error || '').trim();
+    if (name === 'QuotaExceededError' || /quota|storage.*full|disk.*full/i.test(detail)) {
+      return `${context} 실패: 브라우저 저장공간이 부족합니다. 불필요한 사이트 데이터를 정리한 뒤 다시 시도하세요.`;
+    }
+    if (name === 'SecurityError' || /access.*denied|not allowed|blocked/i.test(detail)) {
+      return `${context} 실패: 브라우저가 저장소 접근을 차단했습니다. 시크릿 모드·사이트 권한을 확인한 뒤 다시 시도하세요.`;
+    }
+    if (name === 'AbortError' || name === 'TransactionInactiveError') {
+      return `${context} 실패: 브라우저 데이터베이스 작업이 중단되었습니다. 페이지를 새로고침한 뒤 다시 시도하세요.`;
+    }
+    if (name === 'NotFoundError' || /ObjectStore not found/i.test(detail)) {
+      return `${context} 실패: 필요한 브라우저 데이터 저장소를 찾지 못했습니다. 페이지를 새로고침해 저장소를 다시 초기화하세요.`;
+    }
+    return `${context} 실패${detail ? `: ${detail}` : '했습니다. 페이지를 새로고침한 뒤 다시 시도하세요.'}`;
+  };
+
+  ERRORS.create = (error, context) => {
+    const wrapped = new Error(ERRORS.toActionableMessage(error, context));
+    wrapped.name = 'OneAppClientError';
+    try { wrapped.cause = error; } catch (e) {}
+    return wrapped;
+  };
+
   const calcDiffRate = (oldVal, newVal) => {
     const oldNum = parseNum(oldVal);
     const newNum = parseNum(newVal);
@@ -288,6 +320,51 @@
   // ============================================================
   const STORAGE = ONEAPP.STORAGE = ONEAPP.STORAGE || {};
 
+  STORAGE.writeLocalValue = (key, value, options = {}) => {
+    const safeKey = String(key || '').trim();
+    const label = options.label || `브라우저 저장(${safeKey || '키 없음'})`;
+    if (!safeKey) throw new Error(`${label} 실패: 저장 키가 비어 있습니다.`);
+    const serialized = String(value ?? '');
+    try {
+      global.localStorage.setItem(safeKey, serialized);
+      if (options.verify !== false && global.localStorage.getItem(safeKey) !== serialized) {
+        throw new Error('저장 후 검증값이 일치하지 않습니다.');
+      }
+      return serialized;
+    } catch (error) {
+      throw ERRORS.create(error, label);
+    }
+  };
+
+  STORAGE.writeLocalJSON = (key, value, options = {}) => {
+    const label = options.label || `브라우저 JSON 저장(${String(key || '').trim() || '키 없음'})`;
+    let serialized;
+    try {
+      serialized = JSON.stringify(value);
+    } catch (error) {
+      throw ERRORS.create(error, `${label} 직렬화`);
+    }
+    return STORAGE.writeLocalValue(key, serialized, { ...options, label });
+  };
+
+  STORAGE.restoreLocalValue = (key, previousValue, options = {}) => {
+    const safeKey = String(key || '').trim();
+    const label = options.label || `브라우저 저장 복구(${safeKey || '키 없음'})`;
+    try {
+      if (previousValue === null || previousValue === undefined) {
+        global.localStorage.removeItem(safeKey);
+        if (options.verify !== false && global.localStorage.getItem(safeKey) !== null) {
+          throw new Error('삭제 후 검증값이 일치하지 않습니다.');
+        }
+        return null;
+      }
+      return STORAGE.writeLocalValue(safeKey, previousValue, { ...options, label });
+    } catch (error) {
+      if (error?.name === 'OneAppClientError') throw error;
+      throw ERRORS.create(error, label);
+    }
+  };
+
   STORAGE.initIDB = () => new Promise((resolve, reject) => {
     const request = indexedDB.open(DEFAULT_DB_NAME, DEFAULT_DB_VERSION);
     request.onupgradeneeded = (e) => {
@@ -296,7 +373,8 @@
       if (!db.objectStoreNames.contains(STORE_MASTER)) db.createObjectStore(STORE_MASTER, { keyPath: '코드' });
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => reject(ERRORS.create(request.error, '브라우저 데이터베이스 열기'));
+    request.onblocked = () => reject(new Error('브라우저 데이터베이스 열기 실패: 다른 탭에서 데이터베이스를 사용 중입니다. ONEAPP 탭을 닫고 다시 시도하세요.'));
   });
 
   STORAGE.getIDB = async (key) => {
@@ -313,9 +391,11 @@
     const db = await STORAGE.initIDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_KV, 'readwrite');
-      tx.objectStore(STORE_KV).put(val, key);
+      try { tx.objectStore(STORE_KV).put(val, key); }
+      catch (error) { reject(ERRORS.create(error, `브라우저 데이터 저장(${key})`)); return; }
       tx.oncomplete = () => resolve(true);
-      tx.onerror = () => reject(tx.error);
+      tx.onerror = () => reject(ERRORS.create(tx.error, `브라우저 데이터 저장(${key})`));
+      tx.onabort = () => reject(ERRORS.create(tx.error || new DOMException('Transaction aborted', 'AbortError'), `브라우저 데이터 저장(${key})`));
     });
   };
 
@@ -331,1015 +411,14 @@
   };
 
   STORAGE.bulkPutIDB = async (storeName, items = []) => {
+    if (!Array.isArray(items)) throw new Error(`브라우저 일괄 저장(${storeName}) 실패: 저장 데이터가 배열이 아닙니다.`);
     const db = await STORAGE.initIDB();
     return new Promise((resolve, reject) => {
       if (!db.objectStoreNames.contains(storeName)) return reject(new Error(`ObjectStore not found: ${storeName}`));
       const tx = db.transaction(storeName, 'readwrite');
       const store = tx.objectStore(storeName);
-      (items || []).forEach(item => {
-        if (item) store.put(item);
-      });
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => reject(tx.error);
-    });
-  };
-
-  STORAGE.safeJSONParse = safeJSONParse;
-  STORAGE.safeJSONParseRaw = safeJSONParseRaw;
-  STORAGE.generateUUID = generateUUID;
-
-  // ============================================================
-  // PRICING ENGINE
-  // ============================================================
-  const PRICING = ONEAPP.PRICING = ONEAPP.PRICING || {};
-
-  PRICING.parseNum = parseNum;
-  PRICING.findBestMarginRule = findBestMarginRule;
-  PRICING.getDefaultMerchMarginRules = getDefaultMerchMarginRules;
-  PRICING.sanitizeMerchMarginRules = sanitizeMerchMarginRules;
-  PRICING.normalizeMerchWarehouseForRule = normalizeMerchWarehouseForRule;
-  PRICING.getMerchUnitRuleCandidates = getMerchUnitRuleCandidates;
-
-  PRICING.calculatePricesEngine = (baseInPrice, providedOutPrice = 0, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
-    const ROUND_UNIT = 100;
-    const inPrice = parseNum(baseInPrice);
-    const outsrc = (!currentFinalData?.['외주비'] && currentFinalData?.['외주비'] !== 0)
-      ? parseNum(mItem?.['외주비'])
-      : parseNum(currentFinalData?.['외주비']);
-
-    const labor = (!currentFinalData?.['노무비'] && currentFinalData?.['노무비'] !== 0)
-      ? parseNum(mItem?.['노무비'])
-      : parseNum(currentFinalData?.['노무비']);
-
-    const totalCost = inPrice + outsrc + labor;
-    const appliedRule = findBestMarginRule(marginRules, {
-      // 계산용 창고/단위는 원본값을 덮어쓰지 않는 보조 컨텍스트다.
-      // 재고 불러오기 상품이 창고 각인이 없을 때만 _calcWarehouse=01이 전달된다.
-      창고: currentFinalData?.['_calcWarehouse'] ?? currentFinalData?.['창고'] ?? mItem?.['창고'] ?? '',
-      단위: currentFinalData?.['_calcUnit'] ?? currentFinalData?.['단위'] ?? mItem?.['단위'] ?? ''
-    });
-
-    let calcOutPrice = 0;
-    if (inPrice > 0) {
-      const rate = parseNum(appliedRule.rate);
-      if (appliedRule.type === 'divide') {
-        calcOutPrice = totalCost / (1 - (rate / 100));
-      } else {
-        calcOutPrice = totalCost * (1 + (rate / 100));
-      }
-      calcOutPrice = Math.round(calcOutPrice / ROUND_UNIT) * ROUND_UNIT;
-    }
-
-    if (inPrice === 0) return 0;
-    if (forceRecalc) return calcOutPrice;
-    if (parseNum(providedOutPrice) > 0) return parseNum(providedOutPrice);
-    return calcOutPrice;
-  };
-
-  PRICING.getWorkingSourceRole = (sources = {}) => {
-    const explicit = String(sources?._activeRole || sources?.activeRole || sources?.sourceRole || '').trim();
-    const known = ['estimate', 'purchase', 'inventory', 'info', 'catalog', 'sales'];
-    if (known.includes(explicit)) return explicit;
-    // 현재 작업파일이 하나인 구조를 우선한다. 복수 source가 있으면 구매/재고 병합을 자동 추정하지 않고, 명확한 작업군을 우선 판정한다.
-    const priority = ['info', 'purchase', 'inventory', 'estimate', 'catalog', 'sales'];
-    return priority.find(role => isNonEmptySource(sources?.[role])) || '';
-  };
-
-  PRICING.shouldUseMasterMarketPriceForRole = (role = '') => ['purchase', 'inventory'].includes(String(role || '').trim());
-  PRICING.shouldAllowMarketPriceRecalcForRole = (role = '') => String(role || '').trim() === 'estimate';
-
-  PRICING.computeFinalData = (mItem = {}, sources = {}, marginRules = [], forceRecalc = false) => {
-    const activeRole = PRICING.getWorkingSourceRole(sources || {});
-    const hasUploadSource = !!activeRole && isNonEmptySource((sources || {})[activeRole]);
-    const source = hasUploadSource ? { ...((sources || {})[activeRole] || {}) } : { ...(mItem || {}) };
-    const working = { ...source };
-
-    // v1.0.8 정책:
-    // - 업로드 source가 있으면 해당 파일에 있는 값만 작업값으로 사용한다.
-    // - 입고가가 파일에 없으면 마스터 입고가로 자동 대체하지 않는다.
-    // - 계산값은 메타 정보에만 보관하고, forceRecalc일 때만 출고가를 실제 작업값으로 반영한다.
-    const sourceHasInPrice = hasOwnField(source, '입고가');
-    const sourceHasOutPrice = hasOwnField(source, '출고가');
-    const sourceHasMarketPrice = hasOwnField(source, '시중가');
-    const masterMarketPrice = getExplicitValue(mItem, '시중가', '');
-
-    const baseInRaw = hasUploadSource
-      ? (sourceHasInPrice ? source['입고가'] : '')
-      : getExplicitValue(mItem, '입고가', '');
-    const baseInPrice = parseNum(baseInRaw);
-    const providedOutPrice = sourceHasOutPrice ? parseNum(source['출고가']) : 0;
-    const calculatedOutPrice = baseInPrice > 0
-      ? PRICING.calculatePricesEngine(baseInPrice, 0, mItem, working, marginRules, true)
-      : 0;
-
-    if (hasUploadSource && !sourceHasInPrice) {
-      delete working['입고가'];
-      working._missingInPrice = true;
-    }
-
-    if (forceRecalc && baseInPrice > 0 && activeRole !== 'info') {
-      working['출고가'] = calculatedOutPrice;
-      working._ruleAppliedAt = getNowISO();
-    } else if (hasUploadSource && !sourceHasOutPrice) {
-      // 자동 불러오기 단계에서는 출고가를 임의 계산값으로 채우지 않는다.
-      delete working['출고가'];
-    }
-
-    if (PRICING.shouldUseMasterMarketPriceForRole(activeRole)) {
-      working['시중가'] = masterMarketPrice;
-      working._marketPricePolicy = 'master_reference_for_purchase_inventory';
-    } else if (PRICING.shouldAllowMarketPriceRecalcForRole(activeRole)) {
-      if (forceRecalc && calculatedOutPrice > 0) {
-        working['시중가'] = calculatedOutPrice;
-        working._marketPricePolicy = 'estimate_rule_recalc_allowed';
-      } else if (sourceHasMarketPrice) {
-        working['시중가'] = source['시중가'];
-        working._marketPricePolicy = 'estimate_source_market_price';
-      } else if (hasUploadSource) {
-        // 견적 파일에 시중가가 없으면 마스터 시중가로 자동 대체하지 않는다.
-        delete working['시중가'];
-        working._marketPricePolicy = 'estimate_market_price_missing';
-      } else {
-        working['시중가'] = masterMarketPrice;
-        working._marketPricePolicy = 'master_reference';
-      }
-    } else if (activeRole === 'info') {
-      // 정보파일은 쇼핑몰 원본값 보존이 원칙이며, 가격 룰 계산 대상이 아니다.
-      if (sourceHasMarketPrice) working['시중가'] = source['시중가'];
-      working._marketPricePolicy = 'info_original_preserved';
-    } else if (!hasUploadSource) {
-      working['시중가'] = masterMarketPrice;
-      working._marketPricePolicy = 'master_reference';
-    } else if (!sourceHasMarketPrice) {
-      delete working['시중가'];
-      working._marketPricePolicy = 'source_market_price_missing';
-    }
-
-    const themeValue = normalizePromotionThemeValue(working, hasUploadSource ? {} : (mItem || {}));
-    if (themeValue) {
-      working['행사테마'] = themeValue;
-      [1, 2, 3, 4, 5].forEach(n => { working[`테마${n}`] = themeValue.split(',').includes(String(n)) ? '1' : ''; });
-    }
-
-    const actualOutPrice = hasOwnField(working, '출고가') ? parseNum(working['출고가']) : 0;
-    working._activeSourceRole = activeRole || 'master';
-    working._sourcePolicy = hasUploadSource ? 'source_value_only_no_master_fallback' : 'master_reference';
-    working._isRuleApplied = !!forceRecalc;
-    working._calculatedOutPrice = calculatedOutPrice || 0;
-    working._sourceOutPrice = providedOutPrice || 0;
-    working._normalPrice = actualOutPrice || calculatedOutPrice || 0;
-    working._isPromo = parseNum(working['행사가']) > 0;
-    working._pricingPolicyVersion = 'v1.0.8_PricingPolicySync';
-
-    if (sourceHasOutPrice && calculatedOutPrice > 0 && providedOutPrice > 0 && providedOutPrice !== calculatedOutPrice) {
-      working._outPriceRuleDiff = true;
-      working._outPriceRuleDiffAmount = calculatedOutPrice - providedOutPrice;
-      working._outPriceRuleDiffRate = providedOutPrice > 0 ? Math.round(((calculatedOutPrice - providedOutPrice) / providedOutPrice) * 1000) / 10 : 0;
-    } else {
-      working._outPriceRuleDiff = false;
-      working._outPriceRuleDiffAmount = 0;
-      working._outPriceRuleDiffRate = 0;
-    }
-
-    return working;
-  };
-
-  PRICING.calculateReviewOutPrice = (baseInPrice, context = {}, marginRules = []) => {
-    return PRICING.calculatePricesEngine(
-      parseNum(baseInPrice),
-      0,
-      context,
-      context,
-      marginRules,
-      true
-    );
-  };
-
-  PRICING.isValidSubItemCode = (code) => {
-    if (!code) return false;
-    const s = String(code).trim();
-    return s !== '' && s !== '0' && s !== '00' && s !== '-' && s.toLowerCase() !== 'undefined' && s.toLowerCase() !== 'null';
-  };
-
-  // 1종연산은 원가/가격 산출용 계수다. 재고수량 환산은 1당수량을 사용한다.
-  PRICING.calculateSubPriceInfo = (row = {}) => {
-    const costFactor1 = parseNum(row['1종연산']);
-    if (!PRICING.isValidSubItemCode(row['1종코드']) || costFactor1 <= 0) return null;
-
-    const inPrice = parseNum(row.입고가);
-    const outPrice = parseNum(row.출고가); // 확정 정책: 원물 기본 출고가 기준
-    const outsrc = parseNum(row['외주비']);
-    const extraCost = parseNum(row['경비']);
-    const stockFactor1 = parseNum(row['1당수량']);
-
-    const subIn = inPrice > 0 ? Math.round(((inPrice + outsrc) / costFactor1) / 100) * 100 : 0;
-    const rawSubOut = outPrice > 0 ? Math.round((outPrice / costFactor1) + extraCost) : 0;
-    const subOut = rawSubOut > 0 ? Math.round(rawSubOut / 10) * 10 : 0;
-
-    return {
-      code: String(row['1종코드']).trim(),
-      spec: row['1종규격'] || '',
-      div1: costFactor1,
-      costFactor1,
-      stockFactor1,
-      oneQty: stockFactor1,
-      subIn,
-      subOut
-    };
-  };
-
-  // 원물 재고수량을 1종품목 재고 가능수량으로 환산한다.
-  // 정책: 재고수량 산출에는 1종연산을 쓰지 않고 1당수량만 사용한다.
-  PRICING.calculateSubStockInfo = (row = {}, rawStockQty = undefined) => {
-    if (!PRICING.isValidSubItemCode(row['1종코드'])) return null;
-    const stockFactor1 = parseNum(row['1당수량']);
-    if (stockFactor1 <= 0) return null;
-
-    const rawStock = rawStockQty !== undefined ? parseNum(rawStockQty) : parseNum(row['재고수량']);
-    const subStockQty = rawStock * stockFactor1;
-
-    return {
-      code: String(row['1종코드']).trim(),
-      spec: row['1종규격'] || '',
-      rawStockQty: rawStock,
-      stockFactor1,
-      oneQty: stockFactor1,
-      subStockQty
-    };
-  };
-
-  PRICING.getMasterSalesState = (item = {}) => {
-    const rawStatus = item['판매여부'];
-    const statusStr = rawStatus !== undefined && rawStatus !== null ? String(rawStatus).trim() : '';
-    const hasStatusValue = statusStr !== '';
-    const outPrice = parseNum(item['출고가']);
-    const promoPrice = parseNum(item['행사가']);
-    const stockQty = item['재고수량'] !== undefined && item['재고수량'] !== '' ? parseNum(item['재고수량']) : 999;
-    const hasSalePrice = outPrice > 0 || promoPrice > 0;
-
-    if (!hasStatusValue && !hasSalePrice) {
-      return { code: '-', label: '-', text: '-', tone: 'muted', className: 'text-slate-400 font-bold' };
-    }
-
-    if (statusStr === '0' || statusStr === '정지' || statusStr === '정지중' || statusStr === '판매중단' || (!hasSalePrice && hasStatusValue)) {
-      return { code: '0', label: '정지', text: '정지', tone: 'stopped', className: 'text-rose-600 font-black' };
-    }
-
-    if (hasSalePrice) {
-      if (stockQty === 0) return { code: '1', label: '품절', text: '품절', tone: 'soldout', className: 'text-orange-600 font-black' };
-      if (promoPrice > 0) return { code: '1', label: '행사', text: '행사', tone: 'promo', className: 'text-purple-700 font-black' };
-      return { code: '1', label: '판매', text: '판매', tone: 'selling', className: 'text-emerald-700 font-black' };
-    }
-
-    return { code: '-', label: '-', text: '-', tone: 'muted', className: 'text-slate-400 font-bold' };
-  };
-
-  // ============================================================
-  // HISTORY ENGINE
-  // ============================================================
-  const HISTORY = ONEAPP.HISTORY = ONEAPP.HISTORY || {};
-  const HISTORY_KEY = 'merchHistory_v870';
-
-  HISTORY.calcDiffRate = calcDiffRate;
-  HISTORY.getNowISO = getNowISO;
-
-  HISTORY.normalizeHistoryLog = (log = {}) => {
-    const oldVal = log.oldVal ?? log.beforeVal ?? '';
-    const newVal = log.newVal ?? log.afterVal ?? '';
-    const oldNum = parseNum(oldVal);
-    const newNum = parseNum(newVal);
-    const hasNumeric = String(oldVal).match(/[0-9]/) || String(newVal).match(/[0-9]/);
-    const diff = log.diff !== undefined ? Number(log.diff) : (hasNumeric ? newNum - oldNum : 0);
-    const diffRate = log.diffRate !== undefined ? log.diffRate : calcDiffRate(oldVal, newVal);
-
-    return {
-      id: log.id || generateUUID(),
-      timestamp: log.timestamp || new Date().toLocaleString('ko-KR'),
-      timestampISO: log.timestampISO || log.createdAtISO || log.savedAtISO || getNowISO(),
-      source: String(log.source || log.origin || log.sourceRole || 'unknown'),
-      sourceRole: String(log.sourceRole || log.role || log.source || log.origin || 'unknown'),
-      sourceLabel: String(log.sourceLabel || ''),
-      actionType: String(log.actionType || log.action || 'change'),
-      applyMode: String(log.applyMode || ''),
-      path: String(log.path || log.route || ''),
-      route: String(log.route || log.path || ''),
-      catalog: String(log.catalog || log.catalogName || ''),
-      catalogName: String(log.catalogName || log.catalog || ''),
-      estimate: String(log.estimate || log.quoteName || log.quote || log.견적서 || ''),
-      quoteName: String(log.quoteName || log.estimate || log.quote || log.견적서 || ''),
-      code: String(log.code || ''),
-      name: String(log.name || ''),
-      spec: String(log.spec || ''),
-      unit: String(log.unit || ''),
-      parsedName: String(log.parsedName || ''),
-      parsedSpec: String(log.parsedSpec || ''),
-      parsedUnit: String(log.parsedUnit || ''),
-      parsedInPrice: log.parsedInPrice !== undefined ? parseNum(log.parsedInPrice) : undefined,
-      parsedSoldOut: !!log.parsedSoldOut,
-      matchStatus: String(log.matchStatus || ''),
-      field: String(log.field || ''),
-      oldVal,
-      newVal,
-      diff,
-      diffRate,
-      oldOutPrice: log.oldOutPrice,
-      newOutPrice: log.newOutPrice,
-      oldSalePrice: log.oldSalePrice,
-      newSalePrice: log.newSalePrice,
-      oldInPrice: log.oldInPrice,
-      stockQty: log.stockQty,
-      safeStock: log.safeStock,
-      marginRate: log.marginRate,
-      memo: String(log.memo || log.note || '')
-    };
-  };
-
-  HISTORY.buildHistoryLog = (payload = {}) => {
-    return HISTORY.normalizeHistoryLog({
-      id: generateUUID(),
-      timestamp: new Date().toLocaleString('ko-KR'),
-      timestampISO: getNowISO(),
-      ...payload
-    });
-  };
-
-  HISTORY.addHistoryLogs = (newLogs = [], options = {}) => {
-    const limit = options.limit || 5000;
-    const logs = Array.isArray(newLogs) ? newLogs : [newLogs];
-    const normalized = logs.filter(Boolean).map(HISTORY.normalizeHistoryLog);
-
-    let current = [];
-    try { current = JSON.parse(global.localStorage.getItem(HISTORY_KEY) || '[]') || []; } catch (e) { current = []; }
-
-    const merged = [...normalized, ...current].slice(0, limit);
-    global.localStorage.setItem(HISTORY_KEY, JSON.stringify(merged));
-    return merged;
-  };
-
-  HISTORY.verifyHistorySaved = (newLogs = []) => {
-    const logs = Array.isArray(newLogs) ? newLogs : [newLogs];
-    if (logs.length === 0) return true;
-
-    let current = [];
-    try { current = JSON.parse(global.localStorage.getItem(HISTORY_KEY) || '[]') || []; } catch (e) { return false; }
-
-    const ids = new Set(current.map(log => log && log.id));
-    return logs.every(log => log && log.id && ids.has(log.id));
-  };
-
-  HISTORY.assertHistoryForMutation = (mutationCount, logs = []) => {
-    if (mutationCount > 0 && (!Array.isArray(logs) || logs.length === 0)) {
-      throw new Error('마스터 변경 항목이 있으나 히스토리 로그가 생성되지 않았습니다.');
-    }
-    return true;
-  };
-
-  // ============================================================
-  // EXPORT DRAFT ENGINE
-  // ============================================================
-  const EXPORT = ONEAPP.EXPORT = ONEAPP.EXPORT || {};
-
-  const getValueFromRow = (row = {}, master = {}, key, defaultValue = '') => {
-    const finalData = row.finalData || {};
-    const sources = row.sources || {};
-    const inventory = sources.inventory || {};
-    const estimate = sources.estimate || {};
-    const purchase = sources.purchase || {};
-    const sales = sources.sales || {};
-
-    if (finalData[key] !== undefined && finalData[key] !== '') return finalData[key];
-    if (inventory[key] !== undefined && inventory[key] !== '') return inventory[key];
-    if (estimate[key] !== undefined && estimate[key] !== '') return estimate[key];
-    if (purchase[key] !== undefined && purchase[key] !== '') return purchase[key];
-    if (sales[key] !== undefined && sales[key] !== '') return sales[key];
-    if (master[key] !== undefined && master[key] !== '') return master[key];
-    return defaultValue;
-  };
-
-  EXPORT.buildWorkingPayload = (row = {}, master = {}) => {
-    const finalData = row.finalData || {};
-    const getValue = (key, defaultValue = '') => getValueFromRow(row, master, key, defaultValue);
-    const getNum = (key, defaultValue = 0) => parseNum(getValue(key, defaultValue));
-    const getStr = (key, defaultValue = '') => {
-      const val = getValue(key, defaultValue);
-      return val !== undefined && val !== null ? String(val) : defaultValue;
-    };
-
-    const inventory = row.sources?.inventory || {};
-    const estimate = row.sources?.estimate || {};
-    const purchase = row.sources?.purchase || {};
-    const sales = row.sources?.sales || {};
-    const info = row.sources?.info || {};
-    const stockRaw = finalData['재고수량'] ?? info['재고수량'] ?? info['재고'] ?? inventory['재고수량'] ?? inventory['안전재고'] ?? estimate['재고수량'];
-    const stockQty = stockRaw !== undefined && stockRaw !== null && stockRaw !== '' ? parseNum(stockRaw) : 999;
-    const promoThemeCodes = parsePromotionThemeCodes(finalData, info, inventory, estimate, purchase, sales, master);
-    const hasPromoTheme = (n) => promoThemeCodes.includes(String(n));
-
-    return {
-      품목명: getStr('품목명'),
-      규격: getStr('규격'),
-      브랜드: getStr('브랜드'),
-      간단설명: getStr('간단설명'),
-      창고: getStr('창고'),
-      단위: getStr('단위'),
-      _calcWarehouse: getStr('_calcWarehouse'),
-      _calcWarehouseReason: getStr('_calcWarehouseReason'),
-      입고가: getNum('입고가'),
-      출고가: getNum('출고가'),
-      행사가: getNum('행사가'),
-      도매A: getNum('도매A'),
-      도매B: getNum('도매B'),
-      시중가: getNum('시중가'),
-      입고B: getNum('입고B'),
-      판매여부: finalData._salesStopRequested === true ? 0 : (finalData['판매여부'] !== undefined ? finalData['판매여부'] : ''),
-      '1종코드': getStr('1종코드'),
-      '1종규격': getStr('1종규격'),
-      '1종연산': getNum('1종연산'),
-      '1당수량': getNum('1당수량'),
-      '경비': getNum('경비'),
-      '외주비': getNum('외주비'),
-      '노무비': getNum('노무비'),
-      재고수량: stockQty,
-      행사테마: promoThemeCodes.join(','),
-      테마1: hasPromoTheme(1) ? '1' : '',
-      테마2: hasPromoTheme(2) ? '1' : '',
-      테마3: hasPromoTheme(3) ? '1' : '',
-      테마4: hasPromoTheme(4) ? '1' : '',
-      테마5: hasPromoTheme(5) ? '1' : '',
-      카테고리: getStr('견적서') || getStr('카테고리'),
-      검색어등록: getStr('검색어등록')
-    };
-  };
-
-  EXPORT.buildBaselineSnapshot = (master = {}) => {
-    const salesState = PRICING.getMasterSalesState(master);
-    return {
-      기준입고가: parseNum(master['입고가']),
-      기준출고가: parseNum(master['출고가']),
-      기준행사가: parseNum(master['행사가']),
-      기준시중가: parseNum(master['시중가']),
-      기준판매여부: master['판매여부'] !== undefined && master['판매여부'] !== '' ? master['판매여부'] : salesState.text,
-      기준상태코드: salesState.code,
-      기준상태명: salesState.label
-    };
-  };
-
-  EXPORT.buildSourceSummary = (row = {}) => {
-    const sources = row.sources || {};
-    const inventory = sources.inventory || {};
-    const estimate = sources.estimate || {};
-    const purchase = sources.purchase || {};
-    const sales = sources.sales || {};
-    const tags = row._tags ? Array.from(row._tags) : [];
-
-    return {
-      hasInventory: Object.keys(inventory).length > 0,
-      hasEstimate: Object.keys(estimate).length > 0,
-      hasPurchase: Object.keys(purchase).length > 0,
-      hasSales: Object.keys(sales).length > 0,
-      tags,
-      sourceType: tags.join(', '),
-      inventoryKeys: Object.keys(inventory),
-      estimateKeys: Object.keys(estimate),
-      purchaseKeys: Object.keys(purchase),
-      salesKeys: Object.keys(sales)
-    };
-  };
-
-  EXPORT.buildExportDraft = ({ targetRows = [], masterProducts = {} } = {}) => {
-    const rows = Array.isArray(targetRows) ? targetRows : [];
-    return rows
-      .filter(row => row && row.코드)
-      .map(row => {
-        const code = row.코드;
-        const master = masterProducts[code] || {};
-        return {
-          코드: code,
-          working: EXPORT.buildWorkingPayload(row, master),
-          baselineSnapshot: EXPORT.buildBaselineSnapshot(master),
-          source: EXPORT.buildSourceSummary(row)
-        };
-      });
-  };
-
-  EXPORT.validateExportDraft = (exportDraft = []) => {
-    if (!Array.isArray(exportDraft)) return { ok: false, message: 'exportDraft가 배열이 아닙니다.' };
-    const invalid = exportDraft.filter(item => !item || !item.코드 || !item.working);
-    if (invalid.length > 0) return { ok: false, message: `유효하지 않은 draft ${invalid.length}건이 있습니다.` };
-    return { ok: true, message: 'OK', count: exportDraft.length };
-  };
-
-  // ============================================================
-  // CLOUD ENGINE
-  // ============================================================
-  const CLOUD = ONEAPP.CLOUD = ONEAPP.CLOUD || {};
-
-  // ============================================================
-  // CLOUD URL / DATAOPS MASTER SYNC SETTINGS
-  // - URL은 고정 하드코딩이 아니라 사용자가 설정값으로 변경 가능해야 한다.
-  // - 기본 URL은 최초 실행/복원용 fallback으로만 사용한다.
-  // ============================================================
-  const ONEAPP_CLOUD_URL_KEY = 'oneapp_cloud_sync_url_v1';
-  const ONEAPP_DEFAULT_CLOUD_SYNC_URL = 'https://script.google.com/macros/s/AKfycbzOUOIu_bP7NkiFVziDR0Og1da1KO1ePoU09Q3pSlPr-9uD-WkdCpWN7nidO5hlrJi6Qw/exec';
-  const DATAOPS_MASTER_CACHE_KEY = 'dataops_merch_master_cache_v1';
-  const DATAOPS_MASTER_SUMMARY_KEY = 'dataops_merch_master_summary_v1';
-  const DATAOPS_RAW_SUBDIVISION_KEY = 'dataops_raw_subdivision_cache_v1';
-
-  const appendQueryParam = (url, key, value) => {
-    const safeUrl = String(url || '').trim();
-    if (!safeUrl) return '';
-    const sep = safeUrl.includes('?') ? '&' : '?';
-    return `${safeUrl}${sep}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
-  };
-
-  CLOUD.fetchJson = async (url, options = {}, label = '클라우드 요청') => {
-    const response = await fetch(url, options);
-    const rawText = await response.text();
-    let result = null;
-    try { result = rawText ? JSON.parse(rawText) : null; }
-    catch (e) { throw new Error(`${label} 응답이 JSON 형식이 아닙니다.`); }
-    if (!response.ok) throw new Error(result?.message || `${label} 네트워크 오류 (${response.status})`);
-    if (!result || result.status !== 'success') throw new Error(result?.message || `${label} 실패`);
-    return result;
-  };
-
-  CLOUD.getDefaultCloudSyncUrl = () => ONEAPP_DEFAULT_CLOUD_SYNC_URL;
-
-  CLOUD.getCloudSyncUrl = () => {
-    try {
-      const saved = String(global.localStorage.getItem(ONEAPP_CLOUD_URL_KEY) || '').trim();
-      return saved || ONEAPP_DEFAULT_CLOUD_SYNC_URL;
-    } catch (e) {
-      return ONEAPP_DEFAULT_CLOUD_SYNC_URL;
-    }
-  };
-
-  CLOUD.setCloudSyncUrl = (url) => {
-    const safeUrl = String(url || '').trim().replace(/([?&])action=[^&#]*/g, '$1').replace(/[?&]$/, '');
-    if (!safeUrl) throw new Error('클라우드 URL이 비어 있습니다.');
-    try {
-      global.localStorage.setItem(ONEAPP_CLOUD_URL_KEY, safeUrl);
-      global.localStorage.setItem('merchCloudUrl_v870', safeUrl);
-    } catch (e) {
-      throw new Error('클라우드 URL 저장에 실패했습니다.');
-    }
-    return safeUrl;
-  };
-
-  CLOUD.ensureDefaultCloudSyncUrl = () => {
-    try {
-      const current = String(global.localStorage.getItem(ONEAPP_CLOUD_URL_KEY) || '').trim();
-      if (!current) global.localStorage.setItem(ONEAPP_CLOUD_URL_KEY, ONEAPP_DEFAULT_CLOUD_SYNC_URL);
-    } catch (e) {}
-    return CLOUD.getCloudSyncUrl();
-  };
-
-  CLOUD.buildMasterOnlyUrl = (url) => appendQueryParam(url || CLOUD.getCloudSyncUrl(), 'action', 'master_only');
-  CLOUD.buildConfigOnlyUrl = (url) => appendQueryParam(url || CLOUD.getCloudSyncUrl(), 'action', 'config_only');
-
-  CLOUD.buildCloudConfigPayload = async (config = {}) => {
-    const pendingShopStatus = await STORAGE.getIDB('pending_shop_status').catch(() => safeJSONParse('pendingShopStatus', []));
-    const dict = safeJSONParse('parserDict_v870', {});
-    const settingsKeys = {};
-    [
-      'parserDict_v870', 'merchMarginRules_v878', 'merchMappings_v870', 'merchMasterLinks_v870',
-      'merchVisUpload_v870', 'merchVisMaster_v870', 'merchUploadColumnMeta_v870',
-      'merchTableShortcuts_v870', 'merchTableViewPresets_v1', 'merchProductStatusRecords_v1',
-      'merchActiveTableTarget_v1', 'merchActiveTableViewId_v1', ONEAPP_CLOUD_URL_KEY, 'merchCloudUrl_v870'
-    ].forEach(key => {
       try {
-        const value = global.localStorage.getItem(key);
-        if (value !== null && value !== undefined) settingsKeys[key] = value;
-      } catch (e) {}
-    });
-
-    return {
-      schemaVersion: 'CoreConfig_v1.0.9_CloudConfigSyncFix',
-      updatedAt: getNowISO(),
-      dict,
-      rules: config.marginRules || config.rules || safeJSONParse('merchMarginRules_v878', []),
-      pendingShopStatus: pendingShopStatus || [],
-      appConfig: {
-        mappings: config.mappings || {},
-        masterLinks: config.masterLinks || {},
-        visibleUploadCols: config.visibleUploadCols || {},
-        visibleMasterCols: config.visibleMasterCols || {},
-        uploadColumnMeta: config.uploadColumnMeta || {},
-        tableShortcuts: config.tableShortcuts || safeJSONParse('merchTableShortcuts_v870', []),
-        tableViewPresets: config.tableViewPresets || safeJSONParse('merchTableViewPresets_v1', {}),
-        activeTableTarget: config.activeTableTarget || global.localStorage.getItem('merchActiveTableTarget_v1') || '',
-        activeTableViewId: config.activeTableViewId || global.localStorage.getItem('merchActiveTableViewId_v1') || ''
-      },
-      settingsKeys
-    };
-  };
-
-  CLOUD.pushConfigBackup = async ({ url, data } = {}) => {
-    const targetUrl = String(url || CLOUD.getCloudSyncUrl() || '').trim();
-    if (!targetUrl) throw new Error('클라우드 URL이 없습니다.');
-    const configData = data || await CLOUD.buildCloudConfigPayload({});
-    const result = await CLOUD.fetchJson(targetUrl, {
-      method: 'POST',
-      body: JSON.stringify({ action: 'config', data: configData })
-    }, '환경설정 백업');
-    return { ...result, data: configData };
-  };
-
-  CLOUD.pullConfigBackup = async ({ url } = {}) => {
-    const targetUrl = String(url || CLOUD.getCloudSyncUrl() || '').trim();
-    if (!targetUrl) throw new Error('클라우드 URL이 없습니다.');
-    return CLOUD.fetchJson(CLOUD.buildConfigOnlyUrl(targetUrl), { method: 'GET' }, '환경설정 복원');
-  };
-
-  CLOUD.normalizeMasterItemForDataOps = (item = {}, fallbackCode = '') => {
-    const code = String(item.코드 || item['품목코드'] || fallbackCode || '').trim();
-    return {
-      ...item,
-      코드: code,
-      품목코드: String(item['품목코드'] || code).trim(),
-      품목명: String(item['품목명'] || '').trim(),
-      규격: String(item['규격'] || '').trim(),
-      단위: String(item['단위'] || '').trim(),
-      창고: String(item['창고'] || '').trim(),
-      기본: item['기본'],
-      입고가: parseNum(item['입고가']),
-      출고가: parseNum(item['출고가']),
-      도매A: parseNum(item['도매A']),
-      도매B: parseNum(item['도매B']),
-      상장가: parseNum(item['상장가']),
-      행사가: parseNum(item['행사가']),
-      판매여부: item['판매여부'],
-      '1종코드': String(item['1종코드'] || '').trim(),
-      '1종규격': String(item['1종규격'] || '').trim(),
-      '1종연산': parseNum(item['1종연산']),
-      '1당수량': parseNum(item['1당수량']),
-      '2종코드': String(item['2종코드'] || '').trim(),
-      '2종규격': String(item['2종규격'] || '').trim(),
-      '2종연산': parseNum(item['2종연산']),
-      외주비: parseNum(item['외주비']),
-      노무비: parseNum(item['노무비']),
-      경비: parseNum(item['경비'])
-    };
-  };
-
-  CLOUD.buildRawSubdivisionFromMaster = (masterMap = {}) => {
-    const items = Object.entries(masterMap || {}).map(([code, item]) => CLOUD.normalizeMasterItemForDataOps(item, code));
-    const relations = [];
-    const issues = [];
-
-    const isValidSubCode = (code) => {
-      const s = String(code || '').trim();
-      return s !== '' && s !== '0' && s !== '00' && s !== '-' && s.toLowerCase() !== 'undefined' && s.toLowerCase() !== 'null';
-    };
-
-    items.forEach(item => {
-      const rawCode = String(item.코드 || item['품목코드'] || '').trim();
-      const subCode = String(item['1종코드'] || '').trim();
-      const subSpec = String(item['1종규격'] || '').trim();
-      const costRate = parseNum(item['1종연산']);
-      const stockRate = parseNum(item['1당수량']);
-
-      if (!rawCode) {
-        issues.push({ type: 'NO_RAW_CODE', message: '원물 품목코드 없음', item });
-        return;
-      }
-
-      if (!isValidSubCode(subCode)) return;
-
-      if (costRate <= 0) {
-        issues.push({ type: 'NO_SUB_COST_RATE', message: '1종코드는 있으나 원가계수(1종연산) 없음', rawCode, subCode, item });
-      }
-
-      if (stockRate <= 0) {
-        issues.push({ type: 'NO_SUB_STOCK_RATE', message: '1종코드는 있으나 재고수량계수(1당수량) 없음', rawCode, subCode, item });
-      }
-
-      if (costRate <= 0 && stockRate <= 0) return;
-
-      relations.push({
-        source: 'MerchOpsMasterDB',
-        rawCode,
-        rawName: item['품목명'] || '',
-        rawSpec: item['규격'] || '',
-        rawUnit: item['단위'] || '',
-        subCode,
-        subNameSpec: subSpec,
-        subSpec,
-        subUnit: '',
-        // 기존 DataOps 호환값: 원가 산출용 1종연산을 conversionRate로 유지한다.
-        conversionRate: costRate,
-        costConversionRate: costRate,
-        stockConversionRate: stockRate,
-        stockQtyPerRaw: stockRate,
-        costMethod: 'raw_cost_divide_1종연산',
-        stockMethod: 'raw_stock_multiply_1당수량',
-        rawDeductMethod: 'ceil',
-        active: true,
-        createdFrom: '1종코드',
-        memo: ''
-      });
-    });
-
-    const bySubCode = {};
-    const byRawCode = {};
-
-    relations.forEach(rel => {
-      if (rel.subCode) bySubCode[rel.subCode] = rel;
-      if (rel.rawCode) {
-        if (!byRawCode[rel.rawCode]) byRawCode[rel.rawCode] = [];
-        byRawCode[rel.rawCode].push(rel);
-      }
-    });
-
-    return {
-      relations,
-      bySubCode,
-      byRawCode,
-      issues,
-      summary: {
-        relationCount: relations.length,
-        issueCount: issues.length
-      }
-    };
-  };
-
-  CLOUD.pullMerchMasterForDataOps = async ({ url, onProgress } = {}) => {
-    const targetUrl = String(url || CLOUD.getCloudSyncUrl() || '').trim();
-    if (!targetUrl) throw new Error('클라우드 URL이 없습니다.');
-
-    if (typeof onProgress === 'function') {
-      onProgress({ step: 'download', message: 'MerchOps MasterDB 수신 중...' });
-    }
-
-    const requestUrl = CLOUD.buildMasterOnlyUrl(targetUrl);
-    const result = await CLOUD.fetchJson(requestUrl, { method: 'GET' }, 'MerchOps MasterDB 다운로드');
-    if (!result.data) throw new Error('MerchOps MasterDB 응답 형식 오류');
-
-    const rawMaster = result.data.master || {};
-    const normalizedMaster = {};
-
-    Object.entries(rawMaster).forEach(([code, item]) => {
-      const normalized = CLOUD.normalizeMasterItemForDataOps(item, code);
-      if (normalized.코드) normalizedMaster[normalized.코드] = normalized;
-    });
-
-    const masterItems = Object.values(normalizedMaster);
-    const rawSubdivision = CLOUD.buildRawSubdivisionFromMaster(normalizedMaster);
-
-    await STORAGE.bulkPutIDB(STORE_MASTER, masterItems).catch(() => false);
-    await STORAGE.setIDB(DATAOPS_MASTER_CACHE_KEY, normalizedMaster).catch(() => false);
-    await STORAGE.setIDB(DATAOPS_RAW_SUBDIVISION_KEY, rawSubdivision).catch(() => false);
-
-    const summary = {
-      ...(result.data.summary || {}),
-      normalizedCount: masterItems.length,
-      rawSubdivisionCount: rawSubdivision.relations.length,
-      rawSubdivisionIssueCount: rawSubdivision.issues.length,
-      syncedAt: new Date().toISOString(),
-      url: targetUrl
-    };
-
-    try {
-      global.localStorage.setItem(DATAOPS_MASTER_SUMMARY_KEY, JSON.stringify(summary));
-      global.localStorage.setItem('dataops_master_sync_trigger', Date.now().toString());
-    } catch (e) {}
-
-    if (typeof onProgress === 'function') {
-      onProgress({
-        step: 'done',
-        message: `마스터 ${summary.normalizedCount || 0}건 / 소분관계 ${summary.rawSubdivisionCount || 0}건 불러오기 완료`
-      });
-    }
-
-    return { status: 'success', master: normalizedMaster, rawSubdivision, summary };
-  };
-
-  CLOUD.getCachedMerchMasterForDataOps = async () => {
-    const master = await STORAGE.getIDB(DATAOPS_MASTER_CACHE_KEY).catch(() => null);
-    const rawSubdivision = await STORAGE.getIDB(DATAOPS_RAW_SUBDIVISION_KEY).catch(() => null);
-    const summary = safeJSONParse(DATAOPS_MASTER_SUMMARY_KEY, {});
-
-    return {
-      master: master || {},
-      rawSubdivision: rawSubdivision || { relations: [], bySubCode: {}, byRawCode: {}, issues: [], summary: {} },
-      summary
-    };
-  };
-
-  CLOUD.chunkUpload = async ({ url, action, data = [], chunkSize = 500, onProgress }) => {
-    if (!url) throw new Error('클라우드 URL이 없습니다.');
-    const items = Array.isArray(data) ? data : [];
-
-    for (let i = 0; i < items.length; i += chunkSize) {
-      const chunk = items.slice(i, i + chunkSize);
-      if (typeof onProgress === 'function') onProgress({ action, sent: Math.min(i + chunkSize, items.length), total: items.length });
-      await CLOUD.fetchJson(url, {
-        method: 'POST',
-        body: JSON.stringify({ action, data: chunk })
-      }, `${action} 업로드`);
-    }
-
-    return { status: 'success', total: items.length };
-  };
-
-  CLOUD.pushCloudBackup = async ({ url, masterProducts = {}, historyLogs = [], config = {}, chunkSize = 500, onProgress }) => {
-    const targetUrl = String(url || CLOUD.getCloudSyncUrl() || '').trim();
-    if (!targetUrl) throw new Error('클라우드 URL이 없습니다.');
-
-    if (typeof onProgress === 'function') onProgress({ step: 'init', message: '서버 초기화 중...' });
-    await CLOUD.fetchJson(targetUrl, {
-      method: 'POST',
-      body: JSON.stringify({ action: 'initSync' })
-    }, '클라우드 초기화');
-
-    const masterItems = Array.isArray(masterProducts) ? masterProducts : Object.values(masterProducts || {});
-    await CLOUD.chunkUpload({
-      url: targetUrl,
-      action: 'chunk_master',
-      data: masterItems,
-      chunkSize,
-      onProgress: p => onProgress && onProgress({ ...p, step: 'master', message: `마스터 데이터 업로드 중... (${p.sent} / ${p.total}건)` })
-    });
-
-    const safeHistory = Array.isArray(historyLogs) ? historyLogs : [];
-    await CLOUD.chunkUpload({
-      url: targetUrl,
-      action: 'chunk_history',
-      data: safeHistory,
-      chunkSize,
-      onProgress: p => onProgress && onProgress({ ...p, step: 'history', message: `히스토리 업로드 중... (${p.sent} / ${p.total}건)` })
-    });
-
-    if (typeof onProgress === 'function') onProgress({ step: 'config', message: '환경설정 및 대기열 업로드 중...' });
-    const configPayload = await CLOUD.buildCloudConfigPayload(config);
-    await CLOUD.pushConfigBackup({ url: targetUrl, data: configPayload });
-
-    return { status: 'success', masterCount: masterItems.length, historyCount: safeHistory.length };
-  };
-
-  CLOUD.restoreCloudData = async (result = {}, hooks = {}) => {
-    if (!result || result.status !== 'success' || !result.data) throw new Error('복구 데이터 형식이 올바르지 않습니다.');
-    const data = result.data;
-
-    if (data.master && Object.keys(data.master).length > 0) {
-      const safeData = Object.values(data.master).filter(item => item && item.코드);
-      await STORAGE.bulkPutIDB(STORE_MASTER, safeData);
-      global.localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
-      if (typeof hooks.setMasterProducts === 'function') hooks.setMasterProducts(data.master);
-    }
-
-    if (data.history && Array.isArray(data.history)) {
-      global.localStorage.setItem(HISTORY_KEY, JSON.stringify(data.history));
-      if (typeof hooks.setHistoryLogs === 'function') hooks.setHistoryLogs(data.history);
-    }
-
-    if (data.dict && Object.keys(data.dict).length > 0) {
-      global.localStorage.setItem('parserDict_v870', JSON.stringify(data.dict));
-    }
-
-    if (data.pendingShopStatus) {
-      await STORAGE.setIDB('pending_shop_status', data.pendingShopStatus);
-    }
-
-    const settingsKeys = data.settingsKeys || {};
-    Object.entries(settingsKeys).forEach(([key, value]) => {
-      try { if (value !== undefined && value !== null) global.localStorage.setItem(key, String(value)); } catch (e) {}
-    });
-
-    const appConfig = data.appConfig || {};
-    if (data.rules && data.rules.length > 0) {
-      global.localStorage.setItem('merchMarginRules_v878', JSON.stringify(data.rules));
-      if (typeof hooks.setMarginRules === 'function') hooks.setMarginRules(data.rules);
-    }
-
-    const configKeyMap = {
-      mappings: ['merchMappings_v870', 'setMappings'],
-      masterLinks: ['merchMasterLinks_v870', 'setMasterLinks'],
-      visibleUploadCols: ['merchVisUpload_v870', 'setVisibleUploadCols'],
-      visibleMasterCols: ['merchVisMaster_v870', 'setVisibleMasterCols'],
-      uploadColumnMeta: ['merchUploadColumnMeta_v870', 'setUploadColumnMeta'],
-      tableShortcuts: ['merchTableShortcuts_v870', 'setTableShortcuts'],
-      tableViewPresets: ['merchTableViewPresets_v1', 'setTableViewPresets']
-    };
-
-    Object.keys(configKeyMap).forEach(key => {
-      if (appConfig[key] !== undefined && appConfig[key] !== null) {
-        const [storageKey, hookName] = configKeyMap[key];
-        global.localStorage.setItem(storageKey, JSON.stringify(appConfig[key]));
-        if (typeof hooks[hookName] === 'function') hooks[hookName](appConfig[key]);
-      }
-    });
-    if (appConfig.activeTableTarget) {
-      global.localStorage.setItem('merchActiveTableTarget_v1', String(appConfig.activeTableTarget));
-      if (typeof hooks.setActiveTableTarget === 'function') hooks.setActiveTableTarget(appConfig.activeTableTarget);
-    }
-    if (appConfig.activeTableViewId) {
-      global.localStorage.setItem('merchActiveTableViewId_v1', String(appConfig.activeTableViewId));
-      if (typeof hooks.setActiveTableViewId === 'function') hooks.setActiveTableViewId(appConfig.activeTableViewId);
-    }
-
-    global.localStorage.setItem('config_sync_trigger', Date.now().toString());
-    return data;
-  };
-
-  CLOUD.pullCloudBackup = async ({ url, hooks = {}, onProgress }) => {
-    const targetUrl = String(url || CLOUD.getCloudSyncUrl() || '').trim();
-    if (!targetUrl) throw new Error('클라우드 URL이 없습니다.');
-    if (typeof onProgress === 'function') onProgress({ step: 'download', message: '클라우드 데이터 수신 중...' });
-
-    const result = await CLOUD.fetchJson(targetUrl, { method: 'GET' }, '클라우드 데이터 복원');
-    const data = await CLOUD.restoreCloudData(result, hooks);
-    return { status: 'success', data };
-  };
-
-
-
-  // ============================================================
-  // MASTER EXCEL UPLOAD ENGINE
-  // 목적: 환경설정에서 마스터 엑셀 원장을 품목코드 기준으로 비교하고,
-  //       엑셀에 있는 컬럼만 안전하게 master_products에 병합 적용한다.
-  // 정책:
-  // - 기준키: 품목코드 우선, 없으면 코드/상품코드/바코드 후보
-  // - 컬럼 없음: 기존값 유지
-  // - 컬럼 있음 + 공란: 공란으로 반영
-  // - 엑셀에 없는 기존 마스터: 삭제/정지하지 않고 유지
-  // - 적용 전 자동 백업, 변경된 항목만 히스토리 기록
-  // ============================================================
-  const MASTER = ONEAPP.MASTER = ONEAPP.MASTER || {};
-  const MASTER_BACKUP_KEY = 'merchMasterBackups_v1';
-
-  const MASTER_FIELD_ALIASES = {
-    '상품코드': '품목코드',
-    '바코드': '품목코드',
-    '상품번호': '품목코드',
-    '상품명': '품목명',
-    '품명': '품목명',
-    '상품이름': '품목명',
-    '규격명': '규격',
-    '사이즈': '규격',
-    '단량': '규격',
-    'A판매': '도매A',
-    'A판매가': '도매A',
-    'B판매': '도매B',
-    'B판매가': '도매B',
-    'B도매가': '도매B',
-    '매입가': '입고가',
-    '구매단가': '입고가',
-    '매입단가': '입고가',
-    '판매가': '출고가',
-    '판매단가': '출고가',
-    '행사': '행사가',
-    '특가': '행사가',
-    '테마': '행사테마',
-    '프로모션테마': '행사테마',
-    '행사 테마': '행사테마',
-    '테마번호': '행사테마',
-    '포장단위': '단위',
-    '판매단위': '단위',
-    '매입단위': '단위',
-    'UNIT': '단위',
-    'unit': '단위',
-    '카테고리': '견적서',
-    '템플릿': '견적서',
-    '견적분류': '견적서',
-    // 쇼핑몰 정보(info) 파일 컬럼 매핑
-    '판매가격': '출고가',
-    '시중가격': '시중가',
-    '판매': '판매여부',
-    '재고': '재고수량',
-    '기본설명': '간단설명',
-    '상품태그': '검색어등록',
-    '테마1': '행사테마',
-    '테마2': '행사테마',
-    '테마3': '행사테마',
-    '테마4': '행사테마',
-    '테마5': '행사테마',
-    '기본여부': '기본',
-    '관리구분': '기본'
-  };
-
-  MASTER.canonicalMasterFieldName = (field = '') => {
-    const clean = String(field ?? '').trim();
-    if (!clean) return '';
-    // 오더즈판매가/오더즈구매가는 입점사 전용 노출가격이므로 MerchOps 표준 가격 필드로 연결하지 않는다.
-    if (INFO_EXCLUDED_MASTER_FIELDS.includes(clean)) return '';
-    return MASTER_FIELD_ALIASES[clean] || clean;
-  };
-
-  MASTER.normalizeMasterCode = (v) => String(v ?? '').trim().replace(/\s/g, '');
-
-  MASTER.getMasterCode = (item = {}) => {
-    const direct = item['품목코드'] ?? item['상품코드'] ?? item['바코드'] ?? item['상품번호'] ?? item['코드'];
-    return MASTER.normalizeMasterCode(direct);
-  };
-
-  MASTER.getMasterStorageKey = (item = {}) => {
-    const code = MASTER.getMasterCode(item);
-    return code || MASTER.normalizeMasterCode(item['코드']);
-  };
-
-  MASTER.normalizeMasterCellValue = (field, value) => {
-    if (value === undefined || value === null) return '';
+     …11464 tokens truncated…urn '';
     const raw = String(value).trim();
     if (raw === '') return '';
     if (field === '판매여부') return normalizeShopSaleValue(value);
@@ -1407,6 +486,75 @@
       return parseNum(a) === parseNum(b);
     }
     return String(a ?? '') === String(b ?? '');
+  };
+
+  MASTER.validateMasterExcelAnalysis = (analysis = {}) => {
+    const blockingErrors = [];
+    const warnings = [];
+    const summary = analysis && typeof analysis.summary === 'object' ? analysis.summary : {};
+    const candidates = Array.isArray(analysis?.candidates) ? analysis.candidates : [];
+    const sourceColumns = Array.isArray(analysis?.sourceColumns) ? analysis.sourceColumns : [];
+    const totalRows = Number(summary.totalRows ?? analysis?.totalRows ?? 0) || 0;
+    const noCodeCount = Number(summary.noCodeCount ?? analysis?.errors?.length ?? 0) || 0;
+    const duplicateCodeCount = Number(summary.duplicateCodeCount ?? analysis?.duplicateCodes?.length ?? 0) || 0;
+    const updateCount = Number(summary.updateCount ?? 0) || 0;
+    const createCount = Number(summary.createCount ?? 0) || 0;
+    const changeCount = updateCount + createCount;
+
+    if (!analysis || typeof analysis !== 'object' || !Array.isArray(analysis.candidates)) {
+      blockingErrors.push('분석 결과 형식이 올바르지 않습니다. 엑셀을 다시 선택해 분석하세요.');
+    }
+    if (totalRows <= 0) blockingErrors.push('엑셀 데이터 행이 없습니다. 첫 번째 시트와 헤더를 확인하세요.');
+    if (!sourceColumns.includes('품목코드')) {
+      blockingErrors.push('품목코드 컬럼을 찾지 못했습니다. 헤더에 품목코드·상품코드·바코드 중 하나가 필요합니다.');
+    }
+    if (noCodeCount > 0) {
+      const rows = (Array.isArray(analysis?.errors) ? analysis.errors : []).slice(0, 5).map(item => item?.rowNumber).filter(Boolean);
+      blockingErrors.push(`품목코드가 없는 행이 ${noCodeCount.toLocaleString()}건 있습니다${rows.length ? ` (행 ${rows.join(', ')})` : ''}. 해당 행을 수정하거나 삭제하세요.`);
+    }
+    if (duplicateCodeCount > 0) {
+      const codes = (Array.isArray(analysis?.duplicateCodes) ? analysis.duplicateCodes : []).slice(0, 5);
+      blockingErrors.push(`중복 품목코드가 ${duplicateCodeCount.toLocaleString()}건 있습니다${codes.length ? ` (${codes.join(', ')})` : ''}. 코드별로 한 행만 남기세요.`);
+    }
+
+    const seenCodes = new Set();
+    for (const candidate of candidates) {
+      const code = String(candidate?.code || '').trim();
+      if (!code) {
+        blockingErrors.push('적용 후보에 품목코드가 없는 항목이 있습니다. 엑셀을 다시 분석하세요.');
+        break;
+      }
+      if (seenCodes.has(code)) {
+        blockingErrors.push(`적용 후보에 중복 품목코드 ${code}가 있습니다. 엑셀을 다시 분석하세요.`);
+        break;
+      }
+      seenCodes.add(code);
+      if (!['create', 'update', 'same'].includes(String(candidate?.status || ''))) {
+        blockingErrors.push(`품목코드 ${code}의 적용 상태가 올바르지 않습니다. 엑셀을 다시 분석하세요.`);
+        break;
+      }
+    }
+
+    if (candidates.length === 0 && totalRows > 0) {
+      blockingErrors.push('적용 가능한 품목을 찾지 못했습니다. 품목코드와 헤더 구성을 확인하세요.');
+    }
+    if (changeCount === 0 && blockingErrors.length === 0) {
+      blockingErrors.push('변경하거나 추가할 품목이 없습니다. 현재 마스터와 동일한 파일인지 확인하세요.');
+    }
+    if ((Number(summary.missingInExcelCount) || 0) > 0) {
+      warnings.push(`엑셀에 없는 기존 상품 ${(Number(summary.missingInExcelCount) || 0).toLocaleString()}건은 삭제하지 않고 유지합니다.`);
+    }
+
+    const uniqueBlockingErrors = [...new Set(blockingErrors)];
+    return {
+      ok: uniqueBlockingErrors.length === 0,
+      blockingErrors: uniqueBlockingErrors,
+      warnings,
+      changeCount,
+      message: uniqueBlockingErrors.length > 0
+        ? `마스터 적용이 차단되었습니다. ${uniqueBlockingErrors.join(' ')}`
+        : `검증 통과: 수정 ${updateCount.toLocaleString()}건, 신규 ${createCount.toLocaleString()}건을 적용할 수 있습니다.`
+    };
   };
 
   MASTER.analyzeMasterExcelUpload = ({ excelRows = [], currentMaster = {}, sourceHeaders = [] } = {}) => {
@@ -1478,7 +626,7 @@
     const excelCodeSet = new Set(candidates.map(c => c.code));
     const missingInExcel = Object.keys(masterMap).filter(code => !excelCodeSet.has(code));
 
-    return {
+    const analysis = {
       analyzedAt: getNowISO(),
       totalRows: rows.length,
       validRows: normalizedRows.length - duplicateCodes.length,
@@ -1503,6 +651,8 @@
       duplicateGroups,
       missingInExcel
     };
+    analysis.validation = MASTER.validateMasterExcelAnalysis(analysis);
+    return analysis;
   };
 
   MASTER.createMasterBackup = async (masterInput = {}, label = '마스터엑셀업로드') => {
@@ -1530,13 +680,14 @@
     const backup = backups.find(b => b && b.id === backupId);
     if (!backup) throw new Error('백업을 찾을 수 없습니다.');
     const items = Object.values(backup.data || {}).filter(item => item && (item.코드 || item.품목코드));
-    await STORAGE.bulkPutIDB(STORE_MASTER, items);
-    global.localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+    await STORAGE.replaceAllIDB(STORE_MASTER, items);
+    STORAGE.writeLocalValue('merchMaster_sync_trigger', Date.now().toString(), { label: '마스터 복구 알림 저장' });
     return backup;
   };
 
   MASTER.applyMasterExcelUpload = async ({ analysis, currentMaster = {}, label = '마스터엑셀업로드' } = {}) => {
-    if (!analysis || !Array.isArray(analysis.candidates)) throw new Error('적용할 마스터 업로드 분석 결과가 없습니다.');
+    const validation = MASTER.validateMasterExcelAnalysis(analysis);
+    if (!validation.ok) throw new Error(validation.message);
     const masterMap = MASTER.buildMasterIndex(currentMaster);
     const backup = await MASTER.createMasterBackup(masterMap, label);
     const historyLogs = [];
@@ -1579,13 +730,37 @@
     });
 
     const items = Object.values(masterMap).filter(item => item && (item.코드 || item.품목코드));
-    await STORAGE.bulkPutIDB(STORE_MASTER, items);
-    if (historyLogs.length > 0) HISTORY.addHistoryLogs(historyLogs);
-    global.localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
-    global.localStorage.setItem('config_sync_trigger', Date.now().toString());
+    const previousItems = Object.values(backup.data || {}).filter(item => item && (item.코드 || item.품목코드));
+    let previousHistory = null;
+    try { previousHistory = global.localStorage.getItem(HISTORY_KEY); } catch (e) {}
+    let masterWriteCompleted = false;
+
+    HISTORY.assertHistoryForMutation(updateCount + createCount, historyLogs);
+    try {
+      await STORAGE.replaceAllIDB(STORE_MASTER, items);
+      masterWriteCompleted = true;
+      if (historyLogs.length > 0) HISTORY.addHistoryLogs(historyLogs);
+      STORAGE.writeLocalValue('merchMaster_sync_trigger', Date.now().toString(), { label: '마스터 변경 알림 저장' });
+      STORAGE.writeLocalValue('config_sync_trigger', Date.now().toString(), { label: '설정 변경 알림 저장' });
+    } catch (error) {
+      const rollbackFailures = [];
+      if (masterWriteCompleted) {
+        try { await STORAGE.replaceAllIDB(STORE_MASTER, previousItems); }
+        catch (rollbackError) { rollbackFailures.push(ERRORS.toActionableMessage(rollbackError, '마스터 자동복구')); }
+      }
+      try { STORAGE.restoreLocalValue(HISTORY_KEY, previousHistory, { label: '변경 이력 자동복구' }); }
+      catch (rollbackError) { rollbackFailures.push(ERRORS.toActionableMessage(rollbackError, '변경 이력 자동복구')); }
+
+      const baseMessage = ERRORS.toActionableMessage(error, '마스터 적용');
+      if (rollbackFailures.length > 0) {
+        throw new Error(`${baseMessage} 자동복구에도 실패했습니다: ${rollbackFailures.join(' / ')}. 적용을 중단하고 백업 복구를 실행하세요.`);
+      }
+      throw new Error(`${baseMessage} 변경 전 데이터로 자동 복구했습니다.`);
+    }
 
     return {
       status: 'success',
+      validation,
       backup,
       masterMap,
       updateCount,
@@ -1610,6 +785,7 @@
   global.setIDB = global.setIDB || STORAGE.setIDB;
   global.getAllIDB = global.getAllIDB || STORAGE.getAllIDB;
   global.bulkPutIDB = global.bulkPutIDB || STORAGE.bulkPutIDB;
+  global.replaceAllIDB = global.replaceAllIDB || STORAGE.replaceAllIDB;
   global.getDefaultMerchMarginRules = global.getDefaultMerchMarginRules || getDefaultMerchMarginRules;
   global.sanitizeMerchMarginRules = global.sanitizeMerchMarginRules || sanitizeMerchMarginRules;
   global.normalizeMerchWarehouseForRule = global.normalizeMerchWarehouseForRule || normalizeMerchWarehouseForRule;
@@ -1632,6 +808,7 @@
   global.pushConfigBackup = global.pushConfigBackup || CLOUD.pushConfigBackup;
   global.pullConfigBackup = global.pullConfigBackup || CLOUD.pullConfigBackup;
   global.analyzeMasterExcelUpload = global.analyzeMasterExcelUpload || MASTER.analyzeMasterExcelUpload;
+  global.validateMasterExcelAnalysis = global.validateMasterExcelAnalysis || MASTER.validateMasterExcelAnalysis;
   global.applyMasterExcelUpload = global.applyMasterExcelUpload || MASTER.applyMasterExcelUpload;
   global.getMasterBackups = global.getMasterBackups || MASTER.getMasterBackups;
   global.restoreMasterBackup = global.restoreMasterBackup || MASTER.restoreMasterBackup;
