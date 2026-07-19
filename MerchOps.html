@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.143_PromotionWorkbench]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.144_DragMultiSelect]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -44,6 +44,7 @@
         // v2.1.141: 카탈로그를 별도 source/업무모드가 아닌 마스터 작업범위로 분리한다. 미선택은 전체 마스터, 선택은 해당 견적서/카테고리 태그 마스터만 범위가 되며 구매·재고·정보에도 공통 적용한다. 견적은 선택 범위를 기준으로 추가·누락을 비교하되 카탈로그 선택만으로 견적 양식으로 전환하거나 managedItems를 생성하지 않는다.
         // v2.1.142: 기존 변동 필터와 견적 가격확인을 가격확인 하나로 통합한다. 견적 비교에서는 입고가·출고가·출고가 공란·룰적용가 차이를, 구매·재고·정보에서는 기존 마스터 입고가 대비 작업 입고가 변동을 같은 공통 엔진으로 판정한다. 구버전 저장필터 changed는 priceCheck로 자동 변환한다.
         // v2.1.143: 테마1~5·행사상품/행사제외/행사제안·룰적용·행사가 생성/초기화를 일반 필터줄에서 분리해 행사 작업대로 구축한다. 행사작업 버튼으로 전용 패널을 열고, 행사 필터가 남아 있으면 버튼 배지와 강조상태로 숨은 필터를 알린다. 테마 선택은 상세필터 패널을 강제 노출하지 않는다.
+        // v2.1.144: 행사 작업대·행사가 라벨을 보더 없는 텍스트로 단순화한다. 카테고리와 테마는 일반 클릭 단일선택, Ctrl/⌘ 클릭 다중선택을 유지하면서 마우스 드래그 연속선택을 지원한다. 테이블 상품 체크도 첫 체크박스에서 드래그해 연속 선택/해제한다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결하며 오더즈판매가/오더즈구매가는 작업·출력에서 제외한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
@@ -6017,6 +6018,95 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
         if (screenBaseField === '최신단가') setScreenBaseField('입고가');
     }, [screenBaseField]);
     const isMultiSelectEvent = (event) => !!(event && (event.ctrlKey || event.metaKey));
+    // [M-DRAG-FILTER-01] 카테고리/테마 마우스 드래그 연속선택
+    // - 클릭: 단일선택, 같은 항목 재클릭 시 해제
+    // - Ctrl/⌘ 클릭: 기존 선택을 유지하며 개별 추가/제거
+    // - 드래그: 시작 항목부터 지나간 항목을 연속 선택, Ctrl/⌘ 드래그는 기존 선택을 유지하며 추가/제거
+    const categoryDragRef = useRef({ active: false, moved: false, start: '', multi: false, mode: 'add', base: [], visited: [] });
+    const themeDragRef = useRef({ active: false, moved: false, start: '', multi: false, mode: 'add', base: [], visited: [] });
+    const suppressFilterClickRef = useRef({ category: false, theme: false });
+    useEffect(() => {
+        const finishDrag = () => {
+            if (categoryDragRef.current.active && categoryDragRef.current.moved) {
+                suppressFilterClickRef.current.category = true;
+                setTimeout(() => { suppressFilterClickRef.current.category = false; }, 0);
+            }
+            if (themeDragRef.current.active && themeDragRef.current.moved) {
+                suppressFilterClickRef.current.theme = true;
+                setTimeout(() => { suppressFilterClickRef.current.theme = false; }, 0);
+            }
+            categoryDragRef.current.active = false;
+            themeDragRef.current.active = false;
+        };
+        window.addEventListener('mouseup', finishDrag);
+        window.addEventListener('blur', finishDrag);
+        return () => {
+            window.removeEventListener('mouseup', finishDrag);
+            window.removeEventListener('blur', finishDrag);
+        };
+    }, []);
+    const beginCategoryDrag = (cat, event) => {
+        if (event.button !== 0 || !setCategoryFilters) return;
+        const current = Array.isArray(categoryFilters) ? [...categoryFilters] : [];
+        categoryDragRef.current = {
+            active: true,
+            moved: false,
+            start: cat,
+            multi: isMultiSelectEvent(event),
+            mode: current.includes(cat) ? 'remove' : 'add',
+            base: current,
+            visited: [cat]
+        };
+    };
+    const continueCategoryDrag = (cat) => {
+        const drag = categoryDragRef.current;
+        if (!drag.active || drag.visited.includes(cat)) return;
+        drag.moved = true;
+        drag.visited = [...drag.visited, cat];
+        setCategoryFilters(() => {
+            if (!drag.multi) return [...drag.visited];
+            const next = new Set(drag.base);
+            drag.visited.forEach(value => drag.mode === 'remove' ? next.delete(value) : next.add(value));
+            return Array.from(next);
+        });
+        setSelectedRows(new Set());
+    };
+    const beginThemeDrag = (value, event) => {
+        if (event.button !== 0) return;
+        const current = Array.isArray(detailFilters) ? detailFilters.filter(v => /^theme[1-5]$/.test(String(v))) : [];
+        themeDragRef.current = {
+            active: true,
+            moved: false,
+            start: value,
+            multi: isMultiSelectEvent(event),
+            mode: current.includes(value) ? 'remove' : 'add',
+            base: [...current],
+            visited: [value]
+        };
+    };
+    const continueThemeDrag = (value) => {
+        const drag = themeDragRef.current;
+        if (!drag.active || drag.visited.includes(value)) return;
+        drag.moved = true;
+        drag.visited = [...drag.visited, value];
+        setDetailFilters(prev => {
+            const current = Array.isArray(prev) ? prev : [];
+            const nonTheme = current.filter(v => !/^theme[1-5]$/.test(String(v)));
+            if (!drag.multi) return [...nonTheme, ...drag.visited];
+            const next = new Set(drag.base);
+            drag.visited.forEach(item => drag.mode === 'remove' ? next.delete(item) : next.add(item));
+            return [...nonTheme, ...Array.from(next)];
+        });
+        setSelectedRows(new Set());
+    };
+    const handleCategoryClick = (cat, event) => {
+        if (suppressFilterClickRef.current.category) return;
+        toggleCategoryFilter(cat, event);
+    };
+    const handleThemeClick = (value, event) => {
+        if (suppressFilterClickRef.current.theme) return;
+        toggleThemeFilter(value, event);
+    };
     const toggleCategoryFilter = (cat, event = null) => {
         if (!setCategoryFilters)
             return;
@@ -6119,9 +6209,9 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
     };
     return (React.createElement("div", { className: "flex flex-col w-full border-b border-slate-200 bg-white pb-2 shadow-sm relative z-10" },
         React.createElement("div", { className: "px-5 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-2 overflow-x-auto overflow-y-hidden w-full whitespace-nowrap" },
-            React.createElement("div", { className: "flex items-center justify-start gap-1 min-w-0 shrink-0 rounded-xl border border-slate-200 bg-white/90 px-1.5 py-1 shadow-sm", title: "분류/탐색: 카테고리 필터입니다. 기본 클릭은 단일선택, Ctrl/⌘ 클릭은 다중선택입니다." },
+            React.createElement("div", { className: "flex items-center justify-start gap-1 min-w-0 shrink-0 rounded-xl border border-slate-200 bg-white/90 px-1.5 py-1 shadow-sm select-none", title: "분류/탐색: 클릭 단일선택, Ctrl/⌘ 클릭 다중선택, 마우스 드래그 연속선택" },
                 React.createElement("button", { onClick: () => { setCategoryFilters?.([]); setSelectedRows(new Set()); }, className: `h-8 px-2.5 rounded-lg text-[11px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${(!Array.isArray(categoryFilters) || categoryFilters.length === 0) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-blue-50'}`, title: "전체 카테고리: 카테고리 필터를 해제해 전체를 봅니다." }, "전체"),
-                MERCH_CATEGORY_FILTERS.map(cat => (React.createElement("button", { key: `cat-main-${cat}`, onClick: (event) => toggleCategoryFilter(cat, event), className: `h-8 px-2.5 rounded-lg text-[11px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 ${categoryFilters.includes(cat) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-blue-50'}`, title: `${cat} 카테고리: 기본 클릭은 단일선택, Ctrl/⌘ 클릭은 다중선택` }, cat)))),
+                MERCH_CATEGORY_FILTERS.map(cat => (React.createElement("button", { key: `cat-main-${cat}`, onMouseDown: (event) => beginCategoryDrag(cat, event), onMouseEnter: () => continueCategoryDrag(cat), onClick: (event) => handleCategoryClick(cat, event), draggable: false, className: `h-8 px-2.5 rounded-lg text-[11px] font-black border shadow-sm transition-all whitespace-nowrap shrink-0 select-none ${categoryFilters.includes(cat) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-blue-50'}`, title: `${cat} 카테고리: 클릭 단일선택 / Ctrl·⌘ 클릭 다중선택 / 드래그 연속선택` }, cat)))),
             React.createElement("div", { className: "flex items-center justify-start gap-1 min-w-0 shrink-0 rounded-xl border border-indigo-100 bg-white/90 px-1.5 py-1 shadow-sm", title: "리스트/카탈로그 작업" },
                 React.createElement("div", { className: "relative shrink-0" },
                     React.createElement("i", { className: "fas fa-bolt absolute left-3 top-2.5 text-indigo-500 pointer-events-none text-[13px]" }),
@@ -6221,28 +6311,28 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                     React.createElement("button", { onClick: handleFilterResetOnly, className: "h-9 w-9 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-sm hover:bg-indigo-100 hover:border-indigo-300 flex items-center justify-center shrink-0", title: "필터 초기화", "aria-label": "필터 초기화" },
                         React.createElement("i", { className: "fas fa-filter-circle-xmark text-[13px]" })),
                     React.createElement(SearchBar, { value: globalSearch, onChange: setGlobalSearch }))),
-            promoWorkbenchOpen && (React.createElement("div", { className: "rounded-xl border border-rose-200 bg-gradient-to-r from-purple-50/80 via-white to-rose-50/80 px-3 py-2 shadow-inner flex items-center gap-2 flex-wrap", title: "현재 마스터/카탈로그 작업범위를 그대로 사용하는 행사 전용 작업대" },
-                React.createElement("span", { className: "h-8 px-2.5 rounded-lg bg-rose-600 text-white text-[12px] font-black flex items-center shrink-0 shadow-sm" },
+            promoWorkbenchOpen && (React.createElement("div", { className: "rounded-xl border border-rose-200 bg-gradient-to-r from-purple-50/80 via-white to-rose-50/80 px-3 py-2 shadow-inner flex items-center gap-2 flex-wrap select-none", title: "현재 마스터/카탈로그 작업범위를 그대로 사용하는 행사 전용 작업대" },
+                React.createElement("span", { className: "h-8 px-1 text-rose-700 text-[12px] font-black flex items-center shrink-0" },
                     React.createElement("i", { className: "fas fa-tags mr-1.5 text-[12px]" }),
                     "행사 작업대"),
-                React.createElement("div", { className: "flex h-8 rounded-full border border-purple-200 overflow-hidden bg-white shadow-sm shrink-0", title: "행사테마 복수선택: 클릭으로 개별 선택/해제합니다." },
+                React.createElement("div", { className: "flex h-8 rounded-full border border-purple-200 overflow-hidden bg-white shadow-sm shrink-0 select-none", title: "행사테마: 클릭 단일선택, Ctrl/⌘ 클릭 다중선택, 마우스 드래그 연속선택" },
                     [
                         ['theme1', '테마1'],
                         ['theme2', '테마2'],
                         ['theme3', '테마3'],
                         ['theme4', '테마4'],
                         ['theme5', '테마5']
-                    ].map(([value, label], idx) => React.createElement("button", { key: `promo-work-theme-${value}`, onClick: (event) => toggleThemeFilter(value, { ...event, ctrlKey: true }), className: `h-full px-2.5 text-[11px] font-black transition-all whitespace-nowrap ${idx > 0 ? 'border-l border-purple-200' : ''} ${detailFilters.includes(value) ? 'bg-purple-700 text-white' : 'bg-white text-purple-700 hover:bg-purple-50'}`, title: `${label}: 다른 테마와 함께 복수선택 가능` }, label))),
+                    ].map(([value, label], idx) => React.createElement("button", { key: `promo-work-theme-${value}`, onMouseDown: (event) => beginThemeDrag(value, event), onMouseEnter: () => continueThemeDrag(value), onClick: (event) => handleThemeClick(value, event), draggable: false, className: `h-full px-2.5 text-[11px] font-black transition-all whitespace-nowrap select-none ${idx > 0 ? 'border-l border-purple-200' : ''} ${detailFilters.includes(value) ? 'bg-purple-700 text-white' : 'bg-white text-purple-700 hover:bg-purple-50'}`, title: `${label}: 클릭 단일선택 / Ctrl·⌘ 클릭 다중선택 / 드래그 연속선택` }, label))),
                 React.createElement("div", { className: "flex h-8 rounded-full border border-rose-200 overflow-hidden bg-white shadow-sm shrink-0", title: "행사상태 분류: 한 항목만 선택되며 다시 누르면 해제됩니다." },
                     [['promo', '행사상품'], ['promoExclude', '행사제외'], ['promoSuggest', '행사제안']].map(([value, label], idx) => React.createElement("button", { key: `promo-work-state-${value}`, onClick: () => applyPriceFilter(value), className: `h-full px-2.5 text-[11px] font-black transition-all whitespace-nowrap ${idx > 0 ? 'border-l border-rose-200' : ''} ${priceFilter === value ? 'bg-rose-600 text-white' : 'bg-white text-rose-700 hover:bg-rose-50'}`, title: `${label}: 한 번 누르면 선택, 다시 누르면 해제` }, label))),
                 React.createElement("div", { className: "w-px h-6 bg-slate-300 mx-1 shrink-0" }),
                 React.createElement("button", { onClick: handleForceApplyMarginRules, disabled: fullDisplayRows.length === 0, className: `h-8 px-3 rounded-lg text-[11px] font-black shadow-sm flex items-center border transition-all whitespace-nowrap shrink-0 ${fullDisplayRows.length > 0 ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택행이 있으면 선택행, 없으면 현재 필터/검색 결과 전체에 룰을 적용합니다. 견적은 출고가/시중가, 구매·재고는 출고가만 계산하고 시중가는 마스터값을 유지합니다." },
                     React.createElement("i", { className: "fas fa-magic mr-1.5 text-[12px]" }),
                     "룰적용"),
-                React.createElement("div", { className: "flex h-8 rounded-lg border border-rose-200 overflow-hidden bg-white shadow-sm shrink-0", title: "행사가 생성·초기화 작업" },
-                    React.createElement("span", { className: "px-2 flex items-center bg-rose-50 text-rose-700 text-[11px] font-black whitespace-nowrap" }, "행사가:"),
-                    React.createElement("button", { onClick: () => setPromoActionOpen(v => !v), disabled: fullDisplayRows.length === 0, className: `h-full px-2.5 text-[11px] font-black border-l border-rose-200 transition-all whitespace-nowrap ${promoActionOpen ? 'bg-rose-600 text-white' : (fullDisplayRows.length > 0 ? 'bg-white text-rose-700 hover:bg-rose-50' : 'bg-slate-100 text-slate-300 cursor-not-allowed')}`, title: "행사가 생성 설정을 열고 닫습니다." }, "생성"),
-                    React.createElement("button", { onClick: handleResetPromoValues, disabled: fullDisplayRows.length === 0 && activeThemeFilters.length === 0, className: `h-full px-2.5 text-[11px] font-black border-l border-rose-200 transition-all whitespace-nowrap ${(fullDisplayRows.length > 0 || activeThemeFilters.length > 0) ? 'bg-white text-rose-700 hover:bg-rose-50' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`, title: "선택 테마 또는 현재 작업범위의 행사값을 초기화합니다. 마스터 상태에서는 선택 테마가 대상입니다." }, "초기화")),
+                React.createElement("div", { className: "flex h-8 items-center gap-1 bg-transparent shrink-0", title: "행사가 생성·초기화 작업" },
+                    React.createElement("span", { className: "px-1 flex items-center text-rose-700 text-[11px] font-black whitespace-nowrap" }, "행사가:"),
+                    React.createElement("button", { onClick: () => setPromoActionOpen(v => !v), disabled: fullDisplayRows.length === 0, className: `h-8 px-2.5 rounded-lg text-[11px] font-black border transition-all whitespace-nowrap ${promoActionOpen ? 'bg-rose-600 text-white border-rose-600' : (fullDisplayRows.length > 0 ? 'bg-white text-rose-700 border-rose-200 hover:bg-rose-50' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed')}`, title: "행사가 생성 설정을 열고 닫습니다." }, "생성"),
+                    React.createElement("button", { onClick: handleResetPromoValues, disabled: fullDisplayRows.length === 0 && activeThemeFilters.length === 0, className: `h-8 px-2.5 rounded-lg text-[11px] font-black border transition-all whitespace-nowrap ${(fullDisplayRows.length > 0 || activeThemeFilters.length > 0) ? 'bg-white text-rose-700 border-rose-200 hover:bg-rose-50' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`, title: "선택 테마 또는 현재 작업범위의 행사값을 초기화합니다. 마스터 상태에서는 선택 테마가 대상입니다." }, "초기화")),
                 promoWorkbenchFilterCount > 0 && React.createElement("button", { onClick: () => { setPriceFilter('all'); setDetailFilters(prev => (Array.isArray(prev) ? prev.filter(v => !/^theme[1-5]$/.test(String(v))) : [])); setSelectedRows(new Set()); }, className: "h-8 px-2.5 rounded-lg text-[11px] font-black border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 shadow-sm shrink-0", title: "테마와 행사상태 필터만 해제합니다." },
                     React.createElement("i", { className: "fas fa-filter-circle-xmark mr-1.5 text-[11px]" }),
                     "행사필터 해제"))),
@@ -7701,9 +7791,9 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
     }
     const reportTone = reportLines.some(t => String(t).includes('역마진') || String(t).includes('근거 없음') || String(t).includes('근거없음')) ? 'text-rose-700' : (latestParserHistory ? 'text-slate-700' : 'text-slate-500');
     return (React.createElement("tr", { className: `group border-b border-slate-200 transition-all relative z-0 hover:z-10 ${isMasterAddedRow ? 'bg-amber-50/70 hover:bg-amber-100/70' : 'hover:bg-slate-50'} ${isStopped ? 'opacity-70 bg-slate-50' : ''}` },
-        React.createElement("td", { className: `sticky z-20 px-3 py-2 border-r border-r-slate-200 transition-colors min-w-[230px] w-[230px] max-w-[230px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : (isMasterAddedRow ? 'bg-amber-50/95 group-hover:!bg-amber-100/90 border-l-4 border-l-amber-400' : 'bg-white group-hover:!bg-slate-50 border-l-4 border-l-transparent group-hover:!border-l-slate-300')}`, style: { left: 0, ...widthStyle('core:마스터 정보', '마스터 정보', 230) } },
+        React.createElement("td", { onMouseEnter: () => actions.continueRowSelectionDrag?.(window.getManagedRowKey(row)), className: `sticky z-20 px-3 py-2 border-r border-r-slate-200 transition-colors min-w-[230px] w-[230px] max-w-[230px] ${isSel ? '!bg-indigo-100/70 border-l-4 !border-l-indigo-500' : (isMasterAddedRow ? 'bg-amber-50/95 group-hover:!bg-amber-100/90 border-l-4 border-l-amber-400' : 'bg-white group-hover:!bg-slate-50 border-l-4 border-l-transparent group-hover:!border-l-slate-300')}`, style: { left: 0, ...widthStyle('core:마스터 정보', '마스터 정보', 230) } },
             React.createElement("div", { className: "flex gap-2 items-center w-full min-w-0" },
-                isEstimateUploaded && (React.createElement("input", { type: "checkbox", className: "w-4 h-4 rounded border-slate-300 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500", checked: isSel, onChange: () => { const n = new Set(state.selectedRows); n.has(window.getManagedRowKey(row)) ? n.delete(window.getManagedRowKey(row)) : n.add(window.getManagedRowKey(row)); actions.setSelectedRows(n); } })),
+                isEstimateUploaded && (React.createElement("input", { type: "checkbox", className: "w-4 h-4 rounded border-slate-300 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500 select-none", checked: isSel, onMouseDown: (event) => actions.beginRowSelectionDrag?.(window.getManagedRowKey(row), event), onClick: (event) => { event.preventDefault(); event.stopPropagation(); }, onChange: () => {}, onKeyDown: (event) => { if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); actions.toggleRowSelectionKeyboard?.(window.getManagedRowKey(row)); } }, title: "클릭 선택/해제 · 누른 채 위아래로 드래그하면 연속 선택/해제" })),
                 React.createElement("div", { className: "flex flex-col min-w-0 w-full overflow-hidden ml-1" },
                     React.createElement("div", { className: "flex items-center gap-1 mb-0.5 min-w-0" },
                         React.createElement("span", { className: `text-[10px] font-mono truncate block ${isMasterAddedRow ? 'text-amber-600' : 'text-indigo-400'}` }, row.코드),
@@ -7780,6 +7870,48 @@ const ExcelDataGrid = ({ state, actions }) => {
     const { isEstimateUploaded, selectedRows, fullDisplayRows, visibleMasterCols, visibleUploadCols, masterProducts, activeTableTarget = 'estimate', registrationMode = false, config = {} } = state;
     const [visibleCount, setVisibleCount] = useState(100);
     useEffect(() => { setVisibleCount(100); }, [fullDisplayRows]);
+    // [M-DRAG-ROW-01] 테이블 상품 체크박스 드래그 연속선택
+    // 체크박스에서 마우스를 누른 뒤 첫 번째 열을 따라 이동하면 시작 상태 기준으로 연속 선택/해제한다.
+    const rowSelectionDragRef = useRef({ active: false, mode: 'add', visited: new Set() });
+    useEffect(() => {
+        const finishRowDrag = () => { rowSelectionDragRef.current.active = false; };
+        window.addEventListener('mouseup', finishRowDrag);
+        window.addEventListener('blur', finishRowDrag);
+        return () => {
+            window.removeEventListener('mouseup', finishRowDrag);
+            window.removeEventListener('blur', finishRowDrag);
+        };
+    }, []);
+    const applyRowDragSelection = useCallback((rowKey) => {
+        const drag = rowSelectionDragRef.current;
+        if (!drag.active || !rowKey || drag.visited.has(rowKey)) return;
+        drag.visited.add(rowKey);
+        actions.setSelectedRows(prev => {
+            const next = new Set(prev || []);
+            if (drag.mode === 'remove') next.delete(rowKey);
+            else next.add(rowKey);
+            return next;
+        });
+    }, [actions.setSelectedRows]);
+    const beginRowSelectionDrag = useCallback((rowKey, event) => {
+        if (!rowKey || event.button !== 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const isSelected = selectedRows.has(rowKey);
+        rowSelectionDragRef.current = { active: true, mode: isSelected ? 'remove' : 'add', visited: new Set() };
+        applyRowDragSelection(rowKey);
+    }, [selectedRows, applyRowDragSelection]);
+    const continueRowSelectionDrag = useCallback((rowKey) => {
+        applyRowDragSelection(rowKey);
+    }, [applyRowDragSelection]);
+    const toggleRowSelectionKeyboard = useCallback((rowKey) => {
+        actions.setSelectedRows(prev => {
+            const next = new Set(prev || []);
+            next.has(rowKey) ? next.delete(rowKey) : next.add(rowKey);
+            return next;
+        });
+    }, [actions.setSelectedRows]);
+    const tableRowActions = useMemo(() => ({ ...actions, beginRowSelectionDrag, continueRowSelectionDrag, toggleRowSelectionKeyboard }), [actions, beginRowSelectionDrag, continueRowSelectionDrag, toggleRowSelectionKeyboard]);
     const handleScroll = useCallback((e) => {
         const { scrollTop, clientHeight, scrollHeight } = e.target;
         if (scrollHeight - scrollTop <= clientHeight + 150)
@@ -7925,7 +8057,7 @@ const ExcelDataGrid = ({ state, actions }) => {
                             React.createElement("i", { className: "fas fa-folder-open text-4xl mb-4 block" }),
                             isEstimateUploaded ? "작업 버퍼에 일치하는 항목이 없습니다." : "조건에 일치하는 상품이 없거나, 데이터가 비어있습니다.\n상단의 [파서리스트] 또는 [카탈로그]를 통해 목록을 띄우세요."))) : displayRows.map((row, idx) => {
                         const isSel = selectedRows.has(window.getManagedRowKey(row));
-                        return React.createElement(MemoizedTableRow, { key: window.getManagedRowKey(row), row: row, idx: idx, state: { ...state, columnWidths: currentColumnWidths }, actions: actions, isSel: isSel, mItem: (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(masterProducts, row) : masterProducts[row.코드]) || {} });
+                        return React.createElement(MemoizedTableRow, { key: window.getManagedRowKey(row), row: row, idx: idx, state: { ...state, columnWidths: currentColumnWidths }, actions: tableRowActions, isSel: isSel, mItem: (window.getMerchMasterItemForRow ? window.getMerchMasterItemForRow(masterProducts, row) : masterProducts[row.코드]) || {} });
                     }),
                     React.createElement("tr", null,
                         React.createElement("td", { colSpan: "50", className: "h-[80px] bg-slate-50 border-t border-slate-200 text-center align-middle" }, hiddenCount > 0 ? (React.createElement("div", { className: "inline-flex items-center justify-center text-[12px] font-bold text-slate-500 bg-white px-6 py-2 rounded-full border shadow-sm mt-5" },
@@ -7940,7 +8072,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.143_PromotionWorkbench]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.144_DragMultiSelect]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -8353,7 +8485,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.143_PromotionWorkbench")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.144_DragMultiSelect")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
