@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.89)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.90)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.89.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.90.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -909,7 +909,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.89',
+    version: 'V1.a22.90',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -2271,7 +2271,7 @@ const FILTER_SORT_MODULE = Object.freeze({
 // V1.a22.88: 보기 전환 시 기존 이슈 Tab 세션/ref/지연 포커스를 즉시 종료하고, 전역 Tab 가로채기는 작업 테이블 행 내부에서만 실행한다. 통합형 직접수정의 실제 sourceKey를 포커스 추적에 사용해 일반 Tab과 이슈 Tab의 충돌을 차단한다.
 // V1.a22.88: 스페이스바/CTRL 대체판매는 실제 출고 상품의 원가를 판매전표 상품의 단가(입고가)에 반영한다. 원가출처 Lot·BOX 단가는 보존하고 대상 판매상품에만 환산원가를 생성한다.
 // V1.a22.88: 스페이스바 대체판매 역할 판정은 마스터 원물/소분 관계보다 ‘단가가 있는 실제출고 상품 → 단가 0 판매전표 상품’을 우선한다. 원가 생성 실패 시 단가이슈를 확인완료로 바꾸지 않고 작업을 중단한다.
-// V1.a22.89: 코드통합형 통합후보 탐색은 Enter=다음, Shift+Enter=이전으로 분리한다. 일반 Tab/셀 이동과 재고·Lot 이슈 Tab 큐는 그대로 유지하며, 첫/마지막 후보에서 순환하지 않고 정지한다.
+// V1.a22.90: 다음항목 점프 키를 Tab으로 통일한다. 코드통합형에서는 Tab=다음 통합후보, Shift+Tab=이전 통합후보 전용이며, Lot상세형의 재고·Lot 이슈 Tab 큐와 화면 모드별로 분리한다. 첫/마지막 후보에서는 순환하지 않고 정지한다.
 // V1.a22.69: 코드통합형 해제/다시 통합 상태 관리.
 // 원본 Lot은 수정하지 않고 화면 보기/엑셀 1번 시트 출력에만 반영한다.
 const DATAOPS_CODE_MERGE_OVERRIDE_MODULE = Object.freeze({
@@ -6758,9 +6758,8 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
     const handleKd = (e, type) => {
         const cols = ['price-input', 'base-prev', 'base-in', 'base-out', 'actual-input'];
         const colIdx = cols.indexOf(type);
-        // V1.a22.89: 코드통합형의 통합후보 행에서는 Enter/Shift+Enter를 후보 이동기로 넘긴다.
-        // 일반행 Enter 세로이동과 모든 Tab 동작은 기존 그대로 유지한다.
-        if (e.key === 'Enter' && isMergeBoxRow && (isCodeSummaryViewRow || isMergeDisabledRow)) return;
+        // V1.a22.90: 코드통합형의 Tab/Shift+Tab은 전역 통합후보 이동기가 전담한다.
+        // Enter와 방향키는 기존 셀 이동 규칙을 유지한다.
         if (e.key === 'ArrowRight') {
             if (colIdx < cols.length - 1) {
                 e.preventDefault();
@@ -7089,8 +7088,8 @@ function App() {
         }
         setMergeOverrideVersion(v => v + 1);
     }, []);
-    // V1.a22.89: 코드통합형 통합후보 이동은 이슈카드 Tab 큐와 완전히 분리한다.
-    // Enter/Shift+Enter 및 화면 버튼은 동일한 DOM 후보 목록과 커서를 사용한다.
+    // V1.a22.90: 코드통합형 통합후보 이동은 Tab/Shift+Tab 전용이다.
+    // Lot상세형의 재고·Lot 이슈 Tab 큐와 화면 모드로 분리하며, 화면 버튼도 동일한 DOM 후보 목록과 커서를 사용한다.
     const getVisibleMergeCandidateRows = useCallback(() => {
         return Array.from(document.querySelectorAll('tr[data-merge-group-start="1"]'))
             .filter(row => row && row.isConnected && row.getClientRects().length > 0);
@@ -10283,21 +10282,8 @@ ${balanceText}
                 if (document.querySelector('.modal-bounce'))
                     return;
                 const activeEl = document.activeElement;
-                const eventTarget = e.target;
-                const originTag = eventTarget && eventTarget.tagName ? eventTarget.tagName.toLowerCase() : '';
-                const activeMergeRow = eventTarget && eventTarget.closest ? eventTarget.closest('tr[data-merge-group-start="1"]') : null;
-                // V1.a22.89 우선순위: 모달 확인 > 코드통합형 후보 이동 > 일반 입력/분석 실행.
-                // 키를 누른 원래 행(e.target)이 통합후보일 때만 가로채므로, 일반행 Enter가 다음 행에 포커스를 준 뒤
-                // 우연히 통합후보 이동까지 연속 실행되는 충돌을 막는다. 버튼/선택상자의 기본 Enter도 유지한다.
-                if (activeMergeRow && originTag !== 'button' && originTag !== 'select' && originTag !== 'textarea') {
-                    if (!e.shiftKey) latestHandlers.current.flushFocusedTableEdit();
-                    const moved = latestHandlers.current.moveMergeCandidate(e.shiftKey ? 'prev' : 'next');
-                    if (moved) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        return;
-                    }
-                }
+                // V1.a22.90: 통합후보 점프는 Tab/Shift+Tab으로 이동했다.
+                // Enter는 기존 입력 세로이동·모달 확인·전체마감 실행 규칙만 담당한다.
                 const tag = activeEl ? activeEl.tagName.toLowerCase() : '';
                 const type = activeEl ? activeEl.type : '';
                 const isTyping = tag === 'textarea' || (tag === 'input' && (type === 'text' || type === 'number' || type === 'search'));
@@ -10350,25 +10336,37 @@ ${balanceText}
                     issueFocusTimersRef.current = [];
                 }
             }
-            if (e.key === 'Tab' && activeIssueModeRef.current) {
-                const eventTarget = e.target;
-                const isInsideWorkRow = !!(eventTarget && eventTarget.closest && eventTarget.closest('tr[data-batch]'));
-                // 필터·보기 버튼·모달·브라우저 기본 포커스 이동까지 이슈 Tab이 가로채지 않는다.
-                if (!isInsideWorkRow)
+            if (e.key === 'Tab') {
+                // V1.a22.90 공통 규칙: Tab=다음항목 점프, Shift+Tab=이전항목 점프.
+                // 코드통합형에서는 포커스 위치와 관계없이 통합후보 전용으로 사용한다.
+                // 현재 입력값은 정방향 이동 전에 즉시 저장하고, 후보가 없어도 일반 Tab으로 흘려보내지 않는다.
+                if (viewMode === 'CODE_SUMMARY') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!e.shiftKey) latestHandlers.current.flushFocusedTableEdit();
+                    latestHandlers.current.moveMergeCandidate(e.shiftKey ? 'prev' : 'next');
                     return;
-                e.preventDefault();
-                const session = issueReviewSessionRef.current;
-                // Shift+Tab은 조회 복귀이므로 수동 입력 완료를 강제하지 않는다.
-                // 정방향 Tab은 다른 상품 수정 중이었다면 현재 셀을 먼저 저장하고 원래 검토 커서에서 이어간다.
-                if (!e.shiftKey && session && session.detourActive)
-                    latestHandlers.current.flushFocusedTableEdit();
-                latestHandlers.current.handleIssueJump(activeIssueModeRef.current, e.shiftKey ? 'prev' : 'next');
+                }
+                if (activeIssueModeRef.current) {
+                    const eventTarget = e.target;
+                    const isInsideWorkRow = !!(eventTarget && eventTarget.closest && eventTarget.closest('tr[data-batch]'));
+                    // Lot상세형 이슈 탐색은 작업행 내부에서만 Tab을 점프키로 사용한다.
+                    if (!isInsideWorkRow)
+                        return;
+                    e.preventDefault();
+                    const session = issueReviewSessionRef.current;
+                    // Shift+Tab은 조회 복귀이므로 수동 입력 완료를 강제하지 않는다.
+                    // 정방향 Tab은 다른 상품 수정 중이었다면 현재 셀을 먼저 저장하고 원래 검토 커서에서 이어간다.
+                    if (!e.shiftKey && session && session.detourActive)
+                        latestHandlers.current.flushFocusedTableEdit();
+                    latestHandlers.current.handleIssueJump(activeIssueModeRef.current, e.shiftKey ? 'prev' : 'next');
+                }
             }
         };
         window.addEventListener('keydown', handleGlobalEnter);
         window.addEventListener('keydown', handleGlobalKeys);
         return () => { window.removeEventListener('keydown', handleGlobalEnter); window.removeEventListener('keydown', handleGlobalKeys); };
-    }, [linkSourceKey, appStep, isProcessing, files, guideModalOpen]);
+    }, [linkSourceKey, appStep, isProcessing, files, guideModalOpen, viewMode]);
     const viewProductData = useMemo(() => DATAOPS_VIEW_LAYER_MODULE.buildViewRows(productData, { viewMode }), [productData, viewMode, mergeOverrideVersion]);
     const handleViewLayerEditBlocked = useCallback(() => {
         setAlertMsg('코드 통합형의 원본 1행 상품은 현재 화면에서 바로 수정할 수 있습니다. 통합2 이상 또는 원본 다중행은 어느 Lot에 반영할지 모호하므로 [Lot 상세형]에서 수정하세요.');
@@ -10903,9 +10901,9 @@ ${balanceText}
                                             };
                                             return React.createElement("button", { key: mode, onClick: handleModeClick, title: mode === 'LOT_DETAIL' ? 'Lot별 상세행으로 봅니다. 재고가 남은 Lot이 2개 이상인 상품은 테두리와 통합 버튼을 항상 표시합니다.' : '같은 품목코드를 한 행으로 봅니다.', className: `px-2.5 py-1 rounded border transition font-black ${isActive ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm' : 'bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50'}` }, label);
                                         })),
-                                    viewMode === 'CODE_SUMMARY' && React.createElement("div", { className: "flex items-center gap-1 whitespace-nowrap ml-0.5", title: "통합후보 이동: Enter 다음 / Shift+Enter 이전" },
-                                        React.createElement("button", { type: "button", onClick: () => moveMergeCandidate('prev'), className: "px-2 py-1 rounded border border-amber-300 bg-white text-amber-700 hover:bg-amber-50 font-black", title: "이전 통합후보 (Shift+Enter)" }, "◀"),
-                                        React.createElement("button", { type: "button", onClick: () => moveMergeCandidate('next'), className: "px-2 py-1 rounded border border-amber-500 bg-amber-50 text-amber-800 hover:bg-amber-100 font-black", title: "다음 통합후보 (Enter)" }, "Enter ▶")),
+                                    viewMode === 'CODE_SUMMARY' && React.createElement("div", { className: "flex items-center gap-1 whitespace-nowrap ml-0.5", title: "통합후보 이동: Tab 다음 / Shift+Tab 이전" },
+                                        React.createElement("button", { type: "button", onClick: () => moveMergeCandidate('prev'), className: "px-2 py-1 rounded border border-amber-300 bg-white text-amber-700 hover:bg-amber-50 font-black", title: "이전 통합후보 (Shift+Tab)" }, "◀"),
+                                        React.createElement("button", { type: "button", onClick: () => moveMergeCandidate('next'), className: "px-2 py-1 rounded border border-amber-500 bg-amber-50 text-amber-800 hover:bg-amber-100 font-black", title: "다음 통합후보 (Tab)" }, "Tab ▶")),
                                     React.createElement("div", { className: "w-px h-5 bg-slate-200 mx-0.5" }),
                                     React.createElement("select", { value: filters.sortMode, onChange: (e) => setFilters(f => ({ ...f, sortMode: e.target.value, sortDesc: false })), title: "정렬 기준을 선택합니다.", className: "px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 font-black shadow-sm focus:outline-none focus:ring-1 focus:ring-slate-400" },
                                         React.createElement("option", { value: "DEFAULT" }, "품목순"),
