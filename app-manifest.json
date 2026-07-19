@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "updatedAt": "2026-07-20",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
@@ -374,6 +374,17 @@
         "all-web-entry-points",
         "deployment-routes"
       ]
+    },
+    {
+      "change": "function-key-behavior",
+      "review": [
+        "owning-application",
+        "keyboard-handler",
+        "visible-button",
+        "downstream-workflow",
+        "application-specific-smoke-test"
+      ],
+      "policy": "Function keys are application-owned. The same key must not be assumed to have the same business meaning across applications."
     }
   ],
   "planningPolicy": {
@@ -394,7 +405,168 @@
       "targetStatus"
     ]
   },
-  "plannedApplications": [],
+  "plannedApplications": [
+    {
+      "id": "master-lookup",
+      "name": "Master",
+      "proposedPath": "Master.html",
+      "kind": "web-entry",
+      "status": "planned",
+      "developmentState": "on-hold",
+      "purpose": "Provide a category-based, read-only product master lookup layout.",
+      "owner": "merchops-roadmap",
+      "inputs": [
+        "product-master",
+        "category hierarchy"
+      ],
+      "outputs": [
+        "categorized product lookup view"
+      ],
+      "sharedContracts": [
+        "product-master"
+      ],
+      "upstream": [
+        "merchops",
+        "dataops"
+      ],
+      "downstream": [],
+      "productionWrites": false,
+      "validation": [
+        "Category and product counts match the product master.",
+        "The planned page cannot mutate production data.",
+        "No production navigation depends on this page."
+      ],
+      "rollback": "Remove any pilot navigation entry and keep the file isolated from production entry points.",
+      "targetStatus": "pilot",
+      "resumeAfter": [
+        "MerchOps core workflow is stable.",
+        "DataOps core workflow is stable."
+      ]
+    },
+    {
+      "id": "item-manager",
+      "name": "Item Manager",
+      "proposedPath": "Item_manager.html",
+      "kind": "web-entry",
+      "status": "planned",
+      "developmentState": "on-hold",
+      "purpose": "Provide category-based product lookup and prepare a future controlled product-management workflow.",
+      "owner": "merchops-roadmap",
+      "inputs": [
+        "product-master",
+        "category hierarchy",
+        "approved product change request"
+      ],
+      "outputs": [
+        "categorized product lookup view",
+        "reviewable product change draft"
+      ],
+      "sharedContracts": [
+        "product-master",
+        "change-history"
+      ],
+      "upstream": [
+        "merchops",
+        "dataops"
+      ],
+      "downstream": [
+        "merchops"
+      ],
+      "productionWrites": false,
+      "validation": [
+        "Lookup results match the product master.",
+        "Management actions remain disabled until write rules are separately approved.",
+        "No production navigation depends on this page."
+      ],
+      "rollback": "Remove any pilot navigation entry and keep all proposed changes in read-only or draft state.",
+      "targetStatus": "pilot",
+      "resumeAfter": [
+        "MerchOps write and rollback flow is stable.",
+        "DataOps product contracts are stable."
+      ]
+    },
+    {
+      "id": "trend-report",
+      "name": "Trend Report",
+      "proposedPath": "trend_report.html",
+      "kind": "web-entry",
+      "status": "planned",
+      "developmentState": "on-hold",
+      "purpose": "Turn MerchOps and DataOps results into decision-support insights after the core applications mature.",
+      "owner": "analytics-roadmap",
+      "inputs": [
+        "product-master",
+        "change-history",
+        "inventory and performance results"
+      ],
+      "outputs": [
+        "trend insights",
+        "decision-support report"
+      ],
+      "sharedContracts": [
+        "product-master",
+        "change-history"
+      ],
+      "upstream": [
+        "merchops",
+        "dataops"
+      ],
+      "downstream": [],
+      "productionWrites": false,
+      "validation": [
+        "Every reported metric identifies its source and period.",
+        "Results reconcile with the source application totals.",
+        "The report cannot mutate production data."
+      ],
+      "rollback": "Remove pilot navigation and retain generated reports only as non-authoritative artifacts.",
+      "targetStatus": "pilot",
+      "resumeAfter": [
+        "MerchOps data contracts are stable.",
+        "DataOps analysis outputs are stable."
+      ]
+    },
+    {
+      "id": "image-generator",
+      "name": "Image Generator",
+      "proposedPath": "image_generator.html",
+      "kind": "utility",
+      "status": "planned",
+      "developmentState": "on-hold",
+      "purpose": "Create offline-sales images and print materials for market-price changes and promotional products.",
+      "owner": "sales-output-roadmap",
+      "inputs": [
+        "MerchOps F9 review payload",
+        "approved product and promotion information"
+      ],
+      "outputs": [
+        "offline sales image",
+        "print-ready sales material"
+      ],
+      "sharedContracts": [
+        "product-master"
+      ],
+      "upstream": [
+        "merchops",
+        "export-center"
+      ],
+      "downstream": [
+        "print-output"
+      ],
+      "productionWrites": false,
+      "workflowIntent": "MerchOps F9 review leads to a downstream F10 print action after the output workflow is approved.",
+      "validation": [
+        "Printed values match the approved review payload.",
+        "Preview and print layouts remain legible at the target paper size.",
+        "Image generation cannot mutate product master data."
+      ],
+      "rollback": "Disable the pilot output entry and continue using existing Excel or manual print output.",
+      "targetStatus": "pilot",
+      "resumeAfter": [
+        "MerchOps Export Center workflow is stable.",
+        "Output and print validation rules are approved."
+      ]
+    }
+  ],
   "recoveryPolicy": {
     "sourceOfTruth": "Git history and the main branch",
     "preferredMethods": [
@@ -404,5 +576,97 @@
     ],
     "testCopiesAreBackups": false,
     "optionalPreviewPolicy": "Keep at most one explicitly named preview or stable entry point per operational need, with an owner and verification date."
-  }
+  },
+  "functionKeyPolicy": {
+    "applicationOwned": true,
+    "crossApplicationSemanticUnification": false,
+    "assignments": {
+      "merchops": {
+        "F8": "Apply current work to the master and create the immediate Excel output.",
+        "F9": "Open Export Center for review and downstream output."
+      },
+      "dataops": {
+        "F8": "Unassigned.",
+        "F9": "Create the combined workbook output.",
+        "F10": "Open the print output workflow."
+      }
+    }
+  },
+  "developmentRoadmap": [
+    {
+      "phase": 1,
+      "name": "Baseline and checks",
+      "scope": [
+        "inventory production entry points",
+        "record shared contracts",
+        "define application-specific smoke tests"
+      ]
+    },
+    {
+      "phase": 2,
+      "name": "Client safety",
+      "scope": [
+        "validate imports before apply",
+        "protect browser storage writes",
+        "show actionable errors"
+      ]
+    },
+    {
+      "phase": 3,
+      "name": "Cloud protection",
+      "scope": [
+        "validate cloud actions and payloads",
+        "protect restore paths",
+        "improve failure reporting"
+      ]
+    },
+    {
+      "phase": 4,
+      "name": "Atomic backup and rollback",
+      "scope": [
+        "version stable releases",
+        "verify rollback procedure",
+        "avoid duplicate recovery files"
+      ]
+    },
+    {
+      "phase": 5,
+      "name": "Application-specific output stability",
+      "subphases": [
+        {
+          "id": "5A",
+          "application": "merchops",
+          "shortcuts": {
+            "F8": "Apply current work to the master and create the immediate Excel output.",
+            "F9": "Open Export Center for review and downstream output."
+          }
+        },
+        {
+          "id": "5B",
+          "application": "dataops",
+          "shortcuts": {
+            "F8": "Unassigned.",
+            "F9": "Create the combined workbook output.",
+            "F10": "Open the print output workflow."
+          }
+        }
+      ],
+      "sharedOnly": [
+        "validation",
+        "backup",
+        "download status",
+        "audit utilities"
+      ],
+      "constraint": "Do not unify application-specific business semantics merely because the same function key is used."
+    },
+    {
+      "phase": 6,
+      "name": "Dependency and shared-engine hardening",
+      "scope": [
+        "remove unsafe duplication only after compatibility tests",
+        "document migrations",
+        "protect application-owned workflows"
+      ]
+    }
+  ]
 }
