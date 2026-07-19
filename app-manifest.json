@@ -1,0 +1,408 @@
+{
+  "schemaVersion": "1.0.0",
+  "updatedAt": "2026-07-20",
+  "repository": {
+    "fullName": "orderzoneapp-coder/oneapp",
+    "defaultBranch": "main",
+    "architectureDocument": "APP_ARCHITECTURE.md"
+  },
+  "statusDefinitions": {
+    "planned": "Design stage; must not be a production dependency.",
+    "pilot": "Controlled validation stage with protected production writes.",
+    "production": "Supported operational component.",
+    "deprecated": "Migration or read-only stage with a documented replacement.",
+    "archived": "Retained in Git history or releases and not deployed as an active entry point."
+  },
+  "applications": [
+    {
+      "id": "merchops",
+      "name": "MerchOps",
+      "path": "MerchOps.html",
+      "kind": "web-entry",
+      "status": "production",
+      "purpose": "Review and apply product master, pricing, promotion, stop-management, and information-change work.",
+      "navigatesTo": [
+        "smart-parser",
+        "export-center",
+        "settings",
+        "history-viewer"
+      ],
+      "services": [
+        "cloud-sync"
+      ],
+      "sharedContracts": [
+        "product-master",
+        "change-history",
+        "information-change-queue",
+        "parser-dictionary",
+        "pricing-rules",
+        "mapping-config",
+        "table-view-config",
+        "cloud-url"
+      ]
+    },
+    {
+      "id": "dataops",
+      "name": "DataOps",
+      "path": "DataOps.html",
+      "kind": "web-entry",
+      "status": "production",
+      "purpose": "Analyze purchase, sales, inventory, stock ledger, cost, and performance information.",
+      "services": [
+        "cloud-sync"
+      ],
+      "sharedContracts": [
+        "product-master",
+        "change-history",
+        "pricing-rules",
+        "mapping-config",
+        "cloud-url"
+      ]
+    },
+    {
+      "id": "smart-parser",
+      "name": "Smart Parser",
+      "path": "SmartParser.html",
+      "kind": "web-entry",
+      "status": "production",
+      "purpose": "Parse external documents, normalize product information, and create review candidates.",
+      "navigatesTo": [
+        "merchops",
+        "settings",
+        "history-viewer"
+      ],
+      "sharedContracts": [
+        "product-master",
+        "change-history",
+        "information-change-queue",
+        "parser-dictionary",
+        "pricing-rules"
+      ]
+    },
+    {
+      "id": "export-center",
+      "name": "Export Center",
+      "path": "export_center.html",
+      "kind": "web-entry",
+      "status": "production",
+      "purpose": "Validate selected work, generate Excel output, and apply approved master changes.",
+      "navigatesTo": [
+        "merchops"
+      ],
+      "sharedContracts": [
+        "product-master",
+        "change-history"
+      ]
+    },
+    {
+      "id": "settings",
+      "name": "Settings",
+      "path": "settings.html",
+      "kind": "web-entry",
+      "status": "production",
+      "purpose": "Manage mappings, pricing policies, columns, table views, cloud URL, and shared configuration.",
+      "navigatesTo": [
+        "merchops"
+      ],
+      "runtimeDependencies": [
+        "core-engine"
+      ],
+      "services": [
+        "cloud-sync"
+      ],
+      "sharedContracts": [
+        "product-master",
+        "change-history",
+        "parser-dictionary",
+        "pricing-rules",
+        "mapping-config",
+        "table-view-config",
+        "cloud-url"
+      ]
+    },
+    {
+      "id": "history-viewer",
+      "name": "History Viewer",
+      "path": "history_viewer.html",
+      "kind": "web-entry",
+      "status": "production",
+      "purpose": "Inspect product-change history and price trends.",
+      "navigatesTo": [
+        "merchops"
+      ],
+      "services": [
+        "cloud-sync"
+      ],
+      "sharedContracts": [
+        "product-master",
+        "change-history",
+        "cloud-url"
+      ]
+    },
+    {
+      "id": "core-engine",
+      "name": "ONEAPP Core Engine",
+      "path": "coreEngine.js",
+      "kind": "shared-library",
+      "status": "production",
+      "purpose": "Provide common storage, pricing, history, export, cloud, and master-data utilities.",
+      "modules": [
+        "ONEAPP.STORAGE",
+        "ONEAPP.PRICING",
+        "ONEAPP.HISTORY",
+        "ONEAPP.EXPORT",
+        "ONEAPP.CLOUD",
+        "ONEAPP.MASTER"
+      ],
+      "integrationNote": "Settings explicitly loads this library. Other production pages still contain overlapping local implementations and require compatibility validation before consolidation."
+    },
+    {
+      "id": "cloud-sync",
+      "name": "ONEAPP Cloud Sync",
+      "path": "code.gs",
+      "kind": "google-apps-script-service",
+      "status": "production",
+      "purpose": "Back up and restore product master, history, and shared configuration.",
+      "apiActions": {
+        "post": [
+          "initSync",
+          "chunk_master",
+          "chunk_history",
+          "config"
+        ],
+        "get": [
+          "full",
+          "master_only",
+          "config_only"
+        ]
+      },
+      "sharedContracts": [
+        "product-master",
+        "change-history",
+        "parser-dictionary",
+        "pricing-rules",
+        "mapping-config",
+        "table-view-config",
+        "cloud-url"
+      ]
+    }
+  ],
+  "sharedDataContracts": [
+    {
+      "id": "product-master",
+      "owner": "merchops",
+      "resources": {
+        "indexedDb": {
+          "database": "MerchOpsDB",
+          "keys": [
+            "merchMaster_v870"
+          ]
+        },
+        "localStorage": [
+          "merchMaster_v870",
+          "merchMaster_sync_trigger"
+        ],
+        "cloud": [
+          "master",
+          "master_only",
+          "chunk_master"
+        ]
+      }
+    },
+    {
+      "id": "change-history",
+      "owner": "merchops",
+      "resources": {
+        "localStorage": [
+          "merchHistory_v870"
+        ],
+        "cloud": [
+          "history",
+          "chunk_history"
+        ]
+      }
+    },
+    {
+      "id": "information-change-queue",
+      "owner": "merchops",
+      "resources": {
+        "localStorage": [
+          "merchInfoChangeQueue_v1"
+        ]
+      }
+    },
+    {
+      "id": "parser-dictionary",
+      "owner": "smart-parser",
+      "resources": {
+        "localStorage": [
+          "parserDict_v870"
+        ],
+        "cloudConfigField": "dict"
+      }
+    },
+    {
+      "id": "pricing-rules",
+      "owner": "settings",
+      "resources": {
+        "localStorage": [
+          "merchMarginRules_v878"
+        ],
+        "cloudConfigField": "rules"
+      }
+    },
+    {
+      "id": "mapping-config",
+      "owner": "settings",
+      "resources": {
+        "localStorage": [
+          "merchMappings_v870",
+          "merchMasterLinks_v870"
+        ]
+      }
+    },
+    {
+      "id": "table-view-config",
+      "owner": "settings",
+      "resources": {
+        "localStorage": [
+          "merchActiveTableTarget_v1",
+          "merchActiveTableViewId_v1",
+          "merchTableViewPresets_v1"
+        ]
+      }
+    },
+    {
+      "id": "cloud-url",
+      "owner": "settings",
+      "resources": {
+        "primaryLocalStorage": "oneapp_cloud_sync_url_v1",
+        "legacyLocalStorage": "merchCloudUrl_v870"
+      }
+    }
+  ],
+  "navigationEdges": [
+    [
+      "merchops",
+      "smart-parser"
+    ],
+    [
+      "merchops",
+      "export-center"
+    ],
+    [
+      "merchops",
+      "settings"
+    ],
+    [
+      "merchops",
+      "history-viewer"
+    ],
+    [
+      "smart-parser",
+      "merchops"
+    ],
+    [
+      "smart-parser",
+      "settings"
+    ],
+    [
+      "smart-parser",
+      "history-viewer"
+    ],
+    [
+      "export-center",
+      "merchops"
+    ],
+    [
+      "settings",
+      "merchops"
+    ],
+    [
+      "history-viewer",
+      "merchops"
+    ]
+  ],
+  "changeRules": [
+    {
+      "change": "layout-or-button-placement",
+      "review": [
+        "affected-page",
+        "navigation-smoke-test"
+      ]
+    },
+    {
+      "change": "product-field-or-excel-mapping",
+      "review": [
+        "merchops",
+        "smart-parser",
+        "dataops",
+        "export-center",
+        "settings",
+        "history-viewer"
+      ]
+    },
+    {
+      "change": "pricing-or-margin",
+      "review": [
+        "core-engine",
+        "merchops",
+        "dataops",
+        "smart-parser",
+        "export-center"
+      ]
+    },
+    {
+      "change": "storage-key-or-indexeddb-schema",
+      "review": [
+        "all-contract-consumers",
+        "migration",
+        "rollback"
+      ]
+    },
+    {
+      "change": "cloud-action-or-payload",
+      "review": [
+        "cloud-sync",
+        "core-engine",
+        "all-api-callers"
+      ]
+    },
+    {
+      "change": "navigation-path-or-filename",
+      "review": [
+        "all-web-entry-points",
+        "deployment-routes"
+      ]
+    }
+  ],
+  "planningPolicy": {
+    "allowedProductionDependency": false,
+    "requiredFields": [
+      "id",
+      "name",
+      "proposedPath",
+      "purpose",
+      "owner",
+      "inputs",
+      "outputs",
+      "sharedContracts",
+      "upstream",
+      "downstream",
+      "validation",
+      "rollback",
+      "targetStatus"
+    ]
+  },
+  "plannedApplications": [],
+  "recoveryPolicy": {
+    "sourceOfTruth": "Git history and the main branch",
+    "preferredMethods": [
+      "stable-tag",
+      "pull-request-revert",
+      "rollback-pull-request"
+    ],
+    "testCopiesAreBackups": false,
+    "optionalPreviewPolicy": "Keep at most one explicitly named preview or stable entry point per operational need, with an owner and verification date."
+  }
+}
