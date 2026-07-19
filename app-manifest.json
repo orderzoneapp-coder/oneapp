@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.1.0",
+  "schemaVersion": "1.2.0",
   "updatedAt": "2026-07-20",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
@@ -605,10 +605,17 @@
     {
       "phase": 2,
       "name": "Client safety",
+      "status": "in-progress",
       "scope": [
         "validate imports before apply",
         "protect browser storage writes",
         "show actionable errors"
+      ],
+      "delivered": [
+        "block master Excel apply when rows have missing or duplicate product codes",
+        "limit master imports to supported file types, 25 MB, and 100000 rows",
+        "verify shared storage writes and automatically restore master/history after an apply failure",
+        "show persistent actionable errors in the master database management screen"
       ]
     },
     {
