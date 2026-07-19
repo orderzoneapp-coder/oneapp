@@ -32,3 +32,6 @@ jobs:
       - name: Validate manifest, files, and contracts
         run: node scripts/validate-repository.mjs
 
+      - name: Test client-side import and storage safety
+        run: node scripts/test-client-safety.mjs
+
