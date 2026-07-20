@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.153_DirectInfoAndRulePlacement]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.154_SpotPriceExcelPriority]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -52,6 +52,7 @@
         // v2.1.151: 우측 고정 초기화 버튼의 상단 오프셋·높이·패딩·그림자를 다른 1단 버튼과 맞춰 수직 정렬과 시각적 균형을 보정한다.
         // v2.1.152: 모든 불러오기에서 판매여부를 작업값으로 보존하고, 행사초기화·Quick F8·마스터 반영까지 동일한 0/1 판정을 사용한다.
         // v2.1.153: 룰적용을 행사작업에서 분리해 필터초기화 좌측에 고정한다. SmartParser 구버전 정보변경 큐를 제거하고 정보 마스터 즉시반영·기존 히스토리 기록·새로고침 동기화 정책으로 전환한다.
+        // v2.1.154: 정보 엑셀의 싯가 헤더를 내부 싯가 필드에 직접 매핑한다. 숫자 1·공란을 포함한 원본 셀값을 보존하고, 엑셀 필드가 존재하면 마스터값보다 우선 표시·반영한다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결하며 오더즈판매가/오더즈구매가는 작업·출력에서 제외한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
@@ -514,6 +515,30 @@
                 if (val !== undefined) return val ?? '';
             }
             return defaultValue;
+        };
+
+        // 정보 엑셀 싯가 정책:
+        // - 엑셀의 싯가/싯가판매여부/시가판매여부 헤더는 내부 '싯가' 하나로 통일한다.
+        // - source에 셀이 존재하면 숫자 1, 0, 공란까지 원본값을 마스터보다 우선한다.
+        window.getMerchSpotPriceSourceCell = (sources = {}) => {
+            for (const role of window.getWorkingSourcePriority(sources || {})) {
+                const src = sources?.[role] || {};
+                if (window.hasOwnField(src, '싯가')) return { hasValue: true, value: src['싯가'], role, field: '싯가' };
+                if (window.hasOwnField(src, '싯가판매여부')) return { hasValue: true, value: src['싯가판매여부'], role, field: '싯가판매여부' };
+                if (window.hasOwnField(src, '시가판매여부')) return { hasValue: true, value: src['시가판매여부'], role, field: '시가판매여부' };
+            }
+            return { hasValue: false, value: undefined, role: '', field: '' };
+        };
+        window.applyMerchSpotPriceExcelPriority = (working = {}, sources = {}) => {
+            const next = { ...(working || {}) };
+            const sourceCell = window.getMerchSpotPriceSourceCell(sources || {});
+            if (sourceCell.hasValue) {
+                next['싯가'] = sourceCell.value ?? '';
+                next._spotPriceSourceRole = sourceCell.role;
+                next._spotPriceSourceField = sourceCell.field;
+                next._spotPricePolicy = 'excel_original_first';
+            }
+            return next;
         };
 
         // 1재고현황 정책: 엑셀의 '기록' 열은 재고상품의 구매일자다.
@@ -979,6 +1004,7 @@
 
             let working = { ...targetSource };
             working = window.applyMarketPricePolicyToWorkingData ? window.applyMarketPricePolicyToWorkingData(working, mItem || {}, sources || {}) : working;
+            working = window.applyMerchSpotPriceExcelPriority ? window.applyMerchSpotPriceExcelPriority(working, sources || {}) : working;
             working._sourcePolicy = hasUploadSource ? 'excel_original_first' : 'master_reference';
             working._isRuleApplied = !!forceRecalc;
 
@@ -1329,7 +1355,7 @@ const getInitialVisibleMasterCols = () => ({
     purchase: ['입고가'],
     sales: ['입고가'],
     inventory: ['입고가'],
-    info: ["브랜드","간단설명","출고가","시중가","행사가","행사테마","테마1","테마2","테마3","테마4","테마5","판매여부","준비기간","마감시간","검색어등록","싯가판매여부","재입고 준비기간","주문마감시간","최소구매수","최대구매수","과세","유통사코드","단가연동","찜적용안함","재고"]
+    info: ["브랜드","간단설명","출고가","시중가","행사가","행사테마","테마1","테마2","테마3","테마4","테마5","판매여부","준비기간","마감시간","검색어등록","싯가","재입고 준비기간","주문마감시간","최소구매수","최대구매수","과세","유통사코드","단가연동","찜적용안함","재고"]
 });
 const getInitialVisibleUploadCols = () => ({
     catalog: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A', '행사가', '행사테마', '판매여부'],
@@ -1337,7 +1363,7 @@ const getInitialVisibleUploadCols = () => ({
     purchase: ['창고', '구매처', '단위', '입고가', '입고수량', '판매여부'],
     sales: ['창고', '구매처', '단위', '출고가', '출고량', '판매여부'],
     inventory: ['창고', '기준일자', '재고수량', '기록', '거래', '최종(창고)', '구분(기본)', '상품 구매일자', '구매처', '단위', '입고가', '출고가', '행사가', '판매여부', '간단설명'],
-    info: ['분류1코드', '분류1명', '분류2코드', '분류2명', '분류3코드', '분류3명', '브랜드', '찜적용안함', '상품코드', '상품명', '규격', '싯가판매여부', '재입고 준비기간', '주문마감시간', '판매', '판매가격', '시중가격', '재고', '최소구매수', '최대구매수', '기본설명', '테마1', '테마2', '테마3', '테마4', '테마5', '과세', '상품태그', '유통사코드', '원상품코드', '복사상품코드', '단가연동']
+    info: ['분류1코드', '분류1명', '분류2코드', '분류2명', '분류3코드', '분류3명', '브랜드', '찜적용안함', '상품코드', '상품명', '규격', '싯가', '재입고 준비기간', '주문마감시간', '판매', '판매가격', '시중가격', '재고', '최소구매수', '최대구매수', '기본설명', '테마1', '테마2', '테마3', '테마4', '테마5', '과세', '상품태그', '유통사코드', '원상품코드', '복사상품코드', '단가연동']
 });
 window.withMerchSaleAvailabilityColumn = window.withMerchSaleAvailabilityColumn || ((columns = [], rows = [], target = 'estimate') => {
     const next = Array.isArray(columns) ? [...columns] : [];
@@ -1365,6 +1391,8 @@ window.canonicalMerchFieldName = (field) => {
         return '도매A';
     if (['B판매', 'B판매가', 'B도매가'].includes(clean))
         return '도매B';
+    if (['싯가판매여부', '시가판매여부'].includes(clean))
+        return '싯가';
     return clean;
 };
 window.normalizeMerchTableColumns = (columns = []) => {
@@ -1982,7 +2010,7 @@ const getInitialMappings = () => {
         '원상품코드': '원상품코드',
         '복사상품코드': '복사상품코드',
         '단가연동': '단가연동, 연동',
-        '싯가판매여부': '싯가판매여부, 싯가, 시가판매여부',
+        '싯가': '싯가, 싯가판매여부, 시가판매여부',
         '찜적용안함': '찜적용안함, 찜 제외',
         '재입고 준비기간': '재입고 준비기간',
         '주문마감시간': '주문마감시간'
@@ -2095,7 +2123,7 @@ const getInitialMasterLinks = () => {
         '과세': '과세',
         '유통사코드': '유통사코드',
         '단가연동': '단가연동',
-        '싯가판매여부': '싯가판매여부',
+        '싯가': '싯가',
         '찜적용안함': '찜적용안함',
         '재입고 준비기간': '재입고 준비기간',
         '주문마감시간': '주문마감시간'
@@ -2434,14 +2462,14 @@ const useMerchConfig = () => {
         const defaults = getInitialVisibleMasterCols();
         const saved = safeJSONParse('merchVisMaster_v870', defaults) || {};
         const savedInfo = Array.isArray(saved.info) ? saved.info : [];
-        const info = [...new Set([...savedInfo, ...(defaults.info || [])])];
+        const info = window.normalizeMerchTableColumns([...new Set([...savedInfo, ...(defaults.info || [])])]);
         return { ...defaults, ...saved, info };
     });
     const [visibleUploadCols, setVisibleUploadCols] = useState(() => {
         const defaults = getInitialVisibleUploadCols();
         const saved = safeJSONParse('merchVisUpload_v870', defaults) || {};
         const savedInfo = Array.isArray(saved.info) ? saved.info : [];
-        const info = window.filterMerchInfoWorkColumns([...new Set([...savedInfo, ...(defaults.info || [])])]);
+        const info = window.filterMerchInfoWorkColumns(window.normalizeMerchTableColumns([...new Set([...savedInfo, ...(defaults.info || [])])]));
         return { ...defaults, ...saved, info };
     });
     const [tableViewPresets, setTableViewPresets] = useState(() => window.sanitizeMerchTableViewPresets(safeJSONParse('merchTableViewPresets_v1', window.getDefaultMerchTableViewPresets())));
@@ -2453,6 +2481,8 @@ const useMerchConfig = () => {
         const merged = { ...defaults, ...saved, info: { ...((saved || {}).info || {}), ...(defaults.info || {}) } };
         delete merged.info['오더즈판매가'];
         delete merged.info['오더즈구매가'];
+        delete merged.info['싯가판매여부'];
+        merged.info['싯가'] = (defaults.info || {})['싯가'] || '싯가, 싯가판매여부, 시가판매여부';
         return merged;
     });
     const [masterLinks, setMasterLinks] = useState(() => {
@@ -2461,6 +2491,8 @@ const useMerchConfig = () => {
         const merged = { ...defaults, ...saved, info: { ...((saved || {}).info || {}), ...(defaults.info || {}) } };
         delete merged.info['오더즈판매가'];
         delete merged.info['오더즈구매가'];
+        delete merged.info['싯가판매여부'];
+        merged.info['싯가'] = '싯가';
         return merged;
     });
     const [uploadColumnMeta, setUploadColumnMeta] = useState(() => safeJSONParse('merchUploadColumnMeta_v870', {}));
@@ -2536,19 +2568,27 @@ const useMerchConfig = () => {
                         setCloudUrl(restoredCloudUrl || '');
                     }
                     if (saved.visibleMasterCols && !localStorage.getItem('merchVisMaster_v870'))
-                        setVisibleMasterCols(saved.visibleMasterCols);
+                        setVisibleMasterCols({ ...saved.visibleMasterCols, info: window.normalizeMerchTableColumns((saved.visibleMasterCols || {}).info || []) });
                     if (saved.visibleUploadCols && !localStorage.getItem('merchVisUpload_v870'))
-                        setVisibleUploadCols(saved.visibleUploadCols);
+                        setVisibleUploadCols({ ...saved.visibleUploadCols, info: window.filterMerchInfoWorkColumns(window.normalizeMerchTableColumns((saved.visibleUploadCols || {}).info || [])) });
                     if (saved.tableViewPresets && !localStorage.getItem('merchTableViewPresets_v1'))
                         setTableViewPresets(window.sanitizeMerchTableViewPresets(saved.tableViewPresets));
                     if (saved.activeTableTarget && !localStorage.getItem('merchActiveTableTarget_v1'))
                         setActiveTableTarget(normalizeMerchTableTarget(saved.activeTableTarget));
                     if (saved.activeTableViewId && !localStorage.getItem('merchActiveTableViewId_v1'))
                         setActiveTableViewId(saved.activeTableViewId);
-                    if (saved.mappings && !localStorage.getItem('merchMappings_v870'))
-                        setMappings(saved.mappings);
-                    if (saved.masterLinks && !localStorage.getItem('merchMasterLinks_v870'))
-                        setMasterLinks(saved.masterLinks);
+                    if (saved.mappings && !localStorage.getItem('merchMappings_v870')) {
+                        const restoredMappings = { ...saved.mappings, info: { ...((saved.mappings || {}).info || {}) } };
+                        delete restoredMappings.info['싯가판매여부'];
+                        restoredMappings.info['싯가'] = '싯가, 싯가판매여부, 시가판매여부';
+                        setMappings(restoredMappings);
+                    }
+                    if (saved.masterLinks && !localStorage.getItem('merchMasterLinks_v870')) {
+                        const restoredMasterLinks = { ...saved.masterLinks, info: { ...((saved.masterLinks || {}).info || {}) } };
+                        delete restoredMasterLinks.info['싯가판매여부'];
+                        restoredMasterLinks.info['싯가'] = '싯가';
+                        setMasterLinks(restoredMasterLinks);
+                    }
                     if (saved.uploadColumnMeta && !localStorage.getItem('merchUploadColumnMeta_v870'))
                         setUploadColumnMeta(saved.uploadColumnMeta);
                     if (saved.marginRules && !localStorage.getItem('merchMarginRules_v878'))
@@ -2622,9 +2662,9 @@ const useMerchConfig = () => {
                 const fUploadColumnMeta = safeJSONParse('merchUploadColumnMeta_v870', null);
                 const fMarginRules = safeJSONParse('merchMarginRules_v878', null);
                 if (fVisMaster)
-                    setVisibleMasterCols(fVisMaster);
+                    setVisibleMasterCols({ ...fVisMaster, info: window.normalizeMerchTableColumns((fVisMaster || {}).info || []) });
                 if (fVisUpload)
-                    setVisibleUploadCols(fVisUpload);
+                    setVisibleUploadCols({ ...fVisUpload, info: window.filterMerchInfoWorkColumns(window.normalizeMerchTableColumns((fVisUpload || {}).info || [])) });
                 if (fTableViewPresets)
                     setTableViewPresets(window.sanitizeMerchTableViewPresets(fTableViewPresets));
                 const fActiveTableTarget = localStorage.getItem('merchActiveTableTarget_v1');
@@ -2632,10 +2672,18 @@ const useMerchConfig = () => {
                 setActiveTableTarget(normalizeMerchTableTarget(fActiveTableTarget || DEFAULT_TABLE_VIEW_TARGET));
                 if (fActiveTableViewId)
                     setActiveTableViewId(fActiveTableViewId);
-                if (fMappings)
-                    setMappings(fMappings);
-                if (fMasterLinks)
-                    setMasterLinks(fMasterLinks);
+                if (fMappings) {
+                    const syncedMappings = { ...fMappings, info: { ...((fMappings || {}).info || {}) } };
+                    delete syncedMappings.info['싯가판매여부'];
+                    syncedMappings.info['싯가'] = '싯가, 싯가판매여부, 시가판매여부';
+                    setMappings(syncedMappings);
+                }
+                if (fMasterLinks) {
+                    const syncedMasterLinks = { ...fMasterLinks, info: { ...((fMasterLinks || {}).info || {}) } };
+                    delete syncedMasterLinks.info['싯가판매여부'];
+                    syncedMasterLinks.info['싯가'] = '싯가';
+                    setMasterLinks(syncedMasterLinks);
+                }
                 if (fUploadColumnMeta)
                     setUploadColumnMeta(fUploadColumnMeta);
                 if (fMarginRules)
@@ -3240,6 +3288,11 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                         infoSource._originalHeaders = [...actualHeaders];
                         infoSource._originalRow = { ...row };
                         infoSource._infoHeaderMap = { ...headerCache };
+                        const spotPriceKey = headerCache['싯가'] || findActualHeader(['싯가', '싯가판매여부', '시가판매여부']);
+                        if (spotPriceKey) {
+                            infoSource['싯가'] = window.keepExcelCellValue(row[spotPriceKey], false);
+                            infoSource['_spotPriceSourceHeader'] = spotPriceKey;
+                        }
                         const cleanHeaders = actualHeaders.map(h => String(h || '').replace(/\s/g, ''));
                         const isShopInfo = cleanHeaders.includes('상품코드') && (cleanHeaders.includes('판매가격') || cleanHeaders.includes('오더즈판매가') || cleanHeaders.includes('상품태그') || cleanHeaders.includes('단가연동'));
                         const isErpInfo = !isShopInfo && cleanHeaders.some(h => ['품목코드', '출고가', '입고가', '도매A', '도매B', '행사가'].includes(h));
@@ -4730,7 +4783,8 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
 
             // 기존 기능 호환용 보조 필드. 신규 정확 필드는 그대로 유지한다.
             if (hasOwn(targetMaster, '재고')) targetMaster['재고수량'] = targetMaster['재고'];
-            if (hasOwn(targetMaster, '싯가판매여부')) targetMaster['싯가'] = targetMaster['싯가판매여부'];
+            if (hasOwn(targetMaster, '싯가')) targetMaster['싯가판매여부'] = targetMaster['싯가'];
+            else if (hasOwn(targetMaster, '싯가판매여부')) targetMaster['싯가'] = targetMaster['싯가판매여부'];
             if (hasOwn(targetMaster, '단가연동')) targetMaster['연동'] = targetMaster['단가연동'];
 
             return changed;
@@ -7973,7 +8027,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.153_DirectInfoAndRulePlacement]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.154_SpotPriceExcelPriority]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -8377,7 +8431,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.153_DirectInfoAndRulePlacement")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.154_SpotPriceExcelPriority")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
