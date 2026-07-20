@@ -23,7 +23,7 @@ parseInlineScripts(merch, "MerchOps");
 parseInlineScripts(parser, "SmartParser");
 JSON.parse(manifest);
 
-assert.match(merch, /v2\.1\.157_BulkFieldsPriceFilters/);
+assert.match(merch, /v2\.1\.158_FilterResetBulkBlank/);
 assert.match(parser, /v3\.0\.19 ExplicitInfoSave/);
 
 for (const removed of [

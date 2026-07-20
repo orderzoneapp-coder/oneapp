@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.157_BulkFieldsPriceFilters]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.158_FilterResetBulkBlank]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -56,6 +56,7 @@
         // v2.1.155: 견적·구매·재고·정보 등 모든 엑셀 역할에서 싯가 헤더를 공통 수집한다. 기본초기화처럼 견적으로 불러온 파일도 숫자 1·0·공란을 source에 그대로 보존해 마스터보다 우선 표시한다.
         // v2.1.156: 모든 엑셀 역할에서 연동/단가연동을 공통 수집하고 사용/미사용 값을 ERP 코드 1/0으로 표준화한다. 작업테이블과 상품정보 업로드 엑셀은 엑셀 연동값을 마스터보다 우선한다.
         // v2.1.157: 상세패널의 창고 일괄입력을 행사테마·재고·판매여부·연동·싯가·창고 공통 일괄입력으로 확장한다. 선택이 없으면 현재 작업테이블 전체에 적용하고 F8에서 마스터·히스토리에 반영한다. 가격변동은 가격변동으로 변경하며 입고가 0/공란은 가격변동에서 제외하고 입고가없음 상세필터로 분리한다.
+        // v2.1.158: 필터 초기화 시 공통 일괄입력의 행사테마·재고·판매여부·연동·싯가·창고도 모두 공백(지정 안 함)으로 복원한다. 선택형 입력의 공백 옵션을 다시 선택할 수 있게 해 개별 항목도 기존값 유지 상태로 되돌릴 수 있다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결하며 오더즈판매가/오더즈구매가는 작업·출력에서 제외한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
@@ -601,6 +602,7 @@
             const codes = ['1', '2', '3', '4', '5'].filter(code => codeSet.has(code));
             return { ok: true, value: codes.join(','), codes };
         });
+        window.createMerchEmptyBulkInputs = window.createMerchEmptyBulkInputs || (() => ({ theme: '', stock: '', sale: '', linkage: '', spot: '', warehouse: '' }));
         window.buildMerchBulkFieldPatch = window.buildMerchBulkFieldPatch || ((values = {}) => {
             const patch = {};
             const editedFields = {};
@@ -6006,15 +6008,19 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
     const { activeTags, selectedRows, globalSearch, priceFilter, detailFilters = [], categoryFilters = [], basicSearch, filterSteps = [], disabledFilterStepIds = [], pendingFilterAction = 'include', hideMasterAddedRows = false, fullDisplayRows, config, registrationMode, data, sessionExcludedItems = {}, showExcludedPanel = false, stoppedProducts = {}, showStopManager = false } = state;
     const { handleStopSales, handleExcludeSelectedFromUpdate, handleApplyBulkFields, setGlobalSearch, handleReset, handleFileUpload, handleLoadFilter, handleForceApplyMarginRules, handleApplyScreenPercent, handleResetPromoValues, setPriceFilter, setDetailFilters, setCategoryFilters, setSelectedRows, setBasicSearch, setFilterSteps, setDisabledFilterStepIds, setPendingFilterAction, setShowCatalogModal, handleOpenExportCenter, handleCommitEstimate, handleRegisterUnregisteredItems, handleExitRegistrationMode, setShowExcludedPanel, setShowStopManager } = actions;
     const [filterPanelOpen, setFilterPanelOpen] = useState(false);
-    const [bulkInputs, setBulkInputs] = useState({ theme: '', stock: '', sale: '', linkage: '', spot: '', warehouse: '' });
+    const [bulkInputs, setBulkInputs] = useState(() => window.createMerchEmptyBulkInputs());
     const [bulkFocus, setBulkFocus] = useState('');
     const setBulkInput = (field, value) => setBulkInputs(prev => ({ ...prev, [field]: value }));
     const getBulkPlaceholder = (field, label) => bulkFocus === field ? '' : label;
+    const getBulkSelectBlankLabel = (field, label) => bulkInputs[field] === '' && bulkFocus !== field ? label : '지정 안 함(기존 유지)';
+    const resetBulkInputs = () => {
+        setBulkInputs(window.createMerchEmptyBulkInputs());
+        setBulkFocus('');
+    };
     const applyBulkInputs = () => {
         const applied = handleApplyBulkFields(bulkInputs);
         if (applied) {
-            setBulkInputs({ theme: '', stock: '', sale: '', linkage: '', spot: '', warehouse: '' });
-            setBulkFocus('');
+            resetBulkInputs();
         }
     };
     // [M-FILTER-ROWS-01] 정렬필터 재배치
@@ -6393,6 +6399,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
         setPromoWorkbenchOpen(false);
         setPromoActionOpen(false);
         setFilterScenarioOpen(false);
+        resetBulkInputs();
     };
     return (React.createElement("div", { className: "flex flex-col w-full border-b border-slate-200 bg-white pb-2 shadow-sm relative z-10" },
         React.createElement("div", { className: "pl-5 pr-[128px] py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-2 flex-nowrap w-full whitespace-nowrap" },
@@ -6569,7 +6576,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                         onFocus: () => setBulkFocus('sale'), onBlur: () => setBulkFocus(''),
                         className: `h-8 w-[100px] px-2 rounded-lg border border-slate-300 bg-white text-[11px] font-bold outline-none focus:border-indigo-400 ${bulkInputs.sale === '' ? 'text-slate-400' : 'text-slate-700'}`
                     },
-                        React.createElement("option", { value: "", disabled: true }, getBulkPlaceholder('sale', '판매여부')),
+                        React.createElement("option", { value: "" }, getBulkSelectBlankLabel('sale', '판매여부')),
                         React.createElement("option", { value: "1" }, "판매(1)"),
                         React.createElement("option", { value: "0" }, "정지(0)")),
                     React.createElement("select", {
@@ -6577,7 +6584,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                         onFocus: () => setBulkFocus('linkage'), onBlur: () => setBulkFocus(''),
                         className: `h-8 w-[112px] px-2 rounded-lg border border-slate-300 bg-white text-[11px] font-bold outline-none focus:border-indigo-400 ${bulkInputs.linkage === '' ? 'text-slate-400' : 'text-slate-700'}`
                     },
-                        React.createElement("option", { value: "", disabled: true }, getBulkPlaceholder('linkage', '연동')),
+                        React.createElement("option", { value: "" }, getBulkSelectBlankLabel('linkage', '연동')),
                         React.createElement("option", { value: "1" }, "사용(1)"),
                         React.createElement("option", { value: "0" }, "사용 안 함(0)")),
                     React.createElement("select", {
@@ -6585,7 +6592,7 @@ const MainToolbar = React.memo(({ state, actions, availableCatalogs, availableCa
                         onFocus: () => setBulkFocus('spot'), onBlur: () => setBulkFocus(''),
                         className: `h-8 w-[98px] px-2 rounded-lg border border-slate-300 bg-white text-[11px] font-bold outline-none focus:border-indigo-400 ${bulkInputs.spot === '' ? 'text-slate-400' : 'text-slate-700'}`
                     },
-                        React.createElement("option", { value: "", disabled: true }, getBulkPlaceholder('spot', '싯가')),
+                        React.createElement("option", { value: "" }, getBulkSelectBlankLabel('spot', '싯가')),
                         React.createElement("option", { value: "1" }, "적용(1)"),
                         React.createElement("option", { value: "0" }, "미적용(0)")),
                     React.createElement("input", {
@@ -8269,7 +8276,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.157_BulkFieldsPriceFilters]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.158_FilterResetBulkBlank]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -8673,7 +8680,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.157_BulkFieldsPriceFilters")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.158_FilterResetBulkBlank")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
