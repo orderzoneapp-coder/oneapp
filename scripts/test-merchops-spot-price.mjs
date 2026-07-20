@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const html = fs.readFileSync(path.join(ROOT, "MerchOps.html"), "utf8");
 
-assert.match(html, /v2\.1\.155_SpotPriceAllExcelRoles/);
+assert.match(html, /v2\.1\.156_LinkageExcelCode/);
 
 const inlineScripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)]
   .map((match) => match[1])
@@ -79,6 +79,39 @@ browser.copyMerchSpotPriceFromExcelRow(blankImport, { 싯가: "" }, ["싯가"], 
 assert.ok(Object.hasOwn(blankImport, "싯가"), "an explicit blank Excel cell must still exist in the source");
 assert.equal(blankImport.싯가, "");
 
+assert.equal(browser.normalizeMerchLinkageCode(1), 1, "numeric Excel linkage flag 1 must remain numeric 1");
+assert.equal(browser.normalizeMerchLinkageCode("1"), 1, "text Excel linkage flag 1 must normalize to numeric 1");
+assert.equal(browser.normalizeMerchLinkageCode("사용"), 1, "legacy master label 사용 must normalize to numeric 1");
+assert.equal(browser.normalizeMerchLinkageCode(0), 0, "numeric Excel linkage flag 0 must remain numeric 0");
+assert.equal(browser.normalizeMerchLinkageCode("미사용"), 0, "legacy master label 미사용 must normalize to numeric 0");
+assert.equal(browser.normalizeMerchLinkageCode(""), "", "explicit blank linkage cells must remain blank");
+
+const linkageImport = {};
+const linkageImportResult = browser.copyMerchLinkageFromExcelRow(
+  linkageImport,
+  { 품목코드: "101010111", 연동: 1 },
+  ["품목코드", "연동"],
+  {},
+);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(linkageImportResult)),
+  { found: true, header: "연동", value: 1 },
+  "the basic-reset workbook 연동 header must be recognized for every import role",
+);
+assert.equal(linkageImport.연동, 1, "work-table linkage must display Excel numeric 1");
+assert.equal(linkageImport.단가연동, 1, "upload field 단가연동 must keep numeric 1");
+assert.equal(linkageImport._linkageSourceHeader, "연동");
+
+const linkageAliasImport = {};
+browser.copyMerchLinkageFromExcelRow(
+  linkageAliasImport,
+  { 단가연동: "사용" },
+  ["단가연동"],
+  {},
+);
+assert.equal(linkageAliasImport.연동, 1, "단가연동 alias must normalize the legacy 사용 label to numeric 1");
+assert.equal(linkageAliasImport.단가연동, 1);
+
 const estimateSource = { _activeRole: "estimate", estimate: { 싯가: 1 } };
 const appliedEstimate = browser.applyMerchSpotPriceExcelPriority({ 싯가: "" }, estimateSource);
 assert.equal(appliedEstimate.싯가, 1, "estimate Excel spot-price must override a blank master value");
@@ -99,6 +132,8 @@ assert.equal(appliedLegacy.싯가, "1", "legacy saved source must migrate withou
 assert.match(html, /'싯가': '싯가, 싯가판매여부, 시가판매여부'/);
 assert.match(html, /'싯가': '싯가'/);
 assert.match(html, /window\.copyMerchSpotPriceFromExcelRow\(mItem\.sources\[role\], row, actualHeaders, headerCache\)/);
+assert.match(html, /window\.copyMerchLinkageFromExcelRow\(mItem\.sources\[role\], row, actualHeaders, headerCache\)/);
+assert.match(html, /const rawLinkage = getFirstInfoValue\(finalData\['단가연동'\], finalData\['연동'\]/);
 assert.doesNotMatch(html, /infoSource\['싯가'\] = window\.keepExcelCellValue\(row\[spotPriceKey\], false\)/);
 assert.match(html, /working = window\.applyMerchSpotPriceExcelPriority/);
 assert.match(html, /const initialVal = hasFinalField \? row\.finalData\[field\]/);
@@ -106,4 +141,4 @@ assert.match(html, /if \(\['싯가판매여부', '시가판매여부'\]\.include
 assert.match(html, /delete merged\.info\['싯가판매여부'\]/);
 assert.match(html, /if \(hasOwn\(targetMaster, '싯가'\)\) targetMaster\['싯가판매여부'\] = targetMaster\['싯가'\]/);
 
-console.log("MerchOps Excel spot-price mapping and source-priority tests passed.");
+console.log("MerchOps Excel spot-price and linkage-code mapping tests passed.");
