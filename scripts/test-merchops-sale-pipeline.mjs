@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const html = fs.readFileSync(path.join(ROOT, "MerchOps.html"), "utf8");
-assert.match(html, /v2\.1\.156_LinkageExcelCode/);
+assert.match(html, /v2\.1\.157_BulkFieldsPriceFilters/);
 assert.doesNotMatch(html, /v2\.1\.151_ResetVerticalAlign/);
 const inlineScripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)]
   .map((match) => match[1])
@@ -87,7 +87,7 @@ assert.ok(
   "Quick F8 must honor an explicit Excel sale value before the estimate default",
 );
 
-assert.match(html, /actionType: '엑셀 판매여부 반영'/);
+assert.match(html, /\? '공통 일괄입력' : '엑셀 판매여부 반영'/);
 assert.match(html, /window\.resolveMerchSaleAvailability\(current, mItem\)/);
 assert.match(html, /판매여부: mItem\['판매여부'\] \?\? ''/);
 
