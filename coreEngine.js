@@ -1,6 +1,6 @@
 /**
  * ONEAPP MerchOps - coreEngine.js
- * v1.0.9 / Cloud Config Sync Fix
+ * v1.1.0 / Client Safety
  *
  * 목적:
  * - HTML 화면 파일에서 중복되는 저장소, 가격계산, 히스토리, F9 전달, 클라우드 로직을 중앙화한다.
@@ -24,6 +24,11 @@
  * - AppConfig 대용량 저장을 백스크립트 분할 저장 형식과 연동하고 settingsKeys를 복구한다.
  * - 클라우드 URL 공통키와 구형키를 함께 유지해 MerchOps/환경설정/DataOps의 URL 불일치를 방지한다.
  *
+ * v1.1.0_ClientSafety:
+ * - 마스터 엑셀 적용 전 차단 검증을 수행하고 오류 행/중복코드가 있으면 적용하지 않는다.
+ * - localStorage/IndexedDB 쓰기를 검증하며 마스터 적용 실패 시 변경 전 데이터로 자동 복구한다.
+ * - 저장공간 부족, 브라우저 차단, IndexedDB 중단 오류를 사용자가 조치할 수 있는 문구로 변환한다.
+ *
  * v1.0.8_PricingPolicySync:
  * - computeFinalData를 최신 MerchOps 정책에 맞게 정리한다. 엑셀 source에 없는 입고가는 마스터값으로 자동 대체하지 않는다.
  * - 구매/재고 작업의 시중가는 마스터 시중가를 참조하고, 구매/재고 원가로 시중가를 자동 산출하거나 갱신하지 않는다.
@@ -35,7 +40,7 @@
   'use strict';
 
   const ONEAPP = global.ONEAPP = global.ONEAPP || {};
-  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.0.9 CloudConfigSyncFix';
+  ONEAPP.VERSION = ONEAPP.VERSION || 'coreEngine-v1.1.0 ClientSafety';
 
   const DEFAULT_DB_NAME = 'MerchOpsDB';
   const DEFAULT_DB_VERSION = 2;
@@ -166,6 +171,33 @@
     try { return new Date().toISOString(); } catch (e) { return ''; }
   };
 
+  const ERRORS = ONEAPP.ERRORS = ONEAPP.ERRORS || {};
+
+  ERRORS.toActionableMessage = (error, context = '작업') => {
+    const name = String(error?.name || '');
+    const detail = String(error?.message || error || '').trim();
+    if (name === 'QuotaExceededError' || /quota|storage.*full|disk.*full/i.test(detail)) {
+      return `${context} 실패: 브라우저 저장공간이 부족합니다. 불필요한 사이트 데이터를 정리한 뒤 다시 시도하세요.`;
+    }
+    if (name === 'SecurityError' || /access.*denied|not allowed|blocked/i.test(detail)) {
+      return `${context} 실패: 브라우저가 저장소 접근을 차단했습니다. 시크릿 모드·사이트 권한을 확인한 뒤 다시 시도하세요.`;
+    }
+    if (name === 'AbortError' || name === 'TransactionInactiveError') {
+      return `${context} 실패: 브라우저 데이터베이스 작업이 중단되었습니다. 페이지를 새로고침한 뒤 다시 시도하세요.`;
+    }
+    if (name === 'NotFoundError' || /ObjectStore not found/i.test(detail)) {
+      return `${context} 실패: 필요한 브라우저 데이터 저장소를 찾지 못했습니다. 페이지를 새로고침해 저장소를 다시 초기화하세요.`;
+    }
+    return `${context} 실패${detail ? `: ${detail}` : '했습니다. 페이지를 새로고침한 뒤 다시 시도하세요.'}`;
+  };
+
+  ERRORS.create = (error, context) => {
+    const wrapped = new Error(ERRORS.toActionableMessage(error, context));
+    wrapped.name = 'OneAppClientError';
+    try { wrapped.cause = error; } catch (e) {}
+    return wrapped;
+  };
+
   const calcDiffRate = (oldVal, newVal) => {
     const oldNum = parseNum(oldVal);
     const newNum = parseNum(newVal);
@@ -288,6 +320,51 @@
   // ============================================================
   const STORAGE = ONEAPP.STORAGE = ONEAPP.STORAGE || {};
 
+  STORAGE.writeLocalValue = (key, value, options = {}) => {
+    const safeKey = String(key || '').trim();
+    const label = options.label || `브라우저 저장(${safeKey || '키 없음'})`;
+    if (!safeKey) throw new Error(`${label} 실패: 저장 키가 비어 있습니다.`);
+    const serialized = String(value ?? '');
+    try {
+      global.localStorage.setItem(safeKey, serialized);
+      if (options.verify !== false && global.localStorage.getItem(safeKey) !== serialized) {
+        throw new Error('저장 후 검증값이 일치하지 않습니다.');
+      }
+      return serialized;
+    } catch (error) {
+      throw ERRORS.create(error, label);
+    }
+  };
+
+  STORAGE.writeLocalJSON = (key, value, options = {}) => {
+    const label = options.label || `브라우저 JSON 저장(${String(key || '').trim() || '키 없음'})`;
+    let serialized;
+    try {
+      serialized = JSON.stringify(value);
+    } catch (error) {
+      throw ERRORS.create(error, `${label} 직렬화`);
+    }
+    return STORAGE.writeLocalValue(key, serialized, { ...options, label });
+  };
+
+  STORAGE.restoreLocalValue = (key, previousValue, options = {}) => {
+    const safeKey = String(key || '').trim();
+    const label = options.label || `브라우저 저장 복구(${safeKey || '키 없음'})`;
+    try {
+      if (previousValue === null || previousValue === undefined) {
+        global.localStorage.removeItem(safeKey);
+        if (options.verify !== false && global.localStorage.getItem(safeKey) !== null) {
+          throw new Error('삭제 후 검증값이 일치하지 않습니다.');
+        }
+        return null;
+      }
+      return STORAGE.writeLocalValue(safeKey, previousValue, { ...options, label });
+    } catch (error) {
+      if (error?.name === 'OneAppClientError') throw error;
+      throw ERRORS.create(error, label);
+    }
+  };
+
   STORAGE.initIDB = () => new Promise((resolve, reject) => {
     const request = indexedDB.open(DEFAULT_DB_NAME, DEFAULT_DB_VERSION);
     request.onupgradeneeded = (e) => {
@@ -296,7 +373,8 @@
       if (!db.objectStoreNames.contains(STORE_MASTER)) db.createObjectStore(STORE_MASTER, { keyPath: '코드' });
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => reject(ERRORS.create(request.error, '브라우저 데이터베이스 열기'));
+    request.onblocked = () => reject(new Error('브라우저 데이터베이스 열기 실패: 다른 탭에서 데이터베이스를 사용 중입니다. ONEAPP 탭을 닫고 다시 시도하세요.'));
   });
 
   STORAGE.getIDB = async (key) => {
@@ -313,9 +391,11 @@
     const db = await STORAGE.initIDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_KV, 'readwrite');
-      tx.objectStore(STORE_KV).put(val, key);
+      try { tx.objectStore(STORE_KV).put(val, key); }
+      catch (error) { reject(ERRORS.create(error, `브라우저 데이터 저장(${key})`)); return; }
       tx.oncomplete = () => resolve(true);
-      tx.onerror = () => reject(tx.error);
+      tx.onerror = () => reject(ERRORS.create(tx.error, `브라우저 데이터 저장(${key})`));
+      tx.onabort = () => reject(ERRORS.create(tx.error || new DOMException('Transaction aborted', 'AbortError'), `브라우저 데이터 저장(${key})`));
     });
   };
 
@@ -331,16 +411,43 @@
   };
 
   STORAGE.bulkPutIDB = async (storeName, items = []) => {
+    if (!Array.isArray(items)) throw new Error(`브라우저 일괄 저장(${storeName}) 실패: 저장 데이터가 배열이 아닙니다.`);
     const db = await STORAGE.initIDB();
     return new Promise((resolve, reject) => {
       if (!db.objectStoreNames.contains(storeName)) return reject(new Error(`ObjectStore not found: ${storeName}`));
       const tx = db.transaction(storeName, 'readwrite');
       const store = tx.objectStore(storeName);
-      (items || []).forEach(item => {
-        if (item) store.put(item);
-      });
+      try {
+        items.forEach(item => { if (item) store.put(item); });
+      } catch (error) {
+        try { tx.abort(); } catch (e) {}
+        reject(ERRORS.create(error, `브라우저 일괄 저장(${storeName})`));
+        return;
+      }
       tx.oncomplete = () => resolve(true);
-      tx.onerror = () => reject(tx.error);
+      tx.onerror = () => reject(ERRORS.create(tx.error, `브라우저 일괄 저장(${storeName})`));
+      tx.onabort = () => reject(ERRORS.create(tx.error || new DOMException('Transaction aborted', 'AbortError'), `브라우저 일괄 저장(${storeName})`));
+    });
+  };
+
+  STORAGE.replaceAllIDB = async (storeName, items = []) => {
+    if (!Array.isArray(items)) throw new Error(`브라우저 전체교체(${storeName}) 실패: 저장 데이터가 배열이 아닙니다.`);
+    const db = await STORAGE.initIDB();
+    return new Promise((resolve, reject) => {
+      if (!db.objectStoreNames.contains(storeName)) return reject(new Error(`ObjectStore not found: ${storeName}`));
+      const tx = db.transaction(storeName, 'readwrite');
+      const store = tx.objectStore(storeName);
+      try {
+        store.clear();
+        items.forEach(item => { if (item) store.put(item); });
+      } catch (error) {
+        try { tx.abort(); } catch (e) {}
+        reject(ERRORS.create(error, `브라우저 전체교체(${storeName})`));
+        return;
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(ERRORS.create(tx.error, `브라우저 전체교체(${storeName})`));
+      tx.onabort = () => reject(ERRORS.create(tx.error || new DOMException('Transaction aborted', 'AbortError'), `브라우저 전체교체(${storeName})`));
     });
   };
 
@@ -672,7 +779,10 @@
     try { current = JSON.parse(global.localStorage.getItem(HISTORY_KEY) || '[]') || []; } catch (e) { current = []; }
 
     const merged = [...normalized, ...current].slice(0, limit);
-    global.localStorage.setItem(HISTORY_KEY, JSON.stringify(merged));
+    STORAGE.writeLocalJSON(HISTORY_KEY, merged, { label: '변경 이력 저장' });
+    if (!HISTORY.verifyHistorySaved(normalized)) {
+      throw new Error('변경 이력 저장 실패: 저장 후 검증에서 새 이력을 찾지 못했습니다.');
+    }
     return merged;
   };
 
@@ -1409,6 +1519,75 @@
     return String(a ?? '') === String(b ?? '');
   };
 
+  MASTER.validateMasterExcelAnalysis = (analysis = {}) => {
+    const blockingErrors = [];
+    const warnings = [];
+    const summary = analysis && typeof analysis.summary === 'object' ? analysis.summary : {};
+    const candidates = Array.isArray(analysis?.candidates) ? analysis.candidates : [];
+    const sourceColumns = Array.isArray(analysis?.sourceColumns) ? analysis.sourceColumns : [];
+    const totalRows = Number(summary.totalRows ?? analysis?.totalRows ?? 0) || 0;
+    const noCodeCount = Number(summary.noCodeCount ?? analysis?.errors?.length ?? 0) || 0;
+    const duplicateCodeCount = Number(summary.duplicateCodeCount ?? analysis?.duplicateCodes?.length ?? 0) || 0;
+    const updateCount = Number(summary.updateCount ?? 0) || 0;
+    const createCount = Number(summary.createCount ?? 0) || 0;
+    const changeCount = updateCount + createCount;
+
+    if (!analysis || typeof analysis !== 'object' || !Array.isArray(analysis.candidates)) {
+      blockingErrors.push('분석 결과 형식이 올바르지 않습니다. 엑셀을 다시 선택해 분석하세요.');
+    }
+    if (totalRows <= 0) blockingErrors.push('엑셀 데이터 행이 없습니다. 첫 번째 시트와 헤더를 확인하세요.');
+    if (!sourceColumns.includes('품목코드')) {
+      blockingErrors.push('품목코드 컬럼을 찾지 못했습니다. 헤더에 품목코드·상품코드·바코드 중 하나가 필요합니다.');
+    }
+    if (noCodeCount > 0) {
+      const rows = (Array.isArray(analysis?.errors) ? analysis.errors : []).slice(0, 5).map(item => item?.rowNumber).filter(Boolean);
+      blockingErrors.push(`품목코드가 없는 행이 ${noCodeCount.toLocaleString()}건 있습니다${rows.length ? ` (행 ${rows.join(', ')})` : ''}. 해당 행을 수정하거나 삭제하세요.`);
+    }
+    if (duplicateCodeCount > 0) {
+      const codes = (Array.isArray(analysis?.duplicateCodes) ? analysis.duplicateCodes : []).slice(0, 5);
+      blockingErrors.push(`중복 품목코드가 ${duplicateCodeCount.toLocaleString()}건 있습니다${codes.length ? ` (${codes.join(', ')})` : ''}. 코드별로 한 행만 남기세요.`);
+    }
+
+    const seenCodes = new Set();
+    for (const candidate of candidates) {
+      const code = String(candidate?.code || '').trim();
+      if (!code) {
+        blockingErrors.push('적용 후보에 품목코드가 없는 항목이 있습니다. 엑셀을 다시 분석하세요.');
+        break;
+      }
+      if (seenCodes.has(code)) {
+        blockingErrors.push(`적용 후보에 중복 품목코드 ${code}가 있습니다. 엑셀을 다시 분석하세요.`);
+        break;
+      }
+      seenCodes.add(code);
+      if (!['create', 'update', 'same'].includes(String(candidate?.status || ''))) {
+        blockingErrors.push(`품목코드 ${code}의 적용 상태가 올바르지 않습니다. 엑셀을 다시 분석하세요.`);
+        break;
+      }
+    }
+
+    if (candidates.length === 0 && totalRows > 0) {
+      blockingErrors.push('적용 가능한 품목을 찾지 못했습니다. 품목코드와 헤더 구성을 확인하세요.');
+    }
+    if (changeCount === 0 && blockingErrors.length === 0) {
+      blockingErrors.push('변경하거나 추가할 품목이 없습니다. 현재 마스터와 동일한 파일인지 확인하세요.');
+    }
+    if ((Number(summary.missingInExcelCount) || 0) > 0) {
+      warnings.push(`엑셀에 없는 기존 상품 ${(Number(summary.missingInExcelCount) || 0).toLocaleString()}건은 삭제하지 않고 유지합니다.`);
+    }
+
+    const uniqueBlockingErrors = [...new Set(blockingErrors)];
+    return {
+      ok: uniqueBlockingErrors.length === 0,
+      blockingErrors: uniqueBlockingErrors,
+      warnings,
+      changeCount,
+      message: uniqueBlockingErrors.length > 0
+        ? `마스터 적용이 차단되었습니다. ${uniqueBlockingErrors.join(' ')}`
+        : `검증 통과: 수정 ${updateCount.toLocaleString()}건, 신규 ${createCount.toLocaleString()}건을 적용할 수 있습니다.`
+    };
+  };
+
   MASTER.analyzeMasterExcelUpload = ({ excelRows = [], currentMaster = {}, sourceHeaders = [] } = {}) => {
     const rows = Array.isArray(excelRows) ? excelRows : [];
     const masterMap = MASTER.buildMasterIndex(currentMaster);
@@ -1478,7 +1657,7 @@
     const excelCodeSet = new Set(candidates.map(c => c.code));
     const missingInExcel = Object.keys(masterMap).filter(code => !excelCodeSet.has(code));
 
-    return {
+    const analysis = {
       analyzedAt: getNowISO(),
       totalRows: rows.length,
       validRows: normalizedRows.length - duplicateCodes.length,
@@ -1503,6 +1682,8 @@
       duplicateGroups,
       missingInExcel
     };
+    analysis.validation = MASTER.validateMasterExcelAnalysis(analysis);
+    return analysis;
   };
 
   MASTER.createMasterBackup = async (masterInput = {}, label = '마스터엑셀업로드') => {
@@ -1530,13 +1711,14 @@
     const backup = backups.find(b => b && b.id === backupId);
     if (!backup) throw new Error('백업을 찾을 수 없습니다.');
     const items = Object.values(backup.data || {}).filter(item => item && (item.코드 || item.품목코드));
-    await STORAGE.bulkPutIDB(STORE_MASTER, items);
-    global.localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+    await STORAGE.replaceAllIDB(STORE_MASTER, items);
+    STORAGE.writeLocalValue('merchMaster_sync_trigger', Date.now().toString(), { label: '마스터 복구 알림 저장' });
     return backup;
   };
 
   MASTER.applyMasterExcelUpload = async ({ analysis, currentMaster = {}, label = '마스터엑셀업로드' } = {}) => {
-    if (!analysis || !Array.isArray(analysis.candidates)) throw new Error('적용할 마스터 업로드 분석 결과가 없습니다.');
+    const validation = MASTER.validateMasterExcelAnalysis(analysis);
+    if (!validation.ok) throw new Error(validation.message);
     const masterMap = MASTER.buildMasterIndex(currentMaster);
     const backup = await MASTER.createMasterBackup(masterMap, label);
     const historyLogs = [];
@@ -1579,13 +1761,37 @@
     });
 
     const items = Object.values(masterMap).filter(item => item && (item.코드 || item.품목코드));
-    await STORAGE.bulkPutIDB(STORE_MASTER, items);
-    if (historyLogs.length > 0) HISTORY.addHistoryLogs(historyLogs);
-    global.localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
-    global.localStorage.setItem('config_sync_trigger', Date.now().toString());
+    const previousItems = Object.values(backup.data || {}).filter(item => item && (item.코드 || item.품목코드));
+    let previousHistory = null;
+    try { previousHistory = global.localStorage.getItem(HISTORY_KEY); } catch (e) {}
+    let masterWriteCompleted = false;
+
+    HISTORY.assertHistoryForMutation(updateCount + createCount, historyLogs);
+    try {
+      await STORAGE.replaceAllIDB(STORE_MASTER, items);
+      masterWriteCompleted = true;
+      if (historyLogs.length > 0) HISTORY.addHistoryLogs(historyLogs);
+      STORAGE.writeLocalValue('merchMaster_sync_trigger', Date.now().toString(), { label: '마스터 변경 알림 저장' });
+      STORAGE.writeLocalValue('config_sync_trigger', Date.now().toString(), { label: '설정 변경 알림 저장' });
+    } catch (error) {
+      const rollbackFailures = [];
+      if (masterWriteCompleted) {
+        try { await STORAGE.replaceAllIDB(STORE_MASTER, previousItems); }
+        catch (rollbackError) { rollbackFailures.push(ERRORS.toActionableMessage(rollbackError, '마스터 자동복구')); }
+      }
+      try { STORAGE.restoreLocalValue(HISTORY_KEY, previousHistory, { label: '변경 이력 자동복구' }); }
+      catch (rollbackError) { rollbackFailures.push(ERRORS.toActionableMessage(rollbackError, '변경 이력 자동복구')); }
+
+      const baseMessage = ERRORS.toActionableMessage(error, '마스터 적용');
+      if (rollbackFailures.length > 0) {
+        throw new Error(`${baseMessage} 자동복구에도 실패했습니다: ${rollbackFailures.join(' / ')}. 적용을 중단하고 백업 복구를 실행하세요.`);
+      }
+      throw new Error(`${baseMessage} 변경 전 데이터로 자동 복구했습니다.`);
+    }
 
     return {
       status: 'success',
+      validation,
       backup,
       masterMap,
       updateCount,
@@ -1610,6 +1816,7 @@
   global.setIDB = global.setIDB || STORAGE.setIDB;
   global.getAllIDB = global.getAllIDB || STORAGE.getAllIDB;
   global.bulkPutIDB = global.bulkPutIDB || STORAGE.bulkPutIDB;
+  global.replaceAllIDB = global.replaceAllIDB || STORAGE.replaceAllIDB;
   global.getDefaultMerchMarginRules = global.getDefaultMerchMarginRules || getDefaultMerchMarginRules;
   global.sanitizeMerchMarginRules = global.sanitizeMerchMarginRules || sanitizeMerchMarginRules;
   global.normalizeMerchWarehouseForRule = global.normalizeMerchWarehouseForRule || normalizeMerchWarehouseForRule;
@@ -1632,6 +1839,7 @@
   global.pushConfigBackup = global.pushConfigBackup || CLOUD.pushConfigBackup;
   global.pullConfigBackup = global.pullConfigBackup || CLOUD.pullConfigBackup;
   global.analyzeMasterExcelUpload = global.analyzeMasterExcelUpload || MASTER.analyzeMasterExcelUpload;
+  global.validateMasterExcelAnalysis = global.validateMasterExcelAnalysis || MASTER.validateMasterExcelAnalysis;
   global.applyMasterExcelUpload = global.applyMasterExcelUpload || MASTER.applyMasterExcelUpload;
   global.getMasterBackups = global.getMasterBackups || MASTER.getMasterBackups;
   global.restoreMasterBackup = global.restoreMasterBackup || MASTER.restoreMasterBackup;

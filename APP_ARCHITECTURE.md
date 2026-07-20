@@ -1,7 +1,7 @@
 # ONEAPP Application Architecture
 
 - Repository: orderzoneapp-coder/oneapp
-- Architecture document version: 1.1.0
+- Architecture document version: 1.2.0
 - Last reviewed: 2026-07-20
 - Machine-readable companion: app-manifest.json
 
@@ -110,8 +110,20 @@ coreEngine.js defines the intended ONEAPP shared modules:
 - ONEAPP.EXPORT
 - ONEAPP.CLOUD
 - ONEAPP.MASTER
+- ONEAPP.ERRORS
 
 As of this review, settings.html explicitly loads coreEngine.js. MerchOps, DataOps, and SmartParser still contain overlapping or locally implemented logic. Treat coreEngine.js as the intended shared contract, but do not remove duplicated implementations until compatibility tests prove that each application produces the same output.
+
+### 5.5 Client-side safety baseline
+
+The master Excel workflow in settings.html uses the shared core engine and applies these controls before production data changes:
+
+- Accept only xlsx, xls, or csv files up to 25 MB and 100,000 data rows.
+- Block the entire apply action when a row has no product code, a product code is duplicated, or no actual change exists.
+- Keep existing products that are absent from the workbook; absence is a warning, not a delete instruction.
+- Replace the IndexedDB master store in one transaction and verify localStorage writes.
+- If a post-write history or notification step fails, restore the previous master and history automatically.
+- Keep validation and storage errors visible until the operator fixes the file, retries, or clears the analysis.
 
 ## 6. Primary business flows
 
@@ -216,8 +228,9 @@ Roadmap work is delivered as separate pull requests and verified after each merg
    - Establish a verified recovery point.
    - Add JSON, HTML, JavaScript, navigation, and application-load checks.
 2. Client-side safety
-   - Remove unsafe dynamic HTML insertion.
-   - Protect CSV output, validate cloud URLs, and limit imported file size and row count.
+   - Validate imported rows before apply and block ambiguous partial writes.
+   - Protect browser storage writes and automatically restore failed master applies.
+   - Display actionable errors and limit imported file type, size, and row count.
 3. Cloud service protection
    - Add request validation and access control to code.gs.
    - Separate read, write, and destructive actions and reject unknown actions.

@@ -476,8 +476,15 @@ const App = () => {
     const [processMsg, setProcessMsg] = useState('');
     const [masterUploadAnalysis, setMasterUploadAnalysis] = useState(null);
     const [masterUploadFileName, setMasterUploadFileName] = useState('');
+    const [masterUploadError, setMasterUploadError] = useState('');
     const [masterBackups, setMasterBackups] = useState([]);
     const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+    const getActionableError = (error, context) => {
+        if (error?.name === 'OneAppClientError' && error?.message) return error.message;
+        const formatter = window.ONEAPP?.ERRORS?.toActionableMessage;
+        if (typeof formatter === 'function') return formatter(error, context);
+        return `${context} 실패: ${error?.message || error || '알 수 없는 오류'}`;
+    };
     useEffect(() => {
         const syncActiveTableTargetFromMerchOps = () => {
             const storedTarget = localStorage.getItem('merchActiveTableTarget_v1');
@@ -523,37 +530,71 @@ const App = () => {
         catch (e) { setMasterBackups([]); }
     };
     useEffect(() => { loadMasterBackups(); }, []);
+    const MASTER_IMPORT_MAX_BYTES = 25 * 1024 * 1024;
+    const MASTER_IMPORT_MAX_ROWS = 100000;
     const parseMasterExcelFile = (file) => new Promise((resolve, reject) => {
+        if (!file) return reject(new Error('선택한 파일이 없습니다.'));
+        if (!/\.(xlsx|xls|csv)$/i.test(String(file.name || ''))) {
+            return reject(new Error('지원하지 않는 파일 형식입니다. xlsx, xls, csv 파일만 선택하세요.'));
+        }
+        if ((Number(file.size) || 0) > MASTER_IMPORT_MAX_BYTES) {
+            return reject(new Error(`파일이 25MB를 초과합니다. 엑셀을 분할하거나 불필요한 시트를 제거한 뒤 다시 시도하세요.`));
+        }
         if (!window.XLSX) return reject(new Error('엑셀 파서가 로드되지 않았습니다.'));
         const reader = new FileReader();
         reader.onload = (e) => {
             try {
                 const wb = window.XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
-                const ws = wb.Sheets[wb.SheetNames[0]];
+                if (!Array.isArray(wb.SheetNames) || wb.SheetNames.length === 0) {
+                    throw new Error('엑셀에 읽을 수 있는 시트가 없습니다.');
+                }
+                const firstSheetName = wb.SheetNames[0];
+                const ws = wb.Sheets[firstSheetName];
+                if (!ws) throw new Error('첫 번째 시트를 읽을 수 없습니다.');
                 const rows = window.XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
-                resolve({ rows, sourceHeaders: rows.length > 0 ? Object.keys(rows[0] || {}) : [], sheetName: wb.SheetNames[0] });
+                if (!Array.isArray(rows) || rows.length === 0) {
+                    throw new Error('첫 번째 시트에 데이터 행이 없습니다. 헤더가 첫 행에 있는지 확인하세요.');
+                }
+                if (rows.length > MASTER_IMPORT_MAX_ROWS) {
+                    throw new Error(`데이터가 ${MASTER_IMPORT_MAX_ROWS.toLocaleString()}행을 초과합니다. 파일을 분할한 뒤 다시 시도하세요.`);
+                }
+                const sourceHeaders = Object.keys(rows[0] || {}).map(header => String(header || '').trim()).filter(Boolean);
+                if (sourceHeaders.length === 0) throw new Error('첫 번째 시트의 헤더를 찾지 못했습니다.');
+                resolve({ rows, sourceHeaders, sheetName: firstSheetName });
             }
             catch (err) { reject(err); }
         };
         reader.onerror = () => reject(reader.error || new Error('파일 읽기 실패'));
+        reader.onabort = () => reject(new Error('파일 읽기가 중단되었습니다. 파일을 다시 선택하세요.'));
         reader.readAsArrayBuffer(file);
     });
     const handlePromotionThemeSettings = async (file) => {
         if (!file) return;
+        setMasterUploadError('');
+        setMasterUploadAnalysis(null);
         setIsProcessing(true);
         setProcessMsg('마스터 엑셀 분석 중...');
         try {
             const parsed = await parseMasterExcelFile(file);
-            const analyzer = window.ONEAPP?.MASTER?.analyzePromotionThemeSettings || window.analyzePromotionThemeSettings;
+            const analyzer = window.ONEAPP?.MASTER?.analyzeMasterExcelUpload || window.analyzeMasterExcelUpload;
             if (typeof analyzer !== 'function') throw new Error('coreEngine의 마스터 업로드 엔진을 찾을 수 없습니다.');
             const analysis = analyzer({ excelRows: parsed.rows, currentMaster: data.masterProducts, sourceHeaders: parsed.sourceHeaders });
+            const validator = window.ONEAPP?.MASTER?.validateMasterExcelAnalysis || window.validateMasterExcelAnalysis;
+            const validation = analysis.validation || (typeof validator === 'function' ? validator(analysis) : { ok: false, blockingErrors: ['마스터 업로드 검증 엔진을 찾을 수 없습니다.'] });
             setMasterUploadFileName(file.name || '마스터 엑셀');
-            setMasterUploadAnalysis({ ...analysis, sheetName: parsed.sheetName });
-            showToast(`✅ 마스터 엑셀 분석 완료: ${analysis.summary.totalRows.toLocaleString()}행`);
+            setMasterUploadAnalysis({ ...analysis, validation, sheetName: parsed.sheetName });
+            if (!validation.ok) {
+                setMasterUploadError(validation.message || `마스터 적용이 차단되었습니다. ${(validation.blockingErrors || []).join(' ')}`);
+                showToast(`⚠️ 분석 완료 · 오류를 수정해야 적용할 수 있습니다.`);
+            } else {
+                showToast(`✅ 마스터 엑셀 검증 완료: ${analysis.summary.totalRows.toLocaleString()}행`);
+            }
         }
         catch (err) {
             console.error(err);
-            showToast('❌ 마스터 엑셀 분석 실패: ' + err.message);
+            const message = getActionableError(err, '마스터 엑셀 분석');
+            setMasterUploadError(message);
+            showToast('❌ 마스터 엑셀 분석 실패 · 아래 상세내용을 확인하세요.');
         }
         finally {
             setIsProcessing(false);
@@ -562,23 +603,32 @@ const App = () => {
     };
     const handleApplyPromotionThemeSettings = async () => {
         if (!masterUploadAnalysis) return showToast('⚠️ 먼저 마스터 엑셀을 분석하세요.');
+        const validator = window.ONEAPP?.MASTER?.validateMasterExcelAnalysis || window.validateMasterExcelAnalysis;
+        const validation = masterUploadAnalysis.validation || (typeof validator === 'function' ? validator(masterUploadAnalysis) : { ok: false, blockingErrors: ['마스터 업로드 검증 엔진을 찾을 수 없습니다.'] });
+        if (!validation.ok) {
+            const message = validation.message || `마스터 적용이 차단되었습니다. ${(validation.blockingErrors || []).join(' ')}`;
+            setMasterUploadError(message);
+            return showToast('❌ 검증 오류를 수정한 뒤 다시 분석하세요.');
+        }
         const s = masterUploadAnalysis.summary || {};
         const confirmMsg = `마스터DB를 엑셀 기준으로 수정합니다.\n\n수정: ${(s.updateCount || 0).toLocaleString()}건\n신규: ${(s.createCount || 0).toLocaleString()}건\n중복: ${(s.duplicateCodeCount || 0).toLocaleString()}건\n코드없음: ${(s.noCodeCount || 0).toLocaleString()}건\n\n적용 전 자동 백업 후 진행합니다.`;
         if (!window.confirm(confirmMsg)) return;
+        setMasterUploadError('');
         setIsProcessing(true);
         setProcessMsg('마스터DB 백업 및 적용 중...');
         try {
-            const applier = window.ONEAPP?.MASTER?.applyPromotionThemeSettings || window.applyPromotionThemeSettings;
+            const applier = window.ONEAPP?.MASTER?.applyMasterExcelUpload || window.applyMasterExcelUpload;
             if (typeof applier !== 'function') throw new Error('coreEngine의 마스터 적용 엔진을 찾을 수 없습니다.');
             const result = await applier({ analysis: masterUploadAnalysis, currentMaster: data.masterProducts, label: masterUploadFileName || '마스터엑셀업로드' });
             data.setMasterProducts(result.masterMap || {});
-            localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
             await loadMasterBackups();
             showToast(`✅ 마스터 적용 완료: 수정 ${result.updateCount.toLocaleString()}건 / 신규 ${result.createCount.toLocaleString()}건`);
         }
         catch (err) {
             console.error(err);
-            showToast('❌ 마스터 적용 실패: ' + err.message);
+            const message = getActionableError(err, '마스터 적용');
+            setMasterUploadError(message);
+            showToast('❌ 마스터 적용 실패 · 아래 상세내용을 확인하세요.');
         }
         finally {
             setIsProcessing(false);
@@ -595,12 +645,14 @@ const App = () => {
             if (typeof restorer !== 'function') throw new Error('coreEngine의 백업 복구 엔진을 찾을 수 없습니다.');
             const backup = await restorer(backupId);
             data.setMasterProducts(backup.data || {});
-            localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+            setMasterUploadError('');
             showToast(`✅ 백업 복구 완료: ${(backup.count || 0).toLocaleString()}건`);
         }
         catch (err) {
             console.error(err);
-            showToast('❌ 백업 복구 실패: ' + err.message);
+            const message = getActionableError(err, '마스터 백업 복구');
+            setMasterUploadError(message);
+            showToast('❌ 백업 복구 실패 · 아래 상세내용을 확인하세요.');
         }
         finally {
             setIsProcessing(false);
@@ -1282,6 +1334,9 @@ const App = () => {
     const deleteMarginRule = (id) => config.setMarginRules((config.marginRules || []).filter(r => r.id !== id));
 
     const masterUploadSummary = (masterUploadAnalysis && masterUploadAnalysis.summary) || {};
+    const masterUploadValidation = masterUploadAnalysis
+        ? (masterUploadAnalysis.validation || { ok: false, blockingErrors: ['검증 결과가 없습니다. 엑셀을 다시 분석하세요.'], warnings: [] })
+        : null;
     const masterUploadFieldCounts = masterUploadAnalysis ? Object.entries(masterUploadSummary.fieldCounts || {}) : [];
     const masterUploadPreviewRows = masterUploadAnalysis ? [
         ...((masterUploadAnalysis.changeRows || []).flatMap(row => (row.changes || []).map(ch => ({ type: '수정', code: row.code, name: row.name, field: ch.field, oldVal: ch.oldVal, newVal: ch.newVal })))),
@@ -1297,10 +1352,17 @@ const App = () => {
             React.createElement("div", { className: "flex flex-wrap items-center gap-3" },
                 React.createElement("label", { className: "cursor-pointer inline-flex items-center gap-2 bg-cyan-600 hover:bg-cyan-700 text-white px-5 py-3 rounded-xl text-[13px] font-black shadow-md" },
                     React.createElement("i", { className: "fas fa-file-excel" }), "마스터 엑셀 선택",
-                    React.createElement("input", { type: "file", accept: ".xlsx,.xls,.csv", className: "hidden", onChange: e => handlePromotionThemeSettings(e.target.files && e.target.files[0]) })),
-                masterUploadAnalysis && React.createElement("button", { onClick: handleApplyPromotionThemeSettings, className: "inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-xl text-[13px] font-black shadow-md" }, React.createElement("i", { className: "fas fa-check-circle" }), "마스터 적용"),
-                masterUploadAnalysis && React.createElement("button", { onClick: () => { setMasterUploadAnalysis(null); setMasterUploadFileName(''); }, className: "inline-flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-3 rounded-xl text-[13px] font-bold border" }, React.createElement("i", { className: "fas fa-times" }), "초기화")),
-            React.createElement("div", { className: "mt-4 text-[12px] text-slate-500 leading-relaxed" }, "정책: 엑셀에 있는 컬럼만 수정 / 없는 컬럼은 기존값 유지 / 공란과 0은 그대로 반영 / 엑셀에 없는 기존 상품은 삭제하지 않음 / 1당수량은 숫자형 컬럼")),
+                    React.createElement("input", { type: "file", accept: ".xlsx,.xls,.csv", className: "hidden", onChange: e => { const file = e.target.files && e.target.files[0]; e.target.value = ''; handlePromotionThemeSettings(file); } })),
+                masterUploadAnalysis && React.createElement("button", { onClick: handleApplyPromotionThemeSettings, disabled: !masterUploadValidation?.ok, title: masterUploadValidation?.ok ? "검증된 변경을 마스터에 적용" : "오류를 수정한 뒤 엑셀을 다시 분석하세요.", className: `inline-flex items-center gap-2 px-5 py-3 rounded-xl text-[13px] font-black shadow-md ${masterUploadValidation?.ok ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'}` }, React.createElement("i", { className: "fas fa-check-circle" }), masterUploadValidation?.ok ? "마스터 적용" : "오류 수정 후 적용"),
+                masterUploadAnalysis && React.createElement("button", { onClick: () => { setMasterUploadAnalysis(null); setMasterUploadFileName(''); setMasterUploadError(''); }, className: "inline-flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-3 rounded-xl text-[13px] font-bold border" }, React.createElement("i", { className: "fas fa-times" }), "초기화")),
+            React.createElement("div", { className: "mt-4 text-[12px] text-slate-500 leading-relaxed" }, "정책: xlsx·xls·csv / 최대 25MB·100,000행 / 품목코드 없음·중복코드가 있으면 전체 적용 차단 / 엑셀에 있는 컬럼만 수정 / 없는 기존 상품은 유지 / 적용 전 자동 백업")),
+        masterUploadError && React.createElement("div", { className: "bg-rose-50 border border-rose-200 rounded-2xl p-5 text-rose-800 shadow-sm" },
+            React.createElement("div", { className: "flex items-start gap-3" },
+                React.createElement("i", { className: "fas fa-exclamation-triangle mt-0.5 text-rose-500" }),
+                React.createElement("div", null,
+                    React.createElement("div", { className: "font-black text-[14px]" }, "확인이 필요한 문제"),
+                    React.createElement("div", { className: "mt-1 text-[12px] font-bold leading-relaxed whitespace-pre-wrap" }, masterUploadError)))),
+        masterUploadValidation?.warnings?.length > 0 && React.createElement("div", { className: "bg-amber-50 border border-amber-200 rounded-2xl p-4 text-amber-800 text-[12px] font-bold" }, masterUploadValidation.warnings.join(' ')),
         masterUploadAnalysis && React.createElement("div", { className: "grid grid-cols-4 gap-4" },
             React.createElement("div", { className: "bg-white rounded-xl border p-4" }, React.createElement("div", { className: "text-[11px] text-slate-400 font-black" }, "엑셀 행수"), React.createElement("div", { className: "text-2xl font-black text-slate-800" }, (masterUploadSummary.totalRows || 0).toLocaleString())),
             React.createElement("div", { className: "bg-white rounded-xl border p-4" }, React.createElement("div", { className: "text-[11px] text-slate-400 font-black" }, "수정"), React.createElement("div", { className: "text-2xl font-black text-indigo-700" }, (masterUploadSummary.updateCount || 0).toLocaleString())),
