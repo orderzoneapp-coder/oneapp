@@ -87,7 +87,7 @@ assert.ok(
   "Quick F8 must honor an explicit Excel sale value before the estimate default",
 );
 
-assert.match(html, /actionType: '엑셀 판매여부 반영'/);
+assert.match(html, /\? '공통 일괄입력' : '엑셀 판매여부 반영'/);
 assert.match(html, /window\.resolveMerchSaleAvailability\(current, mItem\)/);
 assert.match(html, /판매여부: mItem\['판매여부'\] \?\? ''/);
 
