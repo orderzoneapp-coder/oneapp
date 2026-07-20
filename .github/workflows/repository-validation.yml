@@ -41,6 +41,6 @@ jobs:
       - name: Test MerchOps rule placement and SmartParser direct information apply
         run: node scripts/test-merchops-direct-info.mjs
 
-      - name: Test MerchOps Excel spot-price and linkage-code mapping
+      - name: Test MerchOps Excel codes, bulk edit, and price filters
         run: node scripts/test-merchops-spot-price.mjs
 
