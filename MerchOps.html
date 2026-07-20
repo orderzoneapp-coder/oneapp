@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.151_ResetVerticalAlign]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.152_SaleAvailabilityPipeline]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -52,6 +52,7 @@
         // v2.1.149: 메인 초기화 버튼을 툴바 흐름에서 분리해 우측 상단에 절대 고정하고, 1단 도구영역에 버튼 폭만큼 우측 여백을 확보해 줄바꿈과 겹침을 방지한다.
         // v2.1.150: 상단 1단 툴바의 가로 스크롤을 제거하고 그룹 간격을 압축한다. 불필요한 마스터&작업 텍스트와 구분선을 삭제해 전체 버튼과 우측 초기화 버튼이 한 줄의 고정 영역에 자리잡도록 한다.
         // v2.1.151: 우측 고정 초기화 버튼의 상단 오프셋·높이·패딩·그림자를 다른 1단 버튼과 맞춰 수직 정렬과 시각적 균형을 보정한다.
+        // v2.1.152: 모든 불러오기에서 판매여부를 작업값으로 보존하고, 행사초기화·Quick F8·마스터 반영까지 동일한 0/1 판정을 사용한다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결하며 오더즈판매가/오더즈구매가는 작업·출력에서 제외한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
@@ -683,6 +684,71 @@
         };
 
 
+
+        // ============================================================
+        // [M-SALE-AVAILABILITY-01] 판매여부 공통 파이프라인
+        // 역할: 엑셀의 판매/판매여부/판매상태를 작업대, 행사초기화, F8 출력과 마스터 반영에서 같은 0/1 값으로 사용한다.
+        // 원칙: 숫자 0도 공란으로 취급하지 않으며, 명시값이 없을 때만 기존 업무별 기본정책을 사용한다.
+        // ============================================================
+        window.normalizeMerchSaleAvailability = window.normalizeMerchSaleAvailability || ((value) => {
+            const raw = String(value ?? '').trim();
+            const lower = raw.toLowerCase();
+            if (raw === '') return '';
+            if (['0', '정지', '정지중', '판매중단', '중단', '미판매'].includes(raw) || ['false', 'no', 'n'].includes(lower)) return '0';
+            if (['1', '판매', '판매중', '정상', '판매가능'].includes(raw) || ['true', 'yes', 'y'].includes(lower)) return '1';
+            const numeric = Number(raw.replace(/,/g, ''));
+            if (Number.isFinite(numeric) && (numeric === 0 || numeric === 1)) return String(numeric);
+            return '';
+        });
+        window.getMerchExplicitSaleAvailability = window.getMerchExplicitSaleAvailability || ((row = {}) => {
+            const finalData = row.finalData || {};
+            if (finalData._salesStopRequested === true) return { hasValue: true, code: '0', raw: 0, field: '_salesStopRequested', origin: 'action' };
+            if (finalData._salesResumeRequested === true) return { hasValue: true, code: '1', raw: 1, field: '_salesResumeRequested', origin: 'action' };
+            const saleFields = ['판매여부', '판매', '판매상태'];
+            const inspect = (obj = {}, origin = '') => {
+                for (const field of saleFields) {
+                    if (!obj || !Object.prototype.hasOwnProperty.call(obj, field)) continue;
+                    const raw = obj[field];
+                    const code = window.normalizeMerchSaleAvailability(raw);
+                    if (code !== '') return { hasValue: true, code, raw, field, origin };
+                }
+                return null;
+            };
+            const editedFields = finalData._editedFields || {};
+            for (const field of saleFields) {
+                if (!editedFields[field] || !Object.prototype.hasOwnProperty.call(finalData, field)) continue;
+                const code = window.normalizeMerchSaleAvailability(finalData[field]);
+                if (code !== '') return { hasValue: true, code, raw: finalData[field], field, origin: 'edited' };
+            }
+            const sources = row.sources || {};
+            const activeRole = window.getCurrentMerchSourceRole
+                ? window.getCurrentMerchSourceRole(sources, row._lastUploadRole || '')
+                : String(sources._activeRole || row._lastUploadRole || '').trim();
+            const roles = [activeRole, 'info', 'estimate', 'purchase', 'sales', 'inventory', 'catalog', 'parser'].filter(Boolean);
+            for (const role of [...new Set(roles)]) {
+                const found = inspect(sources[role] || {}, `source:${role}`);
+                if (found) return found;
+            }
+            if (window.hasAnyUploadSource && window.hasAnyUploadSource(sources)) {
+                const found = inspect(finalData, 'working');
+                if (found) return found;
+            }
+            return { hasValue: false, code: '', raw: '', field: '', origin: '' };
+        });
+        window.resolveMerchSaleAvailability = window.resolveMerchSaleAvailability || ((row = {}, master = {}) => {
+            const explicit = window.getMerchExplicitSaleAvailability(row);
+            if (explicit.hasValue) return explicit;
+            const inspect = (obj = {}, origin = '') => {
+                for (const field of ['판매여부', '판매', '판매상태']) {
+                    if (!obj || !Object.prototype.hasOwnProperty.call(obj, field)) continue;
+                    const code = window.normalizeMerchSaleAvailability(obj[field]);
+                    if (code !== '') return { hasValue: true, code, raw: obj[field], field, origin };
+                }
+                return null;
+            };
+            return inspect(row.finalData || {}, 'working') || inspect(master || {}, 'master') || { hasValue: false, code: '', raw: '', field: '', origin: '' };
+        });
+
         // 판매상태는 현재 작업정보가 아니라 마스터에 저장된 결과 상태다.
         // 화면 표시는 숫자와 상태를 섞지 않고 행사/판매/품절/정지 4개로 단순화한다.
         // 테마1~테마5는 판매상태가 아니라 행사 상세정보로 별도 표시한다.
@@ -1267,12 +1333,23 @@ const getInitialVisibleMasterCols = () => ({
     info: ["브랜드","간단설명","출고가","시중가","행사가","행사테마","테마1","테마2","테마3","테마4","테마5","판매여부","준비기간","마감시간","검색어등록","싯가판매여부","재입고 준비기간","주문마감시간","최소구매수","최대구매수","과세","유통사코드","단가연동","찜적용안함","재고"]
 });
 const getInitialVisibleUploadCols = () => ({
-    catalog: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A', '행사가', '행사테마'],
-    estimate: ['창고', '기준일자', '구매처', '브랜드', '견적서', '단위', '재고수량', '상품 구매일자', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '행사테마', '검색어등록'],
-    purchase: ['창고', '구매처', '단위', '입고가', '입고수량'],
-    sales: ['창고', '구매처', '단위', '출고가', '출고량'],
-    inventory: ['창고', '기준일자', '재고수량', '기록', '거래', '최종(창고)', '구분(기본)', '상품 구매일자', '구매처', '단위', '입고가', '출고가', '행사가', '간단설명'],
+    catalog: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A', '행사가', '행사테마', '판매여부'],
+    estimate: ['창고', '기준일자', '구매처', '브랜드', '견적서', '단위', '재고수량', '상품 구매일자', '입고가', '외주비', '노무비', '출고가', '입고B', '도매A', '간단설명', '행사가', '행사테마', '판매여부', '검색어등록'],
+    purchase: ['창고', '구매처', '단위', '입고가', '입고수량', '판매여부'],
+    sales: ['창고', '구매처', '단위', '출고가', '출고량', '판매여부'],
+    inventory: ['창고', '기준일자', '재고수량', '기록', '거래', '최종(창고)', '구분(기본)', '상품 구매일자', '구매처', '단위', '입고가', '출고가', '행사가', '판매여부', '간단설명'],
     info: ['분류1코드', '분류1명', '분류2코드', '분류2명', '분류3코드', '분류3명', '브랜드', '찜적용안함', '상품코드', '상품명', '규격', '싯가판매여부', '재입고 준비기간', '주문마감시간', '판매', '판매가격', '시중가격', '재고', '최소구매수', '최대구매수', '기본설명', '테마1', '테마2', '테마3', '테마4', '테마5', '과세', '상품태그', '유통사코드', '원상품코드', '복사상품코드', '단가연동']
+});
+window.withMerchSaleAvailabilityColumn = window.withMerchSaleAvailabilityColumn || ((columns = [], rows = [], target = 'estimate') => {
+    const next = Array.isArray(columns) ? [...columns] : [];
+    const hasSaleValue = (Array.isArray(rows) ? rows : []).some(row => {
+        const explicit = window.getMerchExplicitSaleAvailability ? window.getMerchExplicitSaleAvailability(row || {}) : { hasValue: false };
+        return explicit.hasValue === true;
+    });
+    if (!hasSaleValue) return next;
+    const saleColumn = String(target || '') === 'info' ? '판매' : '판매여부';
+    if (!next.includes(saleColumn)) next.push(saleColumn);
+    return next;
 });
 // ============================================================
 // [M-TABLE-01] 테이블 양식 프리셋 정책
@@ -3246,6 +3323,13 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                         mItem.sources[role]['부가세여부'] = window.normalizeMerchTaxFlag(row[taxKey], taxKey);
                         mItem.sources[role]['_taxHeader'] = taxKey;
                     }
+                    const saleKey = headerCache['판매'] || headerCache['판매여부'] || findActualHeader(['판매여부', '판매', '판매상태']);
+                    if (saleKey) {
+                        const rawSale = row[saleKey];
+                        mItem.sources[role]['판매'] = rawSale;
+                        mItem.sources[role]['판매여부'] = window.normalizeMerchSaleAvailability ? window.normalizeMerchSaleAvailability(rawSale) : String(rawSale ?? '').trim();
+                        mItem.sources[role]['_saleAvailabilitySourceHeader'] = saleKey;
+                    }
                     if (role === 'info') {
                         const infoSource = mItem.sources.info;
                         infoSource._originalHeaders = [...actualHeaders];
@@ -3272,10 +3356,10 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                             infoSource['재고'] = window.keepExcelCellValue(row[headerCache['재고']], true);
                             infoSource['재고수량'] = infoSource['재고'];
                         }
-                        if (headerCache['판매']) {
-                            const rawSale = String(row[headerCache['판매']] ?? '').trim();
+                        if (saleKey) {
+                            const rawSale = row[saleKey];
                             infoSource['판매'] = rawSale;
-                            infoSource['판매여부'] = rawSale === '0' ? '0' : (rawSale === '' ? '' : '1');
+                            infoSource['판매여부'] = window.normalizeMerchSaleAvailability ? window.normalizeMerchSaleAvailability(rawSale) : String(rawSale ?? '').trim();
                         }
                         const infoTheme = window.normalizePromotionThemeValue ? window.normalizePromotionThemeValue(infoSource, row) : '';
                         if (infoTheme) {
@@ -4504,11 +4588,19 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             return [1, 2, 3, 4, 5].map(n => codes.includes(String(n)) ? '1' : '');
         };
         const getSaleCode = (row) => {
-            // v2.1.106 견적서 쇼핑몰업로드 정책: 견적서 상품은 판매여부를 무조건 1로 출력한다.
-            if (isEstimateQuickRow(row)) return '1';
             const finalData = row.finalData || {};
-            if (finalData._salesStopRequested === true || String(finalData['판매여부']) === '0')
-                return '0';
+            if (finalData._salesStopRequested === true) return '0';
+            if (finalData._salesResumeRequested === true) return '1';
+            const explicitSale = window.getMerchExplicitSaleAvailability
+                ? window.getMerchExplicitSaleAvailability(row)
+                : { hasValue: false, code: '' };
+            if (explicitSale.hasValue) return explicitSale.code;
+            // 견적서에 판매여부 열이 없을 때만 기존 기본정책(판매 1)을 사용한다.
+            if (isEstimateQuickRow(row)) return '1';
+            const resolvedSale = window.resolveMerchSaleAvailability
+                ? window.resolveMerchSaleAvailability(row, getMasterForQuickRow(row))
+                : { hasValue: false, code: '' };
+            if (resolvedSale.hasValue) return resolvedSale.code;
             const out = getBestNum(row, '출고가');
             const promo = getBestNum(row, '행사가');
             return (out > 0 || promo > 0) ? '1' : '0';
@@ -4943,8 +5035,7 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
                         [1, 2, 3, 4, 5].forEach(n => { newMaster[item.코드][`테마${n}`] = themeValue.split(',').includes(String(n)) ? '1' : ''; });
                     }
                 }
-                // 판매중지/판매재개는 정지관리 또는 사용자의 명시적 액션만 마스터에 반영한다.
-                // 일반 가격·재고·행사 작업으로 판매여부를 자동 변경하지 않는다.
+                // 정지관리 요청을 우선하고, 그 외에는 엑셀/수기 작업에 판매여부가 명시된 경우에만 마스터에 반영한다.
                 if (item.finalData._salesResumeRequested === true) {
                     const oldStatus = oldItem['판매여부'] !== undefined && oldItem['판매여부'] !== '' ? oldItem['판매여부'] : '-';
                     if (String(oldStatus) !== '1') {
@@ -4955,15 +5046,15 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
                         });
                     }
                     newMaster[item.코드]['판매여부'] = 1;
-                } else if (item.finalData._salesStopRequested === true || String(item.finalData['판매여부']) === '0') {
+                } else if (item.finalData._salesStopRequested === true) {
                     const oldStatus = oldItem['판매여부'] !== undefined && oldItem['판매여부'] !== '' ? oldItem['판매여부'] : '-';
                     if (String(oldStatus) !== '0') {
                         localLogs.push({
                             id: window.generateUUID(),
                             timestamp: nowStr,
                             code: code,
-                            name: oldItem.품목명 || ((_b = (_a = item.sources) === null || _a === void 0 ? void 0 : _a.estimate) === null || _b === void 0 ? void 0 : _b.품목명) || '',
-                            spec: oldItem.규격 || ((_d = (_c = item.sources) === null || _c === void 0 ? void 0 : _c.estimate) === null || _d === void 0 ? void 0 : _d.규격) || '',
+                            name: oldItem.품목명 || item.sources?.estimate?.품목명 || '',
+                            spec: oldItem.규격 || item.sources?.estimate?.규격 || '',
                             field: '판매여부',
                             oldVal: oldStatus,
                             newVal: '정지',
@@ -4973,6 +5064,29 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
                         });
                     }
                     newMaster[item.코드]['판매여부'] = 0;
+                } else {
+                    const explicitSale = window.getMerchExplicitSaleAvailability
+                        ? window.getMerchExplicitSaleAvailability(item)
+                        : { hasValue: false, code: '' };
+                    if (explicitSale.hasValue) {
+                        const oldStatus = window.normalizeMerchSaleAvailability ? window.normalizeMerchSaleAvailability(oldItem['판매여부']) : String(oldItem['판매여부'] ?? '');
+                        if (oldStatus !== explicitSale.code) {
+                            localLogs.push({
+                                id: window.generateUUID(),
+                                timestamp: nowStr,
+                                code,
+                                name: oldItem.품목명 || item.finalData?.품목명 || '',
+                                spec: oldItem.규격 || item.finalData?.규격 || '',
+                                field: '판매여부',
+                                oldVal: oldStatus === '' ? '공백' : oldStatus,
+                                newVal: explicitSale.code,
+                                diff: 0,
+                                actionType: '엑셀 판매여부 반영',
+                                source: `MerchOps ${explicitSale.origin || 'working'}`
+                            });
+                        }
+                        newMaster[item.코드]['판매여부'] = Number(explicitSale.code);
+                    }
                 }
                 if (!promoResetRequested) {
                     Object.keys(item.finalData).forEach(field => {
@@ -5318,7 +5432,7 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
                 브랜드: mItem['브랜드'] || '',
                 간단설명: mItem['간단설명'] || '',
                 검색어등록: mItem['검색어등록'] || mItem['상품태그'] || '',
-                판매여부: mItem['판매여부'] || '',
+                판매여부: mItem['판매여부'] ?? '',
                 행사가: mItem['행사가'] || '',
                 행사테마: mItem['행사테마'] || '',
                 재고수량: mItem['재고수량'] || 999,
@@ -5392,7 +5506,10 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
                     const wholesaleA = getResetUploadValue(mItem, ['도매A'], '');
                     const wholesaleB = getResetUploadValue(mItem, ['도매B'], '');
                     const marketPrice = getResetUploadValue(mItem, ['시중가'], outPrice);
-                    const saleCode = String(getResetUploadValue(mItem, ['판매여부'], '1')) === '0' ? '0' : '1';
+                    const resetSale = window.resolveMerchSaleAvailability
+                        ? window.resolveMerchSaleAvailability(current, mItem)
+                        : { hasValue: true, code: String(getResetUploadValue(mItem, ['판매여부'], '1')) === '0' ? '0' : '1' };
+                    const saleCode = resetSale.hasValue ? resetSale.code : '1';
                     const stockQty = getResetUploadValue(mItem, ['재고수량', '재고'], 999);
                     resetShopRows.push([
                         code,
@@ -7601,7 +7718,7 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
     const targetWorkCols = (visibleUploadCols === null || visibleUploadCols === void 0 ? void 0 : visibleUploadCols[activeTableTarget]);
     const currentMasterCols = registrationMode ? [] : (Array.isArray(targetMasterCols) ? targetMasterCols : (getInitialVisibleMasterCols()[activeTableTarget] || [])).filter(h => !requiredCoreFields.includes(h));
     const isParserListTableMode = !registrationMode && (state.activeTags || []).some(t => String(t?.type || '') === 'catalog');
-    const currentWorkCols = registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : window.filterMerchInfoWorkColumns((Array.isArray(targetWorkCols) ? targetWorkCols : (getInitialVisibleUploadCols()[activeTableTarget] || []))).filter(h => h !== '품목코드' && h !== '구매리포트' && h !== '구매검증리포트');
+    const currentWorkCols = registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : window.withMerchSaleAvailabilityColumn(window.filterMerchInfoWorkColumns((Array.isArray(targetWorkCols) ? targetWorkCols : (getInitialVisibleUploadCols()[activeTableTarget] || []))).filter(h => h !== '품목코드' && h !== '구매리포트' && h !== '구매검증리포트'), [row], activeTableTarget);
     const columnWidths = window.normalizeMerchColumnWidths(state.columnWidths || {});
     const widthStyle = (key, label, fallback) => window.getMerchColumnWidthStyle(columnWidths, key, label, fallback);
     const hasUploadNameField = !!(row.finalData && Object.prototype.hasOwnProperty.call(row.finalData, '품목명'));
@@ -7939,7 +8056,7 @@ const ExcelDataGrid = ({ state, actions }) => {
     const targetWorkCols = (visibleUploadCols === null || visibleUploadCols === void 0 ? void 0 : visibleUploadCols[activeTableTarget]);
     const currentMasterCols = registrationMode ? [] : (Array.isArray(targetMasterCols) ? targetMasterCols : (getInitialVisibleMasterCols()[activeTableTarget] || [])).filter(h => !requiredCoreFields.includes(h));
     const isParserListTableMode = !registrationMode && (state.activeTags || []).some(t => String(t?.type || '') === 'catalog');
-    const currentWorkCols = registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : window.filterMerchInfoWorkColumns((Array.isArray(targetWorkCols) ? targetWorkCols : (getInitialVisibleUploadCols()[activeTableTarget] || []))).filter(h => h !== '품목코드' && h !== '구매리포트' && h !== '구매검증리포트');
+    const currentWorkCols = registrationMode ? window.MERCH_REGISTRATION_WORK_COLS : window.withMerchSaleAvailabilityColumn(window.filterMerchInfoWorkColumns((Array.isArray(targetWorkCols) ? targetWorkCols : (getInitialVisibleUploadCols()[activeTableTarget] || []))).filter(h => h !== '품목코드' && h !== '구매리포트' && h !== '구매검증리포트'), fullDisplayRows, activeTableTarget);
     const activeView = useMemo(() => window.findMerchTableView ? window.findMerchTableView(config.tableViewPresets || {}, activeTableTarget, config.activeTableViewId || '') : null, [config.tableViewPresets, activeTableTarget, config.activeTableViewId]);
     const activeViewColumnWidths = activeView && activeView.columnWidths ? activeView.columnWidths : {};
     const [columnWidthDraft, setColumnWidthDraft] = useState(() => window.normalizeMerchColumnWidths(activeViewColumnWidths));
