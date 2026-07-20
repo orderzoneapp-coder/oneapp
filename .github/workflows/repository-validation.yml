@@ -35,3 +35,6 @@ jobs:
       - name: Test client-side import and storage safety
         run: node scripts/test-client-safety.mjs
 
+      - name: Test MerchOps sale availability pipeline
+        run: node scripts/test-merchops-sale-pipeline.mjs
+
