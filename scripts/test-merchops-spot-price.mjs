@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const html = fs.readFileSync(path.join(ROOT, "MerchOps.html"), "utf8");
 
-assert.match(html, /v2\.1\.157_BulkFieldsPriceFilters/);
+assert.match(html, /v2\.1\.158_FilterResetBulkBlank/);
 
 const inlineScripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)]
   .map((match) => match[1])
@@ -45,6 +45,12 @@ const context = vm.createContext({
   Math,
 });
 vm.runInContext(inlineScripts[0], context, { filename: "MerchOps-head.js" });
+
+assert.deepEqual(
+  JSON.parse(JSON.stringify(browser.createMerchEmptyBulkInputs())),
+  { theme: "", stock: "", sale: "", linkage: "", spot: "", warehouse: "" },
+  "filter reset must restore every common bulk input to unspecified/keep-existing",
+);
 
 assert.equal(browser.keepExcelCellValue(1, false), 1, "numeric Excel spot-price flag 1 must remain 1");
 assert.equal(browser.keepExcelCellValue("1", false), "1", "formatted Excel spot-price flag must remain original text");
@@ -181,10 +187,16 @@ assert.match(html, /const handleApplyBulkFields = useCallback/);
 assert.match(html, /ui\.selectedRows\.size > 0[\s\S]*fullDisplayRows\.filter[\s\S]*: fullDisplayRows/);
 assert.match(html, /placeholder: getBulkPlaceholder\('theme', '행사테마'\)/);
 assert.match(html, /placeholder: getBulkPlaceholder\('stock', '재고'\)/);
-assert.match(html, /getBulkPlaceholder\('sale', '판매여부'\)/);
-assert.match(html, /getBulkPlaceholder\('linkage', '연동'\)/);
-assert.match(html, /getBulkPlaceholder\('spot', '싯가'\)/);
+assert.match(html, /getBulkSelectBlankLabel\('sale', '판매여부'\)/);
+assert.match(html, /getBulkSelectBlankLabel\('linkage', '연동'\)/);
+assert.match(html, /getBulkSelectBlankLabel\('spot', '싯가'\)/);
 assert.match(html, /placeholder: getBulkPlaceholder\('warehouse', '예: 01'\)/);
+assert.match(html, /setFilterScenarioOpen\(false\);\s*resetBulkInputs\(\);/);
+assert.match(html, /getBulkSelectBlankLabel = \(field, label\) =>[\s\S]*'지정 안 함\(기존 유지\)'/);
+assert.match(html, /React\.createElement\("option", \{ value: "" \}, getBulkSelectBlankLabel\('sale', '판매여부'\)\)/);
+assert.match(html, /React\.createElement\("option", \{ value: "" \}, getBulkSelectBlankLabel\('linkage', '연동'\)\)/);
+assert.match(html, /React\.createElement\("option", \{ value: "" \}, getBulkSelectBlankLabel\('spot', '싯가'\)\)/);
+assert.doesNotMatch(html, /value: "", disabled: true \}, getBulkSelectBlankLabel\('(sale|linkage|spot)'/);
 assert.match(html, /"판매\(1\)"[\s\S]*"정지\(0\)"/);
 assert.match(html, /"사용\(1\)"[\s\S]*"사용 안 함\(0\)"/);
 assert.match(html, /"적용\(1\)"[\s\S]*"미적용\(0\)"/);
