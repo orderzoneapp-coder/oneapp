@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Smart Parser [v3.0.17 StopInfoSync NoBabel]</title>
+    <title>ONEAPP MerchOps - Smart Parser [v3.0.18 DirectInfoMaster NoBabel]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -400,7 +400,6 @@ const loadParserExcludeDict = () => {
 };
 const getParserExcludeList = (excludeDict, currentTag = '') => Object.entries(normalizeParserExcludeDict(excludeDict || {})).map(([key, item]) => ({ key, ...(item || {}) })).filter(item => !currentTag || !item.catalog || item.catalog === currentTag);
 const STOP_MANAGER_STORAGE_KEY = 'merchStoppedProducts_v2';
-const INFO_CHANGE_QUEUE_KEY = 'merchInfoChangeQueue_v1';
 const normalizeSharedProductCode = (value) => String(value == null ? '' : value).replace(/\s/g, '').trim();
 const loadSharedObject = (key, fallback = {}) => {
     const value = safeParseJson(localStorage.getItem(key), fallback);
@@ -414,18 +413,6 @@ const normalizeStoppedProductsMap = (source = {}) => {
         const code = normalizeSharedProductCode(item.productCode || item.코드 || rawKey);
         if (!code) return;
         next[code] = { ...item, productCode: code };
-    });
-    return next;
-};
-const normalizeInfoChangeQueue = (source = {}) => {
-    const next = {};
-    Object.entries(source && typeof source === 'object' && !Array.isArray(source) ? source : {}).forEach(([rawKey, rawItem]) => {
-        const item = rawItem && typeof rawItem === 'object' ? rawItem : {};
-        const code = normalizeSharedProductCode(item.productCode || item.코드 || rawKey);
-        if (!code) return;
-        const fields = item.fields && typeof item.fields === 'object' ? { ...item.fields } : {};
-        if (Object.keys(fields).length === 0) return;
-        next[code] = { ...item, productCode: code, fields };
     });
     return next;
 };
@@ -457,43 +444,6 @@ const upsertParserStoppedProduct = (source = {}, codeValue = '', options = {}) =
         sourceLabel: options.sourceLabel || before.sourceLabel || '공급사 텍스트',
         status: 'pendingStop',
         pendingAction: 'stop'
-    };
-    return next;
-};
-const upsertParserInfoChange = (source = {}, codeValue = '', fieldName = '', oldValue = '', newValue = '', options = {}) => {
-    const code = normalizeSharedProductCode(codeValue);
-    const field = String(fieldName || '').trim();
-    const next = normalizeInfoChangeQueue(source);
-    if (!code || !field) return next;
-    const before = next[code] || {};
-    const beforeFields = { ...(before.fields || {}) };
-    const originalOld = Object.prototype.hasOwnProperty.call(beforeFields, field) ? beforeFields[field].oldValue : oldValue;
-    if (String(originalOld ?? '') === String(newValue ?? '')) {
-        delete beforeFields[field];
-    } else {
-        beforeFields[field] = {
-            field,
-            oldValue: originalOld ?? '',
-            newValue: newValue ?? '',
-            changedAt: options.now || getNowISO()
-        };
-    }
-    if (Object.keys(beforeFields).length === 0) {
-        delete next[code];
-        return next;
-    }
-    const now = options.now || getNowISO();
-    next[code] = {
-        ...before,
-        productCode: code,
-        fields: beforeFields,
-        source: 'SmartParser',
-        sourceLabel: options.sourceLabel || '스마트 파서',
-        catalog: options.catalog || before.catalog || '',
-        createdAt: before.createdAt || now,
-        updatedAt: now,
-        erpStatus: before.erpStatus === 'completed' ? 'pending' : (before.erpStatus || 'pending'),
-        shopStatus: before.shopStatus === 'completed' ? 'pending' : (before.shopStatus || 'pending')
     };
     return next;
 };
@@ -728,7 +678,7 @@ const useParserActions = (appState) => {
                 quoteName: '',
                 timestamp: nowStr,
                 timestampISO: nowISO,
-                version: 'smart-parser-v3.0.17-stop-info-sync'
+                version: 'smart-parser-v3.0.18-direct-info-master'
             };
             const makeHistoryLog = ({ code, row, oldItem, field, oldVal, newVal, memo, extra = {} }) => {
                 const oldNum = parseNum(oldVal);
@@ -765,13 +715,10 @@ const useParserActions = (appState) => {
             let pendingList = await getIDB('pending_shop_status') || [];
             if (!Array.isArray(pendingList)) pendingList = [];
             let stoppedProducts = normalizeStoppedProductsMap((await getIDB(STOP_MANAGER_STORAGE_KEY)) || loadSharedObject(STOP_MANAGER_STORAGE_KEY, {}));
-            let infoChangeQueue = normalizeInfoChangeQueue((await getIDB(INFO_CHANGE_QUEUE_KEY)) || loadSharedObject(INFO_CHANGE_QUEUE_KEY, {}));
             let addedToPending = false;
             let stoppedQueueChanged = false;
-            let infoQueueChanged = false;
-            let staleExternalBlockedCount = 0;
             const stoppedCodes = new Set();
-            const infoChangedCodes = new Set();
+            const directInfoChangedCodes = new Set();
             let masterMutationCount = 0;
             toApply.forEach(row => {
                 const code = row._matchCode;
@@ -857,36 +804,27 @@ const useParserActions = (appState) => {
                 }
                 if (updateTextData) {
                     ['품목명', '규격', '단위'].forEach(fieldName => {
-                        const parsedVal = row[fieldName] || '';
+                        const editedTextFields = row._editedTextFields || {};
+                        const hasExplicitTextEdit = Object.prototype.hasOwnProperty.call(editedTextFields, fieldName);
+                        const parsedVal = hasExplicitTextEdit ? editedTextFields[fieldName] : (row[fieldName] || '');
                         const oldVal = newMaster[code][fieldName] || '';
-                        const pendingField = infoChangeQueue?.[normalizeSharedProductCode(code)]?.fields?.[fieldName];
-                        const isStaleExternalValue = !!pendingField
-                            && String(parsedVal ?? '') === String(pendingField.oldValue ?? '')
-                            && String(oldVal ?? '') === String(pendingField.newValue ?? '');
-                        if (parsedVal && isStaleExternalValue) {
-                            staleExternalBlockedCount++;
-                            localLogs.push(makeHistoryLog({
-                                code, row, oldItem,
-                                field: fieldName,
-                                oldVal,
-                                newVal: parsedVal,
-                                memo: `외부 미반영 이전 ${fieldName} 값 재유입 차단`,
-                                extra: { actionType: 'parser_stale_external_value_blocked', blocked: true }
-                            }));
-                            return;
-                        }
                         if (parsedVal && oldVal !== parsedVal) {
                             localLogs.push(makeHistoryLog({
                                 code, row, oldItem,
                                 field: fieldName,
                                 oldVal,
                                 newVal: parsedVal,
-                                memo: `파싱 텍스트 기준 ${fieldName} 갱신`,
-                                extra: { actionType: 'parser_text_field_update', outputPending: true }
+                                memo: `스마트 파서에서 수정·저장한 ${fieldName}을 정보 마스터에 즉시 반영`,
+                                extra: {
+                                    actionType: '정보변경',
+                                    historyType: '정보변경',
+                                    changeType: '정보변경',
+                                    applyMode: 'direct_master_apply',
+                                    path: `SmartParser > ${catalogLabel} > 정보 마스터 즉시 반영`,
+                                    route: `파서/${catalogLabel}/정보마스터즉시반영`
+                                }
                             }));
-                            infoChangeQueue = upsertParserInfoChange(infoChangeQueue, code, fieldName, oldVal, parsedVal, { now: nowISO, catalog: catalogLabel, sourceLabel: '스마트 파서 품명/규격/단위 변경' });
-                            infoQueueChanged = true;
-                            infoChangedCodes.add(normalizeSharedProductCode(code));
+                            directInfoChangedCodes.add(normalizeSharedProductCode(code));
                             newMaster[code][fieldName] = parsedVal;
                             masterMutationCount++;
                         }
@@ -904,18 +842,15 @@ const useParserActions = (appState) => {
             const sharedEntries = {};
             if (addedToPending) sharedEntries.pending_shop_status = pendingList;
             if (stoppedQueueChanged) sharedEntries[STOP_MANAGER_STORAGE_KEY] = stoppedProducts;
-            if (infoQueueChanged) sharedEntries[INFO_CHANGE_QUEUE_KEY] = infoChangeQueue;
             await saveMaster(newMaster, sharedEntries);
             if (stoppedQueueChanged) saveSharedObject(STOP_MANAGER_STORAGE_KEY, stoppedProducts, 'merchStopManager_sync_trigger');
-            if (infoQueueChanged) saveSharedObject(INFO_CHANGE_QUEUE_KEY, infoChangeQueue, 'merchInfoChange_sync_trigger');
             saveDict(newDict);
             setProcessedCodes(newlyProcessed);
             const appliedIds = new Set(toApply.map(r => r._id));
             setParserBuffer(prev => prev.filter(r => !appliedIds.has(r._id)));
             const syncSummary = [
                 stoppedCodes.size > 0 ? `정지관리 ${stoppedCodes.size}건` : '',
-                infoChangedCodes.size > 0 ? `정보변경 ${infoChangedCodes.size}건` : '',
-                staleExternalBlockedCount > 0 ? `이전값 재유입 차단 ${staleExternalBlockedCount}건` : ''
+                directInfoChangedCodes.size > 0 ? `정보 마스터 즉시반영 ${directInfoChangedCodes.size}건` : ''
             ].filter(Boolean).join(' / ');
             showToast(`✅ ${toApply.length}건 마스터 적용 완료${syncSummary ? ` · ${syncSummary}` : ''}`);
             return true;
@@ -1625,6 +1560,17 @@ const ParserApp = () => {
             return r;
         }));
     }, [masterProducts, appState]);
+    const handleUpdateMatchedText = useCallback((rowId, fieldName, newValue) => {
+        appState.setParserBuffer(prev => prev.map(row => {
+            if (row._id !== rowId) return row;
+            return {
+                ...row,
+                [fieldName]: newValue,
+                finalData: { ...(row.finalData || {}), [fieldName]: newValue },
+                _editedTextFields: { ...(row._editedTextFields || {}), [fieldName]: newValue }
+            };
+        }));
+    }, [appState.setParserBuffer]);
     const safeGoToMain = async () => {
         const toApply = appState.parserBuffer.filter(r => r._apply && r._matchCode);
         if (toApply.length > 0) {
@@ -1702,7 +1648,7 @@ const ParserApp = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "Smart Parser"),
-                                        React.createElement("span", { className: "ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold" }, "v3.0.17 StopInfoSync")),
+                                        React.createElement("span", { className: "ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold" }, "v3.0.18 DirectInfoMaster")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "TEXT ANALYSIS & DELTA SYNC"))),
                             React.createElement("div", { className: "flex flex-1 max-w-md xl:max-w-xl mx-4" }, isProcessing ? React.createElement("div", { className: "w-full bg-amber-400 text-amber-900 px-4 py-1.5 rounded-md font-mono text-[12px] font-bold flex items-center shadow-inner truncate" },
                                 React.createElement("i", { className: "fas fa-spinner fa-spin mr-2" }),
@@ -1814,10 +1760,13 @@ const ParserApp = () => {
                                             "(",
                                             mItem.규격 || row['규격'],
                                             ")"))),
-                                React.createElement("td", { className: "py-2 px-3 text-emerald-800 bg-emerald-50/20 font-bold" },
-                                    row['품목명'],
-                                    " ",
-                                    row._isSoldOut && React.createElement("span", { className: "ml-1 bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded text-[10px] font-black" }, "\uD488\uC808")),
+                                React.createElement("td", { className: "py-2 px-3 text-emerald-800 bg-emerald-50/20 font-bold min-w-[280px]" },
+                                    React.createElement("div", { className: "flex items-center gap-1.5" },
+                                        React.createElement("input", { type: "text", value: row['품목명'] || '', onChange: e => handleUpdateMatchedText(row._id, '품목명', e.target.value), className: "h-7 min-w-0 flex-1 rounded border border-emerald-200 bg-white px-2 text-[11px] font-black text-emerald-900 outline-none focus:border-emerald-500", title: "저장할 품목명 수정" }),
+                                        row._isSoldOut && React.createElement("span", { className: "shrink-0 bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded text-[10px] font-black" }, "\uD488\uC808")),
+                                    React.createElement("div", { className: "mt-1 flex items-center gap-1" },
+                                        React.createElement("input", { type: "text", value: row['규격'] || '', onChange: e => handleUpdateMatchedText(row._id, '규격', e.target.value), placeholder: "규격", className: "h-7 min-w-0 flex-1 rounded border border-slate-200 bg-white px-2 text-[10px] font-bold text-slate-700 outline-none focus:border-emerald-400", title: "저장할 규격 수정" }),
+                                        React.createElement("input", { type: "text", value: row['단위'] || '', onChange: e => handleUpdateMatchedText(row._id, '단위', e.target.value), placeholder: "단위", className: "h-7 w-[64px] rounded border border-slate-200 bg-white px-2 text-[10px] font-bold text-slate-700 outline-none focus:border-emerald-400", title: "저장할 단위 수정" }))),
                                 React.createElement("td", { className: "py-2 px-3 text-right text-slate-500 font-bold" }, mIn ? mIn.toLocaleString() : '-'),
                                 React.createElement("td", { className: `py-2 px-3 text-right font-black ${isDiff ? 'text-rose-500 bg-rose-50/30' : 'text-emerald-700 bg-emerald-50/20'}` },
                                     React.createElement(EditablePriceCell, { rowId: row._id, initialVal: row.finalData['입고가'], onUpdate: handleUpdateMatchedPrice }))));
