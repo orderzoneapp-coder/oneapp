@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.154_SpotPriceExcelPriority]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.155_SpotPriceAllExcelRoles]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -52,7 +52,7 @@
         // v2.1.151: 우측 고정 초기화 버튼의 상단 오프셋·높이·패딩·그림자를 다른 1단 버튼과 맞춰 수직 정렬과 시각적 균형을 보정한다.
         // v2.1.152: 모든 불러오기에서 판매여부를 작업값으로 보존하고, 행사초기화·Quick F8·마스터 반영까지 동일한 0/1 판정을 사용한다.
         // v2.1.153: 룰적용을 행사작업에서 분리해 필터초기화 좌측에 고정한다. SmartParser 구버전 정보변경 큐를 제거하고 정보 마스터 즉시반영·기존 히스토리 기록·새로고침 동기화 정책으로 전환한다.
-        // v2.1.154: 정보 엑셀의 싯가 헤더를 내부 싯가 필드에 직접 매핑한다. 숫자 1·공란을 포함한 원본 셀값을 보존하고, 엑셀 필드가 존재하면 마스터값보다 우선 표시·반영한다.
+        // v2.1.154: 정보 엑셀의 싯가 헤더를 내부 싯가 필드에 직접 매핑한다. 숫자 1·공란을 포함한 원본 셀값을 보존하고, 엑셀 필드가 존재하면 마스터값보다 우선 표시·반영한다.\n        // v2.1.155: 견적·구매·재고·정보 등 모든 엑셀 역할에서 싯가 헤더를 공통 수집한다. 기본초기화처럼 견적으로 불러온 파일도 숫자 1·0·공란을 source에 그대로 보존해 마스터보다 우선 표시한다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결하며 오더즈판매가/오더즈구매가는 작업·출력에서 제외한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
@@ -517,7 +517,7 @@
             return defaultValue;
         };
 
-        // 정보 엑셀 싯가 정책:
+        // 모든 엑셀 역할 공통 싯가 정책:
         // - 엑셀의 싯가/싯가판매여부/시가판매여부 헤더는 내부 '싯가' 하나로 통일한다.
         // - source에 셀이 존재하면 숫자 1, 0, 공란까지 원본값을 마스터보다 우선한다.
         window.getMerchSpotPriceSourceCell = (sources = {}) => {
@@ -528,6 +528,23 @@
                 if (window.hasOwnField(src, '시가판매여부')) return { hasValue: true, value: src['시가판매여부'], role, field: '시가판매여부' };
             }
             return { hasValue: false, value: undefined, role: '', field: '' };
+        };
+        window.findMerchSpotPriceExcelHeader = (actualHeaders = [], headerCache = {}) => {
+            const headers = Array.isArray(actualHeaders) ? actualHeaders : [];
+            const cached = headerCache?.['싯가'];
+            if (cached && headers.includes(cached)) return cached;
+            const aliases = new Set(['싯가', '싯가판매여부', '시가판매여부']);
+            return headers.find(header => aliases.has(String(header ?? '').replace(/\s/g, ''))) || '';
+        };
+        window.copyMerchSpotPriceFromExcelRow = (targetSource = {}, row = {}, actualHeaders = [], headerCache = {}) => {
+            const spotPriceKey = window.findMerchSpotPriceExcelHeader(actualHeaders, headerCache);
+            if (!spotPriceKey || !window.hasOwnField(row, spotPriceKey)) {
+                return { found: false, header: '', value: undefined };
+            }
+            const value = window.keepExcelCellValue(row[spotPriceKey], false);
+            targetSource['싯가'] = value;
+            targetSource['_spotPriceSourceHeader'] = spotPriceKey;
+            return { found: true, header: spotPriceKey, value };
         };
         window.applyMerchSpotPriceExcelPriority = (working = {}, sources = {}) => {
             const next = { ...(working || {}) };
@@ -3283,16 +3300,16 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                         mItem.sources[role]['판매여부'] = window.normalizeMerchSaleAvailability ? window.normalizeMerchSaleAvailability(rawSale) : String(rawSale ?? '').trim();
                         mItem.sources[role]['_saleAvailabilitySourceHeader'] = saleKey;
                     }
+                    // 싯가는 업로드 역할과 무관하게 실제 엑셀 헤더에서 직접 보존한다.
+                    // 기본초기화 파일을 '견적'으로 불러와도 source.estimate['싯가']에 1/0/공란이 그대로 들어간다.
+                    if (window.copyMerchSpotPriceFromExcelRow) {
+                        window.copyMerchSpotPriceFromExcelRow(mItem.sources[role], row, actualHeaders, headerCache);
+                    }
                     if (role === 'info') {
                         const infoSource = mItem.sources.info;
                         infoSource._originalHeaders = [...actualHeaders];
                         infoSource._originalRow = { ...row };
                         infoSource._infoHeaderMap = { ...headerCache };
-                        const spotPriceKey = headerCache['싯가'] || findActualHeader(['싯가', '싯가판매여부', '시가판매여부']);
-                        if (spotPriceKey) {
-                            infoSource['싯가'] = window.keepExcelCellValue(row[spotPriceKey], false);
-                            infoSource['_spotPriceSourceHeader'] = spotPriceKey;
-                        }
                         const cleanHeaders = actualHeaders.map(h => String(h || '').replace(/\s/g, ''));
                         const isShopInfo = cleanHeaders.includes('상품코드') && (cleanHeaders.includes('판매가격') || cleanHeaders.includes('오더즈판매가') || cleanHeaders.includes('상품태그') || cleanHeaders.includes('단가연동'));
                         const isErpInfo = !isShopInfo && cleanHeaders.some(h => ['품목코드', '출고가', '입고가', '도매A', '도매B', '행사가'].includes(h));
@@ -8027,7 +8044,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.154_SpotPriceExcelPriority]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.155_SpotPriceAllExcelRoles]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -8431,7 +8448,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.154_SpotPriceExcelPriority")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.155_SpotPriceAllExcelRoles")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },

@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const html = fs.readFileSync(path.join(ROOT, "MerchOps.html"), "utf8");
 
-assert.match(html, /v2\.1\.154_SpotPriceExcelPriority/);
+assert.match(html, /v2\.1\.155_SpotPriceAllExcelRoles/);
 
 const inlineScripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)]
   .map((match) => match[1])
@@ -50,6 +50,39 @@ assert.equal(browser.keepExcelCellValue(1, false), 1, "numeric Excel spot-price 
 assert.equal(browser.keepExcelCellValue("1", false), "1", "formatted Excel spot-price flag must remain original text");
 assert.equal(browser.keepExcelCellValue(0, false), 0, "numeric Excel spot-price flag 0 must remain 0");
 
+const estimateImport = {};
+const estimateImportResult = browser.copyMerchSpotPriceFromExcelRow(
+  estimateImport,
+  { 품목코드: "101010111", 싯가: 1 },
+  ["품목코드", "싯가"],
+  {},
+);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(estimateImportResult)),
+  { found: true, header: "싯가", value: 1 },
+  "the basic-reset workbook header must be recognized without info-role mappings",
+);
+assert.equal(estimateImport.싯가, 1, "estimate-role import must keep Excel numeric 1");
+assert.equal(estimateImport._spotPriceSourceHeader, "싯가");
+
+const aliasImport = {};
+browser.copyMerchSpotPriceFromExcelRow(
+  aliasImport,
+  { "싯가판매여부": "1" },
+  ["싯가판매여부"],
+  {},
+);
+assert.equal(aliasImport.싯가, "1", "legacy header aliases must populate canonical 싯가");
+
+const blankImport = {};
+browser.copyMerchSpotPriceFromExcelRow(blankImport, { 싯가: "" }, ["싯가"], {});
+assert.ok(Object.hasOwn(blankImport, "싯가"), "an explicit blank Excel cell must still exist in the source");
+assert.equal(blankImport.싯가, "");
+
+const estimateSource = { _activeRole: "estimate", estimate: { 싯가: 1 } };
+const appliedEstimate = browser.applyMerchSpotPriceExcelPriority({ 싯가: "" }, estimateSource);
+assert.equal(appliedEstimate.싯가, 1, "estimate Excel spot-price must override a blank master value");
+
 const sourceOne = { _activeRole: "info", info: { 싯가: 1 } };
 assert.deepEqual(
   JSON.parse(JSON.stringify(browser.getMerchSpotPriceSourceCell(sourceOne))),
@@ -65,7 +98,8 @@ assert.equal(appliedLegacy.싯가, "1", "legacy saved source must migrate withou
 
 assert.match(html, /'싯가': '싯가, 싯가판매여부, 시가판매여부'/);
 assert.match(html, /'싯가': '싯가'/);
-assert.match(html, /infoSource\['싯가'\] = window\.keepExcelCellValue\(row\[spotPriceKey\], false\)/);
+assert.match(html, /window\.copyMerchSpotPriceFromExcelRow\(mItem\.sources\[role\], row, actualHeaders, headerCache\)/);
+assert.doesNotMatch(html, /infoSource\['싯가'\] = window\.keepExcelCellValue\(row\[spotPriceKey\], false\)/);
 assert.match(html, /working = window\.applyMerchSpotPriceExcelPriority/);
 assert.match(html, /const initialVal = hasFinalField \? row\.finalData\[field\]/);
 assert.match(html, /if \(\['싯가판매여부', '시가판매여부'\]\.includes\(clean\)\)\s+return '싯가'/);

@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const html = fs.readFileSync(path.join(ROOT, "MerchOps.html"), "utf8");
-assert.match(html, /v2\.1\.154_SpotPriceExcelPriority/);
+assert.match(html, /v2\.1\.155_SpotPriceAllExcelRoles/);
 assert.doesNotMatch(html, /v2\.1\.151_ResetVerticalAlign/);
 const inlineScripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)]
   .map((match) => match[1])
