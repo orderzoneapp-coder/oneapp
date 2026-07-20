@@ -121,7 +121,7 @@ const bulkPatch = browser.buildMerchBulkFieldPatch({
   warehouse: "01",
 });
 assert.equal(bulkPatch.ok, true);
-assert.deepEqual(bulkPatch.inputFields, ["행사테마", "재고", "판매여부", "연동", "싯가", "창고"]);
+assert.deepEqual(JSON.parse(JSON.stringify(bulkPatch.inputFields)), ["행사테마", "재고", "판매여부", "연동", "싯가", "창고"]);
 assert.equal(bulkPatch.patch.행사테마, "1,2,5");
 assert.equal(bulkPatch.patch.테마1, "1");
 assert.equal(bulkPatch.patch.테마3, "");
