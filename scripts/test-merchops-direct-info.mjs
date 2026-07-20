@@ -24,7 +24,7 @@ parseInlineScripts(parser, "SmartParser");
 JSON.parse(manifest);
 
 assert.match(merch, /v2\.1\.153_DirectInfoAndRulePlacement/);
-assert.match(parser, /v3\.0\.18 DirectInfoMaster/);
+assert.match(parser, /v3\.0\.19 ExplicitInfoSave/);
 
 for (const removed of [
   "정보변경 대기",
@@ -69,6 +69,9 @@ assert.match(parser, /newMaster\[code\]\[fieldName\] = parsedVal/);
 assert.match(parser, /handleUpdateMatchedText/);
 assert.match(parser, /_editedTextFields/);
 assert.match(parser, /hasExplicitTextEdit/);
+assert.match(parser, /const shouldApplyTextField = hasExplicitTextEdit \|\| updateTextData/);
+assert.match(parser, /if \(!shouldApplyTextField\) return/);
+assert.match(parser, /const hasApplicableValue = hasExplicitTextEdit \|\| !!parsedVal/);
 assert.match(parser, /저장할 품목명 수정/);
 assert.match(parser, /저장할 규격 수정/);
 assert.match(parser, /await saveMaster\(newMaster, sharedEntries\)/);
