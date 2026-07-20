@@ -46,9 +46,9 @@ All applications exchange state through shared browser storage and, where config
 
 | Component | Type | Status | Primary responsibility |
 |---|---|---|---|
-| MerchOps.html | Web entry | Production | Product master review, pricing, promotion, stop management, information-change review, and Excel application workflow |
+| MerchOps.html | Web entry | Production | Product master review, pricing, promotion, stop management, and Excel-based product-information application workflow |
 | DataOps.html | Web entry | Production | Purchase, sales, inventory, stock ledger, cost, and performance analysis |
-| SmartParser.html | Web entry | Production | Parse external documents, normalize product information, and create supply-stop or information-change candidates |
+| SmartParser.html | Web entry | Production | Parse external documents, normalize product information, apply saved fields directly to the product master, and record information-change history |
 | export_center.html | Web entry | Production | Validate selected results, prepare output payloads, export Excel, and apply approved master changes |
 | settings.html | Web entry | Production | Manage mappings, pricing rules, visible columns, table views, cloud URL, and shared configuration |
 | history_viewer.html | Web entry | Production | Inspect product-change history and price trends |
@@ -70,9 +70,8 @@ The current applications share the browser database MerchOpsDB and a set of loca
 | Contract | Current key or resource | Main consumers |
 |---|---|---|
 | Product master | merchMaster_v870, MerchOpsDB | MerchOps, SmartParser, DataOps synchronization, export center, settings, history viewer |
-| Master change notification | merchMaster_sync_trigger | MerchOps, SmartParser, DataOps, export center, settings |
+| Master change notification | merchMaster_sync_trigger | SmartParser, DataOps, export center, and settings; MerchOps reloads master values on a full page refresh and keeps an open worktable unchanged |
 | Change history | merchHistory_v870 | MerchOps, SmartParser, DataOps, history viewer, cloud backup |
-| Information-change queue | merchInfoChangeQueue_v1 | SmartParser and MerchOps information workflow |
 | Parser dictionary | parserDict_v870 | SmartParser, MerchOps, settings, cloud configuration |
 | Margin and pricing rules | merchMarginRules_v878 | MerchOps, SmartParser, settings, core engine |
 | Mapping configuration | merchMappings_v870 | MerchOps, settings, cloud configuration |
@@ -130,11 +129,11 @@ The master Excel workflow in settings.html uses the shared core engine and appli
 ### 6.1 External information to shopping-mall update
 
 1. SmartParser reads and normalizes an external document.
-2. Supply-stop and product-information differences become review candidates.
-3. MerchOps matches candidates against the master and displays the information-change queue.
-4. The operator validates and edits product data using the original Excel structure.
-5. Export center generates the ERP or shopping-mall update workbook.
-6. Completion state and history are recorded after the relevant system upload is confirmed.
+2. The operator reviews the matched product and saves approved name, specification, or unit changes.
+3. SmartParser applies the saved product information directly to the product master.
+4. Every changed field is recorded in the existing history with before/after values, timestamp, product code, field, and SmartParser route.
+5. A currently open MerchOps worktable remains a snapshot; a full page refresh loads the changed master values.
+6. MerchOps information Excel import/export remains available as an independent bidirectional correction workflow.
 
 ### 6.2 Inventory and performance insight
 
@@ -160,7 +159,7 @@ The master Excel workflow in settings.html uses the shared core engine and appli
 | Storage key or IndexedDB schema | Every listed consumer plus migration and rollback |
 | Cloud action or payload | code.gs, coreEngine, MerchOps, DataOps, settings, history viewer |
 | Navigation path or filename | Every HTML entry point and deployed routes |
-| Information-change workflow | SmartParser, MerchOps, export center, history viewer, cloud backup |
+| Information-change workflow | SmartParser direct master apply, existing history viewer, master refresh behavior, and cloud history backup |
 | Planned app promotion to production | Manifest update, architecture review, navigation review, and PR validation |
 | Function-key behavior | Review only the owning application's workflow; do not assume the same function key has the same meaning in another application |
 
@@ -238,7 +237,7 @@ Roadmap work is delivered as separate pull requests and verified after each merg
    - Upload into a staging session, verify counts and integrity, and finalize only after every chunk succeeds.
    - Preserve the previous backup on interruption or validation failure.
 5. Application-specific output stability
-   - 5A MerchOps: F8 applies reviewed work, stop-management, and information changes to the master and creates immediate Excel output. F9 sends the current result to Export Center for a separate review-and-output flow.
+   - 5A MerchOps: F8 applies reviewed work and stop-management changes to the master and creates immediate Excel output. SmartParser information changes are already applied directly and are not queued into F8. F9 sends the current result to Export Center for a separate review-and-output flow.
    - 5B DataOps: F9 downloads the combined inventory, ledger, and analysis workbook. F10 prints the DataOps result. F8 is currently unassigned and remains reserved until a separate requirement is approved.
    - Function keys are application-owned behavior. They share validation, backup, download-status, and audit utilities only; their business meaning must not be unified.
 6. Dependency and shared-engine hardening
