@@ -20,7 +20,7 @@
       "path": "MerchOps.html",
       "kind": "web-entry",
       "status": "production",
-      "purpose": "Review and apply product master, pricing, promotion, stop-management, and information-change work.",
+      "purpose": "Review and apply product master, pricing, promotion, stop-management, and Excel-based product-information work.",
       "navigatesTo": [
         "smart-parser",
         "export-center",
@@ -33,7 +33,6 @@
       "sharedContracts": [
         "product-master",
         "change-history",
-        "information-change-queue",
         "parser-dictionary",
         "pricing-rules",
         "mapping-config",
@@ -65,7 +64,7 @@
       "path": "SmartParser.html",
       "kind": "web-entry",
       "status": "production",
-      "purpose": "Parse external documents, normalize product information, and create review candidates.",
+      "purpose": "Parse external documents, normalize product information, apply saved information directly to the product master, and record changes in shared history.",
       "navigatesTo": [
         "merchops",
         "settings",
@@ -74,7 +73,6 @@
       "sharedContracts": [
         "product-master",
         "change-history",
-        "information-change-queue",
         "parser-dictionary",
         "pricing-rules"
       ]
@@ -219,15 +217,6 @@
         "cloud": [
           "history",
           "chunk_history"
-        ]
-      }
-    },
-    {
-      "id": "information-change-queue",
-      "owner": "merchops",
-      "resources": {
-        "localStorage": [
-          "merchInfoChangeQueue_v1"
         ]
       }
     },

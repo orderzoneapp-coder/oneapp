@@ -38,3 +38,6 @@ jobs:
       - name: Test MerchOps sale availability pipeline
         run: node scripts/test-merchops-sale-pipeline.mjs
 
+      - name: Test MerchOps rule placement and SmartParser direct information apply
+        run: node scripts/test-merchops-direct-info.mjs
+
