@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Smart Parser [v3.0.18 DirectInfoMaster NoBabel]</title>
+    <title>ONEAPP MerchOps - Smart Parser [v3.0.19 ExplicitInfoSave NoBabel]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -678,7 +678,7 @@ const useParserActions = (appState) => {
                 quoteName: '',
                 timestamp: nowStr,
                 timestampISO: nowISO,
-                version: 'smart-parser-v3.0.18-direct-info-master'
+                version: 'smart-parser-v3.0.19-explicit-info-save'
             };
             const makeHistoryLog = ({ code, row, oldItem, field, oldVal, newVal, memo, extra = {} }) => {
                 const oldNum = parseNum(oldVal);
@@ -802,34 +802,35 @@ const useParserActions = (appState) => {
                     newMaster[code]['카탈로그'] = newCatalogTags;
                     masterMutationCount++;
                 }
-                if (updateTextData) {
-                    ['품목명', '규격', '단위'].forEach(fieldName => {
-                        const editedTextFields = row._editedTextFields || {};
-                        const hasExplicitTextEdit = Object.prototype.hasOwnProperty.call(editedTextFields, fieldName);
-                        const parsedVal = hasExplicitTextEdit ? editedTextFields[fieldName] : (row[fieldName] || '');
-                        const oldVal = newMaster[code][fieldName] || '';
-                        if (parsedVal && oldVal !== parsedVal) {
-                            localLogs.push(makeHistoryLog({
-                                code, row, oldItem,
-                                field: fieldName,
-                                oldVal,
-                                newVal: parsedVal,
-                                memo: `스마트 파서에서 수정·저장한 ${fieldName}을 정보 마스터에 즉시 반영`,
-                                extra: {
-                                    actionType: '정보변경',
-                                    historyType: '정보변경',
-                                    changeType: '정보변경',
-                                    applyMode: 'direct_master_apply',
-                                    path: `SmartParser > ${catalogLabel} > 정보 마스터 즉시 반영`,
-                                    route: `파서/${catalogLabel}/정보마스터즉시반영`
-                                }
-                            }));
-                            directInfoChangedCodes.add(normalizeSharedProductCode(code));
-                            newMaster[code][fieldName] = parsedVal;
-                            masterMutationCount++;
-                        }
-                    });
-                }
+                ['품목명', '규격', '단위'].forEach(fieldName => {
+                    const editedTextFields = row._editedTextFields || {};
+                    const hasExplicitTextEdit = Object.prototype.hasOwnProperty.call(editedTextFields, fieldName);
+                    const shouldApplyTextField = hasExplicitTextEdit || updateTextData;
+                    if (!shouldApplyTextField) return;
+                    const parsedVal = hasExplicitTextEdit ? editedTextFields[fieldName] : (row[fieldName] || '');
+                    const oldVal = newMaster[code][fieldName] || '';
+                    const hasApplicableValue = hasExplicitTextEdit || !!parsedVal;
+                    if (hasApplicableValue && String(oldVal ?? '') !== String(parsedVal ?? '')) {
+                        localLogs.push(makeHistoryLog({
+                            code, row, oldItem,
+                            field: fieldName,
+                            oldVal,
+                            newVal: parsedVal,
+                            memo: `스마트 파서에서 수정·저장한 ${fieldName}을 정보 마스터에 즉시 반영`,
+                            extra: {
+                                actionType: '정보변경',
+                                historyType: '정보변경',
+                                changeType: '정보변경',
+                                applyMode: 'direct_master_apply',
+                                path: `SmartParser > ${catalogLabel} > 정보 마스터 즉시 반영`,
+                                route: `파서/${catalogLabel}/정보마스터즉시반영`
+                            }
+                        }));
+                        directInfoChangedCodes.add(normalizeSharedProductCode(code));
+                        newMaster[code][fieldName] = parsedVal;
+                        masterMutationCount++;
+                    }
+                });
                 if (row['품목명'] && row._matchStatus.includes('수동일치'))
                     newDict[`${normalizeText(row['품목명'])}|${normalizeText(row['규격'])}`] = code;
             });
@@ -1648,7 +1649,7 @@ const ParserApp = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "Smart Parser"),
-                                        React.createElement("span", { className: "ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold" }, "v3.0.18 DirectInfoMaster")),
+                                        React.createElement("span", { className: "ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold" }, "v3.0.19 ExplicitInfoSave")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "TEXT ANALYSIS & DELTA SYNC"))),
                             React.createElement("div", { className: "flex flex-1 max-w-md xl:max-w-xl mx-4" }, isProcessing ? React.createElement("div", { className: "w-full bg-amber-400 text-amber-900 px-4 py-1.5 rounded-md font-mono text-[12px] font-bold flex items-center shadow-inner truncate" },
                                 React.createElement("i", { className: "fas fa-spinner fa-spin mr-2" }),
