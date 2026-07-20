@@ -2568,19 +2568,27 @@ const useMerchConfig = () => {
                         setCloudUrl(restoredCloudUrl || '');
                     }
                     if (saved.visibleMasterCols && !localStorage.getItem('merchVisMaster_v870'))
-                        setVisibleMasterCols(saved.visibleMasterCols);
+                        setVisibleMasterCols({ ...saved.visibleMasterCols, info: window.normalizeMerchTableColumns((saved.visibleMasterCols || {}).info || []) });
                     if (saved.visibleUploadCols && !localStorage.getItem('merchVisUpload_v870'))
-                        setVisibleUploadCols(saved.visibleUploadCols);
+                        setVisibleUploadCols({ ...saved.visibleUploadCols, info: window.filterMerchInfoWorkColumns(window.normalizeMerchTableColumns((saved.visibleUploadCols || {}).info || [])) });
                     if (saved.tableViewPresets && !localStorage.getItem('merchTableViewPresets_v1'))
                         setTableViewPresets(window.sanitizeMerchTableViewPresets(saved.tableViewPresets));
                     if (saved.activeTableTarget && !localStorage.getItem('merchActiveTableTarget_v1'))
                         setActiveTableTarget(normalizeMerchTableTarget(saved.activeTableTarget));
                     if (saved.activeTableViewId && !localStorage.getItem('merchActiveTableViewId_v1'))
                         setActiveTableViewId(saved.activeTableViewId);
-                    if (saved.mappings && !localStorage.getItem('merchMappings_v870'))
-                        setMappings(saved.mappings);
-                    if (saved.masterLinks && !localStorage.getItem('merchMasterLinks_v870'))
-                        setMasterLinks(saved.masterLinks);
+                    if (saved.mappings && !localStorage.getItem('merchMappings_v870')) {
+                        const restoredMappings = { ...saved.mappings, info: { ...((saved.mappings || {}).info || {}) } };
+                        delete restoredMappings.info['싯가판매여부'];
+                        restoredMappings.info['싯가'] = '싯가, 싯가판매여부, 시가판매여부';
+                        setMappings(restoredMappings);
+                    }
+                    if (saved.masterLinks && !localStorage.getItem('merchMasterLinks_v870')) {
+                        const restoredMasterLinks = { ...saved.masterLinks, info: { ...((saved.masterLinks || {}).info || {}) } };
+                        delete restoredMasterLinks.info['싯가판매여부'];
+                        restoredMasterLinks.info['싯가'] = '싯가';
+                        setMasterLinks(restoredMasterLinks);
+                    }
                     if (saved.uploadColumnMeta && !localStorage.getItem('merchUploadColumnMeta_v870'))
                         setUploadColumnMeta(saved.uploadColumnMeta);
                     if (saved.marginRules && !localStorage.getItem('merchMarginRules_v878'))
@@ -2654,9 +2662,9 @@ const useMerchConfig = () => {
                 const fUploadColumnMeta = safeJSONParse('merchUploadColumnMeta_v870', null);
                 const fMarginRules = safeJSONParse('merchMarginRules_v878', null);
                 if (fVisMaster)
-                    setVisibleMasterCols(fVisMaster);
+                    setVisibleMasterCols({ ...fVisMaster, info: window.normalizeMerchTableColumns((fVisMaster || {}).info || []) });
                 if (fVisUpload)
-                    setVisibleUploadCols(fVisUpload);
+                    setVisibleUploadCols({ ...fVisUpload, info: window.filterMerchInfoWorkColumns(window.normalizeMerchTableColumns((fVisUpload || {}).info || [])) });
                 if (fTableViewPresets)
                     setTableViewPresets(window.sanitizeMerchTableViewPresets(fTableViewPresets));
                 const fActiveTableTarget = localStorage.getItem('merchActiveTableTarget_v1');
@@ -2664,10 +2672,18 @@ const useMerchConfig = () => {
                 setActiveTableTarget(normalizeMerchTableTarget(fActiveTableTarget || DEFAULT_TABLE_VIEW_TARGET));
                 if (fActiveTableViewId)
                     setActiveTableViewId(fActiveTableViewId);
-                if (fMappings)
-                    setMappings(fMappings);
-                if (fMasterLinks)
-                    setMasterLinks(fMasterLinks);
+                if (fMappings) {
+                    const syncedMappings = { ...fMappings, info: { ...((fMappings || {}).info || {}) } };
+                    delete syncedMappings.info['싯가판매여부'];
+                    syncedMappings.info['싯가'] = '싯가, 싯가판매여부, 시가판매여부';
+                    setMappings(syncedMappings);
+                }
+                if (fMasterLinks) {
+                    const syncedMasterLinks = { ...fMasterLinks, info: { ...((fMasterLinks || {}).info || {}) } };
+                    delete syncedMasterLinks.info['싯가판매여부'];
+                    syncedMasterLinks.info['싯가'] = '싯가';
+                    setMasterLinks(syncedMasterLinks);
+                }
                 if (fUploadColumnMeta)
                     setUploadColumnMeta(fUploadColumnMeta);
                 if (fMarginRules)
