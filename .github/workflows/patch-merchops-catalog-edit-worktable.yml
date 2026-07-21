@@ -1,0 +1,167 @@
+name: Patch MerchOps catalog edit worktable
+
+on:
+  push:
+    branches:
+      - agent/merchops-catalog-edit-worktable-20260721
+    paths:
+      - .github/workflows/patch-merchops-catalog-edit-worktable.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/merchops-catalog-edit-worktable-20260721
+          fetch-depth: 0
+
+      - name: Patch MerchOps
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('MerchOps.html')
+          text = path.read_text(encoding='utf-8')
+
+          old_version = 'v2.1.159_MasterInfoDisplayFix'
+          new_version = 'v2.1.160_CatalogEditWorktable'
+          if old_version not in text:
+              raise SystemExit(f'old version not found: {old_version}')
+          text = text.replace(old_version, new_version)
+
+          if '// v2.1.160:' not in text:
+              marker = '        // v2.1.159:'
+              marker_start = text.index(marker)
+              marker_end = text.index('\n', marker_start) + 1
+              version_note = '        // v2.1.160: 카탈로그만 선택한 경우 선택 상품의 마스터값을 편집 가능한 작업테이블로 복사한다. 이후 견적·구매·재고·정보 엑셀을 불러오면 카탈로그 편집용 임시행을 제거하고 기존 비교모드의 엑셀 source만 작업테이블에 표시한다.\n'
+              text = text[:marker_end] + version_note + text[marker_end:]
+
+          helper_anchor = 'window.rebuildMerchEstimateComparisonForScope = (managedItems = {}, masterProducts = {}, activeTags = [], marginRules = []) => {'
+          if 'window.stripMerchCatalogEditRows' not in text:
+              helper_pos = text.index(helper_anchor)
+              helper = r'''// 카탈로그 단독 편집용 임시행은 외부 엑셀 비교 source와 분리한다.
+window.isMerchCatalogEditRow = (item = {}) => item?._catalogEditOnly === true || item?.sources?.catalog?._catalogEditOnly === true;
+window.stripMerchCatalogEditRows = (managedItems = {}) => {
+    const next = {};
+    Object.entries(managedItems || {}).forEach(([key, item]) => {
+        if (!item || window.isMerchCatalogEditRow(item)) return;
+        next[key] = item;
+    });
+    return next;
+};
+
+'''
+              text = text[:helper_pos] + helper + text[helper_pos:]
+
+          upload_anchor = "            let newManaged = { ...data.managedItems, ...excludedToRestore };"
+          upload_start = text.index('    const handleFileUpload = useCallback')
+          upload_pos = text.index(upload_anchor, upload_start)
+          upload_replacement = """            // 카탈로그 단독 편집용 마스터 복사행은 엑셀 비교 입력이 아니다.\n            // 외부 엑셀을 불러오는 순간 제거해 기존 비교모드의 source 우선순위를 그대로 유지한다.\n            let newManaged = window.stripMerchCatalogEditRows\n                ? window.stripMerchCatalogEditRows({ ...data.managedItems, ...excludedToRestore })\n                : { ...data.managedItems, ...excludedToRestore };"""
+          text = text[:upload_pos] + upload_replacement + text[upload_pos + len(upload_anchor):]
+
+          flow_old = """    // [M-FLOW-02] 파서리스트 불러오기 / 카탈로그 작업범위 선택\n    // - 파서리스트(type/catalog)는 기존처럼 목록 source를 작업대에 불러온다.\n    // - 카탈로그(type/category)는 managedItems/source를 만들지 않고 마스터 작업범위만 바꾼다.\n    // - 카탈로그 선택만으로 견적 양식이나 업무모드를 변경하지 않는다."""
+          flow_new = """    // [M-FLOW-02] 파서리스트 불러오기 / 카탈로그 편집·비교범위 선택\n    // - 파서리스트(type/catalog)는 기존처럼 목록 source를 작업대에 불러온다.\n    // - 외부 엑셀이 없을 때 카탈로그(type/category)를 선택하면 마스터값 복사본을 편집 작업테이블로 생성한다.\n    // - 외부 엑셀이 있으면 카탈로그는 왼쪽 마스터 비교범위만 유지하고 오른쪽은 기존 엑셀 source를 표시한다."""
+          if flow_old not in text:
+              raise SystemExit('M-FLOW-02 comment block not found')
+          text = text.replace(flow_old, flow_new, 1)
+
+          handle_anchor = '    const handleLoadFilter = useCallback((type, name) => {'
+          handle_start = text.index(handle_anchor)
+          branch_start = text.index("        if (type === 'category') {", handle_start)
+          branch_end = text.index('        const removeLoadedFilter = () => {', branch_start)
+          new_branch = r'''        if (type === 'category') {
+            const isSameScope = (ui.activeTags || []).some(t => String(t?.type || '') === 'category' && String(t?.name || '') === filterName);
+            const nextCatalogName = isSameScope ? '' : filterName;
+            const scopeTags = nextCatalogName ? [{ type: 'category', name: nextCatalogName }] : [];
+            const nextScope = window.buildMerchWorkScope
+                ? window.buildMerchWorkScope(data.masterProducts, scopeTags)
+                : { mode: nextCatalogName ? 'catalog' : 'all', catalogName: nextCatalogName, codeSet: new Set(), scopeCount: 0, masterCount: Object.keys(data.masterProducts || {}).length };
+            const externalRoles = ['estimate', 'purchase', 'sales', 'inventory', 'info'];
+            const hasExternalExcel = Object.values(data.managedItems || {}).some(item => externalRoles.some(role => window.hasMerchSourceRoleData ? window.hasMerchSourceRoleData(item, role) : !!(item?.sources?.[role] && Object.keys(item.sources[role]).length > 0)));
+
+            ui.setActiveTags(prev => {
+                const keep = (prev || []).filter(t => String(t?.type || '') !== 'category');
+                return nextCatalogName ? [...keep, { type: 'category', name: nextCatalogName }] : keep;
+            });
+
+            data.setManagedItems(prev => {
+                // 이전 카탈로그 단독 편집용 복사행은 카탈로그 전환·해제 시 제거한다.
+                // 외부 엑셀 source가 있으면 그대로 보존해 현재 비교모드를 유지한다.
+                let next = window.stripMerchCatalogEditRows ? window.stripMerchCatalogEditRows(prev) : { ...(prev || {}) };
+                if (!hasExternalExcel) next = {};
+
+                if (nextCatalogName && !hasExternalExcel) {
+                    const safeMarginRules = window.sanitizeMerchMarginRules ? window.sanitizeMerchMarginRules(config.marginRules) : (Array.isArray(config.marginRules) ? config.marginRules : []);
+                    nextScope.codeSet.forEach(code => {
+                        const mItem = data.masterProducts[code];
+                        if (!mItem) return;
+                        const catalogSource = { ...(mItem || {}), _catalogEditOnly: true, _catalogName: nextCatalogName };
+                        const sources = { catalog: catalogSource, _activeRole: 'catalog' };
+                        next[code] = {
+                            코드: code,
+                            _managedKey: code,
+                            _lastUploadRole: 'catalog',
+                            _catalogEditOnly: true,
+                            _workScopeCatalogs: [nextCatalogName],
+                            sources,
+                            finalData: window.computeFinalData(mItem, sources, safeMarginRules, false),
+                            _tags: new Set([`category:${nextCatalogName}`])
+                        };
+                    });
+                }
+
+                const rebuilt = window.rebuildMerchEstimateComparisonForScope
+                    ? window.rebuildMerchEstimateComparisonForScope(next, data.masterProducts, scopeTags, config.marginRules)
+                    : { items: next };
+                return rebuilt.items;
+            });
+
+            ui.setSelectedRows(new Set());
+            if (nextCatalogName && !hasExternalExcel) {
+                const appliedView = window.applyMerchTableView ? window.applyMerchTableView(config, 'catalog', null, { manual: false }) : null;
+                const filterApplied = window.applyMerchFilterPresetToState && appliedView ? window.applyMerchFilterPresetToState(appliedView, ui) : false;
+                ui.showToast(`✅ 카탈로그 [${nextCatalogName}] 편집 작업테이블 생성 (${nextScope?.scopeCount ?? 0}건)${appliedView ? ` / 양식선택: ${appliedView.name}${filterApplied ? '·필터적용' : ''}` : ''}`);
+            } else if (nextCatalogName) {
+                ui.showToast(`✅ 카탈로그 [${nextCatalogName}] 비교 작업범위 적용 (${nextScope?.scopeCount ?? 0}건) / 작업테이블은 현재 엑셀값 유지`);
+            } else {
+                ui.showToast(`✅ 카탈로그 작업범위 해제 / 전체 마스터 ${nextScope?.masterCount ?? Object.keys(data.masterProducts || {}).length}건`);
+            }
+            return;
+        }
+'''
+          text = text[:branch_start] + new_branch + text[branch_end:]
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Validate patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('MerchOps.html').read_text(encoding='utf-8')
+          assert text.count('v2.1.160_CatalogEditWorktable') == 3
+          assert 'window.stripMerchCatalogEditRows' in text
+          assert '_catalogEditOnly: true' in text
+          assert '작업테이블은 현재 엑셀값 유지' in text
+          assert 'let newManaged = window.stripMerchCatalogEditRows' in text
+          assert "window.applyMerchTableView(config, 'catalog'" in text
+          print('MerchOps catalog edit worktable patch validated')
+          PY
+          git diff --check
+
+      - name: Commit patched source
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm --ignore-unmatch .github/workflows/patch-merchops-catalog-edit-worktable.yml
+          git add MerchOps.html
+          git diff --cached --check
+          git commit -m "Fix catalog edit worktable"
+          git push origin HEAD:agent/merchops-catalog-edit-worktable-20260721
