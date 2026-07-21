@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.158_FilterResetBulkBlank]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.159_MasterInfoDisplayFix]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -57,6 +57,7 @@
         // v2.1.156: 모든 엑셀 역할에서 연동/단가연동을 공통 수집하고 사용/미사용 값을 ERP 코드 1/0으로 표준화한다. 작업테이블과 상품정보 업로드 엑셀은 엑셀 연동값을 마스터보다 우선한다.
         // v2.1.157: 상세패널의 창고 일괄입력을 행사테마·재고·판매여부·연동·싯가·창고 공통 일괄입력으로 확장한다. 선택이 없으면 현재 작업테이블 전체에 적용하고 F8에서 마스터·히스토리에 반영한다. 가격변동은 가격변동으로 변경하며 입고가 0/공란은 가격변동에서 제외하고 입고가없음 상세필터로 분리한다.
         // v2.1.158: 필터 초기화 시 공통 일괄입력의 행사테마·재고·판매여부·연동·싯가·창고도 모두 공백(지정 안 함)으로 복원한다. 선택형 입력의 공백 옵션을 다시 선택할 수 있게 해 개별 항목도 기존값 유지 상태로 되돌릴 수 있다.
+        // v2.1.159: 등록상품의 마스터 정보 셀은 마스터 품목코드·품목명·규격을 항상 표시한다. 업로드 파일에 해당 헤더가 없을 때는 source 필드를 만들지 않아 컬럼 없음과 값 공란을 구분한다. 마스터 입고가는 기존 기본 열을 유지한다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결하며 오더즈판매가/오더즈구매가는 작업·출력에서 제외한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
@@ -3372,9 +3373,9 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                     const cleanHeader = (h) => String(h || '').replace(/\s/g, '');
                     const findActualHeader = (candidates = []) => actualHeaders.find(h => candidates.includes(cleanHeader(h)));
                     const codeKey = headerCache['품목코드'] || findActualHeader(['품목코드', '상품코드', '코드', '바코드']) || '품목코드';
-                    const nameKey = headerCache['품목명'] || findActualHeader(['품목명', '상품명', '품명']) || '품목명';
+                    const nameKey = headerCache['품목명'] || findActualHeader(['품목명', '상품명', '품명']) || '';
                     const code = row[codeKey];
-                    const name = row[nameKey];
+                    const name = nameKey ? row[nameKey] : '';
                     const cleanCode = String(code || '').replace(/\s/g, '');
                     const cleanName = String(name || '').replace(/\s/g, '');
                     if (!cleanCode || cleanCode.includes('출력') || cleanCode === '코드' || cleanCode === '품목코드' || cleanCode === '상품코드' || cleanCode.includes('예시'))
@@ -3415,10 +3416,12 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                     const unitKey = headerCache['단위'] || findActualHeader(['단위', '포장단위', '판매단위', '매입단위', 'UNIT', 'unit']);
                     const taxKey = headerCache['부가세여부'] || headerCache['과세'] || findActualHeader(['과세', '부가세여부', '부가세', '면세', '비과세']);
                     mItem.sources[role]['품목코드'] = cleanCode;
-                    mItem.sources[role]['품목명'] = nameKey ? row[nameKey] : '';
-                    mItem.sources[role]['규격'] = specKey ? row[specKey] : '';
-                    mItem.sources[role]['단위'] = unitKey ? row[unitKey] : '';
-                    mItem.sources[role]['구매처'] = vendorKey ? row[vendorKey] : '';
+                    // 선택 헤더는 실제 파일에 존재할 때만 source 필드를 만든다.
+                    // 헤더 없음(undefined)과 헤더는 있으나 셀 공란('')을 구분해야 마스터 표시와 원본 공란 정책이 동시에 유지된다.
+                    if (nameKey) mItem.sources[role]['품목명'] = row[nameKey];
+                    if (specKey) mItem.sources[role]['규격'] = row[specKey];
+                    if (unitKey) mItem.sources[role]['단위'] = row[unitKey];
+                    if (vendorKey) mItem.sources[role]['구매처'] = row[vendorKey];
                     if (taxKey) {
                         mItem.sources[role]['과세'] = row[taxKey];
                         mItem.sources[role]['부가세여부'] = window.normalizeMerchTaxFlag(row[taxKey], taxKey);
@@ -7795,12 +7798,17 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
     const widthStyle = (key, label, fallback) => window.getMerchColumnWidthStyle(columnWidths, key, label, fallback);
     const hasUploadNameField = !!(row.finalData && Object.prototype.hasOwnProperty.call(row.finalData, '품목명'));
     const hasUploadSpecField = !!(row.finalData && Object.prototype.hasOwnProperty.call(row.finalData, '규격'));
-    const hasUploadSourceForOriginal = typeof window.hasAnyUploadSource === 'function' ? window.hasAnyUploadSource(row.sources || {}) : !!(row.sources && Object.keys(row.sources || {}).length > 0);
     const uploadName = hasUploadNameField ? row.finalData['품목명'] : '';
     const uploadSpec = hasUploadSpecField ? row.finalData['규격'] : '';
-    const dName = hasUploadNameField ? (uploadName || '[미등록]') : (mItem.품목명 || '[미등록]');
-    // 엑셀 업로드 상태에서 규격 컬럼이 없거나 공란이면 마스터 규격/품목명으로 보강하지 않고 그대로 비운다.
-    const dSpec = hasUploadSourceForOriginal ? (hasUploadSpecField ? uploadSpec : '') : (mItem.규격 || '');
+    const masterCode = String(mItem.코드 || mItem['품목코드'] || '').trim();
+    const masterName = mItem.품목명 || mItem['상품명'] || '';
+    const masterSpec = mItem.규격 || '';
+    const hasMasterIdentity = !!(masterCode || masterName || masterSpec);
+    // '마스터 정보' 고정 셀은 등록상품이면 업로드값과 무관하게 기존 마스터 식별정보만 표시한다.
+    // 미등록상품만 작업 원본의 코드·품목명·규격을 표시해 신규등록 검토가 가능하도록 한다.
+    const dCode = hasMasterIdentity ? (masterCode || row.코드) : (row.코드 || '');
+    const dName = hasMasterIdentity ? (masterName || '[미등록]') : (uploadName || '[미등록]');
+    const dSpec = hasMasterIdentity ? masterSpec : (hasUploadSpecField ? uploadSpec : '');
     const oldP = window.parseNum(mItem['입고가']);
     const newP = window.parseNum(((_c = row.finalData) === null || _c === void 0 ? void 0 : _c['입고가']) !== undefined ? row.finalData['입고가'] : ((_q = (_m = (_j = (_f = (_e = (_d = row.sources) === null || _d === void 0 ? void 0 : _d['estimate']) === null || _e === void 0 ? void 0 : _e['입고가']) !== null && _f !== void 0 ? _f : (_h = (_g = row.sources) === null || _g === void 0 ? void 0 : _g['purchase']) === null || _h === void 0 ? void 0 : _h['입고가']) !== null && _j !== void 0 ? _j : (_l = (_k = row.sources) === null || _k === void 0 ? void 0 : _k['sales']) === null || _l === void 0 ? void 0 : _l['입고가']) !== null && _m !== void 0 ? _m : (_p = (_o = row.sources) === null || _o === void 0 ? void 0 : _o['inventory']) === null || _p === void 0 ? void 0 : _p['입고가']) !== null && _q !== void 0 ? _q : oldP));
     const diffAmount = newP - oldP;
@@ -8000,12 +8008,12 @@ const MemoizedTableRow = React.memo(({ row, idx, state, actions, isSel, mItem })
                 isEstimateUploaded && (React.createElement("input", { type: "checkbox", className: "w-4 h-4 rounded border-slate-300 cursor-pointer shrink-0 text-indigo-600 focus:ring-indigo-500 select-none", checked: isSel, onMouseDown: (event) => actions.beginRowSelectionDrag?.(window.getManagedRowKey(row), event), onClick: (event) => { event.preventDefault(); event.stopPropagation(); }, onChange: () => {}, onKeyDown: (event) => { if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); actions.toggleRowSelectionKeyboard?.(window.getManagedRowKey(row)); } }, title: "클릭 선택/해제 · 누른 채 위아래로 드래그하면 연속 선택/해제" })),
                 React.createElement("div", { className: "flex flex-col min-w-0 w-full overflow-hidden ml-1" },
                     React.createElement("div", { className: "flex items-center gap-1 mb-0.5 min-w-0" },
-                        React.createElement("span", { className: `text-[10px] font-mono truncate block ${isMasterAddedRow ? 'text-amber-600' : 'text-indigo-400'}` }, row.코드),
+                        React.createElement("span", { className: `text-[10px] font-mono truncate block ${isMasterAddedRow ? 'text-amber-600' : 'text-indigo-400'}`, title: dCode }, dCode),
                         isMasterAddedRow && React.createElement("span", { className: "px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 text-[9px] font-black shrink-0" }, "마스터추가"),
                         isFileMissingRow && React.createElement("span", { className: "px-1.5 py-0.5 rounded-full bg-white/70 text-amber-700 border border-amber-200 text-[9px] font-black shrink-0" }, "파일없음"),
                         ['add', 'missing'].includes(estimateCompareMeta.status) && React.createElement("span", { className: `px-1.5 py-0.5 rounded-full text-[9px] font-black shrink-0 border ${estimateCompareMeta.status === 'missing' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}` }, estimateCompareMeta.statusLabel)),
                     React.createElement("div", { className: "flex items-center w-full min-w-0 overflow-hidden" },
-                        React.createElement("span", { className: `text-[13px] font-extrabold truncate block shrink ${isMasterAddedRow ? 'text-amber-950' : (!mItem.품목명 ? 'text-rose-500' : 'text-slate-800')}`, title: dName }, dName),
+                        React.createElement("span", { className: `text-[13px] font-extrabold truncate block shrink ${isMasterAddedRow ? 'text-amber-950' : (!masterName ? 'text-rose-500' : 'text-slate-800')}`, title: dName }, dName),
                         dSpec && React.createElement("span", { className: "text-[11px] text-slate-400 truncate block shrink-0 ml-1 max-w-[40%]", title: dSpec },
                             "(",
                             dSpec,
@@ -8276,7 +8284,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.158_FilterResetBulkBlank]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.159_MasterInfoDisplayFix]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -8680,7 +8688,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.158_FilterResetBulkBlank")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.159_MasterInfoDisplayFix")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
