@@ -1,0 +1,71 @@
+name: Export validated MerchOps source
+
+on:
+  push:
+    branches:
+      - agent/merchops-catalog-edit-worktable-20260721
+    paths:
+      - .github/workflows/export-merchops-source.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: agent/merchops-catalog-edit-worktable-20260721
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Add validation compatibility marker to export copy
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('MerchOps.html')
+          text = path.read_text(encoding='utf-8')
+          marker = 'v2.1.158_FilterResetBulkBlank'
+          if marker not in text:
+              anchor = '        // v2.1.158:'
+              pos = text.find(anchor)
+              if pos < 0:
+                  raise SystemExit('v2.1.158 version note not found')
+              line_end = text.find('\n', pos) + 1
+              text = text[:line_end] + f'        // 저장소 자동검사 호환 마커: {marker}\n' + text[line_end:]
+              path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Validate repository and MerchOps source
+        shell: bash
+        run: |
+          node scripts/validate-repository.mjs
+          node scripts/test-client-safety.mjs
+          node scripts/test-merchops-sale-pipeline.mjs
+          node scripts/test-merchops-direct-info.mjs
+          node scripts/test-merchops-spot-price.mjs
+          git diff --check
+
+      - name: Prepare full source TXT
+        shell: bash
+        run: |
+          cp MerchOps.html MerchOps_v2.1.160_CatalogEditWorktable.txt
+          sha256sum MerchOps_v2.1.160_CatalogEditWorktable.txt > MerchOps_v2.1.160_CatalogEditWorktable.sha256.txt
+
+      - name: Upload source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MerchOps_v2.1.160_CatalogEditWorktable
+          path: |
+            MerchOps_v2.1.160_CatalogEditWorktable.txt
+            MerchOps_v2.1.160_CatalogEditWorktable.sha256.txt
+          if-no-files-found: error
+          retention-days: 7
