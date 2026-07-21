@@ -69,3 +69,5 @@ jobs:
             MerchOps_v2.1.160_CatalogEditWorktable.sha256.txt
           if-no-files-found: error
           retention-days: 7
+
+# trigger: 2026-07-21-source-export
