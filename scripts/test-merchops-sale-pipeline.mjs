@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const html = fs.readFileSync(path.join(ROOT, "MerchOps.html"), "utf8");
-assert.match(html, /v2\.1\.158_FilterResetBulkBlank/);
+assert.match(html, /v2\.1\.161_WorktableHistoryPreserve/);
 assert.doesNotMatch(html, /v2\.1\.151_ResetVerticalAlign/);
 const inlineScripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)]
   .map((match) => match[1])
@@ -45,6 +45,10 @@ const context = vm.createContext({
   Math,
 });
 vm.runInContext(inlineScripts[0], context, { filename: "MerchOps-head.js" });
+
+assert.equal(browser.getMerchFieldEditOrigin({ _editedFields: { 규격: true } }, "규격", "규격"), "direct");
+assert.equal(browser.getMerchFieldEditOrigin({ _editedFields: { 재고: true }, _bulkEditedFields: { 재고: true } }, "재고", "재고"), "bulk");
+assert.equal(browser.getMerchFieldEditOrigin({}, "품목명", "품목명"), "");
 
 assert.equal(browser.normalizeMerchSaleAvailability(0), "0", "numeric zero must remain a sale-stop value");
 assert.equal(browser.normalizeMerchSaleAvailability("false"), "0");
@@ -92,3 +96,4 @@ assert.match(html, /window\.resolveMerchSaleAvailability\(current, mItem\)/);
 assert.match(html, /판매여부: mItem\['판매여부'\] \?\? ''/);
 
 console.log("MerchOps sale availability pipeline tests passed.");
+
