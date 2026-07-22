@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const html = fs.readFileSync(path.join(ROOT, "MerchOps.html"), "utf8");
 
-assert.match(html, /v2\.1\.158_FilterResetBulkBlank/);
+assert.match(html, /v2\.1\.161_WorktableHistoryPreserve/);
 
 const inlineScripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)]
   .map((match) => match[1])
@@ -214,3 +214,4 @@ assert.doesNotMatch(html, /가격확인/);
 assert.match(html, /excludedReason: '입고가없음'/);
 
 console.log("MerchOps Excel codes, bulk edit, and price-filter tests passed.");
+

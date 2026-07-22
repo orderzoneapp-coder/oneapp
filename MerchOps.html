@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.160_CatalogEditWorktable]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.161_WorktableHistoryPreserve]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -59,7 +59,7 @@
         // v2.1.158: 필터 초기화 시 공통 일괄입력의 행사테마·재고·판매여부·연동·싯가·창고도 모두 공백(지정 안 함)으로 복원한다. 선택형 입력의 공백 옵션을 다시 선택할 수 있게 해 개별 항목도 기존값 유지 상태로 되돌릴 수 있다.
         // v2.1.159: 등록상품의 마스터 정보 셀은 마스터 품목코드·품목명·규격을 항상 표시한다. 업로드 파일에 해당 헤더가 없을 때는 source 필드를 만들지 않아 컬럼 없음과 값 공란을 구분한다. 마스터 입고가는 기존 기본 열을 유지한다.
         // v2.1.160: 카탈로그만 선택한 경우 선택 상품의 마스터값을 편집 가능한 작업테이블로 복사한다. 이후 견적·구매·재고·정보 엑셀을 불러오면 카탈로그 편집용 임시행을 제거하고 기존 비교모드의 엑셀 source만 작업테이블에 표시한다.
-        // 저장소 자동검사 호환 마커: v2.1.158_FilterResetBulkBlank
+        // v2.1.161: 카탈로그 작업범위 선택 시 기존 파서리스트/작업테이블을 보존한다. F8 저장에서는 직접 셀 수정값도 변경 전·후와 변경경로를 히스토리에 기록한다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결하며 오더즈판매가/오더즈구매가는 작업·출력에서 제외한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
@@ -495,6 +495,12 @@
             return { count: refs.length, stockQty, price: firstPrice, warehouses, rows: priceRows.slice(0, 10) };
         };
         window.hasAnyUploadSource = (sources = {}) => window.getWorkingSourcePriority(sources).some(role => sources?.[role] && Object.keys(sources[role]).length > 0);
+        window.getMerchFieldEditOrigin = (finalData = {}, field = '', linkedField = '') => {
+            const isMarked = (markers = {}) => !!(markers[field] || (linkedField && markers[linkedField]));
+            if (isMarked(finalData?._bulkEditedFields || {})) return 'bulk';
+            if (isMarked(finalData?._editedFields || {})) return 'direct';
+            return '';
+        };
         window.mergeExcelSourcesForTable = (sources = {}, rolePriority = window.getWorkingSourcePriority(sources)) => {
             const merged = {};
             rolePriority.forEach(role => {
@@ -3083,6 +3089,12 @@ window.stripMerchCatalogEditRows = (managedItems = {}) => {
     });
     return next;
 };
+window.hasMerchExistingWorktableRows = (managedItems = {}) => {
+    const preserved = window.stripMerchCatalogEditRows
+        ? window.stripMerchCatalogEditRows(managedItems)
+        : Object.fromEntries(Object.entries(managedItems || {}).filter(([, item]) => item && !window.isMerchCatalogEditRow(item)));
+    return Object.keys(preserved).length > 0;
+};
 
 window.rebuildMerchEstimateComparisonForScope = (managedItems = {}, masterProducts = {}, activeTags = [], marginRules = []) => {
     const scope = window.buildMerchWorkScope(masterProducts, activeTags);
@@ -3816,10 +3828,11 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             const nextScope = window.buildMerchWorkScope
                 ? window.buildMerchWorkScope(data.masterProducts, scopeTags)
                 : { mode: nextCatalogName ? 'catalog' : 'all', catalogName: nextCatalogName, codeSet: new Set(), scopeCount: 0, masterCount: Object.keys(data.masterProducts || {}).length };
-            const externalRoles = ['estimate', 'purchase', 'sales', 'inventory', 'info'];
-            const hasExternalExcel = Object.values(data.managedItems || {}).some(item => externalRoles.some(role => window.hasMerchSourceRoleData
-                ? window.hasMerchSourceRoleData(item, role)
-                : !!(item?.sources?.[role] && Object.keys(item.sources[role]).length > 0)));
+            // 카탈로그 단독 편집행을 제외한 기존 작업행(파서리스트 포함)이 하나라도 있으면
+            // 현재 작업테이블을 보존하고 카탈로그는 비교범위로만 적용한다.
+            const hasExistingWorktable = window.hasMerchExistingWorktableRows
+                ? window.hasMerchExistingWorktableRows(data.managedItems || {})
+                : Object.values(data.managedItems || {}).some(item => item && !window.isMerchCatalogEditRow(item));
 
             ui.setActiveTags(prev => {
                 const keep = (prev || []).filter(t => String(t?.type || '') !== 'category');
@@ -3830,9 +3843,14 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                 // 카탈로그 전환·해제 시 이전 카탈로그 단독 편집행을 제거한다.
                 // 외부 엑셀 source가 있으면 그대로 보존하여 기존 비교모드를 유지한다.
                 let next = window.stripMerchCatalogEditRows ? window.stripMerchCatalogEditRows(prev) : { ...(prev || {}) };
-                if (!hasExternalExcel) next = {};
+                // React 상태 갱신 시점의 prev를 기준으로 다시 판정해 빠른 연속 작업에서도
+                // 방금 불러온 파서리스트/엑셀 작업행을 실수로 초기화하지 않는다.
+                const preserveExistingWorktable = window.hasMerchExistingWorktableRows
+                    ? window.hasMerchExistingWorktableRows(prev || {})
+                    : Object.keys(next).length > 0;
+                if (!preserveExistingWorktable) next = {};
 
-                if (nextCatalogName && !hasExternalExcel) {
+                if (nextCatalogName && !preserveExistingWorktable) {
                     const safeMarginRules = window.sanitizeMerchMarginRules
                         ? window.sanitizeMerchMarginRules(config.marginRules)
                         : (Array.isArray(config.marginRules) ? config.marginRules : []);
@@ -3861,12 +3879,12 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             });
 
             ui.setSelectedRows(new Set());
-            if (nextCatalogName && !hasExternalExcel) {
+            if (nextCatalogName && !hasExistingWorktable) {
                 const appliedView = window.applyMerchTableView ? window.applyMerchTableView(config, 'catalog', null, { manual: false }) : null;
                 const filterApplied = window.applyMerchFilterPresetToState && appliedView ? window.applyMerchFilterPresetToState(appliedView, ui) : false;
                 ui.showToast(`✅ 카탈로그 [${nextCatalogName}] 편집 작업테이블 생성 (${nextScope?.scopeCount ?? 0}건)${appliedView ? ` / 양식선택: ${appliedView.name}${filterApplied ? '·필터적용' : ''}` : ''}`);
             } else if (nextCatalogName) {
-                ui.showToast(`✅ 카탈로그 [${nextCatalogName}] 비교 작업범위 적용 (${nextScope?.scopeCount ?? 0}건) / 작업테이블은 현재 엑셀값 유지`);
+                ui.showToast(`✅ 카탈로그 [${nextCatalogName}] 비교 작업범위 적용 (${nextScope?.scopeCount ?? 0}건) / 기존 작업테이블 유지`);
             } else {
                 ui.showToast(`✅ 카탈로그 작업범위 해제 / 전체 마스터 ${nextScope?.masterCount ?? Object.keys(data.masterProducts || {}).length}건`);
             }
@@ -5172,6 +5190,7 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
                     }
                 }
                 if (!promoResetRequested) {
+                    const recordedFieldChangeLogs = new Set();
                     Object.keys(item.finalData).forEach(field => {
                         var _a, _b, _c, _d, _e, _f, _g, _h, _j;
                         if (field.startsWith('_') || field === '판매여부')
@@ -5189,7 +5208,45 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
                             const oldRaw = Object.prototype.hasOwnProperty.call(oldItem, linked) ? oldItem[linked] : '';
                             const oldVal = window.NUMERIC_HEADERS.includes(linked) ? window.parseNum(oldRaw) : oldRaw;
                             if (oldVal !== newVal) {
-                                if (['입고가', '출고가'].includes(linked) && oldVal > 0) {
+                                const editOrigin = window.getMerchFieldEditOrigin
+                                    ? window.getMerchFieldEditOrigin(item.finalData || {}, field, linked)
+                                    : '';
+                                const isBulkEdited = editOrigin === 'bulk';
+                                const isDirectlyEdited = editOrigin === 'direct';
+                                const canRecordFieldLog = !recordedFieldChangeLogs.has(linked);
+                                if (canRecordFieldLog && isBulkEdited) {
+                                    localLogs.push({
+                                        id: window.generateUUID(),
+                                        timestamp: nowStr,
+                                        code,
+                                        name: oldItem.품목명 || item.finalData?.품목명 || '',
+                                        spec: oldItem.규격 || item.finalData?.규격 || '',
+                                        field: linked,
+                                        oldVal: String(oldVal ?? '').trim() === '' ? '공백' : oldVal,
+                                        newVal: String(newVal ?? '').trim() === '' ? '공백' : newVal,
+                                        diff: window.NUMERIC_HEADERS.includes(linked) ? newVal - oldVal : 0,
+                                        actionType: '공통 일괄입력',
+                                        source: 'MerchOps bulk'
+                                    });
+                                    recordedFieldChangeLogs.add(linked);
+                                }
+                                else if (canRecordFieldLog && isDirectlyEdited) {
+                                    localLogs.push({
+                                        id: window.generateUUID(),
+                                        timestamp: nowStr,
+                                        code,
+                                        name: oldItem.품목명 || item.finalData?.품목명 || '',
+                                        spec: oldItem.규격 || item.finalData?.규격 || '',
+                                        field: linked,
+                                        oldVal: String(oldVal ?? '').trim() === '' ? '공백' : oldVal,
+                                        newVal: String(newVal ?? '').trim() === '' ? '공백' : newVal,
+                                        diff: window.NUMERIC_HEADERS.includes(linked) ? newVal - oldVal : 0,
+                                        actionType: '작업테이블 직접수정',
+                                        source: `MerchOps ${activeRoleForCommit || 'worktable'}`
+                                    });
+                                    recordedFieldChangeLogs.add(linked);
+                                }
+                                else if (canRecordFieldLog && ['입고가', '출고가'].includes(linked) && oldVal > 0) {
                                     localLogs.push({
                                         id: window.generateUUID(),
                                         timestamp: nowStr,
@@ -5201,8 +5258,9 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
                                         newVal: newVal,
                                         diff: newVal - oldVal
                                     });
+                                    recordedFieldChangeLogs.add(linked);
                                 }
-                                else if (['카탈로그', '견적서'].includes(linked)) {
+                                else if (canRecordFieldLog && ['카탈로그', '견적서'].includes(linked)) {
                                     localLogs.push({
                                         id: window.generateUUID(),
                                         timestamp: nowStr,
@@ -5214,21 +5272,7 @@ ${targetModeText} ${targets.size}건을 마스터에 저장한 뒤, 출력검증
                                         newVal: newVal || '삭제됨',
                                         diff: 0
                                     });
-                                }
-                                else if (item.finalData?._bulkEditedFields?.[field] || item.finalData?._bulkEditedFields?.[linked]) {
-                                    localLogs.push({
-                                        id: window.generateUUID(),
-                                        timestamp: nowStr,
-                                        code,
-                                        name: oldItem.품목명 || item.finalData?.품목명 || '',
-                                        spec: oldItem.규격 || item.finalData?.규격 || '',
-                                        field: linked,
-                                        oldVal: String(oldVal ?? '').trim() === '' ? '공백' : oldVal,
-                                        newVal: String(newVal ?? '').trim() === '' ? '공백' : newVal,
-                                        diff: 0,
-                                        actionType: '공통 일괄입력',
-                                        source: 'MerchOps bulk'
-                                    });
+                                    recordedFieldChangeLogs.add(linked);
                                 }
                             }
                             newMaster[item.코드][linked] = newVal;
@@ -8325,7 +8369,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.160_CatalogEditWorktable]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.161_WorktableHistoryPreserve]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -8729,7 +8773,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.160_CatalogEditWorktable")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.161_WorktableHistoryPreserve")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
