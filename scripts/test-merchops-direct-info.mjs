@@ -23,8 +23,32 @@ parseInlineScripts(merch, "MerchOps");
 parseInlineScripts(parser, "SmartParser");
 JSON.parse(manifest);
 
-assert.match(merch, /v2\.1\.158_FilterResetBulkBlank/);
+assert.match(merch, /v2\.1\.161_WorktableHistoryPreserve/);
 assert.match(parser, /v3\.0\.19 ExplicitInfoSave/);
+
+assert.match(merch, /window\.hasMerchExistingWorktableRows =/);
+assert.match(merch, /const preserveExistingWorktable = window\.hasMerchExistingWorktableRows/);
+assert.match(merch, /if \(nextCatalogName && !preserveExistingWorktable\)/);
+assert.doesNotMatch(merch, /if \(!hasExternalExcel\) next = \{\};/);
+assert.match(merch, /actionType: '작업테이블 직접수정'/);
+assert.match(merch, /const editOrigin = window\.getMerchFieldEditOrigin/);
+assert.match(merch, /recordedFieldChangeLogs\.add\(linked\)/);
+
+const catalogHelperStart = merch.indexOf("window.isMerchCatalogEditRow =");
+const catalogHelperEnd = merch.indexOf("window.rebuildMerchEstimateComparisonForScope =", catalogHelperStart);
+assert.ok(catalogHelperStart >= 0 && catalogHelperEnd > catalogHelperStart, "Catalog worktable helper block was not found");
+const catalogBrowser = {};
+vm.runInContext(merch.slice(catalogHelperStart, catalogHelperEnd), vm.createContext({ window: catalogBrowser, Object }));
+const parserListRows = {
+  P001: { sources: { catalog: { 품목명: "파서 상품", _catalogListOnly: true } }, finalData: { 품목명: "파서 상품" } },
+};
+const catalogEditRows = {
+  P002: { _catalogEditOnly: true, sources: { catalog: { 품목명: "편집 상품", _catalogEditOnly: true } } },
+};
+assert.equal(catalogBrowser.hasMerchExistingWorktableRows(parserListRows), true,
+  "A loaded parser list must keep the existing worktable when catalog scope changes");
+assert.equal(catalogBrowser.hasMerchExistingWorktableRows(catalogEditRows), false,
+  "Catalog-only edit rows must be replaceable when catalog scope changes");
 
 for (const removed of [
   "정보변경 대기",
@@ -84,3 +108,4 @@ assert.match(history, /oldVal/);
 assert.match(history, /newVal/);
 
 console.log("MerchOps rule placement and SmartParser direct information-master tests passed.");
+
