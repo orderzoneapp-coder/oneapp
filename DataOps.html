@@ -3456,11 +3456,15 @@ const EXPORT_MODULE = Object.freeze({
                 || unitMismatch
                 || safeNum(item.대체입고) !== 0
                 || safeNum(item.대체출고) !== 0;
-            const isDirectPurchase = validPurchaseFields && (hasExplicitPurchaseLot || !isStructuralStock);
+            const isDirectPurchase = validPurchaseFields && !unitMismatch && (hasExplicitPurchaseLot || !isStructuralStock);
             const issueText = [...(item.이슈 || []), safeStr(item.메모, '')].filter(Boolean).join(' ');
             const otherReason = EXPORT_MODULE.getOtherStockReason(item);
             const systemParts = [];
-            if (!isDirectPurchase && (otherReason === '치환/묶음재고' || /원가치환/.test(issueText))) {
+            const hasSubstitutedCost = !isDirectPurchase && price > 0 && (unitMismatch
+                || /소분|치환|묶음|대체/.test(structuralText)
+                || otherReason === '치환/묶음재고'
+                || /원가치환/.test(issueText));
+            if (hasSubstitutedCost) {
                 systemParts.push('원가치환');
             }
             if (safeNum(diffQty) !== 0) {
@@ -3581,7 +3585,8 @@ const EXPORT_MODULE = Object.freeze({
                     <script>window.onload=()=>{setTimeout(()=>window.print(),200)}<\/script></body></html>`);
         w.document.close();
         return true;
-    },    createCombinedWorkbook: ({ productData = [], screenRows = null, analysisPeriod = '', targetDateStr = '', closingStats = {} }) => {
+    },
+    createCombinedWorkbook: ({ productData = [], screenRows = null, analysisPeriod = '', targetDateStr = '', closingStats = {} }) => {
         const exportFileNameDate = targetDateStr ? targetDateStr.replace(/-/g, '') : (() => { const today = new Date(); return `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`; })();
         // V1.a22.30: 운영 출력은 코드통합형을 기본으로 한다. Lot/일자/구매처 상세는 분석원장에만 보존한다.
         const operationalProductData = DATAOPS_VIEW_LAYER_MODULE.buildCodeSummaryRows(productData || []).sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b));
