@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.90)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.91)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.90.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.91.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -909,7 +909,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.90',
+    version: 'V1.a22.91',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -2272,6 +2272,7 @@ const FILTER_SORT_MODULE = Object.freeze({
 // V1.a22.88: 스페이스바/CTRL 대체판매는 실제 출고 상품의 원가를 판매전표 상품의 단가(입고가)에 반영한다. 원가출처 Lot·BOX 단가는 보존하고 대상 판매상품에만 환산원가를 생성한다.
 // V1.a22.88: 스페이스바 대체판매 역할 판정은 마스터 원물/소분 관계보다 ‘단가가 있는 실제출고 상품 → 단가 0 판매전표 상품’을 우선한다. 원가 생성 실패 시 단가이슈를 확인완료로 바꾸지 않고 작업을 중단한다.
 // V1.a22.90: 다음항목 점프 키를 Tab으로 통일한다. 코드통합형에서는 Tab=다음 통합후보, Shift+Tab=이전 통합후보 전용이며, Lot상세형의 재고·Lot 이슈 Tab 큐와 화면 모드별로 분리한다. 첫/마지막 후보에서는 순환하지 않고 정지한다.
+// V1.a22.91: 재고 실사 출력은 품목코드·품명·규격·잔량을 우선하고 재고·입고·출고와 구매일·구매처·구매가·시스템 순으로 재구성한다. 0은 공백, 입출고는 색상 구분, 마이너스 잔량과 당일 구매만 단계적으로 강조하며 장문 이슈메모는 간결한 시스템 정보로 축약한다.
 // V1.a22.69: 코드통합형 해제/다시 통합 상태 관리.
 // 원본 Lot은 수정하지 않고 화면 보기/엑셀 1번 시트 출력에만 반영한다.
 const DATAOPS_CODE_MERGE_OVERRIDE_MODULE = Object.freeze({
@@ -3418,94 +3419,169 @@ const EXPORT_MODULE = Object.freeze({
             ws['!autofilter'] = { ref: ws['!ref'] };
         return ws;
     },
-    buildPrintRows: ({ productData = [] }) => {
-        const codeCounts = {};
-        (productData || []).forEach(row => {
-            const code = safeStr(row && row.코드, '').replace(/\.0$/, '').trim();
-            if (!code || code === '-' || code === 'NO_CODE') return;
-            codeCounts[code] = (codeCounts[code] || 0) + 1;
-        });
-        return productData.map(item => {
+    buildPrintRows: ({ productData = [], targetDateStr = '' }) => {
+        const targetDateKey = safeStr(targetDateStr, '').replace(/[^0-9]/g, '');
+        return (productData || []).map(item => {
             const standard = DATA_MODEL_MODULE.fromLegacyRow(item);
+            const productFields = EXPORT_MODULE.getPurchaseBalanceProductFields(item);
+            const raw = item._raw || {};
             const finalQty = STOCK_ENGINE_MODULE.getActualQty(item);
             const systemQty = safeNum(item.전산잔량);
             const diffQty = finalQty - systemQty;
             const code = safeStr(standard.code || item.코드, '').replace(/\.0$/, '').trim();
-            const splitLotMemo = code && codeCounts[code] > 1
-                ? [safeStr(item.일자 || item._stockRecordDate || '미상'), safeStr(item.거래처 || standard.vendor || '미지정')].filter(Boolean).join(' ')
-                : '';
+            const purchaseDateSource = item.일자 || item._purchaseLotDate || '';
+            const purchaseVendorSource = item.거래처 || item._purchaseLotVendor || item._displayPurchaseVendor || '';
+            const purchaseDate = EXPORT_MODULE.sanitizeLedgerRecordValue(purchaseDateSource);
+            const purchaseVendor = EXPORT_MODULE.sanitizeLedgerTradeValue(purchaseVendorSource);
+            const price = Math.round(safeNum(item.단가));
+            const modeText = safeStr(item._costExtractMode || item._analysisMode || '', '');
+            const lotKey = safeStr(item._purchaseLotKey || '', '');
+            const stockUnit = safeStr(item._stockLotUnit || item._stockUnit || item.단위 || raw['단위'] || raw['규격단위'] || raw['포장단위'], '');
+            const purchaseUnit = safeStr(item._purchaseLotUnit || '', '');
+            const unitMismatch = !!purchaseUnit && !!stockUnit && purchaseUnit.trim().toUpperCase() !== stockUnit.trim().toUpperCase();
+            const validPurchaseFields = !!purchaseDate
+                && !safeStr(purchaseDate).includes('미확정')
+                && !!purchaseVendor
+                && purchaseVendor !== '미지정'
+                && purchaseVendor !== '매입내역 없음'
+                && purchaseVendor !== '구매Lot미확정'
+                && purchaseVendor !== '구매처미상'
+                && price > 0;
+            const hasExplicitPurchaseLot = !!lotKey
+                || item._manualLotOverrideApplied
+                || modeText === 'REVERSE_PURCHASE'
+                || modeText === 'MANUAL_PURCHASE_LOT_OVERRIDE';
+            const structuralText = `${stockUnit} ${modeText}`;
+            const isStructuralStock = /소분|치환|묶음|대체/.test(structuralText)
+                || unitMismatch
+                || safeNum(item.대체입고) !== 0
+                || safeNum(item.대체출고) !== 0;
+            const isDirectPurchase = validPurchaseFields && (hasExplicitPurchaseLot || !isStructuralStock);
+            const issueText = [...(item.이슈 || []), safeStr(item.메모, '')].filter(Boolean).join(' ');
+            const otherReason = EXPORT_MODULE.getOtherStockReason(item);
+            const systemParts = [];
+            if (!isDirectPurchase && (otherReason === '치환/묶음재고' || /원가치환/.test(issueText))) {
+                systemParts.push('원가치환');
+            }
+            if (safeNum(diffQty) !== 0) {
+                const adjustLabel = /수기치환|수기조정|수기/.test(issueText) ? '수기' : '실사';
+                systemParts.push(`${adjustLabel} ${safeNum(diffQty) > 0 ? '+' : ''}${formatQty(diffQty)}`);
+            }
+            if (!isDirectPurchase && otherReason === '소분재고') {
+                systemParts.push('분할재고');
+            }
+            if (/과다로스|로스/.test(issueText)) {
+                systemParts.push('로스');
+            }
+            if (!isDirectPurchase && otherReason === '매입내역 없음') {
+                systemParts.push('매입없음');
+            }
+            if (price <= 0 && (purchaseDate || purchaseVendor)) {
+                systemParts.push('원가확인');
+            }
+            const uniqueSystemParts = DATAOPS_ISSUE_HELPER.unique(systemParts).slice(0, 3);
+            const purchaseDateKey = safeStr(purchaseDate, '').replace(/[^0-9]/g, '');
+            const isTodayPurchase = isDirectPurchase
+                && !!targetDateKey
+                && (purchaseDateKey === targetDateKey || (purchaseDateKey.length === 4 && targetDateKey.endsWith(purchaseDateKey)));
             return {
-                name: safeStr(item.품명),
-                code: standard.code,
+                code: code && code !== 'NO_CODE' ? code : '',
+                name: productFields.name || safeStr(item.품명),
+                spec: productFields.spec || productFields.unit || stockUnit,
                 categoryCode: standard.categoryCode || safeStr(item.코드).slice(0, 2),
                 category2Code: standard.category2Code || DATA_MODEL_MODULE.getCategory2Code(standard.code || item.코드),
-                categoryName: standard.categoryName || '',
                 baseQty: safeNum(item.기초),
                 inQty: safeNum(item.입고) + safeNum(item.대체입고),
                 outQty: safeNum(item.출고) + safeNum(item.대체출고),
                 finalQty,
                 diffQty,
-                price: safeNum(item.단가),
-                issueMemo: [...(item.이슈 || []), splitLotMemo, item.메모 ? `메모:${item.메모}` : ''].filter(Boolean).join(' / ')
+                purchaseDate: isDirectPurchase ? purchaseDate : '',
+                purchaseVendor: isDirectPurchase ? purchaseVendor : '',
+                price,
+                isDirectPurchase,
+                isTodayPurchase,
+                systemText: uniqueSystemParts.join(' · ')
             };
         });
     },
     openPrintWindow: ({ productData = [], targetDateStr = '', title = 'DataOps 재고 실사 출력' }) => {
-        const rows = EXPORT_MODULE.buildPrintRows({ productData }).map((row, idx, arr) => ({
+        const rows = EXPORT_MODULE.buildPrintRows({ productData, targetDateStr }).map((row, idx, arr) => ({
             ...row,
             _idx: idx,
             _categoryBreak: idx > 0 && safeStr(row.category2Code || row.categoryCode) !== safeStr(arr[idx - 1].category2Code || arr[idx - 1].categoryCode)
         }));
-        // V1.a22.74: F10 인쇄는 고정 40행 강제 분할을 폐기한다.
-        // 이슈메모 줄바꿈으로 실제 행 높이가 달라질 수 있으므로 브라우저가 A4 높이에 맞춰 연속 자동 페이지 분할한다.
-        const issueCount = rows.filter(r => r.issueMemo).length;
+        const systemCount = rows.filter(r => r.systemText).length;
         const diffCount = rows.filter(r => safeNum(r.diffQty) !== 0).length;
         const negativeCount = rows.filter(r => safeNum(r.finalQty) < 0).length;
+        const formatPrintQty = (value) => safeNum(value) === 0 ? '' : formatQty(value);
+        const formatPurchaseDate = (value) => {
+            const text = safeStr(value, '');
+            if (!text) return '—';
+            const digits = text.replace(/[^0-9]/g, '');
+            if (digits.length === 8) return `${digits.slice(4, 6)}/${digits.slice(6, 8)}`;
+            if (digits.length === 4) return `${digits.slice(0, 2)}/${digits.slice(2, 4)}`;
+            return text;
+        };
         const renderTable = (pageRows = []) => {
             const htmlRows = pageRows.map((r) => {
-                const stateClass = safeNum(r.finalQty) < 0 ? 'negative' : (safeNum(r.diffQty) !== 0 ? 'diff' : '');
                 const categoryClass = r._categoryBreak ? 'category-break' : '';
+                const finalClass = safeNum(r.finalQty) < 0 ? 'negative-final' : '';
+                const inboundClass = safeNum(r.inQty) !== 0 ? 'inbound-value' : '';
+                const outboundClass = safeNum(r.outQty) !== 0 ? 'outbound-value' : '';
+                const purchaseClass = r.isTodayPurchase ? 'today-purchase' : '';
+                const purchaseDateClass = r.purchaseDate ? `purchase-date ${purchaseClass}` : 'purchase-empty';
+                const purchaseVendorClass = r.purchaseVendor ? purchaseClass : 'purchase-empty';
+                const purchasePriceClass = r.isDirectPurchase && r.isTodayPurchase ? 'today-purchase' : '';
+                const purchasePrice = safeNum(r.price) > 0 ? formatMoney(r.price) : '—';
+                const systemText = r.systemText || '—';
                 return `
-                    <tr class="${categoryClass} ${stateClass}">
-                        <td class="name">${EXPORT_MODULE.escapeHtml(r.name)}</td>
-                        <td class="final strong">${formatQty(r.finalQty)}</td>
-                        <td>${formatQty(r.baseQty)}</td>
-                        <td>${formatQty(r.inQty)}</td>
-                        <td>${formatQty(r.outQty)}</td>
-                        <td>${formatMoney(r.price)}</td>
-                        <td class="memo">${EXPORT_MODULE.escapeHtml(r.issueMemo)}</td>
+                    <tr class="${categoryClass}">
+                        <td class="code">${EXPORT_MODULE.escapeHtml(r.code || '—')}</td>
+                        <td class="name">${EXPORT_MODULE.escapeHtml(r.name || '—')}</td>
+                        <td class="spec">${EXPORT_MODULE.escapeHtml(r.spec || '—')}</td>
+                        <td class="qty final divider-core ${finalClass}">${formatPrintQty(r.finalQty)}</td>
+                        <td class="qty">${formatPrintQty(r.baseQty)}</td>
+                        <td class="qty ${inboundClass}">${formatPrintQty(r.inQty)}</td>
+                        <td class="qty divider-check ${outboundClass}">${formatPrintQty(r.outQty)}</td>
+                        <td class="${purchaseDateClass}">${EXPORT_MODULE.escapeHtml(formatPurchaseDate(r.purchaseDate))}</td>
+                        <td class="vendor ${purchaseVendorClass}">${EXPORT_MODULE.escapeHtml(r.purchaseVendor || '—')}</td>
+                        <td class="price ${purchasePriceClass}">${purchasePrice}</td>
+                        <td class="system ${r.systemText ? 'active' : ''}">${EXPORT_MODULE.escapeHtml(systemText)}</td>
                     </tr>`;
             }).join('');
-            return `<table><colgroup><col class="name-col"><col class="final-col"><col class="qty-col"><col class="qty-col"><col class="qty-col"><col class="price-col"><col class="memo-col"></colgroup><thead><tr><th>품명&규격</th><th>잔량</th><th>재고</th><th>입고</th><th>출고</th><th>입고가</th><th>이슈메모</th></tr></thead><tbody>${htmlRows}</tbody></table>`;
+            return `<table><colgroup><col class="code-col"><col class="name-col"><col class="spec-col"><col class="final-col"><col class="stock-col"><col class="move-col"><col class="move-col"><col class="date-col"><col class="vendor-col"><col class="price-col"><col class="system-col"></colgroup><thead><tr><th>품목코드</th><th>품명</th><th>규격</th><th class="divider-core">잔량</th><th>재고</th><th>입고</th><th class="divider-check">출고</th><th>구매일</th><th>구매처</th><th>구매가</th><th>시스템</th></tr></thead><tbody>${htmlRows}</tbody></table>`;
         };
-        // V1.a22.74: 전체 행을 하나의 연속 테이블로 출력한다.
-        // 고정 행수 기준 page-break가 실제 용지 분할과 겹쳐 빈 공간/3행짜리 페이지가 생기던 문제를 제거한다.
-        const htmlTables = renderTable(rows);
+        const htmlTable = renderTable(rows);
         const w = window.open('', '_blank');
-        if (!w)
-            return false;
+        if (!w) return false;
         w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>${EXPORT_MODULE.escapeHtml(title)}</title>
                     <style>
-                        @page{size:A4 portrait;margin:7mm 6mm}
-                        body{font-family:Arial,'Malgun Gothic',sans-serif;color:#111827;margin:0;font-size:10.9px}
-                        h1{font-size:18px;margin:0 0 4px;font-weight:900}.meta{font-size:10.8px;color:#475569;margin-bottom:5px;display:flex;gap:10px;flex-wrap:wrap;font-weight:700}
-                        .summary{display:flex;gap:5px;margin:0 0 7px;font-size:10.8px}.chip{border:1px solid #94a3b8;border-radius:999px;padding:3px 7px;background:#f8fafc;font-weight:800;line-height:1.1}.chip.warn{background:#fff7ed;border-color:#fdba74}.chip.danger{background:#fef2f2;border-color:#fca5a5}
-                        table{width:100%;border-collapse:collapse;font-size:10.6px;line-height:1.14;table-layout:fixed;break-inside:auto;page-break-inside:auto}
-                        col.name-col{width:24%} col.final-col{width:7.5%} col.qty-col{width:6.2%} col.price-col{width:8.5%} col.memo-col{width:41.4%}
-                        thead{display:table-header-group} tfoot{display:table-footer-group}
-                        th{background:#dbe3ee;border:1px solid #94a3b8;padding:2.5px 2px;text-align:center;white-space:nowrap;font-size:10.4px;font-weight:900}
-                        td{border:1px solid #cbd5e1;padding:2px 2px;text-align:right;vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-                        .final{text-align:center;font-size:11px}.name{text-align:left;font-weight:900;white-space:normal;line-height:1.1}.memo{text-align:left;font-size:9.8px;white-space:normal;line-height:1.1;overflow:visible;text-overflow:clip}.strong{font-weight:900}.diff td{font-weight:800}.negative td{font-weight:900}.negative .final{background:#fee2e2}.diff .memo{background:#fff7ed}
-                        tr.category-break td{border-top:4px solid #0f172a !important}
-                        @media print{button{display:none} body{-webkit-print-color-adjust:exact;print-color-adjust:exact} thead{display:table-header-group} tr{break-inside:avoid;page-break-inside:avoid} table{break-after:auto;page-break-after:auto}}
-                    </style></head><body><h1>${EXPORT_MODULE.escapeHtml(title)}</h1><div class="meta"><span>마감일자: ${EXPORT_MODULE.escapeHtml(targetDateStr || '-')}</span><span>출력시각: ${EXPORT_MODULE.escapeHtml(new Date().toLocaleString())}</span><span>A4 자동 연속분할</span></div>
-                    <div class="summary"><span class="chip">전체 ${rows.length}행</span><span class="chip warn">오차 ${diffCount}행</span><span class="chip danger">마이너스 ${negativeCount}행</span><span class="chip">이슈 ${issueCount}행</span></div>
-                    ${htmlTables}
+                        @page{size:A4 landscape;margin:7mm 6mm}
+                        body{font-family:Arial,'Malgun Gothic',sans-serif;color:#111827;margin:0;font-size:9.8px}
+                        h1{font-size:18px;margin:0 0 3px;font-weight:900}
+                        .meta{font-size:9.5px;color:#475569;margin-bottom:4px;display:flex;gap:10px;flex-wrap:wrap;font-weight:700}
+                        .summary{border-top:1px solid #cbd5e1;border-bottom:1px solid #cbd5e1;padding:3px 0;margin:0 0 5px;color:#334155;font-size:9.4px;font-weight:700}
+                        table{width:100%;border-collapse:collapse;font-size:9.4px;line-height:1.12;table-layout:fixed;break-inside:auto;page-break-inside:auto}
+                        col.code-col{width:9%} col.name-col{width:18%} col.spec-col{width:11%} col.final-col{width:6%} col.stock-col{width:6%} col.move-col{width:5%} col.date-col{width:7%} col.vendor-col{width:9%} col.price-col{width:8%} col.system-col{width:16%}
+                        thead{display:table-header-group}
+                        th{background:#e8edf3;border:1px solid #9aa8ba;padding:3px 2px;text-align:center;white-space:nowrap;font-size:9.3px;font-weight:900;color:#1f2937}
+                        td{border:1px solid #cbd5e1;padding:2.2px 3px;vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+                        .code{text-align:left;color:#1d4ed8}.name{text-align:left;font-weight:800}.spec{text-align:left;color:#334155}
+                        .qty,.price{text-align:right;font-variant-numeric:tabular-nums}.final{font-weight:900}.vendor{text-align:left}.purchase-date{text-align:center}
+                        .divider-core,.divider-check{border-right:2px solid #64748b!important}
+                        .inbound-value{color:#0f766e;font-weight:800}.outbound-value{color:#c2410c;font-weight:800}
+                        .negative-final{background:#fee2e2!important;color:#b91c1c;font-weight:900}
+                        .today-purchase{background:#fff4c2}.purchase-date.today-purchase{color:#1d4ed8;font-weight:900}
+                        .purchase-empty{color:#94a3b8;text-align:center}.system{text-align:left;color:#64748b}.system.active{color:#334155;font-weight:700}
+                        tr.category-break td{border-top:3px solid #334155!important}
+                        @media print{button{display:none}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}table{break-after:auto;page-break-after:auto}}
+                    </style></head><body><h1>${EXPORT_MODULE.escapeHtml(title)}</h1><div class="meta"><span>마감일자: ${EXPORT_MODULE.escapeHtml(targetDateStr || '—')}</span><span>출력시각: ${EXPORT_MODULE.escapeHtml(new Date().toLocaleString())}</span></div>
+                    <div class="summary">전체 ${rows.length}행 · 오차 ${diffCount}행 · 마이너스 ${negativeCount}행 · 시스템 ${systemCount}행</div>
+                    ${htmlTable}
                     <script>window.onload=()=>{setTimeout(()=>window.print(),200)}<\/script></body></html>`);
         w.document.close();
         return true;
-    },
-    createCombinedWorkbook: ({ productData = [], screenRows = null, analysisPeriod = '', targetDateStr = '', closingStats = {} }) => {
+    },    createCombinedWorkbook: ({ productData = [], screenRows = null, analysisPeriod = '', targetDateStr = '', closingStats = {} }) => {
         const exportFileNameDate = targetDateStr ? targetDateStr.replace(/-/g, '') : (() => { const today = new Date(); return `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`; })();
         // V1.a22.30: 운영 출력은 코드통합형을 기본으로 한다. Lot/일자/구매처 상세는 분석원장에만 보존한다.
         const operationalProductData = DATAOPS_VIEW_LAYER_MODULE.buildCodeSummaryRows(productData || []).sort((a, b) => FILTER_SORT_MODULE.compareByCodeThenName(a, b));
