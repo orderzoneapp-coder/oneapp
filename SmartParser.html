@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Smart Parser [v3.0.19 ExplicitInfoSave NoBabel]</title>
+    <title>ONEAPP MerchOps - Smart Parser [v3.0.21 NoOpSaveFix CatalogUpdatedAt EnterExecute ExplicitInfoSave]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -87,6 +87,49 @@
         };
         const getNowISO = () => {
             try { return new Date().toISOString(); } catch(e) { return ''; }
+        };
+        const CATALOG_UPDATED_AT_KEY = 'smart_parser_catalog_updated_at_v1';
+        const normalizeCatalogUpdatedAtMap = (input = {}) => {
+            const result = {};
+            if (!input || typeof input !== 'object' || Array.isArray(input)) return result;
+            Object.entries(input).forEach(([rawName, rawValue]) => {
+                const name = String(rawName || '').trim();
+                const parsed = new Date(rawValue);
+                if (name && !Number.isNaN(parsed.getTime())) result[name] = parsed.toISOString();
+            });
+            return result;
+        };
+        const mergeCatalogUpdatedAtFromHistory = (savedMap = {}, history = []) => {
+            const result = normalizeCatalogUpdatedAtMap(savedMap);
+            (Array.isArray(history) ? history : []).forEach(log => {
+                const name = String(log?.catalogName || log?.catalog || '').trim();
+                const rawTimestamp = log?.timestampISO || log?.updatedAt || log?.timestamp;
+                const parsed = new Date(rawTimestamp);
+                if (!name || Number.isNaN(parsed.getTime())) return;
+                const currentMs = result[name] ? new Date(result[name]).getTime() : 0;
+                if (parsed.getTime() > currentMs) result[name] = parsed.toISOString();
+            });
+            return result;
+        };
+        const formatCatalogUpdatedAt = (rawValue, nowMs = Date.now()) => {
+            const parsed = new Date(rawValue);
+            if (Number.isNaN(parsed.getTime())) {
+                return { label: '업데이트 기록 없음', fullLabel: '업데이트 기록 없음', isToday: false, timestampMs: 0 };
+            }
+            const now = new Date(nowMs);
+            const pad2 = value => String(value).padStart(2, '0');
+            const dateKey = value => `${value.getFullYear()}-${pad2(value.getMonth() + 1)}-${pad2(value.getDate())}`;
+            const fullLabel = `${parsed.getFullYear()}.${pad2(parsed.getMonth() + 1)}.${pad2(parsed.getDate())} ${pad2(parsed.getHours())}:${pad2(parsed.getMinutes())}`;
+            const timeLabel = `${pad2(parsed.getHours())}:${pad2(parsed.getMinutes())}`;
+            const isToday = dateKey(parsed) === dateKey(now);
+            const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+            const isYesterday = dateKey(parsed) === dateKey(yesterday);
+            const diffMs = now.getTime() - parsed.getTime();
+            let label = `${pad2(parsed.getMonth() + 1)}.${pad2(parsed.getDate())}`;
+            if (isToday && diffMs >= -5000 && diffMs < 60000) label = '방금';
+            else if (isToday) label = `오늘 ${timeLabel}`;
+            else if (isYesterday) label = `어제 ${timeLabel}`;
+            return { label, fullLabel, isToday, timestampMs: parsed.getTime() };
         };
 
         const calculatePricesEngine = (baseInPrice, mItem = {}, currentFinalData = {}, marginRules = [], forceRecalc = false) => {
@@ -493,6 +536,7 @@ const useParserApp = () => {
         return {};
     } });
     const [parserExcludeDict, setParserExcludeDict] = useState(() => loadParserExcludeDict());
+    const [catalogUpdatedAt, setCatalogUpdatedAt] = useState({});
     const [marginRules, setMarginRules] = useState(() => { try {
         return JSON.parse(localStorage.getItem('merchMarginRules_v878')) || [{ id: 'default', whCode: '*', unit: '*', rate: 10, type: 'divide' }];
     }
@@ -504,6 +548,19 @@ const useParserApp = () => {
         items.forEach(i => dict[i.코드] = i);
         setMasterProducts(dict);
     } }).catch(console.error); }, []);
+    useEffect(() => {
+        let isActive = true;
+        getIDB(CATALOG_UPDATED_AT_KEY)
+            .catch(() => ({}))
+            .then(savedMap => {
+                if (!isActive) return;
+                let history = [];
+                try { history = safeParseJson(localStorage.getItem('merchHistory_v870'), []); }
+                catch (e) { history = []; }
+                setCatalogUpdatedAt(mergeCatalogUpdatedAtFromHistory(savedMap, history));
+            });
+        return () => { isActive = false; };
+    }, []);
     useEffect(() => { const handleStorageChange = (e) => { if (e.key === 'merchMaster_sync_trigger' || e.key === 'merch_settings_update_trigger')
         window.location.reload(); }; window.addEventListener('storage', handleStorageChange); return () => window.removeEventListener('storage', handleStorageChange); }, []);
     const saveMaster = async (data, storeEntries = {}) => {
@@ -589,10 +646,10 @@ const useParserApp = () => {
     const [showMappingExcludeModal, setShowMappingExcludeModal] = useState(false);
     const [lastExcludedCount, setLastExcludedCount] = useState(0);
     const showToast = useCallback((msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(''), 3000); }, []);
-    return { masterProducts, saveMaster, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, marginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, setIsProcessing, processMsg, setProcessMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, missingSearch, setMissingSearch, showExcludeModal, setShowExcludeModal, excludeTarget, setExcludeTarget, showMappingExcludeModal, setShowMappingExcludeModal, lastExcludedCount, setLastExcludedCount };
+    return { masterProducts, saveMaster, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, catalogUpdatedAt, setCatalogUpdatedAt, marginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, setIsProcessing, processMsg, setProcessMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, missingSearch, setMissingSearch, showExcludeModal, setShowExcludeModal, excludeTarget, setExcludeTarget, showMappingExcludeModal, setShowMappingExcludeModal, lastExcludedCount, setLastExcludedCount };
 };
 const useParserActions = (appState) => {
-    const { masterProducts, saveMaster, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, marginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, setActiveTab, setShowInputModal, showToast, setIsProcessing, setProcessMsg, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, setShowErpModal, setShowExcludeModal, setExcludeTarget, setShowMappingExcludeModal, setLastExcludedCount } = appState;
+    const { masterProducts, saveMaster, parserDict, saveDict, parserExcludeDict, saveParserExcludeDict, catalogUpdatedAt, setCatalogUpdatedAt, marginRules, parserBuffer, setParserBuffer, currentTag, setCurrentTag, setActiveTab, setShowInputModal, showToast, setIsProcessing, setProcessMsg, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, setProcessedCodes, setShowErpModal, setShowExcludeModal, setExcludeTarget, setShowMappingExcludeModal, setLastExcludedCount } = appState;
     const executeParser = useCallback((rawText, tag, forceManual = false) => {
         setShowInputModal(false);
         setIsProcessing(true);
@@ -678,7 +735,7 @@ const useParserActions = (appState) => {
                 quoteName: '',
                 timestamp: nowStr,
                 timestampISO: nowISO,
-                version: 'smart-parser-v3.0.19-explicit-info-save'
+                version: 'smart-parser-v3.0.21-no-op-save-fix-catalog-updated-at-enter-execute-explicit-info-save'
             };
             const makeHistoryLog = ({ code, row, oldItem, field, oldVal, newVal, memo, extra = {} }) => {
                 const oldNum = parseNum(oldVal);
@@ -732,8 +789,8 @@ const useParserActions = (appState) => {
                 if (row._isSoldOut) {
                     const oldSaleStatus = newMaster[code]['판매여부'];
                     newMaster[code]['판매여부'] = 0;
-                    masterMutationCount++;
                     if (String(oldSaleStatus ?? '') !== '0') {
+                        masterMutationCount++;
                         localLogs.push(makeHistoryLog({
                             code, row, oldItem,
                             field: '판매여부',
@@ -770,13 +827,14 @@ const useParserActions = (appState) => {
                         }));
                     }
                     newMaster[code]['입고가'] = pInNum;
-                    masterMutationCount++;
                     const recalculated = calculatePricesEngine(pInNum, newMaster[code], row.finalData || {}, marginRules, false);
                     Object.assign(newMaster[code], recalculated);
                     const afterOut = parseNum(newMaster[code]['출고가']);
                     const afterMarket = parseNum(newMaster[code]['시중가']);
                     const afterUnitIn = parseNum(newMaster[code]['1입고']);
                     const afterUnitOut = parseNum(newMaster[code]['1출고']);
+                    if (oldP !== pInNum || beforeOut !== afterOut || beforeMarket !== afterMarket || beforeUnitIn !== afterUnitIn || beforeUnitOut !== afterUnitOut)
+                        masterMutationCount++;
                     if (beforeOut !== afterOut)
                         localLogs.push(makeHistoryLog({ code, row, oldItem, field: '출고가', oldVal: beforeOut, newVal: afterOut, memo: '입고가 변경에 따른 출고가 재계산', extra: { actionType: 'parser_price_recalc' } }));
                     if (beforeMarket !== afterMarket)
@@ -790,6 +848,7 @@ const useParserActions = (appState) => {
                     const oldCatalogTags = newMaster[code]['카탈로그'] || '';
                     const newCatalogTags = addTag(oldCatalogTags, currentTag);
                     if (oldCatalogTags !== newCatalogTags) {
+                        masterMutationCount++;
                         localLogs.push(makeHistoryLog({
                             code, row, oldItem,
                             field: '카탈로그',
@@ -800,7 +859,6 @@ const useParserActions = (appState) => {
                         }));
                     }
                     newMaster[code]['카탈로그'] = newCatalogTags;
-                    masterMutationCount++;
                 }
                 ['품목명', '규격', '단위'].forEach(fieldName => {
                     const editedTextFields = row._editedTextFields || {};
@@ -843,7 +901,13 @@ const useParserActions = (appState) => {
             const sharedEntries = {};
             if (addedToPending) sharedEntries.pending_shop_status = pendingList;
             if (stoppedQueueChanged) sharedEntries[STOP_MANAGER_STORAGE_KEY] = stoppedProducts;
+            const catalogWasUpdated = localLogs.some(log => !log?.blocked && String(log?.oldVal ?? '') !== String(log?.newVal ?? ''));
+            const nextCatalogUpdatedAt = catalogWasUpdated
+                ? { ...catalogUpdatedAt, [catalogLabel]: nowISO }
+                : catalogUpdatedAt;
+            if (catalogWasUpdated) sharedEntries[CATALOG_UPDATED_AT_KEY] = nextCatalogUpdatedAt;
             await saveMaster(newMaster, sharedEntries);
+            if (catalogWasUpdated) setCatalogUpdatedAt(nextCatalogUpdatedAt);
             if (stoppedQueueChanged) saveSharedObject(STOP_MANAGER_STORAGE_KEY, stoppedProducts, 'merchStopManager_sync_trigger');
             saveDict(newDict);
             setProcessedCodes(newlyProcessed);
@@ -869,7 +933,7 @@ const useParserActions = (appState) => {
             setIsProcessing(false);
             setProcessMsg('');
         }
-    }, [parserBuffer, masterProducts, parserDict, marginRules, currentTag, processedCodes, saveMaster, saveDict, setProcessedCodes, setParserBuffer, setIsProcessing, setProcessMsg, showToast]);
+    }, [parserBuffer, masterProducts, parserDict, marginRules, currentTag, processedCodes, catalogUpdatedAt, saveMaster, saveDict, setCatalogUpdatedAt, setProcessedCodes, setParserBuffer, setIsProcessing, setProcessMsg, showToast]);
     const handleConfirmMapping = useCallback(async (masterCode) => {
         if (!targetId)
             return showToast("⚠️ 먼저 왼쪽에서 매핑할 타겟 상품을 선택하세요.");
@@ -907,11 +971,17 @@ const useParserActions = (appState) => {
         setProcessMsg("신규 마스터 품목 등록 중...");
         try {
             let newMaster = { ...masterProducts };
+            const catalogLabel = String(currentTag || '').trim();
             const pInNum = row.finalData?.['입고가'] !== undefined ? parseNum(row.finalData['입고가']) : parseNum(row['입고가']);
-            newMaster[newCode] = { 코드: newCode, 품목명: row['품목명'], 규격: row['규격'] || '', 단위: row['단위'] || '', 입고가: pInNum, 카탈로그: currentTag ? currentTag : '' };
+            newMaster[newCode] = { 코드: newCode, 품목명: row['품목명'], 규격: row['규격'] || '', 단위: row['단위'] || '', 입고가: pInNum, 카탈로그: catalogLabel };
             const recalculatedFinal = calculatePricesEngine(pInNum, newMaster[newCode], row.finalData || {}, marginRules, false);
             Object.assign(newMaster[newCode], recalculatedFinal);
-            await saveMaster(newMaster);
+            const savedAt = getNowISO();
+            const nextCatalogUpdatedAt = catalogLabel
+                ? { ...catalogUpdatedAt, [catalogLabel]: savedAt }
+                : catalogUpdatedAt;
+            await saveMaster(newMaster, catalogLabel ? { [CATALOG_UPDATED_AT_KEY]: nextCatalogUpdatedAt } : {});
+            if (catalogLabel) setCatalogUpdatedAt(nextCatalogUpdatedAt);
             saveDict({ ...parserDict, [`${normalizeText(row['품목명'])}|${normalizeText(row['규격'])}`]: newCode });
             const newProcessed = new Set(processedCodes);
             newProcessed.add(newCode);
@@ -920,7 +990,7 @@ const useParserActions = (appState) => {
             setTargetId(null);
             setGlobalSearch('');
             setShowErpModal(false);
-            showToast(`✅ [${newCode}] 신규 등록/연결 완료. 아직 저장 전입니다. [마스터 적용 및 학습저장]을 눌러 완료하세요.`);
+            showToast(`✅ [${newCode}] 신규 등록 및 카탈로그 저장 완료`);
         }
         catch (error) {
             showToast("❌ 신규 등록 처리 중 오류가 발생했습니다.");
@@ -929,7 +999,7 @@ const useParserActions = (appState) => {
             setIsProcessing(false);
             setProcessMsg('');
         }
-    }, [targetId, parserBuffer, masterProducts, currentTag, marginRules, parserDict, processedCodes, saveMaster, saveDict, setProcessedCodes, setParserBuffer, setTargetId, setGlobalSearch, setShowErpModal, setIsProcessing, setProcessMsg, showToast]);
+    }, [targetId, parserBuffer, masterProducts, currentTag, marginRules, parserDict, processedCodes, catalogUpdatedAt, saveMaster, saveDict, setCatalogUpdatedAt, setProcessedCodes, setParserBuffer, setTargetId, setGlobalSearch, setShowErpModal, setIsProcessing, setProcessMsg, showToast]);
     const handleIgnoreParsedItem = useCallback((id) => { setParserBuffer(prev => prev.filter(r => r._id !== id)); if (targetId === id) {
         setTargetId(null);
         setGlobalSearch('');
@@ -1003,6 +1073,7 @@ const useParserActions = (appState) => {
         try {
             let newMaster = { ...masterProducts };
             let count = 0;
+            let catalogWasUpdated = false;
             let pending = await getIDB('pending_shop_status') || [];
             if (!Array.isArray(pending)) pending = [];
             let stoppedProducts = normalizeStoppedProductsMap((await getIDB(STOP_MANAGER_STORAGE_KEY)) || loadSharedObject(STOP_MANAGER_STORAGE_KEY, {}));
@@ -1011,8 +1082,12 @@ const useParserActions = (appState) => {
             codesToProcess.forEach(rawCode => {
                 const code = normalizeSharedProductCode(rawCode);
                 if (!code || !newMaster[code]) return;
-                newMaster[code] = { ...newMaster[code], '카탈로그': removeTag(newMaster[code]['카탈로그'], currentTag) };
+                const oldCatalogTags = newMaster[code]['카탈로그'] || '';
+                const newCatalogTags = removeTag(oldCatalogTags, currentTag);
+                newMaster[code] = { ...newMaster[code], '카탈로그': newCatalogTags };
+                if (oldCatalogTags !== newCatalogTags) catalogWasUpdated = true;
                 if (statusType === 'stop') {
+                    if (String(newMaster[code]['판매여부'] ?? '') !== '0') catalogWasUpdated = true;
                     newMaster[code]['판매여부'] = 0;
                     stoppedProducts = upsertParserStoppedProduct(stoppedProducts, code, { now, reason: '공급중단', catalog: currentTag, sourceLabel: '카탈로그 누락/단종 처리' });
                     stoppedQueueChanged = true;
@@ -1028,7 +1103,13 @@ const useParserActions = (appState) => {
             const sharedEntries = {};
             if (statusType !== 'none') sharedEntries.pending_shop_status = pending;
             if (stoppedQueueChanged) sharedEntries[STOP_MANAGER_STORAGE_KEY] = stoppedProducts;
+            const catalogLabel = String(currentTag || '').trim();
+            const nextCatalogUpdatedAt = catalogWasUpdated && catalogLabel
+                ? { ...catalogUpdatedAt, [catalogLabel]: now }
+                : catalogUpdatedAt;
+            if (catalogWasUpdated && catalogLabel) sharedEntries[CATALOG_UPDATED_AT_KEY] = nextCatalogUpdatedAt;
             await saveMaster(newMaster, sharedEntries);
+            if (catalogWasUpdated && catalogLabel) setCatalogUpdatedAt(nextCatalogUpdatedAt);
             if (stoppedQueueChanged) saveSharedObject(STOP_MANAGER_STORAGE_KEY, stoppedProducts, 'merchStopManager_sync_trigger');
             setSelectedMissingCodes(new Set());
             setShowExcludeModal(false);
@@ -1043,7 +1124,7 @@ const useParserActions = (appState) => {
             setIsProcessing(false);
             setProcessMsg('');
         }
-    }, [masterProducts, currentTag, saveMaster, setSelectedMissingCodes, setIsProcessing, setProcessMsg, showToast, setShowExcludeModal, setExcludeTarget]);
+    }, [masterProducts, currentTag, catalogUpdatedAt, saveMaster, setCatalogUpdatedAt, setSelectedMissingCodes, setIsProcessing, setProcessMsg, showToast, setShowExcludeModal, setExcludeTarget]);
     const handleRemoveMissingTags = useCallback(() => {
         if (selectedMissingCodes.size === 0)
             return showToast("⚠️ 제외할 상품을 선택하세요.");
@@ -1213,6 +1294,26 @@ const SmartParserInputModal = ({ onClose, executeParser, showToast, availableTag
     const [selectedCatalog, setSelectedCatalog] = useState('');
     const [newCatalogInput, setNewCatalogInput] = useState("");
     const [forceManual, setForceManual] = useState(false);
+    const [catalogMenuOpen, setCatalogMenuOpen] = useState(false);
+    const [nowTick, setNowTick] = useState(Date.now());
+    const catalogMenuRef = useRef(null);
+    useEffect(() => {
+        if (availableTags.length > 0 && !selectedCatalog && !newCatalogInput.trim())
+            setCatalogMode('select');
+    }, [availableTags.length, selectedCatalog, newCatalogInput]);
+    useEffect(() => {
+        const timer = window.setInterval(() => setNowTick(Date.now()), 30000);
+        return () => window.clearInterval(timer);
+    }, []);
+    useEffect(() => {
+        const closeOnOutsideClick = (event) => {
+            if (catalogMenuRef.current && !catalogMenuRef.current.contains(event.target))
+                setCatalogMenuOpen(false);
+        };
+        document.addEventListener('mousedown', closeOnOutsideClick);
+        return () => document.removeEventListener('mousedown', closeOnOutsideClick);
+    }, []);
+    const selectedTag = availableTags.find(tag => tag.name === selectedCatalog);
     const handleExecute = () => {
         if (!rawText.trim())
             return showToast("⚠️ 시세 텍스트를 붙여넣어주세요.");
@@ -1220,6 +1321,19 @@ const SmartParserInputModal = ({ onClose, executeParser, showToast, availableTag
         if (!finalTag)
             return showToast("⚠️ 기준 카탈로그 또는 견적서명을 선택/입력하세요.");
         executeParser(rawText, finalTag, forceManual);
+    };
+    const handleExecuteKeyDown = (event) => {
+        if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.nativeEvent?.isComposing)
+            return;
+        event.preventDefault();
+        handleExecute();
+    };
+    const renderCatalogUpdatedAt = (tag) => {
+        const display = formatCatalogUpdatedAt(tag?.updatedAt, nowTick);
+        return React.createElement("span", {
+            className: `shrink-0 text-[11px] font-black ${display.isToday ? 'text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full' : 'text-slate-400'}`,
+            title: display.fullLabel
+        }, display.label);
     };
     return (React.createElement("div", { className: "fixed inset-0 bg-slate-900/80 z-[200] flex justify-center items-center backdrop-blur-sm fade-in", onClick: onClose },
         React.createElement("div", { className: "bg-white w-[800px] rounded-2xl shadow-2xl flex flex-col overflow-hidden", onClick: (e) => e.stopPropagation() },
@@ -1239,20 +1353,40 @@ const SmartParserInputModal = ({ onClose, executeParser, showToast, availableTag
                         React.createElement("div", { className: "flex bg-slate-100 p-1 rounded-lg border border-slate-200" },
                             React.createElement("button", { onClick: () => setCatalogMode('select'), className: `px-3 py-1.5 text-[12px] font-bold rounded-md transition-all ${catalogMode === 'select' ? 'bg-white text-emerald-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}` }, "\uAE30\uC874 \uCE74\uD0C8\uB85C\uADF8"),
                             React.createElement("button", { onClick: () => setCatalogMode('input'), className: `px-3 py-1.5 text-[12px] font-bold rounded-md transition-all ${catalogMode === 'input' ? 'bg-white text-indigo-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}` }, "\uC0C8\uB85C \uB9CC\uB4E4\uAE30"))),
-                    catalogMode === 'select' ? (React.createElement("div", { className: "relative" },
-                        React.createElement("select", { value: selectedCatalog, onChange: (e) => setSelectedCatalog(e.target.value), className: "appearance-none w-full border border-slate-300 rounded-lg px-4 py-2.5 text-[13px] font-bold outline-none focus:border-emerald-500 bg-white" },
-                            React.createElement("option", { value: "", className: "text-slate-400" }, "-- \uAE30\uC900 \uCE74\uD0C8\uB85C\uADF8\uB97C \uC120\uD0DD\uD558\uC138\uC694 --"),
-                            availableTags.map(t => React.createElement("option", { key: t.name, value: t.name, className: "text-slate-800" },
-                                "\uD83D\uDCC2 ",
-                                t.name,
-                                " (",
-                                t.count,
-                                "\uAC74)"))),
-                        React.createElement("i", { className: "fas fa-chevron-down absolute right-4 top-3.5 text-slate-400" }))) : (React.createElement("input", { type: "text", value: newCatalogInput, onChange: (e) => setNewCatalogInput(e.target.value), placeholder: "\uC0C8 \uCE74\uD0C8\uB85C\uADF8 \uC774\uB984", className: "w-full border border-slate-300 rounded-lg px-4 py-2.5 text-[13px] font-bold outline-none focus:border-indigo-500" }))),
+                    catalogMode === 'select' ? (React.createElement("div", { className: "relative", ref: catalogMenuRef },
+                        React.createElement("button", {
+                            type: "button",
+                            onClick: () => setCatalogMenuOpen(open => !open),
+                            className: "w-full border border-slate-300 rounded-lg px-4 py-2.5 text-[13px] font-bold outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-white flex items-center gap-3 text-left",
+                            "aria-haspopup": "listbox",
+                            "aria-expanded": catalogMenuOpen
+                        },
+                            selectedTag
+                                ? React.createElement("span", { className: "min-w-0 flex-1 truncate text-slate-800" }, "\uD83D\uDCC2 ", selectedTag.name, " (", selectedTag.count, "\uAC74)")
+                                : React.createElement("span", { className: "min-w-0 flex-1 truncate text-slate-400" }, "-- \uAE30\uC900 \uCE74\uD0C8\uB85C\uADF8\uB97C \uC120\uD0DD\uD558\uC138\uC694 --"),
+                            selectedTag && renderCatalogUpdatedAt(selectedTag),
+                            React.createElement("i", { className: `fas fa-chevron-down text-slate-400 transition-transform ${catalogMenuOpen ? 'rotate-180' : ''}` })),
+                        catalogMenuOpen && React.createElement("div", { className: "absolute left-0 right-0 top-full mt-1 z-[260] bg-white border border-slate-300 shadow-2xl overflow-hidden", role: "listbox" },
+                            React.createElement("div", { className: "px-4 py-2 text-[12px] text-slate-400 border-b border-slate-100 bg-slate-50" }, "-- \uAE30\uC900 \uCE74\uD0C8\uB85C\uADF8\uB97C \uC120\uD0DD\uD558\uC138\uC694 --"),
+                            React.createElement("div", { className: "max-h-[300px] overflow-y-auto py-1" },
+                                availableTags.map(tag => React.createElement("button", {
+                                    key: tag.name,
+                                    type: "button",
+                                    role: "option",
+                                    "aria-selected": selectedCatalog === tag.name,
+                                    onClick: () => {
+                                        setSelectedCatalog(tag.name);
+                                        setCatalogMenuOpen(false);
+                                    },
+                                    className: `w-full px-4 py-2 flex items-center gap-3 text-left text-[13px] transition-colors ${selectedCatalog === tag.name ? 'bg-blue-600 text-white' : 'text-slate-800 hover:bg-slate-50'}`
+                                },
+                                    React.createElement("span", { className: "min-w-0 flex-1 truncate font-bold" }, "\uD83D\uDCC2 ", tag.name, " (", tag.count, "\uAC74)"),
+                                    renderCatalogUpdatedAt(tag))))))) : (React.createElement("input", { type: "text", value: newCatalogInput, onChange: (e) => setNewCatalogInput(e.target.value), onKeyDown: handleExecuteKeyDown, placeholder: "\uC0C8 \uCE74\uD0C8\uB85C\uADF8 \uC774\uB984", className: "w-full border border-slate-300 rounded-lg px-4 py-2.5 text-[13px] font-bold outline-none focus:border-indigo-500" }))),
                 React.createElement("div", { className: "bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[350px]" },
                     React.createElement("label", { className: "text-[13px] font-bold text-slate-800 mb-2 block" }, "\uD14D\uC2A4\uD2B8 \uBCF5\uC0AC/\uBD99\uC5EC\uB123\uAE30"),
-                    React.createElement("textarea", { value: rawText, onChange: (e) => setRawText(e.target.value), className: "w-full flex-1 bg-slate-800 text-slate-200 rounded-lg p-4 font-mono text-[13px] outline-none border-none resize-none shadow-inner", placeholder: "\uBCF5\uC0AC\uD55C \uC2DC\uC138 \uD14D\uC2A4\uD2B8 \uC804\uCCB4\uB97C \uBD99\uC5EC\uB123\uC73C\uC138\uC694..." }),
-                    React.createElement("div", { className: "mt-3 flex justify-end" },
+                    React.createElement("textarea", { value: rawText, onChange: (e) => setRawText(e.target.value), onKeyDown: handleExecuteKeyDown, title: "Enter: 분석 시작 · Shift+Enter: 줄바꿈", className: "w-full flex-1 bg-slate-800 text-slate-200 rounded-lg p-4 font-mono text-[13px] outline-none border-none resize-none shadow-inner", placeholder: "\uBCF5\uC0AC\uD55C \uC2DC\uC138 \uD14D\uC2A4\uD2B8 \uC804\uCCB4\uB97C \uBD99\uC5EC\uB123\uC73C\uC138\uC694..." }),
+                    React.createElement("div", { className: "mt-3 flex justify-between items-center gap-3" },
+                        React.createElement("span", { className: "text-[10px] text-slate-400 font-bold" }, "Enter: 분석 시작 · Shift+Enter: 줄바꿈"),
                         React.createElement("label", { className: "flex items-center gap-2 cursor-pointer text-slate-600 text-[12px] font-bold hover:text-slate-800" },
                             React.createElement("input", { type: "checkbox", className: "rounded border-slate-300 text-rose-500", checked: forceManual, onChange: e => setForceManual(e.target.checked) }),
                             React.createElement("span", null,
@@ -1489,9 +1623,11 @@ const ParserReviewModal = ({ onClose, onConfirm, state, actions }) => {
 const ParserApp = () => {
     const appState = useParserApp();
     const actions = useParserActions(appState);
-    const { masterProducts, parserBuffer, currentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, processMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, parserExcludeDict, lastExcludedCount } = appState;
+    const { masterProducts, parserBuffer, currentTag, activeTab, setActiveTab, showInputModal, setShowInputModal, showReviewModal, setShowReviewModal, showErpModal, setShowErpModal, toastMsg, showToast, isProcessing, processMsg, globalSearch, setGlobalSearch, targetId, setTargetId, selectedMissingCodes, setSelectedMissingCodes, processedCodes, parserExcludeDict, catalogUpdatedAt, lastExcludedCount } = appState;
     const availableTags = useMemo(() => { const counts = {}; Object.values(masterProducts).forEach(m => String(m['카탈로그'] || '').split(',').forEach(t => { const r = t.trim(); if (r)
-        counts[r] = (counts[r] || 0) + 1; })); return Object.keys(counts).sort().map(tag => ({ name: tag, count: counts[tag] })); }, [masterProducts]);
+        counts[r] = (counts[r] || 0) + 1; })); return Object.keys(counts)
+            .map(tag => ({ name: tag, count: counts[tag], updatedAt: catalogUpdatedAt[tag] || '' }))
+            .sort((a, b) => formatCatalogUpdatedAt(b.updatedAt).timestampMs - formatCatalogUpdatedAt(a.updatedAt).timestampMs || a.name.localeCompare(b.name, 'ko')); }, [masterProducts, catalogUpdatedAt]);
     const mappingExcludeCount = useMemo(() => getParserExcludeList(parserExcludeDict, currentTag).length, [parserExcludeDict, currentTag]);
     const matchedRows = parserBuffer.filter(r => r._matchCode);
     const similarRows = parserBuffer.filter(r => !r._matchCode && r._matchStatus.includes('유사') && !r._matchStatus.includes('중복'));
@@ -1649,7 +1785,7 @@ const ParserApp = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "Smart Parser"),
-                                        React.createElement("span", { className: "ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold" }, "v3.0.19 ExplicitInfoSave")),
+                                        React.createElement("span", { className: "ml-2 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] font-bold" }, "v3.0.21 NoOpSaveFix")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "TEXT ANALYSIS & DELTA SYNC"))),
                             React.createElement("div", { className: "flex flex-1 max-w-md xl:max-w-xl mx-4" }, isProcessing ? React.createElement("div", { className: "w-full bg-amber-400 text-amber-900 px-4 py-1.5 rounded-md font-mono text-[12px] font-bold flex items-center shadow-inner truncate" },
                                 React.createElement("i", { className: "fas fa-spinner fa-spin mr-2" }),
