@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.91)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.92)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.91.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.92.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -909,7 +909,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.91',
+    version: 'V1.a22.92',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -2273,6 +2273,7 @@ const FILTER_SORT_MODULE = Object.freeze({
 // V1.a22.88: 스페이스바 대체판매 역할 판정은 마스터 원물/소분 관계보다 ‘단가가 있는 실제출고 상품 → 단가 0 판매전표 상품’을 우선한다. 원가 생성 실패 시 단가이슈를 확인완료로 바꾸지 않고 작업을 중단한다.
 // V1.a22.90: 다음항목 점프 키를 Tab으로 통일한다. 코드통합형에서는 Tab=다음 통합후보, Shift+Tab=이전 통합후보 전용이며, Lot상세형의 재고·Lot 이슈 Tab 큐와 화면 모드별로 분리한다. 첫/마지막 후보에서는 순환하지 않고 정지한다.
 // V1.a22.91: 재고 실사 출력은 품목코드·품명·규격·잔량을 우선하고 재고·입고·출고와 구매일·구매처·구매가·시스템 순으로 재구성한다. 0은 공백, 입출고는 색상 구분, 마이너스 잔량과 당일 구매만 단계적으로 강조하며 장문 이슈메모는 간결한 시스템 정보로 축약한다.
+// V1.a22.92: 재고 실사 출력은 A4 세로형으로 전환하고 열 너비·셀 여백·상단 정보를 압축한다. 품목 식별 영역과 시스템 정보의 가독성을 유지하면서 불필요한 가로 공백과 페이지당 낭비 공간을 줄인다.
 // V1.a22.69: 코드통합형 해제/다시 통합 상태 관리.
 // 원본 Lot은 수정하지 않고 화면 보기/엑셀 1번 시트 출력에만 반영한다.
 const DATAOPS_CODE_MERGE_OVERRIDE_MODULE = Object.freeze({
@@ -3560,17 +3561,17 @@ const EXPORT_MODULE = Object.freeze({
         if (!w) return false;
         w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>${EXPORT_MODULE.escapeHtml(title)}</title>
                     <style>
-                        @page{size:A4 landscape;margin:7mm 6mm}
-                        body{font-family:Arial,'Malgun Gothic',sans-serif;color:#111827;margin:0;font-size:9.8px}
-                        h1{font-size:18px;margin:0 0 3px;font-weight:900}
-                        .meta{font-size:9.5px;color:#475569;margin-bottom:4px;display:flex;gap:10px;flex-wrap:wrap;font-weight:700}
-                        .summary{border-top:1px solid #cbd5e1;border-bottom:1px solid #cbd5e1;padding:3px 0;margin:0 0 5px;color:#334155;font-size:9.4px;font-weight:700}
-                        table{width:100%;border-collapse:collapse;font-size:9.4px;line-height:1.12;table-layout:fixed;break-inside:auto;page-break-inside:auto}
-                        col.code-col{width:9%} col.name-col{width:18%} col.spec-col{width:11%} col.final-col{width:6%} col.stock-col{width:6%} col.move-col{width:5%} col.date-col{width:7%} col.vendor-col{width:9%} col.price-col{width:8%} col.system-col{width:16%}
+                        @page{size:A4 portrait;margin:6mm 5mm}
+                        body{font-family:Arial,'Malgun Gothic',sans-serif;color:#111827;margin:0;font-size:9.2px;letter-spacing:-0.1px}
+                        h1{font-size:16px;margin:0;font-weight:900;white-space:nowrap}
+                        .print-head{display:flex;align-items:flex-end;justify-content:space-between;gap:8px;margin:0 0 3px}.meta{font-size:8.2px;color:#475569;display:flex;gap:7px;justify-content:flex-end;white-space:nowrap;font-weight:700}
+                        .summary{border-top:1px solid #cbd5e1;border-bottom:1px solid #cbd5e1;padding:2px 0;margin:0 0 3px;color:#334155;font-size:8.4px;font-weight:700}
+                        table{width:100%;border-collapse:collapse;font-size:8.5px;line-height:1.06;table-layout:fixed;break-inside:auto;page-break-inside:auto}
+                        col.code-col{width:11%} col.name-col{width:21%} col.spec-col{width:8%} col.final-col{width:6%} col.stock-col{width:5%} col.move-col{width:4.5%} col.date-col{width:7%} col.vendor-col{width:9%} col.price-col{width:8%} col.system-col{width:16%}
                         thead{display:table-header-group}
-                        th{background:#e8edf3;border:1px solid #9aa8ba;padding:3px 2px;text-align:center;white-space:nowrap;font-size:9.3px;font-weight:900;color:#1f2937}
-                        td{border:1px solid #cbd5e1;padding:2.2px 3px;vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-                        .code{text-align:left;color:#1d4ed8}.name{text-align:left;font-weight:800}.spec{text-align:left;color:#334155}
+                        th{background:#e8edf3;border:1px solid #9aa8ba;padding:2.2px 1px;text-align:center;white-space:nowrap;font-size:8.3px;font-weight:900;color:#1f2937}
+                        td{border:1px solid #cbd5e1;padding:1.7px 2px;vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+                        .code{text-align:left;color:#1d4ed8;font-size:8px}.name{text-align:left;font-weight:800}.spec{text-align:left;color:#334155}
                         .qty,.price{text-align:right;font-variant-numeric:tabular-nums}.final{font-weight:900}.vendor{text-align:left}.purchase-date{text-align:center}
                         .divider-core,.divider-check{border-right:2px solid #64748b!important}
                         .inbound-value{color:#0f766e;font-weight:800}.outbound-value{color:#c2410c;font-weight:800}
@@ -3579,7 +3580,7 @@ const EXPORT_MODULE = Object.freeze({
                         .purchase-empty{color:#94a3b8;text-align:center}.system{text-align:left;color:#64748b}.system.active{color:#334155;font-weight:700}
                         tr.category-break td{border-top:3px solid #334155!important}
                         @media print{button{display:none}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}table{break-after:auto;page-break-after:auto}}
-                    </style></head><body><h1>${EXPORT_MODULE.escapeHtml(title)}</h1><div class="meta"><span>마감일자: ${EXPORT_MODULE.escapeHtml(targetDateStr || '—')}</span><span>출력시각: ${EXPORT_MODULE.escapeHtml(new Date().toLocaleString())}</span></div>
+                    </style></head><body><div class="print-head"><h1>${EXPORT_MODULE.escapeHtml(title)}</h1><div class="meta"><span>마감일자: ${EXPORT_MODULE.escapeHtml(targetDateStr || '—')}</span><span>출력시각: ${EXPORT_MODULE.escapeHtml(new Date().toLocaleString())}</span></div></div>
                     <div class="summary">전체 ${rows.length}행 · 오차 ${diffCount}행 · 마이너스 ${negativeCount}행 · 시스템 ${systemCount}행</div>
                     ${htmlTable}
                     <script>window.onload=()=>{setTimeout(()=>window.print(),200)}<\/script></body></html>`);
