@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.161_WorktableHistoryPreserve]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.162_ShopInfoUploadCompatibility]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -60,8 +60,9 @@
         // v2.1.159: 등록상품의 마스터 정보 셀은 마스터 품목코드·품목명·규격을 항상 표시한다. 업로드 파일에 해당 헤더가 없을 때는 source 필드를 만들지 않아 컬럼 없음과 값 공란을 구분한다. 마스터 입고가는 기존 기본 열을 유지한다.
         // v2.1.160: 카탈로그만 선택한 경우 선택 상품의 마스터값을 편집 가능한 작업테이블로 복사한다. 이후 견적·구매·재고·정보 엑셀을 불러오면 카탈로그 편집용 임시행을 제거하고 기존 비교모드의 엑셀 source만 작업테이블에 표시한다.
         // v2.1.161: 카탈로그 작업범위 선택 시 기존 파서리스트/작업테이블을 보존한다. F8 저장에서는 직접 셀 수정값도 변경 전·후와 변경경로를 히스토리에 기록한다.
+        // v2.1.162: 쇼핑몰 상품정보 F8 출력은 원본 xls 형식·Worksheet 시트명·전체 34개 헤더·원본 셀 자료형을 보존한다. 오더즈판매가/오더즈구매가 누락과 빈 정보행 대량출력을 제거해 쇼핑몰 업로드 호환성을 복구한다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
-        // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결하며 오더즈판매가/오더즈구매가는 작업·출력에서 제외한다.
+        // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결한다. 오더즈판매가/오더즈구매가는 작업테이블에서는 숨기되 v2.1.162부터 원본 출력에는 보존한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
         // v2.1.117: 테마 상세필터가 테이블 표시값과 동일한 작업값/finalData/source/info 값을 보도록 보정한다. 행사테마=3 또는 테마3=1이면 테마3 필터에 반드시 포함된다.
         // v2.1.116: 정보 엑셀불러오기 작업군을 추가한다. 쇼핑몰/ERP 상품정보 엑셀은 원본 컬럼을 보존해 수정·다운로드하며, F8에서는 마스터 반영 없이 상품정보 업로드 엑셀을 생성한다.
@@ -2506,7 +2507,10 @@ const parseExcelRobust = (file) => {
             try {
                 const wb = window.XLSX.read(data, { type: type, cellDates: true });
                 const ws = wb.Sheets[wb.SheetNames[0]];
+                // 화면 표시용 값은 기존처럼 raw:false를 사용하되,
+                // 쇼핑몰 업로드 재출력용으로 원본 셀 자료형을 raw:true 배열에 별도 보존한다.
                 const jsonAll = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
+                const jsonAllRaw = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true });
                 if (jsonAll.length === 0)
                     return [];
                 let headerRowIdx = -1;
@@ -2559,19 +2563,27 @@ const parseExcelRobust = (file) => {
                 const parsedData = [];
                 for (let i = headerRowIdx + 1; i <= endIdx; i++) {
                     const row = jsonAll[i];
+                    const rawRow = jsonAllRaw[i] || [];
                     if (!row)
                         continue;
                     let isEmpty = true;
                     const obj = {};
+                    const rawObj = {};
                     headers.forEach((h, idx) => {
                         if (h) {
                             obj[h] = row[idx];
+                            rawObj[h] = rawRow[idx] !== undefined ? rawRow[idx] : row[idx];
                             if (row[idx] !== undefined && String(row[idx]).trim() !== '') {
                                 isEmpty = false;
                             }
                         }
                     });
                     if (!isEmpty) {
+                        Object.defineProperty(obj, '_originalRawRow', {
+                            value: rawObj,
+                            enumerable: false,
+                            configurable: true
+                        });
                         parsedData.push(obj);
                     }
                 }
@@ -3480,6 +3492,11 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                         const infoSource = mItem.sources.info;
                         infoSource._originalHeaders = [...actualHeaders];
                         infoSource._originalRow = { ...row };
+                        infoSource._originalRawRow = { ...((row && row._originalRawRow) || row) };
+                        infoSource._originalSheetName = String(sheetMeta.sheetName || 'Worksheet').trim() || 'Worksheet';
+                        infoSource._originalFileName = String(file.name || '');
+                        infoSource._originalBookType = /\.xls$/i.test(String(file.name || '')) && !/\.xlsx$/i.test(String(file.name || '')) ? 'biff8' : 'xlsx';
+                        infoSource._originalFileExtension = infoSource._originalBookType === 'biff8' ? 'xls' : 'xlsx';
                         infoSource._infoHeaderMap = { ...headerCache };
                         const cleanHeaders = actualHeaders.map(h => String(h || '').replace(/\s/g, ''));
                         const isShopInfo = cleanHeaders.includes('상품코드') && (cleanHeaders.includes('판매가격') || cleanHeaders.includes('오더즈판매가') || cleanHeaders.includes('상품태그') || cleanHeaders.includes('단가연동'));
@@ -4503,18 +4520,42 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                 : (ui.selectedRows.size > 0 ? fullDisplayRows.filter(row => ui.selectedRows.has(window.getManagedRowKey(row))) : fullDisplayRows));
         if (targetRows.length === 0)
             return ui.showToast('⚠️ 선택된 빠른 출력 대상이 없습니다.');
-        const isInfoQuickRow = (row = {}) => !!(row?.sources?.info) || (window.getCurrentMerchSourceRole && window.getCurrentMerchSourceRole(row.sources || {}, row._lastUploadRole || '') === 'info');
+        // 쇼핑몰 정보출력은 실제 원본행을 가진 상품만 허용한다.
+        // sources.info 빈 객체나 현재 역할만 info인 마스터 행은 출력대상에서 제외해 대량 빈 행 생성을 방지한다.
+        const getInfoOriginalCode = (row = {}, src = {}) => {
+            const headers = Array.isArray(src._originalHeaders) ? src._originalHeaders : [];
+            const codeHeader = headers.find(h => ['상품코드', '품목코드', '코드'].includes(String(h || '').replace(/\s/g, '')));
+            const originalRaw = src._originalRawRow || src._originalRow || {};
+            const originalDisplay = src._originalRow || {};
+            return (codeHeader ? (originalRaw[codeHeader] ?? originalDisplay[codeHeader]) : '') ?? row.코드 ?? '';
+        };
+        const isInfoQuickRow = (row = {}) => {
+            const src = row?.sources?.info;
+            if (!src || typeof src !== 'object') return false;
+            if (!Array.isArray(src._originalHeaders) || src._originalHeaders.length === 0) return false;
+            if (!src._originalRow || typeof src._originalRow !== 'object') return false;
+            return String(getInfoOriginalCode(row, src) ?? '').trim() !== '';
+        };
         const exportInfoRows = (rows = []) => {
             const infoRows = rows.filter(isInfoQuickRow);
             if (infoRows.length === 0) return false;
-            const headerUnion = [];
-            const isExcludedInfoHeader = (h = '') => window.isMerchInfoExcludedColumn ? window.isMerchInfoExcludedColumn(h) : ['오더즈판매가', '오더즈구매가'].includes(String(h || '').trim());
-            const pushHeader = (h) => { const key = String(h || '').trim(); if (key && !isExcludedInfoHeader(key) && !headerUnion.includes(key)) headerUnion.push(key); };
+
+            // 첫 원본파일의 헤더순서를 기준으로 삼고, 다중파일에서만 뒤쪽에 추가헤더를 보강한다.
+            // 쇼핑몰 필수 컬럼인 오더즈판매가/오더즈구매가도 원본 그대로 유지한다.
+            const primarySource = infoRows[0].sources?.info || {};
+            const headerUnion = Array.isArray(primarySource._originalHeaders) ? [...primarySource._originalHeaders] : [];
+            const pushHeader = (h) => {
+                const key = String(h || '').trim();
+                if (key && !headerUnion.includes(key)) headerUnion.push(key);
+            };
             infoRows.forEach(row => {
                 const src = row.sources?.info || {};
-                const headers = Array.isArray(src._originalHeaders) && src._originalHeaders.length > 0 ? src._originalHeaders : Object.keys(src._originalRow || src).filter(k => !String(k).startsWith('_'));
+                const headers = Array.isArray(src._originalHeaders) && src._originalHeaders.length > 0
+                    ? src._originalHeaders
+                    : Object.keys(src._originalRow || src).filter(k => !String(k).startsWith('_'));
                 headers.forEach(pushHeader);
             });
+
             const getCanonicalForHeader = (src = {}, header = '') => {
                 const map = src._infoHeaderMap || {};
                 return Object.keys(map).find(key => String(map[key] || '') === String(header || '')) || '';
@@ -4527,58 +4568,116 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             };
             const normalizeInfoSaleCode = (val) => {
                 const s = String(val ?? '').trim();
-                if (s === '0' || s === '정지' || s === '정지중' || s === '판매중단') return '0';
+                if (s === '0' || s === '정지' || s === '정지중' || s === '판매중단') return 0;
                 if (s === '') return '';
-                return '1';
+                return 1;
             };
             const getThemeFlagForInfo = (themeValue, n) => {
-                const codes = window.parsePromotionThemeCodes ? window.parsePromotionThemeCodes(themeValue) : String(themeValue || '').split(/[,/|\s]+/).filter(Boolean);
-                return codes.includes(String(n)) ? '1' : '';
+                const codes = window.parsePromotionThemeCodes
+                    ? window.parsePromotionThemeCodes(themeValue)
+                    : String(themeValue || '').split(/[,/|\s]+/).filter(Boolean);
+                return codes.includes(String(n)) ? 1 : 0;
+            };
+            const numericInfoHeaders = new Set([
+                '분류1코드', '분류2코드', '분류3코드', '찜적용안함', '상품코드',
+                '싯가판매여부', '싯가', '재입고 준비기간', '주문마감시간', '판매',
+                '판매가격', '시중가격', '재고', '최소구매수', '최대구매수',
+                '테마1', '테마2', '테마3', '테마4', '테마5', '과세',
+                '원상품코드', '복사상품코드', '단가연동', '오더즈판매가', '오더즈구매가'
+            ]);
+            const normalizeInfoOutputCellType = (value, originalRawValue, header = '') => {
+                if (value === undefined || value === null) return '';
+                if (String(value).trim() === '') return '';
+                if (typeof originalRawValue === 'number') {
+                    const n = Number(String(value).replace(/,/g, '').trim());
+                    return Number.isFinite(n) ? n : value;
+                }
+                if (typeof originalRawValue === 'boolean') {
+                    const s = String(value).trim().toLowerCase();
+                    if (s === '1' || s === 'true') return true;
+                    if (s === '0' || s === 'false') return false;
+                    return value;
+                }
+                if (numericInfoHeaders.has(String(header || '').trim())) {
+                    const n = Number(String(value).replace(/,/g, '').trim());
+                    return Number.isFinite(n) ? n : value;
+                }
+                return value;
             };
             const resolveInfoOutputValue = (row = {}, src = {}, finalData = {}, original = {}, header = '', canonical = '') => {
                 const cleanHeader = String(header || '').trim();
                 const key = String(canonical || cleanHeader).trim();
-                if (isExcludedInfoHeader(cleanHeader) || isExcludedInfoHeader(key)) return undefined;
-                if (key === '상품코드' || cleanHeader === '상품코드') return getFirstInfoValue(finalData['상품코드'], finalData['품목코드'], src['상품코드'], src['품목코드'], row.코드, original[cleanHeader]);
-                if (key === '상품명' || cleanHeader === '상품명') return getFirstInfoValue(finalData['상품명'], finalData['품목명'], src['상품명'], src['품목명'], original[cleanHeader]);
-                if (key === '판매가격' || cleanHeader === '판매가격') return getFirstInfoValue(finalData['판매가격'], finalData['출고가'], src['판매가격'], src['출고가'], original[cleanHeader]);
-                if (key === '시중가격' || cleanHeader === '시중가격') return getFirstInfoValue(finalData['시중가격'], finalData['시중가'], src['시중가격'], src['시중가'], original[cleanHeader]);
-                if (key === '재고' || cleanHeader === '재고') return getFirstInfoValue(finalData['재고'], finalData['재고수량'], src['재고'], src['재고수량'], original[cleanHeader]);
-                if (key === '판매' || cleanHeader === '판매') return normalizeInfoSaleCode(getFirstInfoValue(finalData['판매'], finalData['판매여부'], src['판매'], src['판매여부'], original[cleanHeader]));
+                if (key === '상품코드' || cleanHeader === '상품코드')
+                    return getFirstInfoValue(original[cleanHeader], src['상품코드'], src['품목코드'], row.코드, finalData['상품코드'], finalData['품목코드']);
+                if (key === '상품명' || cleanHeader === '상품명')
+                    return getFirstInfoValue(finalData['상품명'], finalData['품목명'], src['상품명'], src['품목명'], original[cleanHeader]);
+                if (key === '판매가격' || cleanHeader === '판매가격')
+                    return getFirstInfoValue(finalData['판매가격'], finalData['출고가'], src['판매가격'], src['출고가'], original[cleanHeader]);
+                if (key === '시중가격' || cleanHeader === '시중가격')
+                    return getFirstInfoValue(finalData['시중가격'], finalData['시중가'], src['시중가격'], src['시중가'], original[cleanHeader]);
+                if (key === '재고' || cleanHeader === '재고')
+                    return getFirstInfoValue(finalData['재고'], finalData['재고수량'], src['재고'], src['재고수량'], original[cleanHeader]);
+                if (key === '판매' || cleanHeader === '판매')
+                    return normalizeInfoSaleCode(getFirstInfoValue(finalData['판매'], finalData['판매여부'], src['판매'], src['판매여부'], original[cleanHeader]));
                 if (key === '단가연동' || key === '연동' || cleanHeader === '단가연동' || cleanHeader === '연동') {
                     const rawLinkage = getFirstInfoValue(finalData['단가연동'], finalData['연동'], src['단가연동'], src['연동'], original[cleanHeader]);
                     return window.normalizeMerchLinkageCode ? window.normalizeMerchLinkageCode(rawLinkage) : rawLinkage;
                 }
-                if (key === '기본설명' || cleanHeader === '기본설명') return getFirstInfoValue(finalData['기본설명'], finalData['간단설명'], src['기본설명'], src['간단설명'], original[cleanHeader]);
-                if (key === '상품태그' || cleanHeader === '상품태그') return getFirstInfoValue(finalData['상품태그'], finalData['검색어등록'], src['상품태그'], src['검색어등록'], original[cleanHeader]);
+                if (key === '기본설명' || cleanHeader === '기본설명')
+                    return getFirstInfoValue(finalData['기본설명'], finalData['간단설명'], src['기본설명'], src['간단설명'], original[cleanHeader]);
+                if (key === '상품태그' || cleanHeader === '상품태그')
+                    return getFirstInfoValue(finalData['상품태그'], finalData['검색어등록'], src['상품태그'], src['검색어등록'], original[cleanHeader]);
                 const themeMatch = cleanHeader.match(/^테마([1-5])$/) || key.match(/^테마([1-5])$/);
                 if (themeMatch) {
                     const n = themeMatch[1];
-                    return getFirstInfoValue(finalData[`테마${n}`], src[`테마${n}`], getThemeFlagForInfo(getFirstInfoValue(finalData['행사테마'], src['행사테마']), n), original[cleanHeader]);
+                    return getFirstInfoValue(
+                        finalData[`테마${n}`],
+                        src[`테마${n}`],
+                        getThemeFlagForInfo(getFirstInfoValue(finalData['행사테마'], src['행사테마']), n),
+                        original[cleanHeader]
+                    );
                 }
                 if (key && window.hasOwnField(finalData, key)) return finalData[key] ?? '';
                 if (key && window.hasOwnField(src, key)) return src[key] ?? '';
                 return window.hasOwnField(original, cleanHeader) ? (original[cleanHeader] ?? '') : '';
             };
-            const aoa = [headerUnion];
+
+            const outputRows = [];
             infoRows.forEach(row => {
                 const src = row.sources?.info || {};
                 const finalData = row.finalData || {};
-                const original = src._originalRow || {};
-                aoa.push(headerUnion.map(header => {
+                const originalDisplay = src._originalRow || {};
+                const originalRaw = src._originalRawRow || originalDisplay;
+                const outputRow = headerUnion.map(header => {
                     const canonical = getCanonicalForHeader(src, header);
-                    const val = resolveInfoOutputValue(row, src, finalData, original, header, canonical);
-                    return val === undefined ? '' : val;
-                }));
+                    const val = resolveInfoOutputValue(row, src, finalData, originalDisplay, header, canonical);
+                    return normalizeInfoOutputCellType(val, originalRaw[header], header);
+                });
+                const codeIdx = headerUnion.findIndex(h => ['상품코드', '품목코드', '코드'].includes(String(h || '').replace(/\s/g, '')));
+                if (codeIdx >= 0 && String(outputRow[codeIdx] ?? '').trim() !== '') outputRows.push(outputRow);
             });
+            if (outputRows.length === 0) return false;
+
+            const isShop = infoRows.some(row => String(row.sources?.info?._infoType || '') === 'shop');
+            const isErp = !isShop && infoRows.some(row => String(row.sources?.info?._infoType || '') === 'erp');
+            const type = isShop ? '쇼핑몰' : (isErp ? 'ERP' : '상품');
+            const aoa = [headerUnion, ...outputRows];
             const wb = window.XLSX.utils.book_new();
             const ws = window.XLSX.utils.aoa_to_sheet(aoa);
-            window.XLSX.utils.book_append_sheet(wb, ws, '상품정보업로드');
-            const type = infoRows.some(row => String(row.sources?.info?._infoType || '') === 'shop') ? '쇼핑몰' : (infoRows.some(row => String(row.sources?.info?._infoType || '') === 'erp') ? 'ERP' : '상품');
-            window.XLSX.writeFile(wb, `${type}상품정보_업로드_${new Date().toISOString().slice(0, 10)}.xlsx`);
+
+            const rawSheetName = String(primarySource._originalSheetName || (isShop ? 'Worksheet' : '상품정보업로드')).trim();
+            const sheetName = (rawSheetName || (isShop ? 'Worksheet' : '상품정보업로드')).replace(/[\\/?*\[\]:]/g, '_').slice(0, 31);
+            window.XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+            const originalBookType = String(primarySource._originalBookType || '').trim();
+            const bookType = originalBookType || (isShop ? 'biff8' : 'xlsx');
+            const extension = bookType === 'biff8' ? 'xls' : 'xlsx';
+            const dateStamp = new Date().toISOString().slice(0, 10);
+            window.XLSX.writeFile(wb, `${type}상품정보_업로드_${dateStamp}.${extension}`, { bookType });
+
             quickExcelReadyRef.current = { ready: false, at: 0, count: 0, codes: [], rows: [] };
             window.__MERCHOPS_QUICK_MASTER_OVERRIDE = null;
-            ui.showToast(`✅ ${type} 상품정보 업로드 엑셀 생성 완료: ${infoRows.length}건`);
+            ui.showToast(`✅ ${type} 상품정보 업로드 엑셀 생성 완료: ${outputRows.length}건 / ${headerUnion.length}개 컬럼 / ${extension.toUpperCase()}`);
             return true;
         };
         if (targetRows.some(isInfoQuickRow)) {
@@ -8369,7 +8468,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.161_WorktableHistoryPreserve]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.162_ShopInfoUploadCompatibility]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -8773,7 +8872,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.161_WorktableHistoryPreserve")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.162_ShopInfoUploadCompatibility")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
