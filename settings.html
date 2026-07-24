@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.23_CloudConfigSyncFix]</title>
+    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.24_ActionExecutionSteps]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -139,7 +139,7 @@ const mergeConfigDefaults = (saved = {}, defaults = {}) => {
 
 // ============================================================
 // [S-VIEW-FILTER-01] 테이블 보기별 필터 실행순서 저장
-// 역할: 보기양식에 컬럼뿐 아니라 순서가 있는 포함/제외 필터 실행단계를 함께 저장한다.
+// 역할: 보기양식에 컬럼뿐 아니라 순서가 있는 포함/제외 필터와 판매정지·테마초기화 실행단계를 함께 저장한다.
 // ============================================================
 const TABLE_PRICE_FILTER_OPTIONS = [ ['all', '필터없음'], ['changed', '변동'], ['promo', '행사중'], ['promoExclude', '행사제외'], ['promoSuggest', '제안'] ];
 const TABLE_CATEGORY_FILTER_VALUES = ['10', '20', '30', '40', '50'];
@@ -147,6 +147,12 @@ const TABLE_DETAIL_FILTER_OPTIONS = [ ['selling', '판매중'], ['stoppedSoldout
 const TABLE_DETAIL_FILTER_VALUES = TABLE_DETAIL_FILTER_OPTIONS.map(v => v[0]);
 const TABLE_PRICE_FILTER_LABELS = Object.fromEntries(TABLE_PRICE_FILTER_OPTIONS);
 const TABLE_DETAIL_FILTER_LABELS = Object.fromEntries(TABLE_DETAIL_FILTER_OPTIONS);
+const TABLE_EXECUTION_ACTION_OPTIONS = [
+    ['stopSales', '판매정지 적용'],
+    ['resetThemes', '테마초기화 적용']
+];
+const TABLE_EXECUTION_ACTION_LABELS = Object.fromEntries(TABLE_EXECUTION_ACTION_OPTIONS);
+const TABLE_EXECUTION_ACTION_VALUES = TABLE_EXECUTION_ACTION_OPTIONS.map(v => v[0]);
 const normalizeTableFilterPreset = (preset = {}) => {
     const priceValues = TABLE_PRICE_FILTER_OPTIONS.map(v => v[0]);
     const priceFilter = priceValues.includes(String(preset.priceFilter || 'all')) ? String(preset.priceFilter || 'all') : 'all';
@@ -174,11 +180,21 @@ const getTableFilterPresetSummary = (preset = {}) => {
     return labels.length ? labels.join(' · ') : '조건 없음';
 };
 const normalizeTableFilterStep = (step = {}, idx = 0) => {
+    const operation = String(step.operation || step.workflowAction || '').trim();
+    const isExecutionAction = String(step.stepType || step.type || '').trim() === 'action' || TABLE_EXECUTION_ACTION_VALUES.includes(operation);
+    if (isExecutionAction && TABLE_EXECUTION_ACTION_VALUES.includes(operation)) {
+        return {
+            id: String(step.id || `action_step_${Date.now()}_${idx}`),
+            stepType: 'action',
+            operation,
+            label: String(step.label || TABLE_EXECUTION_ACTION_LABELS[operation] || operation)
+        };
+    }
     const action = ['include', 'exclude'].includes(String(step.action || 'include')) ? String(step.action || 'include') : 'include';
     const conditions = normalizeTableFilterPreset(step.conditions || step.filterPreset || step.preset || {});
     if (isTableFilterPresetEmpty(conditions)) return null;
     const label = `${getTableFilterPresetSummary(conditions)} ${action === 'exclude' ? '제외' : '포함'}`;
-    return { id: String(step.id || `filter_step_${Date.now()}_${idx}`), action, label: String(step.label || label), conditions };
+    return { id: String(step.id || `filter_step_${Date.now()}_${idx}`), stepType: 'filter', action, label: String(step.label || label), conditions };
 };
 const normalizeTableFilterSteps = (steps = [], fallbackPreset = null) => {
     const normalized = (Array.isArray(steps) ? steps : []).map((step, idx) => normalizeTableFilterStep(step, idx)).filter(Boolean);
@@ -202,6 +218,8 @@ const toTableCoachmarkTag = (label = '', action = 'include') => {
     if (clean === '제안') return '제안상품';
     if (clean === '행사중') return '행사중';
     if (clean === '행사제외') return '행사제외';
+    if (clean === '판매정지 적용') return '판매정지';
+    if (clean === '테마초기화 적용') return '테마초기화';
     if (clean === '기본상품 제외') return '기본상품 제외';
     if (['BOX', 'EA', '소분'].includes(clean)) return `${clean}만`;
     if (/^테마[1-5]$/.test(clean)) return `${clean}만`;
@@ -660,7 +678,8 @@ const App = () => {
         }
     };
 
-    // ☁️ 환경설정 전용 클라우드 백업/복원 [v1.6.23_CloudConfigSyncFix]
+    // v1.6.24: 정보 양식 자동 실행순서에 판매정지 적용·테마초기화 적용 버튼을 추가하고, 필터단계와 값 적용단계를 한 순서로 저장한다.
+    // ☁️ 환경설정 전용 클라우드 백업/복원 [v1.6.24_ActionExecutionSteps]
     // 역할: 브라우저가 달라도 테이블 보기양식/필터 시나리오/매핑/룰을 동일하게 복구한다.
     // 핵심: Apps Script appConfig뿐 아니라 localStorage 원본 키도 함께 저장해 구조 변경에 안전하게 대응한다.
     // 제외: 마스터 상품정보와 히스토리 대용량 데이터는 기존 MasterDB/HistoryLogs 흐름을 사용한다.
@@ -727,7 +746,7 @@ const App = () => {
         return {
             action: 'config',
             data: {
-                schemaVersion: 'Settings_v1.6.23_CloudConfigSyncFix',
+                schemaVersion: 'Settings_v1.6.24_ActionExecutionSteps',
                 updatedAt: new Date().toISOString(),
                 dict,
                 rules: config.marginRules,
@@ -1228,10 +1247,22 @@ const App = () => {
     const addActiveFilterStep = () => {
         if (!editView) return;
         if (isTableFilterPresetEmpty(filterPresetDraft)) return showToast('⚠️ 단계에 추가할 필터조건을 먼저 선택하세요.');
-        const step = normalizeTableFilterStep({ action: filterStepActionDraft, conditions: filterPresetDraft, id: `filter_step_${Date.now()}` });
+        const step = normalizeTableFilterStep({ stepType: 'filter', action: filterStepActionDraft, conditions: filterPresetDraft, id: `filter_step_${Date.now()}` });
         if (!step) return;
         updateDraft({ filterSteps: [...filterStepsDraft, step], filterPreset: {} });
         updateActiveFilterPreset({ priceFilter: 'all', categoryFilters: [], detailFilters: [], basicSearch: '' });
+    };
+    const addActiveExecutionAction = (operation) => {
+        if (!editView) return;
+        if (activeUploadRole !== 'info') return showToast('⚠️ 판매정지·테마초기화 실행은 정보 양식에서만 사용할 수 있습니다.');
+        if (!TABLE_EXECUTION_ACTION_VALUES.includes(operation)) return;
+        if (filterStepsDraft.some(step => step.stepType === 'action' && step.operation === operation)) {
+            return showToast(`⚠️ [${TABLE_EXECUTION_ACTION_LABELS[operation]}] 단계가 이미 있습니다.`);
+        }
+        const step = normalizeTableFilterStep({ stepType: 'action', operation, id: `action_step_${Date.now()}` });
+        if (!step) return;
+        updateDraft({ filterSteps: [...filterStepsDraft, step], filterPreset: {} });
+        showToast(`✅ [${step.label}] 실행단계를 추가했습니다.`);
     };
     const deleteActiveFilterStep = (stepId) => updateDraft({ filterSteps: filterStepsDraft.filter(step => step.id !== stepId), filterPreset: {} });
     const moveActiveFilterStep = (idx, delta) => {
@@ -1526,7 +1557,7 @@ const App = () => {
                                 React.createElement("div", { className: "mt-5 pt-4 border-t border-slate-100" },
                                     React.createElement("div", { className: "flex items-center justify-between mb-3" },
                                         React.createElement("div", null,
-                                            React.createElement("div", { className: "text-[12px] font-black text-slate-700" }, React.createElement("i", { className: "fas fa-filter text-purple-500 mr-1.5" }), "자동 필터 실행순서"),
+                                            React.createElement("div", { className: "text-[12px] font-black text-slate-700" }, React.createElement("i", { className: "fas fa-filter text-purple-500 mr-1.5" }), "자동 실행순서"),
                                             React.createElement("div", { className: "text-[11px] text-slate-400 font-bold mt-0.5" }, getTableFilterStepsSummary(filterStepsDraft))),
                                         React.createElement("button", { onClick: resetActiveFilterSteps, disabled: !editView || filterStepsDraft.length === 0, className: "px-3 py-1.5 rounded-lg bg-slate-50 text-slate-500 border border-slate-200 text-[11px] font-black hover:bg-slate-100 disabled:opacity-40" }, "실행순서 비우기")),
                                     React.createElement("div", { className: "space-y-3" },
@@ -1534,14 +1565,20 @@ const App = () => {
                                             React.createElement("div", { className: "flex items-center gap-2" },
                                                 React.createElement("button", { onClick: () => setFilterStepActionDraft('include'), disabled: !editView, className: `px-3 py-1.5 rounded-lg border text-[12px] font-black ${filterStepActionDraft === 'include' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-200'}` }, "포함"),
                                                 React.createElement("button", { onClick: () => setFilterStepActionDraft('exclude'), disabled: !editView, className: `px-3 py-1.5 rounded-lg border text-[12px] font-black ${filterStepActionDraft === 'exclude' ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-slate-600 border-slate-200'}` }, "제외"),
-                                                React.createElement("button", { onClick: addActiveFilterStep, disabled: !editView || isTableFilterPresetEmpty(filterPresetDraft), className: "ml-auto px-3 py-1.5 rounded-lg bg-slate-800 text-white text-[12px] font-black disabled:bg-slate-200 disabled:text-slate-400" }, "단계 추가"),
+                                                React.createElement("button", { onClick: addActiveFilterStep, disabled: !editView || isTableFilterPresetEmpty(filterPresetDraft), className: "ml-auto px-3 py-1.5 rounded-lg bg-slate-800 text-white text-[12px] font-black disabled:bg-slate-200 disabled:text-slate-400" }, "필터단계 추가"),
                                                 React.createElement("button", { onClick: resetActiveFilterPreset, disabled: !editView, className: "px-3 py-1.5 rounded-lg bg-white text-slate-500 border border-slate-200 text-[11px] font-black hover:bg-slate-100 disabled:opacity-40" }, "조건 비우기")),
-                                            React.createElement("div", { className: "text-[11px] text-slate-500 font-bold" }, "현재 조건: ", getTableFilterPresetSummary(filterPresetDraft))),
+                                            React.createElement("div", { className: "text-[11px] text-slate-500 font-bold" }, "현재 조건: ", getTableFilterPresetSummary(filterPresetDraft)),
+                                            activeUploadRole === 'info' && React.createElement("div", { className: "pt-2 mt-2 border-t border-slate-200" },
+                                                React.createElement("div", { className: "text-[11px] font-black text-slate-500 mb-2" }, "현재 결과에 값 적용"),
+                                                React.createElement("div", { className: "flex flex-wrap gap-2" },
+                                                    React.createElement("button", { onClick: () => addActiveExecutionAction('stopSales'), disabled: !editView, className: "px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[12px] font-black disabled:bg-slate-200 disabled:text-slate-400" }, "판매정지 적용"),
+                                                    React.createElement("button", { onClick: () => addActiveExecutionAction('resetThemes'), disabled: !editView, className: "px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-[12px] font-black disabled:bg-slate-200 disabled:text-slate-400" }, "테마초기화 적용"))),
+                                            activeUploadRole !== 'info' && React.createElement("div", { className: "pt-2 mt-2 border-t border-slate-200 text-[11px] text-slate-400 font-bold" }, "판매정지·테마초기화 실행단계는 정보 양식에서 설정합니다.")),
                                         React.createElement("div", null, React.createElement("div", { className: "text-[11px] font-black text-slate-500 mb-1" }, "1단 필터"), React.createElement("div", { className: "flex flex-wrap gap-2" }, TABLE_PRICE_FILTER_OPTIONS.map(([value, label]) => React.createElement("button", { key: `preset-price-${value}`, onClick: () => toggleActivePriceFilterPreset(value), disabled: !editView, className: `px-3 py-1.5 rounded-full border text-[12px] font-bold transition-all ${filterPresetDraft.priceFilter === value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}` }, label)))),
                                         React.createElement("div", null, React.createElement("div", { className: "text-[11px] font-black text-slate-500 mb-1" }, "카테고리"), React.createElement("div", { className: "flex flex-wrap gap-2" }, TABLE_CATEGORY_FILTER_VALUES.map(cat => React.createElement("button", { key: `preset-cat-${cat}`, onClick: () => toggleActiveCategoryFilterPreset(cat), disabled: !editView, className: `px-3 py-1.5 rounded-full border text-[12px] font-bold transition-all ${filterPresetDraft.categoryFilters.includes(cat) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-200 text-slate-500 hover:bg-blue-50'}` }, cat)))),
                                         React.createElement("div", null, React.createElement("div", { className: "text-[11px] font-black text-slate-500 mb-1" }, "상세필터"), React.createElement("div", { className: "flex flex-wrap gap-2" }, TABLE_DETAIL_FILTER_OPTIONS.map(([value, label]) => React.createElement("button", { key: `preset-detail-${value}`, onClick: () => toggleActiveDetailFilterPreset(value), disabled: !editView, className: `px-3 py-1.5 rounded-full border text-[12px] font-bold transition-all ${filterPresetDraft.detailFilters.includes(value) ? 'bg-purple-700 text-white border-purple-700' : value.startsWith('theme') ? 'bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}` }, label)))),
                                         React.createElement("div", { className: "flex items-center gap-2" }, React.createElement("span", { className: "text-[11px] font-black text-slate-500 shrink-0" }, "기본값"), React.createElement("input", { type: "text", value: filterPresetDraft.basicSearch, onChange: e => updateActiveFilterPreset({ basicSearch: e.target.value }), disabled: !editView, placeholder: "예: 1, 3, 5", className: "w-[160px] border border-slate-300 rounded-lg px-3 py-2 text-[12px] font-bold outline-none focus:border-purple-500 disabled:bg-slate-50" }), React.createElement("span", { className: "text-[11px] text-slate-400 font-bold" }, "기본상품 필터를 켰을 때만 적용")),
-                                        React.createElement("div", { className: "rounded-xl border border-slate-200 overflow-hidden" }, filterStepsDraft.length === 0 ? React.createElement("div", { className: "p-3 text-[12px] text-slate-400 font-bold bg-white" }, "저장된 필터 실행순서가 없습니다.") : filterStepsDraft.map((step, idx) => React.createElement("div", { key: step.id, className: "flex items-center gap-2 px-3 py-2 border-b last:border-b-0 bg-white text-[12px]" }, React.createElement("span", { className: `px-2 py-1 rounded-md font-black ${step.action === 'exclude' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}` }, step.action === 'exclude' ? '제외' : '포함'), React.createElement("span", { className: "font-bold text-slate-700 flex-1" }, idx + 1, ". ", step.label), React.createElement("button", { onClick: () => moveActiveFilterStep(idx, -1), disabled: idx === 0, className: "px-2 py-1 rounded bg-slate-50 text-slate-500 disabled:opacity-30" }, "↑"), React.createElement("button", { onClick: () => moveActiveFilterStep(idx, 1), disabled: idx === filterStepsDraft.length - 1, className: "px-2 py-1 rounded bg-slate-50 text-slate-500 disabled:opacity-30" }, "↓"), React.createElement("button", { onClick: () => deleteActiveFilterStep(step.id), className: "px-2 py-1 rounded bg-rose-50 text-rose-600 font-black" }, "삭제")))))))))))),
+                                        React.createElement("div", { className: "rounded-xl border border-slate-200 overflow-hidden" }, filterStepsDraft.length === 0 ? React.createElement("div", { className: "p-3 text-[12px] text-slate-400 font-bold bg-white" }, "저장된 자동 실행순서가 없습니다.") : filterStepsDraft.map((step, idx) => React.createElement("div", { key: step.id, className: "flex items-center gap-2 px-3 py-2 border-b last:border-b-0 bg-white text-[12px]" }, React.createElement("span", { className: `px-2 py-1 rounded-md font-black ${step.stepType === 'action' ? (step.operation === 'stopSales' ? 'bg-rose-100 text-rose-700' : 'bg-purple-100 text-purple-700') : step.action === 'exclude' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}` }, step.stepType === 'action' ? '실행' : (step.action === 'exclude' ? '제외' : '포함')), React.createElement("span", { className: "font-bold text-slate-700 flex-1" }, idx + 1, ". ", step.label), React.createElement("button", { onClick: () => moveActiveFilterStep(idx, -1), disabled: idx === 0, className: "px-2 py-1 rounded bg-slate-50 text-slate-500 disabled:opacity-30" }, "↑"), React.createElement("button", { onClick: () => moveActiveFilterStep(idx, 1), disabled: idx === filterStepsDraft.length - 1, className: "px-2 py-1 rounded bg-slate-50 text-slate-500 disabled:opacity-30" }, "↓"), React.createElement("button", { onClick: () => deleteActiveFilterStep(step.id), className: "px-2 py-1 rounded bg-rose-50 text-rose-600 font-black" }, "삭제")))))))))))),
             activeTab === 'inputMap' && (React.createElement("div", { className: "max-w-4xl space-y-6" },
                 React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3" }, "\uC785\uB825 \uB370\uC774\uD130 \uB9E4\uD551"),
                 React.createElement("div", { className: "flex flex-wrap gap-2 mb-6" }, UPLOAD_ROLES.map(role => (React.createElement("button", { key: `role-map-${role.id}`, onClick: () => selectTableView(role.id), className: `px-4 py-2 rounded-xl border text-[12px] font-black transition-all ${activeUploadRole === role.id ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}` }, role.label)))),
