@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.93)</title>
+    <title>ONEAPP DataOps - 핵심 수불부 관리 (V1.a22.94_PerformanceFix)</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f8fafc; overflow: hidden; }
@@ -46,7 +46,7 @@
     <!-- 초기 로딩 스크린 -->
     <div id="initial-loader">
         <div class="spinner"></div>
-        <div class="loader-text">ONEAPP DataOps V1.a22.93.....</div>
+        <div class="loader-text">ONEAPP DataOps V1.a22.94_PerformanceFix.....</div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">앱 환경을 구성하고 있습니다</div>
     </div>
 
@@ -909,7 +909,7 @@ const clearTableSortPreference = () => {
    - 주의: 물리적 파일 분리는 하지 않는다. 단일 HTML 실행 구조를 유지한다.
    ======================================================================= */
 const CONFIG_MODULE = Object.freeze({
-    version: 'V1.a22.93',
+    version: 'V1.a22.94_PerformanceFix',
     categoryMap: Object.freeze({
         '10': '채소.과일',
         '20': '수산.축산',
@@ -2275,6 +2275,7 @@ const FILTER_SORT_MODULE = Object.freeze({
 // V1.a22.91: 재고 실사 출력은 품목코드·품명·규격·잔량을 우선하고 재고·입고·출고와 구매일·구매처·구매가·시스템 순으로 재구성한다. 0은 공백, 입출고는 색상 구분, 마이너스 잔량과 당일 구매만 단계적으로 강조하며 장문 이슈메모는 간결한 시스템 정보로 축약한다.
 // V1.a22.92: 재고 실사 출력은 A4 세로형으로 전환하고 열 너비·셀 여백·상단 정보를 압축한다. 품목 식별 영역과 시스템 정보의 가독성을 유지하면서 불필요한 가로 공백과 페이지당 낭비 공간을 줄인다.
 // V1.a22.93: 당일 구매 강조의 아이보리 배경을 구매정보 3개 셀에서 행 전체로 확장한다. 마이너스 잔량의 붉은 배경과 입·출고 색상은 기존 우선순위를 유지한다.
+// V1.a22.94: Tab은 코드통합형 통합후보 행 내부에서만 가로채고 일반 입력·브라우저 Tab은 유지한다. 동일값 편집은 productData를 갱신하지 않으며 즉시 저장 시 250ms 타이머를 취소한다. 사용되지 않는 중복 보기 계산을 제거해 키 입력 후 전체 재계산·재렌더링 부담을 줄인다.
 // V1.a22.69: 코드통합형 해제/다시 통합 상태 관리.
 // 원본 Lot은 수정하지 않고 화면 보기/엑셀 1번 시트 출력에만 반영한다.
 const DATAOPS_CODE_MERGE_OVERRIDE_MODULE = Object.freeze({
@@ -4092,54 +4093,68 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
         setAckMultiCodes(new Set());
     }, []);
     const handleBaseDataChange = useCallback((batchKey, field, val) => {
-        const numVal = val === '' ? 0 : Number(val);
-        setProductData(prevP => prevP.map(item => {
+        const parsedValue = val === '' ? 0 : Number(val);
+        const numVal = Number.isFinite(parsedValue) ? parsedValue : 0;
+        setProductData(prevP => {
+            const rowIndex = prevP.findIndex(item => item.batchKey === batchKey);
+            if (rowIndex < 0)
+                return prevP;
+            const currentItem = prevP[rowIndex];
+            // V1.a22.94: 같은 값을 다시 저장할 때 전체 배열을 새로 만들지 않는다.
+            if (safeNum(currentItem[field]) === safeNum(numVal))
+                return prevP;
             var _a, _b, _c;
-            if (item.batchKey !== batchKey)
-                return item;
-            let nextItem = { ...item, [field]: numVal };
+            let nextItem = { ...currentItem, [field]: numVal };
             if (field === '단가') {
                 nextItem.이슈 = DATAOPS_ISSUE_HELPER.syncPriceIssues(nextItem, nextItem.이슈 || []).filter(msg => msg !== '매입내역 없음');
                 nextItem.수기확인완료 = !DATAOPS_ISSUE_HELPER.hasUnresolved(nextItem.이슈);
-                return nextItem;
             }
-            // V1.a22.12 핵심 정책 복구:
-            // 기초/입고/출고는 장부 기준값이다. 사용자가 장부값을 수정하면 최종 잔량도 새 계산잔량으로 따라간다.
-            // 즉 장부 수정은 오차를 만드는 행위가 아니라, 기준 장부를 바로잡는 행위다.
-            const systemQty = safeNum(nextItem.기초) + safeNum(nextItem.입고) + safeNum(nextItem.대체입고) - safeNum(nextItem.출고) - safeNum(nextItem.대체출고);
-            nextItem.전산잔량 = systemQty;
-            nextItem.실사 = systemQty;
-            nextItem.로스 = 0;
-            let newIssues = (nextItem.이슈 || []).filter(msg => msg !== '장부 수기조정');
-            newIssues = DATAOPS_ISSUE_HELPER.syncQuantityIssues(nextItem, newIssues);
-            const isBaseChanged = safeNum(nextItem.기초) !== safeNum((_a = nextItem._orig) === null || _a === void 0 ? void 0 : _a.기초) ||
-                safeNum(nextItem.입고) !== safeNum((_b = nextItem._orig) === null || _b === void 0 ? void 0 : _b.입고) ||
-                safeNum(nextItem.출고) !== safeNum((_c = nextItem._orig) === null || _c === void 0 ? void 0 : _c.출고);
-            if (isBaseChanged)
-                newIssues.push('장부 수기조정');
-            nextItem.이슈 = DATAOPS_ISSUE_HELPER.unique(newIssues);
-            nextItem.수기확인완료 = !DATAOPS_ISSUE_HELPER.hasUnresolved(nextItem.이슈);
-            return nextItem;
-        }));
+            else {
+                // 기초/입고/출고는 장부 기준값이다. 장부값 수정 시 최종 잔량도 새 계산잔량으로 따른다.
+                const systemQty = safeNum(nextItem.기초) + safeNum(nextItem.입고) + safeNum(nextItem.대체입고) - safeNum(nextItem.출고) - safeNum(nextItem.대체출고);
+                nextItem.전산잔량 = systemQty;
+                nextItem.실사 = systemQty;
+                nextItem.로스 = 0;
+                let newIssues = (nextItem.이슈 || []).filter(msg => msg !== '장부 수기조정');
+                newIssues = DATAOPS_ISSUE_HELPER.syncQuantityIssues(nextItem, newIssues);
+                const isBaseChanged = safeNum(nextItem.기초) !== safeNum((_a = nextItem._orig) === null || _a === void 0 ? void 0 : _a.기초) ||
+                    safeNum(nextItem.입고) !== safeNum((_b = nextItem._orig) === null || _b === void 0 ? void 0 : _b.입고) ||
+                    safeNum(nextItem.출고) !== safeNum((_c = nextItem._orig) === null || _c === void 0 ? void 0 : _c.출고);
+                if (isBaseChanged)
+                    newIssues.push('장부 수기조정');
+                nextItem.이슈 = DATAOPS_ISSUE_HELPER.unique(newIssues);
+                nextItem.수기확인완료 = !DATAOPS_ISSUE_HELPER.hasUnresolved(nextItem.이슈);
+            }
+            const nextData = [...prevP];
+            nextData[rowIndex] = nextItem;
+            return nextData;
+        });
     }, []);
     const handleManualStockChange = useCallback((batchKey, val) => {
-        setProductData(prev => prev.map(item => {
-            if (item.batchKey !== batchKey)
-                return item;
-            // V1.a22.12 핵심 정책 복구:
-            // 잔량 수정은 기초/입고/출고를 역산 수정하지 않는다. 최종 잔량만 바꾸고 오차로 표기한다.
-            let nextItem = { ...item, 실사: val === '' ? '' : Number(val) };
+        const nextActual = val === '' ? '' : Number(val);
+        setProductData(prev => {
+            const rowIndex = prev.findIndex(item => item.batchKey === batchKey);
+            if (rowIndex < 0)
+                return prev;
+            const currentItem = prev[rowIndex];
+            const currentActual = currentItem.실사;
+            const sameBlank = nextActual === '' && (currentActual === '' || currentActual === null || currentActual === undefined);
+            const sameNumber = nextActual !== '' && currentActual !== '' && currentActual !== null && currentActual !== undefined && safeNum(currentActual) === safeNum(nextActual);
+            // V1.a22.94: 실사값이 실제로 바뀌지 않으면 계산·렌더링을 시작하지 않는다.
+            if (sameBlank || sameNumber)
+                return prev;
+            let nextItem = { ...currentItem, 실사: nextActual };
             const systemQty = safeNum(nextItem.기초) + safeNum(nextItem.입고) + safeNum(nextItem.대체입고) - safeNum(nextItem.출고) - safeNum(nextItem.대체출고);
             const finalQty = nextItem.실사 === '' || nextItem.실사 === null || nextItem.실사 === undefined ? systemQty : safeNum(nextItem.실사);
             nextItem.전산잔량 = systemQty;
             nextItem.로스 = finalQty - systemQty;
             nextItem.이슈 = DATAOPS_ISSUE_HELPER.syncQuantityIssues(nextItem, nextItem.이슈 || []);
-            // V1.a22.12: 소분잔량은 디테일 장부로 추적하지 않고, 실사오차가 음수일 때 소분로스 후보 인사이트만 제공한다.
             nextItem = DATAOPS_OPERATION_MODULE.syncSplitLossInsight(nextItem);
-            // 잔량 수정으로 오차가 해결되면 수량 이슈는 자동 삭제되고, 남은 경고가 없으면 확인 완료 상태가 된다.
             nextItem.수기확인완료 = !DATAOPS_ISSUE_HELPER.hasUnresolved(nextItem.이슈);
-            return nextItem;
-        }));
+            const nextData = [...prev];
+            nextData[rowIndex] = nextItem;
+            return nextData;
+        });
     }, []);
     const handlePurchaseLotManualAdjust = useCallback((batchKey) => {
         const baseItem = productData.find(item => item.batchKey === batchKey);
@@ -4229,6 +4244,14 @@ const useInventoryEngine = ({ mappings, grouping, setAlertMsg, setConfirmModal, 
                 return prev;
             const item1Orig = { ...prev[idx1], 이슈: [...(prev[idx1].이슈 || [])], 출고내역: prev[idx1].출고내역 ? JSON.parse(JSON.stringify(prev[idx1].출고내역)) : {} };
             const item2Orig = { ...prev[idx2], 이슈: [...(prev[idx2].이슈 || [])], 출고내역: prev[idx2].출고내역 ? JSON.parse(JSON.stringify(prev[idx2].출고내역)) : {} };
+            // V1.a22.94: 이미 같은 두 행이 수기치환으로 연결된 상태에서 Space를 다시 눌러도
+            // productData·히스토리를 다시 만들지 않는다.
+            const alreadyLinkedPair = item1Orig._manualSubstitutionResolved === true &&
+                item2Orig._manualSubstitutionResolved === true &&
+                safeStr(item1Orig._manualSubstitutionPartnerKey) === safeStr(item2Orig.batchKey) &&
+                safeStr(item2Orig._manualSubstitutionPartnerKey) === safeStr(item1Orig.batchKey);
+            if (alreadyLinkedPair)
+                return prev;
             let sourceItem = { ...item1Orig, 이슈: [...(item1Orig.이슈 || [])] };
             let targetItem = { ...item2Orig, 이슈: [...(item2Orig.이슈 || [])] };
             // V1.a22.12: 스페이스바 치환은 선택 순서가 아니라 source/target 역할 판정 기준으로 처리한다.
@@ -6818,6 +6841,77 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
             clearTimeout(actualTimeout.current);
         actualTimeout.current = setTimeout(() => onStockChange(operationBatchKey, val), 250);
     };
+    // V1.a22.94: Tab/Space 즉시 저장은 남아 있는 250ms 타이머를 먼저 제거한다.
+    // 동일값이면 엔진 갱신을 호출하지 않아 대규모 재계산을 피한다.
+    const getPriceEditBatchKey = () => isDirectEditableCodeSummaryRow
+        ? operationBatchKey
+        : (isMergedViewRow ? safeStr(item._representativeSourceKey || '') : item.batchKey);
+    const clearPendingEditTimer = (type) => {
+        const timerRefMap = {
+            'price-input': priceTimeout,
+            'base-prev': prevTimeout,
+            'base-in': inTimeout,
+            'base-out': outTimeout,
+            'actual-input': actualTimeout
+        };
+        const timerRef = timerRefMap[type];
+        if (timerRef && timerRef.current) {
+            clearTimeout(timerRef.current);
+            timerRef.current = null;
+        }
+    };
+    const flushPendingEdit = (type) => {
+        clearPendingEditTimer(type);
+        if (type === 'price-input') {
+            const editBatchKey = getPriceEditBatchKey();
+            if (!editBatchKey || DATAOPS_VIEW_LAYER_MODULE.isViewRowKey(editBatchKey))
+                return false;
+            const nextValue = localPrice === '' ? 0 : Number(localPrice);
+            if (safeNum(item.단가) === safeNum(nextValue))
+                return false;
+            onBaseDataChange(editBatchKey, '단가', nextValue);
+            return true;
+        }
+        if (rejectCodeSummaryEdit())
+            return false;
+        if (type === 'base-prev') {
+            const nextValue = localPrev === '' ? 0 : Number(localPrev);
+            if (safeNum(item.기초) === safeNum(nextValue))
+                return false;
+            onBaseDataChange(operationBatchKey, '기초', nextValue);
+            return true;
+        }
+        if (type === 'base-in') {
+            const nextValue = (localIn === '' ? 0 : Number(localIn)) - safeNum(item.대체입고);
+            if (safeNum(item.입고) === safeNum(nextValue))
+                return false;
+            onBaseDataChange(operationBatchKey, '입고', nextValue);
+            return true;
+        }
+        if (type === 'base-out') {
+            const nextValue = (localOut === '' ? 0 : Number(localOut)) - safeNum(item.대체출고);
+            if (safeNum(item.출고) === safeNum(nextValue))
+                return false;
+            onBaseDataChange(operationBatchKey, '출고', nextValue);
+            return true;
+        }
+        if (type === 'actual-input') {
+            const currentActual = item.실사;
+            const nextValue = localActual === '' ? '' : Number(localActual);
+            const sameBlank = nextValue === '' && (currentActual === '' || currentActual === null || currentActual === undefined);
+            const sameNumber = nextValue !== '' && currentActual !== '' && currentActual !== null && currentActual !== undefined && safeNum(currentActual) === safeNum(nextValue);
+            if (sameBlank || sameNumber)
+                return false;
+            onStockChange(operationBatchKey, localActual);
+            return true;
+        }
+        return false;
+    };
+    const bindImmediateFlush = (element, type) => {
+        if (!element)
+            return;
+        element.__dataopsFlushNow = () => flushPendingEdit(type);
+    };
     const actualQty = localActual === '' ? '' : Number(localActual);
     const isNegativeActual = typeof actualQty === 'number' && actualQty < 0;
     const focusAndEnsureVisible = (id) => {
@@ -6840,8 +6934,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
     const handleKd = (e, type) => {
         const cols = ['price-input', 'base-prev', 'base-in', 'base-out', 'actual-input'];
         const colIdx = cols.indexOf(type);
-        // V1.a22.90: 코드통합형의 Tab/Shift+Tab은 전역 통합후보 이동기가 전담한다.
-        // Enter와 방향키는 기존 셀 이동 규칙을 유지한다.
+        // V1.a22.94: 통합후보 행의 Tab만 전역 후보 이동기가 처리한다. 일반 Tab과 Enter·방향키는 기존 동작을 유지한다.
         if (e.key === 'ArrowRight') {
             if (colIdx < cols.length - 1) {
                 e.preventDefault();
@@ -6866,6 +6959,7 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
             if (type === 'actual-input') {
                 e.preventDefault();
                 if (rejectCodeSummaryEdit()) return;
+                flushPendingEdit('actual-input');
                 onSpacebar(operationBatchKey, idx);
             }
         }
@@ -6956,16 +7050,16 @@ const ProductRow = React.memo(({ item, idx, isLinked, isActiveMulti, isMultiGrou
                     false && isMergeDisabledRow && splitRepresentativeInfo && React.createElement("div", { className: "hidden", title: splitRepresentativeInfo.title }, splitRepresentativeInfo.text)),
                 React.createElement("div", { className: "flex items-center justify-end shrink-0 pl-3 border-l border-slate-200" },
                     React.createElement("span", { className: "text-slate-400 font-semibold text-[10px] mr-1" }, "\u20A9"),
-                    React.createElement("input", { id: `price-input-${idx}`, "data-field": "price-input", type: "number", className: `${cellInputBase} w-[70px] font-bold ${item.단가 === 0 ? 'border-rose-300 bg-rose-50 text-rose-600' : 'text-slate-800'}`, value: localPrice, onChange: handlePriceChange, onClick: (e) => e.stopPropagation(), onFocus: e => { e.target.select(); onFocusInput(operationBatchKey, idx); }, onKeyDown: (e) => handleKd(e, 'price-input'), placeholder: "0" })))),
+                    React.createElement("input", { id: `price-input-${idx}`, ref: el => bindImmediateFlush(el, 'price-input'), "data-field": "price-input", type: "number", className: `${cellInputBase} w-[70px] font-bold ${item.단가 === 0 ? 'border-rose-300 bg-rose-50 text-rose-600' : 'text-slate-800'}`, value: localPrice, onChange: handlePriceChange, onClick: (e) => e.stopPropagation(), onFocus: e => { e.target.select(); onFocusInput(operationBatchKey, idx); }, onKeyDown: (e) => handleKd(e, 'price-input'), placeholder: "0" })))),
         React.createElement("td", { className: `py-2 px-2 text-right ${isActiveMulti ? 'bg-slate-50/50' : ''} border-r border-slate-100 ${topBorderClass} ${mergeHorizontalCellBoxClass} ${lotReviewHorizontalCellBoxClass}` },
-            React.createElement("input", { id: `base-prev-${idx}`, "data-field": "base-prev", type: "number", step: "any", className: `${cellInputBase} font-semibold ${item.기초 < 0 ? 'text-rose-600 border-rose-200' : 'text-slate-700'}`, value: localPrev, onChange: handlePrevChange, onFocus: e => { e.target.select(); onFocusInput(operationBatchKey, idx); }, onKeyDown: (e) => handleKd(e, 'base-prev'), onWheel: e => e.target.blur(), placeholder: "0" })),
+            React.createElement("input", { id: `base-prev-${idx}`, ref: el => bindImmediateFlush(el, 'base-prev'), "data-field": "base-prev", type: "number", step: "any", className: `${cellInputBase} font-semibold ${item.기초 < 0 ? 'text-rose-600 border-rose-200' : 'text-slate-700'}`, value: localPrev, onChange: handlePrevChange, onFocus: e => { e.target.select(); onFocusInput(operationBatchKey, idx); }, onKeyDown: (e) => handleKd(e, 'base-prev'), onWheel: e => e.target.blur(), placeholder: "0" })),
         React.createElement("td", { className: `py-2 px-2 text-right border-r border-slate-100 ${topBorderClass} ${mergeHorizontalCellBoxClass} ${lotReviewHorizontalCellBoxClass}` },
-            React.createElement("input", { id: `base-in-${idx}`, "data-field": "base-in", type: "number", step: "any", className: `${cellInputBase} font-bold ${totalIn > 0 ? 'text-emerald-600' : 'text-slate-400'}`, value: localIn, onChange: handleInChange, onFocus: e => { e.target.select(); onFocusInput(operationBatchKey, idx); }, onKeyDown: (e) => handleKd(e, 'base-in'), onWheel: e => e.target.blur(), placeholder: "0" })),
+            React.createElement("input", { id: `base-in-${idx}`, ref: el => bindImmediateFlush(el, 'base-in'), "data-field": "base-in", type: "number", step: "any", className: `${cellInputBase} font-bold ${totalIn > 0 ? 'text-emerald-600' : 'text-slate-400'}`, value: localIn, onChange: handleInChange, onFocus: e => { e.target.select(); onFocusInput(operationBatchKey, idx); }, onKeyDown: (e) => handleKd(e, 'base-in'), onWheel: e => e.target.blur(), placeholder: "0" })),
         React.createElement("td", { className: `py-2 px-2 text-right border-r border-slate-100 ${topBorderClass} ${mergeHorizontalCellBoxClass} ${lotReviewHorizontalCellBoxClass}` },
-            React.createElement("input", { id: `base-out-${idx}`, "data-field": "base-out", type: "number", step: "any", className: `${cellInputBase} font-bold ${totalOut > 0 ? 'text-rose-600' : 'text-slate-400'}`, value: localOut, onChange: handleOutChange, onFocus: e => { e.target.select(); onFocusInput(operationBatchKey, idx); }, onKeyDown: (e) => handleKd(e, 'base-out'), onWheel: e => e.target.blur(), placeholder: "0" })),
+            React.createElement("input", { id: `base-out-${idx}`, ref: el => bindImmediateFlush(el, 'base-out'), "data-field": "base-out", type: "number", step: "any", className: `${cellInputBase} font-bold ${totalOut > 0 ? 'text-rose-600' : 'text-slate-400'}`, value: localOut, onChange: handleOutChange, onFocus: e => { e.target.select(); onFocusInput(operationBatchKey, idx); }, onKeyDown: (e) => handleKd(e, 'base-out'), onWheel: e => e.target.blur(), placeholder: "0" })),
         React.createElement("td", { className: `py-2 px-2 text-right border-r border-slate-100 ${isLinked ? 'bg-blue-50' : ''} relative ${topBorderClass} ${mergeHorizontalCellBoxClass} ${lotReviewHorizontalCellBoxClass}` },
             isLinked && React.createElement("div", { className: "absolute -top-6 right-0 bg-slate-800 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-md whitespace-nowrap animate-bounce" }, "\uC870\uC815 \uB300\uC0C1"),
-            React.createElement("input", { id: `actual-input-${idx}`, "data-field": "actual-input", type: "number", step: "any", value: localActual, onChange: handleActualChange, onClick: () => onFocusInput(operationBatchKey, idx), onFocus: (e) => { e.target.select(); onFocusInput(operationBatchKey, idx); }, onKeyDown: (e) => handleKd(e, 'actual-input'), onWheel: e => e.target.blur(), placeholder: item.전산잔량, className: `w-full text-right bg-white border ${isLinked ? 'border-blue-500 ring-1 ring-blue-500 text-blue-900' : 'border-slate-300 text-slate-800 hover:border-slate-400'} ${isNegativeActual ? 'bg-rose-50 border-rose-400 text-rose-700 font-bold' : 'font-semibold'} rounded text-[13px] px-1.5 py-1 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-sm transition-all cursor-pointer` })),
+            React.createElement("input", { id: `actual-input-${idx}`, ref: el => bindImmediateFlush(el, 'actual-input'), "data-field": "actual-input", type: "number", step: "any", value: localActual, onChange: handleActualChange, onClick: () => onFocusInput(operationBatchKey, idx), onFocus: (e) => { e.target.select(); onFocusInput(operationBatchKey, idx); }, onKeyDown: (e) => handleKd(e, 'actual-input'), onWheel: e => e.target.blur(), placeholder: item.전산잔량, className: `w-full text-right bg-white border ${isLinked ? 'border-blue-500 ring-1 ring-blue-500 text-blue-900' : 'border-slate-300 text-slate-800 hover:border-slate-400'} ${isNegativeActual ? 'bg-rose-50 border-rose-400 text-rose-700 font-bold' : 'font-semibold'} rounded text-[13px] px-1.5 py-1 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-sm transition-all cursor-pointer` })),
         React.createElement("td", { className: `py-2 px-2 text-right border-r border-slate-100 ${topBorderClass} ${mergeHorizontalCellBoxClass} ${lotReviewHorizontalCellBoxClass}` },
             item.로스 !== 0 && React.createElement("div", { className: "flex flex-col items-end justify-center mb-0.5" },
                 React.createElement("span", { className: `text-[12px] font-bold ${item.로스 < 0 ? 'text-rose-600' : 'text-blue-600'}` },
@@ -7170,8 +7264,8 @@ function App() {
         }
         setMergeOverrideVersion(v => v + 1);
     }, []);
-    // V1.a22.90: 코드통합형 통합후보 이동은 Tab/Shift+Tab 전용이다.
-    // Lot상세형의 재고·Lot 이슈 Tab 큐와 화면 모드로 분리하며, 화면 버튼도 동일한 DOM 후보 목록과 커서를 사용한다.
+    // V1.a22.94: 코드통합형 통합후보 행 내부의 Tab/Shift+Tab과 화면 버튼은 동일한 DOM 후보 목록과 커서를 사용한다.
+    // 일반 입력행의 Tab과 Lot상세형 이슈 Tab 큐는 서로 가로채지 않는다.
     const getVisibleMergeCandidateRows = useCallback(() => {
         return Array.from(document.querySelectorAll('tr[data-merge-group-start="1"]'))
             .filter(row => row && row.isConnected && row.getClientRects().length > 0);
@@ -10322,9 +10416,21 @@ ${balanceText}
         const batchKey = safeStr(focusInfo.key);
         if (!activeEl || !batchKey || safeStr(activeEl.tagName).toLowerCase() !== 'input')
             return false;
+        // ProductRow가 보유한 디바운스 타이머를 취소하고 현재 로컬값을 한 번만 저장한다.
+        if (typeof activeEl.__dataopsFlushNow === 'function')
+            return activeEl.__dataopsFlushNow() === true;
         const dataField = safeStr(activeEl.getAttribute && activeEl.getAttribute('data-field'));
         const value = activeEl.value;
+        const sourceItem = productData.find(item => safeStr(item.batchKey) === batchKey);
+        if (!sourceItem)
+            return false;
         if (dataField === 'actual-input') {
+            const currentActual = sourceItem.실사;
+            const nextActual = value === '' ? '' : Number(value);
+            const sameBlank = nextActual === '' && (currentActual === '' || currentActual === null || currentActual === undefined);
+            const sameNumber = nextActual !== '' && currentActual !== '' && currentActual !== null && currentActual !== undefined && safeNum(currentActual) === safeNum(nextActual);
+            if (sameBlank || sameNumber)
+                return false;
             handleManualStockChange(batchKey, value);
             return true;
         }
@@ -10332,12 +10438,13 @@ ${balanceText}
         const baseField = baseFieldMap[dataField];
         if (!baseField)
             return false;
-        const sourceItem = productData.find(item => safeStr(item.batchKey) === batchKey);
-        let normalizedValue = value;
+        let normalizedValue = value === '' ? 0 : Number(value);
         if (baseField === '입고')
-            normalizedValue = (value === '' ? 0 : Number(value)) - safeNum((sourceItem || {}).대체입고);
+            normalizedValue -= safeNum(sourceItem.대체입고);
         else if (baseField === '출고')
-            normalizedValue = (value === '' ? 0 : Number(value)) - safeNum((sourceItem || {}).대체출고);
+            normalizedValue -= safeNum(sourceItem.대체출고);
+        if (safeNum(sourceItem[baseField]) === safeNum(normalizedValue))
+            return false;
         handleBaseDataChange(batchKey, baseField, normalizedValue);
         return true;
     }, [handleManualStockChange, handleBaseDataChange, productData]);
@@ -10419,26 +10526,28 @@ ${balanceText}
                 }
             }
             if (e.key === 'Tab') {
-                // V1.a22.90 공통 규칙: Tab=다음항목 점프, Shift+Tab=이전항목 점프.
-                // 코드통합형에서는 포커스 위치와 관계없이 통합후보 전용으로 사용한다.
-                // 현재 입력값은 정방향 이동 전에 즉시 저장하고, 후보가 없어도 일반 Tab으로 흘려보내지 않는다.
-                if (viewMode === 'CODE_SUMMARY') {
+                const eventTarget = e.target;
+                const originTag = eventTarget && eventTarget.tagName ? eventTarget.tagName.toLowerCase() : '';
+                const activeMergeRow = eventTarget && eventTarget.closest
+                    ? eventTarget.closest('tr[data-merge-group-start="1"]')
+                    : null;
+                // V1.a22.94: 코드통합형이라도 통합후보 시작행 안에서 누른 Tab만 후보 이동으로 사용한다.
+                // 일반 셀·검색창·다른 웹 UI의 Tab은 브라우저 기본동작을 그대로 유지한다.
+                if (viewMode === 'CODE_SUMMARY' && activeMergeRow &&
+                    originTag !== 'button' && originTag !== 'select' && originTag !== 'textarea') {
+                    if (!e.shiftKey)
+                        latestHandlers.current.flushFocusedTableEdit();
                     e.preventDefault();
                     e.stopPropagation();
-                    if (!e.shiftKey) latestHandlers.current.flushFocusedTableEdit();
                     latestHandlers.current.moveMergeCandidate(e.shiftKey ? 'prev' : 'next');
                     return;
                 }
                 if (activeIssueModeRef.current) {
-                    const eventTarget = e.target;
                     const isInsideWorkRow = !!(eventTarget && eventTarget.closest && eventTarget.closest('tr[data-batch]'));
-                    // Lot상세형 이슈 탐색은 작업행 내부에서만 Tab을 점프키로 사용한다.
                     if (!isInsideWorkRow)
                         return;
                     e.preventDefault();
                     const session = issueReviewSessionRef.current;
-                    // Shift+Tab은 조회 복귀이므로 수동 입력 완료를 강제하지 않는다.
-                    // 정방향 Tab은 다른 상품 수정 중이었다면 현재 셀을 먼저 저장하고 원래 검토 커서에서 이어간다.
                     if (!e.shiftKey && session && session.detourActive)
                         latestHandlers.current.flushFocusedTableEdit();
                     latestHandlers.current.handleIssueJump(activeIssueModeRef.current, e.shiftKey ? 'prev' : 'next');
@@ -10449,7 +10558,6 @@ ${balanceText}
         window.addEventListener('keydown', handleGlobalKeys);
         return () => { window.removeEventListener('keydown', handleGlobalEnter); window.removeEventListener('keydown', handleGlobalKeys); };
     }, [linkSourceKey, appStep, isProcessing, files, guideModalOpen, viewMode]);
-    const viewProductData = useMemo(() => DATAOPS_VIEW_LAYER_MODULE.buildViewRows(productData, { viewMode }), [productData, viewMode, mergeOverrideVersion]);
     const handleViewLayerEditBlocked = useCallback(() => {
         setAlertMsg('코드 통합형의 원본 1행 상품은 현재 화면에서 바로 수정할 수 있습니다. 통합2 이상 또는 원본 다중행은 어느 Lot에 반영할지 모호하므로 [Lot 상세형]에서 수정하세요.');
     }, [setAlertMsg]);
