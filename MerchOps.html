@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.162_ShopInfoUploadCompatibility]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.163_SubPriceRounding]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -61,6 +61,7 @@
         // v2.1.160: 카탈로그만 선택한 경우 선택 상품의 마스터값을 편집 가능한 작업테이블로 복사한다. 이후 견적·구매·재고·정보 엑셀을 불러오면 카탈로그 편집용 임시행을 제거하고 기존 비교모드의 엑셀 source만 작업테이블에 표시한다.
         // v2.1.161: 카탈로그 작업범위 선택 시 기존 파서리스트/작업테이블을 보존한다. F8 저장에서는 직접 셀 수정값도 변경 전·후와 변경경로를 히스토리에 기록한다.
         // v2.1.162: 쇼핑몰 상품정보 F8 출력은 원본 xls 형식·Worksheet 시트명·전체 34개 헤더·원본 셀 자료형을 보존한다. 오더즈판매가/오더즈구매가 누락과 빈 정보행 대량출력을 제거해 쇼핑몰 업로드 호환성을 복구한다.
+        // v2.1.163: F8 소분상품 판매가는 경비 합산 후 계산값이 1,000원 이상이면 100원 단위, 1,000원 미만이면 10원 단위로 반올림한다. 소분 입고가는 기존 100원 단위 정책을 유지한다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결한다. 오더즈판매가/오더즈구매가는 작업테이블에서는 숨기되 v2.1.162부터 원본 출력에는 보존한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
@@ -4815,6 +4816,14 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             const out = getBestNum(row, '출고가');
             return promo > 0 ? promo : out;
         };
+        const roundSubSalePrice = (value) => {
+            const amount = Number(value) || 0;
+            if (amount <= 0) return 0;
+            // F8 소분 판매가 정책: 경비 합산 후 원 계산값 기준으로
+            // 1,000원 이상은 100원 단위, 1,000원 미만은 10원 단위 반올림한다.
+            const roundUnit = amount >= 1000 ? 100 : 10;
+            return Math.round(amount / roundUnit) * roundUnit;
+        };
         const calculateSubInfo = (row) => {
             const subCode = getBestStr(row, '1종코드');
             const div1 = getBestNum(row, '1종연산');
@@ -4826,8 +4835,8 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
             const outsrc = getBestNum(row, '외주비');
             const extraCost = getBestNum(row, '경비');
             const subIn = inPrice > 0 ? Math.round(((inPrice + outsrc) / div1) / ROUND_UNIT) * ROUND_UNIT : 0;
-            const rawSubOut = outPrice > 0 ? Math.round((outPrice / div1) + extraCost) : 0;
-            const subOut = rawSubOut > 0 ? Math.round(rawSubOut / 10) * 10 : 0;
+            const rawSubOut = outPrice > 0 ? (outPrice / div1) + extraCost : 0;
+            const subOut = roundSubSalePrice(rawSubOut);
             return { code: subCode, spec: getBestStr(row, '1종규격'), subIn, subOut };
         };
         const wb = window.XLSX.utils.book_new();
@@ -8468,7 +8477,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.162_ShopInfoUploadCompatibility]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.163_SubPriceRounding]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -8872,7 +8881,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.162_ShopInfoUploadCompatibility")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.163_SubPriceRounding")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
