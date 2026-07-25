@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.24_ActionExecutionSteps]</title>
+    <title>ONEAPP MerchOps - 시스템 콘트롤 타워 [v1.6.25_MasterPriceDefault]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -61,7 +61,7 @@ if (typeof window.getAllIDB !== 'function') {
     } };
 }
 if (!window.MASTER_HEADERS) {
-    window.MASTER_HEADERS = ["창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "행사테마", "판매여부", "1종코드", "1종규격", "1종연산", "1당수량", "2종코드", "2종규격", "2종연산", "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록"];
+    window.MASTER_HEADERS = ["창고", "1코드", "1그룹명", "2코드", "2그룹명", "3코드", "3그룹명", "오더즈", "구매처", "브랜드", "품목코드", "품목명", "규격", "안전재고", "간단설명", "카탈로그", "견적서", "출고가", "입고가", "판매가", "입고B", "도매A", "도매B", "상장가", "최종전송", "최종입고", "단가H", "단가I", "시중가", "행사가", "행사테마", "판매여부", "1종코드", "1종규격", "1종연산", "1당수량", "2종코드", "2종규격", "2종연산", "외주비", "노무비", "경비", "비과세", "기본", "연동", "싯가", "단위", "준비기간", "마감시간", "검색어등록"];
 }
 window.ensureMerchHeaderAfter = window.ensureMerchHeaderAfter || ((headers = [], header, afterHeader = '') => {
     const result = Array.isArray(headers) ? [...headers] : [];
@@ -71,8 +71,8 @@ window.ensureMerchHeaderAfter = window.ensureMerchHeaderAfter || ((headers = [],
     else result.push(header);
     return result;
 });
-window.MASTER_HEADERS = window.ensureMerchHeaderAfter(window.ensureMerchHeaderAfter(window.MASTER_HEADERS || [], "행사테마", "행사가"), "1당수량", "1종연산");
-if (window.NUMERIC_HEADERS) window.NUMERIC_HEADERS = window.ensureMerchHeaderAfter(window.NUMERIC_HEADERS, "1당수량", "1종연산");
+window.MASTER_HEADERS = window.ensureMerchHeaderAfter(window.ensureMerchHeaderAfter(window.ensureMerchHeaderAfter(window.MASTER_HEADERS || [], "판매가", "입고가"), "행사테마", "행사가"), "1당수량", "1종연산");
+if (window.NUMERIC_HEADERS) window.NUMERIC_HEADERS = window.ensureMerchHeaderAfter(window.ensureMerchHeaderAfter(window.NUMERIC_HEADERS, "판매가", "입고가"), "1당수량", "1종연산");
 
 window.PROMOTION_THEMES = window.PROMOTION_THEMES || [
     { code: '1', label: '오늘의행사', type: '탭' },
@@ -254,6 +254,14 @@ const getTableFilterCoachmark = (steps = [], memo = '') => {
     return tags.length ? tags.join(' → ') : '';
 };
 const getDefaultVisibleMasterCols = () => ({
+    catalog: ['입고가', '판매가', '시중가'],
+    estimate: ['입고가', '판매가', '시중가'],
+    purchase: ['입고가', '판매가', '시중가'],
+    sales: ['입고가', '판매가', '시중가'],
+    inventory: ['입고가', '판매가', '시중가'],
+    info: ['입고가', '판매가', '시중가']
+});
+const getLegacyVisibleMasterCols = () => ({
     catalog: ['입고가'],
     estimate: ['입고가'],
     purchase: ['입고가'],
@@ -261,6 +269,18 @@ const getDefaultVisibleMasterCols = () => ({
     inventory: ['입고가'],
     info: ['출고가', '시중가', '행사가', '행사테마', '판매여부']
 });
+const migrateVisibleMasterDefaults = (saved = {}) => {
+    const defaults = getDefaultVisibleMasterCols();
+    const legacy = getLegacyVisibleMasterCols();
+    const result = {};
+    TABLE_VIEW_TARGET_IDS.forEach(target => {
+        const savedCols = Array.isArray(saved?.[target]) ? normalizeMasterColumns(saved[target]) : [];
+        const legacyCols = normalizeMasterColumns(legacy[target] || []);
+        const isLegacyDefault = JSON.stringify(savedCols) === JSON.stringify(legacyCols);
+        result[target] = (savedCols.length === 0 || isLegacyDefault) ? [...(defaults[target] || [])] : savedCols;
+    });
+    return result;
+};
 const getDefaultVisibleUploadCols = () => ({
     catalog: ['카탈로그', '견적서', '입고가', '출고가', '입고B', '도매A', '행사가'],
     estimate: ['창고', '구매처', '견적서', '입고가', '출고가', '입고B', '도매A', '간단설명', '행사가'],
@@ -380,7 +400,7 @@ const useMerchConfig = () => {
         const sharedUrl = typeof window.getOneAppCloudSyncUrl === 'function' ? window.getOneAppCloudSyncUrl() : '';
         return sharedUrl || localStorage.getItem('oneapp_cloud_sync_url_v1') || localStorage.getItem('merchCloudUrl_v870') || '';
     });
-    const [visibleMasterCols, setVisibleMasterCols] = useState(() => mergeConfigDefaults(safeJSONParse('merchVisMaster_v870', {}), getDefaultVisibleMasterCols()));
+    const [visibleMasterCols, setVisibleMasterCols] = useState(() => migrateVisibleMasterDefaults(safeJSONParse('merchVisMaster_v870', {}) || {}));
     const [visibleUploadCols, setVisibleUploadCols] = useState(() => mergeConfigDefaults(safeJSONParse('merchVisUpload_v870', {}), getDefaultVisibleUploadCols()));
     const [mappings, setMappings] = useState(() => mergeConfigDefaults(safeJSONParse('merchMappings_v870', {}), getDefaultMappings()));
     const [masterLinks, setMasterLinks] = useState(() => mergeConfigDefaults(safeJSONParse('merchMasterLinks_v870', {}), getDefaultMasterLinks()));
@@ -679,7 +699,8 @@ const App = () => {
     };
 
     // v1.6.24: 정보 양식 자동 실행순서에 판매정지 적용·테마초기화 적용 버튼을 추가하고, 필터단계와 값 적용단계를 한 순서로 저장한다.
-    // ☁️ 환경설정 전용 클라우드 백업/복원 [v1.6.24_ActionExecutionSteps]
+    // v1.6.25: 마스터 기본 노출을 입고가·판매가·시중가로 변경하고, 판매가를 양식 선택항목에 추가한다.
+    // ☁️ 환경설정 전용 클라우드 백업/복원 [v1.6.25_MasterPriceDefault]
     // 역할: 브라우저가 달라도 테이블 보기양식/필터 시나리오/매핑/룰을 동일하게 복구한다.
     // 핵심: Apps Script appConfig뿐 아니라 localStorage 원본 키도 함께 저장해 구조 변경에 안전하게 대응한다.
     // 제외: 마스터 상품정보와 히스토리 대용량 데이터는 기존 MasterDB/HistoryLogs 흐름을 사용한다.
@@ -746,7 +767,7 @@ const App = () => {
         return {
             action: 'config',
             data: {
-                schemaVersion: 'Settings_v1.6.24_ActionExecutionSteps',
+                schemaVersion: 'Settings_v1.6.25_MasterPriceDefault',
                 updatedAt: new Date().toISOString(),
                 dict,
                 rules: config.marginRules,
