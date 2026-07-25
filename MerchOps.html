@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.166_WorktableSalesFilter]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.167_InfoSaleStopCoverage]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -74,6 +74,7 @@
         // v2.1.164: 환경설정 정보 양식의 자동 실행순서에 저장된 판매정지 적용·테마초기화 적용 단계를 순서대로 작업테이블에 반영한다. 상품초기화 F8은 마스터를 변경하지 않고 현재 작업값으로 쇼핑몰 원본양식 엑셀만 출력한다.
         // v2.1.165: 마스터 기본 단가를 입고가·판매가·시중가로 변경한다. 판매가는 행사가가 있으면 행사가, 없으면 출고가를 표시하며 행사 적용 시 색상으로 강조한다. F7=마스터 적용, F8=엑셀 출력, F9=출력검증으로 완전히 분리한다.
         // v2.1.166: 쇼핑몰 상품정보(info)를 불러온 경우 판매중·정지&품절 필터가 마스터 판매상태가 아니라 현재 작업테이블의 판매값과 재고값을 우선 판정하도록 수정한다. 작업값이 명시되지 않은 경우에만 마스터 상태를 fallback한다.
+        // v2.1.167: 쇼핑몰 상품정보 초기화는 선택 카탈로그 범위와 무관하게 업로드 원본 전체를 작업대상으로 유지한다. 정보 작업의 판매중 필터는 재고와 무관하게 판매=1 전체를 포함하고, 재고 0 상품도 판매정지 적용·F8 출력에서 누락되지 않도록 수정한다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결한다. 오더즈판매가/오더즈구매가는 작업테이블에서는 숨기되 v2.1.162부터 원본 출력에는 보존한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
@@ -3476,9 +3477,10 @@ const useMerchActions = (config, data, ui, fullDisplayRows) => {
                         return;
                     const existsInMaster = !!newMaster[cleanCode];
                     const isInsideSelectedWorkScope = workScope.mode === 'all' || workScope.codeSet.has(cleanCode);
-                    // 구매·재고·정보·판매는 선택 카탈로그 범위와 교집합인 행만 작업대상으로 적재한다.
+                    // 구매·재고·판매는 선택 카탈로그 범위와 교집합인 행만 작업대상으로 적재한다.
+                    // 쇼핑몰 상품정보(info)는 상품초기화 누락 방지를 위해 선택 카탈로그와 무관하게 원본 전체를 적재한다.
                     // 견적은 범위 밖 행도 '추가' 판정에 필요하므로 비교 입력으로 유지한다.
-                    if (workScope.mode === 'catalog' && role !== 'estimate' && !isInsideSelectedWorkScope) {
+                    if (workScope.mode === 'catalog' && !['estimate', 'info'].includes(role) && !isInsideSelectedWorkScope) {
                         if (existsInMaster) workScopeExcludedCount++;
                         else workScopeUnregisteredCount++;
                         return;
@@ -7348,7 +7350,8 @@ const isPromoActive = (row = {}, mItem = {}) => getEffectivePromoPriceForMargin(
 // [M-FILTER-WORK-SALE-01] 판매상태 필터 작업테이블 우선
 // 역할: 쇼핑몰 상품정보(info) 등 오늘 불러온 파일의 판매값으로 판매중·정지&품절을 판정한다.
 // 우선순위: 실행/수정된 작업값 → 현재 활성 source(info 포함) → 마스터 상태 fallback.
-// 재고 0은 판매값이 1이어도 품절로 분류한다.
+// 정보 작업의 판매중은 쇼핑몰 판매값=1 전체이며 재고 0도 포함한다.
+// 정지&품절은 판매=0 또는 재고=0을 확인하는 보조필터로 유지한다.
 // ============================================================
 const getWorkingStockQtyForSalesFilter = (row = {}, mItem = {}) => {
     const inspect = (obj = {}) => {
@@ -7374,28 +7377,42 @@ const getWorkingStockQtyForSalesFilter = (row = {}, mItem = {}) => {
     return getStockQty(row, mItem);
 };
 const getWorkingSalesStateForFilter = (row = {}, mItem = {}) => {
+    const sources = row.sources || {};
+    const activeRole = window.getCurrentMerchSourceRole
+        ? window.getCurrentMerchSourceRole(sources, row._lastUploadRole || '')
+        : String(sources._activeRole || row._lastUploadRole || '').trim();
+    const isInfoWork = activeRole === 'info' || row._lastUploadRole === 'info';
     const resolved = window.resolveMerchSaleAvailability
         ? window.resolveMerchSaleAvailability(row, mItem)
         : { hasValue: false, code: '', origin: '' };
     if (resolved && resolved.hasValue) {
+        const stockQty = getWorkingStockQtyForSalesFilter(row, mItem);
+        const isStockEmpty = stockQty === 0;
         if (String(resolved.code) === '0') {
-            return { code: '0', label: '정지', source: resolved.origin || 'working' };
+            return { code: '0', label: '정지', source: resolved.origin || 'working', stockQty, isStockEmpty, isInfoWork };
         }
         if (String(resolved.code) === '1') {
-            const stockQty = getWorkingStockQtyForSalesFilter(row, mItem);
-            if (stockQty === 0) {
-                return { code: '1', label: '품절', source: resolved.origin || 'working' };
+            // 쇼핑몰 상품초기화의 판매중 필터는 판매=1 전체가 대상이다.
+            // 재고 0 상품도 쇼핑몰에는 판매활성 상태로 남을 수 있으므로 판매정지 대상에서 제외하지 않는다.
+            if (isInfoWork) {
+                return { code: '1', label: '판매', source: resolved.origin || 'working', stockQty, isStockEmpty, isInfoWork };
             }
-            return { code: '1', label: '판매', source: resolved.origin || 'working' };
+            if (isStockEmpty) {
+                return { code: '1', label: '품절', source: resolved.origin || 'working', stockQty, isStockEmpty, isInfoWork };
+            }
+            return { code: '1', label: '판매', source: resolved.origin || 'working', stockQty, isStockEmpty, isInfoWork };
         }
     }
     const masterState = window.getMasterSalesState ? window.getMasterSalesState(mItem || {}) : { code: '', label: '-' };
-    return { ...masterState, source: 'master' };
+    return { ...masterState, source: 'master', isInfoWork };
 };
-const isSellingItem = (row = {}, mItem = {}) => getWorkingSalesStateForFilter(row, mItem).label === '판매';
+const isSellingItem = (row = {}, mItem = {}) => {
+    const state = getWorkingSalesStateForFilter(row, mItem);
+    return state.isInfoWork ? String(state.code) === '1' : state.label === '판매';
+};
 const isStoppedOrSoldoutItem = (row = {}, mItem = {}) => {
-    const label = getWorkingSalesStateForFilter(row, mItem).label;
-    return label === '정지' || label === '품절';
+    const state = getWorkingSalesStateForFilter(row, mItem);
+    return String(state.code) === '0' || state.label === '품절' || state.isStockEmpty === true;
 };
 const isSafeMinusItem = (row = {}, mItem = {}) => {
     const stockQty = getStockQty(row, mItem);
@@ -8661,7 +8678,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.166_WorktableSalesFilter]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.167_InfoSaleStopCoverage]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -8757,7 +8774,9 @@ const App = () => {
         const activeWorkRole = normalizeMerchTableTarget((config && config.activeTableTarget) || DEFAULT_TABLE_VIEW_TARGET);
         if (!ui.registrationMode) {
             const workScope = window.buildMerchWorkScope ? window.buildMerchWorkScope(data.masterProducts, ui.activeTags || []) : { mode: 'all', codeSet: new Set() };
-            if (workScope.mode === 'catalog') {
+            // 쇼핑몰 상품정보(info)는 선택 카탈로그에 포함되지 않은 판매상품도 모두 정지해야 하므로
+            // 카탈로그 작업범위 필터를 적용하지 않고 업로드 원본 전체를 유지한다.
+            if (workScope.mode === 'catalog' && activeWorkRole !== 'info') {
                 baseList = baseList.filter(item => {
                     const code = window.normalizeProductCodeText ? window.normalizeProductCodeText(item?.코드 || item?.['품목코드']) : String(item?.코드 || item?.['품목코드'] || '').replace(/\s/g, '');
                     if (workScope.codeSet.has(code)) return true;
@@ -9075,7 +9094,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.166_WorktableSalesFilter")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.167_InfoSaleStopCoverage")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
