@@ -47,6 +47,9 @@ jobs:
       - name: Test shared master writers, CAS rollback, and mixed locks
         run: node scripts/test-merchops-shared-storage.mjs
 
+      - name: Test Master add/update review and rollback workflow
+        run: node scripts/test-master-add-update.mjs
+
       - name: Test MerchOps rule placement and SmartParser direct information apply
         run: node scripts/test-merchops-direct-info.mjs
 

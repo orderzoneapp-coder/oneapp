@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.2.0",
-  "updatedAt": "2026-07-20",
+  "updatedAt": "2026-07-27",
   "repository": {
     "fullName": "orderzoneapp-coder/oneapp",
     "defaultBranch": "main",
@@ -124,13 +124,14 @@
       "path": "Master.html",
       "kind": "web-entry",
       "status": "pilot",
-      "purpose": "Provide a category-based product master lookup with controlled master upload and cloud synchronization.",
+      "purpose": "Provide product-master lookup and a controlled, administrator-reviewed add/update workflow with cloud synchronization.",
       "productionWrites": true,
       "runtimeDependencies": [
         "core-engine"
       ],
       "sharedContracts": [
-        "product-master"
+        "product-master",
+        "change-history"
       ]
     },
     {
