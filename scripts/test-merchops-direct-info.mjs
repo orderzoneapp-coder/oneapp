@@ -23,8 +23,8 @@ parseInlineScripts(merch, "MerchOps");
 parseInlineScripts(parser, "SmartParser");
 JSON.parse(manifest);
 
-assert.match(merch, /v2\.1\.161_WorktableHistoryPreserve/);
-assert.match(parser, /v3\.0\.19 ExplicitInfoSave/);
+assert.match(merch, /ONEAPP MerchOps - Main Workspace \[v\d+\.\d+\.\d+_[^\]]+\]/);
+assert.match(parser, /ONEAPP MerchOps - Smart Parser \[v3\.0\.\d+/);
 
 assert.match(merch, /window\.hasMerchExistingWorktableRows =/);
 assert.match(merch, /const preserveExistingWorktable = window\.hasMerchExistingWorktableRows/);

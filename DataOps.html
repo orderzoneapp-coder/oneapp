@@ -949,6 +949,23 @@ const DATAOPS_MERCH_MASTER_SUMMARY_KEY = 'dataops_merch_master_summary_v1';
 const DATAOPS_RAW_SUBDIVISION_CACHE_KEY = 'dataops_raw_subdivision_cache_v1';
 const DATAOPS_MASTER_INDEX_CACHE_KEY = 'dataops_merch_master_index_v1';
 const DATAOPS_MASTER_SNAPSHOT_KEY = 'dataops_master_snapshot_id_v1';
+const persistDataOpsMasterCache = (master, rawSubdivision, summary, storage = localStorage) => {
+    storage.setItem(DATAOPS_MERCH_MASTER_CACHE_KEY, JSON.stringify(master || {}));
+    const warnings = [];
+    [
+        [DATAOPS_RAW_SUBDIVISION_CACHE_KEY, rawSubdivision],
+        [DATAOPS_MERCH_MASTER_SUMMARY_KEY, summary],
+        ['dataops_master_sync_trigger', String(Date.now()), true]
+    ].forEach(([key, value, rawValue]) => {
+        try {
+            storage.setItem(key, rawValue ? value : JSON.stringify(value));
+        }
+        catch (error) {
+            warnings.push({ key, error });
+        }
+    });
+    return { ok: true, warnings };
+};
 const DATAOPS_MASTER_ITEM_HELPER = Object.freeze({
     normalizeText: (val = '') => safeStr(val, '').replace(/\s/g, '').toLowerCase(),
     isBlankRelationCode: (val = '') => {
@@ -1167,16 +1184,21 @@ const DATAOPS_CLOUD_MODULE = Object.freeze({
         });
         const rawSubdivision = DATAOPS_CLOUD_MODULE.buildRawSubdivisionFromMaster(normalizedMaster);
         const summary = DATAOPS_CLOUD_MODULE.buildMasterSummary(normalizedMaster, rawSubdivision, json.data.summary || {});
+        let cacheResult;
         try {
-            localStorage.setItem(DATAOPS_MERCH_MASTER_CACHE_KEY, JSON.stringify(normalizedMaster));
-            localStorage.setItem(DATAOPS_RAW_SUBDIVISION_CACHE_KEY, JSON.stringify(rawSubdivision));
-            localStorage.setItem(DATAOPS_MERCH_MASTER_SUMMARY_KEY, JSON.stringify({ ...summary, url: safeUrl }));
-            localStorage.setItem('dataops_master_sync_trigger', String(Date.now()));
-            if (window.DATAOPS_MASTER_CACHE_MODULE) window.DATAOPS_MASTER_CACHE_MODULE.refreshMemoryCache();
+            cacheResult = persistDataOpsMasterCache(
+                normalizedMaster,
+                rawSubdivision,
+                { ...summary, url: safeUrl }
+            );
         }
         catch (e) {
             throw new Error('마스터 캐시 저장 실패: 브라우저 저장공간을 확인하세요.');
         }
+        if (cacheResult.warnings.length > 0) {
+            console.warn('DataOps derived cache mirror update failed after atomic master cache save', cacheResult.warnings);
+        }
+        if (window.DATAOPS_MASTER_CACHE_MODULE) window.DATAOPS_MASTER_CACHE_MODULE.refreshMemoryCache();
         return { status: 'success', url: safeUrl, master: normalizedMaster, rawSubdivision, summary: { ...summary, url: safeUrl } };
     },
     getCachedMaster: () => {
@@ -1189,10 +1211,18 @@ const DATAOPS_CLOUD_MODULE = Object.freeze({
                 return fallback;
             }
         };
+        const master = parse(DATAOPS_MERCH_MASTER_CACHE_KEY, {});
+        const rawSubdivision = DATAOPS_CLOUD_MODULE.buildRawSubdivisionFromMaster(master);
+        const storedSummary = parse(DATAOPS_MERCH_MASTER_SUMMARY_KEY, {});
+        const summary = {
+            ...DATAOPS_CLOUD_MODULE.buildMasterSummary(master, rawSubdivision, storedSummary.sourceSummary || storedSummary),
+            ...(storedSummary.syncedAt ? { syncedAt: storedSummary.syncedAt } : {}),
+            ...(storedSummary.url ? { url: storedSummary.url } : {})
+        };
         return {
-            master: parse(DATAOPS_MERCH_MASTER_CACHE_KEY, {}),
-            rawSubdivision: parse(DATAOPS_RAW_SUBDIVISION_CACHE_KEY, { relations: [], bySubCode: {}, byRawCode: {}, issues: [], summary: {} }),
-            summary: parse(DATAOPS_MERCH_MASTER_SUMMARY_KEY, {})
+            master,
+            rawSubdivision,
+            summary
         };
     },
     getSummary: () => (window.DATAOPS_MASTER_CACHE_MODULE ? window.DATAOPS_MASTER_CACHE_MODULE.getContext().summary : DATAOPS_CLOUD_MODULE.getCachedMaster().summary) || {}
@@ -1220,8 +1250,8 @@ const DATAOPS_MASTER_CACHE_MODULE = {
     },
     buildStorageVersion: () => {
         const trigger = safeStr(localStorage.getItem('dataops_master_sync_trigger'), '0');
-        const summaryRaw = safeStr(localStorage.getItem(DATAOPS_MERCH_MASTER_SUMMARY_KEY), '');
-        return `${trigger}|${summaryRaw.length}`;
+        const masterRaw = safeStr(localStorage.getItem(DATAOPS_MERCH_MASTER_CACHE_KEY), '');
+        return `${trigger}|${masterRaw.length}`;
     },
     buildIndexes: (masterMap = {}) => {
         const byCode = {};
@@ -1250,8 +1280,13 @@ const DATAOPS_MASTER_CACHE_MODULE = {
             return DATAOPS_MASTER_CACHE_MODULE._context;
         }
         const master = DATAOPS_MASTER_CACHE_MODULE.safeParse(DATAOPS_MERCH_MASTER_CACHE_KEY, {});
-        const rawSubdivision = DATAOPS_MASTER_CACHE_MODULE.safeParse(DATAOPS_RAW_SUBDIVISION_CACHE_KEY, { relations: [], bySubCode: {}, byRawCode: {}, issues: [], summary: {} });
-        const summary = DATAOPS_MASTER_CACHE_MODULE.safeParse(DATAOPS_MERCH_MASTER_SUMMARY_KEY, {});
+        const rawSubdivision = DATAOPS_CLOUD_MODULE.buildRawSubdivisionFromMaster(master);
+        const storedSummary = DATAOPS_MASTER_CACHE_MODULE.safeParse(DATAOPS_MERCH_MASTER_SUMMARY_KEY, {});
+        const summary = {
+            ...DATAOPS_CLOUD_MODULE.buildMasterSummary(master, rawSubdivision, storedSummary.sourceSummary || storedSummary),
+            ...(storedSummary.syncedAt ? { syncedAt: storedSummary.syncedAt } : {}),
+            ...(storedSummary.url ? { url: storedSummary.url } : {})
+        };
         const indexes = DATAOPS_MASTER_CACHE_MODULE.buildIndexes(master);
         const snapshotId = DATAOPS_MASTER_CACHE_MODULE.buildSnapshotId(summary);
         const context = {

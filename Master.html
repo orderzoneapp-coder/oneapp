@@ -11,6 +11,7 @@
     <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+    <script src="coreEngine.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     
     <style>
@@ -171,30 +172,19 @@
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
         });
-        const setIDB = async (key, val) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readwrite'); tx.objectStore('store').put(val, key); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }); };
+        const setIDB = async (key, val) => {
+            if ([STORAGE_KEYS.MASTER_DB, 'merchMaster_revision_v870'].includes(key)) {
+                throw new Error(`${key}는 공통 원자 저장 경로만 사용할 수 있습니다.`);
+            }
+            const db = await initIDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('store', 'readwrite');
+                tx.objectStore('store').put(val, key);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        };
         const getIDB = async (key) => { const db = await initIDB(); return new Promise((resolve, reject) => { const tx = db.transaction('store', 'readonly'); const req = tx.objectStore('store').get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(tx.error); }); };
-
-        const clearIDBStore = async (storeName) => {
-            const db = await initIDB();
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction(storeName, 'readwrite');
-                tx.objectStore(storeName).clear();
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error);
-            });
-        };
-
-        const bulkPutMasterIDB = async (items = []) => {
-            const db = await initIDB();
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction(STORAGE_KEYS.MASTER_STORE, 'readwrite');
-                const store = tx.objectStore(STORAGE_KEYS.MASTER_STORE);
-                store.clear();
-                items.forEach(item => { if (item && item.코드) store.put(item); });
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error);
-            });
-        };
 
         const getAllMasterIDB = async () => {
             const db = await initIDB();
@@ -205,6 +195,7 @@
                 req.onerror = () => reject(tx.error);
             });
         };
+        let masterPageRevision = undefined;
 
         const normalizeMasterItem = (item = {}, fallbackCode = '') => {
             const code = safeStr(item['코드'] || item['품목코드'] || fallbackCode).trim();
@@ -221,27 +212,42 @@
 
         const masterArrayToMap = (items = []) => {
             const map = {};
-            (Array.isArray(items) ? items : Object.values(items || {})).forEach((item, idx) => {
-                const normalized = normalizeMasterItem(item, item && (item.코드 || item['품목코드']) || `ROW-${idx}`);
-                if (normalized.코드) map[normalized.코드] = normalized;
+            const entries = Array.isArray(items)
+                ? items.map((item, idx) => [String(idx + 1), item, ''])
+                : Object.entries(items || {}).map(([key, item], idx) => [String(idx + 1), item, key]);
+            entries.forEach(([rowNumber, item, objectKey]) => {
+                const normalized = normalizeMasterItem(item, objectKey);
+                if (!normalized.코드) {
+                    throw new Error(`마스터 ${rowNumber}행에 코드가 없습니다.`);
+                }
+                if (map[normalized.코드]) {
+                    throw new Error(`마스터 중복 코드가 있습니다: ${normalized.코드}`);
+                }
+                map[normalized.코드] = normalized;
             });
             return map;
         };
 
         const saveMasterLocal = async (masterMap = {}) => {
             const safeMap = masterArrayToMap(masterMap);
-            const items = Object.values(safeMap);
-            await setIDB(STORAGE_KEYS.MASTER_DB, safeMap);
-            await bulkPutMasterIDB(items);
+            if (!window.ONEAPP?.STORAGE?.commitMasterStateOrThrow) {
+                throw new Error('공통 마스터 저장 엔진을 불러오지 못했습니다.');
+            }
+            const result = await window.ONEAPP.STORAGE.commitMasterStateOrThrow(safeMap, {
+                expectedRevision: masterPageRevision
+            });
+            masterPageRevision = result.revision;
             try { localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); } catch (e) {}
             return safeMap;
         };
 
         const loadMasterLocal = async () => {
-            const items = await getAllMasterIDB().catch(() => []);
+            const state = await window.ONEAPP.STORAGE.readMasterSnapshotState();
+            masterPageRevision = state.revision;
+            const items = state.items;
             if (items && items.length > 0) return masterArrayToMap(items);
             const legacy = await getIDB(STORAGE_KEYS.MASTER_DB).catch(() => null);
-            if (legacy && typeof legacy === 'object') {
+            if (legacy && typeof legacy === 'object' && Object.keys(legacy).length > 0) {
                 const safeMap = await saveMasterLocal(legacy);
                 return safeMap;
             }
@@ -693,7 +699,10 @@
                         setShowSettingsModal(false);
                         loadMasterLocal().then(data => {
                             if (data && typeof data === 'object') setMasterProducts(data);
-                        }); 
+                        }).catch(error => {
+                            console.error(error);
+                            showToast(`❌ 마스터 다시 불러오기 실패: ${error.message}`);
+                        });
                     }
                 };
                 window.addEventListener('message', handleMessage);
@@ -726,8 +735,11 @@
                             const rowObj = {};
                             headers.forEach((h, idx) => { if (h) rowObj[h] = rowArr[idx]; });
                             const code = safeStr(rowObj['코드'] || rowObj['품목코드']);
-                            if (code) newMaster[code] = rowObj;
+                            if (!code) throw new Error(`마스터 Excel ${i + 1}행에 코드가 없습니다.`);
+                            if (newMaster[code]) throw new Error(`마스터 Excel 중복 코드가 있습니다: ${code}`);
+                            newMaster[code] = rowObj;
                         }
+                        if (Object.keys(newMaster).length === 0) throw new Error('마스터 Excel에 저장할 상품 행이 없습니다.');
                         const savedMaster = await saveMasterLocal(newMaster);
                         setMasterProducts(savedMaster);
                         showToast(`✅ ${Object.keys(savedMaster).length}건 등록 완료! MerchOps 공통 마스터 캐시에 반영되었습니다.`);
