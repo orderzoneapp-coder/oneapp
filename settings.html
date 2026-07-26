@@ -452,12 +452,15 @@ const useMerchConfig = () => {
     }, [cloudUrl, visibleMasterCols, visibleUploadCols, mappings, masterLinks, marginRules, uploadColumnMeta, tableShortcuts, tableViewPresets]);
     return { cloudUrl, setCloudUrl, visibleMasterCols, setVisibleMasterCols, visibleUploadCols, setVisibleUploadCols, mappings, setMappings, masterLinks, setMasterLinks, marginRules, setMarginRules, uploadColumnMeta, setUploadColumnMeta, tableShortcuts, setTableShortcuts, tableViewPresets, setTableViewPresets };
 };
+let settingsMasterRevision = undefined;
 const useMerchData = () => {
     const [masterProducts, setMasterProducts] = useState({});
     const [historyLogs, setHistoryLogs] = useState([]);
     useEffect(() => {
-        if (typeof window.getAllIDB === 'function') {
-            window.getAllIDB('master_products').then(items => {
+        if (window.ONEAPP?.STORAGE?.readMasterSnapshotState) {
+            window.ONEAPP.STORAGE.readMasterSnapshotState().then(state => {
+                settingsMasterRevision = state.revision;
+                const items = state.items;
                 if (items && items.length > 0) {
                     const dict = {};
                     items.forEach(i => dict[i.코드] = i);
@@ -659,7 +662,13 @@ const App = () => {
         try {
             const applier = window.ONEAPP?.MASTER?.applyMasterExcelUpload || window.applyMasterExcelUpload;
             if (typeof applier !== 'function') throw new Error('coreEngine의 마스터 적용 엔진을 찾을 수 없습니다.');
-            const result = await applier({ analysis: masterUploadAnalysis, currentMaster: data.masterProducts, label: masterUploadFileName || '마스터엑셀업로드' });
+            const result = await applier({
+                analysis: masterUploadAnalysis,
+                currentMaster: data.masterProducts,
+                expectedRevision: settingsMasterRevision,
+                label: masterUploadFileName || '마스터엑셀업로드'
+            });
+            settingsMasterRevision = result.revision;
             data.setMasterProducts(result.masterMap || {});
             await loadMasterBackups();
             showToast(`✅ 마스터 적용 완료: 수정 ${result.updateCount.toLocaleString()}건 / 신규 ${result.createCount.toLocaleString()}건`);
@@ -684,6 +693,7 @@ const App = () => {
             const restorer = window.ONEAPP?.MASTER?.restoreMasterBackup || window.restoreMasterBackup;
             if (typeof restorer !== 'function') throw new Error('coreEngine의 백업 복구 엔진을 찾을 수 없습니다.');
             const backup = await restorer(backupId);
+            settingsMasterRevision = backup.revision;
             data.setMasterProducts(backup.data || {});
             setMasterUploadError('');
             showToast(`✅ 백업 복구 완료: ${(backup.count || 0).toLocaleString()}건`);
@@ -977,9 +987,13 @@ const App = () => {
                 const commonStorage = window.ONEAPP?.STORAGE;
                 if (!commonStorage?.commitMasterStateOrThrow)
                     throw new Error('공통 마스터 저장 엔진을 불러오지 못했습니다.');
-                await commonStorage.commitMasterStateOrThrow(newMaster);
+                const result = await commonStorage.commitMasterStateOrThrow(newMaster, {
+                    expectedRevision: settingsMasterRevision
+                });
+                settingsMasterRevision = result.revision;
                 data.setMasterProducts(newMaster);
-                localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+                try { localStorage.setItem('merchMaster_sync_trigger', Date.now().toString()); }
+                catch (triggerError) { console.warn('Settings master sync notification failed after a verified commit', triggerError); }
                 showToast(`✅ ${count}개 상품에서 [${tagName}] 태그를 삭제했습니다.`);
             }
             catch (error) {
@@ -1778,8 +1792,9 @@ root.render(React.createElement(App, null));
         if (!code) return { ok: true, changed: false };
         var touched = false;
         try {
-            if (typeof window.getAllIDB === 'function') {
-                var rows = await window.getAllIDB('master_products');
+            if (window.ONEAPP && window.ONEAPP.STORAGE && typeof window.ONEAPP.STORAGE.readMasterState === 'function') {
+                var masterState = await window.ONEAPP.STORAGE.readMasterState();
+                var rows = masterState.items;
                 if (Array.isArray(rows) && rows.length) {
                     var matched = false;
                     var next = rows.map(function(item){
@@ -1794,7 +1809,10 @@ root.render(React.createElement(App, null));
                         next.forEach(function(item){ if (item && item['코드']) nextMaster[String(item['코드'])] = item; });
                         if (!window.ONEAPP || !window.ONEAPP.STORAGE || typeof window.ONEAPP.STORAGE.commitMasterStateOrThrow !== 'function')
                             throw new Error('공통 마스터 저장 엔진을 불러오지 못했습니다.');
-                        await window.ONEAPP.STORAGE.commitMasterStateOrThrow(nextMaster);
+                        var commitResult = await window.ONEAPP.STORAGE.commitMasterStateOrThrow(nextMaster, {
+                            expectedRevision: masterState.revision
+                        });
+                        settingsMasterRevision = commitResult.revision;
                         touched = true;
                     }
                 }
@@ -1803,7 +1821,10 @@ root.render(React.createElement(App, null));
             console.warn('[StatusMaintenance] IDB 판매활성 반영 실패', e);
             throw e;
         }
-        if (touched) localStorage.setItem('merchMaster_sync_trigger', String(Date.now()));
+        if (touched) {
+            try { localStorage.setItem('merchMaster_sync_trigger', String(Date.now())); }
+            catch (triggerError) { console.warn('Status maintenance sync notification failed after a verified commit', triggerError); }
+        }
         return { ok: true, changed: touched };
     }
     function addStyle(){

@@ -527,6 +527,7 @@ const saveMerchHistoryWithRetry = (localLogs, storageKey = 'merchHistory_v870') 
     }
     throw new Error('히스토리 저장 실패: 브라우저 저장공간이 부족하거나 localStorage가 차단되었습니다. ' + (lastError?.message || lastError?.name || String(lastError || '')));
 };
+let smartParserMasterRevision = undefined;
 const commitSmartParserMaster = async (data, storeEntries = {}, historyLogs = [], onCommitted = () => {}) => {
     const commonStorage = window.ONEAPP?.STORAGE;
     if (!commonStorage?.commitMasterStateOrThrow) {
@@ -534,8 +535,10 @@ const commitSmartParserMaster = async (data, storeEntries = {}, historyLogs = []
     }
     const logs = Array.isArray(historyLogs) ? historyLogs.filter(Boolean) : [];
     const previousHistory = logs.length > 0 ? localStorage.getItem('merchHistory_v870') : null;
+    let result;
     try {
-        const result = await commonStorage.commitMasterStateOrThrow(data, {
+        result = await commonStorage.commitMasterStateOrThrow(data, {
+            expectedRevision: smartParserMasterRevision,
             extraStoreEntries: storeEntries,
             ...(logs.length > 0 ? {
                 afterVerified: () => {
@@ -545,9 +548,6 @@ const commitSmartParserMaster = async (data, storeEntries = {}, historyLogs = []
                 afterVerifiedError: 'SmartParser 히스토리 저장 실패'
             } : {})
         });
-        onCommitted(data, result);
-        localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
-        return result;
     }
     catch (error) {
         if (logs.length > 0) {
@@ -561,6 +561,22 @@ const commitSmartParserMaster = async (data, storeEntries = {}, historyLogs = []
         }
         throw new Error('마스터/연동대기 IndexedDB 저장 실패: ' + (error?.message || error?.name || String(error)));
     }
+    smartParserMasterRevision = result.revision;
+    try {
+        onCommitted(data, result);
+    }
+    catch (memoryError) {
+        console.warn('SmartParser memory refresh failed after a verified commit', memoryError);
+        result.memoryWarning = memoryError?.message || String(memoryError);
+    }
+    try {
+        localStorage.setItem('merchMaster_sync_trigger', Date.now().toString());
+    }
+    catch (triggerError) {
+        console.warn('SmartParser master sync notification failed after a verified commit', triggerError);
+        result.syncWarning = triggerError?.message || String(triggerError);
+    }
+    return result;
 };
 const useParserApp = () => {
     const [masterProducts, setMasterProducts] = useState({});
@@ -578,7 +594,10 @@ const useParserApp = () => {
     catch (e) {
         return [{ id: 'default', whCode: '*', unit: '*', rate: 10, type: 'divide' }];
     } });
-    useEffect(() => { getAllIDB('master_products').then(items => { if (items && items.length > 0) {
+    useEffect(() => { window.ONEAPP.STORAGE.readMasterSnapshotState().then(state => {
+        smartParserMasterRevision = state.revision;
+        const items = state.items;
+        if (items && items.length > 0) {
         const dict = {};
         items.forEach(i => dict[i.코드] = i);
         setMasterProducts(dict);

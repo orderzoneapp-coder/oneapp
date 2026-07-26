@@ -536,6 +536,26 @@
     });
   };
 
+  STORAGE.readMasterSnapshotState = async (extraKeys = []) => {
+    const state = await STORAGE.readMasterState(extraKeys);
+    let masterMap = {};
+    if (state.items.length > 0) {
+      state.items.forEach(item => {
+        const code = String(item?.['코드'] || item?.productCode || '').trim();
+        if (code) masterMap[code] = item;
+      });
+    } else if (state.snapshot && typeof state.snapshot === 'object' && !Array.isArray(state.snapshot)) {
+      masterMap = state.snapshot;
+    }
+    return { ...state, masterMap };
+  };
+
+  STORAGE.createMasterRevisionConflictError = (message = '다른 저장이 먼저 완료되어 현재 저장 요청이 오래된 상태가 되었습니다.') => {
+    const error = new Error(message);
+    error.code = 'MERCH_MASTER_REVISION_CONFLICT';
+    return error;
+  };
+
   STORAGE.createLockFenceError = (lockName, message = '저장 잠금 fencing 검증 실패') => {
     const error = new Error(`${message}: ${lockName}`);
     error.code = 'MERCH_LOCK_FENCE_LOST';
@@ -891,9 +911,7 @@
           previousState = await STORAGE.readMasterState(extraKeys);
           if (Object.prototype.hasOwnProperty.call(options, 'expectedRevision')
             && previousState.revision !== options.expectedRevision) {
-            const conflict = new Error('다른 저장이 먼저 완료되어 현재 저장 요청이 오래된 상태가 되었습니다.');
-            conflict.code = 'MERCH_MASTER_REVISION_CONFLICT';
-            throw conflict;
+            throw STORAGE.createMasterRevisionConflictError();
           }
           const items = STORAGE.getMasterItems(data, { allowEmpty: options.allowEmpty === true });
           revision = STORAGE.createMasterRevision();
@@ -1005,6 +1023,11 @@
   };
 
   STORAGE.commitMasterStateOrThrow = async (data = {}, options = {}) => {
+    if (!Object.prototype.hasOwnProperty.call(options, 'expectedRevision')) {
+      const error = new Error('전체 마스터 저장에는 읽은 시점의 expectedRevision이 필요합니다.');
+      error.code = 'MERCH_MASTER_REVISION_REQUIRED';
+      throw error;
+    }
     const result = await STORAGE.commitMasterState(data, options);
     if (!result.ok) {
       const error = new Error(result.error || '마스터 저장 실패');
@@ -1759,8 +1782,11 @@
 
     const masterItems = Object.values(normalizedMaster);
     const rawSubdivision = CLOUD.buildRawSubdivisionFromMaster(normalizedMaster);
+    const linkedKeys = [DATAOPS_MASTER_CACHE_KEY, DATAOPS_RAW_SUBDIVISION_KEY];
+    const currentState = await STORAGE.readMasterState(linkedKeys);
 
     await STORAGE.commitMasterStateOrThrow(normalizedMaster, {
+      expectedRevision: currentState.revision,
       extraStoreEntries: {
         [DATAOPS_MASTER_CACHE_KEY]: normalizedMaster,
         [DATAOPS_RAW_SUBDIVISION_KEY]: rawSubdivision
@@ -1861,7 +1887,9 @@
     const hasPendingShopStatus = Object.prototype.hasOwnProperty.call(data, 'pendingShopStatus');
 
     if (hasMaster) {
+      const currentState = await STORAGE.readMasterState(hasPendingShopStatus ? ['pending_shop_status'] : []);
       await STORAGE.commitMasterStateOrThrow(data.master, {
+        expectedRevision: currentState.revision,
         extraStoreEntries: hasPendingShopStatus
           ? { pending_shop_status: data.pendingShopStatus }
           : {}
@@ -2282,15 +2310,27 @@
     const backups = await MASTER.getMasterBackups();
     const backup = backups.find(b => b && b.id === backupId);
     if (!backup) throw new Error('백업을 찾을 수 없습니다.');
-    await STORAGE.commitMasterStateOrThrow(backup.data || {});
+    const currentState = await STORAGE.readMasterState();
+    const commitResult = await STORAGE.commitMasterStateOrThrow(backup.data || {}, {
+      expectedRevision: currentState.revision,
+      allowEmpty: Object.keys(backup.data || {}).length === 0
+    });
     STORAGE.writeLocalValue('merchMaster_sync_trigger', Date.now().toString(), { label: '마스터 복구 알림 저장' });
-    return backup;
+    return { ...backup, revision: commitResult.revision };
   };
 
-  MASTER.applyMasterExcelUpload = async ({ analysis, currentMaster = {}, label = '마스터엑셀업로드' } = {}) => {
+  MASTER.applyMasterExcelUpload = async ({ analysis, currentMaster = {}, expectedRevision, label = '마스터엑셀업로드' } = {}) => {
     const validation = MASTER.validateMasterExcelAnalysis(analysis);
     if (!validation.ok) throw new Error(validation.message);
     const masterMap = MASTER.buildMasterIndex(currentMaster);
+    const currentState = await STORAGE.readMasterSnapshotState();
+    if (expectedRevision !== undefined && currentState.revision !== expectedRevision) {
+      throw STORAGE.createMasterRevisionConflictError();
+    }
+    if (STORAGE.stableSerialize(currentState.masterMap) !== STORAGE.stableSerialize(currentMaster)) {
+      throw STORAGE.createMasterRevisionConflictError('현재 마스터가 Excel 분석 이후 변경되었습니다. 새로고침 후 다시 분석해 주세요.');
+    }
+    const baseRevision = currentState.revision;
     const backup = await MASTER.createMasterBackup(masterMap, label);
     const historyLogs = [];
     let updateCount = 0;
@@ -2338,6 +2378,7 @@
     HISTORY.assertHistoryForMutation(updateCount + createCount, historyLogs);
     try {
       const commitResult = await STORAGE.commitMasterStateOrThrow(masterMap, {
+        expectedRevision: baseRevision,
         afterVerified: () => {
           if (historyLogs.length > 0) HISTORY.addHistoryLogs(historyLogs);
           return true;
@@ -2373,6 +2414,7 @@
       validation,
       backup,
       masterMap,
+      revision: committedRevision,
       updateCount,
       createCount,
       historyCount: historyLogs.length,

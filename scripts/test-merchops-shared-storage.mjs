@@ -204,6 +204,11 @@ const dataB = { B: { 코드: "B", 품목명: "B 최신 저장" } };
 await assert.rejects(storage.bulkPutIDB("master_products", []), /commitMasterState/);
 await assert.rejects(storage.replaceAllIDB("master_products", []), /commitMasterState/);
 await assert.rejects(storage.setIDB("merchMaster_v870", {}), /commitMasterState/);
+await assert.rejects(
+  storage.commitMasterStateOrThrow(dataA),
+  (error) => error?.code === "MERCH_MASTER_REVISION_REQUIRED",
+  "the production writer must reject a full snapshot without a read revision",
+);
 
 const emptyBefore = memoryIDB.snapshot();
 const emptyCommit = await storage.commitMasterState({});
@@ -357,6 +362,12 @@ assert.deepEqual(renewFailureIDB.snapshot().snapshot, dataB);
 const firstCommit = await storage.commitMasterState(dataA, { expectedRevision: "rev-old" });
 assert.equal(firstCommit.ok, true);
 assert.equal(memoryIDB.snapshot().revision, firstCommit.revision);
+assert.deepEqual(memoryIDB.snapshot().snapshot, dataA);
+await assert.rejects(
+  storage.commitMasterStateOrThrow(dataB, { expectedRevision: "rev-old" }),
+  (error) => error?.code === "MERCH_MASTER_REVISION_CONFLICT",
+  "a stale full snapshot must not delete a newer successful save",
+);
 assert.deepEqual(memoryIDB.snapshot().snapshot, dataA);
 
 const previousState = {
@@ -594,31 +605,80 @@ const files = Object.fromEntries(
     "export_center.html",
     "Master.html",
     "Item_manager.html",
+    "DataOps.html",
     "coreEngine.js",
     "app-manifest.json",
+    "APP_ARCHITECTURE.md",
   ]
     .map((name) => [name, fs.readFileSync(path.join(ROOT, name), "utf8")]),
 );
-const smartParserHelperStart = files["SmartParser.html"].indexOf("const commitSmartParserMaster = async");
+const dataOpsPersistStart = files["DataOps.html"].indexOf("const persistDataOpsMasterCache =");
+const dataOpsPersistEnd = files["DataOps.html"].indexOf("const DATAOPS_MASTER_ITEM_HELPER", dataOpsPersistStart);
+assert.ok(dataOpsPersistStart >= 0 && dataOpsPersistEnd > dataOpsPersistStart);
+const dataOpsCacheValues = new Map();
+const dataOpsCacheStorage = {
+  setItem(key, value) {
+    if (key === "dataops_raw_subdivision_cache_v1") throw new Error("forced derived cache failure");
+    dataOpsCacheValues.set(key, String(value));
+  },
+};
+const dataOpsPersistContext = vm.createContext({ JSON, Date });
+vm.runInContext(
+  `const DATAOPS_MERCH_MASTER_CACHE_KEY = "dataops_merch_master_cache_v1";
+const DATAOPS_MERCH_MASTER_SUMMARY_KEY = "dataops_merch_master_summary_v1";
+const DATAOPS_RAW_SUBDIVISION_CACHE_KEY = "dataops_raw_subdivision_cache_v1";
+${files["DataOps.html"].slice(dataOpsPersistStart, dataOpsPersistEnd)}
+globalThis.__persistDataOpsMasterCache = persistDataOpsMasterCache;`,
+  dataOpsPersistContext,
+);
+const activeDataOpsCacheResult = dataOpsPersistContext.__persistDataOpsMasterCache(
+  dataA,
+  { relations: [{ subCode: "S", rawCode: "A" }] },
+  { total: 1 },
+  dataOpsCacheStorage,
+);
+assert.equal(activeDataOpsCacheResult.ok, true);
+assert.equal(activeDataOpsCacheResult.warnings.length, 1);
+assert.deepEqual(
+  JSON.parse(dataOpsCacheValues.get("dataops_merch_master_cache_v1")),
+  dataA,
+  "the active DataOps cache must retain its authoritative master when a derived mirror fails",
+);
+assert.ok(dataOpsCacheValues.has("dataops_master_sync_trigger"));
+
+const smartParserHelperStart = files["SmartParser.html"].indexOf("let smartParserMasterRevision = undefined");
 const smartParserHelperEnd = files["SmartParser.html"].indexOf("const useParserApp =", smartParserHelperStart);
 assert.ok(smartParserHelperStart >= 0 && smartParserHelperEnd > smartParserHelperStart);
+let smartParserCommitShouldFail = true;
+let smartParserHistoryWrites = 0;
+const smartParserStorageValues = new Map([
+  ["merchHistory_v870", JSON.stringify([{ id: "before" }])],
+]);
+const smartParserLocalStorage = createSharedLocalStorage(smartParserStorageValues);
+const smartParserWarnings = [];
 const smartParserContext = vm.createContext({
   window: {
     ONEAPP: {
       STORAGE: {
-        commitMasterStateOrThrow: async () => {
-          throw new Error("forced master failure");
+        commitMasterStateOrThrow: async (_data, options) => {
+          assert.ok(Object.prototype.hasOwnProperty.call(options, "expectedRevision"));
+          if (smartParserCommitShouldFail) throw new Error("forced master failure");
+          options.afterVerified?.();
+          return { ok: true, revision: "rev-smart-success" };
         },
       },
     },
   },
-  localStorage: createSharedLocalStorage(new Map([
-    ["merchHistory_v870", JSON.stringify([{ id: "before" }])],
-  ])),
-  saveMerchHistoryWithRetry: () => {
-    throw new Error("history must not run before master verification");
+  localStorage: smartParserLocalStorage,
+  saveMerchHistoryWithRetry: (logs) => {
+    smartParserHistoryWrites++;
+    smartParserLocalStorage.setItem("merchHistory_v870", JSON.stringify(logs));
   },
-  console,
+  console: {
+    log: console.log,
+    error: console.error,
+    warn: (...args) => smartParserWarnings.push(args),
+  },
   Date,
   Array,
   String,
@@ -646,7 +706,31 @@ assert.deepEqual(
   [{ id: "before" }],
   "SmartParser history must remain unchanged when the master commit fails",
 );
+assert.equal(smartParserHistoryWrites, 0);
 assert.equal(smartParserContext.localStorage.getItem("merchMaster_sync_trigger"), null);
+
+smartParserCommitShouldFail = false;
+const originalSmartParserSetItem = smartParserLocalStorage.setItem;
+smartParserLocalStorage.setItem = (key, value) => {
+  if (key === "merchMaster_sync_trigger") throw new Error("forced trigger failure");
+  return originalSmartParserSetItem(key, value);
+};
+const smartParserSuccess = await smartParserContext.window.__commitSmartParserMaster(
+  dataA,
+  {},
+  [{ id: "committed", code: "A" }],
+  () => { smartParserMemoryUpdates++; },
+);
+assert.equal(smartParserSuccess.revision, "rev-smart-success");
+assert.match(smartParserSuccess.syncWarning, /forced trigger failure/);
+assert.equal(smartParserWarnings.length, 1);
+assert.equal(smartParserMemoryUpdates, 1);
+assert.equal(smartParserHistoryWrites, 1);
+assert.deepEqual(
+  JSON.parse(smartParserContext.localStorage.getItem("merchHistory_v870")),
+  [{ id: "committed", code: "A" }],
+  "a notification failure after commit must preserve the committed history",
+);
 
 for (const name of [
   "MerchOps.html",
@@ -660,8 +744,10 @@ for (const name of [
 }
 assert.match(files["SmartParser.html"], /afterVerified: \(\) => \{\s*saveMerchHistoryWithRetry\(logs\)/);
 assert.match(files["SmartParser.html"], /await commitSmartParserMaster\(data, storeEntries, historyLogs/);
-assert.match(files["settings.html"], /commitMasterStateOrThrow\(newMaster\)/);
-assert.match(files["export_center.html"], /commitMasterStateOrThrow\(newMaster\)/);
+assert.match(files["settings.html"], /commitMasterStateOrThrow\(newMaster, \{\s*expectedRevision: settingsMasterRevision/);
+assert.match(files["settings.html"], /commitMasterStateOrThrow\(nextMaster, \{\s*expectedRevision: masterState\.revision/);
+assert.match(files["export_center.html"], /commitMasterStateOrThrow\(newMaster, \{\s*expectedRevision: exportMasterRevision/);
+assert.match(files["SmartParser.html"], /commitMasterStateOrThrow\(data, \{\s*expectedRevision: smartParserMasterRevision/);
 assert.match(
   files["settings.html"],
   /var activation = await activateMasterProduct\(rec\.code\);[\s\S]*?catch \(error\)[\s\S]*?완료 상태로 변경하지 않았습니다/,
@@ -673,7 +759,7 @@ assert.doesNotMatch(files["export_center.html"], /bulkPutIDB\('master_products'/
 assert.doesNotMatch(files["export_center.html"], /setIDB\('merchMaster_v870'/);
 for (const name of ["Master.html", "Item_manager.html"]) {
   const saveMasterLocal = files[name].match(/const saveMasterLocal = async[\s\S]*?\n        };/)?.[0] || "";
-  assert.match(saveMasterLocal, /commitMasterStateOrThrow\(safeMap\)/, `${name} must use the shared writer`);
+  assert.match(saveMasterLocal, /commitMasterStateOrThrow\(safeMap, \{\s*expectedRevision:/, `${name} must use the revision-checked shared writer`);
   assert.doesNotMatch(saveMasterLocal, /setIDB\(/, `${name} must not split the snapshot write`);
   assert.doesNotMatch(saveMasterLocal, /bulkPutMasterIDB\(/, `${name} must not split the row write`);
   assert.doesNotMatch(files[name], /bulkPutMasterIDB/, `${name} must not retain an alternate master writer`);
@@ -691,11 +777,13 @@ assert.match(
 assert.doesNotMatch(files["coreEngine.js"], /bulkPutIDB\(STORE_MASTER/);
 assert.doesNotMatch(files["coreEngine.js"], /replaceAllIDB\(STORE_MASTER/);
 assert.match(files["coreEngine.js"], /CLOUD\.pullMerchMasterForDataOps[\s\S]*commitMasterStateOrThrow\(normalizedMaster, \{/);
+assert.match(files["coreEngine.js"], /commitMasterStateOrThrow\(normalizedMaster, \{\s*expectedRevision: currentState\.revision/);
 assert.match(files["coreEngine.js"], /\[DATAOPS_MASTER_CACHE_KEY\]: normalizedMaster/);
 assert.match(files["coreEngine.js"], /\[DATAOPS_RAW_SUBDIVISION_KEY\]: rawSubdivision/);
 assert.match(files["coreEngine.js"], /pending_shop_status: data\.pendingShopStatus/);
-assert.match(files["coreEngine.js"], /MASTER\.restoreMasterBackup[\s\S]*commitMasterStateOrThrow\(backup\.data \|\| \{\}\)/);
+assert.match(files["coreEngine.js"], /MASTER\.restoreMasterBackup[\s\S]*commitMasterStateOrThrow\(backup\.data \|\| \{\}, \{\s*expectedRevision: currentState\.revision/);
 assert.match(files["coreEngine.js"], /totalCount: Object\.keys\(masterMap\)\.length/);
+assert.match(files["coreEngine.js"], /revision: committedRevision/);
 assert.doesNotMatch(files["coreEngine.js"], /totalCount: items\.length/);
 assert.match(
   files["coreEngine.js"],
@@ -715,5 +803,11 @@ assert.match(files["Master.html"], /마스터 Excel에 저장할 상품 행이 �
 assert.match(files["Master.html"], /마스터 Excel 중복 코드가 있습니다/);
 assert.match(files["app-manifest.json"], /"F7": "Apply current work to the MerchOps master/);
 assert.match(files["app-manifest.json"], /"F8": "Create the Excel output from current work without changing the master/);
+assert.match(files["app-manifest.json"], /"name": "Master"[\s\S]*?"productionWrites": true/);
+assert.match(files["app-manifest.json"], /"name": "Item Manager"[\s\S]*?"productionWrites": true/);
+assert.match(files["APP_ARCHITECTURE.md"], /MerchOps: F7 applies reviewed work[\s\S]*F8 creates the Excel output/);
+assert.match(files["DataOps.html"], /persistDataOpsMasterCache[\s\S]*storage\.setItem\(DATAOPS_MERCH_MASTER_CACHE_KEY/);
+assert.match(files["DataOps.html"], /const rawSubdivision = DATAOPS_CLOUD_MODULE\.buildRawSubdivisionFromMaster\(master\)/);
+assert.match(files["DataOps.html"], /derived cache mirror update failed after atomic master cache save/);
 
 console.log("Shared writer, fencing, invalid-input, linked-store, CAS rollback, SmartParser history, and F7/F8 tests passed.");

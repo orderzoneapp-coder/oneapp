@@ -237,7 +237,7 @@ Roadmap work is delivered as separate pull requests and verified after each merg
    - Upload into a staging session, verify counts and integrity, and finalize only after every chunk succeeds.
    - Preserve the previous backup on interruption or validation failure.
 5. Application-specific output stability
-   - 5A MerchOps: F8 applies reviewed work and stop-management changes to the master and creates immediate Excel output. SmartParser information changes are already applied directly and are not queued into F8. F9 sends the current result to Export Center for a separate review-and-output flow.
+   - 5A MerchOps: F7 applies reviewed work and stop-management changes to the master. F8 creates the Excel output from the current work without changing the master. SmartParser information changes are already applied directly and are not queued into F7. F9 sends the current result to Export Center for a separate review-and-output flow.
    - 5B DataOps: F9 downloads the combined inventory, ledger, and analysis workbook. F10 prints the DataOps result. F8 is currently unassigned and remains reserved until a separate requirement is approved.
    - Function keys are application-owned behavior. They share validation, backup, download-status, and audit utilities only; their business meaning must not be unified.
 6. Dependency and shared-engine hardening

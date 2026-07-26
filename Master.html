@@ -195,6 +195,7 @@
                 req.onerror = () => reject(tx.error);
             });
         };
+        let masterPageRevision = undefined;
 
         const normalizeMasterItem = (item = {}, fallbackCode = '') => {
             const code = safeStr(item['코드'] || item['품목코드'] || fallbackCode).trim();
@@ -232,13 +233,18 @@
             if (!window.ONEAPP?.STORAGE?.commitMasterStateOrThrow) {
                 throw new Error('공통 마스터 저장 엔진을 불러오지 못했습니다.');
             }
-            await window.ONEAPP.STORAGE.commitMasterStateOrThrow(safeMap);
+            const result = await window.ONEAPP.STORAGE.commitMasterStateOrThrow(safeMap, {
+                expectedRevision: masterPageRevision
+            });
+            masterPageRevision = result.revision;
             try { localStorage.setItem(STORAGE_KEYS.SYNC_TRIGGER, Date.now().toString()); } catch (e) {}
             return safeMap;
         };
 
         const loadMasterLocal = async () => {
-            const items = await getAllMasterIDB().catch(() => []);
+            const state = await window.ONEAPP.STORAGE.readMasterSnapshotState();
+            masterPageRevision = state.revision;
+            const items = state.items;
             if (items && items.length > 0) return masterArrayToMap(items);
             const legacy = await getIDB(STORAGE_KEYS.MASTER_DB).catch(() => null);
             if (legacy && typeof legacy === 'object' && Object.keys(legacy).length > 0) {

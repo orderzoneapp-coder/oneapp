@@ -402,7 +402,7 @@
       "kind": "web-entry",
       "status": "planned",
       "developmentState": "on-hold",
-      "purpose": "Provide a category-based, read-only product master lookup layout.",
+      "purpose": "Provide a category-based product master lookup with controlled master upload and cloud synchronization.",
       "owner": "merchops-roadmap",
       "inputs": [
         "product-master",
@@ -419,10 +419,10 @@
         "dataops"
       ],
       "downstream": [],
-      "productionWrites": false,
+      "productionWrites": true,
       "validation": [
         "Category and product counts match the product master.",
-        "The planned page cannot mutate production data.",
+        "Master writes use the shared revision-checked atomic writer.",
         "No production navigation depends on this page."
       ],
       "rollback": "Remove any pilot navigation entry and keep the file isolated from production entry points.",
@@ -439,7 +439,7 @@
       "kind": "web-entry",
       "status": "planned",
       "developmentState": "on-hold",
-      "purpose": "Provide category-based product lookup and prepare a future controlled product-management workflow.",
+      "purpose": "Provide category-based product lookup and controlled product-management writes.",
       "owner": "merchops-roadmap",
       "inputs": [
         "product-master",
@@ -461,10 +461,10 @@
       "downstream": [
         "merchops"
       ],
-      "productionWrites": false,
+      "productionWrites": true,
       "validation": [
         "Lookup results match the product master.",
-        "Management actions remain disabled until write rules are separately approved.",
+        "Management writes use the shared revision-checked atomic writer.",
         "No production navigation depends on this page."
       ],
       "rollback": "Remove any pilot navigation entry and keep all proposed changes in read-only or draft state.",
