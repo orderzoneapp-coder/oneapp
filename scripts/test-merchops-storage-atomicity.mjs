@@ -10,49 +10,136 @@ const inlineScripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<
   .map((match) => match[1])
   .filter((script) => script.trim() !== "");
 
-const browser = {};
-const storageValues = new Map();
-const context = vm.createContext({
-  window: browser,
-  document: {
-    getElementById: () => null,
-    createElement: () => ({
-      style: {},
-      appendChild() {},
-      append() {},
-      remove() {},
-      addEventListener() {},
-      querySelector: () => ({}),
-      focus() {},
-    }),
-    body: { appendChild() {} },
+const createSharedLocalStorage = (values) => ({
+  get length() {
+    return values.size;
   },
-  localStorage: {
-    getItem: (key) => storageValues.has(key) ? storageValues.get(key) : null,
-    setItem: (key, value) => storageValues.set(key, String(value)),
-    removeItem: (key) => storageValues.delete(key),
+  key(index) {
+    return [...values.keys()][index] ?? null;
   },
-  navigator: {},
-  indexedDB: {},
-  crypto: { randomUUID: () => "test-uuid" },
-  console,
-  Date,
-  Map,
-  Set,
-  Number,
-  Object,
-  String,
-  Array,
-  Math,
-  Promise,
-  structuredClone,
-  setTimeout,
-  clearTimeout,
+  getItem(key) {
+    return values.has(key) ? values.get(key) : null;
+  },
+  setItem(key, value) {
+    values.set(key, String(value));
+  },
+  removeItem(key) {
+    values.delete(key);
+  },
 });
-vm.runInContext(inlineScripts[0], context, { filename: "MerchOps-head.js" });
+
+const createBrowserRuntime = (tabId, storageValues = new Map(), navigatorValue = {}) => {
+  const browser = {};
+  const context = vm.createContext({
+    window: browser,
+    document: {
+      getElementById: () => null,
+      createElement: () => ({
+        style: {},
+        appendChild() {},
+        append() {},
+        remove() {},
+        addEventListener() {},
+        querySelector: () => ({}),
+        focus() {},
+      }),
+      body: { appendChild() {} },
+    },
+    localStorage: createSharedLocalStorage(storageValues),
+    navigator: navigatorValue,
+    indexedDB: {},
+    crypto: { randomUUID: () => tabId },
+    console,
+    Date,
+    Map,
+    Set,
+    Number,
+    Object,
+    String,
+    Array,
+    Math,
+    Promise,
+    structuredClone,
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+  });
+  vm.runInContext(inlineScripts[0], context, { filename: `MerchOps-head-${tabId}.js` });
+  return { browser, context, storageValues };
+};
+
+const storageValues = new Map();
+const primaryRuntime = createBrowserRuntime("test-primary-tab", storageValues, {
+  locks: {
+    request: async (_name, _options, callback) => callback(),
+  },
+});
+const { browser, context } = primaryRuntime;
 const queuedStorageLock = browser.withMerchStorageLock;
 
 const clone = (value) => value === undefined ? undefined : structuredClone(value);
+const createSerializedLockIDB = () => {
+  const state = new Map();
+  let writeQueue = Promise.resolve();
+  return {
+    state,
+    db: {
+      transaction(storeName, mode) {
+        assert.equal(storeName, "store");
+        assert.equal(mode, "readwrite");
+        const pendingGets = [];
+        let staged = null;
+        const tx = {
+          error: null,
+          oncomplete: null,
+          onerror: null,
+          onabort: null,
+          objectStore(name) {
+            assert.equal(name, "store");
+            return {
+              get(key) {
+                const request = { result: undefined, error: null, onsuccess: null, onerror: null };
+                pendingGets.push({ key, request });
+                return request;
+              },
+              put(value, key) {
+                assert.ok(staged, "lock transaction must be active before put");
+                staged.set(key, clone(value));
+              },
+              delete(key) {
+                assert.ok(staged, "lock transaction must be active before delete");
+                staged.delete(key);
+              },
+            };
+          },
+        };
+        const execute = () => new Promise((resolve) => {
+          setTimeout(() => {
+            try {
+              staged = new Map([...state].map(([key, value]) => [key, clone(value)]));
+              pendingGets.forEach(({ key, request }) => {
+                request.result = clone(staged.get(key));
+                request.onsuccess?.();
+              });
+              state.clear();
+              staged.forEach((value, key) => state.set(key, clone(value)));
+              tx.oncomplete?.();
+            } catch (error) {
+              tx.error = error;
+              tx.onerror?.();
+            } finally {
+              resolve();
+            }
+          }, 0);
+        });
+        writeQueue = writeQueue.then(execute, execute);
+        return tx;
+      },
+    },
+  };
+};
+
 const createFakeIDB = (initial) => {
   const state = {
     master: new Map((initial.items || []).map((item) => [item.코드, clone(item)])),
@@ -258,4 +345,68 @@ assert.deepEqual(
 assert.equal(persistedA.length, 1);
 assert.equal(persistedB.length, 2);
 
-console.log("MerchOps IndexedDB atomicity, save queue, stale rollback, and persisted history merge tests passed.");
+const fallbackStorage = new Map();
+const fallbackTabA = createBrowserRuntime("fallback-tab-a", fallbackStorage).browser;
+const fallbackTabB = createBrowserRuntime("fallback-tab-b", fallbackStorage).browser;
+const fallbackLockIDB = createSerializedLockIDB();
+fallbackTabA.initIDB = async () => fallbackLockIDB.db;
+fallbackTabB.initIDB = async () => fallbackLockIDB.db;
+let activeFallbackWriters = 0;
+let maximumFallbackWriters = 0;
+for (let attempt = 0; attempt < 12; attempt++) {
+  fallbackStorage.clear();
+  const writeWithReadPause = (tab, id) => tab.withMerchStorageLock("oneapp-merch-history-save", async () => {
+    activeFallbackWriters++;
+    maximumFallbackWriters = Math.max(maximumFallbackWriters, activeFallbackWriters);
+    try {
+      const before = JSON.parse(fallbackStorage.get("merchHistory_v870") || "[]");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const merged = tab.mergeMerchHistoryLogs([{ id, code: "2001" }], before);
+      fallbackStorage.set("merchHistory_v870", JSON.stringify(merged));
+    } finally {
+      activeFallbackWriters--;
+    }
+  });
+  await Promise.all([
+    writeWithReadPause(fallbackTabA, `fallback-a-${attempt}`),
+    writeWithReadPause(fallbackTabB, `fallback-b-${attempt}`),
+  ]);
+  assert.deepEqual(
+    JSON.parse(fallbackStorage.get("merchHistory_v870")).map((log) => log.id).sort(),
+    [`fallback-a-${attempt}`, `fallback-b-${attempt}`],
+    `fallback cross-tab save ${attempt + 1} must preserve both logs`,
+  );
+  assert.equal(
+    [...fallbackLockIDB.state.keys()].filter((key) => key.startsWith("merch_fallback_lock_v1:")).length,
+    0,
+    "fallback lock entries must be released after each save",
+  );
+}
+assert.equal(maximumFallbackWriters, 1, "Web Locks fallback must serialize independent tab writers");
+
+const staleLockKey = "merch_fallback_lock_v1:stale-cleanup";
+fallbackLockIDB.state.set(staleLockKey, { owner: "crashed-tab", expiresAt: Date.now() - 1 });
+const releaseAfterStale = await fallbackTabA.acquireMerchFallbackStorageLock("stale-cleanup", {
+  timeoutMs: 1000,
+  pollMs: 4,
+  leaseMs: 10000,
+});
+await releaseAfterStale();
+assert.equal(
+  fallbackLockIDB.state.has(staleLockKey),
+  false,
+  "expired fallback lock entries must not block the next writer",
+);
+
+fallbackStorage.clear();
+await Promise.all([
+  fallbackTabA.persistMerchHistoryLogs([{ id: "fallback-production-a", code: "2001" }], []),
+  fallbackTabB.persistMerchHistoryLogs([{ id: "fallback-production-b", code: "2001" }], []),
+]);
+assert.deepEqual(
+  JSON.parse(fallbackStorage.get("merchHistory_v870")).map((log) => log.id).sort(),
+  ["fallback-production-a", "fallback-production-b"],
+  "production history persistence must preserve both logs without Web Locks",
+);
+
+console.log("MerchOps IndexedDB atomicity, save queue, stale rollback, fallback tab lock, and persisted history merge tests passed.");
