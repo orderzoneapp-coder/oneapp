@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.169_StorageF8E2E]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.170_FallbackTabLock]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -89,6 +89,7 @@
         // v2.1.167: 일반업무 안정화. 별칭값 누락을 수정하고, 행사초기화는 작업테이블에만 반영하며, F7 실제 저장 성공 후 완료 처리, 정보/일반 혼합 F8 차단, 재고 0 보존을 적용한다.
         // v2.1.168: 마스터 레코드와 전체 스냅샷을 하나의 IndexedDB 트랜잭션으로 교체하고 저장 후 전수 검증한다. 저장 큐·브라우저 잠금·세대 검증으로 늦은 롤백을 차단하고, F7 히스토리까지 성공해야 완료한다. 히스토리는 ID 중복 제거·탭간 병합 후 보존한다.
         // v2.1.169: 히스토리 잠금·최신값 재조회·병합·검증을 단일 production 함수로 통합한다. 실제 F8 XLSX 생성·재열기 회귀검사와 Chrome 두 탭 동시 저장·storage 동기화 검증을 완료한다.
+        // v2.1.170: Web Locks 미지원 브라우저에서도 IndexedDB 원자 임대 잠금으로 복수 탭 저장을 직렬화한다. 잠금 만료·갱신·대기 타임아웃·소유권 확인으로 비정상 종료와 영구 대기를 방지한다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결한다. 오더즈판매가/오더즈구매가는 작업테이블에서는 숨기되 v2.1.162부터 원본 출력에는 보존한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
@@ -1014,14 +1015,101 @@
         };
 
         window.__MERCHOPS_STORAGE_QUEUES = window.__MERCHOPS_STORAGE_QUEUES || {};
+        window.__MERCHOPS_TAB_ID = window.__MERCHOPS_TAB_ID || window.generateUUID();
+        window.mutateMerchFallbackLock = async (lockName, owner, action, leaseMs = 120000) => {
+            const db = await window.initIDB();
+            const lockKey = `merch_fallback_lock_v1:${lockName}`;
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('store', 'readwrite');
+                const store = tx.objectStore('store');
+                const request = store.get(lockKey);
+                let result = false;
+                request.onsuccess = () => {
+                    const current = request.result;
+                    const now = Date.now();
+                    if (action === 'acquire') {
+                        if (!current || current.owner === owner || Number(current.expiresAt) <= now) {
+                            store.put({ owner, expiresAt: now + leaseMs }, lockKey);
+                            result = true;
+                        }
+                    }
+                    else if (action === 'renew') {
+                        if (current && current.owner === owner) {
+                            store.put({ owner, expiresAt: now + leaseMs }, lockKey);
+                            result = true;
+                        }
+                    }
+                    else if (action === 'release') {
+                        if (!current || current.owner === owner) {
+                            store.delete(lockKey);
+                            result = true;
+                        }
+                    }
+                };
+                request.onerror = () => reject(request.error || new Error(`탭 간 저장 잠금 조회 실패: ${lockName}`));
+                tx.oncomplete = () => resolve(result);
+                tx.onerror = () => reject(tx.error || new Error(`탭 간 저장 잠금 처리 실패: ${lockName}`));
+                tx.onabort = () => reject(tx.error || new Error(`탭 간 저장 잠금 중단: ${lockName}`));
+            });
+        };
+        window.acquireMerchFallbackStorageLock = async (lockName, options = {}) => {
+            const owner = window.__MERCHOPS_TAB_ID;
+            const leaseMs = Math.max(10000, Number(options.leaseMs) || 120000);
+            const timeoutMs = Math.max(1000, Number(options.timeoutMs) || 20000);
+            const pollMs = Math.max(4, Number(options.pollMs) || 20);
+            const deadline = Date.now() + timeoutMs;
+            const wait = () => new Promise(resolve => setTimeout(resolve, pollMs + Math.floor(Math.random() * pollMs)));
+            while (Date.now() < deadline) {
+                if (await window.mutateMerchFallbackLock(lockName, owner, 'acquire', leaseMs)) {
+                    let heartbeatWork = Promise.resolve();
+                    const heartbeat = setInterval(() => {
+                        heartbeatWork = heartbeatWork
+                            .then(() => window.mutateMerchFallbackLock(lockName, owner, 'renew', leaseMs))
+                            .then(renewed => {
+                                if (!renewed) console.error(`MerchOps fallback lock ownership lost: ${lockName}`);
+                            })
+                            .catch(error => console.error('MerchOps fallback lock heartbeat failed', error));
+                    }, Math.max(1000, Math.floor(leaseMs / 3)));
+                    return async () => {
+                        clearInterval(heartbeat);
+                        await heartbeatWork.catch(() => undefined);
+                        const released = await window.mutateMerchFallbackLock(lockName, owner, 'release', leaseMs);
+                        if (!released) throw new Error(`탭 간 저장 잠금 해제 검증 실패: ${lockName}`);
+                    };
+                }
+                await wait();
+            }
+            const timeoutError = new Error(`탭 간 저장 잠금 대기시간 초과: ${lockName}`);
+            timeoutError.code = 'MERCH_FALLBACK_LOCK_TIMEOUT';
+            throw timeoutError;
+        };
+        window.withMerchFallbackStorageLock = async (lockName, task) => {
+            const release = await window.acquireMerchFallbackStorageLock(lockName);
+            try {
+                return await task();
+            }
+            finally {
+                await release();
+            }
+        };
         window.withMerchStorageLock = (lockName, task) => {
             const queues = window.__MERCHOPS_STORAGE_QUEUES;
             const previous = queues[lockName] || Promise.resolve();
-            const run = previous.catch(() => undefined).then(() => {
+            const run = previous.catch(() => undefined).then(async () => {
                 if (typeof navigator !== 'undefined' && navigator.locks && typeof navigator.locks.request === 'function') {
-                    return navigator.locks.request(lockName, { mode: 'exclusive' }, task);
+                    let entered = false;
+                    try {
+                        return await navigator.locks.request(lockName, { mode: 'exclusive' }, async () => {
+                            entered = true;
+                            return task();
+                        });
+                    }
+                    catch (error) {
+                        if (entered) throw error;
+                        console.warn('MerchOps Web Locks unavailable; using cross-tab fallback lock', error);
+                    }
                 }
-                return task();
+                return window.withMerchFallbackStorageLock(lockName, task);
             });
             const settled = run.catch(() => undefined);
             queues[lockName] = settled;
@@ -9007,7 +9095,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.169_StorageF8E2E]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.170_FallbackTabLock]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -9421,7 +9509,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.169_StorageF8E2E")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.170_FallbackTabLock")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
