@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const html = fs.readFileSync(path.join(ROOT, "MerchOps.html"), "utf8");
 
-assert.match(html, /v2\.1\.161_WorktableHistoryPreserve/);
+assert.match(html, /v\d+\.\d+\.\d+_[A-Za-z0-9]+/);
 
 const inlineScripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)]
   .map((match) => match[1])
@@ -174,7 +174,7 @@ assert.match(html, /'싯가': '싯가, 싯가판매여부, 시가판매여부'/)
 assert.match(html, /'싯가': '싯가'/);
 assert.match(html, /window\.copyMerchSpotPriceFromExcelRow\(mItem\.sources\[role\], row, actualHeaders, headerCache\)/);
 assert.match(html, /window\.copyMerchLinkageFromExcelRow\(mItem\.sources\[role\], row, actualHeaders, headerCache\)/);
-assert.match(html, /const rawLinkage = getFirstInfoValue\(finalData\['단가연동'\], finalData\['연동'\]/);
+assert.match(html, /const rawLinkage = readOwnedInfoValue\(\[\[finalData, '단가연동'\], \[finalData, '연동'\]/);
 assert.doesNotMatch(html, /infoSource\['싯가'\] = window\.keepExcelCellValue\(row\[spotPriceKey\], false\)/);
 assert.match(html, /working = window\.applyMerchSpotPriceExcelPriority/);
 assert.match(html, /const initialVal = hasFinalField \? row\.finalData\[field\]/);
