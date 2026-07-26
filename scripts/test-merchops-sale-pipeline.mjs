@@ -110,10 +110,15 @@ assert.match(html, /판매여부: mItem\['판매여부'\] \?\? ''/);
 assert.match(html, /db\.transaction\(\['master_products', 'store'\], 'readwrite'\)/);
 assert.match(html, /masterStore\.clear\(\)/);
 assert.match(html, /try \{ tx\.abort\(\); \}/);
-assert.match(html, /await window\.verifyMasterIDBState\(data\)/);
+assert.match(html, /await window\.verifyMasterIDBState\(data, revision\)/);
 assert.match(html, /afterVerified: \(\) => localLogs\.length === 0 \|\| data\.addHistoryLogs/);
 assert.match(html, /const \[historyLogs, setHistoryLogs\] = useState\(\(\) =>/);
 assert.match(html, /localStorage\.getItem\('merchHistory_v870'\) !== serializedLogs/);
+assert.match(html, /window\.withMerchStorageLock\('oneapp-merch-master-save'/);
+assert.match(html, /currentState\.revision === revision/);
+assert.match(html, /staleRollbackSkipped = true/);
+assert.match(html, /disabled: ui\.isProcessing \|\|/);
+assert.doesNotMatch(html, /(?<!await )data\.setMasterProducts\(/);
 
 console.log("MerchOps sale availability pipeline tests passed.");
 
