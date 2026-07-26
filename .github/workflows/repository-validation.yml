@@ -38,6 +38,9 @@ jobs:
       - name: Test MerchOps sale availability pipeline
         run: node scripts/test-merchops-sale-pipeline.mjs
 
+      - name: Generate and reopen a real MerchOps F8 XLSX workbook
+        run: node scripts/test-merchops-f8-xlsx-e2e.mjs
+
       - name: Test MerchOps storage atomicity and concurrent saves
         run: node scripts/test-merchops-storage-atomicity.mjs
 
