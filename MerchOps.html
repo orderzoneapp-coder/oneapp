@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="google" content="notranslate">
-    <title>ONEAPP MerchOps - Main Workspace [v2.1.168_AtomicMasterCommit]</title>
+    <title>ONEAPP MerchOps - Main Workspace [v2.1.169_StorageF8E2E]</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -88,6 +88,7 @@
         // v2.1.166: 클라우드 백업 응답검증, 상품코드 문자열 보존, 수기 공란 우선, 활성 source 우선, F7 저장 안정화, 한국시간 파일명과 F7 안내문을 통합 보정한다.
         // v2.1.167: 일반업무 안정화. 별칭값 누락을 수정하고, 행사초기화는 작업테이블에만 반영하며, F7 실제 저장 성공 후 완료 처리, 정보/일반 혼합 F8 차단, 재고 0 보존을 적용한다.
         // v2.1.168: 마스터 레코드와 전체 스냅샷을 하나의 IndexedDB 트랜잭션으로 교체하고 저장 후 전수 검증한다. 저장 큐·브라우저 잠금·세대 검증으로 늦은 롤백을 차단하고, F7 히스토리까지 성공해야 완료한다. 히스토리는 ID 중복 제거·탭간 병합 후 보존한다.
+        // v2.1.169: 히스토리 잠금·최신값 재조회·병합·검증을 단일 production 함수로 통합한다. 실제 F8 XLSX 생성·재열기 회귀검사와 Chrome 두 탭 동시 저장·storage 동기화 검증을 완료한다.
         // v2.1.123: 구매·재고 작업 리포트에 히스토리 비교값을 연결한다. 현재 마스터 기준, 전일 히스토리, 최근 7일/30일 평균 대비 차이를 리포트 보조줄에 표시해 견적 적용 후에도 어제/단기/장기 흐름을 함께 판단한다.
         // v2.1.122: info(쇼핑몰 상품정보) 작업군의 매핑·불러오기·F8 원본양식 출력을 안정화한다. 상품코드=품목코드, 판매가격=출고가, 시중가격=시중가, 판매 1/0=판매여부, 테마1~5=행사테마로 연결한다. 오더즈판매가/오더즈구매가는 작업테이블에서는 숨기되 v2.1.162부터 원본 출력에는 보존한다.
         // v2.1.121: 상단 툴바를 유형별 그룹으로 시각 구분하고, 양식보기를 상단 파일작업 영역 우측으로 이동한다. 테이블 열폭 저장/초기화는 헤더 위에 겹치지 않게 우측 도구줄로 분리한다.
@@ -1221,6 +1222,32 @@
             });
             return result;
         };
+
+        // 히스토리 저장의 실제 production 경로를 한 함수로 고정한다.
+        // 같은 탭 큐와 Web Locks API를 함께 사용하므로 여러 탭이 동시에 저장해도
+        // 잠금 안에서 최신 localStorage를 다시 읽고 병합한 뒤 검증한다.
+        window.persistMerchHistoryLogs = (newLogs = [], currentLogs = []) => window.withMerchStorageLock('oneapp-merch-history-save', async () => {
+            let persisted = [];
+            try {
+                const raw = localStorage.getItem('merchHistory_v870');
+                const parsed = raw && raw !== 'undefined' ? JSON.parse(raw) : [];
+                persisted = Array.isArray(parsed) ? parsed : [];
+            }
+            catch (error) {
+                persisted = [];
+            }
+            const finalLogs = window.mergeMerchHistoryLogs(
+                Array.isArray(newLogs) ? newLogs : [],
+                persisted,
+                Array.isArray(currentLogs) ? currentLogs : []
+            );
+            const serializedLogs = JSON.stringify(finalLogs);
+            localStorage.setItem('merchHistory_v870', serializedLogs);
+            if (localStorage.getItem('merchHistory_v870') !== serializedLogs) {
+                throw new Error('히스토리 저장 후 검증 실패');
+            }
+            return finalLogs;
+        });
 
         window.getAllIDB = async (storeName) => { 
             const db = await window.initIDB(); 
@@ -3257,23 +3284,14 @@ const useMerchData = () => {
     }, []);
     const addHistoryLogs = useCallback(async (newLogs, options = {}) => {
         try {
-            return await window.withMerchStorageLock('oneapp-merch-history-save', async () => {
-                const persisted = safeJSONParse('merchHistory_v870', []);
-                const finalLogs = window.mergeMerchHistoryLogs(
-                    Array.isArray(newLogs) ? newLogs : [],
-                    Array.isArray(persisted) ? persisted : [],
-                    Array.isArray(historyLogsRef.current) ? historyLogsRef.current : []
-                );
-                const serializedLogs = JSON.stringify(finalLogs);
-                localStorage.setItem('merchHistory_v870', serializedLogs);
-                if (localStorage.getItem('merchHistory_v870') !== serializedLogs) {
-                    throw new Error('히스토리 저장 후 검증 실패');
-                }
-                historyLogsRef.current = finalLogs;
-                setHistoryLogs(finalLogs);
-                window.__MERCHOPS_LAST_HISTORY_SAVE_ERROR = '';
-                return true;
-            });
+            const finalLogs = await window.persistMerchHistoryLogs(
+                Array.isArray(newLogs) ? newLogs : [],
+                Array.isArray(historyLogsRef.current) ? historyLogsRef.current : []
+            );
+            historyLogsRef.current = finalLogs;
+            setHistoryLogs(finalLogs);
+            window.__MERCHOPS_LAST_HISTORY_SAVE_ERROR = '';
+            return true;
         }
         catch (e) {
             console.error('MerchOps history local save failed', e);
@@ -8989,7 +9007,7 @@ const WelcomeGuide = ({ onUpload, onCloudSync }) => (React.createElement("div", 
         React.createElement("i", { className: "fas fa-box-open" }),
         React.createElement("div", { className: "absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[14px] border-2 border-white shadow-sm" },
             React.createElement("i", { className: "fas fa-check" }))),
-    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.168_AtomicMasterCommit]"),
+    React.createElement("h2", { className: "text-2xl font-black text-slate-800 mb-3 tracking-tight" }, "MerchOps \uBA54\uC778 \uC6CC\uD06C\uC2A4\uD398\uC774\uC2A4 [v2.1.169_StorageF8E2E]"),
     React.createElement("p", { className: "text-[14px] text-slate-500 mb-10 text-center leading-relaxed font-bold" },
         "\uD604\uC7AC \uB4F1\uB85D\uB41C ",
         React.createElement("span", { className: "text-indigo-500" }, "\uB9C8\uC2A4\uD130 \uC0C1\uD488 \uB370\uC774\uD130"),
@@ -9403,7 +9421,7 @@ const App = () => {
                                 React.createElement("div", { className: "flex flex-col border-l-2 border-slate-700 pl-3" },
                                     React.createElement("div", { className: "flex items-center mb-0.5" },
                                         React.createElement("span", { className: "text-[14px] font-black text-slate-200 leading-none" }, "MerchOps"),
-                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.168_AtomicMasterCommit")),
+                                        React.createElement("span", { className: "ml-2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none tracking-wider" }, "v2.1.169_StorageF8E2E")),
                                     React.createElement("span", { className: "text-[9px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5" }, "MAIN WORKSPACE"))),
                             React.createElement(SystemConsole, { itemCount: Object.keys(data.masterProducts).length, isProcessing: ui.isProcessing, processMsg: ui.processMsg, estimateCount: Object.keys(data.managedItems).length, filteredCount: fullDisplayRows.length, activeTags: ui.activeTags }),
                             React.createElement("nav", { className: "flex gap-1.5 text-[14px] shrink-0 items-center" },
