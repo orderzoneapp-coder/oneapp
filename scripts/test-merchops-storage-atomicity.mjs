@@ -11,6 +11,7 @@ const inlineScripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<
   .filter((script) => script.trim() !== "");
 
 const browser = {};
+const storageValues = new Map();
 const context = vm.createContext({
   window: browser,
   document: {
@@ -26,7 +27,11 @@ const context = vm.createContext({
     }),
     body: { appendChild() {} },
   },
-  localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+  localStorage: {
+    getItem: (key) => storageValues.has(key) ? storageValues.get(key) : null,
+    setItem: (key, value) => storageValues.set(key, String(value)),
+    removeItem: (key) => storageValues.delete(key),
+  },
   navigator: {},
   indexedDB: {},
   crypto: { randomUUID: () => "test-uuid" },
@@ -45,6 +50,7 @@ const context = vm.createContext({
   clearTimeout,
 });
 vm.runInContext(inlineScripts[0], context, { filename: "MerchOps-head.js" });
+const queuedStorageLock = browser.withMerchStorageLock;
 
 const clone = (value) => value === undefined ? undefined : structuredClone(value);
 const createFakeIDB = (initial) => {
@@ -238,4 +244,18 @@ assert.deepEqual(
   "cross-tab history merges must preserve both unique logs",
 );
 
-console.log("MerchOps IndexedDB atomicity, save queue, stale rollback, and history merge tests passed.");
+browser.withMerchStorageLock = queuedStorageLock;
+storageValues.delete("merchHistory_v870");
+const [persistedA, persistedB] = await Promise.all([
+  browser.persistMerchHistoryLogs([{ id: "tab-a", code: "2001" }], []),
+  browser.persistMerchHistoryLogs([{ id: "tab-b", code: "2001" }], []),
+]);
+assert.deepEqual(
+  JSON.parse(storageValues.get("merchHistory_v870")).map((log) => log.id),
+  ["tab-b", "tab-a"],
+  "queued history writes must re-read and merge the latest persisted history",
+);
+assert.equal(persistedA.length, 1);
+assert.equal(persistedB.length, 2);
+
+console.log("MerchOps IndexedDB atomicity, save queue, stale rollback, and persisted history merge tests passed.");
